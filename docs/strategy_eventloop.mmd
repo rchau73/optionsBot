@@ -1,0 +1,22 @@
+flowchart TD
+    A([Bot Start]) --> B[openStrangles\ninitial entry for all targetDTEs]
+    B --> C{Event loop select}
+    C -->|"ctx.Done"| D[return error]
+    C -->|"killSwitchCh\nSIGUSR1"| E[killSwitch\nBuy market ALL positions\nTrigger = kill_switch]
+    C -->|"Tick from MarketData"| F[onTick]
+
+    F --> G[updatePositions\nupdate Mid + Greeks\nfor matching instrument]
+    G --> H[gamma.PushPrice\nunderlyingPrice]
+    H --> I{gamma.Evaluate\nnet γ?}
+    I -->|"γ ≥ 0"| J[Evaluate open positions]
+    I -->|"γ < 0 + bear trend"| K[Close all PUT legs\nBuy market\nTrigger = gamma_close]
+    I -->|"γ < 0 + bull trend"| L[Close all CALL legs\nBuy market\nTrigger = gamma_close]
+    K --> M[Log gamma_trigger\ntimestamp · gamma · direction]
+    L --> M
+    M --> N[maybeOpenStrangles\nre-establish after gamma clear]
+    J --> O{For each position:\nEvaluateLeg}
+    O --> P{Decision}
+    P -->|"None"| O
+    P -->|"Any action"| Q[handleRollout]
+    Q --> N
+    N --> R[hedgeRpt.MaybeReport\nif delta changed > 5%]

@@ -1,0 +1,23 @@
+services:
+  bot-btc:
+    build: .
+    restart: unless-stopped
+    volumes:
+      # Each service maps its own host config file to /app/config.yaml inside
+      # the container — the bot binary always reads that fixed path.
+      - ./.env:/app/.env:ro
+      - ./config_btc.yaml:/app/config.yaml:ro
+      # Separate data/ directories so logs and state don't collide.
+      - ./data/btc:/app/data
+    environment:
+      - TZ=America/Sao_Paulo
+
+  bot-eth:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./config_eth.yaml:/app/config.yaml:ro
+      - ./data/eth:/app/data
+    environment:
+      - TZ=America/Sao_Paulo

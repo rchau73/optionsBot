@@ -1,0 +1,106 @@
+graph TB
+    subgraph EXTERNAL["External Systems"]
+        DERIBIT_WS["Deribit WebSocket API\nwss://test.deribit.com/ws/api/v2"]
+        FILES["File Outputs\nbot.log · orders.log\nhedge_report.json"]
+        HIST_DATA["Historical Data\ndata/historical/options.csv"]
+    end
+
+    subgraph CONFIG["Configuration Layer"]
+        CFG["config.go\nconfig.yaml + .env\n─────────────────\nStrategy params\nRate-limit env vars\nRetry / circuit settings"]
+    end
+
+    subgraph GATEWAY["gateway/"]
+        GW_CONN["WebSocket Connection"]
+        GW_RL["Rate Limiter\n4 scopes × safety factor"]
+        GW_CB["Circuit Breaker\nClosed→Open→HalfOpen"]
+        GW_RETRY["Retry + Jitter\nbackoff on 10028/10040"]
+        GW_PQ["Priority Queue\nHigh: stop-loss/kill\nLow: market data"]
+        GW_SUBS["Subscription Registry\ndedup + capacity cap"]
+    end
+
+    subgraph MARKETDATA["marketdata/"]
+        MD_MGR["Manager\nfetchOptionsChain\nselectRelevantExpiries"]
+        MD_DVOL["DVOLTracker\nrolling IV percentile\n252-day window"]
+        MD_INST["Instrument Cache\nbid/ask/mid/greeks/IV"]
+        MD_TICK["Tick Channel"]
+    end
+
+    subgraph STRATEGY["strategy/"]
+        ST_ENTRY["Entry Logic\nSelectExpiry + SelectStrike\nδ ≈ 0.16"]
+        ST_ROLLOUT["Rollout Rules 4.1–4.5\n19DTE · δdrift · ROI\nstop-loss · kill-switch"]
+        ST_GAMMA["Gamma Monitor\nnet γ sign + trend"]
+        ST_MARGIN["Margin Guard\n15/25/35% IV bands"]
+    end
+
+    subgraph ORDERS["orders/"]
+        ORD_EXEC["Executor\nplace · amend · cancel"]
+        ORD_STATE["State Manager\npositions · strangles\nnet delta/gamma"]
+        ORD_LOG["Order Logger\nOrderLog → orders.log"]
+    end
+
+    subgraph HEDGE["hedge/"]
+        HG_RPT["Hedge Reporter\n5-tranche breakdown\nREPORT ONLY — no orders"]
+    end
+
+    subgraph BACKTEST["backtest/"]
+        BT_FEED["Historical Feed\nCSV → chronological ticks"]
+        BT_EXEC["Sim Executor\nfill models + commission"]
+        BT_ENG["Backtest Engine\nsame strategy logic"]
+        BT_OUT["Results Writer\nsummary · trades · curves\nscenarios · walk-forward"]
+    end
+
+    CFG -->|"params"| GATEWAY
+    CFG -->|"params"| MARKETDATA
+    CFG -->|"params"| STRATEGY
+    CFG -->|"params"| BACKTEST
+
+    DERIBIT_WS <-->|"JSON-RPC 2.0"| GW_CONN
+    GW_CONN --> GW_RL --> GW_PQ
+    GW_PQ --> GW_CB --> GW_RETRY --> GW_CONN
+    GW_CONN --> GW_SUBS
+
+    GW_CONN -->|"ticker notifications\nDVOL updates"| MD_MGR
+    MD_MGR --> MD_DVOL
+    MD_MGR --> MD_INST
+    MD_INST --> MD_TICK
+
+    MD_TICK -->|"Tick events"| ST_ENTRY
+    MD_TICK -->|"Tick events"| ST_ROLLOUT
+    MD_TICK -->|"price"| ST_GAMMA
+    MD_DVOL -->|"IV percentile"| ST_MARGIN
+
+    ST_ENTRY -->|"sell limit"| ORD_EXEC
+    ST_ROLLOUT -->|"buy limit/market"| ORD_EXEC
+    ST_GAMMA -->|"buy market"| ORD_EXEC
+    ORD_EXEC -->|"Fill"| ORD_STATE
+    ORD_EXEC -->|"Fill + Greeks"| ORD_LOG
+    ORD_STATE -->|"positions"| ST_ROLLOUT
+    ORD_STATE -->|"net delta"| HG_RPT
+    ORD_EXEC -->|"private/buy\nprivate/sell"| GW_PQ
+
+    HG_RPT -->|"hedge_report.json"| FILES
+    ORD_LOG -->|"orders.log"| FILES
+
+    HIST_DATA -->|"CSV rows"| BT_FEED
+    BT_FEED -->|"Tick stream"| BT_ENG
+    BT_ENG --> BT_EXEC
+    BT_ENG --> BT_OUT
+    BT_OUT -->|"results/"| FILES
+
+    classDef external fill:#e8f4f8,stroke:#2196F3,color:#000
+    classDef gateway fill:#fff3e0,stroke:#FF9800,color:#000
+    classDef md fill:#e8f5e9,stroke:#4CAF50,color:#000
+    classDef strat fill:#fce4ec,stroke:#E91E63,color:#000
+    classDef ord fill:#f3e5f5,stroke:#9C27B0,color:#000
+    classDef hg fill:#e0f2f1,stroke:#009688,color:#000
+    classDef bt fill:#e3f2fd,stroke:#1565C0,color:#000
+    classDef cfg fill:#fafafa,stroke:#607D8B,color:#000
+
+    class DERIBIT_WS,FILES,HIST_DATA external
+    class GW_CONN,GW_RL,GW_CB,GW_RETRY,GW_PQ,GW_SUBS gateway
+    class MD_MGR,MD_DVOL,MD_INST,MD_TICK md
+    class ST_ENTRY,ST_ROLLOUT,ST_GAMMA,ST_MARGIN strat
+    class ORD_EXEC,ORD_STATE,ORD_LOG ord
+    class HG_RPT hg
+    class BT_FEED,BT_EXEC,BT_ENG,BT_OUT bt
+    class CFG cfg

@@ -1,0 +1,13 @@
+{
+  "theme": "default",
+  "themeVariables": {
+    "fontSize": "14px",
+    "fontFamily": "trebuchet ms, verdana, arial",
+    "primaryColor": "#e3f2fd",
+    "primaryTextColor": "#1a1a2e",
+    "primaryBorderColor": "#1565c0",
+    "lineColor": "#555",
+    "secondaryColor": "#fafafa",
+    "tertiaryColor": "#fff"
+  }
+}

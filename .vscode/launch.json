@@ -1,0 +1,25 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Bot (testnet)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/bot",
+      "args": ["-config", "${workspaceFolder}/config.yaml", "-mode", "live"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "DERIBIT_ENV": "testnet"
+      }
+    },
+    {
+      "name": "Backtest",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/bot",
+      "args": ["-mode", "backtest", "-from", "2023-01-01", "-to", "2024-01-01"]
+    }
+  ]
+}

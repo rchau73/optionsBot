@@ -1,0 +1,11 @@
+stateDiagram-v2
+    [*] --> Closed
+
+    Closed --> Closed : Success() — failures reset to 0
+    Closed --> Open : Failure() — failures ≥ threshold (default 5)
+
+    Open --> Open : Allow() before openUntil — return ErrCircuitOpen
+    Open --> HalfOpen : Allow() after openUntil elapses (default 60s)\nBot safe-idle during Open: no new orders placed
+
+    HalfOpen --> Closed : Success() — resume normal operation
+    HalfOpen --> Open : Failure() — reopen, reset timer

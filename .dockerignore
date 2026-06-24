@@ -1,0 +1,11 @@
+.git
+.env
+bot
+bot.log
+orders.log
+hedge_report.json
+data/results
+data/state.json
+docs/*.png
+*.py
+README.md

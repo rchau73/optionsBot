@@ -1,0 +1,33 @@
+stateDiagram-v2
+    [*] --> PendingFill : Submit sell limit order\n(entry or reopen after rollout)
+
+    PendingFill --> Active : Fill confirmed\n(limit filled or market fallback after timeout)
+    PendingFill --> Cancelled : orderFillTimeoutSec elapsed\nCancel + retry at market
+
+    Active --> Active : Tick received\nMid and Greeks refreshed\nDTE countdown continues
+
+    Active --> RollingOut : EvaluateLeg\nActionRollNextMonth\nor ActionRollSameLeg
+
+    Active --> EmergencyClose : EvaluateLeg\nActionStopLoss\nLoss ≥ 200% of premium
+
+    Active --> GammaClose : GammaMonitor\nNet γ < 0\nbull or bear trend
+
+    Active --> KillSwitch : SIGUSR1 received\nor KILL_SWITCH env var
+
+    RollingOut --> Closed : Buy order fills\nLimit→timeout→market\nNew leg opened
+
+    EmergencyClose --> Closed : Buy market fills\nimmediately\nPriority HIGH queue
+
+    GammaClose --> Closed : Buy market fills\nimmediately\nPriority HIGH queue
+
+    KillSwitch --> Closed : Buy market fills\nimmediately\nPriority HIGH queue
+
+    Closed --> [*] : Removed from StateManager\nROI fields written to orders.log
+
+    note right of Active
+        Monitored every tick:
+        DTE countdown to rolloutDTE
+        abs(delta) drift below 0.10
+        ROI% >= 50% capture
+        Loss% >= 200% stop-loss
+    end note

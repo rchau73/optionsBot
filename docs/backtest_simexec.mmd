@@ -1,0 +1,17 @@
+flowchart TD
+    A([Submit order]) --> B{OrderType?}
+    B -->|"Market"| C{Direction?}
+    C -->|"Buy"| D[fillPrice = mid + mid × slippage_pct]
+    C -->|"Sell"| E[fillPrice = mid - mid × slippage_pct]
+    D --> F[Deduct commission\ncommission_per_contract × qty\nequity -= commission]
+    E --> F
+    F --> G([Fill returned immediately])
+
+    B -->|"Limit\nnext_tick rule"| H[Add to pendingLimits list\nReturn provisional fill at limitPrice]
+    H --> I[On next tick: processPendingLimits]
+    I --> J{Buy: mid ≤ limitPrice\nSell: mid ≥ limitPrice\nOR 24h elapsed?}
+    J -->|"Yes — filled"| K[Deduct commission\nAdjustEquity pnl]
+    J -->|"No — still pending"| I
+
+    B -->|"Limit\nimmediate rule"| L[fillPrice = limitPrice\nfill immediately]
+    L --> F

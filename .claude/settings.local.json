@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod *)",
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(go run *)",
+      "Bash(./bot *)",
+      "Bash(npm install *)",
+      "Bash(mmdc *)",
+      "Bash(awk '{print $5, $9}')",
+      "Bash(sed -i '' 's/\\\\.LogOpen\\(\\\\\\(.*\\\\\\), s\\\\.marketContext\\(\\)\\)/.LogOpen\\(\\\\1, s.marketContext\\(\\), s.gexContext\\(\\)\\)/g' internal/strategy/strategy.go)",
+      "Bash(sed -i '' 's/\\\\.LogClose\\(\\\\\\(.*\\\\\\), s\\\\.marketContext\\(\\)\\)/.LogClose\\(\\\\1, s.marketContext\\(\\), s.gexContext\\(\\)\\)/g' internal/strategy/strategy.go)",
+      "Bash(awk -F'\"time\":\"' '{print $2}')",
+      "Bash(xargs cat)",
+      "Bash(grep -E '\\\\.\\(go|py\\)$')",
+      "Bash(chmod +x *)",
+      "Bash(bash -n /Users/rchau/dev/go/optionsBot/bot.sh)",
+      "Bash(docker compose *)",
+      "Bash(grep -v \"bot-1  |$\")",
+      "Bash(tee /tmp/docker-build.log)",
+      "Bash(echo \"EXIT: $?\")"
+    ]
+  }
+}

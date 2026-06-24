@@ -1,0 +1,17 @@
+graph LR
+    subgraph ENV[".env — Rate Limit Config"]
+        E1["WS_NONMATCH_RPS=20\n× safety_factor 0.80\n= 16 req/s effective"]
+        E2["WS_MATCH_RPS=8\n× 0.80 = 6.4 req/s"]
+        E3["ORDER_OPS_RPS=5\n× 0.80 = 4 req/s"]
+        E4["REST_RPS=10\n× 0.80 = 8 req/s"]
+    end
+    subgraph BUCKETS["golang.org/x/time/rate Token Buckets"]
+        B1["nonMatch\nmarket data\nsubscriptions\nheartbeat"]
+        B2["match\norder placement\nstop-loss\nkill-switch"]
+        B3["orderOps\ncancel + amend"]
+        B4["rest\nHTTP fallback"]
+    end
+    E1 --> B1
+    E2 --> B2
+    E3 --> B3
+    E4 --> B4
