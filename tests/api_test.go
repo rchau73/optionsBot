@@ -12,6 +12,7 @@ import (
 
 	"optionsbot/internal/api"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 	"optionsbot/internal/strategy"
 )
 
@@ -39,6 +40,8 @@ func sampleView() strategy.View {
 	return strategy.View{
 		AsOf: time.Now(), StrategyID: "short-strangle", Underlying: "BTC", Environment: "testnet",
 		Market: orders.MarketSnapshot{Spot: 100000, DVOL: 55},
+		Risk: strategy.RiskView{Status: risk.Status{LimitIMPct: 35, MaxMMPct: 35, Frozen: true, Pending: []risk.Pending{{Rule: "dvol_band", Days: 1, Need: 2}}},
+			IMPct: 12, MMPct: 8, Unit: "USD"},
 		Strangles: []strategy.StrangleView{{
 			ID: "st-1", Slot: orders.SlotRef{DTE: 45, Delta: 0.16},
 			Legs: []strategy.LegView{
@@ -69,6 +72,11 @@ func TestAPI_StatusSummarisesTheBot(t *testing.T) {
 	}
 	if body["market"].(map[string]any)["dvol"].(float64) != 55 {
 		t.Errorf("market = %v", body["market"])
+	}
+	rk := body["risk"].(map[string]any)
+	st := rk["status"].(map[string]any)
+	if st["limit_im_pct"].(float64) != 35 || st["frozen"] != true || len(st["pending"].([]any)) != 1 || rk["im_pct"].(float64) != 12 {
+		t.Errorf("risk = %v", rk)
 	}
 }
 

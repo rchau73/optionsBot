@@ -70,7 +70,7 @@ func TestUpdatePositionQty_UnknownIDIsNoOp(t *testing.T) {
 
 func TestRebalanceMath_DownsizeProportionalPremium(t *testing.T) {
 	// Existing position: 215 ETH qty, 2.150 ETH premium received.
-	// New target: 108 ETH (leverage halved).
+	// New target: 108 ETH (margin limit halved).
 	// Expected new premium: 2.150 × (108/215) = 1.081…
 	currentQty := 215.0
 	currentPremium := 2.150

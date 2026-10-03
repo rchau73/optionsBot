@@ -13,18 +13,19 @@ import (
 	"optionsbot/internal/config"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 	"optionsbot/internal/strategy"
 )
 
 // Engine runs the backtest simulation loop, wiring the HistoricalFeed and
 // SimExecutor through the same strategy logic used in live trading.
 type Engine struct {
-	cfg         *config.Config
-	feed        *HistoricalFeed
-	exec        *SimExecutor
-	state       *orders.StateManager
-	gamma       *strategy.GammaMonitor
-	marginGuard *strategy.MarginGuard
+	cfg     *config.Config
+	feed    *HistoricalFeed
+	exec    *SimExecutor
+	state   *orders.StateManager
+	gamma   *strategy.GammaMonitor
+	riskCfg risk.Config
 
 	snapshots    []PortfolioSnapshot
 	trades       []TradeRecord
@@ -44,14 +45,14 @@ type Engine struct {
 
 func NewEngine(cfg *config.Config, feed *HistoricalFeed, exec *SimExecutor) *Engine {
 	return &Engine{
-		cfg:         cfg,
-		feed:        feed,
-		exec:        exec,
-		state:       orders.NewStateManager(),
-		gamma:       strategy.NewGammaMonitor(cfg.GammaTrendLookbackDays, cfg.SwingPivotN),
-		marginGuard: strategy.NewMarginGuard(cfg.MaxMarginPct, cfg.Leverage),
-		equity:      exec.equity,
-		peakEquity:  exec.equity,
+		cfg:        cfg,
+		feed:       feed,
+		exec:       exec,
+		state:      orders.NewStateManager(),
+		gamma:      strategy.NewGammaMonitor(cfg.GammaTrendLookbackDays, cfg.SwingPivotN),
+		riskCfg:    cfg.RiskPolicy(false), // no GEX history in backtests
+		equity:     exec.equity,
+		peakEquity: exec.equity,
 	}
 }
 
@@ -447,12 +448,17 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
+		// APPROXIMATION: live trading sizes with Deribit's simulate_portfolio,
+		// which a backtest cannot call. Here premium stands in for margin and
+		// the DVOL band's IM limit (unconfirmed, no gamma rule) caps it.
+		limitPct := ApproxIMLimitPct(e.riskCfg, call.IVPercentile)
 		marginNeeded := call.Mid + put.Mid
-		if !e.marginGuard.WithinLimit(e.state.TotalMarginUsed(), marginNeeded, equity) {
+		if e.state.TotalMarginUsed()+marginNeeded > equity*limitPct/100 {
 			slog.Debug("skip entry: margin limit",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"margin_needed", fmt.Sprintf("%.4f", marginNeeded),
 				"margin_used", fmt.Sprintf("%.4f", e.state.TotalMarginUsed()),
+				"approx_limit_pct", limitPct,
 				"equity", fmt.Sprintf("%.2f", equity))
 			continue
 		}
@@ -703,4 +709,11 @@ func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, wind
 	}
 
 	return writer.WriteWalkForwardSummary(wfResults)
+}
+
+// ApproxIMLimitPct is the backtest's stand-in for the live margin policy: the
+// IM limit of the DVOL band ivPct falls in. Live trading also confirms band
+// changes over daily closes and applies the gamma-regime rule.
+func ApproxIMLimitPct(cfg risk.Config, ivPct float64) float64 {
+	return cfg.SortedBands()[cfg.BandIndex(ivPct)].MaxIMPct
 }

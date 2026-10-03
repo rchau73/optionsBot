@@ -129,6 +129,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"market":         v.Market,
 		"trend":          v.Trend,
 		"account":        v.Account,
+		"risk":           v.Risk,
 		"greeks":         v.Greeks,
 		"open_strangles": len(v.Strangles),
 		"open_legs":      openLegs,

@@ -3,10 +3,13 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
+
+	"optionsbot/internal/risk"
 )
 
 // DTEDeltaEntry pairs a target DTE with one or more entry deltas.
@@ -45,10 +48,12 @@ type Config struct {
 	GEXStrikeRangePct      float64 `yaml:"gex_strike_range_pct"`
 	IVPercentileWindow     int     `yaml:"iv_percentile_window"`
 	HedgeReportThreshold   float64 `yaml:"hedge_report_threshold"`
-	MaxMarginPct           float64 `yaml:"max_margin_pct"`
-	Leverage               float64 `yaml:"leverage"`
-	MaxLeverage            float64 `yaml:"max_leverage"`
-	SpreadAlertThreshold   float64 `yaml:"spread_alert_threshold"`
+	// Margin policy (see internal/risk): IM limit by IV-percentile band,
+	// fixed MM limit, band/regime changes confirmed on daily closes.
+	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
+	MaxMMPct             float64     `yaml:"max_mm_pct"`
+	IVBandConfirmDays    int         `yaml:"iv_band_confirm_days"`
+	SpreadAlertThreshold float64     `yaml:"spread_alert_threshold"`
 
 	EvalIntervalMS      int     `yaml:"eval_interval_ms"`
 	ReportIntervalSec   int     `yaml:"report_interval_sec"` // heartbeat + P&L journal period
@@ -151,8 +156,8 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("slot %d DTE is at or below rollout_dte %d: it would roll immediately", sl.TargetDTE, c.RolloutDTE)
 		}
 	}
-	if c.MaxMarginPct <= 0 || c.MaxMarginPct > 1 {
-		return fmt.Errorf("max_margin_pct %.2f must be in (0, 1]", c.MaxMarginPct)
+	if err := c.RiskPolicy(false).Validate(); err != nil {
+		return err
 	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
@@ -161,6 +166,45 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("DERIBIT_ENV %q must be testnet or live", c.Environment)
 	}
 	return nil
+}
+
+// DefaultIVMarginBands is the margin policy used when config sets none:
+// rich premium allows more initial margin, calm markets less.
+var DefaultIVMarginBands = []risk.Band{
+	{MinIVPct: 70, MaxIMPct: 50},
+	{MinIVPct: 30, MaxIMPct: 35},
+	{MinIVPct: 0, MaxIMPct: 20},
+}
+
+// RiskPolicy returns the margin policy; useRegime enables the gamma rule.
+// Unset fields take the defaults Load applies, so a Config built in code
+// (tests, sweeps) gets the same policy as one loaded from YAML.
+func (c *Config) RiskPolicy(useRegime bool) risk.Config {
+	p := risk.Config{Bands: c.IVMarginBands, MaxMMPct: c.MaxMMPct, ConfirmDays: c.IVBandConfirmDays, UseRegime: useRegime}
+	if len(p.Bands) == 0 {
+		p.Bands = DefaultIVMarginBands
+	}
+	if p.MaxMMPct == 0 {
+		p.MaxMMPct = DefaultMaxMMPct
+	}
+	if p.ConfirmDays == 0 {
+		p.ConfirmDays = DefaultIVBandConfirmDays
+	}
+	return p
+}
+
+// Margin policy defaults.
+const (
+	DefaultMaxMMPct          = 35
+	DefaultIVBandConfirmDays = 2
+)
+
+// removedKeys were replaced by the margin policy. Loading a config that still
+// sets them fails loudly, so nobody believes an old cap is still enforced.
+var removedKeys = map[string]string{
+	"max_margin_pct": "iv_margin_bands",
+	"leverage":       "iv_margin_bands",
+	"max_leverage":   "iv_margin_bands and max_mm_pct",
 }
 
 // Slots returns the expanded list of (DTE, delta) strangle slots.
@@ -190,8 +234,21 @@ func Load(path string) (*Config, error) {
 	}
 	defer f.Close()
 
+	raw, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	var keys map[string]any
+	if err := yaml.Unmarshal(raw, &keys); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	for old, repl := range removedKeys {
+		if _, ok := keys[old]; ok {
+			return nil, fmt.Errorf("config key %q was removed: margin is now limited by %s (as %% of Deribit's margin balance) — see README", old, repl)
+		}
+	}
 	var cfg Config
-	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
@@ -238,15 +295,15 @@ func Load(path string) (*Config, error) {
 	// config.yaml is the authority; no default override so users can explicitly disable.
 	// DeltaSlippage == 0 is valid: disables the tolerance filter entirely.
 
-	// ── Leverage defaults and guardrails ──────────────────────────────────────
-	if cfg.MaxLeverage <= 0 {
-		cfg.MaxLeverage = 10.0
+	// ── Margin policy defaults (validated in Validate) ────────────────────────
+	if len(cfg.IVMarginBands) == 0 {
+		cfg.IVMarginBands = append([]risk.Band(nil), DefaultIVMarginBands...)
 	}
-	if cfg.Leverage <= 0 {
-		cfg.Leverage = 1.0
+	if cfg.MaxMMPct == 0 {
+		cfg.MaxMMPct = DefaultMaxMMPct
 	}
-	if cfg.Leverage > cfg.MaxLeverage {
-		return nil, fmt.Errorf("leverage %.2f exceeds max_leverage %.2f", cfg.Leverage, cfg.MaxLeverage)
+	if cfg.IVBandConfirmDays == 0 {
+		cfg.IVBandConfirmDays = DefaultIVBandConfirmDays
 	}
 
 	// ── Platform: rate limits (from .env) ─────────────────────────────────────

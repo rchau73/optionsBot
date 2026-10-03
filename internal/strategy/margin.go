@@ -1,61 +1,45 @@
 package strategy
 
-import "math"
+import (
+	"math"
 
-// MarginGuard enforces IV-risk-model margin limits.
-type MarginGuard struct {
-	maxMarginPct float64
-	leverage     float64
+	"optionsbot/internal/orders"
+)
+
+// Sizing helpers for the margin policy (see limits.go). Every margin figure
+// they take comes from Deribit: the account summary or private/simulate_portfolio.
+
+// EntryLots is how many whole lots of a strangle fit in headroom when one lot
+// adds imPerLot of initial margin. A lot that adds no margin (portfolio
+// netting) is sized at one lot, never scaled up without bound.
+func EntryLots(headroom, imPerLot float64) int {
+	if imPerLot <= 0 {
+		return 1
+	}
+	return int(math.Floor(headroom/imPerLot + 1e-9))
 }
 
-func NewMarginGuard(maxMarginPct, leverage float64) *MarginGuard {
-	return &MarginGuard{maxMarginPct: maxMarginPct, leverage: leverage}
+// TargetLots is the size a held strangle should have so its initial margin
+// fits share, when each lot uses imPerLot. The IM limit never closes a
+// strangle completely (at least one lot stays); the MM limit can.
+// It returns 0 when imPerLot is unknown (≤ 0) and no target can be set.
+func TargetLots(share, imPerLot float64) int {
+	if imPerLot <= 0 {
+		return 0
+	}
+	return max(1, int(math.Floor(share/imPerLot+1e-9)))
 }
 
-// AllowedMargin returns the maximum PM initial margin allowed, computed as
-// max_margin_pct × leverage × total account equity. Volatility is deliberately
-// not an input: Deribit's Portfolio Margin model already prices it in.
-func (g *MarginGuard) AllowedMargin(equity float64) float64 {
-	return equity * g.maxMarginPct * g.leverage
-}
-
-// WithinLimit returns true if adding newMarginCost to currentMargin stays within
-// the cap. equity is total account equity (balance + unrealized PnL).
-func (g *MarginGuard) WithinLimit(currentMargin, newMarginCost, equity float64) bool {
-	return currentMargin+newMarginCost <= g.AllowedMargin(equity)
-}
-
-// ComputeQtyFromIM derives the position size from a PM margin target.
-//
-// callIM and putIM are the incremental initial margins Deribit estimates for one
-// exchMin-sized lot of the call and put respectively (from private/get_margins).
-// The function scales up to as many whole lots as fit within targetMargin, with
-// a floor of one lot.
-//
-// Three cases for imPerUnit = callIM + putIM:
-//   - imPerUnit > 0: normal PM data — size by floor(targetMargin / imPerUnit)
-//   - imPerUnit == 0: PM data unavailable (e.g. testnet ETH) — size by
-//     floor(targetMargin / exchMin), treating the budget as direct notional
-//   - imPerUnit < 0: strangle reduces portfolio PM (netting benefit) — cap at
-//     exchMin to avoid unbounded sizing
-func ComputeQtyFromIM(exchMin, targetMargin, callIM, putIM float64) float64 {
-	if exchMin <= 0 {
-		return exchMin
+// MMKeepQty is the size to keep of a short leg when maintenance margin is at
+// mmPct of margin balance and must come down to maxMMPct: positions shrink in
+// proportion, with 5 % slack, and always by at least one lot.
+func MMKeepQty(qty, lot, mmPct, maxMMPct float64) float64 {
+	if mmPct <= maxMMPct || lot <= 0 {
+		return qty
 	}
-	imPerUnit := callIM + putIM
-	if imPerUnit < 0 {
-		// Netting benefit: adding more lots would reduce PM indefinitely — cap at minimum.
-		return exchMin
+	keep := orders.FloorToStep(qty*maxMMPct/mmPct*0.95, lot)
+	if keep > qty-lot {
+		keep = qty - lot
 	}
-	var units float64
-	if imPerUnit == 0 {
-		// No PM data from exchange: use budget as direct notional (budget ÷ lot size).
-		units = math.Floor(targetMargin / exchMin)
-	} else {
-		units = math.Floor(targetMargin / imPerUnit)
-	}
-	if units < 1 {
-		units = 1
-	}
-	return units * exchMin
+	return math.Max(0, keep)
 }

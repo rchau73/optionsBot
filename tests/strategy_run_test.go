@@ -14,6 +14,7 @@ import (
 
 	"optionsbot/internal/config"
 	"optionsbot/internal/gex"
+	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
@@ -35,7 +36,10 @@ type fakeExchange struct {
 	positions   []orders.RawPosition
 	summary     orders.AccountSummary
 	summaryErr  error
-	imPerLot    float64
+	imPerLot    float64 // IM of one strangle lot (both legs) in simulate_portfolio
+	mmRatio     float64 // MM as a share of IM in simulations
+	simErr      error
+	simCalls    []map[string]float64
 	nextID      int
 	dailyCloses []orders.DailyClose
 	amended     []string
@@ -48,8 +52,9 @@ type fakeExchange struct {
 func newFakeExchange() *fakeExchange {
 	return &fakeExchange{
 		orderStates: map[string]orders.OrderStateInfo{},
-		summary:     orders.AccountSummary{Currency: "BTC", Equity: 10, AvailableFunds: 10},
+		summary:     orders.AccountSummary{Currency: "BTC", Equity: 10, AvailableFunds: 10, MarginBalance: 10},
 		imPerLot:    0.01,
+		mmRatio:     0.7,
 	}
 }
 
@@ -128,6 +133,30 @@ func (f *fakeExchange) GetMargins(context.Context, string, float64, float64) (or
 	return orders.MarginInfo{InitialMargin: f.imPerLot}, nil
 }
 
+// SimulatePortfolio models margin as linear in lots: each short lot (0.1)
+// adds half of imPerLot per leg; a buy (positive size) frees the same.
+func (f *fakeExchange) SimulatePortfolio(_ context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.simCalls = append(f.simCalls, positions)
+	if f.simErr != nil {
+		return orders.AccountSummary{}, f.simErr
+	}
+	out := f.summary
+	for _, size := range positions {
+		dIM := -size / 0.1 * f.imPerLot / 2
+		out.InitialMargin += dIM
+		out.MaintenanceMargin += dIM * f.mmRatio
+	}
+	return out, nil
+}
+
+func (f *fakeExchange) setMargin(im, mm float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.summary.InitialMargin, f.summary.MaintenanceMargin = im, mm
+}
+
 func (f *fakeExchange) GetDailyCloses(context.Context, string, int) ([]orders.DailyClose, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -187,6 +216,28 @@ type fakeMarket struct {
 	mu          sync.Mutex
 	price       float64
 	instruments map[string]*marketdata.Instrument
+	dvolCloses  []marketdata.DayIV
+	dvolToday   marketdata.DayIV
+}
+
+func (m *fakeMarket) DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]marketdata.DayIV(nil), m.dvolCloses...), m.dvolToday
+}
+
+// setIVHistory gives the market daily IV percentiles: closes for the days
+// before today (oldest first) and today's live value.
+func (m *fakeMarket) setIVHistory(closes []float64, today float64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+	m.dvolCloses = nil
+	for i, pct := range closes {
+		d := day.AddDate(0, 0, i-len(closes))
+		m.dvolCloses = append(m.dvolCloses, marketdata.DayIV{Day: d, Percentile: pct, Known: true})
+	}
+	m.dvolToday = marketdata.DayIV{Day: day, Percentile: today, Known: true}
 }
 
 func (m *fakeMarket) UnderlyingPrice() float64 { m.mu.Lock(); defer m.mu.Unlock(); return m.price }
@@ -228,6 +279,26 @@ type recordingJournal struct {
 	mu      sync.Mutex
 	entries []journalEntry
 	pnl     []orders.PnLRecord
+	risk    []orders.RiskRecord
+}
+
+func (j *recordingJournal) LogRisk(r orders.RiskRecord) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.risk = append(j.risk, r)
+}
+
+// riskChanges returns the journaled margin-policy records with this change.
+func (j *recordingJournal) riskChanges(change string) []orders.RiskRecord {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var out []orders.RiskRecord
+	for _, r := range j.risk {
+		if r.Change == change {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 type journalEntry struct {
@@ -309,8 +380,9 @@ type strategyFixture struct {
 	call     string
 	put      string
 	expiry   time.Time
-	gex      strategy.GEXSource // optional
-	oi       strategy.OISource  // optional
+	gex      strategy.GEXSource     // optional
+	regimes  strategy.RegimeHistory // optional; set with withConfirmedRegime
+	oi       strategy.OISource      // optional
 	journal  *recordingJournal
 	logger   *orders.Logger // when set, used as the journal instead of the recorder
 	cancel   context.CancelFunc
@@ -335,8 +407,6 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 			StopLossMultiplier:     2.0,
 			GammaTrendLookbackDays: 21,
 			SwingPivotN:            2,
-			MaxMarginPct:           0.35,
-			Leverage:               1,
 			EvalIntervalMS:         10,
 			MaxDTEDeviation:        10,
 			DeltaSlippage:          0.05,
@@ -365,6 +435,9 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		f.call: inst(f.call, "call", 110000, 0.16),
 		f.put:  inst(f.put, "put", 90000, -0.16),
 	}}
+	// DVOL history as the live bot seeds it at startup: low IV percentile,
+	// so the confirmed IM limit is the lowest band, 20 % of margin balance.
+	f.market.setIVHistory([]float64{10, 10, 10}, 10)
 	f.startRun = func() {
 		var journal strategy.TradeJournal = f.journal
 		if f.logger != nil {
@@ -372,7 +445,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		}
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi,
+			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		f.cancel = cancel
@@ -390,12 +463,13 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 }
 
 // withOpenStrangle makes the exchange report an existing short strangle,
-// which reconcile loads on startup. The margin per lot is set so the current
-// budget fits exactly this size, so the startup rebalance leaves it alone.
+// which reconcile loads on startup. The margin per lot is set so the IM
+// limit (lowest band, 20 %: no DVOL history in the fixture) fits exactly this
+// size, so the startup rebalance leaves it alone.
 func (f *strategyFixture) withOpenStrangle(qty, avgPrice float64) {
 	lots := math.Round(qty / 0.1)
-	allowed := f.exch.summary.Equity * f.cfg.MaxMarginPct * f.cfg.Leverage
-	f.exch.imPerLot = allowed / (2 * lots) * 0.999
+	share := 20.0 / 100 * f.exch.summary.MarginBalance / float64(len(f.cfg.Slots()))
+	f.exch.imPerLot = share / lots * 0.999
 	f.exch.positions = []orders.RawPosition{
 		{InstrumentName: f.call, Size: -qty, Direction: "sell", AveragePrice: avgPrice, MarkPrice: 0.02, Delta: 0.16},
 		{InstrumentName: f.put, Size: -qty, Direction: "sell", AveragePrice: avgPrice, MarkPrice: 0.02, Delta: -0.16},
@@ -608,7 +682,8 @@ func TestStrategy_ReconcileLoadsPositionsAndCancelsOnlyOwnCurrency(t *testing.T)
 func TestStrategy_RebalanceDownsizesInWholeLots(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.withOpenStrangle(0.55, 0.02) // 0.55 is not on the 0.1 grid
-	f.exch.imPerLot = 100          // now the budget fits only the minimum lot (0.1)
+	f.exch.imPerLot = 100          // now the limit fits only the minimum lot (0.1)
+	f.exch.setMargin(3, 1)         // IM 30 % of margin balance > 20 % limit
 	f.startRun()
 
 	eventually(t, 2*time.Second, "both legs downsized", func() bool { return len(f.exch.buys()) == 2 })
@@ -698,6 +773,7 @@ func (f *strategyFixture) withPutSheddingRegime() {
 func TestStrategy_GEXSheddingPutsOpensCallOnly(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.withPutSheddingRegime()
+	f.withConfirmedRegime("NEGATIVE/ACCELERATION") // otherwise entries are frozen
 	f.startRun()
 
 	eventually(t, 2*time.Second, "call submitted", func() bool { return len(f.exch.sells()) >= 1 })
@@ -707,6 +783,16 @@ func TestStrategy_GEXSheddingPutsOpensCallOnly(t *testing.T) {
 			t.Errorf("only the call may be sold while puts are being shed, got %s", o.Instrument)
 		}
 	}
+}
+
+// withConfirmedRegime records regime at the two previous daily closes, so the
+// margin policy sees it as confirmed.
+func (f *strategyFixture) withConfirmedRegime(regime string) {
+	store, _ := history.OpenRegimes("")
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+	store.Record(day.AddDate(0, 0, -2), regime)
+	store.Record(day.AddDate(0, 0, -1), regime)
+	f.regimes = store
 }
 
 // withLoneCall makes the exchange report only the call of a strangle.

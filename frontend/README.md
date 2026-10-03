@@ -10,9 +10,9 @@ A **read-only, single-page live monitor** for the bots: what each strategy holds
 |---|---|
 | Header | one chip per bot: TESTNET / LIVE, data freshness (turns STALE / OFFLINE), HALTED after a kill switch, spot, DVOL, IV percentile, GEX regime, trend |
 | KPI strip | bots online, open legs, pending orders, orders sent / filled, closes, skipped entries, realised / open / total P&L (USD at spot) |
-| Account & collateral | the shared Deribit account, as Deribit reports it: margin model (cross/segregated · portfolio/standard), cross collateral on/off, USD totals (equity, margin balance, IM, MM) with **IM % / MM % bars** (amber from 50 %, red from 80 %; Deribit liquidates at MM 100 %), and per asset: balance, equity, margin balance, available, withdrawable, IM and MM (and projected, without the nearest expiry), IM % / MM %, reserved. Flags STALE data, a failed poll and high margin |
+| Account & collateral | the shared Deribit account, as Deribit reports it: margin model (cross/segregated · portfolio/standard), cross collateral on/off, USD totals (equity, margin balance, IM, MM) with **IM % / MM % bars** (amber from 50 %, red from 80 %; Deribit liquidates at MM 100 %), and per asset: balance, equity, margin balance, available, withdrawable, IM and MM (and projected, without the nearest expiry), IM % / MM %, reserved. Flags STALE data, a failed poll and high margin. **Margin policy per bot**: IM used vs the active limit and *why* (DVOL band, or negative gamma), MM used vs its limit, whether new entries are allowed or FROZEN (with the reason), and any pending change with its countdown (e.g. *DVOL → band ≥70: 1 of 2 daily closes*). The limits are drawn as ticks on the IM / MM bars |
 | Open positions | one row per leg — instrument, slot (DTE · Δ), call/put, strike, DTE, qty, entry, mark, P&L (coin and USD), % of premium captured, stop-loss mark, ITM/ATM/OTM and distance, Δ Γ Θ Vega. Filter by bot, strategy, type, moneyness; group by strategy, slot, expiry or type with group totals |
-| Activity | live feed of orders sent, re-priced, cancelled, opened, closed (take-profit, rolls, stop-loss, GEX shed, kill switch) and skipped entries with the reason, each with its market context (spot, DVOL, moneyness, open interest, regime) |
+| Activity | live feed of orders sent, re-priced, cancelled, opened, closed (take-profit, rolls, stop-loss, GEX shed, kill switch) skipped entries with the reason, and margin-policy changes (entries frozen/unfrozen, IM limit changed, rebalance, MM breach — with DVOL, IV percentile and regime), each with its market context (spot, DVOL, moneyness, open interest, regime) |
 | P&L chart | total and realized P&L across bots (USD). **Live** = this session, every refresh; **1h · 6h · 1d · 1w · 1m · All** = the bots' stored history (survives restarts), about 300 points per range |
 | Working orders | entry/repair orders still on the book: fill progress, limit, re-prices, age |
 
@@ -65,7 +65,7 @@ npm run build   # production build — catches Server/Client Component mistakes
 | Folder | Contents |
 |---|---|
 | `app/` | `layout.jsx`, `page.jsx` (composition only), `api/bots/…` read-only proxy routes |
-| `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `Monitor` (+ `Panel`, `Badge`, `StatTile`) |
+| `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`) |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
 | `__tests__/`, `test/` | tests and shared fixtures |

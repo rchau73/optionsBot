@@ -25,8 +25,6 @@ func buildTestConfig() *config.Config {
 		GammaTrendLookbackDays: 1,
 		IVPercentileWindow:     10,
 		HedgeReportThreshold:   0.05,
-		MaxMarginPct:           0.35,
-		Leverage:               1,
 		SpreadAlertThreshold:   0.05,
 		Backtest: config.Backtest{
 			FillModel:             "mid",

@@ -236,6 +236,12 @@ func (l *Logger) LogSkipped(reason string, ctx EventContext) {
 	l.write(rec)
 }
 
+// LogRisk records a margin-policy change (freeze, limit change, rebalance).
+func (l *Logger) LogRisk(r RiskRecord) {
+	r.Event = EventRisk
+	l.writeJSON(EventRisk, r, slog.Default().With("event", EventRisk, "change", r.Change))
+}
+
 // LogPnL writes a periodic P&L line.
 func (l *Logger) LogPnL(p PnLRecord) {
 	p.Event = EventPnL

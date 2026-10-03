@@ -29,6 +29,10 @@ import (
 // pnlHistoryPath is where the P&L history for the monitor chart is kept.
 const pnlHistoryPath = "data/pnl_history.jsonl"
 
+// regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
+// no history of it, and the margin policy confirms regime changes on it.
+const regimeHistoryPath = "data/regime_history.jsonl"
+
 func main() {
 	// Flags
 	mode := flag.String("mode", "live", "live | backtest")
@@ -124,6 +128,11 @@ func runLive(cfg *config.Config) error {
 		return fmt.Errorf("pnl history: %w", err)
 	}
 	defer pnlHistory.Close()
+	regimes, err := history.OpenRegimes(regimeHistoryPath)
+	if err != nil {
+		return fmt.Errorf("regime history: %w", err)
+	}
+	defer regimes.Close()
 
 	strat := strategy.New(cfg, strategy.Deps{
 		Market:   md,
@@ -134,6 +143,7 @@ func runLive(cfg *config.Config) error {
 		GEX:      gexMgr,
 		OI:       gexMgr,
 		History:  pnlHistory,
+		Regimes:  regimes,
 	})
 
 	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)
@@ -173,7 +183,9 @@ func runLive(cfg *config.Config) error {
 		"stop_loss_mult", cfg.StopLossMultiplier,
 		"roi_take_profit", cfg.ROITakeProfit,
 		"delta_drift_threshold", cfg.DeltaDriftThreshold,
-		"max_margin_pct", cfg.MaxMarginPct,
+		"iv_margin_bands", cfg.IVMarginBands,
+		"max_mm_pct", cfg.MaxMMPct,
+		"iv_band_confirm_days", cfg.IVBandConfirmDays,
 		"iv_percentile_window", cfg.IVPercentileWindow,
 	)
 

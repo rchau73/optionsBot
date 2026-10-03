@@ -35,10 +35,11 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `internal/gateway` | The only Deribit connection: priority queue, rate limiter, circuit breaker, retries, reply routing, reconnect | config |
 | `internal/marketdata` | Option chain, ticker/index/DVOL subscriptions, IV percentile, shared expiry-window rule | gateway (interface) |
 | `internal/gex` | Market-wide gamma exposure regime from open interest | gateway, marketdata (interfaces) |
-| `internal/strategy` | Decision loop: entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex (interfaces) |
+| `internal/risk` | Margin policy, pure: IM limit by DVOL IV-percentile band, negative-gamma override, changes confirmed on daily closes, fixed MM limit | — |
+| `internal/strategy` | Decision loop: entry, fill tracking, exits, margin policy, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex, risk (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
-| `internal/history` | P&L history: append-only `data/pnl_history.jsonl`, reloaded on start (corrupt lines skipped), bucketed range queries | — |
+| `internal/history` | P&L history (`data/pnl_history.jsonl`, bucketed range queries) and gamma regime per UTC daily close (`data/regime_history.jsonl`, which Deribit does not keep); append-only, reloaded on start, corrupt lines skipped | — |
 | `internal/account` | Polls `private/get_account_summaries` (fallback: per-currency `get_account_summary`) every `BOT_ACCOUNT_POLL_SEC` and caches collateral per asset, margin model and IM/MM — Deribit's figures, plus IM %/MM % of margin balance | gateway (interface) |
 | `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls | strategy, orders (interfaces) |
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
@@ -97,13 +98,25 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
 | `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window |
 | `reconcile.go` | rebuild the book from the exchange; startup account log |
-| `rebalance.go` | resize reconciled strangles to the current budget (downsize at market, upsize via a complement entry) |
+| `limits.go` | margin policy each cycle: evaluate `internal/risk`, journal changes, reduce at market on an MM breach, size entries with `private/simulate_portfolio` |
+| `rebalance.go` | resize strangles toward a newly confirmed IM limit (downsize at market only while IM is above it, upsize via a complement entry) |
 | `killswitch.go` | cancel all → flatten at market with retries → stay idle |
 | `entry.go`, `rollout.go`, `gamma.go`, `margin.go` | pure decision functions shared with the backtest |
 
 **Rollout priority** (`EvaluateLeg`, pure): stop-loss → DTE roll → delta drift → ROI take-profit. Rollouts only *close*; replacement legs are opened by repair (single leg) or entry (whole strangle), so there is exactly one fill-tracked way to open a leg.
 
-**Sizing:** budget = equity × `max_margin_pct` × `leverage` − initial margin in use; each vacant slot gets an equal share; `private/get_margins` gives the margin of one lot per leg; `ComputeQtyFromIM` fits whole lots (minimum one).
+**Margin policy and sizing.** All margin figures are Deribit's: the account-wide USD totals when cross collateral is on, otherwise the currency's own (`AccountSummary.MarginUsage`, used for both the live summary and simulations so they compare).
+
+| Rule | Behaviour |
+|---|---|
+| IM limit | `iv_margin_bands` by the confirmed DVOL IV-percentile band (default ≥70 → 50 %, ≥30 → 35 %, else 20 % of margin balance) |
+| Negative gamma | a confirmed negative GEX regime forces the lowest band |
+| Confirmation | a band or regime change must hold for `iv_band_confirm_days` (2) consecutive UTC daily closes; a missing day resets the count. Until then: **frozen**, no new entries or upsizes; exits, rolls and repairs continue. A change that reverts before confirmation unfreezes with nothing else changed |
+| Rebalance | on a confirmed limit change (and at startup): buy back whole lots above each strangle's share while IM is above the limit, at least one lot kept; open complements up to the headroom when below |
+| MM limit | MM ≥ `max_mm_pct` (35 %): reduce every position at market each cycle until under, regardless of any freeze; repairs and entries blocked |
+| Fail safe | margin unknown, simulation failed or units disagree → no new risk; unknown DVOL → lowest band, no rebalance; no confirmed regime yet (first days after deploying) → frozen |
+
+Each vacant slot gets an equal share of the IM headroom (limit × margin balance − IM in use). `private/simulate_portfolio` — Deribit allows one call per second, so the executor spaces them — prices one strangle lot added to the real portfolio (legs offsetting), the size is scaled to the share, and a second simulation confirms post-trade IM and MM fit; otherwise the size shrinks or the slot is skipped (`margin_limit`). Every freeze, unfreeze, limit change, rebalance and MM breach is journaled as a `risk_limit` event.
 
 ## 7. Orders and state
 
@@ -126,11 +139,11 @@ See [hedge_flow](hedge_flow.png). When |net delta| ≥ `hedge_report_threshold` 
 
 See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 
-`HistoricalFeed` replays `data/historical/options.csv` (prices in USD in the synthetic data from `cmd/gendata`) grouped by day; `Engine` runs the pure strategy functions (`EvaluateLeg`, `SelectExpiry`, `SelectStrike`, `GammaMonitor`, `MarginGuard`) **at the simulated date**; `SimExecutor` fills market orders with slippage and limits per the configured rule; results are written to `data/results/`. `--sweep` runs five scenarios in parallel (each applied as a slot matrix); walk-forward splits the period into train/validate windows and flags > 30 % Sharpe degradation as overfit.
+`HistoricalFeed` replays `data/historical/options.csv` (prices in USD in the synthetic data from `cmd/gendata`) grouped by day; `Engine` runs the pure strategy functions (`EvaluateLeg`, `SelectExpiry`, `SelectStrike`, `GammaMonitor`) **at the simulated date**; margin is an approximation (`ApproxIMLimitPct`: premium as margin, capped by the DVOL band's IM limit, no confirmation or gamma rule) because Deribit's simulator is not available offline; `SimExecutor` fills market orders with slippage and limits per the configured rule; results are written to `data/results/`. `--sweep` runs five scenarios in parallel (each applied as a slot matrix); walk-forward splits the period into train/validate windows and flags > 30 % Sharpe degradation as overfit.
 
 ## 11. Configuration
 
-`config.yaml` holds strategy logic, `.env` holds platform settings (credentials, `DERIBIT_ENV`, rate limits, retry, circuit breaker, heartbeat/reconnect) — never mixed. `config.Load` fills defaults and runs `Validate`: underlying set, at least one slot, deltas in (0, 0.5), every slot above `rollout_dte`, `max_margin_pct` in (0, 1], positive stop-loss, `DERIBIT_ENV` ∈ {testnet, live}. Credentials are checked only for trading, so backtests need no API key. The full table is in the README.
+`config.yaml` holds strategy logic, `.env` holds platform settings (credentials, `DERIBIT_ENV`, rate limits, retry, circuit breaker, heartbeat/reconnect) — never mixed. `config.Load` fills defaults and runs `Validate`: underlying set, at least one slot, deltas in (0, 0.5), every slot above `rollout_dte`, margin bands covering 0–100 with limits in (0, 100], `max_mm_pct` below 100 and the removed `leverage` / `max_margin_pct` keys rejected, positive stop-loss, `DERIBIT_ENV` ∈ {testnet, live}. Credentials are checked only for trading, so backtests need no API key. The full table is in the README.
 
 ## 12. Observability
 

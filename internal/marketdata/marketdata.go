@@ -168,10 +168,10 @@ func (m *Manager) newInstrument(info instrumentInfo) *Instrument {
 // window, so the IV percentile is meaningful from the first minute instead
 // of after a year of uptime.
 func (m *Manager) seedDVOLHistory(ctx context.Context, now time.Time) error {
-	days := m.cfg.IVPercentileWindow
-	if days <= 0 {
+	if m.cfg.IVPercentileWindow <= 0 {
 		return nil
 	}
+	days := m.cfg.IVPercentileWindow + DVOLHistoryExtraDays
 	resp, err := m.gw.Call(ctx, "public/get_volatility_index_data", map[string]any{
 		"currency":        m.cfg.Underlying,
 		"start_timestamp": now.AddDate(0, 0, -days-1).UnixMilli(),
@@ -350,6 +350,11 @@ func (m *Manager) DVOL() float64 {
 // IVPercentile ranks today's DVOL against the configured window of days.
 func (m *Manager) IVPercentile() float64 {
 	return m.dvol.Percentile()
+}
+
+// DVOLDaily returns recent daily DVOL closes and today, each with its percentile.
+func (m *Manager) DVOLDaily() ([]DayIV, DayIV) {
+	return m.dvol.Daily()
 }
 
 // UnderlyingPrice returns the latest index price, or 0 before the first push.

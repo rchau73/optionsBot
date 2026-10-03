@@ -27,7 +27,7 @@ This is a study project: a Go concurrency exercise running against a real market
 
 The bot already exists, and good ideas fit its grain. Before proposing anything non-trivial, skim:
 - `CLAUDE.md` and `docs/` — architecture, rollout priority, GEX gating.
-- `config_btc.yaml` / `config_eth.yaml` — the live parameters (slots, deltas, rollout DTE, stop-loss multiple, leverage, margin cap).
+- `config_btc.yaml` / `config_eth.yaml` — the live parameters (slots, deltas, rollout DTE, stop-loss multiple, margin policy: `iv_margin_bands`, `max_mm_pct`, `iv_band_confirm_days`).
 - `internal/strategy/` — what entry, rollout, repair, rebalance and kill-switch actually do today.
 - `orders.log` and `bot.log` (if the user shares them) — real fills, slippage, which exits fire most.
 

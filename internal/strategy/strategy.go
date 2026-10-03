@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 )
 
 // authBackoff is how long the strategy pauses after Deribit answers
@@ -26,20 +29,25 @@ var ErrKillSwitch = errors.New("kill switch activated")
 // reads. Everything that places orders runs on the Run goroutine, so trading
 // decisions never race each other.
 type Strategy struct {
-	cfg         *config.Config
-	md          MarketData
-	exch        Exchange
-	state       *orders.StateManager
-	journal     TradeJournal
-	hedge       HedgeReporter
-	gamma       *GammaMonitor
-	marginGuard *MarginGuard
-	oi          OISource    // may be nil
-	history     PnLRecorder // may be nil
-	pnl         *pnlBook
+	cfg     *config.Config
+	md      MarketData
+	exch    Exchange
+	state   *orders.StateManager
+	journal TradeJournal
+	hedge   HedgeReporter
+	gamma   *GammaMonitor
+	riskCfg risk.Config
+	regimes RegimeHistory
+	oi      OISource    // may be nil
+	history PnLRecorder // may be nil
+	pnl     *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
-	pub      published          // loop-owned state copied for View()
+	// Margin policy state, decision loop only: the last status (to journal
+	// changes) and the IM limit the book was last resized to (NaN: never).
+	lastRisk     *risk.Status
+	appliedLimit float64
+	pub          published // loop-owned state copied for View()
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
@@ -57,6 +65,10 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if d.GEX != nil {
 		gamma.SetGEXSource(d.GEX)
 	}
+	regimes := d.Regimes
+	if regimes == nil {
+		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
+	}
 	return &Strategy{
 		cfg:              cfg,
 		md:               d.Market,
@@ -65,7 +77,9 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		journal:          d.Journal,
 		hedge:            d.Hedge,
 		gamma:            gamma,
-		marginGuard:      NewMarginGuard(cfg.MaxMarginPct, cfg.Leverage),
+		riskCfg:          cfg.RiskPolicy(d.GEX != nil),
+		regimes:          regimes,
+		appliedLimit:     math.NaN(),
 		oi:               d.OI,
 		history:          d.History,
 		pnl:              newPnLBook(),
@@ -84,9 +98,13 @@ func (s *Strategy) Run(ctx context.Context) error {
 	s.logStartupState(ctx)
 	s.reconcilePositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
-	s.rebalancePositions(ctx)
 
-	if err := s.maybeOpenStrangles(ctx, s.gamma.Evaluate()); err != nil {
+	// Startup applies the margin policy like any cycle: the first confirmed
+	// limit resizes the book (rebalance), then vacant slots are entered.
+	gammaDec := s.gamma.Evaluate()
+	m := s.marginNow(ctx, gammaDec)
+	s.applyMarginPolicy(ctx, m)
+	if err := s.maybeOpenStrangles(ctx, gammaDec, m); err != nil {
 		slog.Error("initial strangle open failed", "err", err)
 	}
 	s.publish()
@@ -166,13 +184,22 @@ func (s *Strategy) evaluate(ctx context.Context) {
 		}
 	}
 
+	// Margin policy after exits (they free margin) and before anything that
+	// adds risk: MM breach reduces at once, a confirmed limit change resizes.
+	m := s.marginNow(ctx, gammaDec)
+	s.applyMarginPolicy(ctx, m)
+
 	// Repair skips a leg only when GEX is actively shedding that leg type,
 	// using the same GammaDecision as entry, so the two never disagree.
-	s.repairIncompleteStrangles(ctx, gammaDec)
+	// It restores a structure already held, so a freeze does not stop it;
+	// a maintenance-margin breach does.
+	if !m.mmBreached() {
+		s.repairIncompleteStrangles(ctx, gammaDec)
+	}
 
 	s.hedge.MaybeReport(s.state.TotalNetDelta(), underlyingPrice, s.suggestedHedgeInst())
 
-	if err := s.maybeOpenStrangles(ctx, gammaDec); err != nil {
+	if err := s.maybeOpenStrangles(ctx, gammaDec, m); err != nil {
 		slog.Warn("maybeOpenStrangles error", "err", err)
 	}
 }
@@ -207,23 +234,26 @@ func (s *Strategy) heartbeat(ctx context.Context) {
 }
 
 func (s *Strategy) logHeartbeat(ctx context.Context) {
-	equity, initialMarginUsed, err := s.fetchMarginState(ctx)
+	sum, err := s.fetchAccount(ctx)
 	if err != nil {
-		slog.Warn("heartbeat: margin state fetch failed", "err", err)
+		slog.Warn("heartbeat: account summary fetch failed", "err", err)
 		return
 	}
-	ivPct := s.md.IVPercentile()
-	allowed := s.marginGuard.AllowedMargin(equity)
+	u := sum.MarginUsage()
+	rv := s.riskView()
 	unit := strings.ToLower(s.cfg.Underlying)
 	slog.Info("heartbeat",
 		"open_positions", len(s.state.AllPositions()),
 		"open_strangles", len(s.state.AllStrangles()),
-		"equity_"+unit, fmt.Sprintf("%.6f", equity),
-		"iv_percentile", fmt.Sprintf("%.1f", ivPct),
-		"margin_used_"+unit, fmt.Sprintf("%.6f", initialMarginUsed),
-		"margin_allowed_"+unit, fmt.Sprintf("%.6f", allowed),
-		"margin_used_pct", formatPct(initialMarginUsed, equity),
-		"margin_cap_pct", fmt.Sprintf("%.0f%%", s.cfg.MaxMarginPct*100),
+		"equity_"+unit, fmt.Sprintf("%.6f", sum.Equity),
+		"iv_percentile", fmt.Sprintf("%.1f", s.md.IVPercentile()),
+		"margin_unit", u.Unit,
+		"im_pct", fmt.Sprintf("%.2f", u.IMPct()),
+		"mm_pct", fmt.Sprintf("%.2f", u.MMPct()),
+		"limit_im_pct", rv.Status.LimitIMPct,
+		"max_mm_pct", rv.Status.MaxMMPct,
+		"limit_reason", rv.Status.Reason,
+		"frozen", rv.Status.Frozen,
 	)
 	for _, pos := range s.state.AllPositions() {
 		slog.Debug("position status",
@@ -241,28 +271,18 @@ func (s *Strategy) logHeartbeat(ctx context.Context) {
 	}
 }
 
-// formatPct renders part/whole as a percentage, or "n/a" when whole is zero
-// (e.g. an empty account) instead of printing NaN or +Inf.
-func formatPct(part, whole float64) string {
-	if whole == 0 {
-		return "n/a"
-	}
-	return fmt.Sprintf("%.1f%%", part/whole*100)
-}
-
-// fetchMarginState returns total equity and the Portfolio Margin initial
-// margin in use, both in the underlying currency, from private/get_account_summary.
-func (s *Strategy) fetchMarginState(ctx context.Context) (equity, initialMarginUsed float64, err error) {
+// fetchAccount reads Deribit's account summary for the underlying.
+func (s *Strategy) fetchAccount(ctx context.Context) (orders.AccountSummary, error) {
 	sum, err := s.exch.GetAccountSummary(ctx, s.cfg.Underlying)
 	if err != nil {
 		if errors.Is(err, orders.ErrForbidden) {
 			s.noteAuthError()
 		}
-		return 0, 0, fmt.Errorf("account summary: %w", err)
+		return orders.AccountSummary{}, fmt.Errorf("account summary: %w", err)
 	}
 	s.clearAuthError()
 	s.recordAccount(sum.Equity, sum.InitialMargin)
-	return sum.Equity, sum.InitialMargin, nil
+	return sum, nil
 }
 
 func (s *Strategy) noteAuthError() {

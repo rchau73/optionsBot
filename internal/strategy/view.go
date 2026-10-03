@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 )
 
 // View is a read-only picture of the strategy for the monitor API. It is
@@ -22,6 +23,7 @@ type View struct {
 	Market  orders.MarketSnapshot `json:"market"`
 	Trend   string                `json:"trend"`
 	Account AccountView           `json:"account"`
+	Risk    RiskView              `json:"risk"`
 	Greeks  orders.MarketContext  `json:"greeks"` // net portfolio greeks (short-signed)
 
 	Strangles []StrangleView `json:"strangles"`
@@ -29,12 +31,24 @@ type View struct {
 	PnL       []PnLView      `json:"pnl"` // per slot, last entry = strategy total
 }
 
-// AccountView is the last account summary the decision loop fetched.
+// AccountView is the last account summary the decision loop fetched, in
+// the underlying currency.
 type AccountView struct {
-	Equity        float64   `json:"equity"`
-	MarginUsed    float64   `json:"margin_used"`
-	MarginAllowed float64   `json:"margin_allowed"`
-	AsOf          time.Time `json:"as_of"`
+	Equity     float64   `json:"equity"`
+	MarginUsed float64   `json:"margin_used"`
+	AsOf       time.Time `json:"as_of"`
+}
+
+// RiskView is the margin policy's last decision and the Deribit margin it
+// was measured against (percentages of margin balance, in Unit).
+type RiskView struct {
+	Status        risk.Status `json:"status"`
+	IMPct         float64     `json:"im_pct"`
+	MMPct         float64     `json:"mm_pct"`
+	Unit          string      `json:"unit"`
+	MarginBalance float64     `json:"margin_balance"`
+	Error         string      `json:"error,omitempty"` // margin unknown this cycle
+	AsOf          time.Time   `json:"as_of"`
 }
 
 // StrangleView is one strangle and its open legs.
@@ -113,6 +127,8 @@ type published struct {
 	trend   string
 	pending []PendingView
 	account AccountView
+	risk    RiskView
+	usage   risk.Usage
 	halted  bool
 }
 
@@ -146,10 +162,36 @@ func (s *Strategy) publish() {
 func (s *Strategy) recordAccount(equity, marginUsed float64) {
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
-	s.pub.account = AccountView{
-		Equity: equity, MarginUsed: marginUsed,
-		MarginAllowed: s.marginGuard.AllowedMargin(equity), AsOf: time.Now(),
+	s.pub.account = AccountView{Equity: equity, MarginUsed: marginUsed, AsOf: time.Now()}
+}
+
+// recordRisk publishes the cycle's margin policy decision for the view.
+func (s *Strategy) recordRisk(m marginState) {
+	rv := RiskView{Status: m.status, AsOf: time.Now()}
+	if m.err != nil {
+		rv.Error = m.err.Error()
+	} else {
+		rv.IMPct, rv.MMPct, rv.Unit, rv.MarginBalance = m.usage.IMPct(), m.usage.MMPct(), m.usage.Unit, m.usage.MarginBalance
 	}
+	s.pub.mu.Lock()
+	defer s.pub.mu.Unlock()
+	s.pub.risk = rv
+	if m.err == nil {
+		s.pub.usage = m.usage
+	}
+}
+
+func (s *Strategy) riskView() RiskView {
+	s.pub.mu.RLock()
+	defer s.pub.mu.RUnlock()
+	return s.pub.risk
+}
+
+// lastUsage is the last known Deribit margin (zero before the first read).
+func (s *Strategy) lastUsage() risk.Usage {
+	s.pub.mu.RLock()
+	defer s.pub.mu.RUnlock()
+	return s.pub.usage
 }
 
 func (s *Strategy) setHalted() {
@@ -162,7 +204,7 @@ func (s *Strategy) setHalted() {
 // from any goroutine; it never calls the exchange.
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
-	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, halted: s.pub.halted}
+	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted}
 	s.pub.mu.RUnlock()
 
 	now := time.Now()
@@ -179,6 +221,7 @@ func (s *Strategy) View() View {
 		}),
 		Trend:     pub.trend,
 		Account:   pub.account,
+		Risk:      pub.risk,
 		Strangles: s.strangleViews(now, pub.at),
 		Pending:   pub.pending,
 	}

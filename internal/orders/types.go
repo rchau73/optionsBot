@@ -1,6 +1,10 @@
 package orders
 
-import "time"
+import (
+	"time"
+
+	"optionsbot/internal/risk"
+)
 
 // Trigger reason constants.
 const (
@@ -13,7 +17,8 @@ const (
 	TriggerKillSwitch        = "kill_switch"
 	TriggerReconciled        = "reconciled"         // position loaded from exchange on startup
 	TriggerTimeout           = "order_timeout"      // limit order cancelled after fill-timeout elapsed
-	TriggerRebalanceDownsize = "rebalance_downsize" // startup: position exceeds current budget — partial close
+	TriggerRebalanceDownsize = "rebalance_downsize" // position exceeds the confirmed IM limit — partial close
+	TriggerMarginMM          = "margin_mm_limit"    // maintenance margin above max_mm_pct — immediate partial close
 )
 
 // Order direction and type constants.
@@ -123,6 +128,23 @@ type AccountSummary struct {
 	DeltaTotal        float64 `json:"delta_total"`
 	OptionsPL         float64 `json:"options_pl"`
 	OptionsValue      float64 `json:"options_value"`
+
+	MarginModel               string  `json:"margin_model"`
+	CrossCollateralEnabled    bool    `json:"cross_collateral_enabled"`
+	TotalMarginBalanceUSD     float64 `json:"total_margin_balance_usd"`
+	TotalInitialMarginUSD     float64 `json:"total_initial_margin_usd"`
+	TotalMaintenanceMarginUSD float64 `json:"total_maintenance_margin_usd"`
+}
+
+// MarginUsage is the account's margin as the risk policy measures it: under
+// cross collateral, Deribit's account-wide USD totals (every asset backs every
+// position); otherwise this currency's own figures. Live summaries and
+// simulate_portfolio results go through the same rule, so they compare.
+func (a AccountSummary) MarginUsage() risk.Usage {
+	if a.CrossCollateralEnabled && a.TotalMarginBalanceUSD > 0 {
+		return risk.Usage{IM: a.TotalInitialMarginUSD, MM: a.TotalMaintenanceMarginUSD, MarginBalance: a.TotalMarginBalanceUSD, Unit: "USD"}
+	}
+	return risk.Usage{IM: a.InitialMargin, MM: a.MaintenanceMargin, MarginBalance: a.MarginBalance, Unit: a.Currency}
 }
 
 // RawPosition is the per-position record returned by private/get_positions.

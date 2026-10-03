@@ -12,7 +12,38 @@ const (
 	EventReconciled = "reconciled"
 	EventSkipped    = "skipped"
 	EventPnL        = "pnl"
+	EventRisk       = "risk_limit"
 )
+
+// Risk changes journaled as EventRisk.
+const (
+	RiskFrozen       = "frozen"        // a DVOL band or gamma regime change was seen; new risk blocked
+	RiskUnfrozen     = "unfrozen"      // the change reverted before confirmation, or was confirmed
+	RiskLimitChanged = "limit_changed" // a confirmed change moved the IM limit
+	RiskRebalance    = "rebalance"     // the book is being resized toward the IM limit
+	RiskMMBreach     = "mm_breach"     // maintenance margin above max_mm_pct: reducing now
+)
+
+// RiskRecord is one margin-policy decision with the figures behind it.
+// Margin percentages are of Deribit's margin balance, in Unit (USD under
+// cross collateral, otherwise the underlying).
+type RiskRecord struct {
+	Timestamp    time.Time `json:"timestamp"`
+	Event        string    `json:"event"` // always "risk_limit"
+	StrategyID   string    `json:"strategy_id"`
+	Change       string    `json:"change"`
+	Detail       string    `json:"detail"`
+	LimitIMPct   float64   `json:"limit_im_pct"`
+	BandLimitPct float64   `json:"band_limit_pct"`
+	MaxMMPct     float64   `json:"max_mm_pct"`
+	IMPct        float64   `json:"im_pct"`
+	MMPct        float64   `json:"mm_pct"`
+	Unit         string    `json:"unit,omitempty"`
+	DVOL         float64   `json:"dvol"`
+	IVPercentile float64   `json:"iv_percentile"`
+	Regime       string    `json:"regime"`
+	Frozen       bool      `json:"frozen"`
+}
 
 // SlotRef identifies the (DTE, delta) strategy slot a record belongs to.
 type SlotRef struct {
