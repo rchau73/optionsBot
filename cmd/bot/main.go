@@ -42,11 +42,13 @@ func main() {
 	csvPath := flag.String("csv", "data/historical/options.csv", "historical data CSV path")
 	cfgPath := flag.String("config", "config.yaml", "config file path")
 	debug := flag.Bool("debug", false, "enable debug logging")
+	envFile := flag.String("env-file", ".env", "platform settings file (credentials, DERIBIT_ENV, limits)")
 	flag.Parse()
 
-	// Load .env
-	if err := godotenv.Load(); err != nil {
-		slog.Warn("no .env file found")
+	// Platform settings. Variables already set in the environment win, so a
+	// shared .env can be overridden per process (e.g. BOT_API_ADDR).
+	if err := godotenv.Load(*envFile); err != nil {
+		slog.Warn("no .env file found", "path", *envFile)
 	}
 
 	// Init logger

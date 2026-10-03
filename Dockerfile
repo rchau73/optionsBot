@@ -17,8 +17,12 @@ RUN apk --no-cache add ca-certificates tzdata \
  && adduser -D -H -u 10001 bot
 WORKDIR /app
 COPY --from=builder /build/bot ./bot
-# bot.log and orders.log are written to /app; data/ holds backtest output.
-RUN mkdir -p data && chown -R bot:bot /app
+# The bot writes everything it keeps (bot.log, orders.log, hedge_report.json,
+# data/*.jsonl) relative to its working directory. docker-compose.yml mounts
+# one host folder per underlying at /app/run and starts the bot there, so all
+# of it survives container rebuilds and the bots never share a file.
+RUN mkdir -p run && chown -R bot:bot /app
+WORKDIR /app/run
 # Never run a trading bot as root.
 USER bot
-ENTRYPOINT ["./bot"]
+ENTRYPOINT ["/app/bot"]

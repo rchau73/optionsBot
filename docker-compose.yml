@@ -1,14 +1,16 @@
 services:
+  # One bot per underlying. Each runs in its own host folder (data/btc,
+  # data/eth): bot.log, orders.log (decision journal), hedge_report.json and
+  # data/ (P&L and gamma-regime history) persist there across rebuilds, and the
+  # two bots never write the same file. Config and .env are mounted read-only.
   bot-btc:
     build: .
     restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--env-file", "/app/.env"]
     volumes:
-      # Each service maps its own host config file to /app/config.yaml inside
-      # the container — the bot binary always reads that fixed path.
       - ./.env:/app/.env:ro
       - ./config_btc.yaml:/app/config.yaml:ro
-      # Separate data/ directories so logs and state don't collide.
-      - ./data/btc:/app/data
+      - ./data/btc:/app/run
     environment:
       - TZ=America/Sao_Paulo
       # Read-only monitor API, reachable only on the compose network (not published).
@@ -17,10 +19,11 @@ services:
   bot-eth:
     build: .
     restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--env-file", "/app/.env"]
     volumes:
       - ./.env:/app/.env:ro
       - ./config_eth.yaml:/app/config.yaml:ro
-      - ./data/eth:/app/data
+      - ./data/eth:/app/run
     environment:
       - TZ=America/Sao_Paulo
       - BOT_API_ADDR=:8082
