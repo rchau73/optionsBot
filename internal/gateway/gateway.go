@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,6 +45,10 @@ const (
 type Gateway struct {
 	cfg      *config.Config
 	endpoint string
+	// publicOnly gateways never authenticate and refuse private/* methods,
+	// so no credentials or account request ever travel over them.
+	publicOnly bool
+	log        *slog.Logger // tagged with the gateway's name
 
 	writeMu sync.Mutex // serialises writes and guards conn
 	conn    *websocket.Conn
@@ -80,10 +85,26 @@ type pendingCall struct {
 // Option customises a Gateway at construction.
 type Option func(*Gateway)
 
-// WithEndpoint overrides the WebSocket URL (used by tests to point at a mock).
+// WithEndpoint overrides the WebSocket URL (tests point it at a mock; the
+// bot points its market-data gateway at mainnet).
 func WithEndpoint(url string) Option {
 	return func(g *Gateway) { g.endpoint = url }
 }
+
+// PublicOnly makes a gateway for public market data: it skips
+// authentication and refuses private/* methods with ErrPrivateOnPublic.
+func PublicOnly() Option {
+	return func(g *Gateway) { g.publicOnly = true }
+}
+
+// WithName tags the gateway's log lines (e.g. "trading", "mainnet-public").
+func WithName(name string) Option {
+	return func(g *Gateway) { g.log = slog.Default().With("gateway", name) }
+}
+
+// ErrPrivateOnPublic is returned when a private method is called on a
+// PublicOnly gateway.
+var ErrPrivateOnPublic = errors.New("private method on a public-only gateway")
 
 func New(cfg *config.Config, opts ...Option) *Gateway {
 	g := &Gateway{
@@ -96,6 +117,7 @@ func New(cfg *config.Config, opts ...Option) *Gateway {
 		pq:       NewPriorityQueue(64, 256),
 		subs:     NewSubscriptionRegistry(cfg.RateLimit.MaxSubscriptions),
 		fatal:    make(chan error, 1),
+		log:      slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(g)
@@ -145,6 +167,10 @@ func (g *Gateway) connectOnce(rootCtx context.Context) error {
 	go g.heartbeatLoop(connCtx)
 	go g.metricsLoop(connCtx)
 
+	if g.publicOnly {
+		g.log.Info("connected (public data only, not authenticated)", "endpoint", g.endpoint)
+		return nil
+	}
 	if err := g.authenticate(connCtx); err != nil {
 		cancel()
 		return err
@@ -168,28 +194,28 @@ func (g *Gateway) reconnect(rootCtx context.Context) {
 			float64(base)*math.Pow(2, float64(attempt-1)),
 			float64(30*time.Second),
 		))
-		slog.Info("reconnecting", "attempt", attempt, "backoff", backoff)
+		g.log.Info("reconnecting", "attempt", attempt, "backoff", backoff)
 		select {
 		case <-time.After(backoff):
 		case <-rootCtx.Done():
 			return
 		}
 		if err := g.connectOnce(rootCtx); err != nil {
-			slog.Warn("reconnect attempt failed", "attempt", attempt, "err", err)
+			g.log.Warn("reconnect attempt failed", "attempt", attempt, "err", err)
 			continue
 		}
-		slog.Info("reconnected successfully", "attempt", attempt)
+		g.log.Info("reconnected successfully", "attempt", attempt)
 		if len(channels) > 0 {
-			slog.Info("restoring subscriptions after reconnect", "channels", len(channels))
+			g.log.Info("restoring subscriptions after reconnect", "channels", len(channels))
 			if err := g.Subscribe(rootCtx, channels); err != nil {
-				slog.Error("re-subscribe failed after reconnect", "err", err)
+				g.log.Error("re-subscribe failed after reconnect", "err", err)
 			}
 		}
 		return
 	}
 
 	err := fmt.Errorf("reconnect failed after %d attempts", g.cfg.Heartbeat.ReconnectMaxAttempts)
-	slog.Error("gateway giving up", "err", err)
+	g.log.Error("gateway giving up", "err", err)
 	select {
 	case g.fatal <- err:
 	default:
@@ -205,7 +231,7 @@ func (g *Gateway) readLoop(rootCtx, connCtx context.Context, cancelConn context.
 			if connCtx.Err() != nil {
 				return // connection closed on purpose — no reconnect
 			}
-			slog.Error("websocket read error", "err", err)
+			g.log.Error("websocket read error", "err", err)
 			cancelConn() // stop writing to a dead socket
 			g.failAllPending(ErrConnectionLost)
 			go g.reconnect(rootCtx)
@@ -214,7 +240,7 @@ func (g *Gateway) readLoop(rootCtx, connCtx context.Context, cancelConn context.
 
 		var resp JSONRPCResponse
 		if err := json.Unmarshal(msg, &resp); err != nil {
-			slog.Warn("unmarshal error", "err", err)
+			g.log.Warn("unmarshal error", "err", err)
 			continue
 		}
 
@@ -259,7 +285,7 @@ func (g *Gateway) answerTestRequest(conn *websocket.Conn) {
 	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	defer conn.SetWriteDeadline(time.Time{})
 	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		slog.Debug("heartbeat test_request response failed", "err", err)
+		g.log.Debug("heartbeat test_request response failed", "err", err)
 	}
 }
 
@@ -294,7 +320,7 @@ func (g *Gateway) send(ctx context.Context, req Request) {
 	// attempt costs one request, a stop-loss that is never sent can cost the account.
 	if req.Priority != PriorityHigh {
 		if err := g.cb.Allow(); err != nil {
-			slog.Warn("circuit breaker blocked request", "method", method)
+			g.log.Warn("circuit breaker blocked request", "method", method)
 			req.reply <- callResult{err: fmt.Errorf("%s: %w", method, err)}
 			return
 		}
@@ -317,7 +343,7 @@ func (g *Gateway) send(ctx context.Context, req Request) {
 
 	if err != nil {
 		g.cb.Failure()
-		slog.Error("write error", "method", method, "err", err)
+		g.log.Error("write error", "method", method, "err", err)
 		if p := g.takePending(id); p != nil {
 			p.reply <- callResult{err: fmt.Errorf("%s: write: %w", method, err)}
 		}
@@ -398,6 +424,9 @@ func (g *Gateway) failAllPending(err error) {
 // retried with backoff when Deribit rate-limits them; order methods never are,
 // because a "failed" order may still have reached the book.
 func (g *Gateway) Call(ctx context.Context, method string, params any, priority int) (JSONRPCResponse, error) {
+	if g.publicOnly && strings.HasPrefix(method, "private/") {
+		return JSONRPCResponse{}, fmt.Errorf("%s: %w", method, ErrPrivateOnPublic)
+	}
 	if !isIdempotent(method) {
 		return g.callOnce(ctx, method, params, priority)
 	}
@@ -443,13 +472,13 @@ func (g *Gateway) Subscribe(ctx context.Context, channels []string) error {
 		case g.subs.Add(ch):
 			toSub = append(toSub, ch)
 		default:
-			slog.Warn("subscription limit reached, channel skipped",
+			g.log.Warn("subscription limit reached, channel skipped",
 				"channel", ch, "limit", g.cfg.RateLimit.MaxSubscriptions)
 		}
 	}
 	for i := 0; i < len(toSub); i += subscribeChunkSize {
 		chunk := toSub[i:min(i+subscribeChunkSize, len(toSub))]
-		slog.Debug("subscribing channel batch", "offset", i, "count", len(chunk), "total", len(toSub))
+		g.log.Debug("subscribing channel batch", "offset", i, "count", len(chunk), "total", len(toSub))
 		if _, err := g.Call(ctx, "public/subscribe", map[string]any{"channels": chunk}, PriorityLow); err != nil {
 			for _, ch := range toSub[i:] {
 				g.subs.Remove(ch) // not subscribed: allow a later retry
@@ -488,7 +517,7 @@ func (g *Gateway) authenticate(ctx context.Context) error {
 		return errors.New("auth failed: no access_token in response — check DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET in .env, and verify the API key has account:read and trade:read_write scopes")
 	}
 
-	slog.Info("authenticated with Deribit", "scope", result.Scope)
+	g.log.Info("authenticated with Deribit", "scope", result.Scope)
 	return nil
 }
 
@@ -501,7 +530,7 @@ func (g *Gateway) heartbeatLoop(ctx context.Context) {
 	if _, err := g.Call(ctx, "public/set_heartbeat", HeartbeatParams{
 		Interval: g.cfg.Heartbeat.IntervalSec,
 	}, PriorityLow); err != nil && ctx.Err() == nil {
-		slog.Warn("enable server heartbeat failed", "err", err)
+		g.log.Warn("enable server heartbeat failed", "err", err)
 	}
 
 	for {
@@ -514,7 +543,7 @@ func (g *Gateway) heartbeatLoop(ctx context.Context) {
 			_, err := g.Call(callCtx, "public/test", map[string]string{}, PriorityLow)
 			cancel()
 			if err != nil && ctx.Err() == nil {
-				slog.Warn("heartbeat failed", "err", err)
+				g.log.Warn("heartbeat failed", "err", err)
 			}
 		}
 	}
@@ -533,7 +562,7 @@ func (g *Gateway) metricsLoop(ctx context.Context) {
 			g.pendingMu.Lock()
 			inFlight := len(g.pending)
 			g.pendingMu.Unlock()
-			slog.Info("rate_limit_metrics",
+			g.log.Info("rate_limit_metrics",
 				"event", "rate_limit_metrics",
 				"ws_nonmatch_tokens_available", int(nonMatch),
 				"ws_match_tokens_available", int(match),
@@ -546,7 +575,7 @@ func (g *Gateway) metricsLoop(ctx context.Context) {
 				"notifications_dropped_last_60s", dropped,
 			)
 			if dropped > 0 {
-				slog.Warn("notifications dropped — consumer may be too slow",
+				g.log.Warn("notifications dropped — consumer may be too slow",
 					"dropped", dropped,
 					"notifych_capacity", cap(g.notifyCh),
 				)

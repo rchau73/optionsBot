@@ -33,7 +33,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - **Fill-safe order handling:** partial fills are booked as filled, timed-out entries keep their filled legs, closes use market or immediate-or-cancel orders so the result is always known, rollouts only close and a single fill-tracked path reopens.
 - **Stateless by design:** the in-memory book is rebuilt from the exchange on every start (reconcile), so crashes and restarts are recoverable.
 - **SOLID Go:** the strategy depends on small, consumer-defined interfaces; decision rules are pure functions (time passed in) shared by the live loop and the backtest.
-- **Market-structure aware:** dealer gamma exposure (GEX) from open interest, gamma flip with hysteresis, DVOL-based IV percentile.
+- **Market-structure aware:** dealer gamma exposure (GEX) from **mainnet** open interest even when trading on testnet (testnet positioning isn't real), matching GestaoCarteira's `deribit_tc_export_v3.py` rules; DVOL-based IV percentile.
 - **Decision journal with P&L:** every submit, amend, cancel, fill, close, reconcile and skipped entry in `orders.log` carries a market snapshot (spot, DVOL, IV percentile and skew, ITM/ATM/OTM and distance to strike, open interest of the strike/expiry with rank and max pain, GEX regime, spread), and P&L per strategy slot (realised, unrealised, coin and USD) is journaled periodically.
 - **Tested:** 87 % statement coverage, end-to-end strategy tests against a fake exchange, gateway integration tests against a mock Deribit WebSocket server, all under the race detector in CI, plus `govulncheck` and a Docker build.
 
@@ -147,7 +147,9 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `order_fill_timeout_sec` | 90 | cancel unfilled entry legs after this |
 | `order_slippage_pct` / `order_max_adjustments` | 0.05 / 3 | amend a resting entry when the ask drifts by more than this, at most N times |
 | `gamma_trend_lookback_days`, `swing_pivot_n` | — / 3 | trend detection from daily closes |
-| `gamma_regime_band_pct`, `gex_strike_range_pct` | 0.01 / 0 | GEX hysteresis band; strike range used for GEX (0 = all) |
+| `gex_method` | `script` | `script` = GestaoCarteira's rules (regime = sign of weighted GEX, flip = lowest crossing); `nearest_flip` = crossing nearest spot, regime = spot vs flip, with hysteresis |
+| `gex_strike_range_pct` | 0 | strikes used for GEX: ±this of each expiry's underlying (shipped configs: 0.15, as the script; 0 = all) |
+| `gamma_regime_band_pct` | 0.01 | hysteresis band around the flip (`nearest_flip` only) |
 | `iv_percentile_window` | — | days of DVOL history for the IV percentile |
 | `hedge_report_threshold` | — | \|net delta\| that triggers a hedge report |
 | `spread_alert_threshold` | — | warn when a fill's bid/ask spread exceeds this |

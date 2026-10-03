@@ -12,7 +12,6 @@ import (
 
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
-	"optionsbot/internal/marketdata"
 )
 
 type fakeBookSummary struct {
@@ -41,21 +40,16 @@ func (f *fakeBookSummary) callCount() int {
 	return f.calls
 }
 
-type staticChain []*marketdata.Instrument
-
-func (c staticChain) AllInstruments() []*marketdata.Instrument { return c }
-
-// gexFixture builds a chain with strikes 80k–120k on one expiry and open
-// interest concentrated in puts below spot, which yields negative gamma
-// below the strikes and a flip near spot.
-func gexFixture() (staticChain, string) {
-	expiry := time.Now().AddDate(0, 0, 20)
-	var chain staticChain
+// gexFixture builds a book summary with strikes 80k–120k on one expiry 20
+// days out and open interest concentrated in puts below spot, which yields
+// negative gamma below spot and a flip near it. Names are real Deribit names:
+// the manager reads strike, expiry and type from them.
+func gexFixture() string {
+	label := strings.ToUpper(time.Now().UTC().AddDate(0, 0, 20).Format("2Jan06"))
 	var rows []string
 	for _, k := range []float64{80000, 90000, 100000, 110000, 120000} {
 		for _, typ := range []string{"call", "put"} {
-			name := fmt.Sprintf("BTC-T-%.0f-%s", k, strings.ToUpper(typ[:1]))
-			chain = append(chain, &marketdata.Instrument{Name: name, Strike: k, Expiry: expiry, OptionType: typ})
+			name := fmt.Sprintf("BTC-%s-%.0f-%s", label, k, strings.ToUpper(typ[:1]))
 			oi := 100.0
 			if typ == "put" && k < 100000 {
 				oi = 2000
@@ -63,15 +57,19 @@ func gexFixture() (staticChain, string) {
 			rows = append(rows, fmt.Sprintf(`{"instrument_name":"%s","open_interest":%.0f,"underlying_price":100000,"mark_iv":60,"mark_price":0.01}`, name, oi))
 		}
 	}
-	// An instrument with no open interest must be ignored.
-	rows = append(rows, `{"instrument_name":"BTC-T-80000-C-EXTRA","open_interest":0,"underlying_price":100000,"mark_iv":60}`)
-	return chain, "[" + strings.Join(rows, ",") + "]"
+	// Other underlyings and unparsable names are ignored.
+	rows = append(rows, `{"instrument_name":"ETH-27DEC30-3000-C","open_interest":5,"underlying_price":3000,"mark_iv":60}`,
+		`{"instrument_name":"BTC-PERPETUAL","open_interest":5,"underlying_price":100000,"mark_iv":0}`)
+	return "[" + strings.Join(rows, ",") + "]"
+}
+
+func gexParams(method string) gex.Params {
+	return gex.Params{Underlying: "BTC", NExpiries: 5, StrikeRangePct: 0.25, Method: method}
 }
 
 func TestGEXManager_RefreshPublishesSnapshot(t *testing.T) {
-	chain, summary := gexFixture()
-	gw := &fakeBookSummary{result: summary}
-	m := gex.NewManager(gw, chain, "BTC", 0, 0.01, 0.25)
+	gw := &fakeBookSummary{result: gexFixture()}
+	m := gex.NewManager(gw, gex.Params{Underlying: "BTC"}, 0.01) // defaults: 5 expiries, script method
 
 	if m.Snapshot() != nil {
 		t.Fatal("no snapshot before the first refresh")
@@ -92,32 +90,29 @@ func TestGEXManager_RefreshPublishesSnapshot(t *testing.T) {
 }
 
 func TestGEXManager_RefreshErrors(t *testing.T) {
-	chain, _ := gexFixture()
-
 	failing := &fakeBookSummary{err: errors.New("down")}
-	if err := gex.NewManager(failing, chain, "BTC", 5, 0.01, 0).Refresh(context.Background()); err == nil {
+	if err := gex.NewManager(failing, gexParams(gex.MethodScript), 0.01).Refresh(context.Background()); err == nil {
 		t.Error("a failed fetch must be reported")
 	}
 
 	garbage := &fakeBookSummary{result: `{"not":"a list"}`}
-	if err := gex.NewManager(garbage, chain, "BTC", 5, 0.01, 0).Refresh(context.Background()); err == nil {
+	if err := gex.NewManager(garbage, gexParams(gex.MethodScript), 0.01).Refresh(context.Background()); err == nil {
 		t.Error("an undecodable summary must be reported")
 	}
 
 	noOI := &fakeBookSummary{result: `[]`}
-	m := gex.NewManager(noOI, chain, "BTC", 5, 0.01, 0)
+	m := gex.NewManager(noOI, gexParams(gex.MethodScript), 0.01)
 	if err := m.Refresh(context.Background()); err != nil {
-		t.Errorf("no open interest is not an error: %v", err)
+		t.Errorf("an empty book is not an error: %v", err)
 	}
 	if m.Snapshot() != nil {
-		t.Error("no snapshot without open interest")
+		t.Error("no snapshot from an empty book")
 	}
 }
 
 func TestGEXManager_StartBackgroundRefreshesUntilCancelled(t *testing.T) {
-	chain, summary := gexFixture()
-	gw := &fakeBookSummary{result: summary}
-	m := gex.NewManager(gw, chain, "BTC", 5, 0.01, 0)
+	gw := &fakeBookSummary{result: gexFixture()}
+	m := gex.NewManager(gw, gexParams(gex.MethodScript), 0.01)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.StartBackground(ctx, 10*time.Millisecond)
@@ -134,12 +129,11 @@ func TestGEXManager_StartBackgroundRefreshesUntilCancelled(t *testing.T) {
 	}
 }
 
-// Open interest is published even when no GEX profile can be built (e.g. no IV),
-// because the journal uses it on its own.
+// Open interest is published even when no GEX profile can be built (here no
+// IV, which the original method requires), because the journal uses it on its own.
 func TestGEXManager_PublishesOpenInterest(t *testing.T) {
-	chain, _ := gexFixture()
-	gw := &fakeBookSummary{result: `[{"instrument_name":"BTC-T-90000-P","open_interest":42,"mark_iv":0}]`}
-	m := gex.NewManager(gw, chain, "BTC", 5, 0.01, 0)
+	gw := &fakeBookSummary{result: `[{"instrument_name":"BTC-27DEC30-90000-P","open_interest":42,"mark_iv":0}]`}
+	m := gex.NewManager(gw, gexParams(gex.MethodNearestFlip), 0.01)
 
 	if m.OpenInterest() != nil {
 		t.Fatal("no open interest before the first refresh")
@@ -148,7 +142,7 @@ func TestGEXManager_PublishesOpenInterest(t *testing.T) {
 		t.Fatal(err)
 	}
 	oi := m.OpenInterest()
-	if oi == nil || oi.ByInstrument["BTC-T-90000-P"] != 42 || oi.AsOf.IsZero() {
+	if oi == nil || oi.ByInstrument["BTC-27DEC30-90000-P"] != 42 || oi.AsOf.IsZero() {
 		t.Errorf("open interest = %+v", oi)
 	}
 	if m.Snapshot() != nil {

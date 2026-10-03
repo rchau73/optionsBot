@@ -46,6 +46,7 @@ type Config struct {
 	SwingPivotN            int     `yaml:"swing_pivot_n"`
 	GammaRegimeBandPct     float64 `yaml:"gamma_regime_band_pct"`
 	GEXStrikeRangePct      float64 `yaml:"gex_strike_range_pct"`
+	GEXMethod              string  `yaml:"gex_method"` // script (default) | nearest_flip
 	IVPercentileWindow     int     `yaml:"iv_percentile_window"`
 	HedgeReportThreshold   float64 `yaml:"hedge_report_threshold"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
@@ -117,11 +118,18 @@ type HeartbeatConfig struct {
 	ReconnectBackoffBaseMS int
 }
 
+// Deribit WebSocket endpoints.
+const (
+	MainnetWSEndpoint = "wss://www.deribit.com/ws/api/v2"
+	TestnetWSEndpoint = "wss://test.deribit.com/ws/api/v2"
+)
+
+// WSEndpoint is where the bot trades: testnet unless DERIBIT_ENV=live.
 func (c *Config) WSEndpoint() string {
 	if c.Environment == "live" {
-		return "wss://www.deribit.com/ws/api/v2"
+		return MainnetWSEndpoint
 	}
-	return "wss://test.deribit.com/ws/api/v2"
+	return TestnetWSEndpoint
 }
 
 // IsLive reports whether the bot trades real capital (DERIBIT_ENV=live).
@@ -161,6 +169,9 @@ func (c *Config) Validate() error {
 	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
+	}
+	if c.GEXMethod != "script" && c.GEXMethod != "nearest_flip" {
+		return fmt.Errorf("gex_method %q must be script or nearest_flip", c.GEXMethod)
 	}
 	if c.Environment != "testnet" && c.Environment != "live" {
 		return fmt.Errorf("DERIBIT_ENV %q must be testnet or live", c.Environment)
@@ -294,6 +305,10 @@ func Load(path string) (*Config, error) {
 	// GEXStrikeRangePct: 0 disables the filter (all strikes included).
 	// config.yaml is the authority; no default override so users can explicitly disable.
 	// DeltaSlippage == 0 is valid: disables the tolerance filter entirely.
+
+	if cfg.GEXMethod == "" {
+		cfg.GEXMethod = "script"
+	}
 
 	// ── Margin policy defaults (validated in Validate) ────────────────────────
 	if len(cfg.IVMarginBands) == 0 {

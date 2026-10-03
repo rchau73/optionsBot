@@ -126,3 +126,7 @@ The bot sizes and limits itself on Deribit's own margin figures (see *Margin pol
 - **Reading a skip.** `risk_frozen` = a band/regime change awaits confirmation; `margin_limit` = no headroom, or no size fits after simulation; `margin_unknown` = Deribit margin data unavailable (fail safe).
 - **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing three slots takes a few seconds of the decision cycle.
 - **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands). The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.
+
+## Two connections on testnet
+
+On testnet the bot keeps **two** WebSocket connections: `gateway=trading` (testnet, authenticated: orders, positions, margin, tickers) and `gateway=mainnet-public` (mainnet, never authenticated: the book summary for GEX and open interest). Logs carry the `gateway` field; the public one starts with `connected (public data only, not authenticated)`. Each has its own rate limiter. If either gives up reconnecting the bot exits non-zero so the supervisor restarts it. `gex_snapshot` lines show `method`, `regime`, `gamma_flip` and `first_expiry` — compare them with GestaoCarteira's `runOptIndicator.sh`, which uses the same rules.

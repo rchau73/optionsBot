@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -399,7 +400,7 @@ func (s *Strategy) newPosition(instrument, optionType string, expiry time.Time, 
 		pos.UnderlyingPrice = inst.UnderlyingPrice
 		pos.CurrentMid = inst.Mid
 		pos.CurrentGreeks = toOrderGreeks(inst)
-	} else if _, exp, strike, _, err := parseInstrumentName(instrument); err == nil {
+	} else if _, exp, strike, _, err := marketdata.ParseOptionName(instrument); err == nil {
 		pos.Strike = strike
 		pos.Expiry = exp
 	}
