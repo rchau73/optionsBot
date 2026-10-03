@@ -9,9 +9,10 @@ This is the specialist's spec for the developer skill to build (Next.js App Rout
 4. Drill-down / drill-up hierarchy
 5. Filters and grouping
 6. Panels in detail
-7. Controls (setup & tuning)
-8. API shape the page needs
-9. Build order
+7. Timeline, history and change audit
+8. Controls (setup & tuning)
+9. API shape the page needs
+10. Build order
 
 ---
 
@@ -100,7 +101,41 @@ Each group row shows count, qty, P&L (coin and USD), win rate, avg win / avg los
 
 **Event tape** — every fill, amend, roll, stop, GEX action, reconnect, rejection; filter by severity; clicking an event drills to its leg.
 
-## 7. Controls (setup & tuning)
+## 7. Timeline, history and change audit
+
+The monitor is **timeline-first**: every number can be read *as of a moment* and every chart shares one time axis, so behaviour can be compared across time, across modes and across strategy versions.
+
+### 7.1 One time axis for everything
+- A global **time-range selector** (presets: 24h, 7d, 30d, 90d, YTD, all, custom) plus a **brush** on the main equity chart; every chart and table follows it.
+- A **synced time cursor**: hovering any chart shows the same timestamp on all charts, and the drill table can be switched to "as of cursor" (positions, Greeks and margin at that moment).
+- Times in UTC by default (Deribit settles at 08:00 UTC), with a local-time toggle.
+
+### 7.2 Building history (backtest side)
+- Backtests produce the longest history: each run is stored with its strategy version, parameter set, data source and period, so any past window can be replayed and compared.
+- **Backfill** what Deribit serves historically: underlying candles (`public/get_tradingview_chart_data`), DVOL (`public/get_volatility_index_data`), trades and settlement prices for expired instruments where available.
+- Some inputs have **no historical API** (notably open interest per strike and full order-book depth). Start a **collector** now that snapshots them on a schedule (e.g. OI every 15 min, top-of-book every minute for traded strikes), so pinning/spread strategies gain a real history over time. Label any dataset that is synthetic or partially backfilled.
+
+### 7.3 Storing live/testnet data for future comparison
+- The bot persists an **append-only time series** of its own state, independent of logs: per strategy, every N seconds (e.g. 60 s) — equity/P&L (coin and USD), margin, net Greeks, open structures, spot, DVOL/IV percentile, GEX regime/flip; plus every event (submit, amend, fill, cancel, roll, stop, GEX action, reconnect, error).
+- Storage is the developer's choice under the developer skill's rules (no extra infrastructure): an embedded store such as SQLite or day-partitioned JSONL under `data/`, with retention and a size budget. Restarts must not lose history; reconcile gaps are shown as gaps, not interpolated.
+- The same schema serves backtest and live rows (`mode`, `run_id`, `strategy_id`, `version`, `ts`), so backtest vs testnet vs live overlay is a query, not a special case.
+
+### 7.4 Audit trail of strategy changes
+- **Every change is an audit event**: parameter edits from the UI, config-file changes detected at startup (hash of the effective config differs from the last run), code deploys (git commit / build version), kill-switch use, pause/resume, manual interventions.
+- Each event records: timestamp, who/what (UI user, config file, deploy), strategy, old → new version, the **diff** of parameters, and a free-text **reason** (required for UI changes).
+- Versions are immutable: a strategy at `v4` always means the same parameter set.
+
+### 7.5 Change markers on every chart
+- Vertical markers on all time charts at each audit event, coloured by type (parameter change, deploy, config change, manual action, incident) and labelled (`v3 → v4`). Hover shows the diff and reason; click drills into the event.
+- Background bands show which **version** was active over each period, and regime bands (GEX, IV percentile) can be toggled on, so "the change" is not confused with "the market changed".
+
+### 7.6 Before/after impact analysis
+- Select a change marker → an **impact panel** compares equal-length windows before and after: P&L/day, drawdown, win rate, avg win/loss, exits by reason, slippage, Greeks exposure, margin usage, trade count.
+- Show the regime mix of both windows next to the comparison and flag when it differs a lot (the market, not the change, may explain the result).
+- Counterfactual: run the backtest of the *old* and *new* versions over the same window and overlay them, so the effect of the change is isolated from the market.
+- Small samples are labelled as such (e.g. fewer than 20 trades per window) instead of presenting noise as a finding.
+
+## 8. Controls (setup & tuning)
 
 Phase 1 is read-only. Phase 2 adds controls, behind authentication, explicit confirmation and an audit log, applied to **testnet first**:
 - Strategy setup: create from a template (playbook structure), set slots, deltas, DTE, exits, risk limits; validation mirrors `config.Validate`.
@@ -119,12 +154,17 @@ GET /api/metrics/attribution?group_by=&…     → grouped P&L
 GET /api/market                              → spot, DVOL, IV pct, GEX snapshot, OI by strike
 GET /api/backtests ; /api/backtests/{run_id} → runs and their results
 GET /api/events?since=&severity=             → event tape
+GET /api/timeseries?strategy=&mode=&run=&from=&to=&metrics=&step=  → time-bucketed metrics
+GET /api/audit?strategy=&from=&to=           → change events with diffs and reasons
+GET /api/audit/{event_id}/impact?window=     → before/after comparison for one change
+GET /api/strategies/{id}/versions            → immutable parameter sets per version
 ```
-Every response carries `as_of` (timestamp) and units; empty states are explicit (`[]` + reason), never fabricated zeros.
+Every response carries `as_of` (timestamp) and units; empty states are explicit (`[]` + reason), never fabricated zeros. Time-series endpoints accept `from`/`to`/`step` so the browser never downloads raw history.
 
-## 9. Build order (suggested Research/Dev requests)
+## 10. Build order (suggested Research/Dev requests)
 
-1. Tag orders with `strategy_id` labels and expose `/api/strategies`, `/api/positions`, `/api/market` — KPI strip, strategy board, drill table.
-2. Equity/drawdown and attribution from `orders.log` and backtest results; backtest-vs-testnet overlay.
-3. Risk map and event tape.
-4. Phase-2 controls (auth, confirmation, audit log), testnet only.
+1. Tag orders with `strategy_id` labels; version strategies (hash of parameters); record audit events (startup config hash, deploy version, kill switch).
+2. Persist the time series and events (§7.3) and start the OI/order-book collector (§7.2) — history only accrues from the day this ships, so it comes early.
+3. Expose `/api/strategies`, `/api/positions`, `/api/market`, `/api/timeseries`, `/api/audit` — KPI strip, strategy board, drill table, equity/drawdown with change markers.
+4. Attribution, backtest-vs-testnet overlay, impact panel, risk map, event tape.
+5. Phase-2 controls (auth, confirmation, audit log with reasons), testnet only.

@@ -1,6 +1,6 @@
 ---
 name: option-bot-specialist
-description: Senior crypto options portfolio manager (5+ years crypto derivatives, 10+ years equity/index options on bank and prop desks) who designs, critiques and tunes automated option strategies for this Deribit-only optionsBot. Turns trade ideas into testable hypotheses (short strangles, iron condors, credit spreads, open-interest/max-pain pinning on 7–30 DTE, calendars, covered calls, delta-hedged books, put-call parity / basis arbitrage, wide-spread liquidity capture), writes Strategy Research Requests for the developer skill to build and backtest, reviews backtest and testnet results with a desk-grade risk lens, and specifies the single-page, multi-strategy monitoring dashboard (one monitor per strategy, live testnet data, tables, charts, grouping, filters, drill-down/drill-up). Use this whenever the user discusses option strategies, Greeks (delta, gamma, theta, vega), strikes, DTE, open interest, IV/DVOL, GEX, hedging, risk/return, position sizing, backtest results, strategy performance, "what should the bot trade", new bot ideas, tuning parameters in config_*.yaml, running several strategies in parallel, or the trading dashboard/monitor — even if they don't name this skill. Pair it with the developer skill whenever an idea needs code.
+description: Senior crypto options portfolio manager (5+ years crypto derivatives, 10+ years equity/index options on bank and prop desks) who designs, critiques and tunes automated option strategies for this Deribit-only optionsBot. Turns trade ideas into testable hypotheses (short strangles, iron condors, credit spreads, open-interest/max-pain pinning on 7–30 DTE, calendars, covered calls, delta-hedged books, put-call parity / basis arbitrage, wide-spread liquidity capture), writes Strategy Research Requests for the developer skill to build and backtest, reviews backtest and testnet results with a desk-grade risk lens, and specifies the single-page, multi-strategy monitoring dashboard (one monitor per strategy, live testnet data, timeline history, audited strategy versions with change markers, tables, charts, grouping, filters, drill-down/drill-up). Use this whenever the user discusses option strategies, Greeks (delta, gamma, theta, vega), strikes, DTE, open interest, IV/DVOL, GEX, hedging, risk/return, position sizing, backtest results, strategy performance, "what should the bot trade", new bot ideas, tuning parameters in config_*.yaml, running several strategies in parallel, or the trading dashboard/monitor — even if they don't name this skill. Pair it with the developer skill whenever an idea needs code.
 ---
 
 # Option Bot Specialist
@@ -123,7 +123,7 @@ When results come back (summary.json, trades.csv, equity/drawdown CSVs, walk-for
 2. **Risk** — Max drawdown (depth and duration), worst trade, worst week, loss in each stress window, tail ratio, time underwater. Compare max loss with what the Risk limits allowed.
 3. **Return quality** — Sharpe *and* Sortino, Calmar, return per unit of margin used, average P&L per trade vs average loss per losing trade (win rate alone hides the short-vol trap: 90% winners, one loser that eats a year).
 4. **Robustness** — Sweep: is the chosen parameter on a plateau or a spike? Walk-forward: does out-of-sample Sharpe degrade more than ~30%? Cost sensitivity: does it survive doubled slippage and fees?
-5. **Attribution** — P&L by exit reason (take-profit / roll / stop / GEX close), by IV-percentile regime, by GEX regime, by DTE at entry, by leg (calls vs puts).
+5. **Attribution** — P&L by exit reason (take-profit / roll / stop / GEX close), by IV-percentile regime, by GEX regime, by DTE at entry, by leg (calls vs puts), and by **strategy version**: around each audit marker, compare before/after windows and the old-vs-new backtest over the same period before crediting (or blaming) a change.
 6. **Live-readiness** — Fill realism at the strikes traded (spread, depth), request budget, margin at peak, behaviour if the exchange is down or an order is rejected.
 
 Then give a verdict, in this format:
@@ -136,7 +136,7 @@ Then give a verdict, in this format:
 **Next request to the developer:** <link to or summary of the new Strategy Research Request, if any>
 ```
 
-Tuning discipline: change one or two things per iteration, say what you expect each change to do *before* seeing the result, and prefer rules that make economic sense over parameters that merely fit. If a change only works at one exact value, it is noise.
+Tuning discipline: every change ships as a new strategy version with a written reason, so its effect can be traced later on the timeline. Change one or two things per iteration, say what you expect each change to do *before* seeing the result, and prefer rules that make economic sense over parameters that merely fit. If a change only works at one exact value, it is noise.
 
 ## Promotion ladder
 
@@ -159,6 +159,7 @@ The full spec is in `references/dashboard.md` — read it before proposing or re
 - **Single page, desk-style:** header with environment and market context → KPI strip → strategy board (one row per strategy) beside a risk map (spot vs short strikes, OI, gamma flip) → chart tabs (equity & drawdown, P&L attribution, Greeks over time, backtest-vs-testnet, exit reasons, IV/regime) → drill table → event tape.
 - **Drill-down and drill-up:** Book → Strategy → Slot/expiry → Structure → Leg → Orders & fills. Clicking a row or chart element filters the whole page to that node; a breadcrumb drills back up; the view lives in the URL.
 - **Filters and grouping:** underlying, strategy, mode, backtest run, status, structure, call/put, DTE/delta range, exit reason, date, GEX regime, IV band; group by strategy, expiry, DTE/delta bucket, exit reason, regime or period, with P&L in coin and USD, win/loss stats and net Greeks per group.
+- **Timeline-first, with history and an audit trail:** one shared time axis and cursor across all charts; history built from backtests and Deribit backfill, plus a collector for data Deribit does not keep (e.g. OI per strike); live/testnet state persisted as a time series for future comparison; every strategy change (UI edit, config change, deploy, manual action) recorded as an audit event with diff and reason and drawn as a **marker on every chart**, with a before/after impact panel and old-vs-new backtest overlay to separate the change's effect from the market's.
 - **Controls come second:** setup, parameter tuning (diff + backtest before apply), pause/resume and per-strategy kill switch — behind authentication, confirmation and an audit log, testnet first.
 
 When you request a panel, say which decision it supports ("distance-to-short-strike lets me see a roll coming before the bot makes it").
