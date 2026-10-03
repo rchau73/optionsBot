@@ -21,15 +21,17 @@ export async function fetchMonitorConfig(signal) {
   return { names: bots.map((b) => b.name), pollMs: pollMs ?? 1000 };
 }
 
-/** Status, positions and pending orders of one bot, fetched together. */
+/** Status, positions, pending orders and account summary of one bot, fetched together. */
 export async function fetchBotState(name, signal) {
   const base = `/api/bots/${encodeURIComponent(name)}`;
-  const [status, positions, orders] = await Promise.all([
+  const [status, positions, orders, account] = await Promise.all([
     getJSON(`${base}/status`, signal),
     getJSON(`${base}/positions`, signal),
     getJSON(`${base}/orders`, signal),
+    // Older bots have no /account: treat as "no account data", not an outage.
+    getJSON(`${base}/account`, signal).catch(() => null),
   ]);
-  return { status, positions, orders };
+  return { status, positions, orders, account };
 }
 
 /** Journal events after `since` (sequence number), oldest first. */

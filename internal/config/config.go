@@ -74,6 +74,9 @@ type Config struct {
 	// empty disables it. Use 127.0.0.1:<port> locally, :<port> in Docker
 	// on the private compose network only.
 	APIAddr string
+	// AccountPollSec is how often the account/collateral summary is polled
+	// for the monitor (BOT_ACCOUNT_POLL_SEC, default 10).
+	AccountPollSec int
 }
 
 type Backtest struct {
@@ -270,6 +273,10 @@ func Load(path string) (*Config, error) {
 
 	// ── Platform: monitor API (from env) ──────────────────────────────────────
 	cfg.APIAddr = os.Getenv("BOT_API_ADDR")
+	cfg.AccountPollSec = envInt("BOT_ACCOUNT_POLL_SEC", 10)
+	if cfg.AccountPollSec < 2 {
+		cfg.AccountPollSec = 2 // keep the request rate negligible
+	}
 
 	// ── Platform: heartbeat & reconnect (from .env) ───────────────────────────
 	cfg.Heartbeat = HeartbeatConfig{

@@ -10,6 +10,7 @@ A **read-only, single-page live monitor** for the bots: what each strategy holds
 |---|---|
 | Header | one chip per bot: TESTNET / LIVE, data freshness (turns STALE / OFFLINE), HALTED after a kill switch, spot, DVOL, IV percentile, GEX regime, trend |
 | KPI strip | bots online, open legs, pending orders, orders sent / filled, closes, skipped entries, realised / open / total P&L (USD at spot) |
+| Account & collateral | the shared Deribit account, as Deribit reports it: margin model (cross/segregated · portfolio/standard), cross collateral on/off, USD totals (equity, margin balance, IM, MM) with **IM % / MM % bars** (amber from 50 %, red from 80 %; Deribit liquidates at MM 100 %), and per asset: balance, equity, margin balance, available, withdrawable, IM and MM (and projected, without the nearest expiry), IM % / MM %, reserved. Flags STALE data, a failed poll and high margin |
 | Open positions | one row per leg — instrument, slot (DTE · Δ), call/put, strike, DTE, qty, entry, mark, P&L (coin and USD), % of premium captured, stop-loss mark, ITM/ATM/OTM and distance, Δ Γ Θ Vega. Filter by bot, strategy, type, moneyness; group by strategy, slot, expiry or type with group totals |
 | Activity | live feed of orders sent, re-priced, cancelled, opened, closed (take-profit, rolls, stop-loss, GEX shed, kill switch) and skipped entries with the reason, each with its market context (spot, DVOL, moneyness, open interest, regime) |
 | P&L chart | total and realized P&L across bots (USD). **Live** = this session, every refresh; **1h · 6h · 1d · 1w · 1m · All** = the bots' stored history (survives restarts), about 300 points per range |
@@ -21,7 +22,7 @@ Counts in the KPI strip are **since each bot started**. The P&L chart's longer r
 
 ```
 browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ bot API (Go, internal/api)
-                       /api/bots/<bot>/<endpoint>           /api/status · positions · orders · pnl · pnl/history · events
+                       /api/bots/<bot>/<endpoint>           /api/status · positions · orders · pnl · pnl/history · events · account
 ```
 
 - Each bot exposes a read-only JSON API when `BOT_API_ADDR` is set. It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.

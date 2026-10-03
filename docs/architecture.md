@@ -39,6 +39,7 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
 | `internal/history` | P&L history: append-only `data/pnl_history.jsonl`, reloaded on start (corrupt lines skipped), bucketed range queries | — |
+| `internal/account` | Polls `private/get_account_summaries` (fallback: per-currency `get_account_summary`) every `BOT_ACCOUNT_POLL_SEC` and caches collateral per asset, margin model and IM/MM — Deribit's figures, plus IM %/MM % of margin balance | gateway (interface) |
 | `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls | strategy, orders (interfaces) |
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
 | `internal/logger` | `slog` JSON to stdout + `bot.log` | — |

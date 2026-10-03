@@ -92,7 +92,7 @@ export function useMonitor() {
   }, [names, intervalMs]);
 
   const bots = (names ?? []).map((n) => withStale(states[n] ?? { name: n }, polledAt));
-  return { names, bots, feed, history, error, pollMs: intervalMs };
+  return { names, bots, feed, history, error, pollMs: intervalMs, polledAt };
 }
 
 /** A bot is stale when its last good update is older than STALE_AFTER_SEC at `now`. */

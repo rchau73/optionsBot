@@ -9,14 +9,16 @@ import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
+import AccountPanel from "./AccountPanel";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
+import { pickAccount } from "@/lib/account";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
 /** The single monitor page: header, KPIs, positions, working orders, feed, P&L. */
 export default function Monitor() {
-  const { names, bots, feed, history, error, pollMs } = useMonitor();
+  const { names, bots, feed, history, error, pollMs, polledAt } = useMonitor();
   const [filters, setFilters] = useState(NO_FILTERS);
 
   const rows = useMemo(() => legRows(bots), [bots]);
@@ -37,6 +39,9 @@ export default function Monitor() {
           </div>
         ) : null}
         <KpiStrip kpi={kpi} />
+        <Panel title="Account & collateral (shared by all bots)">
+          <AccountPanel account={pickAccount(bots, polledAt)} />
+        </Panel>
         <Panel title="Open positions" right={<Filters filters={filters} options={options} onChange={setFilters} />}>
           <PositionsTable groups={groups} />
         </Panel>

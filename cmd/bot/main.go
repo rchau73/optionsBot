@@ -12,6 +12,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"optionsbot/internal/account"
 	"optionsbot/internal/api"
 	"optionsbot/internal/backtest"
 	"optionsbot/internal/config"
@@ -151,7 +152,11 @@ func runLive(cfg *config.Config) error {
 
 	// Read-only monitor API for the frontend (off unless BOT_API_ADDR is set).
 	if cfg.APIAddr != "" {
-		mon := api.New(strat, orderLog, api.WithPnLHistory(pnlHistory))
+		// Account/collateral summary for the monitor, cached: one read-only
+		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
+		acct := account.NewPoller(gw)
+		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
+		mon := api.New(strat, orderLog, api.WithPnLHistory(pnlHistory), api.WithAccount(acct))
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
 				slog.Error("monitor API stopped", "addr", cfg.APIAddr, "err", err)

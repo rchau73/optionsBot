@@ -165,6 +165,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `DERIBIT_CIRCUIT_BREAKER_THRESHOLD` / `_OPEN_SEC` | 5 / 60 | failures that open the breaker / how long it stays open |
 | `DERIBIT_HEARTBEAT_INTERVAL_SEC` | 15 | server heartbeat interval |
 | `DERIBIT_RECONNECT_MAX_ATTEMPTS` / `_BACKOFF_BASE_MS` | 10 / 1000 | reconnect policy before giving up |
+| `BOT_ACCOUNT_POLL_SEC` | 10 | how often the account/collateral summary is polled for the monitor (one read-only call; minimum 2) |
 | `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service |
 
 ## Backtesting

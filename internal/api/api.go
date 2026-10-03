@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"optionsbot/internal/account"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
@@ -40,11 +41,17 @@ type PnLHistory interface {
 	Range(from, to time.Time, buckets int) []history.Point
 }
 
+// AccountSource provides the cached account/collateral summary.
+type AccountSource interface {
+	Status() account.Status
+}
+
 // Server is the monitor API for one bot process.
 type Server struct {
 	strategy StrategySource
 	events   EventSource
-	history  PnLHistory // nil → empty history
+	history  PnLHistory    // nil → empty history
+	account  AccountSource // nil → no account data
 	started  time.Time
 	mux      *http.ServeMux
 }
@@ -54,6 +61,9 @@ type Option func(*Server)
 
 // WithPnLHistory serves /api/pnl/history from h.
 func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = h } }
+
+// WithAccount serves /api/account from a.
+func WithAccount(a AccountSource) Option { return func(s *Server) { s.account = a } }
 
 // New builds the API. Use Handler for tests, ListenAndServe to run it.
 func New(src StrategySource, events EventSource, opts ...Option) *Server {
@@ -68,6 +78,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/pnl", s.pnl)
 	s.mux.HandleFunc("GET /api/pnl/history", s.pnlHistory)
 	s.mux.HandleFunc("GET /api/events", s.recentEvents)
+	s.mux.HandleFunc("GET /api/account", s.accountSummary)
 	return s
 }
 
@@ -140,6 +151,21 @@ func (s *Server) pendingOrders(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) pnl(w http.ResponseWriter, _ *http.Request) {
 	v := s.strategy.View()
 	writeJSON(w, map[string]any{"as_of": v.AsOf, "strategy_id": v.StrategyID, "spot": v.Market.Spot, "pnl": v.PnL})
+}
+
+// accountSummary serves the cached account summary (collateral per asset,
+// margin model, IM/MM). It never calls the exchange.
+func (s *Server) accountSummary(w http.ResponseWriter, _ *http.Request) {
+	st := account.Status{}
+	if s.account != nil {
+		st = s.account.Status()
+	}
+	writeJSON(w, map[string]any{
+		"as_of":    time.Now(),
+		"snapshot": st.Snapshot,
+		"error":    st.Error,
+		"error_at": st.ErrorAt,
+	})
 }
 
 // HistoryRanges maps the chart's range names to how far back they reach.

@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"optionsbot/internal/account"
 	"optionsbot/internal/api"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
@@ -46,7 +47,7 @@ func main() {
 	go sim.run(ctx)
 
 	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr)
-	if err := api.New(sim, sim.journal, api.WithPnLHistory(hist)).ListenAndServe(ctx, *addr); err != nil {
+	if err := api.New(sim, sim.journal, api.WithPnLHistory(hist), api.WithAccount(sim)).ListenAndServe(ctx, *addr); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -258,4 +259,25 @@ func (s *simulation) View() strategy.View {
 	v.Greeks = orders.MarketContext{NetDelta: delta, NetGamma: -0.00012, NetVega: -72, NetTheta: 27}
 	v.PnL = []strategy.PnLView{{Realised: s.realised, Unrealised: unrealised, Total: s.realised + unrealised, OpenLegs: len(s.legs), ClosedLegs: s.closed}}
 	return v
+}
+
+// Status implements api.AccountSource with a simulated cross-collateral
+// portfolio-margin account whose margin moves with spot.
+func (s *simulation) Status() account.Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	usage := 0.18 + (100000-s.spot)/100000*2 // margin rises as spot falls
+	btc := account.Summary{
+		Currency: "BTC", Balance: 1.25, Equity: 1.27, MarginBalance: 1.27, AvailableFunds: 1.27 * (1 - usage),
+		AvailableWithdrawalFunds: 1.0, InitialMargin: 1.27 * usage, MaintenanceMargin: 1.27 * usage * 0.7,
+		ProjectedInitialMargin: 1.27 * usage * 0.9, ProjectedMaintenanceMargin: 1.27 * usage * 0.63,
+		MarginModel: "cross_pm", PortfolioMarginingEnabled: true, CrossCollateralEnabled: true,
+		TotalEquityUSD: 1.27*s.spot + 9.5*3500 + 25000, TotalMarginBalanceUSD: 1.27*s.spot + 9.5*3500 + 25000,
+		TotalInitialMarginUSD: 1.27 * usage * s.spot, TotalMaintenanceMarginUSD: 1.27 * usage * 0.7 * s.spot,
+	}
+	eth := account.Summary{Currency: "ETH", Balance: 9.5, Equity: 9.5, MarginBalance: 9.5, AvailableFunds: 9.1, AvailableWithdrawalFunds: 9.1,
+		InitialMargin: 0.4, MaintenanceMargin: 0.28, MarginModel: "cross_pm", CrossCollateralEnabled: true}
+	usdc := account.Summary{Currency: "USDC", Balance: 25000, Equity: 25000, MarginBalance: 25000, AvailableFunds: 25000, AvailableWithdrawalFunds: 25000,
+		MarginModel: "cross_pm", CrossCollateralEnabled: true}
+	return account.Status{Snapshot: account.Build([]account.Summary{btc, eth, usdc}, "demo", time.Now())}
 }
