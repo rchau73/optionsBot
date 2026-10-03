@@ -20,3 +20,17 @@ body {
   background: var(--color-surface);
   color: #e2e8f0;
 }
+
+/* Brief highlight when a live value changes (the element is re-keyed by value). */
+@keyframes value-flash {
+  from {
+    background-color: rgb(56 189 248 / 0.35);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.flash {
+  animation: value-flash 0.8s ease-out;
+  border-radius: 2px;
+}

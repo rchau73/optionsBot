@@ -47,15 +47,22 @@ type StrangleView struct {
 
 // LegView is one open short option.
 type LegView struct {
-	PositionID      string        `json:"position_id"`
-	Instrument      string        `json:"instrument"`
-	OptionType      string        `json:"option_type"`
-	Strike          float64       `json:"strike"`
-	Expiry          time.Time     `json:"expiry"`
-	DTE             float64       `json:"dte"`
-	Qty             float64       `json:"qty"`
-	EntryPrice      float64       `json:"entry_price"`
-	Mark            float64       `json:"mark"`
+	PositionID string    `json:"position_id"`
+	Instrument string    `json:"instrument"`
+	OptionType string    `json:"option_type"`
+	Strike     float64   `json:"strike"`
+	Expiry     time.Time `json:"expiry"`
+	DTE        float64   `json:"dte"`
+	Qty        float64   `json:"qty"`
+	EntryPrice float64   `json:"entry_price"`
+	Mark       float64   `json:"mark"`
+	Bid        float64   `json:"bid"`
+	Ask        float64   `json:"ask"`
+	// MarkSource is "live" when mark and greeks come from the latest ticker,
+	// or "last_cycle" when the instrument has no live data and the values are
+	// the ones the decision loop stored at its last cycle.
+	MarkSource      string        `json:"mark_source"`
+	MarkAsOf        time.Time     `json:"mark_as_of"`
 	PremiumReceived float64       `json:"premium_received"`
 	UnrealisedPnL   float64       `json:"unrealised_pnl"`
 	ROIPct          float64       `json:"roi_pct"`        // share of premium captured, %
@@ -170,22 +177,16 @@ func (s *Strategy) View() View {
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
 			GEX: s.gamma.CurrentGEXSnapshot(),
 		}),
-		Trend:   pub.trend,
-		Account: pub.account,
-		Greeks: orders.MarketContext{
-			Trend:    pub.trend,
-			NetDelta: s.state.TotalNetDelta(),
-			NetGamma: s.state.NetGamma(),
-			NetVega:  s.state.NetVega(),
-			NetTheta: s.state.NetTheta(),
-		},
-		Strangles: s.strangleViews(now),
+		Trend:     pub.trend,
+		Account:   pub.account,
+		Strangles: s.strangleViews(now, pub.at),
 		Pending:   pub.pending,
 	}
+	v.Greeks = netGreeks(v.Strangles, pub.trend)
 	if v.Pending == nil {
 		v.Pending = []PendingView{}
 	}
-	for _, l := range s.PnLReport() {
+	for _, l := range s.pnlWithMarks(liveMarks(v.Strangles)) {
 		v.PnL = append(v.PnL, PnLView{
 			Slot: l.Slot, Realised: l.Realised, Unrealised: l.Unrealised,
 			Total: l.Realised + l.Unrealised, OpenLegs: l.OpenLegs, ClosedLegs: l.ClosedLegs,
@@ -194,14 +195,14 @@ func (s *Strategy) View() View {
 	return v
 }
 
-func (s *Strategy) strangleViews(now time.Time) []StrangleView {
+func (s *Strategy) strangleViews(now, loopAt time.Time) []StrangleView {
 	spot := s.md.UnderlyingPrice()
 	out := make([]StrangleView, 0)
 	for _, st := range s.state.AllStrangles() {
 		sv := StrangleView{ID: st.ID, Slot: orders.SlotRef{DTE: st.TargetDTE, Delta: st.EntryDelta}, OpenedAt: st.OpenedAt}
 		for _, leg := range []*orders.Position{st.CallLeg, st.PutLeg} {
 			if pos := s.livePosition(leg); pos != nil {
-				sv.Legs = append(sv.Legs, s.legView(pos, spot, now))
+				sv.Legs = append(sv.Legs, s.legView(pos, spot, now, loopAt))
 			}
 		}
 		if len(sv.Legs) > 0 {
@@ -217,14 +218,27 @@ func (s *Strategy) strangleViews(now time.Time) []StrangleView {
 	return out
 }
 
-func (s *Strategy) legView(pos *orders.Position, spot float64, now time.Time) LegView {
-	lv := LegView{
-		PositionID: pos.ID, Instrument: pos.Instrument, OptionType: pos.OptionType,
-		Strike: pos.Strike, Expiry: pos.Expiry, DTE: maxf(pos.Expiry.Sub(now).Hours()/24, 0),
-		Qty: pos.Qty, EntryPrice: pos.EntryPrice, Mark: pos.CurrentMid,
-		PremiumReceived: pos.PremiumReceived, UnrealisedPnL: pos.MtMPnL(),
-		ROIPct: pos.ROIPct() * 100, LossMultiple: pos.LossPct(), Greeks: pos.CurrentGreeks,
+// legView describes one open leg, priced from the latest ticker when one is
+// available so the monitor moves with the market between decision cycles.
+func (s *Strategy) legView(pos *orders.Position, spot float64, now, loopAt time.Time) LegView {
+	mark, greeks := pos.CurrentMid, pos.CurrentGreeks
+	lv := LegView{MarkSource: "last_cycle", MarkAsOf: loopAt}
+	if inst, ok := s.md.GetInstrument(pos.Instrument); ok && inst.Mid > 0 {
+		mark, greeks = inst.Mid, toOrderGreeks(inst)
+		lv.Bid, lv.Ask = inst.Bid, inst.Ask
+		lv.MarkSource, lv.MarkAsOf = "live", inst.UpdatedAt
 	}
+	priced := *pos
+	priced.CurrentMid, priced.CurrentGreeks = mark, greeks
+
+	lv.PositionID, lv.Instrument, lv.OptionType = pos.ID, pos.Instrument, pos.OptionType
+	lv.Strike, lv.Expiry, lv.DTE = pos.Strike, pos.Expiry, maxf(pos.Expiry.Sub(now).Hours()/24, 0)
+	lv.Qty, lv.EntryPrice, lv.Mark = pos.Qty, pos.EntryPrice, mark
+	lv.PremiumReceived = pos.PremiumReceived
+	lv.UnrealisedPnL = priced.MtMPnL()
+	lv.ROIPct = priced.ROIPct() * 100
+	lv.LossMultiple = priced.LossPct()
+	lv.Greeks = greeks
 	if pos.Qty > 0 {
 		// LossPct = (mark × qty − premium) / premium reaches the multiplier at this mark.
 		lv.StopLossMark = pos.PremiumReceived * (1 + s.cfg.StopLossMultiplier) / pos.Qty
@@ -233,6 +247,31 @@ func (s *Strategy) legView(pos *orders.Position, spot float64, now time.Time) Le
 		lv.Moneyness, lv.DistancePct = Moneyness(pos.OptionType, spot, pos.Strike)
 	}
 	return lv
+}
+
+// liveMarks maps position IDs to the marks shown in the view.
+func liveMarks(strangles []StrangleView) map[string]float64 {
+	marks := map[string]float64{}
+	for _, st := range strangles {
+		for _, l := range st.Legs {
+			marks[l.PositionID] = l.Mark
+		}
+	}
+	return marks
+}
+
+// netGreeks sums the legs' greeks for a short book (each greek negated).
+func netGreeks(strangles []StrangleView, trend string) orders.MarketContext {
+	g := orders.MarketContext{Trend: trend}
+	for _, st := range strangles {
+		for _, l := range st.Legs {
+			g.NetDelta -= l.Greeks.Delta * l.Qty
+			g.NetGamma -= l.Greeks.Gamma * l.Qty
+			g.NetVega -= l.Greeks.Vega * l.Qty
+			g.NetTheta -= l.Greeks.Theta * l.Qty
+		}
+	}
+	return g
 }
 
 func maxf(a, b float64) float64 {

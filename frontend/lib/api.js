@@ -15,9 +15,10 @@ async function getJSON(url, signal) {
   return res.json();
 }
 
-export async function fetchBotNames(signal) {
-  const { bots } = await getJSON("/api/bots", signal);
-  return bots.map((b) => b.name);
+/** Bot names and the configured poll interval (ms). */
+export async function fetchMonitorConfig(signal) {
+  const { bots, pollMs } = await getJSON("/api/bots", signal);
+  return { names: bots.map((b) => b.name), pollMs: pollMs ?? 1000 };
 }
 
 /** Status, positions and pending orders of one bot, fetched together. */

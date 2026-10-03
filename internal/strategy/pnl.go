@@ -111,6 +111,12 @@ func ComputePnL(slots []orders.SlotRef, positions []*orders.Position, slotOfPos 
 // (realised since the process started, unrealised marked to mid), in the
 // underlying coin. Safe to call from any goroutine.
 func (s *Strategy) PnLReport() []PnLLine {
+	return s.pnlWithMarks(nil)
+}
+
+// pnlWithMarks is PnLReport with positions re-marked from marks (position ID
+// → price) where given, e.g. live ticker prices for the monitor.
+func (s *Strategy) pnlWithMarks(marks map[string]float64) []PnLLine {
 	slotOfPos := map[string]*orders.SlotRef{}
 	for _, st := range s.state.AllStrangles() {
 		ref := slotRef(st.TargetDTE, st.EntryDelta)
@@ -125,7 +131,13 @@ func (s *Strategy) PnLReport() []PnLLine {
 		slots = append(slots, orders.SlotRef{DTE: sl.TargetDTE, Delta: sl.EntryDelta})
 	}
 	realised, closed := s.pnl.snapshot()
-	return ComputePnL(slots, s.state.AllPositions(), slotOfPos, realised, closed)
+	positions := s.state.AllPositions()
+	for _, p := range positions {
+		if m, ok := marks[p.ID]; ok {
+			p.CurrentMid = m // positions are snapshots, safe to modify
+		}
+	}
+	return ComputePnL(slots, positions, slotOfPos, realised, closed)
 }
 
 // logPnL writes one P&L line per slot plus the strategy total to the journal.

@@ -50,6 +50,7 @@ cd frontend && npm install && npm run dev                       # http://localho
 | Variable | Default | Meaning |
 |---|---|---|
 | `BOT_APIS` | `btc=http://127.0.0.1:8081,eth=http://127.0.0.1:8082` | comma-separated `name=url` of each bot API (server side only) |
+| `MONITOR_POLL_MS` | `1000` | how often the page refreshes (500–60000 ms). Polling reads the bots' memory only — it never uses Deribit rate limits |
 
 ## Develop
 

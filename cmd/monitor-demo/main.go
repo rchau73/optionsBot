@@ -205,6 +205,7 @@ func (s *simulation) View() strategy.View {
 		st.Legs = append(st.Legs, strategy.LegView{
 			PositionID: pos.ID, Instrument: pos.Instrument, OptionType: l.typ, Strike: l.strike, Expiry: l.expiry,
 			DTE: l.expiry.Sub(now).Hours() / 24, Qty: l.qty, EntryPrice: l.entry, Mark: l.mark,
+			Bid: l.mark * 0.97, Ask: l.mark * 1.03, MarkSource: "live", MarkAsOf: now,
 			PremiumReceived: pos.PremiumReceived, UnrealisedPnL: pos.MtMPnL(), ROIPct: pos.ROIPct() * 100,
 			LossMultiple: pos.LossPct(), StopLossMark: pos.PremiumReceived * 3 / l.qty,
 			Moneyness: mon, DistancePct: dist, Greeks: pos.CurrentGreeks,

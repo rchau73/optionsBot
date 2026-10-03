@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchBotEvents, fetchBotNames, fetchBotState } from "@/lib/api";
+import { fetchBotEvents, fetchBotState, fetchMonitorConfig } from "@/lib/api";
 import { STALE_AFTER_SEC, describeEvent, mergeFeed, summarise } from "@/lib/monitor";
 
 const HISTORY_POINTS = 900; // 15 minutes at 1 s
 
 /**
- * Polls every configured bot every intervalMs and keeps the latest state,
- * a merged activity feed and a session P&L history.
- * Returns { names, bots, feed, history, error }.
+ * Polls every configured bot (interval from the server's MONITOR_POLL_MS)
+ * and keeps the latest state, a merged activity feed and a session P&L history.
+ * Returns { names, bots, feed, history, error, pollMs }.
  */
-export function useMonitor(intervalMs = 1000) {
+export function useMonitor() {
   const [names, setNames] = useState(null);
+  const [intervalMs, setIntervalMs] = useState(1000);
   const [error, setError] = useState(null);
   const [states, setStates] = useState({});
   const [feed, setFeed] = useState([]);
@@ -26,7 +27,9 @@ export function useMonitor(intervalMs = 1000) {
     const controller = new AbortController();
     const load = async () => {
       try {
-        setNames(await fetchBotNames(controller.signal));
+        const config = await fetchMonitorConfig(controller.signal);
+        setIntervalMs(config.pollMs);
+        setNames(config.names);
         setError(null);
       } catch (e) {
         if (controller.signal.aborted) return;
@@ -89,7 +92,7 @@ export function useMonitor(intervalMs = 1000) {
   }, [names, intervalMs]);
 
   const bots = (names ?? []).map((n) => withStale(states[n] ?? { name: n }, polledAt));
-  return { names, bots, feed, history, error };
+  return { names, bots, feed, history, error, pollMs: intervalMs };
 }
 
 /** A bot is stale when its last good update is older than STALE_AFTER_SEC at `now`. */

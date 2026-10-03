@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { parseBots } from "@/lib/bots";
+import { parseBots, pollIntervalMs } from "@/lib/bots";
 import { GET as listBots } from "@/app/api/bots/route";
 import { GET as proxy } from "@/app/api/bots/[bot]/[...path]/route";
 
@@ -17,6 +17,16 @@ describe("bot configuration", () => {
   });
 });
 
+describe("poll interval", () => {
+  test("defaults to 1 s and is clamped to a sane range", () => {
+    expect(pollIntervalMs(undefined)).toBe(1000);
+    expect(pollIntervalMs("5000")).toBe(5000);
+    expect(pollIntervalMs("10")).toBe(500);
+    expect(pollIntervalMs("999999")).toBe(60000);
+    expect(pollIntervalMs("abc")).toBe(1000);
+  });
+});
+
 describe("read-only proxy", () => {
   const realFetch = global.fetch;
   beforeEach(() => {
@@ -28,7 +38,7 @@ describe("read-only proxy", () => {
 
   test("lists bots by name only", async () => {
     const body = await (await listBots()).json();
-    expect(body).toEqual({ bots: [{ name: "btc" }] });
+    expect(body).toEqual({ bots: [{ name: "btc" }], pollMs: 1000 });
   });
 
   test("forwards allow-listed endpoints with the query string", async () => {

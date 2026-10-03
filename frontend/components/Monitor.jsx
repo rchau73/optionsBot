@@ -12,12 +12,11 @@ import PnlChart from "./PnlChart";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 
-const POLL_MS = 1000;
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
 /** The single monitor page: header, KPIs, positions, working orders, feed, P&L. */
 export default function Monitor() {
-  const { bots, feed, history, error } = useMonitor(POLL_MS);
+  const { bots, feed, history, error, pollMs } = useMonitor();
   const [filters, setFilters] = useState(NO_FILTERS);
 
   const rows = useMemo(() => legRows(bots), [bots]);
@@ -49,13 +48,17 @@ export default function Monitor() {
             <Panel title="P&L this session (USD)">
               <PnlChart history={history} />
             </Panel>
-            <Panel title="Working orders">
+            <Panel title="Working orders (placed, not filled yet)">
+              <p className="mb-2 text-xs text-muted">
+                Limit orders resting on Deribit. Filled orders move to Open positions; unfilled ones are cancelled after the
+                fill timeout and retried on a later cycle.
+              </p>
               <PendingOrders bots={bots} />
             </Panel>
           </div>
         </div>
         <p className="text-center text-xs text-muted">
-          Read-only · refreshes every second · counts are since each bot started · educational study, not investment advice
+          Read-only · refreshes every {pollMs / 1000}s · counts are since each bot started · educational study, not investment advice
         </p>
       </main>
     </div>

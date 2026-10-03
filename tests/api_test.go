@@ -218,3 +218,62 @@ func TestAPI_LiveStrategyUnderConcurrentPolling(t *testing.T) {
 		t.Error("journal events should be visible")
 	}
 }
+
+// The monitor prices legs from the latest ticker, not from the copy the
+// decision loop stores once per cycle, so marks, greeks and unrealised P&L
+// move every poll even with a long eval_interval_ms.
+func TestView_LegsFollowTheMarketBetweenCycles(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.EvalIntervalMS = 10_000 // no decision cycle during this test
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+	eventually(t, 2*time.Second, "positions loaded", func() bool { return len(f.strat.View().Strangles) == 1 })
+
+	f.market.setQuote(f.call, 0.029, 0.031) // call mid 0.02 → 0.03, between cycles
+	f.market.mu.Lock()
+	f.market.instruments[f.call].Greeks.Delta = 0.25
+	f.market.instruments[f.call].UpdatedAt = time.Now()
+	f.market.mu.Unlock()
+
+	v := f.strat.View()
+	var call strategy.LegView
+	for _, l := range v.Strangles[0].Legs {
+		if l.Instrument == f.call {
+			call = l
+		}
+	}
+	if call.Mark != 0.03 || call.Bid != 0.029 || call.Ask != 0.031 || call.MarkSource != "live" {
+		t.Fatalf("call should show the live quote: %+v", call)
+	}
+	if call.Greeks.Delta != 0.25 {
+		t.Errorf("greeks should be live, delta = %v", call.Greeks.Delta)
+	}
+	// premium 0.02 × 0.1 = 0.002; mark 0.03 × 0.1 = 0.003 → unrealised −0.001.
+	if !near(call.UnrealisedPnL, -0.001, 1e-12) || !near(call.ROIPct, -50, 1e-9) {
+		t.Errorf("unrealised = %v, roi = %v", call.UnrealisedPnL, call.ROIPct)
+	}
+	total := v.PnL[len(v.PnL)-1]
+	if !near(total.Unrealised, -0.001, 1e-12) { // the put is flat at 0.02
+		t.Errorf("total unrealised should use live marks: %v", total.Unrealised)
+	}
+	if !near(v.Greeks.NetDelta, -(0.25*0.1)+(-0.16*-0.1), 1e-12) {
+		t.Errorf("net delta should use live greeks: %v", v.Greeks.NetDelta)
+	}
+}
+
+func TestView_LegWithoutLiveTickerIsMarkedLastCycle(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+	eventually(t, 2*time.Second, "positions loaded", func() bool { return len(f.strat.View().Strangles) == 1 })
+
+	f.market.mu.Lock()
+	delete(f.market.instruments, f.put) // e.g. an expiry the bot is not subscribed to
+	f.market.mu.Unlock()
+
+	for _, l := range f.strat.View().Strangles[0].Legs {
+		if l.Instrument == f.put && (l.MarkSource != "last_cycle" || l.Mark == 0) {
+			t.Errorf("a leg without live data must say so and keep its last mark: %+v", l)
+		}
+	}
+}

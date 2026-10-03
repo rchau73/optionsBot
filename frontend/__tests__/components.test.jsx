@@ -36,6 +36,8 @@ describe("KpiStrip", () => {
     expect(screen.getByText("Open legs").nextSibling).toHaveTextContent("2");
     expect(screen.getByText("Total P&L").nextSibling).toHaveTextContent("$150");
     expect(screen.getByText("Total P&L").nextSibling).toHaveClass("text-profit");
+    expect(screen.getByText("Unrealized P&L")).toBeInTheDocument();
+    expect(screen.getByText("Realized P&L")).toBeInTheDocument();
   });
 });
 
@@ -46,6 +48,13 @@ describe("PositionsTable", () => {
     expect(screen.getByText("BTC-27DEC26-115000-C")).toBeInTheDocument();
     expect(screen.getByText("115,000")).toBeInTheDocument();
     expect(screen.getAllByText("44.5")).toHaveLength(2);
+  });
+
+  test("labels unrealized P&L, shows bid/ask and flags non-live marks", () => {
+    render(<PositionsTable groups={groupRows(legRows([bot()]), "slot")} />);
+    expect(screen.getByText("Unrealized P&L")).toBeInTheDocument();
+    expect(screen.getByText("0.0085 / 0.0095")).toBeInTheDocument();
+    expect(screen.getAllByText("last cycle")).toHaveLength(1); // only the put has no live ticker
   });
 
   test("explains an empty table", () => {

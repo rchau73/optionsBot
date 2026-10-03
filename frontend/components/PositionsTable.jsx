@@ -1,10 +1,32 @@
 import clsx from "clsx";
 import Badge from "./Badge";
-import { formatCoin, formatNumber, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
+import { ageSeconds, formatCoin, formatNumber, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
+import { STALE_AFTER_SEC } from "@/lib/monitor";
 
 const pnlClass = (v) => clsx("tabular-nums", v > 0 && "text-profit", v < 0 && "text-loss");
 
-/** Open legs grouped (strategy, slot, expiry or type), with totals per group. */
+/** Renders a live value; re-keying by value replays the flash when it changes. */
+function Live({ value, children }) {
+  return (
+    <span key={String(value)} className="flash px-0.5">
+      {children}
+    </span>
+  );
+}
+
+/** Small tag when a leg's price is not live or is getting old. */
+function Freshness({ row }) {
+  if (row.markSource !== "live") {
+    return <div className="text-[10px] text-warn" title="No live ticker for this instrument; value from the last decision cycle">last cycle</div>;
+  }
+  const age = ageSeconds(row.markAsOf);
+  if (age != null && age > STALE_AFTER_SEC) {
+    return <div className="text-[10px] text-warn">{Math.floor(age)}s old</div>;
+  }
+  return null;
+}
+
+/** Open legs grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
 export default function PositionsTable({ groups }) {
   if (!groups.length) {
     return <p className="px-1 py-6 text-center text-sm text-muted">No open positions match the filters.</p>;
@@ -21,8 +43,9 @@ export default function PositionsTable({ groups }) {
             <th className="px-2 py-1 text-right">DTE</th>
             <th className="px-2 py-1 text-right">Qty</th>
             <th className="px-2 py-1 text-right">Entry</th>
-            <th className="px-2 py-1 text-right">Mark</th>
-            <th className="px-2 py-1 text-right">P&L</th>
+            <th className="px-2 py-1 text-right">Bid / Ask</th>
+            <th className="px-2 py-1 text-right" title="Mid price used to value the leg, from the live ticker">Mark</th>
+            <th className="px-2 py-1 text-right" title="Premium received minus the cost to buy back at the mark">Unrealized P&L</th>
             <th className="px-2 py-1 text-right">Captured</th>
             <th className="px-2 py-1 text-right" title="Mark at which the stop-loss fires">Stop @</th>
             <th className="px-2 py-1">Moneyness</th>
@@ -35,7 +58,7 @@ export default function PositionsTable({ groups }) {
         {groups.map((g) => (
           <tbody key={g.key} className="border-b border-line">
             <tr className="bg-slate-800/40">
-              <td colSpan={8} className="px-2 py-1 font-semibold">
+              <td colSpan={9} className="px-2 py-1 font-semibold">
                 {g.key} <span className="text-xs font-normal text-muted">· {g.legs} legs</span>
               </td>
               <td className={clsx("px-2 py-1 text-right font-semibold", pnlClass(g.pnlUsd))}>
@@ -55,9 +78,17 @@ export default function PositionsTable({ groups }) {
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.dte, 1)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{r.qty}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatPrice(r.entry)}</td>
-                <td className="px-2 py-1 text-right tabular-nums">{formatPrice(r.mark)}</td>
+                <td className="px-2 py-1 text-right text-xs tabular-nums text-muted">
+                  <Live value={`${r.bid}/${r.ask}`}>
+                    {formatPrice(r.bid)} / {formatPrice(r.ask)}
+                  </Live>
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums">
+                  <Live value={r.mark}>{formatPrice(r.mark)}</Live>
+                  <Freshness row={r} />
+                </td>
                 <td className={clsx("px-2 py-1 text-right", pnlClass(r.pnl))}>
-                  {formatCoin(r.pnl, r.unit)}
+                  <Live value={r.pnl}>{formatCoin(r.pnl, r.unit)}</Live>
                   <div className="text-xs">{formatUSD(r.pnlUsd)}</div>
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatPct(r.roiPct, 0)}</td>
@@ -69,7 +100,9 @@ export default function PositionsTable({ groups }) {
                     {r.moneyness} {isNumber(r.distancePct) ? `${r.distancePct.toFixed(1)}%` : ""}
                   </Badge>
                 </td>
-                <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.delta, 3)}</td>
+                <td className="px-2 py-1 text-right tabular-nums">
+                  <Live value={r.delta}>{formatNumber(r.delta, 3)}</Live>
+                </td>
                 <td className="px-2 py-1 text-right tabular-nums">{isNumber(r.gamma) ? r.gamma.toExponential(1) : "—"}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.theta, 1)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.vega, 1)}</td>

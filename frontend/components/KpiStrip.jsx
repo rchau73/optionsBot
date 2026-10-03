@@ -12,8 +12,8 @@ export default function KpiStrip({ kpi }) {
       <StatTile label="Pending orders" value={kpi.pending} />
       <StatTile label="Orders sent" value={kpi.submitted} sub={`${kpi.filled} filled`} />
       <StatTile label="Closes" value={kpi.closed} sub={`${kpi.skipped} skipped entries`} />
-      <StatTile label="Realised P&L" value={formatUSD(kpi.realisedUsd)} tone={tone(kpi.realisedUsd)} />
-      <StatTile label="Open P&L" value={formatUSD(kpi.unrealisedUsd)} tone={tone(kpi.unrealisedUsd)} />
+      <StatTile label="Realized P&L" value={formatUSD(kpi.realisedUsd)} tone={tone(kpi.realisedUsd)} sub="closed legs" />
+      <StatTile label="Unrealized P&L" value={formatUSD(kpi.unrealisedUsd)} tone={tone(kpi.unrealisedUsd)} sub="open legs at live mark" />
       <StatTile label="Total P&L" value={formatUSD(kpi.totalUsd)} tone={tone(kpi.totalUsd)} sub="since start, USD at spot" />
     </div>
   );

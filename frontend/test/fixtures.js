@@ -26,13 +26,13 @@ export const positions = {
       legs: [
         {
           position_id: "p-1", instrument: "BTC-27DEC26-115000-C", option_type: "call", strike: 115000, dte: 44.5,
-          qty: 0.1, entry_price: 0.012, mark: 0.009, unrealised_pnl: 0.0003, roi_pct: 25, loss_multiple: -0.25,
+          qty: 0.1, entry_price: 0.012, mark: 0.009, bid: 0.0085, ask: 0.0095, mark_source: "live", mark_as_of: new Date().toISOString(), unrealised_pnl: 0.0003, roi_pct: 25, loss_multiple: -0.25,
           stop_loss_mark: 0.036, moneyness: "OTM", distance_to_strike_pct: 15,
           greeks: { delta: 0.12, gamma: 0.00001, theta: -12, vega: 30 },
         },
         {
           position_id: "p-2", instrument: "BTC-27DEC26-88000-P", option_type: "put", strike: 88000, dte: 44.5,
-          qty: 0.1, entry_price: 0.015, mark: 0.013, unrealised_pnl: 0.0002, roi_pct: 13, loss_multiple: -0.13,
+          qty: 0.1, entry_price: 0.015, mark: 0.013, bid: 0, ask: 0, mark_source: "last_cycle", mark_as_of: new Date().toISOString(), unrealised_pnl: 0.0002, roi_pct: 13, loss_multiple: -0.13,
           stop_loss_mark: 0.045, moneyness: "OTM", distance_to_strike_pct: 12,
           greeks: { delta: -0.14, gamma: 0.00001, theta: -13, vega: 31 },
         },
