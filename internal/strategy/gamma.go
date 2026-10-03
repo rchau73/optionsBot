@@ -48,6 +48,7 @@ type GammaMonitor struct {
 	lastTickDate  time.Time    // UTC day of the last processed tick
 	lastTickPrice float64      // most recent price (current day's running close)
 	gexSrc        GEXSource    // nil until wired; Evaluate then reports no regime
+	lastAction    GammaAction  // last action announced, so changes are logged once
 }
 
 type pricePoint struct {
@@ -151,7 +152,13 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 
 	dec.Action = ResolveGammaAction(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, trend)
 
-	if dec.Action != GammaActionNone {
+	// Announce a regime action when it changes, not on every cycle it persists.
+	changed := dec.Action != g.lastAction
+	g.lastAction = dec.Action
+	if changed && dec.Action == GammaActionNone {
+		slog.Info("gex_regime_cleared", "event", "gex_regime_cleared", "regime", snap.Regime, "trend", dec.Trend)
+	}
+	if changed && dec.Action != GammaActionNone {
 		slog.Warn("gex_regime_trigger",
 			"event", "gex_regime_trigger",
 			"regime", snap.Regime,

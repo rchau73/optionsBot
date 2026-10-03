@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"math"
 	"strings"
 	"sync"
@@ -981,4 +983,35 @@ func TestStrategy_PeriodicPnLLinesPerSlotAndTotal(t *testing.T) {
 	if !near(total.TotalUSD, total.Total*total.Spot, 1e-9) {
 		t.Errorf("USD must use the recorded spot: %+v", total)
 	}
+}
+
+// A persistent GEX action is announced once, not on every cycle.
+func TestGammaMonitor_AnnouncesRegimeChangesOnce(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&lockedWriter{w: &buf}, nil)))
+	defer slog.SetDefault(prev)
+
+	f := newStrategyFixture(t)
+	f.withPutSheddingRegime()
+	f.startRun()
+	time.Sleep(200 * time.Millisecond) // ~20 cycles in the same regime
+
+	f.cancel()
+	<-f.runErr
+	f.runErr <- nil
+	if n := strings.Count(buf.String(), `"msg":"gex_regime_trigger"`); n != 1 {
+		t.Errorf("gex_regime_trigger logged %d times over many cycles, want 1", n)
+	}
+}
+
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

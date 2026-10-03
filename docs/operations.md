@@ -7,6 +7,7 @@ How to run, watch and stop the bot. For architecture and design see the [main RE
 ## Contents
 - [Run locally](#run-locally)
 - [Run with Docker](#run-with-docker)
+- [Live monitor](#live-monitor)
 - [Watch the logs](#watch-the-logs)
 - [Health monitor (`bot.sh`)](#health-monitor-botsh)
 - [Kill switch](#kill-switch)
@@ -36,6 +37,10 @@ docker compose down                  # stop everything
 docker compose up -d --build         # rebuild after a code change
 docker compose exec bot-btc sh       # shell inside the container (runs as a non-root user)
 ```
+
+## Live monitor
+
+`docker compose up -d` also starts the **monitor** at <http://localhost:3000> (this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
 
 ## Watch the logs
 

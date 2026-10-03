@@ -51,6 +51,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 | Market | `internal/gex` | Gamma exposure regime from open interest, refreshed every 60 s |
 | Decision | `internal/strategy` | Entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions |
 | Execution | `internal/orders` | Deribit order/account calls, in-memory book (snapshots), `orders.log` decision journal (market snapshot + P&L) |
+| Monitoring | `internal/api` | Read-only JSON API for the live monitor, built from in-memory state (no exchange calls); UI in [`frontend/`](frontend/README.md) |
 | Reporting | `internal/hedge` | `hedge_report.json` — suggestion only, never trades |
 | Research | `internal/backtest` | CSV replay, simulated fills, metrics, parameter sweep, walk-forward |
 | Support | `internal/config`, `internal/logger` | `config.yaml` + `.env` with validation; `slog` JSON logging |
@@ -164,6 +165,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `DERIBIT_CIRCUIT_BREAKER_THRESHOLD` / `_OPEN_SEC` | 5 / 60 | failures that open the breaker / how long it stays open |
 | `DERIBIT_HEARTBEAT_INTERVAL_SEC` | 15 | server heartbeat interval |
 | `DERIBIT_RECONNECT_MAX_ATTEMPTS` / `_BACKOFF_BASE_MS` | 10 / 1000 | reconnect policy before giving up |
+| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service |
 
 ## Backtesting
 
@@ -209,7 +211,8 @@ internal/hedge/       hedge report
 internal/backtest/    feed, simulated executor, engine, metrics, results, scenarios
 tests/                all tests (unit, integration, end-to-end)
 docs/                 architecture, operations, Mermaid sources + PNGs
-frontend/             monitoring dashboard (planned) — see frontend/README.md
+frontend/             live monitor (Next.js) — see frontend/README.md
+cmd/monitor-demo/     monitor API with simulated data, for UI development
 ```
 
 ## Design decisions
@@ -231,7 +234,7 @@ frontend/             monitoring dashboard (planned) — see frontend/README.md
 - The backtest engine runs the shared pure rules in its own day loop rather than the live `Strategy`; order-lifecycle behaviour is covered by end-to-end tests and testnet. **Next:** run `Strategy` itself against the simulated executor.
 - Synthetic backtest data only; add a real Deribit dataset and an open-interest collector.
 - Multiple strategies per process with per-strategy order labels, versioning and an audit trail.
-- A read-only monitoring dashboard in `frontend/` (Next.js), documented separately in `frontend/README.md`.
+- Live monitor: phase 1 (read-only, in-session) is in `frontend/`; next are persisted history, change markers and authenticated controls per the dashboard spec.
 
 ## Further documentation
 

@@ -1,0 +1,78 @@
+# optionsBot monitor (frontend)
+
+A **read-only, single-page live monitor** for the bots: what each strategy holds, what it just did and how it is doing, refreshed every second. All UI documentation lives here; the backend docs only describe the API.
+
+> Educational study of an automated trading system — not investment advice. The monitor is meant for **Deribit testnet** first.
+
+## What you see
+
+| Area | Shows |
+|---|---|
+| Header | one chip per bot: TESTNET / LIVE, data freshness (turns STALE / OFFLINE), HALTED after a kill switch, spot, DVOL, IV percentile, GEX regime, trend |
+| KPI strip | bots online, open legs, pending orders, orders sent / filled, closes, skipped entries, realised / open / total P&L (USD at spot) |
+| Open positions | one row per leg — instrument, slot (DTE · Δ), call/put, strike, DTE, qty, entry, mark, P&L (coin and USD), % of premium captured, stop-loss mark, ITM/ATM/OTM and distance, Δ Γ Θ Vega. Filter by bot, strategy, type, moneyness; group by strategy, slot, expiry or type with group totals |
+| Activity | live feed of orders sent, re-priced, cancelled, opened, closed (take-profit, rolls, stop-loss, GEX shed, kill switch) and skipped entries with the reason, each with its market context (spot, DVOL, moneyness, open interest, regime) |
+| P&L this session | total and realised P&L across bots, sampled every second |
+| Working orders | entry/repair orders still on the book: fill progress, limit, re-prices, age |
+
+Counts and realised P&L are **since each bot started**; persistent history is a later phase of the [dashboard spec](../.claude/skills/option-bot-specialist/references/dashboard.md).
+
+## How it works
+
+```
+browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ bot API (Go, internal/api)
+                       /api/bots/<bot>/<endpoint>           /api/status · positions · orders · pnl · events
+```
+
+- Each bot exposes a read-only JSON API when `BOT_API_ADDR` is set. It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
+- The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`). Bot URLs are configured with `BOT_APIS` and never reach the browser.
+- Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
+
+## Run it
+
+**With Docker (recommended)** — from the repository root:
+
+```bash
+docker compose up -d          # bot-btc, bot-eth and the monitor
+open http://localhost:3000    # bound to 127.0.0.1 only
+```
+
+**Without a bot (demo data)** — the real API with a simulated strategy, no exchange connection:
+
+```bash
+go run ./cmd/monitor-demo                                       # BTC on 127.0.0.1:8081
+go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082  # ETH
+cd frontend && npm install && npm run dev                       # http://localhost:3000
+```
+
+**Against locally running bots:** start each bot with `BOT_API_ADDR=127.0.0.1:8081` (BTC) / `127.0.0.1:8082` (ETH), then `npm run dev`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOT_APIS` | `btc=http://127.0.0.1:8081,eth=http://127.0.0.1:8082` | comma-separated `name=url` of each bot API (server side only) |
+
+## Develop
+
+```bash
+npm run dev     # dev server with hot reload
+npm test        # Jest + Testing Library
+npm run lint    # ESLint (next/core-web-vitals)
+npm run build   # production build — catches Server/Client Component mistakes
+```
+
+| Folder | Contents |
+|---|---|
+| `app/` | `layout.jsx`, `page.jsx` (composition only), `api/bots/…` read-only proxy routes |
+| `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `Monitor` (+ `Panel`, `Badge`, `StatTile`) |
+| `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
+| `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
+| `__tests__/`, `test/` | tests and shared fixtures |
+
+Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/globals.css` (`profit`, `loss`, `call`, `put`, `live`, `testnet`…) · Recharts · clsx.
+
+## Rules of the road
+
+- **Read-only.** Anything that would change trading state (pause, kill switch, parameter edits) needs authentication, an explicit confirmation step and an audit entry, and must reuse the bot's existing code paths — it is a planned phase, not part of this page.
+- **Never expose it publicly.** It shows positions and P&L; Docker binds it to `127.0.0.1`.
+- Every number carries its unit (BTC/ETH, USD, %); missing data shows "—", never 0; stale data is flagged.
+- No business logic in Next.js routes — the Go bot is the single backend.

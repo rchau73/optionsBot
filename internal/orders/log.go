@@ -243,7 +243,10 @@ func (l *Logger) LogPnL(p PnLRecord) {
 }
 
 func (l *Logger) write(rec OrderLog) {
-	if rec.Market.SpreadPct > l.spreadAlertThreshold*100 && l.spreadAlertThreshold > 0 {
+	// Warn where the spread is actually paid (submit, fill, close); cancels and
+	// skips repeat the same quote and would only add noise.
+	priced := rec.Event == EventSubmitted || rec.Event == EventFilled || rec.Event == EventClosed
+	if priced && l.spreadAlertThreshold > 0 && rec.Market.SpreadPct > l.spreadAlertThreshold*100 {
 		slog.Warn("wide spread", "instrument", rec.Instrument, "event", rec.Event,
 			"spread_pct", rec.Market.SpreadPct, "threshold_pct", l.spreadAlertThreshold*100)
 	}

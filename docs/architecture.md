@@ -38,6 +38,7 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `internal/strategy` | Decision loop: entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
+| `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls | strategy, orders (interfaces) |
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
 | `internal/logger` | `slog` JSON to stdout + `bot.log` | — |
 
@@ -54,7 +55,8 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `marketdata.processNotifications` | one, until the root context ends | instrument map (RWMutex) |
 | `gex` background refresh | one, every 60 s | published snapshot (immutable, RWMutex) |
 | `strategy.Run` | one — **every trading decision runs here**, so decisions never race | book (StateManager), pending map |
-| `strategy.heartbeat` | one, read-only logging every 60 s | reads snapshots only |
+| `strategy.heartbeat` | one, read-only logging and P&L lines every `report_interval_sec` | reads snapshots only |
+| monitor API handlers | `net/http`, one per request | `View()`: snapshots + state the loop publishes after each cycle |
 | `main` signal watcher | one; `SIGUSR1` → `KillSwitch()` | — |
 
 Rules: every goroutine stops on a context; no lock is held across a network call; readers of shared state get copies (`StateManager` and `marketdata` return snapshots). The suite runs under `-race`.

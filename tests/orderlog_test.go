@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -204,5 +205,22 @@ func TestOrderLog_FileLoggerAppendsAndCloses(t *testing.T) {
 	}
 	if err := orders.NewWriterLogger(&bytes.Buffer{}, 0).Close(); err != nil {
 		t.Error("closing a writer logger is a no-op")
+	}
+}
+
+func TestOrderLog_SpreadWarningOnlyWherePaid(t *testing.T) {
+	var logs strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	defer slog.SetDefault(prev)
+
+	l := orders.NewWriterLogger(&bytes.Buffer{}, 0.05) // alert above 5 %
+	ctx := sampleContext()                             // spread 40 %
+	rec := orders.PendingOrderRecord{Instrument: "BTC-X"}
+	l.LogSubmit(rec, ctx)
+	l.LogCancelled(rec, ctx)
+	l.LogSkipped("no_expiry", ctx)
+	if n := strings.Count(logs.String(), "wide spread"); n != 1 {
+		t.Errorf("wide spread warned %d times, want once (submit only)", n)
 	}
 }
