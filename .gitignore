@@ -9,3 +9,4 @@ deribit_tc_export_v3.py
 .claude/settings.local.json
 coverage.out
 nohup.out
+monitor.out
