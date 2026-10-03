@@ -1,0 +1,37 @@
+sequenceDiagram
+    autonumber
+    participant Main as main.go
+    participant GW as Gateway
+    participant D as Deribit
+    participant MD as MarketData
+    participant GEX as GEX Manager
+    participant S as Strategy
+    participant SM as StateManager
+
+    Main->>Main: load .env + config.yaml, Validate(), RequireCredentials()
+    Main->>GW: Connect(ctx)
+    GW->>D: WebSocket dial
+    GW->>D: public/auth (client_credentials)
+    D-->>GW: access_token
+    GW->>D: public/set_heartbeat
+    Main->>MD: Start(ctx)
+    MD->>D: public/get_instruments (options chain)
+    MD->>D: public/get_volatility_index_data (1y daily DVOL)
+    MD->>GW: Subscribe(index, DVOL, tickers of tradable expiries)
+    GW->>D: public/subscribe (chunks of 50)
+    Main->>GEX: StartBackground(60 s)
+    GEX->>D: public/get_book_summary_by_currency
+    Main->>S: Run(ctx)
+    S->>D: public/get_tradingview_chart_data (seed daily closes)
+    S->>D: private/get_account_summary (log equity + margin)
+    Note over S,D: reconcile — the exchange is the source of truth
+    S->>D: private/cancel_all_by_currency (stale orders)
+    S->>D: private/get_positions
+    D-->>S: open short options
+    S->>SM: AddPosition + AddStrangle (regroup by expiry, match slot)
+    S->>S: waitForTickerData (index price > 0)
+    S->>S: rebalancePositions (resize to current budget)
+    S->>S: maybeOpenStrangles (fill vacant slots)
+    loop every eval_interval_ms
+        S->>S: evaluate()
+    end

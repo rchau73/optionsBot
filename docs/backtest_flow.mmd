@@ -1,18 +1,17 @@
 flowchart TD
-    A([bot --mode=backtest\n--from --to]) --> B[NewHistoricalFeed\nLoad + sort CSV by date·instrument\ndvol rolling window]
+    A([bot --mode=backtest\n--from --to]) --> B[NewHistoricalFeed\nLoad + sort CSV by date·instrument\nDVOL percentile, one value per day]
     B --> C[NewSimExecutor\nstartEquity=100000]
-    C --> D[NewEngine\nstate · gamma · margin · dvol]
+    C --> D[NewEngine\nstate · gamma · margin guard]
     D --> E[Group ticks by trading day]
 
     subgraph DAYLOOP["Daily Simulation Loop"]
         E --> F{For each trading day}
         F --> G[exec.UpdateTick all instruments\nprocess pending limit orders\n1-day expiry → market fallback]
-        G --> H[dvol.Push → update IV percentile]
-        H --> I[Update open positions\nMid + Greeks from ticks]
+        G --> I[Update open positions\nMid + Greeks from ticks]
         I --> J[gamma.PushPrice\ncheck netGamma]
         J --> K{Gamma action?}
         K -->|"Close puts/calls"| L[handleGamma\nmarket close + recordTrade]
-        K -->|"None"| M[EvaluateLeg each position\nRules 4.1-4.5 in priority order]
+        K -->|"None"| M[EvaluateLeg each position at the simulated date\nstop-loss → DTE → delta drift → ROI]
         L --> M
         M --> N{Decision for\neach position?}
         N -->|"Action"| O[handleRollout\nclose limit/market\nreopen if applicable]
@@ -26,7 +25,7 @@ flowchart TD
     R --> S[ResultWriter]
     S --> T["summary.json\ntrades.csv\nequity_curve.csv\ndrawdown.csv"]
 
-    A -->|"--sweep=true"| U[RunScenarioSweep\n5 param combos\nparallel goroutines]
+    A -->|"--sweep=true"| U[RunScenarioSweep\n5 scenarios applied as slots\nparallel goroutines · fails on any error]
     U --> V[scenario_comparison.csv\nranked by Sharpe]
     A -->|"walk-forward"| W[RunWalkForward\n4 windows 75/25 split\nflag overfit > 30% Sharpe drop]
     W --> X[walk_forward/\nwindow_N_train.json\nwindow_N_validate.json]

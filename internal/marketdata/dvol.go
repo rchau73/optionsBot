@@ -1,65 +1,80 @@
 package marketdata
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
-// DVOLTracker computes the rolling IV percentile from DVOL index history.
+// DVOLTracker ranks today's DVOL (Deribit's 30-day implied volatility index)
+// against the previous windowDays daily values, as a percentile.
+//
+// It keeps one value per UTC day: the live feed pushes DVOL about once a
+// second, and ranking against seconds instead of days would make the
+// percentile meaningless. The latest reading of a day replaces earlier ones.
 type DVOLTracker struct {
-	mu      sync.RWMutex
-	window  int
-	history []float64
+	mu         sync.RWMutex
+	windowDays int
+	days       []dvolDay // oldest first; the last entry is the current day
 }
 
-func NewDVOLTracker(window int) *DVOLTracker {
-	return &DVOLTracker{window: window}
+type dvolDay struct {
+	day   time.Time
+	value float64
 }
 
-// Push adds a new DVOL reading and trims history to the configured window.
-func (d *DVOLTracker) Push(value float64) {
+func NewDVOLTracker(windowDays int) *DVOLTracker {
+	return &DVOLTracker{windowDays: windowDays}
+}
+
+// Record stores value as the DVOL of at's UTC day. Readings older than the
+// current day are ignored.
+func (d *DVOLTracker) Record(at time.Time, value float64) {
+	day := at.UTC().Truncate(24 * time.Hour)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.history = append(d.history, value)
-	if len(d.history) > d.window {
-		d.history = d.history[len(d.history)-d.window:]
+
+	if n := len(d.days); n > 0 {
+		last := d.days[n-1].day
+		switch {
+		case day.Equal(last):
+			d.days[n-1].value = value
+			return
+		case day.Before(last):
+			return
+		}
+	}
+	d.days = append(d.days, dvolDay{day: day, value: value})
+	// Keep the window of previous days plus the current one.
+	if extra := len(d.days) - (d.windowDays + 1); extra > 0 {
+		d.days = append(d.days[:0], d.days[extra:]...)
 	}
 }
 
-// Percentile returns the percentile rank of the current value within the window.
-// Returns 50.0 when insufficient data is available.
+// Percentile returns the share (0–100) of previous days whose DVOL was below
+// the current day's. It returns 50 until at least one previous day is known.
 func (d *DVOLTracker) Percentile() float64 {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	n := len(d.history)
+	n := len(d.days)
 	if n < 2 {
 		return 50.0
 	}
-	current := d.history[n-1]
+	current := d.days[n-1].value
 	below := 0
-	for _, v := range d.history[:n-1] {
-		if v < current {
+	for _, p := range d.days[:n-1] {
+		if p.value < current {
 			below++
 		}
 	}
 	return float64(below) / float64(n-1) * 100.0
 }
 
-// Current returns the most recent DVOL value.
+// Current returns the latest DVOL value, or 0 before any reading.
 func (d *DVOLTracker) Current() float64 {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	if len(d.history) == 0 {
+	if len(d.days) == 0 {
 		return 0
 	}
-	return d.history[len(d.history)-1]
-}
-
-// AllowedMarginPct returns the IV-risk-model margin fraction based on percentile.
-func AllowedMarginPct(ivPercentile float64) float64 {
-	switch {
-	case ivPercentile >= 70:
-		return 0.35
-	case ivPercentile >= 30:
-		return 0.25
-	default:
-		return 0.15
-	}
+	return d.days[len(d.days)-1].value
 }

@@ -9,13 +9,31 @@ import (
 	"optionsbot/internal/config"
 )
 
+// validConfigBase is the smallest config that passes Validate. Test bodies
+// add keys that are not in it (YAML rejects duplicate keys).
+const validConfigBase = `underlying: BTC
+rollout_dte: 19
+max_margin_pct: 0.35
+stop_loss_multiplier: 2.0
+`
+
+// validSlots is appended when a test does not define its own slots.
+const validSlots = `dte_delta_matrix:
+  - dte: 45
+    deltas: [0.16]
+`
+
 // writeTempConfig writes a minimal config yaml to a temp file and returns its path.
 // The caller is responsible for cleanup via t.Cleanup or os.Remove.
 func writeTempConfig(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("underlying: BTC\n"+body), 0600); err != nil {
+	full := validConfigBase + body
+	if !strings.Contains(body, "dte_delta_matrix") {
+		full += validSlots
+	}
+	if err := os.WriteFile(path, []byte(full), 0600); err != nil {
 		t.Fatalf("writeTempConfig: %v", err)
 	}
 	return path
@@ -112,5 +130,131 @@ func TestLeverageConfig_OmittedLeverageDefaultsToOne(t *testing.T) {
 	}
 	if cfg.Leverage != 1.0 {
 		t.Errorf("Leverage = %.2f, want 1.0 when omitted", cfg.Leverage)
+	}
+}
+
+// ── Validation ───────────────────────────────────────────────────────────────
+
+func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
+	tests := []struct {
+		name, body, wantErr string
+	}{
+		{"delta not OTM", "dte_delta_matrix:\n  - dte: 45\n    deltas: [0.6]\n", "entry delta"},
+		{"zero delta", "dte_delta_matrix:\n  - dte: 45\n    deltas: [0]\n", "entry delta"},
+		{"slot inside rollout window", "dte_delta_matrix:\n  - dte: 15\n    deltas: [0.16]\n", "rollout_dte"},
+		{"no slots", "dte_delta_matrix: []\n", "no strangle slots"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadWithDummyCreds(t, writeTempConfig(t, tc.body))
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+
+	// Keys that live in the base are replaced wholesale.
+	raw := []struct {
+		name, from, to, wantErr string
+	}{
+		{"margin above 100%", "max_margin_pct: 0.35", "max_margin_pct: 1.5", "max_margin_pct"},
+		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
+		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
+	}
+	for _, tc := range raw {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			body := strings.Replace(validConfigBase+validSlots, tc.from, tc.to, 1)
+			if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := loadWithDummyCreds(t, path)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("want error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestConfigValidate_RejectsUnknownEnvironment(t *testing.T) {
+	t.Setenv("DERIBIT_ENV", "Live") // typo: must not silently fall back
+	_, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err == nil || !strings.Contains(err.Error(), "DERIBIT_ENV") {
+		t.Errorf("want DERIBIT_ENV error, got %v", err)
+	}
+}
+
+func TestConfigLoad_DefaultsToTestnet(t *testing.T) {
+	t.Setenv("DERIBIT_ENV", "")
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.IsLive() || cfg.Environment != "testnet" {
+		t.Errorf("environment = %q, want testnet by default", cfg.Environment)
+	}
+	if !strings.Contains(cfg.WSEndpoint(), "test.deribit.com") {
+		t.Errorf("testnet endpoint expected, got %s", cfg.WSEndpoint())
+	}
+}
+
+func TestConfigLoad_LiveNeedsExplicitOptIn(t *testing.T) {
+	t.Setenv("DERIBIT_ENV", "live")
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.IsLive() || cfg.WSEndpoint() != "wss://www.deribit.com/ws/api/v2" {
+		t.Errorf("live endpoint expected, got %s", cfg.WSEndpoint())
+	}
+}
+
+// A backtest never talks to Deribit, so it must load without API keys.
+func TestConfigLoad_CredentialsOnlyRequiredForTrading(t *testing.T) {
+	t.Setenv("DERIBIT_CLIENT_ID", "")
+	t.Setenv("DERIBIT_CLIENT_SECRET", "")
+	cfg, err := config.Load(writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatalf("config without credentials should load for backtests: %v", err)
+	}
+	if err := cfg.RequireCredentials(); err == nil {
+		t.Error("RequireCredentials must fail without keys")
+	}
+}
+
+func TestConfigLoad_MissingFileAndBadYAML(t *testing.T) {
+	if _, err := config.Load(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
+		t.Error("missing file should error")
+	}
+	bad := filepath.Join(t.TempDir(), "bad.yaml")
+	os.WriteFile(bad, []byte("underlying: [unclosed"), 0600)
+	if _, err := config.Load(bad); err == nil {
+		t.Error("malformed YAML should error")
+	}
+}
+
+func TestConfigLoad_PlatformSettingsFromEnv(t *testing.T) {
+	t.Setenv("DERIBIT_RATE_WS_MATCH_RPS", "3")
+	t.Setenv("DERIBIT_CIRCUIT_BREAKER_THRESHOLD", "9")
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RateLimit.WsMatchRPS != 3 || cfg.Circuit.Threshold != 9 {
+		t.Errorf("env overrides not applied: %+v %+v", cfg.RateLimit, cfg.Circuit)
+	}
+	if cfg.EvalIntervalMS <= 0 || cfg.OrderFillTimeoutSec <= 0 {
+		t.Error("logic defaults should be filled in")
+	}
+}
+
+// The shipped configs must always load and validate.
+func TestConfigLoad_RepositoryConfigsAreValid(t *testing.T) {
+	for _, name := range []string{"config_btc.yaml", "config_eth.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadWithDummyCreds(t, filepath.Join("..", name)); err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+		})
 	}
 }

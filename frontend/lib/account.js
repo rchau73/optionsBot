@@ -1,0 +1,51 @@
+// Pure helpers for the account / collateral panel.
+
+import { ageSeconds } from "./format";
+
+/** Deribit starts liquidation when maintenance margin reaches 100 % of margin balance. */
+export const LIQUIDATION_MM_PCT = 100;
+export const WARN_PCT = 50;
+export const DANGER_PCT = 80;
+
+/** "ok" below 50 %, "warn" from 50 %, "danger" from 80 % of margin balance. */
+export function marginLevel(pct) {
+  if (typeof pct !== "number" || !Number.isFinite(pct)) return "unknown";
+  if (pct >= DANGER_PCT) return "danger";
+  if (pct >= WARN_PCT) return "warn";
+  return "ok";
+}
+
+const MODEL_LABELS = {
+  cross_pm: "Cross · Portfolio margin",
+  cross_sm: "Cross · Standard margin",
+  segregated_pm: "Segregated · Portfolio margin",
+  segregated_sm: "Segregated · Standard margin",
+};
+
+export function marginModelLabel(model) {
+  if (!model) return "Unknown model";
+  return MODEL_LABELS[model] ?? model;
+}
+
+/**
+ * The bots share one Deribit account, so the panel shows a single account:
+ * the most recently updated snapshot any bot reported. Returns
+ * { snapshot, bot, ageSec, error } or null when no bot has account data.
+ */
+export function pickAccount(bots, now = Date.now()) {
+  let best = null;
+  for (const b of bots) {
+    const snap = b.account?.snapshot;
+    if (!snap) continue;
+    const t = Date.parse(snap.as_of);
+    if (!best || t > best.t) best = { t, snapshot: snap, bot: b.name, error: b.account.error || null };
+  }
+  if (!best) return null;
+  return { snapshot: best.snapshot, bot: best.bot, error: best.error, ageSec: ageSeconds(best.snapshot.as_of, now) };
+}
+
+/** The highest maintenance-margin usage across the totals and every asset. */
+export function worstMMPct(snapshot) {
+  const values = [snapshot?.totals?.mm_pct, ...(snapshot?.assets ?? []).map((a) => a.mm_pct)].filter((v) => typeof v === "number");
+  return values.length ? Math.max(...values) : null;
+}

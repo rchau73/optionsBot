@@ -1,10 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,6 +28,7 @@ type StrangleSlot struct {
 type Config struct {
 	// ── Loaded from config.yaml ───────────────────────────────────────────────
 	Underlying     string          `yaml:"underlying"`
+	StrategyID     string          `yaml:"strategy_id"` // names the strategy in orders.log and order labels
 	DTEDeltaMatrix []DTEDeltaEntry `yaml:"dte_delta_matrix"`
 	// Legacy fields — kept for backward-compatible configs and backtest scenario sweeps.
 	// Ignored by Slots() when dte_delta_matrix is set.
@@ -50,6 +51,7 @@ type Config struct {
 	SpreadAlertThreshold   float64 `yaml:"spread_alert_threshold"`
 
 	EvalIntervalMS      int     `yaml:"eval_interval_ms"`
+	ReportIntervalSec   int     `yaml:"report_interval_sec"` // heartbeat + P&L journal period
 	MaxDTEDeviation     int     `yaml:"max_dte_deviation"`
 	DeltaSlippage       float64 `yaml:"delta_slippage"`
 	MinTradeAmount      float64 `yaml:"min_trade_amount"`
@@ -68,6 +70,13 @@ type Config struct {
 	Retry        RetryConfig
 	Circuit      CircuitConfig
 	Heartbeat    HeartbeatConfig
+	// APIAddr is where the read-only monitor API listens (BOT_API_ADDR);
+	// empty disables it. Use 127.0.0.1:<port> locally, :<port> in Docker
+	// on the private compose network only.
+	APIAddr string
+	// AccountPollSec is how often the account/collateral summary is polled
+	// for the monitor (BOT_ACCOUNT_POLL_SEC, default 10).
+	AccountPollSec int
 }
 
 type Backtest struct {
@@ -81,8 +90,6 @@ type Backtest struct {
 type RateLimitConfig struct {
 	WsNonMatchRPS    float64
 	WsMatchRPS       float64
-	OrderOpsRPS      float64
-	RestRPS          float64
 	MaxSubscriptions int
 	SafetyFactor     float64
 }
@@ -112,12 +119,48 @@ func (c *Config) WSEndpoint() string {
 	return "wss://test.deribit.com/ws/api/v2"
 }
 
+// IsLive reports whether the bot trades real capital (DERIBIT_ENV=live).
 func (c *Config) IsLive() bool {
 	return c.Environment == "live"
 }
 
-func (c *Config) StartTime() time.Time {
-	return time.Now()
+// RequireCredentials checks that API credentials are present. Only live and
+// testnet trading need them; a backtest runs without any.
+func (c *Config) RequireCredentials() error {
+	if c.ClientID == "" || c.ClientSecret == "" {
+		return errors.New("DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET must be set in .env")
+	}
+	return nil
+}
+
+// Validate rejects strategy settings that would make the bot misbehave
+// silently, so a typo fails at startup instead of in the market.
+func (c *Config) Validate() error {
+	if c.Underlying == "" {
+		return errors.New("underlying is required (BTC or ETH)")
+	}
+	slots := c.Slots()
+	if len(slots) == 0 {
+		return errors.New("no strangle slots: set dte_delta_matrix")
+	}
+	for _, sl := range slots {
+		if sl.EntryDelta <= 0 || sl.EntryDelta >= 0.5 {
+			return fmt.Errorf("slot %d DTE: entry delta %.2f must be in (0, 0.5) — an OTM option", sl.TargetDTE, sl.EntryDelta)
+		}
+		if sl.TargetDTE <= c.RolloutDTE {
+			return fmt.Errorf("slot %d DTE is at or below rollout_dte %d: it would roll immediately", sl.TargetDTE, c.RolloutDTE)
+		}
+	}
+	if c.MaxMarginPct <= 0 || c.MaxMarginPct > 1 {
+		return fmt.Errorf("max_margin_pct %.2f must be in (0, 1]", c.MaxMarginPct)
+	}
+	if c.StopLossMultiplier <= 0 {
+		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
+	}
+	if c.Environment != "testnet" && c.Environment != "live" {
+		return fmt.Errorf("DERIBIT_ENV %q must be testnet or live", c.Environment)
+	}
+	return nil
 }
 
 // Slots returns the expanded list of (DTE, delta) strangle slots.
@@ -152,12 +195,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
-	// ── Platform: credentials (required, from .env) ───────────────────────────
+	// ── Platform: credentials (from .env; checked by RequireCredentials) ─────
 	cfg.ClientID = os.Getenv("DERIBIT_CLIENT_ID")
 	cfg.ClientSecret = os.Getenv("DERIBIT_CLIENT_SECRET")
-	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		return nil, fmt.Errorf("DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET must be set in .env")
-	}
 
 	// ── Platform: environment (from .env, defaults to testnet) ────────────────
 	cfg.Environment = os.Getenv("DERIBIT_ENV")
@@ -168,6 +208,9 @@ func Load(path string) (*Config, error) {
 	// ── Logic param defaults (config.yaml is authoritative; these are fallbacks)
 	if cfg.EvalIntervalMS <= 0 {
 		cfg.EvalIntervalMS = 35000
+	}
+	if cfg.ReportIntervalSec <= 0 {
+		cfg.ReportIntervalSec = 60
 	}
 	if cfg.MaxDTEDeviation <= 0 {
 		cfg.MaxDTEDeviation = 2
@@ -210,8 +253,6 @@ func Load(path string) (*Config, error) {
 	cfg.RateLimit = RateLimitConfig{
 		WsNonMatchRPS:    envFloat("DERIBIT_RATE_WS_NONMATCH_RPS", 20),
 		WsMatchRPS:       envFloat("DERIBIT_RATE_WS_MATCH_RPS", 8),
-		OrderOpsRPS:      envFloat("DERIBIT_RATE_ORDER_OPS_RPS", 5),
-		RestRPS:          envFloat("DERIBIT_RATE_REST_RPS", 10),
 		MaxSubscriptions: envInt("DERIBIT_RATE_MAX_SUBSCRIPTIONS", 1000),
 		SafetyFactor:     envFloat("DERIBIT_RATE_SAFETY_FACTOR", 0.80),
 	}
@@ -230,6 +271,13 @@ func Load(path string) (*Config, error) {
 		OpenSec:   envInt("DERIBIT_CIRCUIT_BREAKER_OPEN_SEC", 60),
 	}
 
+	// ── Platform: monitor API (from env) ──────────────────────────────────────
+	cfg.APIAddr = os.Getenv("BOT_API_ADDR")
+	cfg.AccountPollSec = envInt("BOT_ACCOUNT_POLL_SEC", 10)
+	if cfg.AccountPollSec < 2 {
+		cfg.AccountPollSec = 2 // keep the request rate negligible
+	}
+
 	// ── Platform: heartbeat & reconnect (from .env) ───────────────────────────
 	cfg.Heartbeat = HeartbeatConfig{
 		IntervalSec:            envInt("DERIBIT_HEARTBEAT_INTERVAL_SEC", 15),
@@ -237,6 +285,9 @@ func Load(path string) (*Config, error) {
 		ReconnectBackoffBaseMS: envInt("DERIBIT_RECONNECT_BACKOFF_BASE_MS", 1000),
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return &cfg, nil
 }
 

@@ -2,6 +2,7 @@ package backtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -24,7 +25,6 @@ type Engine struct {
 	state       *orders.StateManager
 	gamma       *strategy.GammaMonitor
 	marginGuard *strategy.MarginGuard
-	dvol        *marketdata.DVOLTracker
 
 	snapshots    []PortfolioSnapshot
 	trades       []TradeRecord
@@ -50,7 +50,6 @@ func NewEngine(cfg *config.Config, feed *HistoricalFeed, exec *SimExecutor) *Eng
 		state:       orders.NewStateManager(),
 		gamma:       strategy.NewGammaMonitor(cfg.GammaTrendLookbackDays, cfg.SwingPivotN),
 		marginGuard: strategy.NewMarginGuard(cfg.MaxMarginPct, cfg.Leverage),
-		dvol:        marketdata.NewDVOLTracker(cfg.IVPercentileWindow),
 		equity:      exec.equity,
 		peakEquity:  exec.equity,
 	}
@@ -115,7 +114,6 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 
 	for _, t := range ticks {
 		e.exec.UpdateTick(t)
-		e.dvol.Push(t.DVOLIndex)
 		underlyingPrice = t.UnderlyingPrice
 		ivPercentile = t.IVPercentile
 		instruments[t.Instrument] = &marketdata.Instrument{
@@ -170,7 +168,7 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 
 	// Per-position rollout checks
 	for _, pos := range e.state.AllPositions() {
-		dec := strategy.EvaluateLeg(pos,
+		dec := strategy.EvaluateLeg(pos, date,
 			e.cfg.RolloutDTE,
 			e.cfg.DeltaDriftThreshold,
 			e.cfg.ROITakeProfit,
@@ -178,13 +176,13 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 		)
 		if dec.Action == strategy.ActionNone {
 			slog.Debug("position hold", "instrument", pos.Instrument, "action", "none",
-				"dte", int(time.Until(pos.Expiry).Hours()/24), "delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
+				"dte", pos.DTEAt(date), "delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 				"roi_pct", fmt.Sprintf("%.2f", (pos.PremiumReceived-pos.CurrentMid)/pos.PremiumReceived*100))
 			continue
 		}
 		slog.Debug("position rollout decision", "instrument", pos.Instrument,
 			"action", dec.Action, "reason", dec.Reason,
-			"dte", int(time.Until(pos.Expiry).Hours()/24),
+			"dte", pos.DTEAt(date),
 			"delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 			"current_mid", fmt.Sprintf("%.4f", pos.CurrentMid),
 			"premium_received", fmt.Sprintf("%.4f", pos.PremiumReceived))
@@ -321,7 +319,7 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 			newExpiry, ok = strategy.NextMonthlyExpiry(date, expiries)
 		} else {
 			for _, e := range expiries {
-				if int(time.Until(e).Hours()/24) >= 25 {
+				if marketdata.DaysToExpiry(e, date) >= 25 {
 					newExpiry = e
 					ok = true
 					break
@@ -338,7 +336,7 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 		}
 		expiries := strategy.AvailableExpiries(instList)
 		for _, exp := range expiries {
-			if int(time.Until(exp).Hours()/24) >= 25 {
+			if marketdata.DaysToExpiry(exp, date) >= 25 {
 				e.openLeg(ctx, instList, exp, pos.OptionType, date, ivPct, posEntryDelta)
 				break
 			}
@@ -426,7 +424,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
-		expiry, ok := strategy.SelectExpiry(instruments, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE)
+		expiry, ok := strategy.SelectExpiry(instruments, date, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE)
 		if !ok {
 			slog.Debug("skip entry: no suitable expiry",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
@@ -450,7 +448,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 		}
 
 		marginNeeded := call.Mid + put.Mid
-		if !e.marginGuard.WithinLimit(e.state.TotalMarginUsed(), marginNeeded, equity, ivPct) {
+		if !e.marginGuard.WithinLimit(e.state.TotalMarginUsed(), marginNeeded, equity) {
 			slog.Debug("skip entry: margin limit",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"margin_needed", fmt.Sprintf("%.4f", marginNeeded),
@@ -603,34 +601,22 @@ func (e *Engine) buildSummary() Summary {
 func (e *Engine) Snapshots() []PortfolioSnapshot { return e.snapshots }
 func (e *Engine) Trades() []TradeRecord          { return e.trades }
 
-// RunScenarioSweep runs all scenarios in parallel and writes scenario_comparison.csv.
+// RunScenarioSweep runs all scenarios in parallel and writes
+// scenario_comparison.csv, ranked by Sharpe ratio. It fails if any scenario
+// fails, rather than writing a comparison with silent gaps.
 func RunScenarioSweep(cfg *config.Config, csvPath string, from, to time.Time, outputDir string) error {
 	scenarios := DefaultScenarios()
 	results := make([]ScenarioResult, len(scenarios))
+	errs := make([]error, len(scenarios))
 	var wg sync.WaitGroup
 
 	for i, sc := range scenarios {
 		wg.Add(1)
 		go func(i int, sc Scenario) {
 			defer wg.Done()
-
-			scCfg := *cfg
-			scCfg.EntryDelta = sc.EntryDelta
-			scCfg.TargetDTE = sc.TargetDTE
-			scCfg.RolloutDTE = sc.RolloutDTE
-			scCfg.StopLossMultiplier = sc.StopLossMulti
-			scCfg.ROITakeProfit = sc.ROITakeProfit
-
-			feed, err := NewHistoricalFeed(csvPath, from, to, cfg.IVPercentileWindow)
+			summary, err := runScenario(sc.Apply(cfg), csvPath, from, to)
 			if err != nil {
-				slog.Error("scenario feed error", "scenario", sc.Name, "err", err)
-				return
-			}
-			exec := NewSimExecutor(cfg.Backtest, 100000)
-			engine := NewEngine(&scCfg, feed, exec)
-			summary, err := engine.Run(context.Background())
-			if err != nil {
-				slog.Error("scenario run error", "scenario", sc.Name, "err", err)
+				errs[i] = fmt.Errorf("scenario %s: %w", sc.Name, err)
 				return
 			}
 			summary.Scenario = sc.Name
@@ -638,8 +624,10 @@ func RunScenarioSweep(cfg *config.Config, csvPath string, from, to time.Time, ou
 		}(i, sc)
 	}
 	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
 
-	// Sort by Sharpe descending
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].SharpeRatio > results[j].SharpeRatio
 	})
@@ -651,8 +639,21 @@ func RunScenarioSweep(cfg *config.Config, csvPath string, from, to time.Time, ou
 	return w.WriteScenarioComparison(results)
 }
 
+func runScenario(cfg *config.Config, csvPath string, from, to time.Time) (Summary, error) {
+	feed, err := NewHistoricalFeed(csvPath, from, to, cfg.IVPercentileWindow)
+	if err != nil {
+		return Summary{}, err
+	}
+	return NewEngine(cfg, feed, NewSimExecutor(cfg.Backtest, 100_000)).Run(context.Background())
+}
+
 // RunWalkForward splits the date range into N windows and validates each.
+// Each window trains on its first 75% and validates on the rest; a Sharpe
+// that degrades by more than 30% out of sample flags the window as overfit.
 func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, windows int, outputDir string) error {
+	if windows <= 0 || !to.After(from) {
+		return fmt.Errorf("walk-forward needs windows > 0 and to after from (windows=%d)", windows)
+	}
 	total := to.Sub(from)
 	windowSize := total / time.Duration(windows)
 	writer, err := NewResultWriter(outputDir)
@@ -666,31 +667,16 @@ func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, wind
 		winEnd := winStart.Add(windowSize)
 		splitPoint := winStart.Add(time.Duration(float64(windowSize) * 0.75))
 
-		// Train
-		trainFeed, err := NewHistoricalFeed(csvPath, winStart, splitPoint, cfg.IVPercentileWindow)
+		trainSummary, err := runScenario(cfg, csvPath, winStart, splitPoint)
 		if err != nil {
-			return fmt.Errorf("walk-forward train feed window %d: %w", i+1, err)
-		}
-		trainExec := NewSimExecutor(cfg.Backtest, 100000)
-		trainEngine := NewEngine(cfg, trainFeed, trainExec)
-		trainSummary, err := trainEngine.Run(context.Background())
-		if err != nil {
-			return err
+			return fmt.Errorf("walk-forward window %d train: %w", i+1, err)
 		}
 		if err := writer.WriteWindowResult(i+1, "train", trainSummary); err != nil {
 			return err
 		}
-
-		// Validate
-		valFeed, err := NewHistoricalFeed(csvPath, splitPoint, winEnd, cfg.IVPercentileWindow)
+		valSummary, err := runScenario(cfg, csvPath, splitPoint, winEnd)
 		if err != nil {
-			return fmt.Errorf("walk-forward validate feed window %d: %w", i+1, err)
-		}
-		valExec := NewSimExecutor(cfg.Backtest, 100000)
-		valEngine := NewEngine(cfg, valFeed, valExec)
-		valSummary, err := valEngine.Run(context.Background())
-		if err != nil {
-			return err
+			return fmt.Errorf("walk-forward window %d validate: %w", i+1, err)
 		}
 		if err := writer.WriteWindowResult(i+1, "validate", valSummary); err != nil {
 			return err

@@ -12,16 +12,22 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"optionsbot/internal/account"
+	"optionsbot/internal/api"
 	"optionsbot/internal/backtest"
 	"optionsbot/internal/config"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/hedge"
+	"optionsbot/internal/history"
 	"optionsbot/internal/logger"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
+
+// pnlHistoryPath is where the P&L history for the monitor chart is kept.
+const pnlHistoryPath = "data/pnl_history.jsonl"
 
 func main() {
 	// Flags
@@ -37,11 +43,6 @@ func main() {
 	// Load .env
 	if err := godotenv.Load(); err != nil {
 		slog.Warn("no .env file found")
-	}
-
-	// Guard: require explicit env var for live mode
-	if os.Getenv("DERIBIT_ENV") == "live" {
-		slog.Warn("LIVE MODE ENABLED — trading real capital")
 	}
 
 	// Init logger
@@ -61,47 +62,107 @@ func main() {
 		return
 	}
 
-	runLive(cfg)
+	if err := runLive(cfg); err != nil {
+		slog.Error("bot exited with error", "err", err)
+		os.Exit(1)
+	}
 }
 
-func runLive(cfg *config.Config) {
+// runLive wires the live components and runs the strategy until shutdown.
+// It returns instead of calling os.Exit so deferred cleanup always runs.
+func runLive(cfg *config.Config) error {
+	if err := cfg.RequireCredentials(); err != nil {
+		return err
+	}
+	if cfg.IsLive() {
+		slog.Warn("LIVE MODE ENABLED — trading real capital")
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	gw := gateway.New(cfg)
 	if err := gw.Connect(ctx); err != nil {
-		slog.Error("gateway connect failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("gateway connect: %w", err)
 	}
 	defer gw.Close()
 
+	// If the gateway gives up reconnecting, stop the bot cleanly and exit
+	// non-zero so the supervisor restarts it; startup reconciles positions.
+	gatewayErr := make(chan error, 1)
+	go func() {
+		select {
+		case err := <-gw.Fatal():
+			gatewayErr <- err
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	md := marketdata.New(cfg, gw)
 	if err := md.Start(ctx); err != nil {
-		slog.Error("marketdata start failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("marketdata start: %w", err)
 	}
 
 	exec := orders.NewExecutor(gw)
-	state := orders.NewStateManager()
 
 	orderLog, err := orders.NewLogger("orders.log", cfg.SpreadAlertThreshold)
 	if err != nil {
-		slog.Error("order logger init failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("order logger init: %w", err)
 	}
 	defer orderLog.Close()
 
-	hedgeRpt := hedge.New("hedge_report.json", cfg.HedgeReportThreshold)
-
-	strat := strategy.New(cfg, md, exec, state, orderLog, hedgeRpt)
-
-	// Wire up the GEX manager: fetches public/get_book_summary_by_currency every
-	// 60s and computes the market-wide gamma exposure (GEX) regime. The strategy
-	// uses this instead of net portfolio gamma to decide when to shed a strangle leg.
+	// The GEX manager polls public/get_book_summary_by_currency every 60s and
+	// classifies the market-wide gamma regime the strategy uses to shed legs.
 	gexMgr := gex.NewManager(gw, md, cfg.Underlying, 5, cfg.GammaRegimeBandPct, cfg.GEXStrikeRangePct)
 	gexMgr.StartBackground(ctx, 60*time.Second)
-	strat.SetGEXManager(gexMgr)
-	strat.LoadGammaPriceHistory(ctx)
+
+	// P&L history for the monitor chart; data/ is a mounted volume in Docker,
+	// so it survives restarts and rebuilds.
+	pnlHistory, err := history.Open(pnlHistoryPath, 366*24*time.Hour, time.Now())
+	if err != nil {
+		return fmt.Errorf("pnl history: %w", err)
+	}
+	defer pnlHistory.Close()
+
+	strat := strategy.New(cfg, strategy.Deps{
+		Market:   md,
+		Exchange: exec,
+		State:    orders.NewStateManager(),
+		Journal:  orderLog,
+		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
+		GEX:      gexMgr,
+		OI:       gexMgr,
+		History:  pnlHistory,
+	})
+
+	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)
+	// flattens every position at market and halts trading.
+	killCh := make(chan os.Signal, 1)
+	signal.Notify(killCh, syscall.SIGUSR1)
+	defer signal.Stop(killCh)
+	go func() {
+		select {
+		case <-killCh:
+			slog.Warn("kill switch triggered via SIGUSR1")
+			strat.KillSwitch()
+		case <-ctx.Done():
+		}
+	}()
+
+	// Read-only monitor API for the frontend (off unless BOT_API_ADDR is set).
+	if cfg.APIAddr != "" {
+		// Account/collateral summary for the monitor, cached: one read-only
+		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
+		acct := account.NewPoller(gw)
+		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
+		mon := api.New(strat, orderLog, api.WithPnLHistory(pnlHistory), api.WithAccount(acct))
+		go func() {
+			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
+				slog.Error("monitor API stopped", "addr", cfg.APIAddr, "err", err)
+			}
+		}()
+	}
 
 	slog.Info("bot starting",
 		"environment", cfg.WSEndpoint(),
@@ -118,6 +179,12 @@ func runLive(cfg *config.Config) {
 
 	if err := strat.Run(ctx); err != nil {
 		slog.Info("bot stopped", "reason", err)
+	}
+	select {
+	case err := <-gatewayErr:
+		return fmt.Errorf("gateway: %w", err)
+	default:
+		return nil
 	}
 }
 

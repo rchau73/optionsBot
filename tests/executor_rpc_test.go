@@ -44,13 +44,10 @@ func (f *fakeCaller) Call(_ context.Context, method string, params any, priority
 
 // rpcResponse builds a JSON-RPC response carrying the given raw JSON result.
 func rpcResponse(raw string) gateway.JSONRPCResponse {
-	var v any
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &v); err != nil {
-			panic("rpcResponse: invalid JSON in test fixture: " + err.Error())
-		}
+	if raw != "" && !json.Valid([]byte(raw)) {
+		panic("rpcResponse: invalid JSON in test fixture: " + raw)
 	}
-	return gateway.JSONRPCResponse{Result: v}
+	return gateway.JSONRPCResponse{Result: json.RawMessage(raw)}
 }
 
 const filledOrderJSON = `{"order":{"order_id":"o-1","filled_amount":0.1,"average_price":0.012,"order_state":"filled"}}`
@@ -226,7 +223,7 @@ func TestExecutor_CancelAndAmendUseExpectedMethods(t *testing.T) {
 	if err := exec.CancelAll(ctx, "BTC-X-C"); err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.CancelAllOrders(ctx); err != nil {
+	if err := exec.CancelAllOrders(ctx, "ETH"); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.AmendOrder(ctx, "o-1", 0.1, 0.012345); err != nil {
@@ -239,13 +236,18 @@ func TestExecutor_CancelAndAmendUseExpectedMethods(t *testing.T) {
 	}{
 		{"private/cancel", gateway.PriorityHigh},
 		{"private/cancel_all_by_instrument", gateway.PriorityHigh},
-		{"private/cancel_all", gateway.PriorityHigh},
+		{"private/cancel_all_by_currency", gateway.PriorityHigh},
 		{"private/edit", gateway.PriorityLow},
 	}
 	for i, w := range want {
 		if fc.calls[i].method != w.method || fc.calls[i].priority != w.priority {
 			t.Errorf("call %d = %s/%d, want %s/%d", i, fc.calls[i].method, fc.calls[i].priority, w.method, w.priority)
 		}
+	}
+	// Startup cleanup must stay within this bot's currency: an ETH bot
+	// restarting must not cancel a BTC bot's orders.
+	if got := fc.calls[2].params["currency"]; got != "ETH" {
+		t.Errorf("cancel-all currency = %v, want ETH", got)
 	}
 	if got := fc.calls[3].params["price"]; got != 0.0123 {
 		t.Errorf("amend price = %v, want 0.0123", got)

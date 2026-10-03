@@ -1,0 +1,40 @@
+sequenceDiagram
+    autonumber
+    participant S as Strategy (evaluate)
+    participant R as EvaluateLeg (pure)
+    participant MD as MarketData
+    participant X as Executor
+    participant D as Deribit
+    participant SM as StateManager
+    participant J as orders.log
+
+    S->>MD: refreshMarks (mid + greeks per position)
+    S->>R: EvaluateLeg(pos, now, rules)
+    Note over R: priority: stop-loss → DTE roll → delta drift → ROI take-profit
+    R-->>S: RolloutDecision
+
+    alt stop-loss (loss ≥ stop_loss_multiplier × premium)
+        S->>X: Submit buy MARKET (high priority, bypasses breaker)
+        X->>D: private/buy
+        D-->>X: filled_amount
+    else roll (DTE / delta drift / ROI)
+        S->>MD: GetInstrument → ask
+        S->>X: Submit buy LIMIT @ ask, immediate_or_cancel
+        X->>D: private/buy
+        D-->>X: filled_amount (final: IOC never rests)
+    end
+
+    S->>J: LogClose(closed part, P&L in coin + USD)
+    alt fully closed
+        S->>SM: RemovePosition + RemoveStrangleContaining
+    else partial fill
+        S->>SM: UpdatePositionQty(remaining) — stop-loss still protects it
+        Note over S: the rule fires again next cycle
+    end
+
+    Note over S,SM: Reopening is not part of the exit
+    alt one leg rolled (strangle now one-legged)
+        S->>S: repairIncompleteStrangles → same expiry, entry delta, size (GEX-gated)
+    else both legs gone
+        S->>S: slot is free → maybeOpenStrangles opens a fresh strangle
+    end

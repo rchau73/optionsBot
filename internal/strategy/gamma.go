@@ -44,11 +44,11 @@ type GammaDecision struct {
 type GammaMonitor struct {
 	lookbackDays  int
 	swingPivotN   int          // days required on each side to confirm a swing pivot
-	priceHistory  []pricePoint // tick-level history (kept for trimming/compat)
 	dailyCloses   []pricePoint // one entry per completed UTC day
 	lastTickDate  time.Time    // UTC day of the last processed tick
 	lastTickPrice float64      // most recent price (current day's running close)
-	gexMgr        *gex.Manager // may be nil before first GEX refresh
+	gexSrc        GEXSource    // nil until wired; Evaluate then reports no regime
+	lastAction    GammaAction  // last action announced, so changes are logged once
 }
 
 type pricePoint struct {
@@ -60,10 +60,9 @@ func NewGammaMonitor(lookbackDays, swingPivotN int) *GammaMonitor {
 	return &GammaMonitor{lookbackDays: lookbackDays, swingPivotN: swingPivotN}
 }
 
-// SetGEXManager wires the GEX manager after construction (avoids an import cycle
-// between strategy and gex during initialisation).
-func (g *GammaMonitor) SetGEXManager(mgr *gex.Manager) {
-	g.gexMgr = mgr
+// SetGEXSource wires the market-wide GEX snapshot provider.
+func (g *GammaMonitor) SetGEXSource(src GEXSource) {
+	g.gexSrc = src
 }
 
 // SeedDailyCloses pre-populates the daily close history on startup so trend and
@@ -99,13 +98,6 @@ func (g *GammaMonitor) PushPrice(price float64) {
 		g.lastTickDate = today
 	}
 	g.lastTickPrice = price
-
-	// Maintain tick-level history for anything that still reads it.
-	g.priceHistory = append(g.priceHistory, pricePoint{now, price})
-	tickCutoff := now.AddDate(0, 0, -g.lookbackDays-1)
-	for len(g.priceHistory) > 1 && g.priceHistory[0].timestamp.Before(tickCutoff) {
-		g.priceHistory = g.priceHistory[1:]
-	}
 }
 
 // ResolveGammaAction is the pure decision function for which strangle leg (if any)
@@ -160,7 +152,13 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 
 	dec.Action = ResolveGammaAction(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, trend)
 
-	if dec.Action != GammaActionNone {
+	// Announce a regime action when it changes, not on every cycle it persists.
+	changed := dec.Action != g.lastAction
+	g.lastAction = dec.Action
+	if changed && dec.Action == GammaActionNone {
+		slog.Info("gex_regime_cleared", "event", "gex_regime_cleared", "regime", snap.Regime, "trend", dec.Trend)
+	}
+	if changed && dec.Action != GammaActionNone {
 		slog.Warn("gex_regime_trigger",
 			"event", "gex_regime_trigger",
 			"regime", snap.Regime,
@@ -187,10 +185,10 @@ func (g *GammaMonitor) Trend() string { return g.trendLabel() }
 func (g *GammaMonitor) CurrentGEXSnapshot() *gex.Snapshot { return g.gexSnapshot() }
 
 func (g *GammaMonitor) gexSnapshot() *gex.Snapshot {
-	if g.gexMgr == nil {
+	if g.gexSrc == nil {
 		return nil
 	}
-	return g.gexMgr.Snapshot()
+	return g.gexSrc.Snapshot()
 }
 
 func (g *GammaMonitor) trendLabel() string {

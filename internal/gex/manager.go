@@ -3,13 +3,25 @@ package gex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/marketdata"
 )
+
+// rpcCaller is the slice of the gateway the manager uses.
+type rpcCaller interface {
+	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
+}
+
+// instrumentSource provides the option chain (strikes and expiries).
+type instrumentSource interface {
+	AllInstruments() []*marketdata.Instrument
+}
 
 // Manager fetches open-interest data from public/get_book_summary_by_currency,
 // merges it with the instrument chain already held by the MarketData manager,
@@ -18,8 +30,8 @@ import (
 // Refresh is called on a background timer by the strategy — not on every tick,
 // because the book_summary endpoint counts against the non-matching rate limiter.
 type Manager struct {
-	gw             *gateway.Gateway
-	md             *marketdata.Manager
+	gw             rpcCaller
+	md             instrumentSource
 	underlying     string
 	nExpiries      int     // number of nearest expiries to include (default 5)
 	bandPct        float64 // hysteresis band around gamma flip; 0 disables
@@ -27,6 +39,7 @@ type Manager struct {
 
 	mu         sync.RWMutex
 	snapshot   *Snapshot
+	oi         *OISnapshot
 	lastRegime string // last published regime, used for hysteresis
 }
 
@@ -35,7 +48,7 @@ type Manager struct {
 // bandPct is the hysteresis band around the gamma flip (e.g. 0.01 = 1%).
 // strikeRangePct limits GEX inputs to strikes within ±rangePct of spot
 // (e.g. 0.25 = ±25%); 0 includes all strikes.
-func NewManager(gw *gateway.Gateway, md *marketdata.Manager, underlying string, nExpiries int, bandPct, strikeRangePct float64) *Manager {
+func NewManager(gw rpcCaller, md instrumentSource, underlying string, nExpiries int, bandPct, strikeRangePct float64) *Manager {
 	if nExpiries <= 0 {
 		nExpiries = 5
 	}
@@ -50,11 +63,27 @@ func NewManager(gw *gateway.Gateway, md *marketdata.Manager, underlying string, 
 }
 
 // Snapshot returns the most recent computed GEX snapshot, or nil if Refresh
-// has not succeeded yet.
+// has not succeeded yet. Each refresh publishes a new snapshot, so the
+// returned value is never modified afterwards; callers must not modify it.
 func (m *Manager) Snapshot() *Snapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.snapshot
+}
+
+// OISnapshot is the open interest per instrument from the last refresh.
+// Like Snapshot it is immutable once published.
+type OISnapshot struct {
+	AsOf         time.Time
+	ByInstrument map[string]float64 // instrument name → open interest (contracts)
+}
+
+// OpenInterest returns the open interest from the last successful refresh,
+// or nil before the first one. It is at most one refresh interval old.
+func (m *Manager) OpenInterest() *OISnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.oi
 }
 
 // Refresh fetches the current book summary, recomputes GEX across the top
@@ -62,7 +91,7 @@ func (m *Manager) Snapshot() *Snapshot {
 func (m *Manager) Refresh(ctx context.Context) error {
 	summaries, err := m.fetchBookSummary(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("gex refresh: %w", err)
 	}
 
 	// Build lookup: instrument_name → (OI, markIV, spot)
@@ -70,13 +99,20 @@ func (m *Manager) Refresh(ctx context.Context) error {
 		oi, markIV, spot float64
 	}
 	lookup := make(map[string]sumRow, len(summaries))
+	oi := &OISnapshot{AsOf: time.Now(), ByInstrument: make(map[string]float64, len(summaries))}
 	var latestSpot float64
 	for _, s := range summaries {
 		lookup[s.InstrumentName] = sumRow{oi: s.OpenInterest, markIV: s.MarkIV / 100, spot: s.UnderlyingPrice}
+		oi.ByInstrument[s.InstrumentName] = s.OpenInterest
 		if s.UnderlyingPrice > 0 {
 			latestSpot = s.UnderlyingPrice
 		}
 	}
+	// Open interest is useful on its own (journal snapshots), even when no
+	// GEX profile can be built from it.
+	m.mu.Lock()
+	m.oi = oi
+	m.mu.Unlock()
 
 	// Get instrument chain from MarketData and group by expiry
 	instruments := m.md.AllInstruments()
@@ -108,7 +144,7 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	for exp := range byExpiry {
 		expiries = append(expiries, exp)
 	}
-	sortAsc(expiries)
+	sort.Slice(expiries, func(i, j int) bool { return expiries[i].Before(expiries[j]) })
 	if len(expiries) > m.nExpiries {
 		expiries = expiries[:m.nExpiries]
 	}
@@ -227,22 +263,9 @@ func (m *Manager) fetchBookSummary(ctx context.Context) ([]bookSummaryRow, error
 		return nil, err
 	}
 
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-
 	var rows []bookSummaryRow
-	if err := json.Unmarshal(b, &rows); err != nil {
-		return nil, err
+	if err := json.Unmarshal(resp.Result, &rows); err != nil {
+		return nil, fmt.Errorf("decode book summary: %w", err)
 	}
 	return rows, nil
-}
-
-func sortAsc(ts []time.Time) {
-	for i := 1; i < len(ts); i++ {
-		for j := i; j > 0 && ts[j].Before(ts[j-1]); j-- {
-			ts[j], ts[j-1] = ts[j-1], ts[j]
-		}
-	}
 }

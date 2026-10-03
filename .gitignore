@@ -1,6 +1,6 @@
 .env
 hedge_report.json
-data*
+/data/
 bot.log
 orders.log
 deribit_tc_export_v3.py
@@ -8,3 +8,4 @@ deribit_tc_export_v3.py
 /bot
 .claude/settings.local.json
 coverage.out
+nohup.out

@@ -1,0 +1,182 @@
+classDiagram
+    direction LR
+
+    class Config {
+        +string Underlying
+        +[]DTEDeltaEntry DTEDeltaMatrix
+        +int RolloutDTE
+        +float DeltaDriftThreshold
+        +float ROITakeProfit
+        +float StopLossMultiplier
+        +float MaxMarginPct
+        +float Leverage
+        +string Environment
+        +Slots() []StrangleSlot
+        +Validate() error
+        +RequireCredentials() error
+    }
+    class StrangleSlot {
+        +int TargetDTE
+        +float EntryDelta
+    }
+    Config --> "1..*" StrangleSlot : Slots()
+
+    class Instrument {
+        +string Name
+        +float Strike
+        +time Expiry
+        +string OptionType
+        +float MinTradeAmount
+        +[]TickSizeStep TickSizeSteps
+        +float Bid
+        +float Ask
+        +float Mid
+        +Greeks Greeks
+        +EffectiveTick(price) float
+    }
+    class Greeks {
+        +float Delta
+        +float Gamma
+        +float Theta
+        +float Vega
+        +float Rho
+        +float IV
+    }
+    Instrument --> Greeks
+
+    class StateManager {
+        -map positions
+        -map strangles
+        +AddPosition(p)
+        +GetPosition(id) snapshot
+        +AllPositions() snapshots
+        +AddStrangle(s)
+        +SetStrangleLeg(id, type, p)
+        +RemoveStrangleContaining(posID)
+        +UpdatePositionQty(id, qty, premium)
+        +UpdatePositionMid(id, mid, greeks)
+        +TotalNetDelta() NetGamma() NetVega() NetTheta()
+    }
+    class Strangle {
+        +string ID
+        +int TargetDTE
+        +float EntryDelta
+        +Position CallLeg
+        +Position PutLeg
+    }
+    class Position {
+        +string ID
+        +string Instrument
+        +string OptionType
+        +float Strike
+        +time Expiry
+        +float Qty
+        +float EntryPrice
+        +float PremiumReceived
+        +float CurrentMid
+        +Greeks CurrentGreeks
+        +DTEAt(now) int
+        +MtMPnL() float
+        +ROIPct() float
+        +LossPct() float
+    }
+    StateManager "1" o-- "*" Position
+    StateManager "1" o-- "*" Strangle
+    Strangle --> "0..1" Position : call leg
+    Strangle --> "0..1" Position : put leg
+
+    class pendingStrangle {
+        +string id
+        +int targetDTE
+        +float entryDelta
+        +string repairStrangleID
+        +int adjustments
+        +allLegsDone() bool
+    }
+    class pendingLeg {
+        +string orderID
+        +float qty
+        +float limitPrice
+        +float filledQty
+        +float fillPrice
+        +bool done
+    }
+    pendingStrangle --> "0..1" pendingLeg : call
+    pendingStrangle --> "0..1" pendingLeg : put
+    pendingStrangle ..> Strangle : finalize creates / repairs
+
+    class Order {
+        +string Instrument
+        +string Direction
+        +string OrderType
+        +float Qty
+        +float LimitPrice
+        +string TimeInForce
+        +string TriggerReason
+    }
+    class Fill {
+        +string OrderID
+        +float FillPrice
+        +float Qty
+    }
+    Order ..> Fill : Executor.Submit
+
+    class RolloutDecision {
+        +RolloutAction Action
+        +string Reason
+        +string LegID
+    }
+    class GammaDecision {
+        +GammaAction Action
+        +string Regime
+        +float GammaFlip
+        +string Trend
+    }
+    class Snapshot {
+        +string Regime
+        +float RegimeScore
+        +float GammaFlip
+        +bool GammaFlipFound
+        +float Spot
+    }
+    GammaDecision ..> Snapshot : built from
+    RolloutDecision ..> Position : EvaluateLeg(pos, now)
+
+    class OrderLog {
+        +string Event
+        +string StrategyID
+        +SlotRef Slot
+        +string Instrument
+        +string TriggerReason
+        +float FillPrice
+        +MarketSnapshot Market
+        +MarketContext Portfolio
+        +string CloseReason
+        +float PnL
+        +float PnLUSD
+    }
+    class MarketSnapshot {
+        +float Spot
+        +float DVOL
+        +float IVPercentile
+        +float OptionIV
+        +float Skew
+        +string Moneyness
+        +float DistanceToStrikePct
+        +float SpreadPct
+        +float Intrinsic
+        +float StrikeOI
+        +int StrikeOIRank
+        +float MaxPainStrike
+        +string GEXRegime
+    }
+    class PnLRecord {
+        +string StrategyID
+        +SlotRef Slot
+        +float Realised
+        +float Unrealised
+        +float TotalUSD
+        +int OpenLegs
+    }
+    OrderLog --> MarketSnapshot : market
+    Snapshot ..> MarketSnapshot : regime, flip

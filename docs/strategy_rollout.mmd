@@ -1,14 +1,13 @@
 flowchart TD
-    A([Position]) --> B{Rule 4.5\nLossPct ≥ 200%\nstopLossMultiplier}
-    B -->|"YES"| C["🔴 ActionStopLoss\nTrigger = stop_loss_200pct\nBuy market — immediate\nEvaluate remaining solo leg"]
-    B -->|"No"| D{Rule 4.1\nDTE ≤ rolloutDTE\ndefault 19}
-    D -->|"YES"| E["🟡 ActionRollNextMonth\nTrigger = rollout_19dte\nClose ENTIRE strangle\nLimit first → market if 1-day timeout\nReopen on next monthly expiry"]
-    D -->|"No"| F{"Rule 4.2\nabs(δ) < 0.10\nAND DTE ≥ 25"}
-    F -->|"YES"| G["🟢 ActionRollSameLeg\nTrigger = rollout_delta_drift\nClose THIS leg only\nLimit buy at favorable price\nReopen at δ=0.16 ≥25 DTE expiry"]
-    F -->|"No"| H{"Rule 4.3\nROIPct ≥ 50%\nAND DTE ≥ 25"}
-    H -->|"YES"| I["🔵 ActionRollSameLeg\nTrigger = rollout_roi\nClose THIS leg only\nLimit buy — continuously updated\nReopen at δ=0.16 ≥25 DTE expiry"]
-    H -->|"No"| J["⚪ ActionNone\nContinue holding"]
-
+    A(["EvaluateLeg(pos, now, …)"]) --> B{"loss ≥ stop_loss_multiplier<br/>× premium received?"}
+    B -- "yes" --> C["ActionStopLoss<br/>buy MARKET, high priority<br/>partial fill → remainder stays tracked"]
+    B -- "no" --> D{"DTE ≤ rollout_dte?"}
+    D -- "yes" --> E["ActionRollNextMonth<br/>close leg: IOC limit at ask<br/>both legs closed → slot freed → fresh entry"]
+    D -- "no" --> F{"|delta| < delta_drift_threshold<br/>and DTE ≥ 25?"}
+    F -- "yes" --> G["ActionRollSameLeg (delta drift)<br/>close leg: IOC limit at ask<br/>repair reopens at entry delta, same expiry"]
+    F -- "no" --> H{"ROI ≥ roi_take_profit<br/>and DTE ≥ 25?"}
+    H -- "yes" --> I["ActionRollSameLeg (take profit)<br/>close leg: IOC limit at ask<br/>repair reopens at entry delta, same expiry"]
+    H -- "no" --> J["ActionNone — keep holding"]
     style C fill:#ffcdd2,stroke:#c62828,color:#000
     style E fill:#fff9c4,stroke:#f9a825,color:#000
     style G fill:#e8f5e9,stroke:#2e7d32,color:#000

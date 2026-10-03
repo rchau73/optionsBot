@@ -1,0 +1,14 @@
+---
+config:
+  themeVariables:
+    xyChart:
+      plotColorPalette: "#c62828"
+  xyChart:
+    width: 1100
+    height: 520
+---
+xychart-beta
+    title "Short strangle at expiry — P&L in USD (illustrative: 0.1 BTC, put 88k / call 115k, $270 premium)"
+    x-axis "BTC price at expiry (USD, thousands)" [70, 75, 80, 85, 88, 90, 95, 100, 105, 110, 115, 120, 125, 130]
+    y-axis "P&L (USD)" -1600 --> 400
+    line [-1530, -1030, -530, -30, 270, 270, 270, 270, 270, 270, 270, -230, -730, -1230]

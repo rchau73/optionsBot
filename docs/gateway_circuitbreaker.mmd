@@ -1,11 +1,12 @@
 stateDiagram-v2
     [*] --> Closed
-
-    Closed --> Closed : Success() — failures reset to 0
-    Closed --> Open : Failure() — failures ≥ threshold (default 5)
-
-    Open --> Open : Allow() before openUntil — return ErrCircuitOpen
-    Open --> HalfOpen : Allow() after openUntil elapses (default 60s)\nBot safe-idle during Open: no new orders placed
-
-    HalfOpen --> Closed : Success() — resume normal operation
-    HalfOpen --> Open : Failure() — reopen, reset timer
+    Closed --> Closed : Success() — any reply, including business rejections, resets failures
+    Closed --> Open : Failure() × threshold (default 5)<br/>write error · reply timeout · exchange-health error (10028, 10040, 10041, 11051, 13888)
+    Open --> Open : Allow() before open period ends → ErrCircuitOpen (low priority only)
+    Open --> HalfOpen : open period elapsed (default 60 s)
+    HalfOpen --> Closed : Success()
+    HalfOpen --> Open : Failure()
+    note right of Open
+        High-priority requests (stop-loss, kill switch,
+        GEX close) are never blocked by the breaker.
+    end note

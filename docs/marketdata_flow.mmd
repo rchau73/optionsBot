@@ -1,36 +1,19 @@
 flowchart TD
-    subgraph STARTUP["Start — called once at bot init"]
-        A[public/get_instruments\ncurrency=BTC kind=option] --> B[Parse 1040+ instruments\nname · strike · expiry\nticSize · minTradeAmount]
-        B --> C[selectRelevantExpiries\ntargetDTE ± maxDTEDeviation\n+ next 3 future expiries for rollout]
-        C --> D{For each instrument}
-        D -->|"expiry in relevant set"| E[Add ticker.INST.100ms\nto channels list]
-        D -->|"not relevant → skip"| D
-        E --> F[Subscribe DVOL channel]
-        F --> G[gw.Subscribe\nbatches of 50\n~200-600 channels instead of 1041]
-        G --> H[go processNotifications]
+    subgraph START["Start (once)"]
+        A["public/get_instruments<br/>strike · expiry · tick steps · min lot"] --> B["public/get_volatility_index_data<br/>seed 1 year of daily DVOL"]
+        B --> C["selectRelevantExpiries<br/>per slot: NearestExpiry in ExpiryWindow<br/>(same rule as the strategy, rollout_dte floor)<br/>+ next 3 expiries for rollouts"]
+        C --> D["Subscribe: deribit_volatility_index.btc_usd<br/>deribit_price_index.btc_usd<br/>ticker.INSTRUMENT.100ms for relevant expiries"]
+        D --> E["go processNotifications"]
     end
-
-    subgraph NOTIFICATIONS["processNotifications — goroutine"]
-        I[gw.Notifications] --> J{channel prefix?}
-        J -->|"deribit_volatility_index.*"| K[dvol.Push volatility\nrolling 252-day history]
-        J -->|"ticker.*"| L[handleTicker]
-        J -->|"other"| I
+    subgraph PUSH["processNotifications"]
+        F["gateway Notifications()"] --> G{"channel prefix"}
+        G -- "deribit_volatility_index." --> H["DVOLTracker.Record(now, value)<br/>one value per UTC day"]
+        G -- "deribit_price_index." --> I["underlyingPrice = price"]
+        G -- "ticker." --> J["update instrument:<br/>bid · ask · mid (mark if no quotes)<br/>greeks · IV · DVOL · IV percentile"]
     end
-
-    subgraph TICKER["handleTicker"]
-        L --> M[Unmarshal bid/ask\nunderlyingPrice\ngreeks delta/gamma/theta/vega/rho\nmarkIV]
-        M --> N{instrument\nin cache?}
-        N -->|"No"| I
-        N -->|"Yes"| O[Update cache\nbid · ask\nmid = bid+ask/2\ngreeks · IV = markIV/100\ndvolIndex · ivPercentile\nupdatedAt]
-        O --> P[Emit Tick to tickCh]
-        P --> Q([Strategy onTick])
+    subgraph READ["Readers (strategy, GEX)"]
+        K["GetInstrument / AllInstruments → copies<br/>UnderlyingPrice · IVPercentile"]
     end
-
-    subgraph DVOL["DVOLTracker"]
-        K --> R[Append value\ntrim to window=252]
-        R --> S[percentile =\ncount below current\n÷ n-1 × 100]
-        S --> T{Band}
-        T -->|"≥ 70"| U[35% margin]
-        T -->|"30–69"| V[25% margin]
-        T -->|"< 30"| W[15% margin]
-    end
+    J --> K
+    I --> K
+    H --> K

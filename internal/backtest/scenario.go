@@ -1,5 +1,7 @@
 package backtest
 
+import "optionsbot/internal/config"
+
 // Scenario defines a parameter combination for a sweep run.
 type Scenario struct {
 	Name          string
@@ -39,4 +41,21 @@ func DefaultScenarios() []Scenario {
 			RolloutDTE: 19, StopLossMulti: 3.0, ROITakeProfit: 0.75,
 		},
 	}
+}
+
+// Apply returns a copy of cfg with this scenario's parameters. The slots are
+// rebuilt as a dte_delta_matrix, because Slots() ignores the legacy
+// target_dte/entry_delta fields whenever a matrix is configured.
+func (sc Scenario) Apply(cfg *config.Config) *config.Config {
+	out := *cfg
+	out.DTEDeltaMatrix = make([]config.DTEDeltaEntry, len(sc.TargetDTE))
+	for i, dte := range sc.TargetDTE {
+		out.DTEDeltaMatrix[i] = config.DTEDeltaEntry{DTE: dte, Deltas: []float64{sc.EntryDelta}}
+	}
+	out.EntryDelta = sc.EntryDelta
+	out.TargetDTE = sc.TargetDTE
+	out.RolloutDTE = sc.RolloutDTE
+	out.StopLossMultiplier = sc.StopLossMulti
+	out.ROITakeProfit = sc.ROITakeProfit
+	return &out
 }

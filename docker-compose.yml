@@ -11,6 +11,8 @@ services:
       - ./data/btc:/app/data
     environment:
       - TZ=America/Sao_Paulo
+      # Read-only monitor API, reachable only on the compose network (not published).
+      - BOT_API_ADDR=:8081
 
   bot-eth:
     build: .
@@ -21,3 +23,15 @@ services:
       - ./data/eth:/app/data
     environment:
       - TZ=America/Sao_Paulo
+      - BOT_API_ADDR=:8082
+
+  # Live monitor UI: http://localhost:3000 (bound to this machine only).
+  monitor:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on: [bot-btc, bot-eth]
+    environment:
+      - BOT_APIS=btc=http://bot-btc:8081,eth=http://bot-eth:8082
+      - MONITOR_POLL_MS=1000   # page refresh; polling never touches Deribit rate limits
+    ports:
+      - "127.0.0.1:3000:3000"

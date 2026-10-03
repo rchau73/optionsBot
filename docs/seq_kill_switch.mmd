@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant Main as main.go
+    participant S as Strategy.Run
+    participant X as Executor
+    participant D as Deribit
+    participant SM as StateManager
+
+    Op->>Main: kill -USR1 pid  /  docker kill -s USR1 container
+    Main->>S: KillSwitch() (idempotent)
+    S->>S: leave the evaluate loop
+    Note over S: detached context, 2 min budget — a SIGTERM cannot abort the flatten
+    S->>X: CancelAllOrders(currency)
+    X->>D: private/cancel_all_by_currency
+    S->>S: drop pending entries
+    loop up to 3 passes while positions remain
+        S->>X: buy MARKET each position (high priority)
+        X->>D: private/buy
+        D-->>X: filled_amount
+        S->>SM: remove or reduce (partial fills retried)
+    end
+    alt anything left open
+        S->>S: log ERROR per position — close manually
+    end
+    S->>S: idle until stopped (exiting would let Docker restart into trading)
+    Op->>Main: docker compose stop / SIGTERM
+    S-->>Main: ErrKillSwitch

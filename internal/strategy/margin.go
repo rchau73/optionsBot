@@ -13,39 +13,47 @@ func NewMarginGuard(maxMarginPct, leverage float64) *MarginGuard {
 }
 
 // AllowedMargin returns the maximum PM initial margin allowed, computed as
-// max_margin_pct × leverage × total account equity. The IV percentile is accepted
-// for call-site compatibility but no longer overrides the configured cap — Deribit's
-// Portfolio Margin model already incorporates volatility into its requirements.
-func (g *MarginGuard) AllowedMargin(equity, _ float64) float64 {
+// max_margin_pct × leverage × total account equity. Volatility is deliberately
+// not an input: Deribit's Portfolio Margin model already prices it in.
+func (g *MarginGuard) AllowedMargin(equity float64) float64 {
 	return equity * g.maxMarginPct * g.leverage
 }
 
 // WithinLimit returns true if adding newMarginCost to currentMargin stays within
 // the cap. equity is total account equity (balance + unrealized PnL).
-func (g *MarginGuard) WithinLimit(currentMargin, newMarginCost, equity, _ float64) bool {
-	return currentMargin+newMarginCost <= g.AllowedMargin(equity, 0)
+func (g *MarginGuard) WithinLimit(currentMargin, newMarginCost, equity float64) bool {
+	return currentMargin+newMarginCost <= g.AllowedMargin(equity)
 }
 
-// ComputeQtyFromIM derives the position size from a PM margin target using leverage.
+// ComputeQtyFromIM derives the position size from a PM margin target.
 //
 // callIM and putIM are the incremental initial margins Deribit estimates for one
-// exchMin-sized lot of the call and put respectively (from private/get_margins,
-// estimated separately per leg). The function scales up to as many whole lots as
-// fit within targetMargin, with a floor of one lot.
+// exchMin-sized lot of the call and put respectively (from private/get_margins).
+// The function scales up to as many whole lots as fit within targetMargin, with
+// a floor of one lot.
 //
-// Falls back to one lot (exchMin) when:
-//   - exchMin ≤ 0 (degenerate instrument data)
-//   - imPerUnit ≤ 0 (the strangle reduces or neutralises portfolio PM — avoid
-//     unbounded sizing; open one lot at minimum exposure)
+// Three cases for imPerUnit = callIM + putIM:
+//   - imPerUnit > 0: normal PM data — size by floor(targetMargin / imPerUnit)
+//   - imPerUnit == 0: PM data unavailable (e.g. testnet ETH) — size by
+//     floor(targetMargin / exchMin), treating the budget as direct notional
+//   - imPerUnit < 0: strangle reduces portfolio PM (netting benefit) — cap at
+//     exchMin to avoid unbounded sizing
 func ComputeQtyFromIM(exchMin, targetMargin, callIM, putIM float64) float64 {
 	if exchMin <= 0 {
 		return exchMin
 	}
 	imPerUnit := callIM + putIM
-	if imPerUnit <= 0 {
+	if imPerUnit < 0 {
+		// Netting benefit: adding more lots would reduce PM indefinitely — cap at minimum.
 		return exchMin
 	}
-	units := math.Floor(targetMargin / imPerUnit)
+	var units float64
+	if imPerUnit == 0 {
+		// No PM data from exchange: use budget as direct notional (budget ÷ lot size).
+		units = math.Floor(targetMargin / exchMin)
+	} else {
+		units = math.Floor(targetMargin / imPerUnit)
+	}
 	if units < 1 {
 		units = 1
 	}

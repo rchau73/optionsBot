@@ -9,39 +9,15 @@ import (
 	"optionsbot/internal/marketdata"
 )
 
-// SelectExpiry returns the lowest-DTE expiry (closest to today) that falls
-// within [max(targetDTE-maxDeviationDays, rolloutDTE+1), targetDTE+maxDeviationDays].
-// rolloutDTE is the rollout trigger threshold: opening a position at or below it
-// would cause an immediate rollout on the next evaluation cycle, so it acts as a
-// hard lower bound that overrides the deviation window.
-// Returns false when no expiry qualifies — normal mid-month, not an error.
-func SelectExpiry(instruments []*marketdata.Instrument, targetDTE, maxDeviationDays, rolloutDTE int) (time.Time, bool) {
-	now := time.Now()
-	lo := targetDTE - maxDeviationDays
-	if lo <= rolloutDTE {
-		lo = rolloutDTE + 1
-	}
-	hi := targetDTE + maxDeviationDays
-
-	var best time.Time
-	bestDTE := math.MaxInt32
-
-	seen := map[time.Time]struct{}{}
-	for _, inst := range instruments {
-		if _, ok := seen[inst.Expiry]; ok {
-			continue
-		}
-		seen[inst.Expiry] = struct{}{}
-		dte := int(math.Round(inst.Expiry.Sub(now).Hours() / 24))
-		if dte < lo || dte > hi {
-			continue
-		}
-		if dte < bestDTE {
-			bestDTE = dte
-			best = inst.Expiry
-		}
-	}
-	return best, !best.IsZero()
+// SelectExpiry returns the nearest expiry whose days-to-expiry, counted from
+// now, falls within [max(targetDTE-maxDeviationDays, rolloutDTE+1), targetDTE+maxDeviationDays].
+// rolloutDTE is a hard lower bound: an entry at or below it would roll on the
+// very next cycle. now is a parameter (not time.Now) so the backtest can pass
+// the simulated date. Returns false when no expiry qualifies — normal
+// mid-month, not an error.
+func SelectExpiry(instruments []*marketdata.Instrument, now time.Time, targetDTE, maxDeviationDays, rolloutDTE int) (time.Time, bool) {
+	lo, hi := marketdata.ExpiryWindow(targetDTE, maxDeviationDays, rolloutDTE)
+	return marketdata.NearestExpiry(instruments, now, lo, hi, nil)
 }
 
 // SelectStrike picks the OTM strike with |delta| closest to targetDelta for the given
@@ -95,43 +71,17 @@ func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optTyp
 	return best, nil
 }
 
-// SelectExpiryFallback finds the nearest available expiry within
-// [max(targetDTE-maxDev, rolloutDTE+1), targetDTE+maxDev] that is NOT already in
-// occupiedExpiries. Applies the same rolloutDTE lower bound as SelectExpiry.
+// SelectExpiryFallback is SelectExpiry restricted to expiries not in
+// occupiedExpiries. It is used when the primary expiry already holds a
+// strangle at the same delta.
 func SelectExpiryFallback(
 	instruments []*marketdata.Instrument,
+	now time.Time,
 	targetDTE, maxDeviationDays, rolloutDTE int,
 	occupiedExpiries map[time.Time]bool,
 ) (time.Time, bool) {
-	now := time.Now()
-	lo := targetDTE - maxDeviationDays
-	if lo <= rolloutDTE {
-		lo = rolloutDTE + 1
-	}
-	hi := targetDTE + maxDeviationDays
-
-	var best time.Time
-	bestDTE := math.MaxInt32
-
-	seen := map[time.Time]struct{}{}
-	for _, inst := range instruments {
-		if _, ok := seen[inst.Expiry]; ok {
-			continue
-		}
-		seen[inst.Expiry] = struct{}{}
-		if occupiedExpiries[inst.Expiry] {
-			continue
-		}
-		dte := int(math.Round(inst.Expiry.Sub(now).Hours() / 24))
-		if dte < lo || dte > hi {
-			continue
-		}
-		if dte < bestDTE {
-			bestDTE = dte
-			best = inst.Expiry
-		}
-	}
-	return best, !best.IsZero()
+	lo, hi := marketdata.ExpiryWindow(targetDTE, maxDeviationDays, rolloutDTE)
+	return marketdata.NearestExpiry(instruments, now, lo, hi, occupiedExpiries)
 }
 
 // AvailableExpiries returns sorted unique expiries across all instruments.

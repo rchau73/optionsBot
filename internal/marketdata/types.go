@@ -56,16 +56,7 @@ func (i *Instrument) EffectiveTick(price float64) float64 {
 	return 0.0001
 }
 
-// DTE returns calendar days to expiry.
-func (i *Instrument) DTE() int {
-	d := time.Until(i.Expiry).Hours() / 24
-	if d < 0 {
-		return 0
-	}
-	return int(d)
-}
-
-// Tick is emitted by both the live feed and the backtest feed.
+// Tick is one row of historical option data replayed by the backtest feed.
 type Tick struct {
 	Timestamp       time.Time
 	Instrument      string

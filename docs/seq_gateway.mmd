@@ -1,0 +1,36 @@
+sequenceDiagram
+    autonumber
+    participant C as Caller (Executor / MarketData / GEX)
+    participant Q as PriorityQueue
+    participant W as dispatchLoop (writer)
+    participant RL as RateLimiter + Breaker
+    participant D as Deribit
+    participant R as readLoop (reader)
+
+    C->>Q: Call(method, params, priority) → Enqueue (deadline = now + 30 s)
+    W->>Q: Next() — high lane first
+    W->>W: drop if deadline passed (never send a stale order)
+    W->>RL: Wait(pool by method) · breaker check (skipped for high priority)
+    W->>W: register pending[id] + timeout timer
+    W->>D: write frame
+    Note over W: the writer moves on — it never waits for the reply
+    D-->>R: response {id, result | error}
+    R->>R: takePending(id) → stop timer
+    alt business rejection (e.g. price_too_low)
+        R->>RL: breaker Success (exchange is healthy)
+    else exchange unhealthy (10028, 11051, 13888 …)
+        R->>RL: breaker Failure
+    end
+    R-->>C: reply on the caller's channel
+
+    opt read-only method rate-limited
+        C->>Q: retry with full-jitter backoff (orders are never retried)
+    end
+
+    Note over R,D: connection drops
+    R->>R: cancel connection goroutines
+    R-->>C: every in-flight call fails fast with ErrConnectionLost
+    R->>R: reconnect(rootCtx): backoff, dial, auth, re-subscribe
+    alt reconnect attempts exhausted
+        R-->>C: Gateway.Fatal() → main shuts down, supervisor restarts, reconcile rebuilds state
+    end

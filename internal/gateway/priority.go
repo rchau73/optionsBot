@@ -1,7 +1,10 @@
 package gateway
 
-// PriorityQueue drains the high-priority channel before the low-priority channel.
-// This ensures stop-loss and kill-switch calls are never starved by market data polling.
+import "context"
+
+// PriorityQueue holds outbound requests in two lanes. Next always drains the
+// high lane first, so stop-loss and kill-switch calls are never starved by
+// market-data traffic.
 type PriorityQueue struct {
 	high chan Request
 	low  chan Request
@@ -14,33 +17,35 @@ func NewPriorityQueue(highBuf, lowBuf int) *PriorityQueue {
 	}
 }
 
-func (pq *PriorityQueue) Enqueue(req Request) {
+// Enqueue adds req to its lane. It blocks while the lane is full and gives up
+// when ctx is cancelled, so a stalled connection cannot hang the caller forever.
+func (pq *PriorityQueue) Enqueue(ctx context.Context, req Request) error {
+	lane := pq.low
 	if req.Priority == PriorityHigh {
-		pq.high <- req
-	} else {
-		pq.low <- req
+		lane = pq.high
+	}
+	select {
+	case lane <- req:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
-// Next returns the next request, preferring high-priority, falling back to low.
-func (pq *PriorityQueue) Next() <-chan Request {
-	out := make(chan Request, 1)
-	go func() {
-		select {
-		case req := <-pq.high:
-			out <- req
-			return
-		default:
-		}
-		select {
-		case req := <-pq.high:
-			out <- req
-		case req := <-pq.low:
-			out <- req
-		}
-	}()
-	return out
+// Next blocks until a request is available, preferring the high lane.
+// It returns false when ctx is cancelled.
+func (pq *PriorityQueue) Next(ctx context.Context) (Request, bool) {
+	select {
+	case req := <-pq.high:
+		return req, true
+	default:
+	}
+	select {
+	case req := <-pq.high:
+		return req, true
+	case req := <-pq.low:
+		return req, true
+	case <-ctx.Done():
+		return Request{}, false
+	}
 }
-
-func (pq *PriorityQueue) HighCh() <-chan Request { return pq.high }
-func (pq *PriorityQueue) LowCh() <-chan Request  { return pq.low }

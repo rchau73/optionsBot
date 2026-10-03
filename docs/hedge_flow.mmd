@@ -1,20 +1,10 @@
 flowchart TD
-    A([Each tick where\nposition state changes]) --> B["hedgeRpt.MaybeReport\nnetDelta · underlyingPrice\nsuggestedInstrument"]
-
-    B --> C{First report\nor lastDelta == 0?}
-    C -->|"Yes"| F[Emit report]
-    C -->|"No"| D{change = abs delta - lastDelta / lastDelta\n> threshold default 5%?}
-    D -->|"No"| Z([No output])
-    D -->|"Yes"| E[Update lastDelta]
-    E --> F
-
-    F --> G[uncovered = abs netDelta]
-    G --> H["Split 5 tranches\n5% → 0.05 × uncovered\n10% → 0.10 × uncovered\n15% → 0.15 × uncovered\n30% → 0.30 × uncovered\n40% → 0.40 × uncovered"]
-    H --> I[Build Report struct\ntimestamp · price · netDelta\nuncoveredQty · tranches]
-    I --> J[Write hedge_report.json\noverwrite previous]
-    I --> K[slog.Info hedge_report\nto bot.log]
-
-    L["⚠ REPORT ONLY\nBot NEVER places\nfutures orders\nAll hedging is manual"]
-
-    style L fill:#fff3e0,stroke:#e65100,color:#000
-    style Z fill:#f5f5f5,stroke:#9e9e9e,color:#000
+    A(["each evaluate cycle"]) --> B["StateManager.TotalNetDelta()<br/>short book: −Σ delta × qty"]
+    B --> C{"|net delta| ≥ hedge_report_threshold?"}
+    C -- "no" --> Z(["nothing written"])
+    C -- "yes" --> D{"first report, or moved ≥ threshold<br/>since the last one?"}
+    D -- "no" --> Z
+    D -- "yes" --> E["BuildReport<br/>side: buy if net delta < 0, else sell<br/>tranches 5 · 10 · 15 · 30 · 40 %"]
+    E --> F["write hedge_report.json + log hedge_report"]
+    N["REPORT ONLY — the bot never places hedge orders"]
+    style N fill:#fff3e0,stroke:#e65100,color:#000
