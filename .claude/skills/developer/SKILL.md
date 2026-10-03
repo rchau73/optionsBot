@@ -49,14 +49,23 @@ The next big piece is a web page to track and monitor outcomes: open strangles a
 
 - **Backend:** a new `internal/api` package (plain `net/http` + `encoding/json`; no web framework unless there's a real need) exposing **read-only** JSON endpoints, wired in `main.go` like every other component. Handlers stay thin: they read from `orders.StateManager`, the order log, `gex.Manager`, or backtest results through small interfaces — never from Deribit directly, and never through the gateway's high-priority queue.
 - **Read-only by default.** Anything that changes trading state from the browser (kill switch, close a strangle, change a parameter) is a product decision: it needs authentication, an explicit confirmation step and an audit log line, and it goes through the same code path the bot already uses (e.g. the existing kill switch), never a parallel one. Propose it; don't sneak it in.
+- **Layout is the option-bot-specialist's call.** The current spec is a **single page** showing every strategy (one monitor per strategy, drill-down Book → Strategy → Slot → Structure → Leg → Orders, filters, grouping, charts) — see `.claude/skills/option-bot-specialist/references/dashboard.md`. Build that page from components; don't split it into separate routes unless the spec changes.
 - **Frontend:** `frontend/` is a **Next.js** app (App Router) styled with **Tailwind CSS** — no Vite, no MUI. Recharts for charts, dayjs for dates, Jest (`next/jest`) + Testing Library for tests. Layout:
-  - `app/` — routes only: `layout.jsx` (shell, nav) and one `page.jsx` per screen (Positions, Orders, Risk/Greeks, GEX, Backtests). Page and layout files only compose components; logic lives elsewhere.
+  - `app/` — routes only: `layout.jsx` (shell) and the single monitor `page.jsx`, which only composes panel components (KPI strip, strategy board, risk map, charts, drill table, event tape). Logic lives elsewhere; drill level, filters and grouping live in the URL query string.
   - `components/` — presentational components, one per file (tables, stat tiles, charts).
   - `hooks/` — client-side data hooks (polling, loading/error state).
   - `lib/` — `api.js` (the **only** place that calls the Go API) and pure logic (P&L math, bucketing, formatting) with tests.
 - **Next.js is the frontend only.** The Go bot stays the single backend: don't add business logic or data storage in Next.js route handlers. Server Components may fetch the Go API on the server (which keeps the Go API off the public network); interactive or auto-refreshing views are Client Components (`"use client"`) using a hook.
 - **Live updates:** start with polling at a sensible interval; move to Server-Sent Events only when polling is clearly not enough. A WebSocket from the dashboard is not needed for a single-user monitor.
 - **Exposure:** bind to localhost (or behind the existing Docker network) by default. Never expose the dashboard publicly without auth — it shows positions and account equity.
+
+## Working with the option-bot-specialist
+
+The `option-bot-specialist` skill owns trading ideas, risk limits, backtest verdicts and the dashboard spec; you own how they are built. When it hands you a **Strategy Research Request**:
+- Treat it as the spec for your normal workflow: analyse, propose a plan (files, tests, logging, live-order impact), wait for confirmation, then build.
+- Push back on anything that conflicts with the guard rails above (e.g. a hedge that bypasses the gateway, a strategy without coverage rules, a request that would blow the rate-limit budget) — say so with numbers rather than silently adapting.
+- Build new strategies as independent decision loops that share the gateway, market data and exchange-reconciled book, tag every order with the strategy's `label`, and enforce book-level risk limits across strategies.
+- Return results in the shape its Backtest Review expects (summary, trades, equity/drawdown, walk-forward, per-regime breakdown) and say plainly when the data is synthetic or incomplete.
 
 ## Go checklist
 
