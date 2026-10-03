@@ -199,7 +199,11 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 	e.maybeOpenStrangles(ctx, instList, date, ivPercentile)
 
 	// Snapshot equity
-	e.equity, _ = e.exec.AccountEquity(ctx, e.cfg.Underlying)
+	if eq, err := e.exec.AccountEquity(ctx, e.cfg.Underlying); err == nil {
+		e.equity = eq
+	} else {
+		slog.Warn("backtest: equity snapshot failed, keeping previous value", "date", date, "err", err)
+	}
 	if e.equity > e.peakEquity {
 		e.peakEquity = e.equity
 	}
@@ -429,7 +433,6 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 				"available_expiries", len(expiries))
 			continue
 		}
-		_ = expiries
 
 		call, err := strategy.SelectStrike(instruments, expiry, "call", slot.EntryDelta, e.cfg.DeltaSlippage)
 		if err != nil {
@@ -641,7 +644,10 @@ func RunScenarioSweep(cfg *config.Config, csvPath string, from, to time.Time, ou
 		return results[i].SharpeRatio > results[j].SharpeRatio
 	})
 
-	w := NewResultWriter(outputDir)
+	w, err := NewResultWriter(outputDir)
+	if err != nil {
+		return err
+	}
 	return w.WriteScenarioComparison(results)
 }
 
@@ -649,7 +655,10 @@ func RunScenarioSweep(cfg *config.Config, csvPath string, from, to time.Time, ou
 func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, windows int, outputDir string) error {
 	total := to.Sub(from)
 	windowSize := total / time.Duration(windows)
-	writer := NewResultWriter(outputDir)
+	writer, err := NewResultWriter(outputDir)
+	if err != nil {
+		return err
+	}
 	var wfResults []WalkForwardResult
 
 	for i := 0; i < windows; i++ {
@@ -668,7 +677,9 @@ func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, wind
 		if err != nil {
 			return err
 		}
-		_ = writer.WriteWindowResult(i+1, "train", trainSummary)
+		if err := writer.WriteWindowResult(i+1, "train", trainSummary); err != nil {
+			return err
+		}
 
 		// Validate
 		valFeed, err := NewHistoricalFeed(csvPath, splitPoint, winEnd, cfg.IVPercentileWindow)
@@ -681,7 +692,9 @@ func RunWalkForward(cfg *config.Config, csvPath string, from, to time.Time, wind
 		if err != nil {
 			return err
 		}
-		_ = writer.WriteWindowResult(i+1, "validate", valSummary)
+		if err := writer.WriteWindowResult(i+1, "validate", valSummary); err != nil {
+			return err
+		}
 
 		degradation := 0.0
 		overfit := false

@@ -3,6 +3,7 @@ package orders
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -39,22 +40,66 @@ func ParsePriceTooLow(msg string) float64 {
 // tickSize is the minimum price increment for Deribit BTC/ETH options (0.0001).
 const tickSize = 0.0001
 
-// RoundToTick rounds a price to the nearest Deribit tick increment,
-// eliminating floating-point artifacts like 107*0.0001 = 0.010700000000000001.
-func RoundToTick(price float64) float64 {
-	n := math.Round(price / tickSize)
-	return math.Round(n*tickSize*1e8) / 1e8
-}
+// RoundToTick rounds a price to the nearest default Deribit tick (0.0001).
+func RoundToTick(price float64) float64 { return RoundToStep(price, tickSize) }
 
-func roundToTick(price float64) float64 { return RoundToTick(price) }
+// rpcCaller is the slice of the gateway the executor needs. Depending on this
+// interface instead of *gateway.Gateway lets tests drive the executor with a fake.
+type rpcCaller interface {
+	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
+}
 
 // Executor submits, amends and cancels orders against the live Deribit API.
 type Executor struct {
-	gw *gateway.Gateway
+	gw rpcCaller
 }
 
-func NewExecutor(gw *gateway.Gateway) *Executor {
+// NewExecutor returns an Executor that sends every request through gw.
+func NewExecutor(gw rpcCaller) *Executor {
 	return &Executor{gw: gw}
+}
+
+// ErrForbidden is returned when Deribit rejects a call for missing API key
+// scopes or invalid credentials. Callers back off instead of retrying every tick.
+var ErrForbidden = errors.New("forbidden: check API key scopes")
+
+// deribitForbiddenCode is Deribit's error code for "forbidden".
+const deribitForbiddenCode = 13021
+
+// call sends one JSON-RPC request and decodes its result into T.
+func call[T any](ctx context.Context, gw rpcCaller, method string, params any, priority int) (T, error) {
+	var out T
+	resp, err := gw.Call(ctx, method, params, priority)
+	if err != nil {
+		var rpcErr *gateway.RPCError
+		if errors.As(err, &rpcErr) && (rpcErr.Code == deribitForbiddenCode || rpcErr.Message == "forbidden") {
+			return out, fmt.Errorf("%s: %w: %w", method, ErrForbidden, err)
+		}
+		return out, fmt.Errorf("%s: %w", method, err)
+	}
+	if err := decodeResult(resp, &out); err != nil {
+		return out, fmt.Errorf("%s: decode result: %w", method, err)
+	}
+	return out, nil
+}
+
+// decodeResult unmarshals the result field of a JSON-RPC response into out.
+func decodeResult(resp gateway.JSONRPCResponse, out any) error {
+	b, err := json.Marshal(resp.Result)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, out)
+}
+
+// submitResult is the subset of private/buy and private/sell we use.
+type submitResult struct {
+	Order struct {
+		OrderID    string  `json:"order_id"`
+		FilledAmt  float64 `json:"filled_amount"`
+		AvgPrice   float64 `json:"average_price"`
+		OrderState string  `json:"order_state"`
+	} `json:"order"`
 }
 
 // Submit places an order and returns the Fill on success.
@@ -64,7 +109,7 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 		method = "private/sell"
 	}
 
-	params := map[string]interface{}{
+	params := map[string]any{
 		"instrument_name": order.Instrument,
 		"amount":          order.Qty,
 		"type":            order.OrderType,
@@ -74,18 +119,11 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 		tick = tickSize
 	}
 	if order.OrderType == TypeLimit {
-		// Round to tick, then eliminate floating-point residue (e.g. 107*0.0001 = 0.010700000000000001).
-		n := math.Round(order.LimitPrice / tick)
-		params["price"] = math.Round(n*tick*1e8) / 1e8
+		params["price"] = RoundToStep(order.LimitPrice, tick)
 		params["post_only"] = false
 	}
 
-	priority := gateway.PriorityLow
-	if order.TriggerReason == TriggerStopLoss200Pct ||
-		order.TriggerReason == TriggerKillSwitch ||
-		order.TriggerReason == TriggerGammaClose {
-		priority = gateway.PriorityHigh
-	}
+	priority := submitPriority(order.TriggerReason)
 
 	slog.Debug("submitting order",
 		"method", method,
@@ -97,15 +135,15 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 		"reason", order.TriggerReason,
 	)
 
-	resp, err := e.gw.Call(ctx, method, params, priority)
+	result, err := call[submitResult](ctx, e.gw, method, params, priority)
 	if err != nil && order.OrderType == TypeLimit {
 		// price_too_low (code 10005): the ask in our instrument cache was stale by
 		// up to 100ms and the exchange minimum ticked up. Deribit tells us the floor
 		// in the error message — round up to the next valid tick and retry once.
-		if rpcErr, ok := err.(*gateway.RPCError); ok && rpcErr.Code == 10005 {
+		var rpcErr *gateway.RPCError
+		if errors.As(err, &rpcErr) && rpcErr.Code == deribitPriceTooLowCode {
 			if minPrice := ParsePriceTooLow(rpcErr.Message); minPrice > 0 {
-				n := math.Ceil(minPrice / tick)
-				adjusted := math.Round(n*tick*1e8) / 1e8
+				adjusted := CeilToStep(minPrice, tick)
 				slog.Info("submit: price_too_low — retrying at exchange minimum",
 					"instrument", order.Instrument,
 					"original_price", params["price"],
@@ -113,7 +151,7 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 					"adjusted_price", adjusted,
 				)
 				params["price"] = adjusted
-				resp, err = e.gw.Call(ctx, method, params, priority)
+				result, err = call[submitResult](ctx, e.gw, method, params, priority)
 			}
 		}
 	}
@@ -122,29 +160,14 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 			order.Instrument, order.Qty, params["price"], err)
 	}
 
-	resultBytes, err := json.Marshal(resp.Result)
-	if err != nil {
-		return Fill{}, err
-	}
-
-	var result struct {
-		Order struct {
-			OrderID    string  `json:"order_id"`
-			FilledAmt  float64 `json:"filled_amount"`
-			AvgPrice   float64 `json:"average_price"`
-			OrderState string  `json:"order_state"`
-		} `json:"order"`
-	}
-	if err := json.Unmarshal(resultBytes, &result); err != nil {
-		return Fill{}, err
-	}
-
 	slog.Info("order submitted",
 		"order_id", result.Order.OrderID,
 		"instrument", order.Instrument,
 		"direction", order.Direction,
 		"type", order.OrderType,
 		"qty", order.Qty,
+		"filled_qty", result.Order.FilledAmt,
+		"state", result.Order.OrderState,
 		"reason", order.TriggerReason,
 	)
 
@@ -156,9 +179,25 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 	}, nil
 }
 
+// deribitPriceTooLowCode is Deribit's error code for a limit price below the
+// exchange minimum; the message carries the minimum (see ParsePriceTooLow).
+const deribitPriceTooLowCode = 10005
+
+// submitPriority sends risk-reducing orders (stop-loss, kill switch, gamma
+// close) through the gateway's high-priority queue so they jump ahead of
+// market-data and entry traffic.
+func submitPriority(reason string) int {
+	switch reason {
+	case TriggerStopLoss200Pct, TriggerKillSwitch, TriggerGammaClose:
+		return gateway.PriorityHigh
+	default:
+		return gateway.PriorityLow
+	}
+}
+
 // Cancel cancels an open order by order ID.
 func (e *Executor) Cancel(ctx context.Context, orderID string) error {
-	_, err := e.gw.Call(ctx, "private/cancel", map[string]interface{}{
+	_, err := call[any](ctx, e.gw, "private/cancel", map[string]any{
 		"order_id": orderID,
 	}, gateway.PriorityHigh)
 	return err
@@ -166,7 +205,7 @@ func (e *Executor) Cancel(ctx context.Context, orderID string) error {
 
 // CancelAll cancels all open orders for the given instrument.
 func (e *Executor) CancelAll(ctx context.Context, instrument string) error {
-	_, err := e.gw.Call(ctx, "private/cancel_all_by_instrument", map[string]interface{}{
+	_, err := call[any](ctx, e.gw, "private/cancel_all_by_instrument", map[string]any{
 		"instrument_name": instrument,
 	}, gateway.PriorityHigh)
 	return err
@@ -176,32 +215,20 @@ func (e *Executor) CancelAll(ctx context.Context, instrument string) error {
 // Called on startup because the bot is the sole manager of this account;
 // any orders left from before a restart are stale and must be cleared.
 func (e *Executor) CancelAllOrders(ctx context.Context) error {
-	_, err := e.gw.Call(ctx, "private/cancel_all", map[string]any{}, gateway.PriorityHigh)
+	_, err := call[any](ctx, e.gw, "private/cancel_all", map[string]any{}, gateway.PriorityHigh)
 	return err
 }
 
 // GetOrderState returns the current fill status of a single order.
 func (e *Executor) GetOrderState(ctx context.Context, orderID string) (OrderStateInfo, error) {
-	resp, err := e.gw.Call(ctx, "private/get_order_state", map[string]interface{}{
+	return call[OrderStateInfo](ctx, e.gw, "private/get_order_state", map[string]any{
 		"order_id": orderID,
 	}, gateway.PriorityLow)
-	if err != nil {
-		return OrderStateInfo{}, err
-	}
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return OrderStateInfo{}, err
-	}
-	var s OrderStateInfo
-	if err := json.Unmarshal(b, &s); err != nil {
-		return OrderStateInfo{}, err
-	}
-	return s, nil
 }
 
 // AmendOrder updates the price (and optionally qty) of an open limit order.
 func (e *Executor) AmendOrder(ctx context.Context, orderID string, qty, price float64) error {
-	_, err := e.gw.Call(ctx, "private/edit", map[string]interface{}{
+	_, err := call[any](ctx, e.gw, "private/edit", map[string]any{
 		"order_id": orderID,
 		"amount":   qty,
 		"price":    RoundToTick(price),
@@ -211,76 +238,46 @@ func (e *Executor) AmendOrder(ctx context.Context, orderID string, qty, price fl
 
 // GetPositions returns all open option positions for the given currency.
 func (e *Executor) GetPositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	resp, err := e.gw.Call(ctx, "private/get_positions", map[string]interface{}{
+	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
 		"currency": currency,
 		"kind":     "option",
 	}, gateway.PriorityLow)
-	if err != nil {
-		return nil, err
-	}
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-	var positions []RawPosition
-	if err := json.Unmarshal(b, &positions); err != nil {
-		return nil, err
-	}
-	return positions, nil
 }
 
 // GetAccountSummary returns the full account summary including margin details.
 func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (AccountSummary, error) {
-	resp, err := e.gw.Call(ctx, "private/get_account_summary", map[string]interface{}{
+	return call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
 		"currency": currency,
 		"extended": true,
 	}, gateway.PriorityLow)
-	if err != nil {
-		return AccountSummary{}, err
-	}
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return AccountSummary{}, err
-	}
-	var s AccountSummary
-	if err := json.Unmarshal(b, &s); err != nil {
-		return AccountSummary{}, err
-	}
-	return s, nil
+}
+
+// chartData is the subset of public/get_tradingview_chart_data we use.
+type chartData struct {
+	Status string    `json:"status"`
+	Ticks  []int64   `json:"ticks"`
+	Close  []float64 `json:"close"`
 }
 
 // GetDailyCloses fetches daily closing prices for the given instrument going back
 // the requested number of days. Uses Deribit's TradingView chart data endpoint.
 func (e *Executor) GetDailyCloses(ctx context.Context, instrument string, days int) ([]DailyClose, error) {
 	now := time.Now().UTC()
-	startMs := now.AddDate(0, 0, -days).UnixMilli()
-	endMs := now.UnixMilli()
-
-	resp, err := e.gw.Call(ctx, "public/get_tradingview_chart_data", map[string]interface{}{
+	result, err := call[chartData](ctx, e.gw, "public/get_tradingview_chart_data", map[string]any{
 		"instrument_name": instrument,
-		"start_timestamp": startMs,
-		"end_timestamp":   endMs,
+		"start_timestamp": now.AddDate(0, 0, -days).UnixMilli(),
+		"end_timestamp":   now.UnixMilli(),
 		"resolution":      "1D",
 	}, gateway.PriorityLow)
 	if err != nil {
-		return nil, fmt.Errorf("get_tradingview_chart_data %s: %w", instrument, err)
-	}
-
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Status string    `json:"status"`
-		Ticks  []int64   `json:"ticks"`
-		Close  []float64 `json:"close"`
-	}
-	if err := json.Unmarshal(b, &result); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("daily closes for %s: %w", instrument, err)
 	}
 	if result.Status != "ok" {
-		return nil, fmt.Errorf("get_tradingview_chart_data %s: status=%s", instrument, result.Status)
+		return nil, fmt.Errorf("daily closes for %s: status=%s", instrument, result.Status)
+	}
+	if len(result.Ticks) != len(result.Close) {
+		return nil, fmt.Errorf("daily closes for %s: %d timestamps but %d closes",
+			instrument, len(result.Ticks), len(result.Close))
 	}
 
 	closes := make([]DailyClose, len(result.Ticks))
@@ -297,45 +294,20 @@ func (e *Executor) GetDailyCloses(ctx context.Context, instrument string, days i
 // private/get_margins estimates for a given instrument, amount and price.
 // Under Portfolio Margin this reflects the portfolio-level impact of the order.
 func (e *Executor) GetMargins(ctx context.Context, instrument string, amount, price float64) (MarginInfo, error) {
-	resp, err := e.gw.Call(ctx, "private/get_margins", map[string]interface{}{
+	return call[MarginInfo](ctx, e.gw, "private/get_margins", map[string]any{
 		"instrument_name": instrument,
 		"amount":          amount,
 		"price":           price,
 	}, gateway.PriorityLow)
-	if err != nil {
-		return MarginInfo{}, err
-	}
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return MarginInfo{}, err
-	}
-	var info MarginInfo
-	if err := json.Unmarshal(b, &info); err != nil {
-		return MarginInfo{}, err
-	}
-	return info, nil
 }
 
-// AccountEquity fetches the current account equity in USD.
+// AccountEquity returns the account's available funds in the underlying currency.
+// For Portfolio Margin accounts, available_funds already reflects Deribit's
+// actual margin requirements. Using it (not equity) lets max_margin_pct act
+// as a pure safety cap on top of Deribit's own risk model.
 func (e *Executor) AccountEquity(ctx context.Context, currency string) (float64, error) {
-	resp, err := e.gw.Call(ctx, "private/get_account_summary", map[string]interface{}{
-		"currency": currency,
-		"extended": true,
-	}, gateway.PriorityLow)
+	summary, err := e.GetAccountSummary(ctx, currency)
 	if err != nil {
-		return 0, err
-	}
-	resultBytes, err := json.Marshal(resp.Result)
-	if err != nil {
-		return 0, err
-	}
-	// For Portfolio Margin accounts, available_funds already reflects Deribit's
-	// actual margin requirements. Using it (not equity) lets max_margin_pct act
-	// as a pure safety cap on top of Deribit's own risk model.
-	var summary struct {
-		AvailableFunds float64 `json:"available_funds"`
-	}
-	if err := json.Unmarshal(resultBytes, &summary); err != nil {
 		return 0, err
 	}
 	return summary.AvailableFunds, nil

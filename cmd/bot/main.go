@@ -162,7 +162,11 @@ func runBacktest(cfg *config.Config, fromStr, toStr string, sweep bool, csvPath 
 		os.Exit(1)
 	}
 
-	writer := backtest.NewResultWriter(outputDir)
+	writer, err := backtest.NewResultWriter(outputDir)
+	if err != nil {
+		slog.Error("results dir init failed", "err", err)
+		os.Exit(1)
+	}
 	if err := writer.WriteSummary(summary); err != nil {
 		slog.Error("write summary failed", "err", err)
 	}

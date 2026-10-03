@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -39,25 +40,23 @@ type ResultWriter struct {
 	dir string
 }
 
-func NewResultWriter(dir string) *ResultWriter {
-	_ = os.MkdirAll(dir, 0755)
-	return &ResultWriter{dir: dir}
+// NewResultWriter creates dir (if needed) and returns a writer for it.
+func NewResultWriter(dir string) (*ResultWriter, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create results dir %s: %w", dir, err)
+	}
+	return &ResultWriter{dir: dir}, nil
 }
 
 func (w *ResultWriter) WriteSummary(s Summary) error {
-	return writeJSON(w.dir+"/summary.json", s)
+	return writeJSON(filepath.Join(w.dir, "summary.json"), s)
 }
 
 func (w *ResultWriter) WriteEquityCurve(snapshots []PortfolioSnapshot) error {
-	f, err := os.Create(w.dir + "/equity_curve.csv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := csv.NewWriter(f)
-	_ = cw.Write([]string{"date", "equity_usd", "open_positions", "margin_used_pct", "iv_percentile"})
+	header := []string{"date", "equity_usd", "open_positions", "margin_used_pct", "iv_percentile"}
+	rows := make([][]string, 0, len(snapshots))
 	for _, s := range snapshots {
-		_ = cw.Write([]string{
+		rows = append(rows, []string{
 			s.Date.Format("2006-01-02"),
 			fmtF(s.EquityUSD),
 			strconv.Itoa(s.OpenPositions),
@@ -65,43 +64,31 @@ func (w *ResultWriter) WriteEquityCurve(snapshots []PortfolioSnapshot) error {
 			fmtF(s.IVPercentile),
 		})
 	}
-	cw.Flush()
-	return cw.Error()
+	return writeCSV(filepath.Join(w.dir, "equity_curve.csv"), header, rows)
 }
 
 func (w *ResultWriter) WriteDrawdown(snapshots []PortfolioSnapshot) error {
-	f, err := os.Create(w.dir + "/drawdown.csv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := csv.NewWriter(f)
-	_ = cw.Write([]string{"date", "drawdown_usd", "drawdown_pct"})
+	header := []string{"date", "drawdown_usd", "drawdown_pct"}
+	rows := make([][]string, 0, len(snapshots))
 	for _, s := range snapshots {
-		_ = cw.Write([]string{
+		rows = append(rows, []string{
 			s.Date.Format("2006-01-02"),
 			fmtF(s.DrawdownUSD),
 			fmtF(s.DrawdownPct),
 		})
 	}
-	cw.Flush()
-	return cw.Error()
+	return writeCSV(filepath.Join(w.dir, "drawdown.csv"), header, rows)
 }
 
 func (w *ResultWriter) WriteTrades(trades []TradeRecord) error {
-	f, err := os.Create(w.dir + "/trades.csv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := csv.NewWriter(f)
-	_ = cw.Write([]string{
+	header := []string{
 		"entry_date", "exit_date", "exit_reason", "instrument", "option_type",
 		"strike", "expiry", "qty", "entry_price", "exit_price",
 		"premium_received", "close_cost", "pnl_usd", "roi_pct", "hold_days", "commission",
-	})
+	}
+	rows := make([][]string, 0, len(trades))
 	for _, t := range trades {
-		_ = cw.Write([]string{
+		rows = append(rows, []string{
 			t.EntryDate.Format("2006-01-02"),
 			t.ExitDate.Format("2006-01-02"),
 			t.ExitReason,
@@ -120,16 +107,42 @@ func (w *ResultWriter) WriteTrades(trades []TradeRecord) error {
 			fmtF(t.Commission),
 		})
 	}
-	cw.Flush()
-	return cw.Error()
+	return writeCSV(filepath.Join(w.dir, "trades.csv"), header, rows)
 }
 
-func writeJSON(path string, v interface{}) error {
+func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("encode %s: %w", path, err)
 	}
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// writeCSV writes a header and rows to path, creating parent directories.
+func writeCSV(path string, header []string, rows [][]string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create dir for %s: %w", path, err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", path, err)
+	}
+	cw := csv.NewWriter(f)
+	if err := cw.Write(header); err != nil {
+		f.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := cw.WriteAll(rows); err != nil { // WriteAll flushes
+		f.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return nil
 }
 
 func fmtF(f float64) string {
@@ -144,18 +157,13 @@ type ScenarioResult struct {
 }
 
 func (w *ResultWriter) WriteScenarioComparison(results []ScenarioResult) error {
-	f, err := os.Create(w.dir + "/scenario_comparison.csv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := csv.NewWriter(f)
-	_ = cw.Write([]string{
+	header := []string{
 		"scenario", "sharpe_ratio", "sortino_ratio", "calmar_ratio",
 		"total_pnl_usd", "win_rate_pct", "max_drawdown_pct", "total_trades",
-	})
+	}
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
-		_ = cw.Write([]string{
+		rows = append(rows, []string{
 			r.ScenarioName,
 			fmtF(r.SharpeRatio),
 			fmtF(r.SortinoRatio),
@@ -166,8 +174,7 @@ func (w *ResultWriter) WriteScenarioComparison(results []ScenarioResult) error {
 			strconv.Itoa(r.TotalTrades),
 		})
 	}
-	cw.Flush()
-	return cw.Error()
+	return writeCSV(filepath.Join(w.dir, "scenario_comparison.csv"), header, rows)
 }
 
 // WalkForwardResult represents one train/validate window.
@@ -184,41 +191,30 @@ type WalkForwardResult struct {
 }
 
 func (w *ResultWriter) WriteWalkForwardSummary(results []WalkForwardResult) error {
-	dir := w.dir + "/walk_forward"
-	_ = os.MkdirAll(dir, 0755)
-	f, err := os.Create(dir + "/walk_forward_summary.csv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	cw := csv.NewWriter(f)
-	_ = cw.Write([]string{
+	header := []string{
 		"window", "train_from", "train_to", "validate_from", "validate_to",
 		"train_sharpe", "validate_sharpe", "degradation_pct", "overfit",
-	})
+	}
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
-		overfit := "false"
-		if r.Overfit {
-			overfit = "true"
-		}
-		_ = cw.Write([]string{
+		rows = append(rows, []string{
 			strconv.Itoa(r.Window),
 			r.TrainFrom, r.TrainTo, r.ValidateFrom, r.ValidateTo,
 			fmtF(r.TrainSharpe),
 			fmtF(r.ValidateSharpe),
 			fmtF(r.Degradation),
-			overfit,
+			strconv.FormatBool(r.Overfit),
 		})
 	}
-	cw.Flush()
-	return cw.Error()
+	return writeCSV(filepath.Join(w.dir, "walk_forward", "walk_forward_summary.csv"), header, rows)
 }
 
 func (w *ResultWriter) Dir() string { return w.dir }
 
 func (w *ResultWriter) WriteWindowResult(window int, phase string, s Summary) error {
-	dir := w.dir + "/walk_forward"
-	_ = os.MkdirAll(dir, 0755)
-	path := fmt.Sprintf("%s/window_%d_%s.json", dir, window, phase)
-	return writeJSON(path, s)
+	dir := filepath.Join(w.dir, "walk_forward")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create walk-forward dir: %w", err)
+	}
+	return writeJSON(filepath.Join(dir, fmt.Sprintf("window_%d_%s.json", window, phase)), s)
 }

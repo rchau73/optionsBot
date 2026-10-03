@@ -2,10 +2,10 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
@@ -308,7 +308,6 @@ func (s *Strategy) evaluate(ctx context.Context) {
 
 	if gammaDec.Action != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)
-		//return
 	}
 
 	for _, pos := range s.state.AllPositions() {
@@ -338,10 +337,6 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	if err := s.maybeOpenStrangles(ctx, gammaDec); err != nil {
 		slog.Warn("maybeOpenStrangles error", "err", err)
 	}
-}
-
-func isForbidden(err error) bool {
-	return err != nil && err.Error() == "forbidden"
 }
 
 func (s *Strategy) openStrangles(ctx context.Context) error {
@@ -444,7 +439,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	// the exchange enforces produces amounts like 0.15 that are rejected with -32602.
 	exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount)
 	if exchStep > s.cfg.MinTradeAmount {
-		qty = quantizeAmount(qty, exchStep)
+		qty = orders.FloorToStep(qty, exchStep)
 		if qty < exchStep {
 			return fmt.Errorf("qty %.6f BTC after exchange-step quantization is below min_trade_amount %.6f (call=%s put=%s)",
 				qty, exchStep, call.Name, put.Name)
@@ -539,7 +534,12 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		})
 		if err != nil {
 			if ps.call != nil && ps.call.orderID != "" {
-				_ = s.exec.Cancel(ctx, ps.call.orderID)
+				// A resting call without its put is a naked short leg — make a
+				// failed cancel loud so it can be cleaned up by hand.
+				if cerr := s.exec.Cancel(ctx, ps.call.orderID); cerr != nil {
+					slog.Error("entry: put failed and call order could not be cancelled",
+						"call_order_id", ps.call.orderID, "call", call.Name, "err", cerr)
+				}
 			}
 			return fmt.Errorf("sell put: %w", err)
 		}
@@ -838,9 +838,7 @@ func (s *Strategy) handlePendingStrangle(ctx context.Context, adjuster orderAdju
 		}
 		drift := math.Abs(inst.Ask-leg.limitPrice) / leg.limitPrice
 		if drift > s.cfg.OrderSlippagePct {
-			tick := inst.EffectiveTick(inst.Ask)
-			n := math.Round(inst.Ask / tick)
-			newPrice := math.Round(n*tick*1e8) / 1e8
+			newPrice := orders.RoundToStep(inst.Ask, inst.EffectiveTick(inst.Ask))
 			if newPrice <= 0 {
 				continue
 			}
@@ -1253,9 +1251,8 @@ func (s *Strategy) fetchMarginState(ctx context.Context) (equity, initialMarginU
 	if mp, ok := s.exec.(marginProvider); ok {
 		sum, e := mp.GetAccountSummary(ctx, s.cfg.Underlying)
 		if e != nil {
-			if isForbidden(e) {
+			if errors.Is(e, orders.ErrForbidden) {
 				s.lastAuthErr = time.Now()
-				return 0, 0, fmt.Errorf("account summary: %w", e)
 			}
 			return 0, 0, fmt.Errorf("account summary: %w", e)
 		}
@@ -1629,13 +1626,6 @@ func absInt(x int) int {
 	return x
 }
 
-// quantizeAmount floors `amount` to the nearest multiple of `step`, then rounds
-// to 8 decimal places to eliminate floating-point artifacts like 0.30000000000000004.
-func quantizeAmount(amount, step float64) float64 {
-	n := math.Floor(amount / step)
-	return math.Round(n*step*1e8) / 1e8
-}
-
 // repairIncompleteStrangles detects strangles missing one leg (closed by a
 // previous gamma action) and reopens the missing leg when the trend allows it.
 // Bear trend: keep call, don't reopen put yet.
@@ -1805,14 +1795,4 @@ func (s *Strategy) KillSwitch() {
 	default:
 		close(s.killSwitchCh)
 	}
-}
-
-// randomID generates a short random ID suffix (used in test helpers).
-func randomID() string {
-	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 6)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
 }

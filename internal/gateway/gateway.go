@@ -383,9 +383,11 @@ func (g *Gateway) heartbeatLoop(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Enable server-side heartbeats
-	_, _ = g.Call(ctx, "public/set_heartbeat", HeartbeatParams{
+	if _, err := g.Call(ctx, "public/set_heartbeat", HeartbeatParams{
 		Interval: g.cfg.Heartbeat.IntervalSec,
-	}, PriorityLow)
+	}, PriorityLow); err != nil && ctx.Err() == nil {
+		slog.Warn("enable server heartbeat failed", "err", err)
+	}
 
 	for {
 		select {

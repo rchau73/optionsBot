@@ -7,3 +7,4 @@ deribit_tc_export_v3.py
 # Build output and local tool settings
 /bot
 .claude/settings.local.json
+coverage.out
