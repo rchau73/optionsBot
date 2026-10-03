@@ -31,7 +31,7 @@ gex_strike_range_pct:      0.25 # GEX inputs: only strikes within ±25% of spot;
 iv_percentile_window:   252     # rolling window (trading days) for DVOL percentile
 hedge_report_threshold: 0.05    # net delta threshold that triggers hedge_report.json
 max_margin_pct:         0.35    # ceiling; overridden at runtime by IV percentile bands
-leverage:               2.0     # multiplier on the margin budget (e.g. 2 = 2× the allowed margin)
+leverage:               4.0     # multiplier on the margin budget (e.g. 2 = 2× the allowed margin)
 max_leverage:           10.0    # hard cap; leverage above this is rejected at startup
 
 # ── Order execution ───────────────────────────────────────────────────────────
