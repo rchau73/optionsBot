@@ -1,142 +1,153 @@
----
-title: "Options Bot — High-Level Software Architecture"
----
+# Architecture
 
-```mermaid
-graph TB
-    subgraph EXTERNAL["External Systems"]
-        DERIBIT_WS["Deribit WebSocket API\nwss://test.deribit.com/ws/api/v2"]
-        FILES["File Outputs\nbot.log · orders.log\nhedge_report.json"]
-        HIST_DATA["Historical Data\ndata/historical/options.csv"]
-    end
+A detailed look at how the bot is built: packages, goroutines, data flow and the invariants that keep it safe. The [README](../README.md) has the overview; [diagrams](README.md) are listed in the docs index.
 
-    subgraph CONFIG["Configuration Layer"]
-        CFG["config.go\nconfig.yaml + .env\n─────────────────\nStrategy params\nRate-limit env vars\nRetry / circuit settings"]
-    end
+## Contents
+1. [Design goals](#1-design-goals)
+2. [Package map](#2-package-map)
+3. [Concurrency model](#3-concurrency-model)
+4. [Gateway](#4-gateway)
+5. [Market data](#5-market-data)
+6. [Strategy](#6-strategy)
+7. [Orders and state](#7-orders-and-state)
+8. [GEX regime](#8-gex-regime)
+9. [Hedge reporting](#9-hedge-reporting)
+10. [Backtest](#10-backtest)
+11. [Configuration](#11-configuration)
+12. [Observability](#12-observability)
+13. [Invariants (do not break)](#13-invariants-do-not-break)
+14. [Known limitations](#14-known-limitations)
 
-    subgraph GATEWAY["gateway/"]
-        GW_CONN["WebSocket\nConnection"]
-        GW_RL["Rate Limiter\ntoken bucket ×4 scopes"]
-        GW_CB["Circuit Breaker\nClosed→Open→HalfOpen"]
-        GW_RETRY["Retry + Jitter\nbackoff on 10028/10040"]
-        GW_PQ["Priority Queue\nHigh (stop-loss/kill)\nLow (market data)"]
-        GW_SUBS["Subscription\nRegistry\ndedup + cap"]
-    end
+## 1. Design goals
 
-    subgraph MARKETDATA["marketdata/"]
-        MD_MGR["Manager\nfetchOptionsChain\nselectRelevantExpiries"]
-        MD_DVOL["DVOLTracker\nrolling IV percentile\n252-day window"]
-        MD_INST["Instrument Cache\nbid/ask/mid/delta\ngamma/theta/vega/IV"]
-        MD_TICK["Tick Channel\n→ strategy events"]
-    end
+- **Safety first.** The bot can trade real capital, so every path that places or closes an order is explicit, tested end to end and logged. Testnet is the default.
+- **The exchange is the source of truth.** State lives in memory and is rebuilt from Deribit on every start (reconcile), so a crash or restart is always recoverable.
+- **Small, consumer-defined interfaces.** Packages depend on the few methods they use, which keeps them testable with fakes and lets the backtest reuse the pure decision functions.
+- **Simple over clever.** One process per underlying, one WebSocket, plain goroutines and mutexes, standard library first.
 
-    subgraph STRATEGY["strategy/"]
-        ST_ENTRY["Entry Logic\nSelectExpiry\nSelectStrike δ≈0.16\nmargin guard"]
-        ST_ROLLOUT["Rollout Rules\n4.1 19 DTE\n4.2 δ drift <0.10\n4.3 ROI ≥50%\n4.4 limit priority\n4.5 stop-loss 200%"]
-        ST_GAMMA["Gamma Monitor\nnet γ sign\nbull/bear trend"]
-        ST_MARGIN["Margin Guard\nIV percentile bands\n15/25/35% of equity"]
-        ST_KILL["Kill Switch\nSIGUSR1 + env var\nmarket flatten all"]
-    end
+## 2. Package map
 
-    subgraph ORDERS["orders/"]
-        ORD_EXEC["Executor\nprivate/buy · sell\namend · cancel"]
-        ORD_STATE["State Manager\nopen positions\nopen strangles\nnet delta/gamma"]
-        ORD_LOG["Order Logger\nOrderLog struct\nJSON lines → orders.log"]
-    end
+| Package | Responsibility | Depends on |
+|---|---|---|
+| `cmd/bot` | Composition root: flags, logger, config, wiring, `SIGUSR1` → kill switch, live vs backtest | everything below |
+| `cmd/gendata` | Synthetic historical CSV for backtests | — |
+| `internal/config` | `config.yaml` (strategy) + `.env` (platform), defaults, `Validate`, `RequireCredentials` | — |
+| `internal/gateway` | The only Deribit connection: priority queue, rate limiter, circuit breaker, retries, reply routing, reconnect | config |
+| `internal/marketdata` | Option chain, ticker/index/DVOL subscriptions, IV percentile, shared expiry-window rule | gateway (interface) |
+| `internal/gex` | Market-wide gamma exposure regime from open interest | gateway, marketdata (interfaces) |
+| `internal/strategy` | Decision loop: entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex (interfaces) |
+| `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
+| `internal/hedge` | Writes `hedge_report.json`; never trades | — |
+| `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
+| `internal/logger` | `slog` JSON to stdout + `bot.log` | — |
 
-    subgraph HEDGE["hedge/"]
-        HG_RPT["Hedge Reporter\nnet delta exposure\n5-tranche breakdown\nhexge_report.json\nREPORT ONLY — no orders"]
-    end
+`internal/strategy/deps.go` lists every interface the strategy consumes (`OrderPlacer`, `OrderTracker`, `AccountReader`, `MarketData`, `TradeJournal`, `HedgeReporter`, `GEXSource`) and the `Deps` struct `main` fills in.
 
-    subgraph BACKTEST["backtest/"]
-        BT_FEED["Historical Feed\nCSV loader\nchronological ticks"]
-        BT_EXEC["Sim Executor\nmid/slippage fill\nlimit next-tick\ncommission deduct"]
-        BT_ENG["Backtest Engine\nsame strategy logic\ndaily simulation loop"]
-        BT_METRICS["Metrics\nSharpe · Sortino\nCalmar · drawdown"]
-        BT_SWEEP["Scenario Sweep\nparallel WaitGroup\n5 param combos"]
-        BT_WF["Walk-Forward\n4 windows 75/25\noverfit flag >30%"]
-        BT_OUT["Results Writer\nsummary.json\ntrades.csv\nequity_curve.csv\ndrawdown.csv\nscenario_comparison.csv"]
-    end
+## 3. Concurrency model
 
-    subgraph LOGGER["logger/"]
-        LOG["slog JSON Handler\nbot.log + stdout\nINFO/DEBUG levels"]
-    end
+| Goroutine | Owner / lifetime | Shares |
+|---|---|---|
+| `gateway.readLoop` | one per connection; stops when the connection context is cancelled | `pending` map (mutex), notification channel |
+| `gateway.dispatchLoop` | one per connection — the **only writer** to the socket | write mutex |
+| `gateway.heartbeatLoop`, `metricsLoop` | one per connection | — |
+| `gateway.reconnect` | at most one at a time (atomic flag), runs on the root context | — |
+| `marketdata.processNotifications` | one, until the root context ends | instrument map (RWMutex) |
+| `gex` background refresh | one, every 60 s | published snapshot (immutable, RWMutex) |
+| `strategy.Run` | one — **every trading decision runs here**, so decisions never race | book (StateManager), pending map |
+| `strategy.heartbeat` | one, read-only logging every 60 s | reads snapshots only |
+| `main` signal watcher | one; `SIGUSR1` → `KillSwitch()` | — |
 
-    %% Config feeds everything
-    CFG -->|"strategy params\nrate limits\nenv credentials"| GATEWAY
-    CFG -->|"targetDTE\nmaxDTEDeviation\nMinTradeAmount"| MARKETDATA
-    CFG -->|"entry delta\nrollout rules\nmargin pcts"| STRATEGY
-    CFG -->|"backtest params\nfill model"| BACKTEST
+Rules: every goroutine stops on a context; no lock is held across a network call; readers of shared state get copies (`StateManager` and `marketdata` return snapshots). The suite runs under `-race`.
 
-    %% Gateway ↔ Deribit
-    DERIBIT_WS <-->|"JSON-RPC 2.0\nWebSocket frames"| GW_CONN
-    GW_CONN --> GW_RL --> GW_PQ
-    GW_PQ -->|"High: stop-loss"| GW_CB
-    GW_PQ -->|"Low: market data"| GW_CB
-    GW_CB --> GW_RETRY --> GW_CONN
-    GW_CONN --> GW_SUBS
+## 4. Gateway
 
-    %% Gateway → MarketData
-    GW_CONN -->|"ticker.BTC-X.100ms\nDVOL notifications"| MD_MGR
-    MD_MGR --> MD_DVOL
-    MD_MGR --> MD_INST
-    MD_INST --> MD_TICK
+See [seq_gateway](seq_gateway.png), [rate limiter](gateway_ratelimiter.png), [circuit breaker](gateway_circuitbreaker.png).
 
-    %% MarketData → Strategy (live)
-    MD_TICK -->|"Tick events"| ST_ENTRY
-    MD_TICK -->|"Tick events"| ST_ROLLOUT
-    MD_TICK -->|"underlying price"| ST_GAMMA
-    MD_DVOL -->|"IV percentile"| ST_MARGIN
+- **Call path:** `Call(ctx, method, params, priority)` → priority queue (high lane drained first) → rate limiter (matching-engine pool for buy/sell/edit/cancel, non-matching pool for everything else) → circuit breaker (skipped for high priority) → write. The writer never waits for the reply; `readLoop` routes each reply to its caller by request ID.
+- **Every request is answered exactly once:** reply, RPC error, timeout (30 s from the `Call`, queue time included), `ErrConnectionLost`, or `ErrCircuitOpen`. Requests that expire in the queue are dropped, never sent late.
+- **Circuit breaker** counts transport failures, timeouts and exchange-health errors (10028, 10040, 10041, 11051, 13888). Business rejections (bad price, no funds) prove the exchange is up and reset it.
+- **Retries** (full-jitter exponential backoff) only for idempotent reads (`public/*`, `private/get_*`); orders are never retried, because a "failed" order may already be on the book.
+- **Reconnect** runs on the root context: backoff, dial, auth, restore subscriptions. When it gives up, `Fatal()` tells `main` to shut down so the supervisor restarts the process and reconcile rebuilds state.
+- **Heartbeats:** Deribit `test_request`s are answered directly on the socket, bypassing the queue.
 
-    %% Strategy → Orders
-    ST_ENTRY -->|"Order{sell limit}"| ORD_EXEC
-    ST_ROLLOUT -->|"Order{buy limit/market}"| ORD_EXEC
-    ST_GAMMA -->|"Order{buy market}"| ORD_EXEC
-    ST_KILL -->|"Order{buy market ALL}"| ORD_EXEC
+## 5. Market data
 
-    %% Orders → State + Log
-    ORD_EXEC -->|"Fill"| ORD_STATE
-    ORD_EXEC -->|"Fill + Greeks"| ORD_LOG
-    ORD_STATE -->|"positions\ngamma\ndelta"| ST_ROLLOUT
-    ORD_STATE -->|"net delta"| HG_RPT
+See [marketdata_flow](marketdata_flow.png).
 
-    %% Orders → Gateway
-    ORD_EXEC -->|"private/buy\nprivate/sell\nprivate/cancel"| GW_PQ
+- Loads the option chain once, seeds a year of daily DVOL, and subscribes to the index price, DVOL and the tickers of **tradable** expiries only: per slot, `NearestExpiry` in `ExpiryWindow(target, deviation, rollout_dte)` — the exact rule the strategy uses — plus the next three expiries for rollouts.
+- Ticker pushes update bid/ask/mid (mark price when there are no quotes, common on testnet), greeks and IV. The spot comes from `deribit_price_index`, not the per-option underlying price.
+- `DVOLTracker` keeps **one value per UTC day**; the IV percentile ranks today against the configured number of days.
 
-    %% Hedge output
-    HG_RPT -->|"hedge_report.json"| FILES
-    ORD_LOG -->|"orders.log"| FILES
+## 6. Strategy
 
-    %% Backtest path
-    HIST_DATA -->|"CSV rows"| BT_FEED
-    BT_FEED -->|"Tick stream"| BT_ENG
-    BT_ENG -->|"same strategy rules"| BT_EXEC
-    BT_ENG --> BT_METRICS
-    BT_SWEEP -->|"parallel runs"| BT_ENG
-    BT_WF -->|"75/25 split runs"| BT_ENG
-    BT_METRICS --> BT_OUT
-    BT_OUT -->|"results/"| FILES
+See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](seq_entry.png), [exit](seq_exit.png), [rollout rules](strategy_rollout.png), [position states](strategy_position_states.png), [kill switch](seq_kill_switch.png).
 
-    %% Logging
-    LOG -.->|"structured JSON events"| FILES
+**Startup:** seed price history → log account → **reconcile** (cancel this currency's stale orders, load open shorts, regroup into strangles by expiry, match each to its slot) → wait for the index price → **rebalance** to the current budget → fill vacant slots.
 
-    classDef external fill:#e8f4f8,stroke:#2196F3,color:#000
-    classDef gateway fill:#fff3e0,stroke:#FF9800,color:#000
-    classDef marketdata fill:#e8f5e9,stroke:#4CAF50,color:#000
-    classDef strategy fill:#fce4ec,stroke:#E91E63,color:#000
-    classDef orders fill:#f3e5f5,stroke:#9C27B0,color:#000
-    classDef hedge fill:#e0f2f1,stroke:#009688,color:#000
-    classDef backtest fill:#e3f2fd,stroke:#1565C0,color:#000
-    classDef config fill:#fafafa,stroke:#607D8B,color:#000
-    classDef logger fill:#fafafa,stroke:#607D8B,color:#000
+**Each cycle (`eval_interval_ms`):** refresh marks → evaluate the GEX regime → poll pending orders → GEX sheds at-risk legs → rollout rules per position → repair one-legged strangles → hedge report → open vacant slots.
 
-    class DERIBIT_WS,FILES,HIST_DATA external
-    class GW_CONN,GW_RL,GW_CB,GW_RETRY,GW_PQ,GW_SUBS gateway
-    class MD_MGR,MD_DVOL,MD_INST,MD_TICK marketdata
-    class ST_ENTRY,ST_ROLLOUT,ST_GAMMA,ST_MARGIN,ST_KILL strategy
-    class ORD_EXEC,ORD_STATE,ORD_LOG orders
-    class HG_RPT hedge
-    class BT_FEED,BT_EXEC,BT_ENG,BT_METRICS,BT_SWEEP,BT_WF,BT_OUT backtest
-    class CFG config
-    class LOG logger
-```
+| File | What it owns |
+|---|---|
+| `open.go` | slot occupancy, expiry choice (with fallback), strike choice, PM-aware sizing, premium floor, GEX leg gate, submitting entry legs |
+| `pending.go` | fill tracking: partial fills, amend on ask drift, timeout → cancel + read back final fill → book filled legs |
+| `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
+| `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window |
+| `reconcile.go` | rebuild the book from the exchange; startup account log |
+| `rebalance.go` | resize reconciled strangles to the current budget (downsize at market, upsize via a complement entry) |
+| `killswitch.go` | cancel all → flatten at market with retries → stay idle |
+| `entry.go`, `rollout.go`, `gamma.go`, `margin.go` | pure decision functions shared with the backtest |
+
+**Rollout priority** (`EvaluateLeg`, pure): stop-loss → DTE roll → delta drift → ROI take-profit. Rollouts only *close*; replacement legs are opened by repair (single leg) or entry (whole strangle), so there is exactly one fill-tracked way to open a leg.
+
+**Sizing:** budget = equity × `max_margin_pct` × `leverage` − initial margin in use; each vacant slot gets an equal share; `private/get_margins` gives the margin of one lot per leg; `ComputeQtyFromIM` fits whole lots (minimum one).
+
+## 7. Orders and state
+
+- `Executor` wraps every Deribit order/account method behind a small `rpcCaller` interface; one generic `call[T]` decodes results; `forbidden` errors become `orders.ErrForbidden`; risk-reducing orders go through the high-priority lane.
+- `StateManager` is the in-memory book (positions + strangles, strangle legs linked by ID). Readers get snapshots; all changes go through methods. Portfolio greeks are short-signed (Deribit greeks are long-perspective).
+- The order journal (`orders.log`) writes one JSON line per submit/cancel/open/close/reconcile with greeks, spread, market and GEX context, and on closes P&L in the underlying (`pnl`) and USD (`pnl_usd`, `pnl_usd_fmt`).
+
+See the [data model](data_model.png).
+
+## 8. GEX regime
+
+See [seq_gex](seq_gex.png). Every 60 s the GEX manager pulls open interest and mark IV for the chain, computes Black-Scholes gamma × OI × spot² per strike over the nearest five expiries, weights and consolidates them, finds the **gamma flip**, and classifies the regime by spot vs flip with a hysteresis band. `GammaMonitor` combines the regime with a trend from daily closes (swing pivots + SMA9/21). Trading uses only `GammaDecision.Action`: shed puts in a confirmed negative regime with a bear trend, shed calls with a bull trend, otherwise trade both legs. Entry and repair apply the same gate.
+
+## 9. Hedge reporting
+
+See [hedge_flow](hedge_flow.png). When |net delta| ≥ `hedge_report_threshold` and has moved by at least that much since the last report, `hedge_report.json` is rewritten with the side (buy/sell perpetual), size and five staged tranches. It never places orders.
+
+## 10. Backtest
+
+See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
+
+`HistoricalFeed` replays `data/historical/options.csv` (prices in USD in the synthetic data from `cmd/gendata`) grouped by day; `Engine` runs the pure strategy functions (`EvaluateLeg`, `SelectExpiry`, `SelectStrike`, `GammaMonitor`, `MarginGuard`) **at the simulated date**; `SimExecutor` fills market orders with slippage and limits per the configured rule; results are written to `data/results/`. `--sweep` runs five scenarios in parallel (each applied as a slot matrix); walk-forward splits the period into train/validate windows and flags > 30 % Sharpe degradation as overfit.
+
+## 11. Configuration
+
+`config.yaml` holds strategy logic, `.env` holds platform settings (credentials, `DERIBIT_ENV`, rate limits, retry, circuit breaker, heartbeat/reconnect) — never mixed. `config.Load` fills defaults and runs `Validate`: underlying set, at least one slot, deltas in (0, 0.5), every slot above `rollout_dte`, `max_margin_pct` in (0, 1], positive stop-loss, `DERIBIT_ENV` ∈ {testnet, live}. Credentials are checked only for trading, so backtests need no API key. The full table is in the README.
+
+## 12. Observability
+
+- `bot.log`: `slog` JSON with key/value context (instrument, slot, order ID, reason). Levels: `Error` needs attention, `Warn` degraded but handled, `Info` lifecycle and trades, `Debug` per-cycle detail (`--debug`).
+- `orders.log`: the audit trail of every order event.
+- Every 60 s: `heartbeat` (equity, margin, positions) and `rate_limit_metrics` (tokens, breaker state, retries, in-flight requests, dropped notifications).
+
+## 13. Invariants (do not break)
+
+1. All exchange I/O goes through `gateway.Gateway`.
+2. Trading decisions use `GammaDecision.Action`, never raw trend; entry and repair gate legs identically.
+3. Every short leg the exchange holds is tracked: partial fills are booked, timeouts keep filled legs, failed closes keep the position.
+4. Rollouts only close; opening a leg has one path.
+5. Stop-loss and kill-switch orders use the high-priority lane and are never blocked by the circuit breaker.
+6. Orders are never retried automatically.
+7. Testnet is the default; live requires `DERIBIT_ENV=live`.
+8. `hedge` never places orders.
+9. Pure decision functions take time as a parameter (`now`), so the backtest replays the past correctly.
+
+## 14. Known limitations
+
+- **Backtest ≠ live loop.** The backtest engine re-implements the day loop around the shared pure functions instead of running `strategy.Strategy` itself, so order-lifecycle behaviour (pending fills, amends, partial fills) is only tested live/testnet and in the end-to-end tests. Running the real strategy against `SimExecutor` is the planned next step.
+- **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only; results on it validate mechanics, not profitability.
+- **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions.
+- **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating.

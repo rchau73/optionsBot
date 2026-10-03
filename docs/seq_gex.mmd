@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    participant G as GEX Manager (background)
+    participant D as Deribit
+    participant MD as MarketData
+    participant GM as GammaMonitor
+    participant S as Strategy
+
+    loop every 60 s
+        G->>D: public/get_book_summary_by_currency (OI, mark IV, spot)
+        G->>MD: AllInstruments() (strikes, expiries)
+        G->>G: Black-Scholes gamma × OI × spot² per strike, nearest 5 expiries
+        G->>G: weight expiries, consolidate, find gamma flip
+        G->>G: regime = spot vs flip, with hysteresis band
+        G->>G: publish new immutable Snapshot
+    end
+
+    S->>GM: PushPrice(index price) — daily closes for swing / SMA trend
+    S->>GM: Evaluate()
+    GM->>G: Snapshot()
+    GM-->>S: GammaDecision (Action, Regime, Flip, Trend)
+    alt NEGATIVE regime, spot < flip, bear trend
+        S->>S: ClosePuts — close puts, skip put entries and repairs
+    else NEGATIVE regime, spot < flip, bull trend
+        S->>S: CloseCalls — close calls, skip call entries and repairs
+    else otherwise
+        S->>S: ActionNone — trade both legs
+    end

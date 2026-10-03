@@ -1,22 +1,19 @@
 flowchart TD
-    A([Bot Start]) --> B[openStrangles\ninitial entry for all targetDTEs]
-    B --> C{Event loop select}
-    C -->|"ctx.Done"| D[return error]
-    C -->|"killSwitchCh\nSIGUSR1"| E[killSwitch\nBuy market ALL positions\nTrigger = kill_switch]
-    C -->|"Tick from MarketData"| F[onTick]
-
-    F --> G[updatePositions\nupdate Mid + Greeks\nfor matching instrument]
-    G --> H[gamma.PushPrice\nunderlyingPrice]
-    H --> I{gamma.Evaluate\nnet γ?}
-    I -->|"γ ≥ 0"| J[Evaluate open positions]
-    I -->|"γ < 0 + bear trend"| K[Close all PUT legs\nBuy market\nTrigger = gamma_close]
-    I -->|"γ < 0 + bull trend"| L[Close all CALL legs\nBuy market\nTrigger = gamma_close]
-    K --> M[Log gamma_trigger\ntimestamp · gamma · direction]
-    L --> M
-    M --> N[maybeOpenStrangles\nre-establish after gamma clear]
-    J --> O{For each position:\nEvaluateLeg}
-    O --> P{Decision}
-    P -->|"None"| O
-    P -->|"Any action"| Q[handleRollout]
-    Q --> N
-    N --> R[hedgeRpt.MaybeReport\nif delta changed > 5%]
+    A(["Run(ctx)"]) --> B["seed gamma history · log account<br/>reconcile with exchange · wait for index price<br/>rebalance · first maybeOpenStrangles"]
+    B --> C{"select"}
+    C -- "ctx.Done" --> Z(["return"])
+    C -- "KillSwitch() (SIGUSR1 via main)" --> K["killSwitch: cancel orders → flatten at market → stay idle"]
+    C -- "ticker every eval_interval_ms" --> E["evaluate()"]
+    E --> E1{"index price known<br/>and no auth back-off?"}
+    E1 -- "no" --> C
+    E1 -- "yes" --> E2["refreshMarks (mid + greeks)<br/>gamma.PushPrice · gamma.Evaluate → GammaDecision"]
+    E2 --> E3["checkPendingOrders<br/>fills · amend on drift · timeout → keep filled legs"]
+    E3 --> E4{"GammaDecision.Action"}
+    E4 -- "ClosePuts / CloseCalls" --> E5["handleGammaAction: buyToClose at market"]
+    E4 -- "None" --> E6
+    E5 --> E6["EvaluateLeg per position → handleRollout<br/>(stop-loss · DTE roll · delta drift · ROI)"]
+    E6 --> E7["repairIncompleteStrangles (GEX-gated)"]
+    E7 --> E8["hedge.MaybeReport (report only)"]
+    E8 --> E9["maybeOpenStrangles (vacant slots, GEX-gated)"]
+    E9 --> C
+    H(["heartbeat goroutine, every 60 s<br/>equity · margin · positions (read only)"])

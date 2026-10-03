@@ -1,0 +1,44 @@
+sequenceDiagram
+    autonumber
+    participant S as Strategy (evaluate)
+    participant MD as MarketData
+    participant X as Executor
+    participant GW as Gateway
+    participant D as Deribit
+    participant J as orders.log
+    participant SM as StateManager
+
+    S->>S: occupiedSlots() — strangles + pending entries
+    S->>X: GetAccountSummary → equity, initial margin
+    S->>S: budget = equity × max_margin_pct × leverage − margin used
+    S->>MD: AllInstruments()
+    S->>S: slotExpiry (ExpiryWindow, fallback if occupied) · SelectStrike(call/put, |Δ| ≈ target)
+    S->>X: GetMargins(call), GetMargins(put) → qty via ComputeQtyFromIM
+    S->>S: premium floor + GEX gate (skip a leg only when the regime sheds it)
+    S->>X: Submit sell call limit @ max(mid, ask)
+    X->>GW: Call(private/sell, low priority)
+    GW->>D: private/sell
+    D-->>GW: order_id, filled_amount
+    GW-->>X: reply (routed by request ID)
+    X-->>S: Fill
+    S->>J: LogSubmit
+    S->>X: Submit sell put limit (if the put fails → abandonPending keeps any filled call)
+    S->>S: addPending(pendingStrangle)
+
+    loop each cycle until done or timeout
+        S->>X: GetOrderState(order)
+        X-->>S: state, filled_amount, avg price
+        alt ask drifted > order_slippage_pct
+            S->>X: AmendOrder(new ask) (≤ order_max_adjustments)
+        end
+    end
+
+    alt every leg filled
+        S->>SM: AddPosition(legs at filled qty) + AddStrangle
+        S->>J: LogOpen
+    else order_fill_timeout_sec elapsed
+        S->>X: Cancel unfilled legs
+        S->>X: GetOrderState (capture fills that raced the cancel)
+        S->>J: LogCancelled
+        S->>SM: book filled legs (one-legged strangle → repair completes it)
+    end

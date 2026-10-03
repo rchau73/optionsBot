@@ -1,17 +1,20 @@
-graph LR
-    subgraph ENV[".env — Rate Limit Config"]
-        E1["WS_NONMATCH_RPS=20\n× safety_factor 0.80\n= 16 req/s effective"]
-        E2["WS_MATCH_RPS=8\n× 0.80 = 6.4 req/s"]
-        E3["ORDER_OPS_RPS=5\n× 0.80 = 4 req/s"]
-        E4["REST_RPS=10\n× 0.80 = 8 req/s"]
+flowchart LR
+    subgraph ENV[".env (platform settings)"]
+        E1["DERIBIT_RATE_WS_NONMATCH_RPS = 20"]
+        E2["DERIBIT_RATE_WS_MATCH_RPS = 8"]
+        E3["DERIBIT_RATE_SAFETY_FACTOR = 0.80"]
     end
-    subgraph BUCKETS["golang.org/x/time/rate Token Buckets"]
-        B1["nonMatch\nmarket data\nsubscriptions\nheartbeat"]
-        B2["match\norder placement\nstop-loss\nkill-switch"]
-        B3["orderOps\ncancel + amend"]
-        B4["rest\nHTTP fallback"]
+    subgraph POOLS["Token buckets (golang.org/x/time/rate), burst 1"]
+        B1["non-matching pool<br/>20 × 0.80 = 16 req/s<br/>auth · subscribe · tickers · account · margins · OI"]
+        B2["matching-engine pool<br/>8 × 0.80 = 6.4 req/s<br/>private/buy · sell · edit · cancel*"]
     end
+    M{"IsMatchingEngine(method)?"}
     E1 --> B1
     E2 --> B2
-    E3 --> B3
-    E4 --> B4
+    E3 --> B1
+    E3 --> B2
+    REQ(["dispatchLoop: next request"]) --> M
+    M -- "no" --> B1
+    M -- "yes" --> B2
+    B1 --> SEND(["write to WebSocket"])
+    B2 --> SEND
