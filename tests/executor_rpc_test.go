@@ -44,13 +44,10 @@ func (f *fakeCaller) Call(_ context.Context, method string, params any, priority
 
 // rpcResponse builds a JSON-RPC response carrying the given raw JSON result.
 func rpcResponse(raw string) gateway.JSONRPCResponse {
-	var v any
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &v); err != nil {
-			panic("rpcResponse: invalid JSON in test fixture: " + err.Error())
-		}
+	if raw != "" && !json.Valid([]byte(raw)) {
+		panic("rpcResponse: invalid JSON in test fixture: " + raw)
 	}
-	return gateway.JSONRPCResponse{Result: v}
+	return gateway.JSONRPCResponse{Result: json.RawMessage(raw)}
 }
 
 const filledOrderJSON = `{"order":{"order_id":"o-1","filled_amount":0.1,"average_price":0.012,"order_state":"filled"}}`

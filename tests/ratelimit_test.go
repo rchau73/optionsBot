@@ -13,8 +13,6 @@ func TestRateLimiterRespectsBurstLimit(t *testing.T) {
 	cfg := config.RateLimitConfig{
 		WsNonMatchRPS: 5,
 		WsMatchRPS:    2,
-		OrderOpsRPS:   1,
-		RestRPS:       1,
 		SafetyFactor:  1.0,
 	}
 	rl := gateway.NewRateLimiter(cfg)

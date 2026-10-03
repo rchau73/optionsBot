@@ -61,24 +61,39 @@ func main() {
 		return
 	}
 
-	runLive(cfg)
+	if err := runLive(cfg); err != nil {
+		slog.Error("bot exited with error", "err", err)
+		os.Exit(1)
+	}
 }
 
-func runLive(cfg *config.Config) {
+// runLive wires the live components and runs the strategy until shutdown.
+// It returns instead of calling os.Exit so deferred cleanup always runs.
+func runLive(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	gw := gateway.New(cfg)
 	if err := gw.Connect(ctx); err != nil {
-		slog.Error("gateway connect failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("gateway connect: %w", err)
 	}
 	defer gw.Close()
 
+	// If the gateway gives up reconnecting, stop the bot cleanly and exit
+	// non-zero so the supervisor restarts it; startup reconciles positions.
+	gatewayErr := make(chan error, 1)
+	go func() {
+		select {
+		case err := <-gw.Fatal():
+			gatewayErr <- err
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	md := marketdata.New(cfg, gw)
 	if err := md.Start(ctx); err != nil {
-		slog.Error("marketdata start failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("marketdata start: %w", err)
 	}
 
 	exec := orders.NewExecutor(gw)
@@ -86,8 +101,7 @@ func runLive(cfg *config.Config) {
 
 	orderLog, err := orders.NewLogger("orders.log", cfg.SpreadAlertThreshold)
 	if err != nil {
-		slog.Error("order logger init failed", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("order logger init: %w", err)
 	}
 	defer orderLog.Close()
 
@@ -118,6 +132,12 @@ func runLive(cfg *config.Config) {
 
 	if err := strat.Run(ctx); err != nil {
 		slog.Info("bot stopped", "reason", err)
+	}
+	select {
+	case err := <-gatewayErr:
+		return fmt.Errorf("gateway: %w", err)
+	default:
+		return nil
 	}
 }
 

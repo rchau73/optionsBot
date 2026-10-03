@@ -227,13 +227,8 @@ func (m *Manager) fetchBookSummary(ctx context.Context) ([]bookSummaryRow, error
 		return nil, err
 	}
 
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-
 	var rows []bookSummaryRow
-	if err := json.Unmarshal(b, &rows); err != nil {
+	if err := json.Unmarshal(resp.Result, &rows); err != nil {
 		return nil, err
 	}
 	return rows, nil

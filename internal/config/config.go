@@ -81,8 +81,6 @@ type Backtest struct {
 type RateLimitConfig struct {
 	WsNonMatchRPS    float64
 	WsMatchRPS       float64
-	OrderOpsRPS      float64
-	RestRPS          float64
 	MaxSubscriptions int
 	SafetyFactor     float64
 }
@@ -210,8 +208,6 @@ func Load(path string) (*Config, error) {
 	cfg.RateLimit = RateLimitConfig{
 		WsNonMatchRPS:    envFloat("DERIBIT_RATE_WS_NONMATCH_RPS", 20),
 		WsMatchRPS:       envFloat("DERIBIT_RATE_WS_MATCH_RPS", 8),
-		OrderOpsRPS:      envFloat("DERIBIT_RATE_ORDER_OPS_RPS", 5),
-		RestRPS:          envFloat("DERIBIT_RATE_REST_RPS", 10),
 		MaxSubscriptions: envInt("DERIBIT_RATE_MAX_SUBSCRIPTIONS", 1000),
 		SafetyFactor:     envFloat("DERIBIT_RATE_SAFETY_FACTOR", 0.80),
 	}

@@ -85,11 +85,10 @@ func call[T any](ctx context.Context, gw rpcCaller, method string, params any, p
 
 // decodeResult unmarshals the result field of a JSON-RPC response into out.
 func decodeResult(resp gateway.JSONRPCResponse, out any) error {
-	b, err := json.Marshal(resp.Result)
-	if err != nil {
-		return err
+	if len(resp.Result) == 0 {
+		return nil // e.g. cancel replies we don't inspect
 	}
-	return json.Unmarshal(b, out)
+	return json.Unmarshal(resp.Result, out)
 }
 
 // submitResult is the subset of private/buy and private/sell we use.

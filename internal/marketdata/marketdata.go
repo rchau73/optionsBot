@@ -96,11 +96,6 @@ func (m *Manager) fetchOptionsChain(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	resultBytes, err := json.Marshal(resp.Result)
-	if err != nil {
-		return nil, err
-	}
-
 	var insts []struct {
 		InstrumentName string  `json:"instrument_name"`
 		Strike         float64 `json:"strike"`
@@ -113,7 +108,7 @@ func (m *Manager) fetchOptionsChain(ctx context.Context) ([]string, error) {
 			TickSize   float64 `json:"tick_size"`
 		} `json:"tick_size_steps"`
 	}
-	if err := json.Unmarshal(resultBytes, &insts); err != nil {
+	if err := json.Unmarshal(resp.Result, &insts); err != nil {
 		return nil, err
 	}
 
@@ -265,10 +260,7 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse) {
 		return
 	}
 
-	data, err := json.Marshal(notif.Params.Data)
-	if err != nil {
-		return
-	}
+	data := []byte(notif.Params.Data)
 
 	switch {
 	case isDVOLChannel(notif.Params.Channel):
