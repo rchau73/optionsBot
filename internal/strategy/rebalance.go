@@ -113,7 +113,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		"call_instrument", call.Name,
 		"put_instrument", put.Name,
 	)
-	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, s.md.IVPercentile(), addQty, s.gamma.Evaluate()); err != nil {
+	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, s.gamma.Evaluate()); err != nil {
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
 	}

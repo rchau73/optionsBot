@@ -32,7 +32,6 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	if err != nil {
 		return err
 	}
-	ivPercentile := s.md.IVPercentile()
 	allowed := s.marginGuard.AllowedMargin(equity)
 	budget := allowed - initialMarginUsed
 
@@ -43,6 +42,12 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			"margin_used_"+unit, fmt.Sprintf("%.6f", initialMarginUsed),
 			"slots_needed", needsOpen,
 		)
+		for _, slot := range slots {
+			if !occupied[makeSlotKey(slot.TargetDTE, slot.EntryDelta)] {
+				s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit,
+					fmt.Sprintf("allowed %.6f, used %.6f", allowed, initialMarginUsed))
+			}
+		}
 		return nil
 	}
 	targetMarginPerSlot := budget / float64(needsOpen)
@@ -57,6 +62,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 		if !ok {
 			slog.Info("skip slot: no suitable expiry available",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, "")
 			continue
 		}
 
@@ -65,6 +71,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			slog.Debug("skip entry: call strike selection failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"expiry", expiry.Format("2006-01-02"), "err", err)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoStrike, err.Error())
 			continue
 		}
 		put, err := SelectStrike(instruments, expiry, "put", slot.EntryDelta, s.cfg.DeltaSlippage)
@@ -72,6 +79,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			slog.Debug("skip entry: put strike selection failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"expiry", expiry.Format("2006-01-02"), "err", err)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoStrike, err.Error())
 			continue
 		}
 
@@ -85,12 +93,39 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			"qty_"+unit, fmt.Sprintf("%.6f", qty),
 			"target_margin_per_slot_"+unit, fmt.Sprintf("%.6f", targetMarginPerSlot),
 		)
-		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, ivPercentile, qty, gammaDec); err != nil {
+		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec); err != nil {
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipEntryRejected, err.Error())
+			continue
 		}
+		delete(s.lastSkip, makeSlotKey(slot.TargetDTE, slot.EntryDelta))
 	}
 	return nil
+}
+
+// Skip reasons journaled when a vacant slot is not entered.
+const (
+	SkipMarginLimit   = "margin_limit"
+	SkipNoExpiry      = "no_expiry"
+	SkipNoStrike      = "no_strike"
+	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
+)
+
+// noteSkip journals why a slot stayed empty, with the market at that moment.
+// The same reason is written once until it changes or the slot is filled,
+// so a slot waiting for an expiry does not write a line every cycle.
+func (s *Strategy) noteSkip(dte int, delta float64, reason, detail string) {
+	key := makeSlotKey(dte, delta)
+	if s.lastSkip[key] == reason {
+		return
+	}
+	s.lastSkip[key] = reason
+	text := reason
+	if detail != "" {
+		text += ": " + detail
+	}
+	s.journal.LogSkipped(text, s.eventContext(nil, slotRef(dte, delta)))
 }
 
 // occupiedSlots returns the slots taken by open strangles or pending entries.
@@ -145,7 +180,7 @@ func (s *Strategy) occupiedExpiriesForDelta(delta float64) map[time.Time]bool {
 
 // openStrangle submits limit sells for both legs (or one leg when GEX is
 // shedding the other) and tracks them as a pending strangle until they fill.
-func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, ivPercentile, qty float64, gammaDec GammaDecision) error {
+func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision) error {
 	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC); an amount off
 	// that grid is rejected, so snap qty down onto it.
 	if exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount); exchStep > 0 {
@@ -192,14 +227,14 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	}
 
 	if openCall {
-		leg, err := s.submitEntryLeg(ctx, call, qty, ivPercentile)
+		leg, err := s.submitEntryLeg(ctx, call, qty, slotRef(targetDTE, entryDelta))
 		if err != nil {
 			return fmt.Errorf("sell call: %w", err)
 		}
 		ps.call = leg
 	}
 	if openPut {
-		leg, err := s.submitEntryLeg(ctx, put, qty, ivPercentile)
+		leg, err := s.submitEntryLeg(ctx, put, qty, slotRef(targetDTE, entryDelta))
 		if err != nil {
 			// The call may already be resting or (partly) filled. Cancel what is
 			// left and keep whatever filled, so no short leg goes untracked.
@@ -246,8 +281,9 @@ func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument) error {
 	return nil
 }
 
-// submitEntryLeg places one limit sell and records the submission in the journal.
-func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrument, qty, ivPercentile float64) (*pendingLeg, error) {
+// submitEntryLeg places one limit sell for slot and journals the submission
+// with the market snapshot at that moment.
+func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrument, qty float64, slot *orders.SlotRef) (*pendingLeg, error) {
 	price := entryLimitPrice(inst)
 	fill, err := s.exch.Submit(ctx, orders.Order{
 		Instrument:    inst.Name,
@@ -257,17 +293,16 @@ func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrume
 		LimitPrice:    price,
 		TickSize:      inst.EffectiveTick(price),
 		TriggerReason: orders.TriggerEntry,
+		Label:         s.orderLabel(slot),
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.journal.LogSubmit(orders.PendingOrderRecord{
 		OrderID: fill.OrderID, Instrument: inst.Name, OptionType: inst.OptionType,
-		Direction: orders.DirectionSell, TriggerReason: orders.TriggerEntry,
-		Qty: qty, LimitPrice: price, Strike: inst.Strike,
-		UnderlyingPrice: inst.UnderlyingPrice, Bid: inst.Bid, Ask: inst.Ask,
-		Greeks: toOrderGreeks(inst), IV: inst.Greeks.IV, IVPercentile: ivPercentile,
-	}, s.marketContext(), s.gexContext())
+		Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
+		Qty: qty, LimitPrice: price, Greeks: toOrderGreeks(inst),
+	}, s.eventContext(inst, slot))
 	return newPendingLeg(fill, inst.Name, inst.OptionType, qty, price), nil
 }
 

@@ -72,7 +72,8 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
 3. **Watches every position, every cycle** (every ~40 seconds with the shipped config) and applies the exit rules in order of urgency (section 4).
 4. **Reads market structure.** It estimates how option dealers are positioned (*gamma exposure*, GEX). When dealers are likely to *amplify* moves (negative gamma) and the trend is clearly down, it stops selling puts and closes existing ones, because that's the side under threat. Calls get the same treatment in a confirmed up-trend.
 5. **Repairs.** If a strangle has lost one leg (stopped out, rolled, or only one leg filled), it re-sells the missing leg at the same expiry and size, unless the market regime says that side is dangerous.
-6. **Reports, never hedges.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file. A human decides whether to act on it.
+6. **Keeps a decision diary.** Every order, fill, close and skipped opportunity is written down together with the market at that moment: BTC price, the volatility index (DVOL), whether the option was in or out of the money and by how much, how much open interest sat at that strike, and the dealer-positioning regime. Every minute it also writes the profit and loss of each slot, realised and open. This is what lets you judge, afterwards, which settings earn money and under which conditions.
+7. **Reports, never hedges.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file. A human decides whether to act on it.
 
 ## 4. How a trade can end
 

@@ -44,18 +44,23 @@ type Exchange interface {
 // MarketData provides the latest option chain snapshot and index price.
 type MarketData interface {
 	UnderlyingPrice() float64
+	DVOL() float64
 	IVPercentile() float64
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
 }
 
-// TradeJournal records every order event to the audit log (orders.log).
+// TradeJournal records every order event, with its market snapshot, and the
+// periodic P&L to the audit log (orders.log).
 type TradeJournal interface {
-	LogOpen(pos *orders.Position, fill orders.Fill, ivPercentile, spreadAlertThreshold float64, mkt orders.MarketContext, gexCtx orders.GEXContext)
-	LogClose(pos *orders.Position, fill orders.Fill, ivPercentile float64, trigger string, mkt orders.MarketContext, gexCtx orders.GEXContext)
-	LogSubmit(r orders.PendingOrderRecord, mkt orders.MarketContext, gexCtx orders.GEXContext)
-	LogCancelled(r orders.PendingOrderRecord, mkt orders.MarketContext, gexCtx orders.GEXContext)
-	LogReconciled(pos *orders.Position, ivPercentile float64, mkt orders.MarketContext, gexCtx orders.GEXContext)
+	LogSubmit(r orders.PendingOrderRecord, ctx orders.EventContext)
+	LogAmend(r orders.PendingOrderRecord, previousPrice float64, ctx orders.EventContext)
+	LogCancelled(r orders.PendingOrderRecord, ctx orders.EventContext)
+	LogOpen(pos *orders.Position, fill orders.Fill, ctx orders.EventContext)
+	LogClose(pos *orders.Position, fill orders.Fill, trigger, orderType string, ctx orders.EventContext)
+	LogReconciled(pos *orders.Position, ctx orders.EventContext)
+	LogSkipped(reason string, ctx orders.EventContext)
+	LogPnL(p orders.PnLRecord)
 }
 
 // HedgeReporter writes a hedge suggestion when net delta is too large.
@@ -69,6 +74,11 @@ type GEXSource interface {
 	Snapshot() *gex.Snapshot
 }
 
+// OISource provides open interest per instrument (refreshed periodically).
+type OISource interface {
+	OpenInterest() *gex.OISnapshot
+}
+
 // Deps groups the collaborators a Strategy needs.
 type Deps struct {
 	Market   MarketData
@@ -79,4 +89,5 @@ type Deps struct {
 	Journal TradeJournal
 	Hedge   HedgeReporter
 	GEX     GEXSource // optional: nil until a GEX manager is wired
+	OI      OISource  // optional: open interest for journal snapshots
 }

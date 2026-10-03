@@ -62,6 +62,15 @@ func (l *pendingLeg) applyState(st orders.OrderStateInfo) {
 	}
 }
 
+// record describes the leg's order for the journal, at limitPrice.
+func (l *pendingLeg) record(trigger string, limitPrice float64) orders.PendingOrderRecord {
+	return orders.PendingOrderRecord{
+		OrderID: l.orderID, Instrument: l.instrument, OptionType: l.optionType,
+		Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: trigger,
+		Qty: l.qty, LimitPrice: limitPrice,
+	}
+}
+
 func (l *pendingLeg) describe() string {
 	if l == nil {
 		return "skipped"
@@ -83,6 +92,11 @@ type pendingStrangle struct {
 	submittedAt      time.Time
 	adjustments      int
 	repairStrangleID string
+}
+
+// slot is the (DTE, delta) slot this entry belongs to.
+func (ps *pendingStrangle) slot() *orders.SlotRef {
+	return slotRef(ps.targetDTE, ps.entryDelta)
 }
 
 func (ps *pendingStrangle) legs() []*pendingLeg {
@@ -247,6 +261,8 @@ func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bo
 			slog.Warn("pending: amend failed", "order_id", leg.orderID, "err", err)
 			continue
 		}
+		s.journal.LogAmend(leg.record(orders.TriggerEntry, newPrice), leg.limitPrice,
+			s.eventContext(inst, ps.slot()))
 		slog.Info("pending: order amended due to price drift",
 			"pending_id", ps.id,
 			"instrument", leg.instrument,
@@ -266,10 +282,6 @@ func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bo
 // before the cancel landed, and finalizes with the filled part. A leg that
 // filled is therefore always tracked, even when its partner never did.
 func (s *Strategy) abandonPending(ctx context.Context, ps *pendingStrangle, reason string) {
-	ivPct := s.md.IVPercentile()
-	mkt := s.marketContext()
-	gexCtx := s.gexContext()
-
 	for _, leg := range ps.legs() {
 		if leg.done || leg.orderID == "" {
 			continue
@@ -287,19 +299,8 @@ func (s *Strategy) abandonPending(ctx context.Context, ps *pendingStrangle, reas
 		}
 		leg.done = true
 
-		rec := orders.PendingOrderRecord{
-			OrderID: leg.orderID, Instrument: leg.instrument, OptionType: leg.optionType,
-			Direction: orders.DirectionSell, TriggerReason: orders.TriggerTimeout,
-			Qty: leg.qty, LimitPrice: leg.limitPrice, IVPercentile: ivPct,
-		}
-		if inst, ok := s.md.GetInstrument(leg.instrument); ok {
-			rec.Strike = inst.Strike
-			rec.UnderlyingPrice = inst.UnderlyingPrice
-			rec.Bid, rec.Ask = inst.Bid, inst.Ask
-			rec.Greeks = toOrderGreeks(inst)
-			rec.IV = inst.Greeks.IV
-		}
-		s.journal.LogCancelled(rec, mkt, gexCtx)
+		s.journal.LogCancelled(leg.record(orders.TriggerTimeout, leg.limitPrice),
+			s.instrumentContext(leg.instrument, ps.slot()))
 		slog.Info("pending: leg abandoned",
 			"pending_id", ps.id, "instrument", leg.instrument, "order_id", leg.orderID,
 			"reason", reason, "filled_qty", leg.filledQty, "requested_qty", leg.qty)
@@ -315,9 +316,8 @@ func (s *Strategy) finalizePending(ps *pendingStrangle) {
 	s.removePending(ps.id)
 
 	now := time.Now()
-	ivPct := s.md.IVPercentile()
 	mkt := s.marketContext()
-	gexCtx := s.gexContext()
+	ivPct := s.md.IVPercentile()
 
 	build := func(leg *pendingLeg) *orders.Position {
 		if leg == nil || leg.filledQty <= qtyEpsilon {
@@ -327,7 +327,7 @@ func (s *Strategy) finalizePending(ps *pendingStrangle) {
 		s.state.AddPosition(pos)
 		s.journal.LogOpen(pos,
 			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Timestamp: now},
-			ivPct, s.cfg.SpreadAlertThreshold, mkt, gexCtx)
+			s.instrumentContext(leg.instrument, ps.slot()))
 		return pos
 	}
 	callPos, putPos := build(ps.call), build(ps.put)

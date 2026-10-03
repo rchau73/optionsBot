@@ -20,12 +20,14 @@ import (
 // answer at once, so there is never a resting close order to track.
 func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64) (float64, error) {
 	qty = math.Min(qty, pos.Qty)
+	slot := s.slotOf(pos.ID) // before the close can remove the strangle
 	order := orders.Order{
 		Instrument:    pos.Instrument,
 		Direction:     orders.DirectionBuy,
 		OrderType:     orders.TypeMarket,
 		Qty:           qty,
 		TriggerReason: reason,
+		Label:         s.orderLabel(slot),
 	}
 	if limitPrice > 0 {
 		order.OrderType = orders.TypeLimit
@@ -50,7 +52,8 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 	closed := *pos
 	closed.Qty = filled
 	closed.PremiumReceived = pos.PremiumReceived * filled / pos.Qty
-	s.journal.LogClose(&closed, fill, s.md.IVPercentile(), reason, s.marketContext(), s.gexContext())
+	s.journal.LogClose(&closed, fill, reason, order.OrderType, s.instrumentContext(pos.Instrument, slot))
+	s.pnl.record(slot, closed.PremiumReceived-fill.FillPrice*filled)
 
 	remaining := pos.Qty - filled
 	if remaining <= qtyEpsilon {

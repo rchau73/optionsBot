@@ -34,6 +34,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - **Stateless by design:** the in-memory book is rebuilt from the exchange on every start (reconcile), so crashes and restarts are recoverable.
 - **SOLID Go:** the strategy depends on small, consumer-defined interfaces; decision rules are pure functions (time passed in) shared by the live loop and the backtest.
 - **Market-structure aware:** dealer gamma exposure (GEX) from open interest, gamma flip with hysteresis, DVOL-based IV percentile.
+- **Decision journal with P&L:** every submit, amend, cancel, fill, close, reconcile and skipped entry in `orders.log` carries a market snapshot (spot, DVOL, IV percentile and skew, ITM/ATM/OTM and distance to strike, open interest of the strike/expiry with rank and max pain, GEX regime, spread), and P&L per strategy slot (realised, unrealised, coin and USD) is journaled periodically.
 - **Tested:** 87 % statement coverage, end-to-end strategy tests against a fake exchange, gateway integration tests against a mock Deribit WebSocket server, all under the race detector in CI, plus `govulncheck` and a Docker build.
 
 ## Architecture
@@ -49,7 +50,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 | Market | `internal/marketdata` | Option chain, ticker/index/DVOL subscriptions, IV percentile, shared expiry-window rule |
 | Market | `internal/gex` | Gamma exposure regime from open interest, refreshed every 60 s |
 | Decision | `internal/strategy` | Entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions |
-| Execution | `internal/orders` | Deribit order/account calls, in-memory book (snapshots), `orders.log` journal |
+| Execution | `internal/orders` | Deribit order/account calls, in-memory book (snapshots), `orders.log` decision journal (market snapshot + P&L) |
 | Reporting | `internal/hedge` | `hedge_report.json` — suggestion only, never trades |
 | Research | `internal/backtest` | CSV replay, simulated fills, metrics, parameter sweep, walk-forward |
 | Support | `internal/config`, `internal/logger` | `config.yaml` + `.env` with validation; `slog` JSON logging |
@@ -127,6 +128,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | Key | Default | Meaning |
 |---|---|---|
 | `underlying` | — | `BTC` or `ETH` |
+| `strategy_id` | `short-strangle` | names the strategy in `orders.log` and in Deribit order labels (`<id>:<dte>d:<delta>`) |
 | `dte_delta_matrix` | — | slots: each `dte` with one or more `deltas`; one strangle per (DTE, delta) |
 | `rollout_dte` | — | roll a leg when days to expiry ≤ this; every slot DTE must be above it |
 | `delta_drift_threshold` | — | roll a leg when \|delta\| falls below this (little premium left) |
@@ -139,6 +141,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `min_premium_btc` | 0 | skip legs whose price is below this (0 = off) |
 | `min_trade_amount` | 0.05 | fallback lot size when the exchange does not provide one |
 | `eval_interval_ms` | 35000 | decision-loop period |
+| `report_interval_sec` | 60 | heartbeat and P&L journal line period |
 | `order_fill_timeout_sec` | 90 | cancel unfilled entry legs after this |
 | `order_slippage_pct` / `order_max_adjustments` | 0.05 / 3 | amend a resting entry when the ask drifts by more than this, at most N times |
 | `gamma_trend_lookback_days`, `swing_pivot_n` | — / 3 | trend detection from daily closes |

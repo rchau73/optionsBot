@@ -105,7 +105,8 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 
 - `Executor` wraps every Deribit order/account method behind a small `rpcCaller` interface; one generic `call[T]` decodes results; `forbidden` errors become `orders.ErrForbidden`; risk-reducing orders go through the high-priority lane.
 - `StateManager` is the in-memory book (positions + strangles, strangle legs linked by ID). Readers get snapshots; all changes go through methods. Portfolio greeks are short-signed (Deribit greeks are long-perspective).
-- The order journal (`orders.log`) writes one JSON line per submit/cancel/open/close/reconcile with greeks, spread, market and GEX context, and on closes P&L in the underlying (`pnl`) and USD (`pnl_usd`, `pnl_usd_fmt`).
+- The order journal (`orders.log`) is the decision record: one JSON line per submit, amend, cancel, fill, close, reconcile and skipped entry, each tagged with `strategy_id` and slot and carrying a **market snapshot** built by the pure `strategy.BuildMarketSnapshot`: spot, DVOL, IV percentile, option IV, ATM IV and skew, ITM/ATM/OTM with distance to strike (in % and in standard deviations), bid/ask/spread, intrinsic and extrinsic value in coin, open interest of the instrument, strike and expiry with the strike's rank and the expiry's max-pain strike (from the GEX manager's 60 s book-summary poll — no extra API calls), and GEX regime/flip. Closes add P&L in coin (`pnl`) and USD at the close-time spot (`pnl_usd`). Skips are written once per reason until it changes.
+- **P&L:** realised P&L is booked per slot on every close; every `report_interval_sec` the journal gets one `pnl` line per slot plus the strategy total (realised since start + unrealised marked to mid, coin and USD). `Strategy.PnLReport()` exposes the same numbers for the future API. Orders carry a Deribit `label` (`<strategy_id>:<dte>d:<delta>`) so exchange-side fills can be attributed too.
 
 See the [data model](data_model.png).
 

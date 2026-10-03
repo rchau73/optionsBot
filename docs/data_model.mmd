@@ -143,14 +143,40 @@ classDiagram
     RolloutDecision ..> Position : EvaluateLeg(pos, now)
 
     class OrderLog {
-        +string OrderID
+        +string Event
+        +string StrategyID
+        +SlotRef Slot
         +string Instrument
-        +string Status
         +string TriggerReason
         +float FillPrice
+        +MarketSnapshot Market
+        +MarketContext Portfolio
         +string CloseReason
         +float PnL
         +float PnLUSD
-        +float ROIPct
-        +string GammaRegime
     }
+    class MarketSnapshot {
+        +float Spot
+        +float DVOL
+        +float IVPercentile
+        +float OptionIV
+        +float Skew
+        +string Moneyness
+        +float DistanceToStrikePct
+        +float SpreadPct
+        +float Intrinsic
+        +float StrikeOI
+        +int StrikeOIRank
+        +float MaxPainStrike
+        +string GEXRegime
+    }
+    class PnLRecord {
+        +string StrategyID
+        +SlotRef Slot
+        +float Realised
+        +float Unrealised
+        +float TotalUSD
+        +int OpenLegs
+    }
+    OrderLog --> MarketSnapshot : market
+    Snapshot ..> MarketSnapshot : regime, flip

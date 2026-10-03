@@ -342,6 +342,11 @@ func (m *Manager) instrumentCount() int {
 	return len(m.instruments)
 }
 
+// DVOL returns the latest Deribit volatility index value (%), 0 if unknown.
+func (m *Manager) DVOL() float64 {
+	return m.dvol.Current()
+}
+
 // IVPercentile ranks today's DVOL against the configured window of days.
 func (m *Manager) IVPercentile() float64 {
 	return m.dvol.Percentile()

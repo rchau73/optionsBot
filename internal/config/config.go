@@ -28,6 +28,7 @@ type StrangleSlot struct {
 type Config struct {
 	// ── Loaded from config.yaml ───────────────────────────────────────────────
 	Underlying     string          `yaml:"underlying"`
+	StrategyID     string          `yaml:"strategy_id"` // names the strategy in orders.log and order labels
 	DTEDeltaMatrix []DTEDeltaEntry `yaml:"dte_delta_matrix"`
 	// Legacy fields — kept for backward-compatible configs and backtest scenario sweeps.
 	// Ignored by Slots() when dte_delta_matrix is set.
@@ -50,6 +51,7 @@ type Config struct {
 	SpreadAlertThreshold   float64 `yaml:"spread_alert_threshold"`
 
 	EvalIntervalMS      int     `yaml:"eval_interval_ms"`
+	ReportIntervalSec   int     `yaml:"report_interval_sec"` // heartbeat + P&L journal period
 	MaxDTEDeviation     int     `yaml:"max_dte_deviation"`
 	DeltaSlippage       float64 `yaml:"delta_slippage"`
 	MinTradeAmount      float64 `yaml:"min_trade_amount"`
@@ -199,6 +201,9 @@ func Load(path string) (*Config, error) {
 	// ── Logic param defaults (config.yaml is authoritative; these are fallbacks)
 	if cfg.EvalIntervalMS <= 0 {
 		cfg.EvalIntervalMS = 35000
+	}
+	if cfg.ReportIntervalSec <= 0 {
+		cfg.ReportIntervalSec = 60
 	}
 	if cfg.MaxDTEDeviation <= 0 {
 		cfg.MaxDTEDeviation = 2

@@ -124,6 +124,13 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 	if order.TimeInForce != "" {
 		params["time_in_force"] = order.TimeInForce
 	}
+	if order.Label != "" {
+		label := order.Label
+		if len(label) > MaxLabelLen {
+			label = label[:MaxLabelLen]
+		}
+		params["label"] = label
+	}
 
 	priority := submitPriority(order.TriggerReason)
 

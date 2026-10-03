@@ -133,3 +133,25 @@ func TestGEXManager_StartBackgroundRefreshesUntilCancelled(t *testing.T) {
 		t.Error("background refresh should publish a snapshot")
 	}
 }
+
+// Open interest is published even when no GEX profile can be built (e.g. no IV),
+// because the journal uses it on its own.
+func TestGEXManager_PublishesOpenInterest(t *testing.T) {
+	chain, _ := gexFixture()
+	gw := &fakeBookSummary{result: `[{"instrument_name":"BTC-T-90000-P","open_interest":42,"mark_iv":0}]`}
+	m := gex.NewManager(gw, chain, "BTC", 5, 0.01, 0)
+
+	if m.OpenInterest() != nil {
+		t.Fatal("no open interest before the first refresh")
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	oi := m.OpenInterest()
+	if oi == nil || oi.ByInstrument["BTC-T-90000-P"] != 42 || oi.AsOf.IsZero() {
+		t.Errorf("open interest = %+v", oi)
+	}
+	if m.Snapshot() != nil {
+		t.Error("no GEX snapshot without IV")
+	}
+}

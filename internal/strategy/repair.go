@@ -17,7 +17,6 @@ import (
 // leg is about to roll, and a fresh partner would roll straight after it.
 func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec GammaDecision) {
 	instruments := s.md.AllInstruments()
-	ivPct := s.md.IVPercentile()
 
 	for _, st := range s.state.AllStrangles() {
 		present, missingType := s.liveLegs(st)
@@ -52,7 +51,7 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			continue
 		}
 
-		leg, err := s.submitEntryLeg(ctx, inst, present.Qty, ivPct)
+		leg, err := s.submitEntryLeg(ctx, inst, present.Qty, slotRef(st.TargetDTE, st.EntryDelta))
 		if err != nil {
 			slog.Warn("repair: order submit failed",
 				"strangle_id", st.ID, "missing", missingType, "err", err)

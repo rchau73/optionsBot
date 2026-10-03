@@ -36,6 +36,7 @@ max_leverage:           10.0    # hard cap; leverage above this is rejected at s
 
 # ── Order execution ───────────────────────────────────────────────────────────
 eval_interval_ms:      40000    # how often the strategy evaluates open positions
+report_interval_sec:   60       # heartbeat and P&L journal line every N seconds
 max_dte_deviation:     10       # max days an expiry may differ from the target DTE
 delta_slippage:        0.03     # max delta distance from target; 0 = accept closest
 min_trade_amount:      0.1      # minimum BTC per order leg (Deribit minimum)

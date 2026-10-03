@@ -149,7 +149,7 @@ func TestMarketData_AppliesTickerIndexAndDVOLPushes(t *testing.T) {
 
 	eventually(t, time.Second, "pushes applied", func() bool {
 		inst, _ := m.GetInstrument("BTC-D24-C")
-		return m.UnderlyingPrice() == 101234.5 && inst.Mid == 0.02
+		return m.UnderlyingPrice() == 101234.5 && inst.Mid == 0.02 && m.DVOL() == 55.5
 	})
 	inst, _ := m.GetInstrument("BTC-D24-C")
 	if inst.Greeks.Delta != 0.16 || inst.Greeks.IV != 0.55 || inst.UpdatedAt.IsZero() {

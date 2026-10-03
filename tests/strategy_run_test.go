@@ -188,6 +188,7 @@ type fakeMarket struct {
 }
 
 func (m *fakeMarket) UnderlyingPrice() float64 { m.mu.Lock(); defer m.mu.Unlock(); return m.price }
+func (m *fakeMarket) DVOL() float64            { return 55 }
 func (m *fakeMarket) IVPercentile() float64    { return 50 }
 
 func (m *fakeMarket) GetInstrument(name string) (*marketdata.Instrument, bool) {
@@ -220,15 +221,66 @@ func (m *fakeMarket) setQuote(name string, bid, ask float64) {
 	inst.Bid, inst.Ask, inst.Mid = bid, ask, (bid+ask)/2
 }
 
-type nopJournal struct{}
+// recordingJournal keeps every journal entry so tests can assert on them.
+type recordingJournal struct {
+	mu      sync.Mutex
+	entries []journalEntry
+	pnl     []orders.PnLRecord
+}
 
-func (nopJournal) LogOpen(*orders.Position, orders.Fill, float64, float64, orders.MarketContext, orders.GEXContext) {
+type journalEntry struct {
+	event      string
+	instrument string
+	trigger    string
+	orderType  string
+	reason     string
+	ctx        orders.EventContext
 }
-func (nopJournal) LogClose(*orders.Position, orders.Fill, float64, string, orders.MarketContext, orders.GEXContext) {
+
+func (j *recordingJournal) add(e journalEntry) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.entries = append(j.entries, e)
 }
-func (nopJournal) LogSubmit(orders.PendingOrderRecord, orders.MarketContext, orders.GEXContext)    {}
-func (nopJournal) LogCancelled(orders.PendingOrderRecord, orders.MarketContext, orders.GEXContext) {}
-func (nopJournal) LogReconciled(*orders.Position, float64, orders.MarketContext, orders.GEXContext) {
+
+func (j *recordingJournal) LogSubmit(r orders.PendingOrderRecord, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventSubmitted, instrument: r.Instrument, trigger: r.TriggerReason, ctx: ctx})
+}
+func (j *recordingJournal) LogAmend(r orders.PendingOrderRecord, _ float64, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventAmended, instrument: r.Instrument, ctx: ctx})
+}
+func (j *recordingJournal) LogCancelled(r orders.PendingOrderRecord, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventCancelled, instrument: r.Instrument, ctx: ctx})
+}
+func (j *recordingJournal) LogOpen(pos *orders.Position, _ orders.Fill, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, ctx: ctx})
+}
+func (j *recordingJournal) LogClose(pos *orders.Position, _ orders.Fill, trigger, orderType string, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventClosed, instrument: pos.Instrument, trigger: trigger, orderType: orderType, ctx: ctx})
+}
+func (j *recordingJournal) LogReconciled(pos *orders.Position, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventReconciled, instrument: pos.Instrument, ctx: ctx})
+}
+func (j *recordingJournal) LogSkipped(reason string, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventSkipped, reason: reason, ctx: ctx})
+}
+func (j *recordingJournal) LogPnL(p orders.PnLRecord) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.pnl = append(j.pnl, p)
+}
+
+// events returns a copy of the entries with the given event name.
+func (j *recordingJournal) events(event string) []journalEntry {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var out []journalEntry
+	for _, e := range j.entries {
+		if e.event == event {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 type nopHedge struct{}
@@ -256,6 +308,8 @@ type strategyFixture struct {
 	put      string
 	expiry   time.Time
 	gex      strategy.GEXSource // optional
+	oi       strategy.OISource  // optional
+	journal  *recordingJournal
 	cancel   context.CancelFunc
 	runErr   chan error
 	startRun func()
@@ -288,12 +342,13 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 			OrderSlippagePct:       0.5,
 			OrderMaxAdjustments:    3,
 		},
-		exch:   newFakeExchange(),
-		state:  orders.NewStateManager(),
-		call:   fmt.Sprintf(testCall, label),
-		put:    fmt.Sprintf(testPut, label),
-		expiry: expiry,
-		runErr: make(chan error, 1),
+		exch:    newFakeExchange(),
+		state:   orders.NewStateManager(),
+		journal: &recordingJournal{},
+		call:    fmt.Sprintf(testCall, label),
+		put:     fmt.Sprintf(testPut, label),
+		expiry:  expiry,
+		runErr:  make(chan error, 1),
 	}
 	inst := func(name, typ string, strike, delta float64) *marketdata.Instrument {
 		return &marketdata.Instrument{
@@ -310,7 +365,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 	f.startRun = func() {
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: nopJournal{}, Hedge: nopHedge{}, GEX: f.gex,
+			Journal: f.journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		f.cancel = cancel
@@ -776,5 +831,149 @@ func TestStrategy_HeartbeatAndHedgeDoNotTrade(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := len(f.exch.sells()) + len(f.exch.buys()); n != 0 {
 		t.Errorf("a quiet book must not trade, got %d orders", n)
+	}
+}
+
+// ── Journal snapshots and P&L ────────────────────────────────────────────────
+
+type fakeOI struct{ snap *gex.OISnapshot }
+
+func (f fakeOI) OpenInterest() *gex.OISnapshot { return f.snap }
+
+func (f *strategyFixture) withOpenInterest() {
+	f.oi = fakeOI{&gex.OISnapshot{AsOf: time.Now(), ByInstrument: map[string]float64{f.call: 1200, f.put: 800}}}
+}
+
+func TestStrategy_EveryDecisionIsJournaledWithMarketSnapshot(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenInterest()
+	f.startRun()
+
+	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.journal.events(orders.EventSubmitted)) == 2 })
+	for _, o := range f.exch.sells() {
+		if o.Label != "short-strangle:45d:0.16" {
+			t.Errorf("order label = %q, want strategy and slot", o.Label)
+		}
+	}
+	f.exch.fill(f.exch.orderIDFor(f.call, 0), 0.1, 0.021)
+	f.exch.fill(f.exch.orderIDFor(f.put, 0), 0.1, 0.021)
+	eventually(t, 2*time.Second, "fills journaled", func() bool { return len(f.journal.events(orders.EventFilled)) == 2 })
+
+	for _, e := range append(f.journal.events(orders.EventSubmitted), f.journal.events(orders.EventFilled)...) {
+		m := e.ctx.Market
+		if e.ctx.StrategyID != strategy.DefaultStrategyID || e.ctx.Slot == nil || e.ctx.Slot.DTE != 45 || e.ctx.Slot.Delta != 0.16 {
+			t.Errorf("%s %s: strategy/slot = %q %+v", e.event, e.instrument, e.ctx.StrategyID, e.ctx.Slot)
+		}
+		if m.Spot != 100000 || m.DVOL != 55 || m.IVPercentile != 50 || m.Moneyness != "OTM" || m.DistanceToStrikePct <= 0 {
+			t.Errorf("%s %s: market snapshot = %+v", e.event, e.instrument, m)
+		}
+		wantRank := 1 // call strike holds 1,200 of the expiry's 2,000 OI
+		if e.instrument == f.put {
+			wantRank = 2
+		}
+		if m.InstrumentOI == 0 || m.StrikeOIRank != wantRank || m.ExpiryOI != 2000 || m.MaxPainStrike == 0 {
+			t.Errorf("%s %s: open interest not captured: %+v", e.event, e.instrument, m)
+		}
+		if m.Mid != 0.02 || !near(m.SpreadPct, 0.002/0.02*100, 1e-9) {
+			t.Errorf("%s %s: liquidity not captured: %+v", e.event, e.instrument, m)
+		}
+	}
+}
+
+func TestStrategy_StopLossRealisesPnLPerSlot(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.01)
+	f.market.setQuote(f.call, 0.039, 0.041) // call mid 0.04 = 4× premium → stop-loss
+	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
+		if o.Direction == orders.DirectionBuy {
+			return orders.Fill{Qty: o.Qty, FillPrice: 0.04}
+		}
+		return orders.Fill{}
+	}
+	f.startRun()
+
+	eventually(t, 2*time.Second, "call stopped out", func() bool { return len(f.journal.events(orders.EventClosed)) >= 1 })
+	closed := f.journal.events(orders.EventClosed)[0]
+	if closed.trigger != orders.TriggerStopLoss200Pct || closed.orderType != orders.TypeMarket {
+		t.Errorf("close journaled as %s/%s, want stop-loss/market", closed.trigger, closed.orderType)
+	}
+	if closed.ctx.Slot == nil || closed.ctx.Slot.DTE != 45 || closed.ctx.Market.Moneyness == "" {
+		t.Errorf("close must carry its slot and snapshot: %+v", closed.ctx)
+	}
+	if b := f.exch.buys()[0]; b.Label != "short-strangle:45d:0.16" {
+		t.Errorf("close order label = %q", b.Label)
+	}
+
+	// Premium 0.01 × 0.1 = 0.001; bought back 0.04 × 0.1 = 0.004 → realised −0.003 BTC.
+	report := f.strat.PnLReport()
+	slot, total := report[0], report[len(report)-1]
+	if slot.Slot == nil || slot.Slot.DTE != 45 || !near(slot.Realised, -0.003, 1e-12) || slot.ClosedLegs != 1 {
+		t.Errorf("slot P&L = %+v, want realised −0.003 over 1 close", slot)
+	}
+	if total.Slot != nil || !near(total.Realised, -0.003, 1e-12) || total.OpenLegs != 1 {
+		t.Errorf("total P&L = %+v (the put stays open)", total)
+	}
+	// Unrealised on the open put: premium 0.001 − mid 0.02 × 0.1 = −0.001.
+	if !near(total.Unrealised, -0.001, 1e-12) {
+		t.Errorf("unrealised = %v, want −0.001", total.Unrealised)
+	}
+}
+
+func TestStrategy_ReconciledPositionsAreJournaledWithSlot(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+
+	eventually(t, 2*time.Second, "reconcile journaled", func() bool { return len(f.journal.events(orders.EventReconciled)) == 2 })
+	for _, e := range f.journal.events(orders.EventReconciled) {
+		if e.ctx.Slot == nil || e.ctx.Slot.DTE != 45 || e.ctx.Market.DVOL != 55 {
+			t.Errorf("reconciled %s: %+v", e.instrument, e.ctx)
+		}
+	}
+}
+
+// A slot that cannot be entered is journaled once per reason, not every cycle.
+func TestStrategy_SkippedEntryIsJournaledOncePerReason(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.MinPremiumBTC = 1 // every leg is below the floor
+	f.startRun()
+
+	eventually(t, 2*time.Second, "skip journaled", func() bool { return len(f.journal.events(orders.EventSkipped)) >= 1 })
+	time.Sleep(100 * time.Millisecond) // ~10 more cycles
+	skips := f.journal.events(orders.EventSkipped)
+	if len(skips) != 1 {
+		t.Fatalf("skip journaled %d times, want once", len(skips))
+	}
+	s := skips[0]
+	if !strings.HasPrefix(s.reason, strategy.SkipEntryRejected) || s.ctx.Slot == nil || s.ctx.Market.DVOL != 55 || s.ctx.Market.Spot != 100000 {
+		t.Errorf("skip = %+v", s)
+	}
+}
+
+func TestStrategy_PeriodicPnLLinesPerSlotAndTotal(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.ReportIntervalSec = 1
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+
+	eventually(t, 3*time.Second, "pnl journaled", func() bool {
+		f.journal.mu.Lock()
+		defer f.journal.mu.Unlock()
+		return len(f.journal.pnl) >= 2
+	})
+	f.journal.mu.Lock()
+	lines := append([]orders.PnLRecord(nil), f.journal.pnl[:2]...)
+	f.journal.mu.Unlock()
+
+	slot, total := lines[0], lines[1]
+	if slot.Slot == nil || slot.Slot.DTE != 45 || total.Slot != nil {
+		t.Fatalf("want one slot line then the total, got %+v / %+v", slot, total)
+	}
+	// Two legs: premium 0.002 each, mid 0.02 × 0.1 = 0.002 → unrealised 0.
+	if total.OpenLegs != 2 || !near(total.Unrealised, 0, 1e-12) || total.Spot != 100000 || total.StrategyID != strategy.DefaultStrategyID {
+		t.Errorf("total = %+v", total)
+	}
+	if !near(total.TotalUSD, total.Total*total.Spot, 1e-9) {
+		t.Errorf("USD must use the recorded spot: %+v", total)
 	}
 }

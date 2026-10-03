@@ -39,6 +39,7 @@ type Manager struct {
 
 	mu         sync.RWMutex
 	snapshot   *Snapshot
+	oi         *OISnapshot
 	lastRegime string // last published regime, used for hysteresis
 }
 
@@ -70,6 +71,21 @@ func (m *Manager) Snapshot() *Snapshot {
 	return m.snapshot
 }
 
+// OISnapshot is the open interest per instrument from the last refresh.
+// Like Snapshot it is immutable once published.
+type OISnapshot struct {
+	AsOf         time.Time
+	ByInstrument map[string]float64 // instrument name → open interest (contracts)
+}
+
+// OpenInterest returns the open interest from the last successful refresh,
+// or nil before the first one. It is at most one refresh interval old.
+func (m *Manager) OpenInterest() *OISnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.oi
+}
+
 // Refresh fetches the current book summary, recomputes GEX across the top
 // nExpiries, and stores the resulting Snapshot.
 func (m *Manager) Refresh(ctx context.Context) error {
@@ -83,13 +99,20 @@ func (m *Manager) Refresh(ctx context.Context) error {
 		oi, markIV, spot float64
 	}
 	lookup := make(map[string]sumRow, len(summaries))
+	oi := &OISnapshot{AsOf: time.Now(), ByInstrument: make(map[string]float64, len(summaries))}
 	var latestSpot float64
 	for _, s := range summaries {
 		lookup[s.InstrumentName] = sumRow{oi: s.OpenInterest, markIV: s.MarkIV / 100, spot: s.UnderlyingPrice}
+		oi.ByInstrument[s.InstrumentName] = s.OpenInterest
 		if s.UnderlyingPrice > 0 {
 			latestSpot = s.UnderlyingPrice
 		}
 	}
+	// Open interest is useful on its own (journal snapshots), even when no
+	// GEX profile can be built from it.
+	m.mu.Lock()
+	m.oi = oi
+	m.mu.Unlock()
 
 	// Get instrument chain from MarketData and group by expiry
 	instruments := m.md.AllInstruments()

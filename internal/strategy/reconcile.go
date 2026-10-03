@@ -177,7 +177,6 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			"unrealised_pnl_btc", fmt.Sprintf("%.6f", pos.MtMPnL()),
 			"delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 		)
-		s.journal.LogReconciled(pos, s.md.IVPercentile(), s.marketContext(), s.gexContext())
 	}
 
 	// Reconstruct strangles from matched call+put pairs per expiry.
@@ -199,6 +198,11 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			ID: stID, TargetDTE: bestSlot.TargetDTE, EntryDelta: bestSlot.EntryDelta,
 			CallLeg: call, PutLeg: put, OpenedAt: now,
 		})
+		for _, leg := range []*orders.Position{call, put} {
+			if leg != nil {
+				s.journal.LogReconciled(leg, s.instrumentContext(leg.Instrument, slotRef(bestSlot.TargetDTE, bestSlot.EntryDelta)))
+			}
+		}
 		if call != nil && put != nil {
 			slog.Info("reconcile: reconstructed strangle",
 				"strangle_id", stID,

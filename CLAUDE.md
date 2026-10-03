@@ -39,7 +39,8 @@ Never reintroduce env-var overrides for logic parameters.
 - **`internal/strategy`** — the decision loop; depends only on the interfaces in `deps.go`.
   - `strategy.go` Run/evaluate/heartbeat · `open.go` entry · `pending.go` fill tracking · `close.go` `buyToClose`, rollouts, GEX closes · `repair.go` · `reconcile.go` · `rebalance.go` · `killswitch.go`.
   - Pure rules shared with the backtest: `entry.go` (`SelectExpiry(…, now, …)`, `SelectStrike`), `rollout.go` (`EvaluateLeg(pos, now, …)`), `gamma.go`, `margin.go`.
-- **`internal/orders`** — `Executor` (Deribit calls behind `rpcCaller`; `ErrForbidden`), `StateManager` (in-memory book; readers get snapshots; greeks short-signed), journal `orders.log`, price/lot helpers (`RoundToStep`, `CeilToStep`, `FloorToStep`).
+- **`internal/orders`** — `Executor` (Deribit calls behind `rpcCaller`; `ErrForbidden`; order `label`), `StateManager` (in-memory book; readers get snapshots; greeks short-signed), decision journal `orders.log` (`journal.go` types: `EventContext`, `MarketSnapshot`, `OrderLog`, `PnLRecord`), price/lot helpers.
+- **Journal rule:** every decision (submit, amend, cancel, fill, close, reconcile, skip) is journaled through `s.eventContext`/`s.instrumentContext`, which build the market snapshot (`strategy/snapshot.go`, pure `BuildMarketSnapshot`). Realised P&L is booked per slot in `buyToClose`; `strategy/pnl.go` writes periodic P&L lines. New decision points must journal too.
 - **`internal/hedge`** — writes `hedge_report.json` when |net delta| ≥ threshold. **Never places orders.**
 - **`internal/backtest`** — CSV feed, `SimExecutor`, day-loop `Engine` using the pure rules at the simulated date, sweep (scenarios applied as slot matrices), walk-forward.
 

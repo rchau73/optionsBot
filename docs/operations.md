@@ -39,7 +39,7 @@ docker compose exec bot-btc sh       # shell inside the container (runs as a non
 
 ## Watch the logs
 
-`bot.log` (structured `slog` JSON) and `orders.log` (one JSON line per order event) are both mirrored to stdout, so `docker compose logs` shows one stream.
+`bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `docker compose logs` shows one stream. Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks.
 
 ```bash
 docker compose logs -f bot-btc                                    # everything, one underlying
@@ -49,6 +49,18 @@ docker compose logs -f bot-btc | grep '"order_id"'                # all order ev
 docker compose logs -f bot-btc | grep '"close_reason":"stop_loss"'
 docker compose logs bot-btc | grep '"close_reason"' \
   | jq '{instrument, close_reason, pnl, pnl_usd_fmt, roi_pct_fmt, hold_days}'
+
+# P&L per strategy slot and total (every report_interval_sec)
+grep '"event":"pnl"' orders.log | jq '{slot, realised, unrealised, total_usd, open_legs}'
+
+# Market conditions at each entry: DVOL, moneyness, open interest
+grep '"event":"filled"' orders.log \
+  | jq '{instrument, slot, dvol: .market.dvol, iv_pct: .market.iv_percentile,
+         moneyness: .market.moneyness, dist_pct: .market.distance_to_strike_pct,
+         strike_oi: .market.strike_oi, oi_rank: .market.strike_oi_rank, gex: .market.gex_regime}'
+
+# Why slots were not entered
+grep '"event":"skipped"' orders.log | jq '{slot, skip_reason, dvol: .market.dvol}'
 docker compose logs -f bot-btc | grep '"msg":"rate_limit_metrics"' # gateway health every 60 s
 ```
 

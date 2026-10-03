@@ -97,276 +97,160 @@ func formatROI(v float64) string {
 	return fmt.Sprintf("%.4f%%", v)
 }
 
-// PendingOrderRecord carries the data available at order-submission time.
-// Used to write orders.log entries before a fill is confirmed (status=submitted/cancelled).
-type PendingOrderRecord struct {
-	OrderID         string
-	Instrument      string
-	OptionType      string // "call" or "put"
-	Direction       string
-	TriggerReason   string
-	Qty             float64
-	LimitPrice      float64
-	Strike          float64
-	UnderlyingPrice float64
-	Bid             float64
-	Ask             float64
-	Greeks          Greeks
-	IV              float64
-	IVPercentile    float64
-}
-
-// GEXContext carries the market-wide GEX fields to embed in every order log entry.
-type GEXContext struct {
-	Regime      string
-	RegimeScore float64
-	GammaFlip   float64
-	FlipFound   bool
-}
-
-func applyGEX(rec *OrderLog, g GEXContext) {
-	rec.GammaRegime = g.Regime
-	rec.GammaRegimeScore = g.RegimeScore
-	if g.FlipFound {
-		rec.GammaFlip = g.GammaFlip
-		rec.GammaFlipFound = true
+// base fills the fields every journal entry shares.
+func base(event string, ctx EventContext) OrderLog {
+	ts := ctx.Market.AsOf
+	if ts.IsZero() {
+		ts = time.Now()
+	}
+	return OrderLog{
+		Timestamp:  ts,
+		Event:      event,
+		Status:     event,
+		StrategyID: ctx.StrategyID,
+		Slot:       ctx.Slot,
+		Market:     ctx.Market,
+		Portfolio:  ctx.Portfolio,
 	}
 }
 
-// LogOpen records a new position entry.
-func (l *Logger) LogOpen(pos *Position, fill Fill, ivPercentile float64, spreadAlertThreshold float64, mkt MarketContext, gexCtx GEXContext) {
-	rec := l.buildRecord(pos, fill, ivPercentile, TriggerEntry)
-	rec.MarketTrend = mkt.Trend
-	rec.PortDelta = mkt.NetDelta
-	rec.PortGamma = mkt.NetGamma
-	rec.PortVega = mkt.NetVega
-	rec.PortTheta = mkt.NetTheta
-	applyGEX(&rec, gexCtx)
+func (rec *OrderLog) setGreeks(g Greeks) {
+	rec.Delta, rec.Gamma, rec.Theta, rec.Vega, rec.Rho = g.Delta, g.Gamma, g.Theta, g.Vega, g.Rho
+}
+
+func (rec *OrderLog) setPending(r PendingOrderRecord) {
+	rec.OrderID = r.OrderID
+	rec.Instrument = r.Instrument
+	rec.OptionType = r.OptionType
+	rec.Direction = r.Direction
+	rec.OrderType = r.OrderType
+	rec.TriggerReason = r.TriggerReason
+	rec.Qty = r.Qty
+	rec.LimitPrice = r.LimitPrice
+	rec.setGreeks(r.Greeks)
+}
+
+func (rec *OrderLog) setPosition(pos *Position) {
+	rec.Instrument = pos.Instrument
+	rec.OptionType = pos.OptionType
+	rec.Qty = pos.Qty
+	rec.setGreeks(pos.CurrentGreeks)
+}
+
+// LogSubmit records an order sent to the exchange, before any fill.
+func (l *Logger) LogSubmit(r PendingOrderRecord, ctx EventContext) {
+	rec := base(EventSubmitted, ctx)
+	rec.setPending(r)
 	l.write(rec)
 }
 
-// LogClose records a position close with ROI fields.
-func (l *Logger) LogClose(pos *Position, fill Fill, ivPercentile float64, trigger string, mkt MarketContext, gexCtx GEXContext) {
-	rec := l.buildRecord(pos, fill, ivPercentile, trigger)
-	rec.MarketTrend = mkt.Trend
-	rec.PortDelta = mkt.NetDelta
-	rec.PortGamma = mkt.NetGamma
-	rec.PortVega = mkt.NetVega
-	rec.PortTheta = mkt.NetTheta
-	applyGEX(&rec, gexCtx)
+// LogAmend records a resting order re-priced from previousPrice to r.LimitPrice.
+func (l *Logger) LogAmend(r PendingOrderRecord, previousPrice float64, ctx EventContext) {
+	rec := base(EventAmended, ctx)
+	rec.setPending(r)
+	rec.PreviousPrice = previousPrice
+	l.write(rec)
+}
+
+// LogCancelled records an order cancelled before it (fully) filled.
+func (l *Logger) LogCancelled(r PendingOrderRecord, ctx EventContext) {
+	rec := base(EventCancelled, ctx)
+	rec.setPending(r)
+	l.write(rec)
+}
+
+// LogOpen records a short position opened by a fill.
+func (l *Logger) LogOpen(pos *Position, fill Fill, ctx EventContext) {
+	rec := base(EventFilled, ctx)
+	rec.setPosition(pos)
+	rec.OrderID = fill.OrderID
+	rec.Direction = DirectionSell
+	rec.OrderType = TypeLimit
+	rec.TriggerReason = TriggerEntry
+	rec.Qty = fill.Qty
+	rec.FillPrice = fill.FillPrice
+	rec.PremiumReceived = fill.FillPrice * fill.Qty
+	l.write(rec)
+}
+
+// LogClose records a (partial) buy-back of pos with its realised P&L. pos
+// must describe only the closed part (qty and premium share). orderType is
+// what was actually sent (market or limit).
+func (l *Logger) LogClose(pos *Position, fill Fill, trigger, orderType string, ctx EventContext) {
+	rec := base(EventClosed, ctx)
+	rec.setPosition(pos)
+	rec.OrderID = fill.OrderID
+	rec.Direction = DirectionBuy
+	rec.OrderType = orderType
+	rec.TriggerReason = trigger
+	rec.FillPrice = fill.FillPrice
 
 	closeCost := fill.FillPrice * pos.Qty
 	pnl := pos.PremiumReceived - closeCost
-	holdDays := int(math.Round(time.Since(pos.EntryTime).Hours() / 24))
+	holdDays := int(math.Round(rec.Timestamp.Sub(pos.EntryTime).Hours() / 24))
 	roi := 0.0
 	if pos.PremiumReceived > 0 {
 		roi = pnl / pos.PremiumReceived * 100
 	}
-	roiAnn := 0.0
-	if holdDays > 0 {
-		roiAnn = roi / float64(holdDays) * 365
+	spot := ctx.Market.Spot
+	if spot <= 0 {
+		spot = pos.UnderlyingPrice // best available conversion price
 	}
 
 	rec.CloseReason = closeReasonLabel(trigger)
 	rec.PremiumReceived = pos.PremiumReceived
 	rec.CloseCost = closeCost
-	// P&L is native to the underlying (BTC/ETH); USD uses the entry-time spot.
 	rec.PnL = pnl
-	rec.PnLUSD = pnl * pos.UnderlyingPrice
+	rec.PnLUSD = pnl * spot
 	rec.PnLUSDFmt = formatUSD(rec.PnLUSD)
 	rec.ROIPct = roi
 	rec.ROIPctFmt = formatROI(roi)
 	rec.HoldDays = holdDays
-	rec.ThetaCapturedUSD = pos.CurrentGreeks.Theta * float64(holdDays)
-	rec.ROIAnnualized = roiAnn
-
-	l.write(rec)
-}
-
-// LogSubmit writes a status=submitted entry when a limit order is placed on the exchange.
-// Called immediately after a successful Submit() call, before fill confirmation.
-func (l *Logger) LogSubmit(r PendingOrderRecord, mkt MarketContext, gexCtx GEXContext) {
-	mid := (r.Bid + r.Ask) / 2
-	spreadAbs := r.Ask - r.Bid
-	spreadPct := 0.0
-	if mid > 0 {
-		spreadPct = spreadAbs / mid * 100
-	}
-	if spreadPct > l.spreadAlertThreshold*100 {
-		slog.Warn("wide spread on submission",
-			"instrument", r.Instrument, "spread_pct", spreadPct)
-	}
-	rec := OrderLog{
-		Timestamp:        time.Now(),
-		OrderID:          r.OrderID,
-		Instrument:       r.Instrument,
-		Direction:        r.Direction,
-		OrderType:        TypeLimit,
-		TriggerReason:    r.TriggerReason,
-		Qty:              r.Qty,
-		LimitPrice:       r.LimitPrice,
-		FillPrice:        0,
-		Status:           "submitted",
-		Delta:            r.Greeks.Delta,
-		Gamma:            r.Greeks.Gamma,
-		Theta:            r.Greeks.Theta,
-		Vega:             r.Greeks.Vega,
-		Rho:              r.Greeks.Rho,
-		IV:               r.IV,
-		IVPercentile:     r.IVPercentile,
-		UnderlyingPrice:  r.UnderlyingPrice,
-		Strike:           r.Strike,
-		Bid:              r.Bid,
-		Ask:              r.Ask,
-		Mid:              mid,
-		SpreadAbs:        spreadAbs,
-		SpreadPct:        spreadPct,
-		MarketTrend:      mkt.Trend,
-		PortDelta:        mkt.NetDelta,
-		PortGamma:        mkt.NetGamma,
-		PortVega:         mkt.NetVega,
-		PortTheta:        mkt.NetTheta,
-		GammaRegime:      gexCtx.Regime,
-		GammaRegimeScore: gexCtx.RegimeScore,
-	}
-	if gexCtx.FlipFound {
-		rec.GammaFlip = gexCtx.GammaFlip
-		rec.GammaFlipFound = true
+	if holdDays > 0 {
+		rec.ROIAnnualized = roi / float64(holdDays) * 365
 	}
 	l.write(rec)
 }
 
-// LogCancelled writes a status=cancelled entry when an open limit order is cancelled
-// (e.g., due to fill-timeout or forced close).
-func (l *Logger) LogCancelled(r PendingOrderRecord, mkt MarketContext, gexCtx GEXContext) {
-	mid := (r.Bid + r.Ask) / 2
-	rec := OrderLog{
-		Timestamp:       time.Now(),
-		OrderID:         r.OrderID,
-		Instrument:      r.Instrument,
-		Direction:       r.Direction,
-		OrderType:       TypeLimit,
-		TriggerReason:   r.TriggerReason,
-		Qty:             r.Qty,
-		LimitPrice:      r.LimitPrice,
-		FillPrice:       0,
-		Status:          "cancelled",
-		Delta:           r.Greeks.Delta,
-		Gamma:           r.Greeks.Gamma,
-		Theta:           r.Greeks.Theta,
-		Vega:            r.Greeks.Vega,
-		Rho:             r.Greeks.Rho,
-		IV:              r.IV,
-		IVPercentile:    r.IVPercentile,
-		UnderlyingPrice: r.UnderlyingPrice,
-		Strike:          r.Strike,
-		Bid:             r.Bid,
-		Ask:             r.Ask,
-		Mid:             mid,
-		MarketTrend:     mkt.Trend,
-		PortDelta:       mkt.NetDelta,
-		GammaRegime:     gexCtx.Regime,
-	}
+// LogReconciled records a position loaded from the exchange at startup.
+func (l *Logger) LogReconciled(pos *Position, ctx EventContext) {
+	rec := base(EventReconciled, ctx)
+	rec.setPosition(pos)
+	rec.OrderID = "reconciled"
+	rec.Direction = DirectionSell
+	rec.TriggerReason = TriggerReconciled
+	rec.FillPrice = pos.EntryPrice
+	rec.PremiumReceived = pos.PremiumReceived
 	l.write(rec)
 }
 
-// LogReconciled writes a status=reconciled entry for positions loaded from the
-// exchange on bot startup (reconcilePositions). These were opened in a previous
-// session and have no original orders.log entry in the current run.
-func (l *Logger) LogReconciled(pos *Position, ivPercentile float64, mkt MarketContext, gexCtx GEXContext) {
-	rec := l.buildRecord(pos,
-		Fill{OrderID: "reconciled", FillPrice: pos.EntryPrice, Qty: pos.Qty, Timestamp: pos.EntryTime},
-		ivPercentile, TriggerReconciled)
-	rec.Status = "reconciled"
-	rec.MarketTrend = mkt.Trend
-	rec.PortDelta = mkt.NetDelta
-	rec.PortGamma = mkt.NetGamma
-	rec.PortVega = mkt.NetVega
-	rec.PortTheta = mkt.NetTheta
-	applyGEX(&rec, gexCtx)
+// LogSkipped records why a vacant slot was not entered, with the market at
+// that moment — the decisions not taken matter as much as the trades.
+func (l *Logger) LogSkipped(reason string, ctx EventContext) {
+	rec := base(EventSkipped, ctx)
+	rec.SkipReason = reason
 	l.write(rec)
 }
 
-func (l *Logger) buildRecord(pos *Position, fill Fill, ivPercentile float64, trigger string) OrderLog {
-	mid := (pos.CurrentMid)
-	spreadAbs := 0.0
-	spreadPct := 0.0
-	if pos.CurrentMid > 0 {
-		// We store bid/ask on position after update
-		spreadAbs = 0 // populated at call site if needed
-		spreadPct = 0
-	}
-
-	// Intrinsic value based on underlying spot price vs strike (not the option premium).
-	intrinsic := 0.0
-	switch pos.OptionType {
-	case "call":
-		intrinsic = math.Max(pos.UnderlyingPrice-pos.Strike, 0)
-	case "put":
-		intrinsic = math.Max(pos.Strike-pos.UnderlyingPrice, 0)
-	}
-
-	extrinsic := fill.FillPrice - intrinsic
-	intrinsicPct := 0.0
-	extrinsicPct := 0.0
-	if fill.FillPrice > 0 {
-		intrinsicPct = intrinsic / fill.FillPrice * 100
-		extrinsicPct = extrinsic / fill.FillPrice * 100
-	}
-
-	if mid > 0 {
-		spreadPct = spreadAbs / mid * 100
-	}
-
-	if spreadPct > l.spreadAlertThreshold*100 {
-		slog.Warn("wide spread alert",
-			"instrument", pos.Instrument,
-			"spread_pct", spreadPct,
-		)
-	}
-
-	direction := DirectionSell
-	if trigger == TriggerRollout19DTE || trigger == TriggerRolloutDelta ||
-		trigger == TriggerRolloutROI || trigger == TriggerStopLoss200Pct ||
-		trigger == TriggerGammaClose || trigger == TriggerKillSwitch {
-		direction = DirectionBuy
-	}
-
-	return OrderLog{
-		Timestamp:       fill.Timestamp,
-		OrderID:         fill.OrderID,
-		Instrument:      pos.Instrument,
-		Direction:       direction,
-		OrderType:       TypeLimit,
-		TriggerReason:   trigger,
-		Qty:             pos.Qty,
-		LimitPrice:      pos.LimitPrice,
-		FillPrice:       fill.FillPrice,
-		Status:          "filled",
-		Delta:           pos.CurrentGreeks.Delta,
-		Gamma:           pos.CurrentGreeks.Gamma,
-		Theta:           pos.CurrentGreeks.Theta,
-		Vega:            pos.CurrentGreeks.Vega,
-		Rho:             pos.CurrentGreeks.Rho,
-		IV:              pos.CurrentGreeks.IV,
-		IVPercentile:    ivPercentile,
-		UnderlyingPrice: pos.UnderlyingPrice,
-		Strike:          pos.Strike,
-		IntrinsicValue:  intrinsic,
-		ExtrinsicValue:  extrinsic,
-		IntrinsicPct:    intrinsicPct,
-		ExtrinsicPct:    extrinsicPct,
-		Mid:             mid,
-		SpreadAbs:       spreadAbs,
-		SpreadPct:       spreadPct,
-		FillVsMid:       fill.FillPrice - mid,
-	}
+// LogPnL writes a periodic P&L line.
+func (l *Logger) LogPnL(p PnLRecord) {
+	p.Event = EventPnL
+	l.writeJSON(p, slog.Default().With("event", EventPnL))
 }
 
 func (l *Logger) write(rec OrderLog) {
-	data, err := json.Marshal(rec)
+	if rec.Market.SpreadPct > l.spreadAlertThreshold*100 && l.spreadAlertThreshold > 0 {
+		slog.Warn("wide spread", "instrument", rec.Instrument, "event", rec.Event,
+			"spread_pct", rec.Market.SpreadPct, "threshold_pct", l.spreadAlertThreshold*100)
+	}
+	l.writeJSON(rec, slog.Default().With("order_id", rec.OrderID, "instrument", rec.Instrument))
+}
+
+// writeJSON appends one JSON line; failures are logged with ctxLog's fields.
+func (l *Logger) writeJSON(v any, ctxLog *slog.Logger) {
+	data, err := json.Marshal(v)
 	if err != nil {
-		slog.Error("order log marshal error", "err", err)
+		ctxLog.Error("order log marshal error", "err", err)
 		return
 	}
 	data = append(data, '\n')
@@ -374,7 +258,7 @@ func (l *Logger) write(rec OrderLog) {
 	defer l.mu.Unlock()
 	// orders.log is the audit trail of every fill; a failed write must be visible.
 	if _, err := l.w.Write(data); err != nil {
-		slog.Error("order log write failed", "order_id", rec.OrderID, "instrument", rec.Instrument, "err", err)
+		ctxLog.Error("order log write failed", "err", err)
 	}
 }
 

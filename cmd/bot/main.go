@@ -118,6 +118,7 @@ func runLive(cfg *config.Config) error {
 		Journal:  orderLog,
 		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
 		GEX:      gexMgr,
+		OI:       gexMgr,
 	})
 
 	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)

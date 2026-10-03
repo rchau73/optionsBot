@@ -34,6 +34,10 @@ type Strategy struct {
 	hedge       HedgeReporter
 	gamma       *GammaMonitor
 	marginGuard *MarginGuard
+	oi          OISource // may be nil
+	pnl         *pnlBook
+
+	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
@@ -60,6 +64,9 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		hedge:            d.Hedge,
 		gamma:            gamma,
 		marginGuard:      NewMarginGuard(cfg.MaxMarginPct, cfg.Leverage),
+		oi:               d.OI,
+		pnl:              newPnLBook(),
+		lastSkip:         make(map[slotKey]string),
 		killSwitchCh:     make(chan struct{}),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
@@ -174,8 +181,14 @@ func (s *Strategy) refreshMarks() {
 	}
 }
 
+// heartbeat logs account state and writes the P&L journal lines every
+// report_interval_sec (default 60 s).
 func (s *Strategy) heartbeat(ctx context.Context) {
-	t := time.NewTicker(60 * time.Second)
+	every := time.Duration(s.cfg.ReportIntervalSec) * time.Second
+	if every <= 0 {
+		every = 60 * time.Second
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
@@ -183,6 +196,7 @@ func (s *Strategy) heartbeat(ctx context.Context) {
 			return
 		case <-t.C:
 			s.logHeartbeat(ctx)
+			s.logPnL()
 		}
 	}
 }
@@ -261,21 +275,6 @@ func (s *Strategy) authBackoffActive() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return !s.lastAuthErr.IsZero() && time.Since(s.lastAuthErr) < authBackoff
-}
-
-// gexContext extracts a GEXContext from the current GEX snapshot for embedding
-// into every order log entry.
-func (s *Strategy) gexContext() orders.GEXContext {
-	snap := s.gamma.CurrentGEXSnapshot()
-	if snap == nil {
-		return orders.GEXContext{Regime: "UNKNOWN"}
-	}
-	return orders.GEXContext{
-		Regime:      snap.Regime,
-		RegimeScore: snap.RegimeScore,
-		GammaFlip:   snap.GammaFlip,
-		FlipFound:   snap.GammaFlipFound,
-	}
 }
 
 // marketContext snapshots the current portfolio Greeks and market trend.
