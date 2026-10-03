@@ -26,6 +26,7 @@ func buildTestConfig() *config.Config {
 		IVPercentileWindow:     10,
 		HedgeReportThreshold:   0.05,
 		MaxMarginPct:           0.35,
+		Leverage:               1,
 		SpreadAlertThreshold:   0.05,
 		Backtest: config.Backtest{
 			FillModel:             "mid",
@@ -87,6 +88,42 @@ func TestBacktestLoop_RunsWithoutError(t *testing.T) {
 	}
 	if summary.TotalTrades < 0 {
 		t.Error("expected non-negative trade count")
+	}
+}
+
+// Regression: expiry selection and DTE used the wall clock instead of the
+// simulated date, so a backtest over any past period never traded. A 2023
+// run must open a strangle on the day the 45-day expiry is 30 DTE away and
+// roll it when it reaches rollout_dte.
+func TestBacktestLoop_TradesOnHistoricalDates(t *testing.T) {
+	cfg := buildTestConfig()
+	cfg.MaxDTEDeviation = 5
+	path := writeSyntheticCSV(t, 40)
+	from := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2023, 2, 9, 0, 0, 0, 0, time.UTC)
+
+	feed, err := backtest.NewHistoricalFeed(path, from, to, cfg.IVPercentileWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := backtest.NewEngine(cfg, feed, backtest.NewSimExecutor(cfg.Backtest, 100_000))
+	summary, err := engine.Run(context.Background())
+	if err != nil {
+		t.Fatalf("engine.Run: %v", err)
+	}
+
+	opened := false
+	for _, snap := range engine.Snapshots() {
+		if snap.OpenPositions > 0 {
+			opened = true
+			break
+		}
+	}
+	if !opened {
+		t.Fatal("backtest never opened a position on historical dates")
+	}
+	if summary.Rollout19DTE == 0 {
+		t.Errorf("legs should roll at rollout_dte (10); summary = %+v", summary)
 	}
 }
 

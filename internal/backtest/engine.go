@@ -170,7 +170,7 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 
 	// Per-position rollout checks
 	for _, pos := range e.state.AllPositions() {
-		dec := strategy.EvaluateLeg(pos,
+		dec := strategy.EvaluateLeg(pos, date,
 			e.cfg.RolloutDTE,
 			e.cfg.DeltaDriftThreshold,
 			e.cfg.ROITakeProfit,
@@ -178,13 +178,13 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 		)
 		if dec.Action == strategy.ActionNone {
 			slog.Debug("position hold", "instrument", pos.Instrument, "action", "none",
-				"dte", int(time.Until(pos.Expiry).Hours()/24), "delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
+				"dte", pos.DTEAt(date), "delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 				"roi_pct", fmt.Sprintf("%.2f", (pos.PremiumReceived-pos.CurrentMid)/pos.PremiumReceived*100))
 			continue
 		}
 		slog.Debug("position rollout decision", "instrument", pos.Instrument,
 			"action", dec.Action, "reason", dec.Reason,
-			"dte", int(time.Until(pos.Expiry).Hours()/24),
+			"dte", pos.DTEAt(date),
 			"delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 			"current_mid", fmt.Sprintf("%.4f", pos.CurrentMid),
 			"premium_received", fmt.Sprintf("%.4f", pos.PremiumReceived))
@@ -321,7 +321,7 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 			newExpiry, ok = strategy.NextMonthlyExpiry(date, expiries)
 		} else {
 			for _, e := range expiries {
-				if int(time.Until(e).Hours()/24) >= 25 {
+				if strategy.DaysToExpiry(e, date) >= 25 {
 					newExpiry = e
 					ok = true
 					break
@@ -338,7 +338,7 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 		}
 		expiries := strategy.AvailableExpiries(instList)
 		for _, exp := range expiries {
-			if int(time.Until(exp).Hours()/24) >= 25 {
+			if strategy.DaysToExpiry(exp, date) >= 25 {
 				e.openLeg(ctx, instList, exp, pos.OptionType, date, ivPct, posEntryDelta)
 				break
 			}
@@ -426,7 +426,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
-		expiry, ok := strategy.SelectExpiry(instruments, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE)
+		expiry, ok := strategy.SelectExpiry(instruments, date, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE)
 		if !ok {
 			slog.Debug("skip entry: no suitable expiry",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
@@ -450,7 +450,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 		}
 
 		marginNeeded := call.Mid + put.Mid
-		if !e.marginGuard.WithinLimit(e.state.TotalMarginUsed(), marginNeeded, equity, ivPct) {
+		if !e.marginGuard.WithinLimit(e.state.TotalMarginUsed(), marginNeeded, equity) {
 			slog.Debug("skip entry: margin limit",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"margin_needed", fmt.Sprintf("%.4f", marginNeeded),

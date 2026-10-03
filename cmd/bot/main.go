@@ -97,7 +97,6 @@ func runLive(cfg *config.Config) error {
 	}
 
 	exec := orders.NewExecutor(gw)
-	state := orders.NewStateManager()
 
 	orderLog, err := orders.NewLogger("orders.log", cfg.SpreadAlertThreshold)
 	if err != nil {
@@ -105,17 +104,33 @@ func runLive(cfg *config.Config) error {
 	}
 	defer orderLog.Close()
 
-	hedgeRpt := hedge.New("hedge_report.json", cfg.HedgeReportThreshold)
-
-	strat := strategy.New(cfg, md, exec, state, orderLog, hedgeRpt)
-
-	// Wire up the GEX manager: fetches public/get_book_summary_by_currency every
-	// 60s and computes the market-wide gamma exposure (GEX) regime. The strategy
-	// uses this instead of net portfolio gamma to decide when to shed a strangle leg.
+	// The GEX manager polls public/get_book_summary_by_currency every 60s and
+	// classifies the market-wide gamma regime the strategy uses to shed legs.
 	gexMgr := gex.NewManager(gw, md, cfg.Underlying, 5, cfg.GammaRegimeBandPct, cfg.GEXStrikeRangePct)
 	gexMgr.StartBackground(ctx, 60*time.Second)
-	strat.SetGEXManager(gexMgr)
-	strat.LoadGammaPriceHistory(ctx)
+
+	strat := strategy.New(cfg, strategy.Deps{
+		Market:   md,
+		Exchange: exec,
+		State:    orders.NewStateManager(),
+		Journal:  orderLog,
+		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
+		GEX:      gexMgr,
+	})
+
+	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)
+	// flattens every position at market and halts trading.
+	killCh := make(chan os.Signal, 1)
+	signal.Notify(killCh, syscall.SIGUSR1)
+	defer signal.Stop(killCh)
+	go func() {
+		select {
+		case <-killCh:
+			slog.Warn("kill switch triggered via SIGUSR1")
+			strat.KillSwitch()
+		case <-ctx.Done():
+		}
+	}()
 
 	slog.Info("bot starting",
 		"environment", cfg.WSEndpoint(),

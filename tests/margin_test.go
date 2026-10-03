@@ -15,27 +15,16 @@ const testEquity = 0.53
 func TestMarginGuard_AllowedMargin_Basic(t *testing.T) {
 	g := strategy.NewMarginGuard(0.35, 1.0)
 	want := testEquity * 0.35
-	got := g.AllowedMargin(testEquity, 0)
+	got := g.AllowedMargin(testEquity)
 	if math.Abs(got-want) > 1e-9 {
-		t.Errorf("AllowedMargin(%.2f, 0) = %.6f, want %.6f", testEquity, got, want)
+		t.Errorf("AllowedMargin(%.2f) = %.6f, want %.6f", testEquity, got, want)
 	}
 }
 
 func TestMarginGuard_AllowedMargin_ZeroEquity(t *testing.T) {
 	g := strategy.NewMarginGuard(0.35, 1.0)
-	if got := g.AllowedMargin(0, 0); got != 0 {
-		t.Errorf("AllowedMargin(0, 0) = %.6f, want 0", got)
-	}
-}
-
-func TestMarginGuard_AllowedMargin_IVPercentileIgnored(t *testing.T) {
-	// IV percentile must not change the allowed amount — Deribit PM already prices vol.
-	g := strategy.NewMarginGuard(0.35, 1.0)
-	at0 := g.AllowedMargin(testEquity, 0)
-	at50 := g.AllowedMargin(testEquity, 50)
-	at99 := g.AllowedMargin(testEquity, 99)
-	if at0 != at50 || at0 != at99 {
-		t.Errorf("AllowedMargin varies with IV percentile: 0→%.6f, 50→%.6f, 99→%.6f", at0, at50, at99)
+	if got := g.AllowedMargin(0); got != 0 {
+		t.Errorf("AllowedMargin(0) = %.6f, want 0", got)
 	}
 }
 
@@ -50,7 +39,7 @@ func TestMarginBudget_NoExistingPositions(t *testing.T) {
 	equity := testEquity
 	existingMargin := 0.0
 
-	allowed := g.AllowedMargin(equity, 0)
+	allowed := g.AllowedMargin(equity)
 	budget := allowed - existingMargin
 
 	wantAllowed := 0.53 * 0.35 // 0.1855 BTC
@@ -69,7 +58,7 @@ func TestMarginBudget_PreExistingPositionsReduceBudget(t *testing.T) {
 	equity := testEquity
 	existingMargin := equity * 0.10 // 10% used
 
-	allowed := g.AllowedMargin(equity, 0)
+	allowed := g.AllowedMargin(equity)
 	budget := allowed - existingMargin
 
 	wantBudget := equity * (0.35 - 0.10) // 25% of equity
@@ -87,7 +76,7 @@ func TestMarginBudget_AtCapStopsNewPositions(t *testing.T) {
 	equity := testEquity
 	existingMargin := equity * 0.35 // exactly at cap
 
-	allowed := g.AllowedMargin(equity, 0)
+	allowed := g.AllowedMargin(equity)
 	budget := allowed - existingMargin
 
 	if budget > 1e-12 {
@@ -101,7 +90,7 @@ func TestMarginBudget_OverCapStopsNewPositions(t *testing.T) {
 	equity := testEquity
 	existingMargin := equity * 0.377
 
-	allowed := g.AllowedMargin(equity, 0)
+	allowed := g.AllowedMargin(equity)
 	budget := allowed - existingMargin
 
 	if budget >= 0 {
@@ -116,7 +105,7 @@ func TestMarginBudget_RealWorldScenario(t *testing.T) {
 	equity := 0.53
 	existingIM := equity * 0.22 // ~22% initial margin for 4-leg strangle book
 
-	allowed := g.AllowedMargin(equity, 0)
+	allowed := g.AllowedMargin(equity)
 	budget := allowed - existingIM
 
 	wantBudget := equity * (0.35 - 0.22)
@@ -173,11 +162,21 @@ func TestComputeQtyFromIM_PartialLotIsFloored(t *testing.T) {
 	}
 }
 
-func TestComputeQtyFromIM_ZeroIMFallsBackToExchMin(t *testing.T) {
-	// Both legs show zero IM (degenerate API response).
+func TestComputeQtyFromIM_ZeroIMUsesBudgetAsNotional(t *testing.T) {
+	// Both legs show zero IM — PM data unavailable (e.g. testnet ETH).
+	// Should size by floor(targetMargin / exchMin), not fall back to exchMin.
+	// floor(0.5 / 0.1) = 5 → qty = 0.5
 	qty := strategy.ComputeQtyFromIM(0.1, 0.5, 0.0, 0.0)
-	if math.Abs(qty-0.1) > 1e-9 {
-		t.Errorf("expected fallback to exchMin 0.1 BTC, got %.6f", qty)
+	if math.Abs(qty-0.5) > 1e-9 {
+		t.Errorf("zero IM: expected budget-based qty 0.5, got %.6f", qty)
+	}
+}
+
+func TestComputeQtyFromIM_ZeroIMBudgetFloor(t *testing.T) {
+	// Budget smaller than one lot — floor clamps to exchMin (1 lot), not zero.
+	qty := strategy.ComputeQtyFromIM(1.0, 0.5, 0.0, 0.0)
+	if math.Abs(qty-1.0) > 1e-9 {
+		t.Errorf("zero IM budget floor: expected 1.0 (floor), got %.6f", qty)
 	}
 }
 
@@ -186,7 +185,19 @@ func TestComputeQtyFromIM_NegativeTotalIMFallsBackToExchMin(t *testing.T) {
 	// Avoid unbounded sizing — open one lot at minimum exposure.
 	qty := strategy.ComputeQtyFromIM(0.1, 0.5, -0.02, 0.01)
 	if math.Abs(qty-0.1) > 1e-9 {
-		t.Errorf("expected fallback to exchMin when imPerUnit ≤ 0, got %.6f", qty)
+		t.Errorf("expected fallback to exchMin when imPerUnit < 0, got %.6f", qty)
+	}
+}
+
+func TestComputeQtyFromIM_ETHTestnetScenario(t *testing.T) {
+	// Mirrors the ETH testnet case: equity=924 ETH, max_margin_pct=35%, leverage=2×,
+	// 3 slots, no existing positions → budget=647 ETH, targetPerSlot=215.75 ETH.
+	// Testnet returns zero IM for ETH options → budget-as-notional fallback.
+	// exchMin=1 ETH → floor(215.75/1) = 215 → qty = 215 ETH.
+	targetPerSlot := 924.0 * 0.35 * 2.0 / 3.0 // 215.75 ETH
+	qty := strategy.ComputeQtyFromIM(1.0, targetPerSlot, 0.0, 0.0)
+	if math.Abs(qty-215.0) > 1e-9 {
+		t.Errorf("ETH testnet: expected 215 ETH (budget-based), got %.6f", qty)
 	}
 }
 
@@ -259,7 +270,7 @@ func TestComputeQtyFromIM_TestnetScenario(t *testing.T) {
 func TestWithinLimit_FitsUnderCap(t *testing.T) {
 	g := strategy.NewMarginGuard(0.35, 1.0)
 	// 10% used, adding 5% → 15%, well under 35%.
-	if !g.WithinLimit(testEquity*0.10, testEquity*0.05, testEquity, 0) {
+	if !g.WithinLimit(testEquity*0.10, testEquity*0.05, testEquity) {
 		t.Error("15% combined should be within 35% cap")
 	}
 }
@@ -267,7 +278,7 @@ func TestWithinLimit_FitsUnderCap(t *testing.T) {
 func TestWithinLimit_ExactlyAtCap(t *testing.T) {
 	g := strategy.NewMarginGuard(0.35, 1.0)
 	// 10% used, adding 25% → exactly 35%.
-	if !g.WithinLimit(testEquity*0.10, testEquity*0.25, testEquity, 0) {
+	if !g.WithinLimit(testEquity*0.10, testEquity*0.25, testEquity) {
 		t.Error("35% combined should be at (not over) 35% cap")
 	}
 }
@@ -275,18 +286,8 @@ func TestWithinLimit_ExactlyAtCap(t *testing.T) {
 func TestWithinLimit_ExceedsCap(t *testing.T) {
 	g := strategy.NewMarginGuard(0.35, 1.0)
 	// 30% used, adding 10% → 40%, over cap.
-	if g.WithinLimit(testEquity*0.30, testEquity*0.10, testEquity, 0) {
+	if g.WithinLimit(testEquity*0.30, testEquity*0.10, testEquity) {
 		t.Error("40% combined should exceed 35% cap")
-	}
-}
-
-func TestWithinLimit_IVPercentileIgnored(t *testing.T) {
-	g := strategy.NewMarginGuard(0.35, 1.0)
-	// Result must be identical regardless of IV percentile passed.
-	r0 := g.WithinLimit(testEquity*0.10, testEquity*0.05, testEquity, 0)
-	r99 := g.WithinLimit(testEquity*0.10, testEquity*0.05, testEquity, 99)
-	if r0 != r99 {
-		t.Errorf("WithinLimit differs with IV percentile: iv=0 → %v, iv=99 → %v", r0, r99)
 	}
 }
 
@@ -296,8 +297,8 @@ func TestLeverage_DoublesAllowedMargin(t *testing.T) {
 	base := strategy.NewMarginGuard(0.35, 1.0)
 	lev2 := strategy.NewMarginGuard(0.35, 2.0)
 
-	want := base.AllowedMargin(testEquity, 0) * 2
-	got := lev2.AllowedMargin(testEquity, 0)
+	want := base.AllowedMargin(testEquity) * 2
+	got := lev2.AllowedMargin(testEquity)
 	if math.Abs(got-want) > 1e-9 {
 		t.Errorf("2× leverage: got %.6f BTC, want %.6f BTC", got, want)
 	}
@@ -307,7 +308,7 @@ func TestLeverage_ExactBudgetCalculation(t *testing.T) {
 	// equity=1 BTC, max_margin_pct=0.35, leverage=2 → allowed=0.70 BTC
 	g := strategy.NewMarginGuard(0.35, 2.0)
 	want := 0.70
-	got := g.AllowedMargin(1.0, 0)
+	got := g.AllowedMargin(1.0)
 	if math.Abs(got-want) > 1e-9 {
 		t.Errorf("AllowedMargin = %.6f BTC, want %.6f BTC", got, want)
 	}
@@ -317,7 +318,7 @@ func TestLeverage_OneIsIdentityFunction(t *testing.T) {
 	// leverage=1 must be identical to the pre-leverage baseline.
 	g1 := strategy.NewMarginGuard(0.35, 1.0)
 	gBase := strategy.NewMarginGuard(0.35, 1.0)
-	if g1.AllowedMargin(testEquity, 0) != gBase.AllowedMargin(testEquity, 0) {
+	if g1.AllowedMargin(testEquity) != gBase.AllowedMargin(testEquity) {
 		t.Error("leverage=1 should be identical to no-leverage baseline")
 	}
 }
@@ -331,10 +332,10 @@ func TestLeverage_WithinLimit_Respects2x(t *testing.T) {
 	current := testEquity * 0.30
 	newCost := testEquity * 0.10
 
-	if g1x.WithinLimit(current, newCost, testEquity, 0) {
+	if g1x.WithinLimit(current, newCost, testEquity) {
 		t.Error("1× leverage: 40% should exceed 35% cap")
 	}
-	if !g2x.WithinLimit(current, newCost, testEquity, 0) {
+	if !g2x.WithinLimit(current, newCost, testEquity) {
 		t.Error("2× leverage: 40% should be within 70% cap")
 	}
 }

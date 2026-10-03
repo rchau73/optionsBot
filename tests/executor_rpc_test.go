@@ -223,7 +223,7 @@ func TestExecutor_CancelAndAmendUseExpectedMethods(t *testing.T) {
 	if err := exec.CancelAll(ctx, "BTC-X-C"); err != nil {
 		t.Fatal(err)
 	}
-	if err := exec.CancelAllOrders(ctx); err != nil {
+	if err := exec.CancelAllOrders(ctx, "ETH"); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.AmendOrder(ctx, "o-1", 0.1, 0.012345); err != nil {
@@ -236,13 +236,18 @@ func TestExecutor_CancelAndAmendUseExpectedMethods(t *testing.T) {
 	}{
 		{"private/cancel", gateway.PriorityHigh},
 		{"private/cancel_all_by_instrument", gateway.PriorityHigh},
-		{"private/cancel_all", gateway.PriorityHigh},
+		{"private/cancel_all_by_currency", gateway.PriorityHigh},
 		{"private/edit", gateway.PriorityLow},
 	}
 	for i, w := range want {
 		if fc.calls[i].method != w.method || fc.calls[i].priority != w.priority {
 			t.Errorf("call %d = %s/%d, want %s/%d", i, fc.calls[i].method, fc.calls[i].priority, w.method, w.priority)
 		}
+	}
+	// Startup cleanup must stay within this bot's currency: an ETH bot
+	// restarting must not cancel a BTC bot's orders.
+	if got := fc.calls[2].params["currency"]; got != "ETH" {
+		t.Errorf("cancel-all currency = %v, want ETH", got)
 	}
 	if got := fc.calls[3].params["price"]; got != 0.0123 {
 		t.Errorf("amend price = %v, want 0.0123", got)

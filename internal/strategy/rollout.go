@@ -1,6 +1,8 @@
 package strategy
 
 import (
+	"time"
+
 	"optionsbot/internal/orders"
 )
 
@@ -24,7 +26,11 @@ const (
 
 // EvaluateLeg applies rollout rules 4.1–4.5 in priority order and returns the
 // highest-priority applicable decision for a single leg.
-func EvaluateLeg(pos *orders.Position, rolloutDTE int, deltaDriftThreshold, roiTakeProfit, stopLossMultiplier float64) RolloutDecision {
+//
+// now is the evaluation time: time.Now() live, the simulated date in a backtest.
+func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDriftThreshold, roiTakeProfit, stopLossMultiplier float64) RolloutDecision {
+	dte := pos.DTEAt(now)
+
 	// Rule 4.5 — Emergency stop-loss (highest priority)
 	if pos.LossPct() >= stopLossMultiplier {
 		return RolloutDecision{
@@ -35,7 +41,7 @@ func EvaluateLeg(pos *orders.Position, rolloutDTE int, deltaDriftThreshold, roiT
 	}
 
 	// Rule 4.1 — 19 DTE time-based rollout
-	if pos.DTE() <= rolloutDTE {
+	if dte <= rolloutDTE {
 		return RolloutDecision{
 			Action:        ActionRollNextMonth,
 			Reason:        orders.TriggerRollout19DTE,
@@ -46,7 +52,7 @@ func EvaluateLeg(pos *orders.Position, rolloutDTE int, deltaDriftThreshold, roiT
 
 	// Rule 4.2 — Delta drift below threshold
 	absDelta := absDelta(pos.CurrentGreeks.Delta)
-	if absDelta < deltaDriftThreshold && pos.DTE() >= 25 {
+	if absDelta < deltaDriftThreshold && dte >= 25 {
 		return RolloutDecision{
 			Action: ActionRollSameLeg,
 			Reason: orders.TriggerRolloutDelta,
@@ -55,7 +61,7 @@ func EvaluateLeg(pos *orders.Position, rolloutDTE int, deltaDriftThreshold, roiT
 	}
 
 	// Rule 4.3 — ROI take-profit >= 50%
-	if pos.ROIPct() >= roiTakeProfit && pos.DTE() >= 25 {
+	if pos.ROIPct() >= roiTakeProfit && dte >= 25 {
 		return RolloutDecision{
 			Action: ActionRollSameLeg,
 			Reason: orders.TriggerRolloutROI,

@@ -121,6 +121,9 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 		params["price"] = RoundToStep(order.LimitPrice, tick)
 		params["post_only"] = false
 	}
+	if order.TimeInForce != "" {
+		params["time_in_force"] = order.TimeInForce
+	}
 
 	priority := submitPriority(order.TriggerReason)
 
@@ -210,11 +213,15 @@ func (e *Executor) CancelAll(ctx context.Context, instrument string) error {
 	return err
 }
 
-// CancelAllOrders cancels every open order for the entire account.
-// Called on startup because the bot is the sole manager of this account;
-// any orders left from before a restart are stale and must be cleared.
-func (e *Executor) CancelAllOrders(ctx context.Context) error {
-	_, err := call[any](ctx, e.gw, "private/cancel_all", map[string]any{}, gateway.PriorityHigh)
+// CancelAllOrders cancels every open order for one currency.
+// Called on startup to clear stale orders from before a restart. Scoped to the
+// currency (private/cancel_all_by_currency — private/cancel_all takes no
+// currency and would clear every currency) so a BTC bot restart leaves an ETH
+// bot's orders alone.
+func (e *Executor) CancelAllOrders(ctx context.Context, currency string) error {
+	_, err := call[any](ctx, e.gw, "private/cancel_all_by_currency", map[string]any{
+		"currency": currency,
+	}, gateway.PriorityHigh)
 	return err
 }
 

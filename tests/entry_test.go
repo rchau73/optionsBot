@@ -32,7 +32,7 @@ func TestSelectExpiry_RolloutDTE_FiltersNearExpiry(t *testing.T) {
 	// A 6 DTE expiry would fit the raw deviation window [5,25] but must be
 	// rejected because opening it would trigger an immediate rollout.
 	insts := makeInstruments(6, 12, 20)
-	expiry, ok := strategy.SelectExpiry(insts, 15, 10, 9)
+	expiry, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 9)
 	if !ok {
 		t.Fatal("expected an expiry to be found (DTE 12 is in [10,25])")
 	}
@@ -45,7 +45,7 @@ func TestSelectExpiry_RolloutDTE_FiltersNearExpiry(t *testing.T) {
 func TestSelectExpiry_RolloutDTE_AllExpiriesBelowFloor_NoResult(t *testing.T) {
 	// Only a 6 DTE expiry available — below rolloutDTE=9. Should return false.
 	insts := makeInstruments(6)
-	_, ok := strategy.SelectExpiry(insts, 15, 10, 9)
+	_, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 9)
 	if ok {
 		t.Error("expected no valid expiry when only DTE=6 is available and rolloutDTE=9")
 	}
@@ -54,7 +54,7 @@ func TestSelectExpiry_RolloutDTE_AllExpiriesBelowFloor_NoResult(t *testing.T) {
 func TestSelectExpiry_RolloutDTE_ExactlyAtFloor_Rejected(t *testing.T) {
 	// DTE == rolloutDTE (9) must be rejected — would roll out immediately.
 	insts := makeInstruments(9, 14)
-	expiry, ok := strategy.SelectExpiry(insts, 15, 10, 9)
+	expiry, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 9)
 	if !ok {
 		t.Fatal("expected DTE=14 to be found")
 	}
@@ -68,7 +68,7 @@ func TestSelectExpiry_RolloutDTE_JustAboveFloor_Accepted(t *testing.T) {
 	// DTE = rolloutDTE+1 = 10 must be accepted (first valid DTE).
 	insts := makeInstruments(10, 20)
 	exp10 := insts[0].Expiry
-	expiry, ok := strategy.SelectExpiry(insts, 15, 10, 9)
+	expiry, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 9)
 	if !ok {
 		t.Fatal("expected DTE=10 to be found")
 	}
@@ -80,7 +80,7 @@ func TestSelectExpiry_RolloutDTE_JustAboveFloor_Accepted(t *testing.T) {
 func TestSelectExpiry_RolloutDTE_Zero_NoFilter(t *testing.T) {
 	// rolloutDTE=0 means no floor — original deviation window applies.
 	insts := makeInstruments(3, 14)
-	_, ok := strategy.SelectExpiry(insts, 15, 10, 0)
+	_, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 0)
 	if !ok {
 		t.Fatal("expected DTE=3 or DTE=14 to be found with no rollout floor")
 	}
@@ -91,7 +91,7 @@ func TestSelectExpiry_RolloutDTE_PreferNearestAboveFloor(t *testing.T) {
 	// DTE=6 filtered (below floor), DTE=11/18/22 valid → nearest is DTE=11.
 	insts := makeInstruments(6, 11, 18, 22)
 	exp11 := insts[1].Expiry // index 1 = DTE 11
-	expiry, ok := strategy.SelectExpiry(insts, 15, 10, 9)
+	expiry, ok := strategy.SelectExpiry(insts, time.Now(), 15, 10, 9)
 	if !ok {
 		t.Fatal("expected an expiry to be found")
 	}
@@ -106,7 +106,7 @@ func TestSelectExpiryFallback_RolloutDTE_Respected(t *testing.T) {
 	// DTE=8 is below rollout floor, DTE=12 is the fallback.
 	occupied := map[time.Time]bool{}
 	insts := makeInstruments(8, 12, 20)
-	expiry, ok := strategy.SelectExpiryFallback(insts, 15, 10, 9, occupied)
+	expiry, ok := strategy.SelectExpiryFallback(insts, time.Now(), 15, 10, 9, occupied)
 	if !ok {
 		t.Fatal("expected DTE=12 as fallback")
 	}
@@ -127,11 +127,26 @@ func TestSelectExpiryFallback_OccupiedAndBelowFloor_Skipped(t *testing.T) {
 		{Name: "C", Expiry: exp18},
 	}
 	occupied := map[time.Time]bool{exp12: true}
-	expiry, ok := strategy.SelectExpiryFallback(insts, 15, 10, 9, occupied)
+	expiry, ok := strategy.SelectExpiryFallback(insts, time.Now(), 15, 10, 9, occupied)
 	if !ok {
 		t.Fatal("expected DTE=18 as the only valid fallback")
 	}
 	if !expiry.Equal(exp18) {
 		t.Errorf("expected expiry at DTE≈18, got %v", expiry)
+	}
+}
+
+// SelectExpiry counts days from the given now, not the wall clock, so the
+// backtest can replay past dates.
+func TestSelectExpiry_UsesGivenNow(t *testing.T) {
+	past := time.Date(2023, 1, 1, 8, 0, 0, 0, time.UTC)
+	insts := []*marketdata.Instrument{{Name: "BTC-X", Expiry: past.AddDate(0, 0, 30)}}
+
+	expiry, ok := strategy.SelectExpiry(insts, past, 30, 0, 10)
+	if !ok || !expiry.Equal(past.AddDate(0, 0, 30)) {
+		t.Errorf("expected the 30-DTE expiry relative to %s, got %v ok=%v", past.Format("2006-01-02"), expiry, ok)
+	}
+	if strategy.DaysToExpiry(expiry, past) != 30 {
+		t.Error("DaysToExpiry should count from the given now")
 	}
 }

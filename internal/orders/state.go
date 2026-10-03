@@ -1,15 +1,23 @@
 package orders
 
 import (
+	"strconv"
 	"sync"
 	"time"
 )
 
-// StateManager tracks all open positions and strangles in memory.
+// StateManager is the in-memory book of open positions and strangles.
+//
+// It is safe for concurrent use. Readers always receive copies (snapshots):
+// a caller can never observe, or race with, a later update. All changes go
+// through the methods below, keyed by position or strangle ID.
+//
+// The book is not persisted. After a restart the strategy rebuilds it from
+// the exchange (reconcile), which is the source of truth.
 type StateManager struct {
 	mu        sync.RWMutex
 	positions map[string]*Position
-	strangles map[string]*Strangle
+	strangles map[string]*Strangle // legs point at entries in positions
 	nextID    int
 }
 
@@ -20,10 +28,12 @@ func NewStateManager() *StateManager {
 	}
 }
 
+// AddPosition stores a copy of pos.
 func (s *StateManager) AddPosition(pos *Position) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.positions[pos.ID] = pos
+	cp := *pos
+	s.positions[pos.ID] = &cp
 }
 
 func (s *StateManager) RemovePosition(id string) {
@@ -32,27 +42,52 @@ func (s *StateManager) RemovePosition(id string) {
 	delete(s.positions, id)
 }
 
+// GetPosition returns a snapshot of the position with the given ID.
 func (s *StateManager) GetPosition(id string) (*Position, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.positions[id]
-	return p, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *p
+	return &cp, true
 }
 
+// AllPositions returns snapshots of every open position.
 func (s *StateManager) AllPositions() []*Position {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*Position, 0, len(s.positions))
 	for _, p := range s.positions {
-		out = append(out, p)
+		cp := *p
+		out = append(out, &cp)
 	}
 	return out
 }
 
+// AddStrangle stores a strangle. Its legs are linked to the stored positions
+// with the same IDs, so later updates to those positions show through.
 func (s *StateManager) AddStrangle(st *Strangle) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.strangles[st.ID] = st
+	cp := *st
+	cp.CallLeg = s.linkLocked(st.CallLeg)
+	cp.PutLeg = s.linkLocked(st.PutLeg)
+	s.strangles[st.ID] = &cp
+}
+
+// linkLocked returns the stored position for leg's ID, or a private copy of
+// leg when it is not (or no longer) in the book. Callers hold s.mu.
+func (s *StateManager) linkLocked(leg *Position) *Position {
+	if leg == nil {
+		return nil
+	}
+	if p, ok := s.positions[leg.ID]; ok {
+		return p
+	}
+	cp := *leg
+	return &cp
 }
 
 func (s *StateManager) RemoveStrangle(id string) {
@@ -61,10 +96,7 @@ func (s *StateManager) RemoveStrangle(id string) {
 	delete(s.strangles, id)
 }
 
-// RemoveStrangleContaining removes any strangle that contains posID as a leg,
-// but only if ALL of that strangle's legs are no longer in the positions map.
-// If one leg is still active the strangle stays — it keeps its DTE slot occupied.
-// SetStrangleLeg replaces one leg of an existing strangle with a new position.
+// SetStrangleLeg replaces one leg of an existing strangle with a position.
 // Used when a previously-closed leg is repaired by reopening it.
 func (s *StateManager) SetStrangleLeg(stID, optType string, pos *Position) {
 	s.mu.Lock()
@@ -74,12 +106,15 @@ func (s *StateManager) SetStrangleLeg(stID, optType string, pos *Position) {
 		return
 	}
 	if optType == "call" {
-		st.CallLeg = pos
+		st.CallLeg = s.linkLocked(pos)
 	} else {
-		st.PutLeg = pos
+		st.PutLeg = s.linkLocked(pos)
 	}
 }
 
+// RemoveStrangleContaining removes any strangle that contains posID as a leg,
+// but only if ALL of that strangle's legs are no longer in the positions map.
+// If one leg is still active the strangle stays — it keeps its DTE slot occupied.
 func (s *StateManager) RemoveStrangleContaining(posID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -96,14 +131,36 @@ func (s *StateManager) RemoveStrangleContaining(posID string) {
 	}
 }
 
+// AllStrangles returns snapshots of every strangle, legs included.
 func (s *StateManager) AllStrangles() []*Strangle {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]*Strangle, 0, len(s.strangles))
 	for _, st := range s.strangles {
-		out = append(out, st)
+		cp := *st
+		if st.CallLeg != nil {
+			leg := *st.CallLeg
+			cp.CallLeg = &leg
+		}
+		if st.PutLeg != nil {
+			leg := *st.PutLeg
+			cp.PutLeg = &leg
+		}
+		out = append(out, &cp)
 	}
 	return out
+}
+
+// UpdatePositionQty adjusts a position's size and premium after a partial
+// close or a rebalance. Scale newPremiumReceived with the size so ROI and
+// stop-loss math stay correct.
+func (s *StateManager) UpdatePositionQty(id string, newQty, newPremiumReceived float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.positions[id]; ok {
+		p.Qty = newQty
+		p.PremiumReceived = newPremiumReceived
+	}
 }
 
 func (s *StateManager) UpdatePositionMid(id string, mid float64, greeks Greeks) {
@@ -115,20 +172,45 @@ func (s *StateManager) UpdatePositionMid(id string, mid float64, greeks Greeks) 
 	}
 }
 
-// NetGamma returns portfolio gamma for all open positions.
-// Deribit reports greeks from the long perspective (gamma always positive).
-// Short positions negate it, so a short-only book has negative net gamma.
+// Deribit reports greeks from the long holder's perspective. Every position in
+// this book is short, so each portfolio greek below negates the per-contract value.
+
+// NetGamma returns portfolio gamma (negative for a short-only book).
 func (s *StateManager) NetGamma() float64 {
+	return s.sumShort(func(g Greeks) float64 { return g.Gamma })
+}
+
+// NetVega returns portfolio vega (negative for a short-only book).
+func (s *StateManager) NetVega() float64 {
+	return s.sumShort(func(g Greeks) float64 { return g.Vega })
+}
+
+// NetTheta returns portfolio theta. Short options earn time decay, so this is
+// positive (Deribit's long-perspective theta is negative).
+func (s *StateManager) NetTheta() float64 {
+	return s.sumShort(func(g Greeks) float64 { return g.Theta })
+}
+
+// TotalNetDelta returns portfolio delta in units of the underlying. A short
+// call (long delta +0.16) contributes -0.16 × qty; a short put (-0.16)
+// contributes +0.16 × qty.
+func (s *StateManager) TotalNetDelta() float64 {
+	return s.sumShort(func(g Greeks) float64 { return g.Delta })
+}
+
+func (s *StateManager) sumShort(greek func(Greeks) float64) float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	total := 0.0
 	for _, p := range s.positions {
-		total -= p.CurrentGreeks.Gamma * p.Qty
+		total -= greek(p.CurrentGreeks) * p.Qty
 	}
 	return total
 }
 
-// TotalMarginUsed returns the total BTC notional deployed across all open positions.
+// TotalMarginUsed returns the summed contract quantity of open positions.
+// It is a rough proxy only; under Portfolio Margin use the exchange's
+// initial margin instead (see strategy.fetchMarginState).
 func (s *StateManager) TotalMarginUsed() float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -139,58 +221,10 @@ func (s *StateManager) TotalMarginUsed() float64 {
 	return total
 }
 
-// NetVega returns portfolio vega. Short positions have negative vega.
-func (s *StateManager) NetVega() float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	total := 0.0
-	for _, p := range s.positions {
-		total -= p.CurrentGreeks.Vega * p.Qty
-	}
-	return total
-}
-
-// NetTheta returns portfolio theta. Short options collect positive theta
-// (Deribit reports theta as negative from the long perspective, so we negate).
-func (s *StateManager) NetTheta() float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	total := 0.0
-	for _, p := range s.positions {
-		total -= p.CurrentGreeks.Theta * p.Qty
-	}
-	return total
-}
-
-// TotalNetDelta returns the sum of delta × qty across all open positions.
-func (s *StateManager) TotalNetDelta() float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	total := 0.0
-	for _, p := range s.positions {
-		total += p.CurrentGreeks.Delta * p.Qty
-	}
-	return total
-}
-
-// NextID returns a unique position/strangle ID.
+// NextID returns a unique position/strangle ID such as "pos-20260102-7".
 func (s *StateManager) NextID(prefix string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nextID++
-	return prefix + "-" + time.Now().Format("20060102") + "-" + itoa(s.nextID)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := [20]byte{}
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[pos:])
+	return prefix + "-" + time.Now().Format("20060102") + "-" + strconv.Itoa(s.nextID)
 }

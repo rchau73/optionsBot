@@ -72,15 +72,16 @@ type OrderLog struct {
 
 // Trigger reason constants.
 const (
-	TriggerEntry          = "entry"
-	TriggerRollout19DTE   = "rollout_19dte"
-	TriggerRolloutDelta   = "rollout_delta_drift"
-	TriggerRolloutROI     = "rollout_roi"
-	TriggerStopLoss200Pct = "stop_loss_200pct"
-	TriggerGammaClose     = "gamma_close"
-	TriggerKillSwitch     = "kill_switch"
-	TriggerReconciled     = "reconciled"    // position loaded from exchange on startup
-	TriggerTimeout        = "order_timeout" // limit order cancelled after fill-timeout elapsed
+	TriggerEntry             = "entry"
+	TriggerRollout19DTE      = "rollout_19dte"
+	TriggerRolloutDelta      = "rollout_delta_drift"
+	TriggerRolloutROI        = "rollout_roi"
+	TriggerStopLoss200Pct    = "stop_loss_200pct"
+	TriggerGammaClose        = "gamma_close"
+	TriggerKillSwitch        = "kill_switch"
+	TriggerReconciled        = "reconciled"         // position loaded from exchange on startup
+	TriggerTimeout           = "order_timeout"      // limit order cancelled after fill-timeout elapsed
+	TriggerRebalanceDownsize = "rebalance_downsize" // startup: position exceeds current budget — partial close
 )
 
 // Order direction and type constants.
@@ -119,9 +120,13 @@ type Greeks struct {
 	IV    float64
 }
 
-// DTE returns calendar days to expiry.
-func (p *Position) DTE() int {
-	d := time.Until(p.Expiry).Hours() / 24
+// DTE returns whole calendar days to expiry from the current wall clock.
+func (p *Position) DTE() int { return p.DTEAt(time.Now()) }
+
+// DTEAt returns whole calendar days to expiry as of now (0 once expired).
+// The backtest passes its simulated date.
+func (p *Position) DTEAt(now time.Time) int {
+	d := p.Expiry.Sub(now).Hours() / 24
 	if d < 0 {
 		return 0
 	}
@@ -221,11 +226,18 @@ type DailyClose struct {
 
 // Order is an outbound order request.
 type Order struct {
-	Instrument    string
-	Direction     string
-	OrderType     string
-	Qty           float64
-	LimitPrice    float64
-	TickSize      float64 // per-instrument tick size; 0 falls back to default 0.0001
+	Instrument string
+	Direction  string
+	OrderType  string
+	Qty        float64
+	LimitPrice float64
+	TickSize   float64 // per-instrument tick size; 0 falls back to default 0.0001
+	// TimeInForce is Deribit's time_in_force; empty means good_til_cancelled.
+	// TimeInForceIOC fills what it can immediately and cancels the rest, so the
+	// returned Fill is final and the caller never has to track a resting order.
+	TimeInForce   string
 	TriggerReason string
 }
+
+// TimeInForceIOC is Deribit's immediate_or_cancel time in force.
+const TimeInForceIOC = "immediate_or_cancel"
