@@ -143,7 +143,7 @@ Phase 1 is read-only. Phase 2 adds controls, behind authentication, explicit con
 - Run control: pause/resume a strategy (stops new entries, keeps managing exits), kill switch per strategy and for the book (uses the bot's existing kill-switch path).
 - Backtest lab: launch a sweep for a strategy version, compare runs, promote a parameter set.
 
-## 8. API shape the page needs (read-only, phase 1)
+## 9. API shape the page needs (read-only, phase 1)
 
 ```
 GET /api/strategies                          → id, mode, version, status, KPIs, Greeks
