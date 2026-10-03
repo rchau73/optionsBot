@@ -44,12 +44,12 @@ type Position struct {
 }
 
 type Greeks struct {
-	Delta float64
-	Gamma float64
-	Theta float64
-	Vega  float64
-	Rho   float64
-	IV    float64
+	Delta float64 `json:"delta"`
+	Gamma float64 `json:"gamma"`
+	Theta float64 `json:"theta"`
+	Vega  float64 `json:"vega"`
+	Rho   float64 `json:"rho"`
+	IV    float64 `json:"iv"`
 }
 
 // DTE returns whole calendar days to expiry from the current wall clock.

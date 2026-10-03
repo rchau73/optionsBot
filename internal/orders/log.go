@@ -20,7 +20,11 @@ type Logger struct {
 	file                 *os.File
 	w                    io.Writer
 	spreadAlertThreshold float64
+	recent               *recentRing // last events, for the monitor API
 }
+
+// recentEvents is how many journal events the logger keeps in memory.
+const recentEvents = 500
 
 // NewLogger appends JSON lines to the file at path and mirrors them to stdout,
 // so `docker logs` shows fills alongside the bot log.
@@ -36,7 +40,7 @@ func NewLogger(path string, spreadAlertThreshold float64) (*Logger, error) {
 
 // NewWriterLogger writes JSON lines to w only (used by tests and tools).
 func NewWriterLogger(w io.Writer, spreadAlertThreshold float64) *Logger {
-	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold}
+	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold, recent: newRecentRing(recentEvents)}
 }
 
 // closeReasonLabel maps internal trigger constants to human-readable close reasons.
@@ -235,7 +239,7 @@ func (l *Logger) LogSkipped(reason string, ctx EventContext) {
 // LogPnL writes a periodic P&L line.
 func (l *Logger) LogPnL(p PnLRecord) {
 	p.Event = EventPnL
-	l.writeJSON(p, slog.Default().With("event", EventPnL))
+	l.writeJSON(EventPnL, p, slog.Default().With("event", EventPnL))
 }
 
 func (l *Logger) write(rec OrderLog) {
@@ -243,16 +247,28 @@ func (l *Logger) write(rec OrderLog) {
 		slog.Warn("wide spread", "instrument", rec.Instrument, "event", rec.Event,
 			"spread_pct", rec.Market.SpreadPct, "threshold_pct", l.spreadAlertThreshold*100)
 	}
-	l.writeJSON(rec, slog.Default().With("order_id", rec.OrderID, "instrument", rec.Instrument))
+	l.writeJSON(rec.Event, rec, slog.Default().With("order_id", rec.OrderID, "instrument", rec.Instrument))
+}
+
+// Recent returns up to limit journal events with sequence number > after,
+// oldest first. Used by the read-only monitor API.
+func (l *Logger) Recent(after uint64, limit int) []RecentEvent {
+	return l.recent.since(after, limit)
+}
+
+// EventCounts returns how many events of each type were journaled since start.
+func (l *Logger) EventCounts() map[string]int {
+	return l.recent.countsCopy()
 }
 
 // writeJSON appends one JSON line; failures are logged with ctxLog's fields.
-func (l *Logger) writeJSON(v any, ctxLog *slog.Logger) {
+func (l *Logger) writeJSON(event string, v any, ctxLog *slog.Logger) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		ctxLog.Error("order log marshal error", "err", err)
 		return
 	}
+	l.recent.add(event, data)
 	data = append(data, '\n')
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -27,6 +27,7 @@ const (
 // the same moment cannot abort the flatten half-way.
 func (s *Strategy) killSwitch(ctx context.Context) error {
 	slog.Warn("kill switch: cancelling orders and flattening all positions at market")
+	s.setHalted()
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killSwitchTimeout)
 	defer cancel()
 
@@ -58,6 +59,7 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 		slog.Warn("kill switch: all positions closed")
 	}
 
+	s.publish()
 	slog.Warn("kill switch complete — trading halted; restart the bot to resume")
 	<-ctx.Done()
 	return ErrKillSwitch

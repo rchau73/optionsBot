@@ -38,6 +38,7 @@ type Strategy struct {
 	pnl         *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
+	pub      published          // loop-owned state copied for View()
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
@@ -86,6 +87,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	if err := s.maybeOpenStrangles(ctx, s.gamma.Evaluate()); err != nil {
 		slog.Error("initial strangle open failed", "err", err)
 	}
+	s.publish()
 
 	evalInterval := time.Duration(s.cfg.EvalIntervalMS) * time.Millisecond
 	slog.Info("strategy loop started", "eval_interval", evalInterval)
@@ -114,6 +116,7 @@ func (s *Strategy) KillSwitch() {
 // lifecycle of pending orders, then risk exits (GEX, rollout rules), then
 // repairs, and only then new entries.
 func (s *Strategy) evaluate(ctx context.Context) {
+	defer s.publish() // refresh what View() serves, every cycle
 	underlyingPrice := s.md.UnderlyingPrice()
 	if underlyingPrice == 0 {
 		slog.Debug("evaluate: no underlying price yet, skipping")
@@ -256,6 +259,7 @@ func (s *Strategy) fetchMarginState(ctx context.Context) (equity, initialMarginU
 		return 0, 0, fmt.Errorf("account summary: %w", err)
 	}
 	s.clearAuthError()
+	s.recordAccount(sum.Equity, sum.InitialMargin)
 	return sum.Equity, sum.InitialMargin, nil
 }
 

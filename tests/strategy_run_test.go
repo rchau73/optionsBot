@@ -310,6 +310,7 @@ type strategyFixture struct {
 	gex      strategy.GEXSource // optional
 	oi       strategy.OISource  // optional
 	journal  *recordingJournal
+	logger   *orders.Logger // when set, used as the journal instead of the recorder
 	cancel   context.CancelFunc
 	runErr   chan error
 	startRun func()
@@ -363,9 +364,13 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		f.put:  inst(f.put, "put", 90000, -0.16),
 	}}
 	f.startRun = func() {
+		var journal strategy.TradeJournal = f.journal
+		if f.logger != nil {
+			journal = f.logger
+		}
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: f.journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi,
+			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi,
 		})
 		ctx, cancel := context.WithCancel(context.Background())
 		f.cancel = cancel

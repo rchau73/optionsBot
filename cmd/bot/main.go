@@ -12,6 +12,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"optionsbot/internal/api"
 	"optionsbot/internal/backtest"
 	"optionsbot/internal/config"
 	"optionsbot/internal/gateway"
@@ -134,6 +135,16 @@ func runLive(cfg *config.Config) error {
 		case <-ctx.Done():
 		}
 	}()
+
+	// Read-only monitor API for the frontend (off unless BOT_API_ADDR is set).
+	if cfg.APIAddr != "" {
+		mon := api.New(strat, orderLog)
+		go func() {
+			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
+				slog.Error("monitor API stopped", "addr", cfg.APIAddr, "err", err)
+			}
+		}()
+	}
 
 	slog.Info("bot starting",
 		"environment", cfg.WSEndpoint(),

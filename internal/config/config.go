@@ -70,6 +70,10 @@ type Config struct {
 	Retry        RetryConfig
 	Circuit      CircuitConfig
 	Heartbeat    HeartbeatConfig
+	// APIAddr is where the read-only monitor API listens (BOT_API_ADDR);
+	// empty disables it. Use 127.0.0.1:<port> locally, :<port> in Docker
+	// on the private compose network only.
+	APIAddr string
 }
 
 type Backtest struct {
@@ -263,6 +267,9 @@ func Load(path string) (*Config, error) {
 		Threshold: envInt("DERIBIT_CIRCUIT_BREAKER_THRESHOLD", 5),
 		OpenSec:   envInt("DERIBIT_CIRCUIT_BREAKER_OPEN_SEC", 60),
 	}
+
+	// ── Platform: monitor API (from env) ──────────────────────────────────────
+	cfg.APIAddr = os.Getenv("BOT_API_ADDR")
 
 	// ── Platform: heartbeat & reconnect (from .env) ───────────────────────────
 	cfg.Heartbeat = HeartbeatConfig{
