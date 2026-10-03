@@ -49,3 +49,35 @@ export function worstMMPct(snapshot) {
   const values = [snapshot?.totals?.mm_pct, ...(snapshot?.assets ?? []).map((a) => a.mm_pct)].filter((v) => typeof v === "number");
   return values.length ? Math.max(...values) : null;
 }
+
+const RULE_LABELS = { dvol_band: "DVOL", gamma_regime: "Gamma regime" };
+
+/** "DVOL → band ≥70 (IM 50%): 1 of 2 daily closes" */
+export function pendingLabel(p) {
+  return `${RULE_LABELS[p.rule] ?? p.rule} → ${p.to}: ${p.days} of ${p.need} daily closes`;
+}
+
+/**
+ * One row per bot with the margin policy it applies (from /api/status `risk`).
+ * Bots without policy data (older builds, not started yet) are left out.
+ */
+export function riskRows(bots) {
+  return bots
+    .filter((b) => b.status?.risk?.status)
+    .map((b) => {
+      const r = b.status.risk;
+      return {
+        bot: b.name,
+        limitIMPct: r.status.limit_im_pct,
+        maxMMPct: r.status.max_mm_pct,
+        reason: r.status.reason,
+        frozen: r.status.frozen,
+        freezeReason: r.status.freeze_reason || null,
+        pending: (r.status.pending ?? []).map(pendingLabel),
+        imPct: r.error ? null : r.im_pct,
+        mmPct: r.error ? null : r.mm_pct,
+        unit: r.unit,
+        error: r.error || null,
+      };
+    });
+}

@@ -10,11 +10,18 @@ const ACCOUNT_STALE_SEC = Math.max(STALE_AFTER_SEC, 30); // the bot polls the ac
 
 const amount = (v) => (typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "—");
 
-/** Collateral per asset and margin usage, as reported by Deribit. */
-export default function AccountPanel({ account }) {
+/** Collateral per asset and margin usage, as reported by Deribit, and the margin policy each bot applies. */
+export default function AccountPanel({ account, risk = [] }) {
   if (!account) {
-    return <p className="py-3 text-center text-sm text-muted">No account data yet — the bots report it every few seconds.</p>;
+    return (
+      <div className="space-y-3">
+        <p className="py-3 text-center text-sm text-muted">No account data yet — the bots report it every few seconds.</p>
+        <RiskTable rows={risk} />
+      </div>
+    );
   }
+  const imMarkers = risk.map((r) => ({ pct: r.limitIMPct, label: `${r.bot.toUpperCase()} IM limit ${r.limitIMPct}%` }));
+  const mmMarkers = risk.length ? [{ pct: risk[0].maxMMPct, label: `MM limit ${risk[0].maxMMPct}%` }] : [];
   const { snapshot: s, bot, ageSec, error } = account;
   const stale = ageSec == null || ageSec > ACCOUNT_STALE_SEC;
   const worst = worstMMPct(s);
@@ -38,8 +45,8 @@ export default function AccountPanel({ account }) {
           <StatTile label="Initial margin" value={formatUSD(s.totals.initial_margin_usd)} />
           <StatTile label="Maintenance margin" value={formatUSD(s.totals.maintenance_margin_usd)} />
           <div className="col-span-2 space-y-2 rounded-lg border border-line bg-panel px-3 py-2">
-            <MarginBar label="IM used" pct={s.totals.im_pct} />
-            <MarginBar label="MM used (liquidation at 100 %)" pct={s.totals.mm_pct} />
+            <MarginBar label="IM used" pct={s.totals.im_pct} markers={imMarkers} />
+            <MarginBar label="MM used (liquidation at 100 %)" pct={s.totals.mm_pct} markers={mmMarkers} />
           </div>
         </div>
       ) : null}
@@ -84,10 +91,64 @@ export default function AccountPanel({ account }) {
           </tbody>
         </table>
       </div>
+      <RiskTable rows={risk} />
       <p className="text-xs text-muted">
         Figures are Deribit&apos;s own (per-asset amounts in that asset; totals in USD). IM % / MM % are margin as a share of
-        margin balance; Deribit starts liquidating when maintenance margin reaches {LIQUIDATION_MM_PCT} %.
+        margin balance; Deribit starts liquidating when maintenance margin reaches {LIQUIDATION_MM_PCT} %. Ticks on the bars
+        are the bots&apos; limits.
       </p>
+    </div>
+  );
+}
+
+/** The margin policy per bot: active IM limit and why, MM limit, freeze and countdowns. */
+function RiskTable({ rows }) {
+  if (!rows.length) return null;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[700px] text-sm">
+        <caption className="pb-1 text-left text-xs uppercase text-muted">Margin policy per bot</caption>
+        <thead className="text-left text-xs uppercase text-muted">
+          <tr className="border-b border-line">
+            <th className="px-2 py-1">Bot</th>
+            <th className="px-2 py-1 text-right">IM used / limit</th>
+            <th className="px-2 py-1 text-right">MM used / limit</th>
+            <th className="px-2 py-1">Why this limit</th>
+            <th className="px-2 py-1">New entries</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.bot} className="border-b border-line/50 align-top">
+              <td className="px-2 py-1 font-semibold">{r.bot.toUpperCase()}</td>
+              <td className="px-2 py-1 text-right tabular-nums">
+                {formatPct(r.imPct, 1)} / {formatPct(r.limitIMPct, 0)}
+              </td>
+              <td className={clsx("px-2 py-1 text-right tabular-nums", r.mmPct >= r.maxMMPct && "text-loss")}>
+                {formatPct(r.mmPct, 1)} / {formatPct(r.maxMMPct, 0)}
+              </td>
+              <td className="px-2 py-1">
+                {r.reason}
+                {r.pending.map((p) => (
+                  <div key={p} className="text-xs text-warn">
+                    pending: {p}
+                  </div>
+                ))}
+              </td>
+              <td className="px-2 py-1">
+                {r.error ? (
+                  <Badge tone="warn" title={r.error}>no margin data</Badge>
+                ) : r.frozen ? (
+                  <Badge tone="warn" title={r.freezeReason}>FROZEN</Badge>
+                ) : (
+                  <Badge tone="good">allowed</Badge>
+                )}
+                {r.frozen && r.freezeReason ? <div className="text-xs text-muted">{r.freezeReason}</div> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

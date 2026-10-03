@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/risk"
 )
 
 // validConfigBase is the smallest config that passes Validate. Test bodies
 // add keys that are not in it (YAML rejects duplicate keys).
 const validConfigBase = `underlying: BTC
 rollout_dte: 19
-max_margin_pct: 0.35
+max_mm_pct: 35
 stop_loss_multiplier: 2.0
 `
 
@@ -48,88 +49,59 @@ func loadWithDummyCreds(t *testing.T, path string) (*config.Config, error) {
 	return config.Load(path)
 }
 
-// ── Leverage validation ───────────────────────────────────────────────────────
+// ── Margin policy ────────────────────────────────────────────────────────────
 
-func TestLeverageConfig_ExceedsMaxRejected(t *testing.T) {
-	path := writeTempConfig(t, "leverage: 15.0\nmax_leverage: 10.0\n")
-	_, err := loadWithDummyCreds(t, path)
-	if err == nil {
-		t.Fatal("expected error when leverage exceeds max_leverage, got nil")
+func TestConfigLoad_MarginPolicyDefaults(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "leverage") {
-		t.Errorf("error message should mention leverage, got: %v", err)
+	p := cfg.RiskPolicy(true)
+	b := p.SortedBands()
+	if len(b) != 3 || b[0] != (risk.Band{MinIVPct: 70, MaxIMPct: 50}) || b[2] != (risk.Band{MinIVPct: 0, MaxIMPct: 20}) {
+		t.Errorf("default bands = %+v", b)
+	}
+	if p.MaxMMPct != 35 || p.ConfirmDays != 2 || !p.UseRegime {
+		t.Errorf("policy = %+v", p)
 	}
 }
 
-func TestLeverageConfig_EqualToMaxAllowed(t *testing.T) {
-	path := writeTempConfig(t, "leverage: 10.0\nmax_leverage: 10.0\n")
+func TestConfigLoad_CustomBands(t *testing.T) {
+	path := writeTempConfig(t, "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 10 }\n  - { min_iv_pct: 50, max_im_pct: 40 }\niv_band_confirm_days: 3\n")
 	cfg, err := loadWithDummyCreds(t, path)
 	if err != nil {
-		t.Fatalf("leverage == max_leverage should be allowed: %v", err)
+		t.Fatal(err)
 	}
-	if cfg.Leverage != 10.0 {
-		t.Errorf("Leverage = %.2f, want 10.0", cfg.Leverage)
+	p := cfg.RiskPolicy(false)
+	if p.ConfirmDays != 3 || p.SortedBands()[0].MaxIMPct != 40 {
+		t.Errorf("policy = %+v", p)
 	}
 }
 
-func TestLeverageConfig_ValidLeverageLoaded(t *testing.T) {
-	path := writeTempConfig(t, "leverage: 2.0\nmax_leverage: 10.0\n")
-	cfg, err := loadWithDummyCreds(t, path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestConfigLoad_RejectsBadBands(t *testing.T) {
+	cases := map[string]string{
+		"no zero band":     "iv_margin_bands:\n  - { min_iv_pct: 30, max_im_pct: 35 }\n",
+		"limit above 100":  "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 120 }\n",
+		"duplicate floor":  "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 20 }\n  - { min_iv_pct: 0, max_im_pct: 30 }\n",
+		"negative confirm": "iv_band_confirm_days: -1\n",
 	}
-	if cfg.Leverage != 2.0 {
-		t.Errorf("Leverage = %.2f, want 2.0", cfg.Leverage)
-	}
-	if cfg.MaxLeverage != 10.0 {
-		t.Errorf("MaxLeverage = %.2f, want 10.0", cfg.MaxLeverage)
-	}
-}
-
-func TestLeverageConfig_NegativeLeverageDefaultsToOne(t *testing.T) {
-	// Negative leverage is nonsensical; Load silently clamps it to 1.0.
-	path := writeTempConfig(t, "leverage: -3.0\n")
-	cfg, err := loadWithDummyCreds(t, path)
-	if err != nil {
-		t.Fatalf("negative leverage should be clamped, not rejected: %v", err)
-	}
-	if cfg.Leverage != 1.0 {
-		t.Errorf("Leverage = %.2f, want 1.0 (clamped from negative)", cfg.Leverage)
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadWithDummyCreds(t, writeTempConfig(t, body)); err == nil {
+				t.Error("want a validation error")
+			}
+		})
 	}
 }
 
-func TestLeverageConfig_ZeroLeverageDefaultsToOne(t *testing.T) {
-	path := writeTempConfig(t, "leverage: 0\n")
-	cfg, err := loadWithDummyCreds(t, path)
-	if err != nil {
-		t.Fatalf("zero leverage should be clamped to 1.0: %v", err)
-	}
-	if cfg.Leverage != 1.0 {
-		t.Errorf("Leverage = %.2f, want 1.0 (clamped from zero)", cfg.Leverage)
-	}
-}
-
-func TestLeverageConfig_MaxLeverageZeroDefaultsTen(t *testing.T) {
-	// Omitting max_leverage (or setting it to 0) should default to 10.
-	path := writeTempConfig(t, "leverage: 2.0\n")
-	cfg, err := loadWithDummyCreds(t, path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.MaxLeverage != 10.0 {
-		t.Errorf("MaxLeverage = %.2f, want 10.0 (default)", cfg.MaxLeverage)
-	}
-}
-
-func TestLeverageConfig_OmittedLeverageDefaultsToOne(t *testing.T) {
-	// A config with no leverage field should behave exactly as before (1×).
-	path := writeTempConfig(t, "")
-	cfg, err := loadWithDummyCreds(t, path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Leverage != 1.0 {
-		t.Errorf("Leverage = %.2f, want 1.0 when omitted", cfg.Leverage)
+// The old cap settings must not be silently ignored: someone who still sets
+// leverage would believe it is enforced.
+func TestConfigLoad_RejectsRemovedMarginKeys(t *testing.T) {
+	for _, key := range []string{"leverage: 4.0", "max_margin_pct: 0.35", "max_leverage: 10"} {
+		_, err := loadWithDummyCreds(t, writeTempConfig(t, key+"\n"))
+		if err == nil || !strings.Contains(err.Error(), "was removed") || !strings.Contains(err.Error(), "iv_margin_bands") {
+			t.Errorf("%s: want a removed-key error, got %v", key, err)
+		}
 	}
 }
 
@@ -157,7 +129,7 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 	raw := []struct {
 		name, from, to, wantErr string
 	}{
-		{"margin above 100%", "max_margin_pct: 0.35", "max_margin_pct: 1.5", "max_margin_pct"},
+		{"MM limit at liquidation", "max_mm_pct: 35", "max_mm_pct: 100", "max_mm_pct"},
 		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
 		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
 	}

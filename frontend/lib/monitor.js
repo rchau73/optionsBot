@@ -1,7 +1,7 @@
 // Pure monitor logic: flatten, filter, group and summarise what the bots
 // report. No React, no fetching — everything here is unit-tested.
 
-import { formatCoin, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
+import { formatCoin, formatPct, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
 
 /** Data older than this (seconds) is shown as stale. */
 export const STALE_AFTER_SEC = 5;
@@ -147,6 +147,15 @@ const EVENT_STYLE = {
   closed: { label: "Closed", tone: "neutral" },
   reconciled: { label: "Loaded", tone: "neutral" },
   skipped: { label: "Skipped", tone: "muted" },
+  risk_limit: { label: "Margin policy", tone: "neutral" },
+};
+
+const RISK_CHANGES = {
+  frozen: { label: "Entries frozen", tone: "warn" },
+  unfrozen: { label: "Unfrozen", tone: "neutral" },
+  limit_changed: { label: "IM limit", tone: "neutral" },
+  rebalance: { label: "Rebalance", tone: "neutral" },
+  mm_breach: { label: "MM breach", tone: "bad" },
 };
 
 const CLOSE_LABELS = {
@@ -157,6 +166,7 @@ const CLOSE_LABELS = {
   gamma_regime: "GEX shed",
   kill_switch: "Kill switch",
   rebalance_downsize: "Rebalance",
+  margin_mm_limit: "MM limit",
 };
 
 /**
@@ -188,7 +198,7 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
       break;
     case "closed":
       label = CLOSE_LABELS[d.close_reason] ?? "Closed";
-      tone = d.close_reason === "stop_loss" || d.close_reason === "kill_switch" ? "bad" : (d.pnl ?? 0) >= 0 ? "good" : "bad";
+      tone = ["stop_loss", "kill_switch", "margin_mm_limit"].includes(d.close_reason) ? "bad" : (d.pnl ?? 0) >= 0 ? "good" : "bad";
       text = `Bought back ${d.qty} ${d.instrument} @ ${formatPrice(d.fill_price)} · P&L ${formatCoin(d.pnl, unit)} (${formatUSD(d.pnl_usd)})${where}`;
       break;
     case "reconciled":
@@ -197,6 +207,14 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
     case "skipped":
       text = `${where.trim() || "Slot"} not entered — ${d.skip_reason ?? "unknown reason"}`;
       break;
+    case "risk_limit": {
+      const change = RISK_CHANGES[d.change] ?? { label: style.label, tone: style.tone };
+      label = d.change === "limit_changed" ? `IM limit ${formatPct(d.limit_im_pct, 0)}` : change.label;
+      tone = change.tone;
+      const usage = isNumber(d.im_pct) && d.unit ? ` · IM ${formatPct(d.im_pct, 1)} / MM ${formatPct(d.mm_pct, 1)}` : "";
+      text = `${d.detail ?? d.change}${usage}`;
+      break;
+    }
     default:
       text = ev.event;
   }
@@ -206,6 +224,8 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
     m.moneyness ? `${m.moneyness} ${isNumber(m.distance_to_strike_pct) ? m.distance_to_strike_pct.toFixed(1) + "%" : ""}`.trim() : null,
     isNumber(m.strike_oi) && m.strike_oi > 0 ? `OI ${Math.round(m.strike_oi)}${m.strike_oi_rank ? ` (#${m.strike_oi_rank})` : ""}` : null,
     m.gex_regime || null,
+    ev.event === "risk_limit" && isNumber(d.dvol) && d.dvol > 0 ? `DVOL ${d.dvol.toFixed(1)} (p${Math.round(d.iv_percentile ?? 0)})` : null,
+    ev.event === "risk_limit" ? d.regime || null : null,
   ].filter(Boolean);
 
   return { id: `${bot}:${ev.seq}`, seq: ev.seq, at: ev.at, bot, event: ev.event, label, tone, text, context };

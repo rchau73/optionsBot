@@ -9,11 +9,13 @@ sequenceDiagram
     participant SM as StateManager
 
     S->>S: occupiedSlots() — strangles + pending entries
-    S->>X: GetAccountSummary → equity, initial margin
-    S->>S: budget = equity × max_margin_pct × leverage − margin used
+    S->>S: margin policy: IM limit (DVOL band / negative gamma), frozen?, MM limit
+    S->>X: GetAccountSummary → Deribit IM, MM, margin balance
+    S->>S: frozen or margin unknown → skip · headroom = limit × margin balance − IM
     S->>MD: AllInstruments()
     S->>S: slotExpiry (ExpiryWindow, fallback if occupied) · SelectStrike(call/put, |Δ| ≈ target)
-    S->>X: GetMargins(call), GetMargins(put) → qty via ComputeQtyFromIM
+    S->>X: SimulatePortfolio(+1 lot call & put) → IM per lot → lots for this slot's share
+    S->>X: SimulatePortfolio(final size) → post-trade IM ≤ limit and MM ≤ max_mm_pct, else shrink or skip
     S->>S: premium floor + GEX gate (skip a leg only when the regime sheds it)
     S->>X: Submit sell call limit @ max(mid, ask)
     X->>GW: Call(private/sell, low priority)

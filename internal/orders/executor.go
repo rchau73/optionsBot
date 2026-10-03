@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"optionsbot/internal/gateway"
@@ -52,7 +53,14 @@ type rpcCaller interface {
 // Executor submits, amends and cancels orders against the live Deribit API.
 type Executor struct {
 	gw rpcCaller
+
+	simMu   sync.Mutex
+	nextSim time.Time // earliest time the next simulate_portfolio may go out
 }
+
+// simulateSpacing honours Deribit's limit of one simulate_portfolio call per
+// second (portfolio margin is expensive to compute), with a little slack.
+const simulateSpacing = 1100 * time.Millisecond
 
 // NewExecutor returns an Executor that sends every request through gw.
 func NewExecutor(gw rpcCaller) *Executor {
@@ -265,6 +273,38 @@ func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (Acco
 	}, gateway.PriorityLow)
 }
 
+// SimulatePortfolio asks Deribit what the account's margin would be with
+// positions (instrument → size in coin; negative = short) added to the current
+// portfolio. Calls are spaced at least simulateSpacing apart.
+func (e *Executor) SimulatePortfolio(ctx context.Context, currency string, positions map[string]float64) (AccountSummary, error) {
+	e.simMu.Lock()
+	at := time.Now()
+	if at.Before(e.nextSim) {
+		at = e.nextSim
+	}
+	e.nextSim = at.Add(simulateSpacing)
+	e.simMu.Unlock()
+
+	if wait := time.Until(at); wait > 0 {
+		t := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return AccountSummary{}, ctx.Err()
+		case <-t.C:
+		}
+	}
+	sum, err := call[AccountSummary](ctx, e.gw, "private/simulate_portfolio", map[string]any{
+		"currency":            currency,
+		"add_positions":       true,
+		"simulated_positions": positions,
+	}, gateway.PriorityLow)
+	if err == nil && sum.Currency == "" {
+		sum.Currency = currency
+	}
+	return sum, err
+}
+
 // chartData is the subset of public/get_tradingview_chart_data we use.
 type chartData struct {
 	Status string    `json:"status"`
@@ -316,8 +356,8 @@ func (e *Executor) GetMargins(ctx context.Context, instrument string, amount, pr
 
 // AccountEquity returns the account's available funds in the underlying currency.
 // For Portfolio Margin accounts, available_funds already reflects Deribit's
-// actual margin requirements. Using it (not equity) lets max_margin_pct act
-// as a pure safety cap on top of Deribit's own risk model.
+// actual margin requirements. The backtest's SimExecutor implements the same
+// method; live trading reads margin through GetAccountSummary.
 func (e *Executor) AccountEquity(ctx context.Context, currency string) (float64, error) {
 	summary, err := e.GetAccountSummary(ctx, currency)
 	if err != nil {

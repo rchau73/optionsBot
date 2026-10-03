@@ -135,8 +135,9 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `delta_drift_threshold` | — | roll a leg when \|delta\| falls below this (little premium left) |
 | `roi_take_profit` | — | roll a leg once this share of the premium is captured (0.5 = 50 %) |
 | `stop_loss_multiplier` | — | close at market when the loss reaches this × premium received |
-| `max_margin_pct` | — | share of equity usable as Portfolio Margin initial margin, in (0, 1] |
-| `leverage` / `max_leverage` | 1 / 10 | multiplier on the margin budget / hard cap |
+| `iv_margin_bands` | ≥70 → 50, ≥30 → 35, ≥0 → 20 | initial-margin limit (% of Deribit's margin balance) by DVOL IV-percentile band; the lowest band must start at 0. A confirmed negative gamma regime forces the lowest band |
+| `iv_band_confirm_days` | 2 | consecutive UTC daily closes a DVOL band or gamma regime change must hold before the limit moves; until then new entries are frozen |
+| `max_mm_pct` | 35 | maintenance-margin limit (% of margin balance), enforced at once by reducing positions; below 100 (Deribit liquidates at 100) |
 | `max_dte_deviation` | 2 | days an expiry may differ from the slot DTE |
 | `delta_slippage` | 0 | max distance from the target delta (0 = take the closest) |
 | `min_premium_btc` | 0 | skip legs whose price is below this (0 = off) |

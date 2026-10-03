@@ -115,3 +115,14 @@ Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i ./bo
 | `gateway giving up` then exit code 1 | reconnect attempts exhausted | the supervisor restarts it and reconcile restores state |
 | `skip slot: no suitable expiry` | no listed expiry inside the slot's DTE window | widen `max_dte_deviation` or change the slot DTE |
 | testnet fills look odd | testnet quotes are thin or synthetic | use testnet to prove mechanics, not profitability |
+
+## Margin policy
+
+The bot sizes and limits itself on Deribit's own margin figures (see *Margin policy and sizing* in [architecture.md](architecture.md)). What to know when running it:
+
+- **Files.** `data/regime_history.jsonl` keeps the gamma regime at each daily close (Deribit has no history of it). Like `data/pnl_history.jsonl`, keep `data/` on a persistent volume; deleting it restarts the regime confirmation.
+- **First days after deploying.** With no recorded regime closes yet, new entries are **frozen** until the regime has been confirmed (2 daily closes by default). Exits, rolls and repairs run normally. The monitor shows the countdown.
+- **Journal.** Every policy change is a `risk_limit` line in `orders.log` (`change`: `frozen`, `unfrozen`, `limit_changed`, `rebalance`, `mm_breach`) with IM/MM %, limits, DVOL, IV percentile and regime.
+- **Reading a skip.** `risk_frozen` = a band/regime change awaits confirmation; `margin_limit` = no headroom, or no size fits after simulation; `margin_unknown` = Deribit margin data unavailable (fail safe).
+- **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing three slots takes a few seconds of the decision cycle.
+- **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands). The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.

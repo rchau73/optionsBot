@@ -12,7 +12,7 @@ import PnlChart from "./PnlChart";
 import AccountPanel from "./AccountPanel";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
-import { pickAccount } from "@/lib/account";
+import { pickAccount, riskRows } from "@/lib/account";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
@@ -40,7 +40,7 @@ export default function Monitor() {
         ) : null}
         <KpiStrip kpi={kpi} />
         <Panel title="Account & collateral (shared by all bots)">
-          <AccountPanel account={pickAccount(bots, polledAt)} />
+          <AccountPanel account={pickAccount(bots, polledAt)} risk={riskRows(bots)} />
         </Panel>
         <Panel title="Open positions" right={<Filters filters={filters} options={options} onChange={setFilters} />}>
           <PositionsTable groups={groups} />

@@ -8,8 +8,9 @@ classDiagram
         +float DeltaDriftThreshold
         +float ROITakeProfit
         +float StopLossMultiplier
-        +float MaxMarginPct
-        +float Leverage
+        +[]Band IVMarginBands
+        +float MaxMMPct
+        +int IVBandConfirmDays
         +string Environment
         +Slots() []StrangleSlot
         +Validate() error

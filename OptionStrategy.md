@@ -67,7 +67,7 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
    - picks the listed expiry closest to the target number of days (never one that is already due to be rolled);
    - picks the call and put strikes whose delta is closest to the target (e.g. ≈0.16 on each side);
    - checks each option is worth at least the minimum premium, so it doesn't take tail risk for crumbs;
-   - sizes the position from the account's margin budget (equity × margin cap × leverage, shared across the slots);
+   - sizes the position so the account stays inside its margin limit, asking Deribit itself what the margin would be after the trade (section 8);
    - places **limit** sell orders and follows them until they fill. If the market moves away it re-prices a few times; if they still don't fill it cancels and tries again later.
 3. **Watches every position, every cycle** (every ~40 seconds with the shipped config) and applies the exit rules in order of urgency (section 4).
 4. **Reads market structure.** It estimates how option dealers are positioned (*gamma exposure*, GEX). When dealers are likely to *amplify* moves (negative gamma) and the trend is clearly down, it stops selling puts and closes existing ones, because that's the side under threat. Calls get the same treatment in a confirmed up-trend.
@@ -150,12 +150,14 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 
 ## 8. Risk controls
 
-- **Margin cap:** only a fraction of equity (35 % × leverage in the shipped config) may be used as initial margin. Exchange-calculated Portfolio Margin is used, not a rough estimate.
+- **Margin limit that follows the market:** the share of the account used as initial margin depends on volatility. When DVOL is high (rich premium, fear already priced in) up to 50 % is allowed; in the middle, 35 %; when it is low (cheap premium, often the calm before a big move), 20 %. When dealer positioning amplifies moves (negative gamma), 20 % applies whatever DVOL says. Every number is Deribit's own margin calculation, including a simulation of each new trade before it is placed.
+- **No knee-jerk reactions:** a change of volatility band or gamma regime must hold for two daily closes before the bot resizes anything. Until then it simply stops opening new positions; if the change reverts (a one-day spike), it carries on as before.
+- **Distance to liquidation:** if maintenance margin reaches 35 % of the account's margin balance (Deribit liquidates at 100 %), positions are bought back at once, whatever else is going on.
 - **Stop-loss on every leg:** 2× premium by default, executed at market with top priority.
 - **Time exit:** nothing is held into the last ~15 days, when gamma risk is highest.
 - **Regime filter:** sheds the threatened side when dealer positioning amplifies moves.
 - **Premium floor:** refuses to sell options too cheap to justify their risk.
-- **Validation:** nonsensical settings (deltas ≥ 0.5, slots inside the roll window, margin > 100 %, no stop-loss) stop the bot at startup.
+- **Validation:** nonsensical settings (deltas ≥ 0.5, slots inside the roll window, margin limits outside 0–100 %, no stop-loss) stop the bot at startup.
 - **Testnet by default; live only on explicit opt-in.**
 - **What is *not* covered:** the strangle has no long "wings", and the bot does not hedge automatically, so in a gap the loss is not capped. Covered alternatives, such as iron condors and delta hedging with perpetual futures, are the natural next research step.
 
@@ -169,7 +171,9 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 | `roi_take_profit` | 50 % | how much profit is "enough" | holds longer for more | banks sooner, re-sells more often |
 | `stop_loss_multiplier` | 2× | how much loss to tolerate | fewer stop-outs, bigger losses | more stop-outs, smaller losses |
 | `delta_drift_threshold` | 0.10 | when a far leg is "dead" | refreshes legs sooner | lets legs drift further |
-| `max_margin_pct` × `leverage` | 35 % × 4 | how much of the account is at work | larger positions | smaller positions |
+| `iv_margin_bands` | 50 / 35 / 20 % by DVOL band | how much of the account is at work, by market calm | larger positions | smaller positions |
+| `iv_band_confirm_days` | 2 days | how long a new regime must last before resizing | slower, ignores more spikes | faster, reacts to more noise |
+| `max_mm_pct` | 35 % | safety distance from liquidation | closer to liquidation | earlier forced reductions |
 | `min_premium_btc` | 0.001 BTC | minimum price worth selling | fewer, richer trades | more, cheaper trades |
 
 ## 10. Lessons and recommendations from this study

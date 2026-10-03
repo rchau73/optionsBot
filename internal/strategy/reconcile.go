@@ -39,8 +39,8 @@ func (s *Strategy) logStartupState(ctx context.Context) {
 		return
 	}
 	ivPct := s.md.IVPercentile()
-	allowedMargin := s.marginGuard.AllowedMargin(sum.Equity)
 	price := s.md.UnderlyingPrice()
+	u := sum.MarginUsage()
 
 	unit := strings.ToLower(s.cfg.Underlying)
 	slog.Info("account state",
@@ -50,12 +50,16 @@ func (s *Strategy) logStartupState(ctx context.Context) {
 		"available_funds_"+unit, fmt.Sprintf("%.6f", sum.AvailableFunds),
 		"available_funds_usd", fmt.Sprintf("%.2f", sum.AvailableFunds*price),
 		"margin_used_"+unit, fmt.Sprintf("%.6f", sum.InitialMargin),
-		"margin_used_pct", formatPct(sum.InitialMargin, sum.Equity),
 		"margin_maintenance_"+unit, fmt.Sprintf("%.6f", sum.MaintenanceMargin),
-		"margin_allowed_"+unit, fmt.Sprintf("%.6f", allowedMargin),
-		"margin_allowed_usd", fmt.Sprintf("%.2f", allowedMargin*price),
-		"margin_cap_pct", fmt.Sprintf("%.0f%%", s.cfg.MaxMarginPct*100),
-		"leverage", fmt.Sprintf("%.2f×", s.cfg.Leverage),
+		"margin_model", sum.MarginModel,
+		"cross_collateral", sum.CrossCollateralEnabled,
+		"margin_unit", u.Unit,
+		"im_pct", fmt.Sprintf("%.2f", u.IMPct()),
+		"mm_pct", fmt.Sprintf("%.2f", u.MMPct()),
+		"iv_margin_bands", s.riskCfg.SortedBands(),
+		"max_mm_pct", s.riskCfg.MaxMMPct,
+		"iv_band_confirm_days", s.riskCfg.ConfirmDays,
+		"gamma_regime_rule", s.riskCfg.UseRegime,
 		"iv_percentile", fmt.Sprintf("%.1f", ivPct),
 		"options_value_"+unit, fmt.Sprintf("%.6f", sum.OptionsValue),
 		"options_pl_"+unit, fmt.Sprintf("%.6f", sum.OptionsPL),

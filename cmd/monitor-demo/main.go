@@ -23,8 +23,10 @@ import (
 
 	"optionsbot/internal/account"
 	"optionsbot/internal/api"
+	"optionsbot/internal/config"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 	"optionsbot/internal/strategy"
 )
 
@@ -222,14 +224,16 @@ func (s *simulation) ctx(l *simLeg, slot *orders.SlotRef) orders.EventContext {
 
 // View implements api.StrategySource with the simulated state.
 func (s *simulation) View() strategy.View {
+	now := time.Now()
+	rv := s.riskView(now) // reads the account, which takes s.mu itself
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
 	v := strategy.View{
 		AsOf: now, StrategyID: strategy.DefaultStrategyID, Underlying: s.underlying, Environment: "testnet (demo)",
 		LoopAt: now, Trend: "neutral",
 		Market:  orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING", GammaFlip: s.spot * 0.96},
-		Account: strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, MarginAllowed: 3.5, AsOf: now},
+		Account: strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},
+		Risk:    rv,
 		Pending: []strategy.PendingView{},
 	}
 	bySlot := map[string]*strategy.StrangleView{}
@@ -259,6 +263,21 @@ func (s *simulation) View() strategy.View {
 	v.Greeks = orders.MarketContext{NetDelta: delta, NetGamma: -0.00012, NetVega: -72, NetTheta: 27}
 	v.PnL = []strategy.PnLView{{Realised: s.realised, Unrealised: unrealised, Total: s.realised + unrealised, OpenLegs: len(s.legs), ClosedLegs: s.closed}}
 	return v
+}
+
+// riskView simulates the margin policy mid-change: DVOL confirmed in the
+// middle band (35 %), one close in the high band so far, so new entries are
+// frozen and the change is 1 of 2 daily closes from confirmation.
+func (s *simulation) riskView(now time.Time) strategy.RiskView {
+	today := now.UTC().Truncate(24 * time.Hour)
+	var closes []risk.Day
+	for i, pct := range []float64{50, 52, 55, 78} {
+		closes = append(closes, risk.Day{Date: today.AddDate(0, 0, i-4), IVPct: pct, IVKnown: true, RegimeKnown: true})
+	}
+	st := risk.Evaluate((&config.Config{}).RiskPolicy(true), closes,
+		risk.Day{Date: today, IVPct: 81, IVKnown: true, RegimeKnown: true})
+	acct := s.Status().Snapshot.Totals
+	return strategy.RiskView{Status: st, IMPct: acct.IMPct, MMPct: acct.MMPct, Unit: "USD", MarginBalance: acct.MarginBalanceUSD, AsOf: now}
 }
 
 // Status implements api.AccountSource with a simulated cross-collateral

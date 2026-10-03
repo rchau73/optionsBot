@@ -2,7 +2,7 @@ underlying: BTC
 
 # ── Entry slots ───────────────────────────────────────────────────────────────
 # Each (dte, delta) pair is an independent strangle slot.
-# Budget is split equally: qty per order = margin_budget ÷ total_slots.
+# Each slot gets an equal share of the margin policy's IM limit (see below).
 dte_delta_matrix:
   - dte: 25
     deltas: [0.16]
@@ -30,9 +30,18 @@ gex_strike_range_pct:      0.25 # GEX inputs: only strikes within ±25% of spot;
 # ── IV & margin ───────────────────────────────────────────────────────────────
 iv_percentile_window:   252     # days of DVOL history the IV percentile ranks against
 hedge_report_threshold: 0.05    # net delta threshold that triggers hedge_report.json
-max_margin_pct:         0.35    # share of equity usable as PM initial margin (× leverage)
-leverage:               4.0     # multiplier on the margin budget (e.g. 2 = 2× the allowed margin)
-max_leverage:           10.0    # hard cap; leverage above this is rejected at startup
+
+# ── Margin policy (all figures are Deribit's: % of margin balance) ────────────
+# Initial-margin limit by DVOL IV-percentile band: rich premium allows more,
+# calm markets (a big move may be coming) allow less. A confirmed negative
+# gamma regime forces the lowest band. Band/regime changes must hold for
+# iv_band_confirm_days daily closes; until then new entries are frozen.
+iv_margin_bands:
+  - { min_iv_pct: 70, max_im_pct: 50 }
+  - { min_iv_pct: 30, max_im_pct: 35 }
+  - { min_iv_pct: 0,  max_im_pct: 20 }
+iv_band_confirm_days:   2
+max_mm_pct:             35      # maintenance-margin limit, enforced at once (Deribit liquidates at 100)
 
 # ── Order execution ───────────────────────────────────────────────────────────
 eval_interval_ms:      40000    # how often the strategy evaluates open positions

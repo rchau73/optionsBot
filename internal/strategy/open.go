@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"strings"
 	"time"
 
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
-// maybeOpenStrangles fills every vacant (DTE, delta) slot, sharing the free
-// margin budget equally between the slots that still need a strangle.
+// maybeOpenStrangles fills every vacant (DTE, delta) slot within the margin
+// policy: nothing while new risk is frozen or margin data is missing, and
+// otherwise each vacant slot gets an equal share of the IM headroom
+// (limit × margin balance − IM in use), sized with Deribit's simulator.
 // A slot is vacant when no open strangle and no pending entry occupies it.
-func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecision) error {
+func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecision, m marginState) error {
 	occupied := s.occupiedSlots()
 	slots := s.cfg.Slots()
 	needsOpen := 0
@@ -27,30 +28,33 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	if needsOpen == 0 {
 		return nil
 	}
-
-	equity, initialMarginUsed, err := s.fetchMarginState(ctx)
-	if err != nil {
-		return err
-	}
-	allowed := s.marginGuard.AllowedMargin(equity)
-	budget := allowed - initialMarginUsed
-
-	unit := strings.ToLower(s.cfg.Underlying)
-	if budget <= 0 {
-		slog.Debug("skip entry: margin limit",
-			"margin_allowed_"+unit, fmt.Sprintf("%.6f", allowed),
-			"margin_used_"+unit, fmt.Sprintf("%.6f", initialMarginUsed),
-			"slots_needed", needsOpen,
-		)
+	skipAll := func(reason, detail string) {
 		for _, slot := range slots {
 			if !occupied[makeSlotKey(slot.TargetDTE, slot.EntryDelta)] {
-				s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit,
-					fmt.Sprintf("allowed %.6f, used %.6f", allowed, initialMarginUsed))
+				s.noteSkip(slot.TargetDTE, slot.EntryDelta, reason, detail)
 			}
 		}
+	}
+
+	switch {
+	case m.err != nil:
+		skipAll(SkipMarginUnknown, m.err.Error())
+		return m.err
+	case m.status.Frozen:
+		skipAll(SkipRiskFrozen, m.status.FreezeReason)
+		return nil
+	case m.mmBreached():
+		skipAll(SkipMarginLimit, fmt.Sprintf("MM %.1f%% ≥ limit %.0f%%", m.usage.MMPct(), m.status.MaxMMPct))
 		return nil
 	}
-	targetMarginPerSlot := budget / float64(needsOpen)
+	headroom := m.usage.Headroom(m.status.LimitIMPct)
+	if headroom <= 0 {
+		slog.Debug("skip entry: IM limit reached",
+			"im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()), "limit_im_pct", m.status.LimitIMPct, "slots_needed", needsOpen)
+		skipAll(SkipMarginLimit, fmt.Sprintf("IM %.1f%% ≥ limit %.0f%% (%s)", m.usage.IMPct(), m.status.LimitIMPct, m.status.Reason))
+		return nil
+	}
+	share := headroom / float64(needsOpen)
 	instruments := s.md.AllInstruments()
 
 	for _, slot := range slots {
@@ -83,16 +87,17 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 
-		qty := s.resolveQty(ctx, call, put, targetMarginPerSlot)
-		slog.Debug("entry margin check",
-			"target_dte", slot.TargetDTE,
-			"entry_delta", slot.EntryDelta,
-			"expiry", expiry.Format("2006-01-02"),
-			"call", call.Name, "call_delta", fmt.Sprintf("%.4f", call.Greeks.Delta), "call_mid", fmt.Sprintf("%.6f", call.Mid),
-			"put", put.Name, "put_delta", fmt.Sprintf("%.4f", put.Greeks.Delta), "put_mid", fmt.Sprintf("%.6f", put.Mid),
-			"qty_"+unit, fmt.Sprintf("%.6f", qty),
-			"target_margin_per_slot_"+unit, fmt.Sprintf("%.6f", targetMarginPerSlot),
-		)
+		lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+		if lot <= 0 {
+			lot = s.cfg.MinTradeAmount
+		}
+		qty, err := s.sizeEntry(ctx, call.Name, put.Name, lot, share, m)
+		if err != nil {
+			slog.Info("skip entry: no size fits the margin limits",
+				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit, err.Error())
+			continue
+		}
 		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec); err != nil {
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
@@ -107,6 +112,8 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 // Skip reasons journaled when a vacant slot is not entered.
 const (
 	SkipMarginLimit   = "margin_limit"
+	SkipMarginUnknown = "margin_unknown" // Deribit margin data unavailable: fail safe
+	SkipRiskFrozen    = "risk_frozen"    // DVOL band or gamma regime change awaiting confirmation
 	SkipNoExpiry      = "no_expiry"
 	SkipNoStrike      = "no_strike"
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
@@ -304,49 +311,6 @@ func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrume
 		Qty: qty, LimitPrice: price, Greeks: toOrderGreeks(inst),
 	}, s.eventContext(inst, slot))
 	return newPendingLeg(fill, inst.Name, inst.OptionType, qty, price), nil
-}
-
-// resolveQty sizes a strangle from the Portfolio Margin budget. It asks
-// private/get_margins for the initial margin of one minimum lot per leg and
-// fits as many whole lots as targetMarginPerSlot allows (see ComputeQtyFromIM).
-// Any error falls back to one minimum lot — the smallest, safest size.
-func (s *Strategy) resolveQty(ctx context.Context, call, put *marketdata.Instrument, targetMarginPerSlot float64) float64 {
-	exchMin := math.Max(call.MinTradeAmount, put.MinTradeAmount)
-	if exchMin <= 0 {
-		exchMin = s.cfg.MinTradeAmount
-	}
-
-	callInfo, err := s.exch.GetMargins(ctx, call.Name, exchMin, entryLimitPrice(call))
-	if err != nil {
-		slog.Warn("resolveQty: GetMargins failed for call, using exchange minimum",
-			"instrument", call.Name, "err", err)
-		return exchMin
-	}
-	putInfo, err := s.exch.GetMargins(ctx, put.Name, exchMin, entryLimitPrice(put))
-	if err != nil {
-		slog.Warn("resolveQty: GetMargins failed for put, using exchange minimum",
-			"instrument", put.Name, "err", err)
-		return exchMin
-	}
-
-	qty := ComputeQtyFromIM(exchMin, targetMarginPerSlot, callInfo.InitialMargin, putInfo.InitialMargin)
-	unit := strings.ToLower(s.cfg.Underlying)
-	imTotal := callInfo.InitialMargin + putInfo.InitialMargin
-	sizingMethod := "pm_aware"
-	if imTotal <= 0 || qty == exchMin {
-		sizingMethod = "exchange_minimum"
-	}
-	slog.Info("resolveQty",
-		"call", call.Name, "put", put.Name,
-		"sizing_method", sizingMethod,
-		"exch_min_"+unit, fmt.Sprintf("%.4f", exchMin),
-		"call_im_per_lot", fmt.Sprintf("%.6f", callInfo.InitialMargin),
-		"put_im_per_lot", fmt.Sprintf("%.6f", putInfo.InitialMargin),
-		"im_per_lot_total", fmt.Sprintf("%.6f", imTotal),
-		"target_margin_per_slot_"+unit, fmt.Sprintf("%.6f", targetMarginPerSlot),
-		"qty_"+unit, fmt.Sprintf("%.4f", qty),
-	)
-	return qty
 }
 
 // toOrderGreeks copies an instrument's greeks into the orders package type.
