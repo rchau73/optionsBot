@@ -78,13 +78,17 @@ Book (all strategies, one underlying or both)
 
 ## 5. Filters and grouping
 
-Filters bar (chips, combinable): underlying · strategy · mode (backtest/testnet/live) · backtest run · status (open/closed/pending) · structure type · option type (call/put) · expiry / DTE range · delta range · exit reason · date range · GEX regime · IV-percentile band.
+Filters bar (chips, combinable): underlying · strategy · DVOL / IV-percentile band at entry · moneyness at entry · OI rank of the strike · mode (backtest/testnet/live) · backtest run · status (open/closed/pending) · structure type · option type (call/put) · expiry / DTE range · delta range · exit reason · date range · GEX regime · IV-percentile band.
 
 Group-by (drill table and attribution chart): strategy · expiry · DTE bucket (0–7, 8–14, 15–30, 31–60, 60+) · delta bucket · option type · exit reason · regime · week/month.
 
 Each group row shows count, qty, P&L (coin and USD), win rate, avg win / avg loss, worst trade, and net Greeks, with sparklines where useful.
 
 ## 6. Panels in detail
+
+**P&L leaderboard (headline)** — strategies ranked by P&L for the selected period: realised, unrealised and total in coin and USD, P&L/day, return on margin, max drawdown, P&L/drawdown, trades, avg win vs avg loss, costs paid. Toggle mode (backtest/testnet/live) and version. This is the panel that answers "which strategy is worth more time?".
+
+**Market snapshot everywhere** — every fill, close and event row carries the snapshot recorded at that moment (spot, DVOL, IV percentile, option IV, ITM/ATM/OTM and distance to strike, OI of the strike and its rank, max pain, GEX regime, spread). Hovering a trade marker on any chart shows it; the drill table can add any snapshot field as a column, filter or group-by (e.g. P&L by DVOL band at entry, by moneyness, by OI rank).
 
 **Strategy board** — status dot (running / paused / halted by kill switch / error), mode badge, version, P&L today/total, max DD, Sharpe (rolling 30d), margin used, net Greeks, open structures, last action time. Red/green is never the only signal: use signs and icons.
 
@@ -150,7 +154,8 @@ GET /api/strategies                          → id, mode, version, status, KPIs
 GET /api/positions?strategy=&group_by=&…     → tree rows for the drill table
 GET /api/orders?strategy=&leg=&since=        → order lifecycle and fills
 GET /api/metrics/equity?strategy=&run=       → equity + drawdown series
-GET /api/metrics/attribution?group_by=&…     → grouped P&L
+GET /api/metrics/attribution?group_by=&…     → grouped P&L (group_by may be any snapshot field)
+GET /api/metrics/pnl?by=strategy&from=&to=   → P&L leaderboard (realised, unrealised, normalised)
 GET /api/market                              → spot, DVOL, IV pct, GEX snapshot, OI by strike
 GET /api/backtests ; /api/backtests/{run_id} → runs and their results
 GET /api/events?since=&severity=             → event tape

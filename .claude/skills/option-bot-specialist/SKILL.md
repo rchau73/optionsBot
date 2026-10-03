@@ -64,6 +64,30 @@ Run every idea through the same desk questions. Write the answers down — the d
 
 `references/deribit.md` lists the platform facts that change strategy design (instrument conventions, settlement, margin, order types, rate limits, fee/limit checks). Facts there that can drift — fee levels, rate limits, minimum sizes — must be re-checked against Deribit's current docs or the API before they drive a decision; say when you are relying on them.
 
+## P&L is the headline KPI — and it needs its market context
+
+P&L per strategy is how you decide where time and capital go: which strategy deserves more tuning, which should be cut. Measure it so it can be trusted and compared:
+
+- **Per strategy, per version, per mode** (backtest / testnet / live), split into **realised** (closed legs) and **unrealised** (open legs marked to mid), in the underlying (BTC/ETH) **and** USD — state the conversion price and time. Inverse options make coin and USD P&L diverge in big moves; show both.
+- **Net of costs:** fees, spread paid vs mid, slippage on market exits, hedge costs and funding.
+- **Normalised so strategies compare fairly:** P&L per day, per unit of margin used (return on margin), per unit of max drawdown, and per trade (average win vs average loss, not just win rate). A strategy that makes more but uses five times the margin is not better.
+- **Attributed:** by exit reason, by leg (call/put), by DTE and delta at entry, by regime, and by the market conditions below — so the question "why did it make or lose money?" has an answer in data.
+
+**Every decision is logged with a market snapshot.** A P&L number without the conditions it was made in can't support a decision. At every decision point — entry submit, fill, amend, cancel, roll, stop-loss, GEX close, repair, kill switch, and ideally skipped entries with their reason — the record must capture:
+
+| Group | Fields |
+|---|---|
+| Underlying | index price (spot) at that moment, 24h change |
+| Volatility | DVOL, IV percentile, the option's mark IV, ATM IV of the expiry (skew = option IV − ATM IV) |
+| Moneyness | ITM / ATM / OTM label, distance to strike in % and in standard deviations (using IV and DTE), delta |
+| Open interest | OI of the instrument, OI of the strike (calls + puts), total OI of the expiry, the strike's OI rank, max-pain strike of the expiry |
+| Positioning | GEX regime, gamma flip, distance of spot to the flip, call/put walls |
+| Liquidity | bid, ask, spread % of mid, fill vs mid |
+| Option values | intrinsic and extrinsic value **in the same unit** (coin) |
+| Context | strategy id, version, slot (DTE, delta), DTE, portfolio Greeks, margin used % |
+
+Use these snapshots in every Backtest Review and testnet review: compare winners and losers by DVOL band, moneyness and OI rank at entry before changing a parameter. When the developer builds or changes the journal, ask for these fields explicitly and check units.
+
 ## Parallel bots: use the architecture, don't fight it
 
 The user wants many strategies running side by side. In this codebase that means:
@@ -120,11 +144,12 @@ Keep requests small enough to finish: one structure, one hypothesis, one grid. A
 When results come back (summary.json, trades.csv, equity/drawdown CSVs, walk-forward output, testnet logs), review them in this order. Data quality first: a beautiful result on broken data is the most expensive mistake on a desk.
 
 1. **Data integrity** — Right period? Real Deribit data or synthetic? Prices in coin or USD? Enough trades to mean anything (fewer than ~30 closed trades is anecdote)? Look for tell-tales of bugs: zero trades, identical results across a sweep, perfect win rates, no stop-losses in a period that contained a crash.
-2. **Risk** — Max drawdown (depth and duration), worst trade, worst week, loss in each stress window, tail ratio, time underwater. Compare max loss with what the Risk limits allowed.
-3. **Return quality** — Sharpe *and* Sortino, Calmar, return per unit of margin used, average P&L per trade vs average loss per losing trade (win rate alone hides the short-vol trap: 90% winners, one loser that eats a year).
-4. **Robustness** — Sweep: is the chosen parameter on a plateau or a spike? Walk-forward: does out-of-sample Sharpe degrade more than ~30%? Cost sensitivity: does it survive doubled slippage and fees?
-5. **Attribution** — P&L by exit reason (take-profit / roll / stop / GEX close), by IV-percentile regime, by GEX regime, by DTE at entry, by leg (calls vs puts), and by **strategy version**: around each audit marker, compare before/after windows and the old-vs-new backtest over the same period before crediting (or blaming) a change.
-6. **Live-readiness** — Fill realism at the strikes traded (spread, depth), request budget, margin at peak, behaviour if the exchange is down or an order is rejected.
+2. **P&L** — realised + unrealised per strategy and version, in coin and USD, net of costs, normalised per day, per margin and per drawdown; compared against the benchmark and the other strategies.
+3. **Risk** — Max drawdown (depth and duration), worst trade, worst week, loss in each stress window, tail ratio, time underwater. Compare max loss with what the Risk limits allowed.
+4. **Return quality** — Sharpe *and* Sortino, Calmar, return per unit of margin used, average P&L per trade vs average loss per losing trade (win rate alone hides the short-vol trap: 90% winners, one loser that eats a year).
+5. **Robustness** — Sweep: is the chosen parameter on a plateau or a spike? Walk-forward: does out-of-sample Sharpe degrade more than ~30%? Cost sensitivity: does it survive doubled slippage and fees?
+6. **Attribution** — P&L by exit reason (take-profit / roll / stop / GEX close), by IV-percentile regime, by GEX regime, by DTE at entry, by leg (calls vs puts), by **market snapshot at entry** (DVOL band, moneyness, OI rank of the strike), and by **strategy version**: around each audit marker, compare before/after windows and the old-vs-new backtest over the same period before crediting (or blaming) a change.
+7. **Live-readiness** — Fill realism at the strikes traded (spread, depth), request budget, margin at peak, behaviour if the exchange is down or an order is rejected.
 
 Then give a verdict, in this format:
 
