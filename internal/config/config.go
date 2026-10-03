@@ -1,10 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -110,12 +110,48 @@ func (c *Config) WSEndpoint() string {
 	return "wss://test.deribit.com/ws/api/v2"
 }
 
+// IsLive reports whether the bot trades real capital (DERIBIT_ENV=live).
 func (c *Config) IsLive() bool {
 	return c.Environment == "live"
 }
 
-func (c *Config) StartTime() time.Time {
-	return time.Now()
+// RequireCredentials checks that API credentials are present. Only live and
+// testnet trading need them; a backtest runs without any.
+func (c *Config) RequireCredentials() error {
+	if c.ClientID == "" || c.ClientSecret == "" {
+		return errors.New("DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET must be set in .env")
+	}
+	return nil
+}
+
+// Validate rejects strategy settings that would make the bot misbehave
+// silently, so a typo fails at startup instead of in the market.
+func (c *Config) Validate() error {
+	if c.Underlying == "" {
+		return errors.New("underlying is required (BTC or ETH)")
+	}
+	slots := c.Slots()
+	if len(slots) == 0 {
+		return errors.New("no strangle slots: set dte_delta_matrix")
+	}
+	for _, sl := range slots {
+		if sl.EntryDelta <= 0 || sl.EntryDelta >= 0.5 {
+			return fmt.Errorf("slot %d DTE: entry delta %.2f must be in (0, 0.5) — an OTM option", sl.TargetDTE, sl.EntryDelta)
+		}
+		if sl.TargetDTE <= c.RolloutDTE {
+			return fmt.Errorf("slot %d DTE is at or below rollout_dte %d: it would roll immediately", sl.TargetDTE, c.RolloutDTE)
+		}
+	}
+	if c.MaxMarginPct <= 0 || c.MaxMarginPct > 1 {
+		return fmt.Errorf("max_margin_pct %.2f must be in (0, 1]", c.MaxMarginPct)
+	}
+	if c.StopLossMultiplier <= 0 {
+		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
+	}
+	if c.Environment != "testnet" && c.Environment != "live" {
+		return fmt.Errorf("DERIBIT_ENV %q must be testnet or live", c.Environment)
+	}
+	return nil
 }
 
 // Slots returns the expanded list of (DTE, delta) strangle slots.
@@ -150,12 +186,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
-	// ── Platform: credentials (required, from .env) ───────────────────────────
+	// ── Platform: credentials (from .env; checked by RequireCredentials) ─────
 	cfg.ClientID = os.Getenv("DERIBIT_CLIENT_ID")
 	cfg.ClientSecret = os.Getenv("DERIBIT_CLIENT_SECRET")
-	if cfg.ClientID == "" || cfg.ClientSecret == "" {
-		return nil, fmt.Errorf("DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET must be set in .env")
-	}
 
 	// ── Platform: environment (from .env, defaults to testnet) ────────────────
 	cfg.Environment = os.Getenv("DERIBIT_ENV")
@@ -233,6 +266,9 @@ func Load(path string) (*Config, error) {
 		ReconnectBackoffBaseMS: envInt("DERIBIT_RECONNECT_BACKOFF_BASE_MS", 1000),
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return &cfg, nil
 }
 

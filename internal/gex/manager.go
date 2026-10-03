@@ -3,13 +3,25 @@ package gex
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/marketdata"
 )
+
+// rpcCaller is the slice of the gateway the manager uses.
+type rpcCaller interface {
+	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
+}
+
+// instrumentSource provides the option chain (strikes and expiries).
+type instrumentSource interface {
+	AllInstruments() []*marketdata.Instrument
+}
 
 // Manager fetches open-interest data from public/get_book_summary_by_currency,
 // merges it with the instrument chain already held by the MarketData manager,
@@ -18,8 +30,8 @@ import (
 // Refresh is called on a background timer by the strategy — not on every tick,
 // because the book_summary endpoint counts against the non-matching rate limiter.
 type Manager struct {
-	gw             *gateway.Gateway
-	md             *marketdata.Manager
+	gw             rpcCaller
+	md             instrumentSource
 	underlying     string
 	nExpiries      int     // number of nearest expiries to include (default 5)
 	bandPct        float64 // hysteresis band around gamma flip; 0 disables
@@ -35,7 +47,7 @@ type Manager struct {
 // bandPct is the hysteresis band around the gamma flip (e.g. 0.01 = 1%).
 // strikeRangePct limits GEX inputs to strikes within ±rangePct of spot
 // (e.g. 0.25 = ±25%); 0 includes all strikes.
-func NewManager(gw *gateway.Gateway, md *marketdata.Manager, underlying string, nExpiries int, bandPct, strikeRangePct float64) *Manager {
+func NewManager(gw rpcCaller, md instrumentSource, underlying string, nExpiries int, bandPct, strikeRangePct float64) *Manager {
 	if nExpiries <= 0 {
 		nExpiries = 5
 	}
@@ -50,7 +62,8 @@ func NewManager(gw *gateway.Gateway, md *marketdata.Manager, underlying string, 
 }
 
 // Snapshot returns the most recent computed GEX snapshot, or nil if Refresh
-// has not succeeded yet.
+// has not succeeded yet. Each refresh publishes a new snapshot, so the
+// returned value is never modified afterwards; callers must not modify it.
 func (m *Manager) Snapshot() *Snapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -62,7 +75,7 @@ func (m *Manager) Snapshot() *Snapshot {
 func (m *Manager) Refresh(ctx context.Context) error {
 	summaries, err := m.fetchBookSummary(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("gex refresh: %w", err)
 	}
 
 	// Build lookup: instrument_name → (OI, markIV, spot)
@@ -108,7 +121,7 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	for exp := range byExpiry {
 		expiries = append(expiries, exp)
 	}
-	sortAsc(expiries)
+	sort.Slice(expiries, func(i, j int) bool { return expiries[i].Before(expiries[j]) })
 	if len(expiries) > m.nExpiries {
 		expiries = expiries[:m.nExpiries]
 	}
@@ -229,15 +242,7 @@ func (m *Manager) fetchBookSummary(ctx context.Context) ([]bookSummaryRow, error
 
 	var rows []bookSummaryRow
 	if err := json.Unmarshal(resp.Result, &rows); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode book summary: %w", err)
 	}
 	return rows, nil
-}
-
-func sortAsc(ts []time.Time) {
-	for i := 1; i < len(ts); i++ {
-		for j := i; j > 0 && ts[j].Before(ts[j-1]); j-- {
-			ts[j], ts[j-1] = ts[j-1], ts[j]
-		}
-	}
 }

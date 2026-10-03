@@ -39,11 +39,6 @@ func main() {
 		slog.Warn("no .env file found")
 	}
 
-	// Guard: require explicit env var for live mode
-	if os.Getenv("DERIBIT_ENV") == "live" {
-		slog.Warn("LIVE MODE ENABLED — trading real capital")
-	}
-
 	// Init logger
 	if err := logger.Init("bot.log", *debug); err != nil {
 		fmt.Fprintf(os.Stderr, "logger init: %v\n", err)
@@ -70,6 +65,13 @@ func main() {
 // runLive wires the live components and runs the strategy until shutdown.
 // It returns instead of calling os.Exit so deferred cleanup always runs.
 func runLive(cfg *config.Config) error {
+	if err := cfg.RequireCredentials(); err != nil {
+		return err
+	}
+	if cfg.IsLive() {
+		slog.Warn("LIVE MODE ENABLED — trading real capital")
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 

@@ -16,32 +16,8 @@ import (
 // the simulated date. Returns false when no expiry qualifies — normal
 // mid-month, not an error.
 func SelectExpiry(instruments []*marketdata.Instrument, now time.Time, targetDTE, maxDeviationDays, rolloutDTE int) (time.Time, bool) {
-	return nearestExpiryInWindow(instruments, now, targetDTE, maxDeviationDays, rolloutDTE, nil)
-}
-
-// DaysToExpiry returns whole calendar days from now to expiry, rounded.
-func DaysToExpiry(expiry, now time.Time) int {
-	return int(math.Round(expiry.Sub(now).Hours() / 24))
-}
-
-func nearestExpiryInWindow(instruments []*marketdata.Instrument, now time.Time, targetDTE, maxDeviationDays, rolloutDTE int, skip map[time.Time]bool) (time.Time, bool) {
-	lo := max(targetDTE-maxDeviationDays, rolloutDTE+1)
-	hi := targetDTE + maxDeviationDays
-
-	var best time.Time
-	bestDTE := math.MaxInt32
-	for _, inst := range instruments {
-		if skip[inst.Expiry] {
-			continue
-		}
-		dte := DaysToExpiry(inst.Expiry, now)
-		if dte < lo || dte > hi || dte >= bestDTE {
-			continue
-		}
-		bestDTE = dte
-		best = inst.Expiry
-	}
-	return best, !best.IsZero()
+	lo, hi := marketdata.ExpiryWindow(targetDTE, maxDeviationDays, rolloutDTE)
+	return marketdata.NearestExpiry(instruments, now, lo, hi, nil)
 }
 
 // SelectStrike picks the OTM strike with |delta| closest to targetDelta for the given
@@ -104,7 +80,8 @@ func SelectExpiryFallback(
 	targetDTE, maxDeviationDays, rolloutDTE int,
 	occupiedExpiries map[time.Time]bool,
 ) (time.Time, bool) {
-	return nearestExpiryInWindow(instruments, now, targetDTE, maxDeviationDays, rolloutDTE, occupiedExpiries)
+	lo, hi := marketdata.ExpiryWindow(targetDTE, maxDeviationDays, rolloutDTE)
+	return marketdata.NearestExpiry(instruments, now, lo, hi, occupiedExpiries)
 }
 
 // AvailableExpiries returns sorted unique expiries across all instruments.

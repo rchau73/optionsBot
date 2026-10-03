@@ -209,8 +209,6 @@ func (w *ResultWriter) WriteWalkForwardSummary(results []WalkForwardResult) erro
 	return writeCSV(filepath.Join(w.dir, "walk_forward", "walk_forward_summary.csv"), header, rows)
 }
 
-func (w *ResultWriter) Dir() string { return w.dir }
-
 func (w *ResultWriter) WriteWindowResult(window int, phase string, s Summary) error {
 	dir := filepath.Join(w.dir, "walk_forward")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

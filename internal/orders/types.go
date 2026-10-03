@@ -61,8 +61,9 @@ type OrderLog struct {
 	CloseReason      string  `json:"close_reason,omitempty"` // human-readable close trigger
 	PremiumReceived  float64 `json:"premium_received,omitempty"`
 	CloseCost        float64 `json:"close_cost,omitempty"`
-	PnLUSD           float64 `json:"pnl_usd,omitempty"`
-	PnLUSDFmt        string  `json:"pnl_usd_fmt,omitempty"` // e.g. "-1,234.56" (BTC × spot)
+	PnL              float64 `json:"pnl,omitempty"`         // in the underlying (BTC or ETH)
+	PnLUSD           float64 `json:"pnl_usd,omitempty"`     // PnL × entry-time spot
+	PnLUSDFmt        string  `json:"pnl_usd_fmt,omitempty"` // e.g. "-1,234.56"
 	ROIPct           float64 `json:"roi_pct,omitempty"`
 	ROIPctFmt        string  `json:"roi_pct_fmt,omitempty"` // e.g. "-7.1429%"
 	HoldDays         int     `json:"hold_days,omitempty"`

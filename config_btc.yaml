@@ -17,18 +17,18 @@ entry_delta:  0.0
 
 # ── Rollout & risk rules ──────────────────────────────────────────────────────
 rollout_dte:            15      # roll entire strangle when DTE ≤ this
-delta_drift_threshold:  0.10    # roll leg when |delta| drifts by more than this
+delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left)
 roi_take_profit:        0.50    # roll leg when ROI ≥ 50% of premium received
 stop_loss_multiplier:   2.0     # emergency close when loss ≥ 2× premium received
 
 # ── Gamma monitor ─────────────────────────────────────────────────────────────
 gamma_trend_lookback_days: 120
 swing_pivot_n:             5    # bars required on each side to confirm a swing pivot
-gamma_regime_band_pct:     0.025 # hysteresis band around gamma flip; spot must break past flip±1% to switch regime
+gamma_regime_band_pct:     0.025 # hysteresis band around the gamma flip; spot must cross flip±band to switch regime
 gex_strike_range_pct:      0.25 # GEX inputs: only strikes within ±25% of spot; 0 = include all strikes
 
 # ── IV & margin ───────────────────────────────────────────────────────────────
-iv_percentile_window:   252     # rolling window (trading days) for DVOL percentile
+iv_percentile_window:   252     # days of DVOL history the IV percentile ranks against
 hedge_report_threshold: 0.05    # net delta threshold that triggers hedge_report.json
 max_margin_pct:         0.35    # share of equity usable as PM initial margin (× leverage)
 leverage:               4.0     # multiplier on the margin budget (e.g. 2 = 2× the allowed margin)

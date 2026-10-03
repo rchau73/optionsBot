@@ -36,6 +36,7 @@ type fakeExchange struct {
 	imPerLot    float64
 	nextID      int
 	dailyCloses []orders.DailyClose
+	amended     []string
 
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
@@ -100,7 +101,12 @@ func (f *fakeExchange) GetOrderState(_ context.Context, id string) (orders.Order
 	return f.orderStates[id], nil
 }
 
-func (f *fakeExchange) AmendOrder(context.Context, string, float64, float64) error { return nil }
+func (f *fakeExchange) AmendOrder(_ context.Context, id string, _ float64, price float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.amended = append(f.amended, fmt.Sprintf("%s@%g", id, price))
+	return nil
+}
 
 func (f *fakeExchange) GetAccountSummary(context.Context, string) (orders.AccountSummary, error) {
 	f.mu.Lock()
@@ -674,5 +680,101 @@ func TestStrategy_RepairRespectsGEXGate(t *testing.T) {
 		if o.Instrument == f.put {
 			t.Error("repair must not sell a put while the GEX regime is shedding puts")
 		}
+	}
+}
+
+func TestStrategy_AmendsEntryWhenAskDrifts(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.OrderSlippagePct = 0.05
+	f.startRun()
+
+	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
+	f.market.setQuote(f.call, 0.014, 0.016) // ask 0.021 → 0.016 (−24%)
+
+	eventually(t, 2*time.Second, "call amended to the new ask", func() bool {
+		f.exch.mu.Lock()
+		defer f.exch.mu.Unlock()
+		for _, a := range f.exch.amended {
+			if strings.HasSuffix(a, "@0.016") {
+				return true
+			}
+		}
+		return false
+	})
+	time.Sleep(100 * time.Millisecond)
+	f.exch.mu.Lock()
+	n := len(f.exch.amended)
+	f.exch.mu.Unlock()
+	if n > f.cfg.OrderMaxAdjustments*2 {
+		t.Errorf("amendments must stop at order_max_adjustments, got %d", n)
+	}
+}
+
+func TestStrategy_GEXSheddingClosesOpenPuts(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.withPutSheddingRegime()
+	f.startRun()
+
+	eventually(t, 2*time.Second, "put closed", func() bool { return len(f.state.AllPositions()) == 1 && f.position(f.put) == nil })
+	for _, b := range f.exch.buys() {
+		if b.Instrument != f.put || b.TriggerReason != orders.TriggerGammaClose || b.OrderType != orders.TypeMarket {
+			t.Errorf("GEX shedding must close the put at market, got %+v", b)
+		}
+	}
+	if f.position(f.call) == nil {
+		t.Error("the call leg must stay open")
+	}
+}
+
+func TestStrategy_RebalanceUpsizeOpensComplementStrangle(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.exch.imPerLot /= 3 // the budget now fits three lots
+	f.startRun()
+
+	eventually(t, 2*time.Second, "complement submitted", func() bool { return len(f.exch.sells()) == 2 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.2) > 1e-9 {
+			t.Errorf("complement should add the missing 0.2, got %+v", o)
+		}
+	}
+	if len(f.exch.buys()) != 0 {
+		t.Error("an upsize must never close the existing legs")
+	}
+}
+
+// A position on an instrument the market data does not know (e.g. an expiry
+// outside the subscribed set) is still loaded, from its name.
+func TestStrategy_ReconcileParsesUnknownInstrument(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.exch.positions = []orders.RawPosition{
+		{InstrumentName: "BTC-27DEC30-150000-C", Size: -0.1, Direction: "sell", AveragePrice: 0.01, MarkPrice: 0.01},
+		{InstrumentName: "BTC-BAD", Size: -0.1, Direction: "sell"},               // unparsable: skipped
+		{InstrumentName: f.put, Size: 0.1, Direction: "buy", AveragePrice: 0.01}, // long: not ours
+	}
+	f.exch.imPerLot = 100
+	f.startRun()
+
+	eventually(t, 2*time.Second, "position loaded", func() bool { return len(f.state.AllPositions()) >= 1 })
+	time.Sleep(30 * time.Millisecond)
+	p := f.position("BTC-27DEC30-150000-C")
+	if p == nil || p.Strike != 150000 || p.OptionType != "call" || p.Expiry.Year() != 2030 {
+		t.Fatalf("parsed position = %+v", p)
+	}
+	if f.position(f.put) != nil {
+		t.Error("long positions are not part of the short book")
+	}
+}
+
+func TestStrategy_HeartbeatAndHedgeDoNotTrade(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.MinPremiumBTC = 1 // block entries: only background activity remains
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+	eventually(t, 2*time.Second, "reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	time.Sleep(50 * time.Millisecond)
+	if n := len(f.exch.sells()) + len(f.exch.buys()); n != 0 {
+		t.Errorf("a quiet book must not trade, got %d orders", n)
 	}
 }

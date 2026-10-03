@@ -66,7 +66,7 @@ func (f *HistoricalFeed) NextTick() (*marketdata.Tick, error) {
 	r := f.rows[f.idx]
 	f.idx++
 
-	f.dvol.Push(r.DVOLIndex)
+	f.dvol.Record(r.Date, r.DVOLIndex)
 
 	return &marketdata.Tick{
 		Timestamp:       r.Date,

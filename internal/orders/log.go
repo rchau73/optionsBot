@@ -22,16 +22,21 @@ type Logger struct {
 	spreadAlertThreshold float64
 }
 
+// NewLogger appends JSON lines to the file at path and mirrors them to stdout,
+// so `docker logs` shows fills alongside the bot log.
 func NewLogger(path string, spreadAlertThreshold float64) (*Logger, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open order log %s: %w", path, err)
 	}
-	return &Logger{
-		file:                 f,
-		w:                    io.MultiWriter(os.Stdout, f),
-		spreadAlertThreshold: spreadAlertThreshold,
-	}, nil
+	l := NewWriterLogger(io.MultiWriter(os.Stdout, f), spreadAlertThreshold)
+	l.file = f
+	return l, nil
+}
+
+// NewWriterLogger writes JSON lines to w only (used by tests and tools).
+func NewWriterLogger(w io.Writer, spreadAlertThreshold float64) *Logger {
+	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold}
 }
 
 // closeReasonLabel maps internal trigger constants to human-readable close reasons.
@@ -165,8 +170,10 @@ func (l *Logger) LogClose(pos *Position, fill Fill, ivPercentile float64, trigge
 	rec.CloseReason = closeReasonLabel(trigger)
 	rec.PremiumReceived = pos.PremiumReceived
 	rec.CloseCost = closeCost
-	rec.PnLUSD = pnl
-	rec.PnLUSDFmt = formatUSD(pnl * pos.UnderlyingPrice) // BTC × spot → USD
+	// P&L is native to the underlying (BTC/ETH); USD uses the entry-time spot.
+	rec.PnL = pnl
+	rec.PnLUSD = pnl * pos.UnderlyingPrice
+	rec.PnLUSDFmt = formatUSD(rec.PnLUSD)
 	rec.ROIPct = roi
 	rec.ROIPctFmt = formatROI(roi)
 	rec.HoldDays = holdDays
@@ -371,6 +378,10 @@ func (l *Logger) write(rec OrderLog) {
 	}
 }
 
+// Close closes the underlying file, if any.
 func (l *Logger) Close() error {
+	if l.file == nil {
+		return nil
+	}
 	return l.file.Close()
 }

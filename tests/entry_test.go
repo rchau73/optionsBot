@@ -146,7 +146,56 @@ func TestSelectExpiry_UsesGivenNow(t *testing.T) {
 	if !ok || !expiry.Equal(past.AddDate(0, 0, 30)) {
 		t.Errorf("expected the 30-DTE expiry relative to %s, got %v ok=%v", past.Format("2006-01-02"), expiry, ok)
 	}
-	if strategy.DaysToExpiry(expiry, past) != 30 {
+	if marketdata.DaysToExpiry(expiry, past) != 30 {
 		t.Error("DaysToExpiry should count from the given now")
+	}
+}
+
+func TestSelectStrike(t *testing.T) {
+	exp := time.Date(2026, 3, 27, 8, 0, 0, 0, time.UTC)
+	opt := func(name, typ string, delta, mid float64) *marketdata.Instrument {
+		return &marketdata.Instrument{Name: name, Expiry: exp, OptionType: typ, Mid: mid, Greeks: marketdata.Greeks{Delta: delta}}
+	}
+	chain := []*marketdata.Instrument{
+		opt("C-ITM", "call", 0.70, 0.1),
+		opt("C-20", "call", 0.20, 0.03),
+		opt("C-15", "call", 0.15, 0.02),
+		opt("C-NODATA", "call", 0.16, 0),
+		opt("P-17", "put", -0.17, 0.02),
+	}
+
+	got, err := strategy.SelectStrike(chain, exp, "call", 0.16, 0.05)
+	if err != nil || got.Name != "C-15" {
+		t.Errorf("closest OTM call with data should win, got %v (%v)", got, err)
+	}
+	if got, err := strategy.SelectStrike(chain, exp, "put", 0.16, 0); err != nil || got.Name != "P-17" {
+		t.Errorf("put by |delta|: got %v (%v)", got, err)
+	}
+	if _, err := strategy.SelectStrike(chain, exp, "call", 0.40, 0.05); err == nil {
+		t.Error("no strike within delta slippage must be an error")
+	}
+	if _, err := strategy.SelectStrike(chain, exp.AddDate(0, 1, 0), "call", 0.16, 0); err == nil {
+		t.Error("unknown expiry must be an error")
+	}
+	if _, err := strategy.SelectStrike(chain[:1], exp, "call", 0.16, 0); err == nil {
+		t.Error("only ITM candidates must be an error")
+	}
+}
+
+func TestAvailableAndNextMonthlyExpiry(t *testing.T) {
+	ref := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	feb := time.Date(2026, 2, 27, 8, 0, 0, 0, time.UTC) // last Friday of February
+	mar := time.Date(2026, 3, 27, 8, 0, 0, 0, time.UTC)
+	insts := []*marketdata.Instrument{{Expiry: mar}, {Expiry: feb}, {Expiry: feb}}
+
+	exps := strategy.AvailableExpiries(insts)
+	if len(exps) != 2 || !exps[0].Equal(feb) {
+		t.Errorf("expiries should be unique and sorted, got %v", exps)
+	}
+	if got, ok := strategy.NextMonthlyExpiry(ref, exps); !ok || !got.Equal(feb) {
+		t.Errorf("next monthly after %s = %v, want %v", ref.Format("2006-01-02"), got, feb)
+	}
+	if _, ok := strategy.NextMonthlyExpiry(ref, nil); ok {
+		t.Error("no expiries → not found")
 	}
 }
