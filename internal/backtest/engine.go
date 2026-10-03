@@ -32,14 +32,14 @@ type Engine struct {
 	equity       float64
 	peakEquity   float64
 
-	stopLossTriggers  int
+	stopLossTriggers   int
 	gammaCloseTriggers int
 	rollout19DTE       int
 	rolloutDelta       int
 	rolloutROI         int
 
-	ivAtEntry         []float64
-	ivPctAtEntry      []float64
+	ivAtEntry    []float64
+	ivPctAtEntry []float64
 }
 
 func NewEngine(cfg *config.Config, feed *HistoricalFeed, exec *SimExecutor) *Engine {
@@ -400,13 +400,22 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 		"iv_percentile", fmt.Sprintf("%.2f", ivPct), "open_strangles", len(e.state.AllStrangles()))
 
 	slots := e.cfg.Slots()
-	openSlots := make(map[struct{ DTE int; DeltaX100 int }]bool)
+	openSlots := make(map[struct {
+		DTE       int
+		DeltaX100 int
+	}]bool)
 	for _, st := range e.state.AllStrangles() {
-		openSlots[struct{ DTE int; DeltaX100 int }{st.TargetDTE, int(math.Round(st.EntryDelta * 100))}] = true
+		openSlots[struct {
+			DTE       int
+			DeltaX100 int
+		}{st.TargetDTE, int(math.Round(st.EntryDelta * 100))}] = true
 	}
 
 	for _, slot := range slots {
-		key := struct{ DTE int; DeltaX100 int }{slot.TargetDTE, int(math.Round(slot.EntryDelta * 100))}
+		key := struct {
+			DTE       int
+			DeltaX100 int
+		}{slot.TargetDTE, int(math.Round(slot.EntryDelta * 100))}
 		if openSlots[key] {
 			slog.Debug("skip entry: slot already open",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta)
@@ -480,7 +489,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			Expiry: call.Expiry, OptionType: "call", Qty: 1.0,
 			EntryPrice: callFill.FillPrice, UnderlyingPrice: call.UnderlyingPrice, EntryTime: date,
 			PremiumReceived: callFill.FillPrice,
-			CurrentMid: call.Mid,
+			CurrentMid:      call.Mid,
 			CurrentGreeks: orders.Greeks{Delta: call.Greeks.Delta, Gamma: call.Greeks.Gamma,
 				Theta: call.Greeks.Theta, Vega: call.Greeks.Vega, IV: call.Greeks.IV},
 		}
@@ -490,7 +499,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			Expiry: put.Expiry, OptionType: "put", Qty: 1.0,
 			EntryPrice: putFill.FillPrice, UnderlyingPrice: put.UnderlyingPrice, EntryTime: date,
 			PremiumReceived: putFill.FillPrice,
-			CurrentMid: put.Mid,
+			CurrentMid:      put.Mid,
 			CurrentGreeks: orders.Greeks{Delta: put.Greeks.Delta, Gamma: put.Greeks.Gamma,
 				Theta: put.Greeks.Theta, Vega: put.Greeks.Vega, IV: put.Greeks.IV},
 		}

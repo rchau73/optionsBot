@@ -319,8 +319,8 @@ func (e *Executor) GetMargins(ctx context.Context, instrument string, amount, pr
 // AccountEquity fetches the current account equity in USD.
 func (e *Executor) AccountEquity(ctx context.Context, currency string) (float64, error) {
 	resp, err := e.gw.Call(ctx, "private/get_account_summary", map[string]interface{}{
-		"currency":  currency,
-		"extended":  true,
+		"currency": currency,
+		"extended": true,
 	}, gateway.PriorityLow)
 	if err != nil {
 		return 0, err

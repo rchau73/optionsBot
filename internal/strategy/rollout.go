@@ -6,20 +6,20 @@ import (
 
 // RolloutDecision describes what action to take on a leg.
 type RolloutDecision struct {
-	Action    RolloutAction
-	Reason    string
-	LegID     string
+	Action        RolloutAction
+	Reason        string
+	LegID         string
 	WholeStrangle bool
 }
 
 type RolloutAction int
 
 const (
-	ActionNone       RolloutAction = iota
-	ActionClose                    // close only, no reopen
-	ActionRollNextMonth            // close and reopen at next monthly expiry
-	ActionRollSameLeg              // close and reopen same leg at delta 0.16, same month
-	ActionStopLoss                 // emergency market close
+	ActionNone          RolloutAction = iota
+	ActionClose                       // close only, no reopen
+	ActionRollNextMonth               // close and reopen at next monthly expiry
+	ActionRollSameLeg                 // close and reopen same leg at delta 0.16, same month
+	ActionStopLoss                    // emergency market close
 )
 
 // EvaluateLeg applies rollout rules 4.1–4.5 in priority order and returns the

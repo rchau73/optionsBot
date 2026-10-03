@@ -35,9 +35,9 @@ type CSVRow struct {
 
 // HistoricalFeed replays CSV rows as Ticks in chronological order.
 type HistoricalFeed struct {
-	rows  []CSVRow
-	idx   int
-	dvol  *marketdata.DVOLTracker
+	rows []CSVRow
+	idx  int
+	dvol *marketdata.DVOLTracker
 }
 
 func NewHistoricalFeed(csvPath string, from, to time.Time, dvolWindow int) (*HistoricalFeed, error) {
@@ -97,7 +97,8 @@ func (f *HistoricalFeed) Done() bool {
 
 // loadCSV parses the historical options data CSV.
 // Expected columns: date,instrument,underlying,underlying_price,strike,expiry,
-//   option_type,bid,ask,mid,delta,gamma,theta,vega,iv,dvol_index
+//
+//	option_type,bid,ask,mid,delta,gamma,theta,vega,iv,dvol_index
 func loadCSV(path string, from, to time.Time) ([]CSVRow, error) {
 	f, err := os.Open(path)
 	if err != nil {

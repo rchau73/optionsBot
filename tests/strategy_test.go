@@ -500,4 +500,3 @@ func TestResolveQty_FallsBackToCfgWhenBothZero(t *testing.T) {
 		t.Errorf("expected cfg fallback 0.05, got %.6f", qty)
 	}
 }
-

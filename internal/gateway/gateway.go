@@ -19,18 +19,18 @@ import (
 // Gateway manages the WebSocket connection to Deribit including auth, heartbeat,
 // reconnection, rate limiting, and the priority dispatch loop.
 type Gateway struct {
-	cfg          *config.Config
-	conn         *websocket.Conn
-	mu           sync.Mutex
-	idCounter    atomic.Int64
-	pending      sync.Map // int64 -> chan JSONRPCResponse
+	cfg           *config.Config
+	conn          *websocket.Conn
+	mu            sync.Mutex
+	idCounter     atomic.Int64
+	pending       sync.Map // int64 -> chan JSONRPCResponse
 	notifyCh      chan JSONRPCResponse
 	droppedNotifs atomic.Int64
 	rl            *RateLimiter
-	cb           *CircuitBreaker
-	pq           *PriorityQueue
-	subs         *SubscriptionRegistry
-	reconnecting atomic.Bool
+	cb            *CircuitBreaker
+	pq            *PriorityQueue
+	subs          *SubscriptionRegistry
+	reconnecting  atomic.Bool
 
 	// connCancel cancels the goroutines (readLoop, dispatchLoop, heartbeatLoop,
 	// metricsLoop) for the current connection. Called before starting fresh goroutines
@@ -39,19 +39,19 @@ type Gateway struct {
 	connMu     sync.Mutex
 
 	// metrics
-	reqCount    atomic.Int64
-	retryCount  atomic.Int64
+	reqCount     atomic.Int64
+	retryCount   atomic.Int64
 	metricsReset time.Time
 }
 
 func New(cfg *config.Config) *Gateway {
 	return &Gateway{
-		cfg:         cfg,
-		notifyCh:    make(chan JSONRPCResponse, 32768),
-		rl:          NewRateLimiter(cfg.RateLimit),
-		cb:          NewCircuitBreaker(cfg.Circuit),
-		pq:          NewPriorityQueue(64, 256),
-		subs:        NewSubscriptionRegistry(cfg.RateLimit.MaxSubscriptions),
+		cfg:          cfg,
+		notifyCh:     make(chan JSONRPCResponse, 32768),
+		rl:           NewRateLimiter(cfg.RateLimit),
+		cb:           NewCircuitBreaker(cfg.Circuit),
+		pq:           NewPriorityQueue(64, 256),
+		subs:         NewSubscriptionRegistry(cfg.RateLimit.MaxSubscriptions),
 		metricsReset: time.Now(),
 	}
 }

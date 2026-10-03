@@ -31,12 +31,12 @@ type Config struct {
 	DTEDeltaMatrix []DTEDeltaEntry `yaml:"dte_delta_matrix"`
 	// Legacy fields — kept for backward-compatible configs and backtest scenario sweeps.
 	// Ignored by Slots() when dte_delta_matrix is set.
-	TargetDTE           []int    `yaml:"target_dte"`
-	EntryDelta          float64  `yaml:"entry_delta"`
-	RolloutDTE          int      `yaml:"rollout_dte"`
-	DeltaDriftThreshold float64  `yaml:"delta_drift_threshold"`
-	ROITakeProfit       float64  `yaml:"roi_take_profit"`
-	StopLossMultiplier  float64  `yaml:"stop_loss_multiplier"`
+	TargetDTE           []int   `yaml:"target_dte"`
+	EntryDelta          float64 `yaml:"entry_delta"`
+	RolloutDTE          int     `yaml:"rollout_dte"`
+	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
+	ROITakeProfit       float64 `yaml:"roi_take_profit"`
+	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`
 
 	GammaTrendLookbackDays int     `yaml:"gamma_trend_lookback_days"`
 	SwingPivotN            int     `yaml:"swing_pivot_n"`

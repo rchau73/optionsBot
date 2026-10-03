@@ -18,9 +18,9 @@ import (
 // Refresh is called on a background timer by the strategy — not on every tick,
 // because the book_summary endpoint counts against the non-matching rate limiter.
 type Manager struct {
-	gw         *gateway.Gateway
-	md         *marketdata.Manager
-	underlying string
+	gw             *gateway.Gateway
+	md             *marketdata.Manager
+	underlying     string
 	nExpiries      int     // number of nearest expiries to include (default 5)
 	bandPct        float64 // hysteresis band around gamma flip; 0 disables
 	strikeRangePct float64 // include only strikes within ±this fraction of spot; 0 = all
