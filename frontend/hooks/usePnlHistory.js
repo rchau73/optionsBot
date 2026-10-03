@@ -22,7 +22,7 @@ export function usePnlHistory(names, range) {
     const load = async () => {
       const results = await Promise.allSettled(names.map((n) => fetchPnlHistory(n, range, controller.signal)));
       if (controller.signal.aborted) return;
-      const ok = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const ok = results.flatMap((r, i) => (r.status === "fulfilled" ? [{ ...r.value, bot: names[i] }] : []));
       const failed = results.length - ok.length;
       setState({ range, points: combineHistories(ok), error: failed ? `${failed} bot(s) without history` : null });
       timer = setTimeout(load, REFRESH_MS);

@@ -303,3 +303,39 @@ func TestNearestExpiry_SkipsAndBounds(t *testing.T) {
 		t.Error("no expiry in [41,59]")
 	}
 }
+
+// A held position in an expiry the bot would not open today (here 17 DTE,
+// inside the rollout window) still needs a ticker, or it has no mark.
+func TestMarketData_TrackSubscribesHeldInstrumentsOnce(t *testing.T) {
+	gw := newFakeFeedGateway()
+	gw.results["public/get_instruments"] = instrumentsJSON(time.Now(), 17, 24, 80, 110, 140, 170)
+	m := startManager(t, gw)
+	ctx := context.Background()
+	if strings.Contains(strings.Join(gw.subscriptions(), " "), "BTC-D17-P") {
+		t.Fatal("precondition: 17 DTE is not subscribed at start")
+	}
+
+	if err := m.Track(ctx, []string{"BTC-D17-P", "BTC-D24-C", "BTC-UNKNOWN"}); err != nil {
+		t.Fatal(err)
+	}
+	subs := gw.subscriptions()
+	n := 0
+	for _, ch := range subs {
+		switch ch {
+		case "ticker.BTC-D17-P.100ms":
+			n++
+		case "ticker.BTC-UNKNOWN.100ms":
+			t.Error("unknown instruments must be skipped")
+		}
+	}
+	if n != 1 {
+		t.Errorf("the held instrument must be subscribed once, got %d", n)
+	}
+	before := len(subs)
+	if err := m.Track(ctx, []string{"BTC-D17-P", "BTC-D24-C"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(gw.subscriptions()) != before {
+		t.Error("already-tracked instruments (from start or Track) must not be subscribed again")
+	}
+}

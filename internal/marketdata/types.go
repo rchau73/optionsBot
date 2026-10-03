@@ -35,7 +35,7 @@ type Instrument struct {
 	Greeks          Greeks
 	DVOLIndex       float64
 	IVPercentile    float64
-	UpdatedAt       time.Time
+	UpdatedAt       time.Time // last ticker update; zero until the first one
 }
 
 // EffectiveTick returns the tick size that applies at the given price,
@@ -72,3 +72,7 @@ type Tick struct {
 	DVOLIndex       float64
 	IVPercentile    float64
 }
+
+// HasQuote reports whether a ticker has ever updated the instrument. Until
+// then its prices and greeks are zero and must not be used as a mark.
+func (i *Instrument) HasQuote() bool { return !i.UpdatedAt.IsZero() }

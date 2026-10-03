@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { fetchBotEvents, fetchBotState, fetchMonitorConfig } from "@/lib/api";
-import { STALE_AFTER_SEC, describeEvent, mergeFeed, summarise } from "@/lib/monitor";
+import { STALE_AFTER_SEC, describeEvent, mergeFeed, summarise, totalsByBot } from "@/lib/monitor";
 
 const HISTORY_POINTS = 900; // 15 minutes at 1 s
 
@@ -75,8 +75,11 @@ export function useMonitor() {
           next[r.name] = r.error ? { ...prev[r.name], name: r.name, error: r.error } : r;
         }
         const now = Date.now();
-        const point = summarise(Object.values(next).map((b) => withStale(b, now)));
-        setHistory((h) => [...h, { t: now, totalUsd: point.totalUsd, realisedUsd: point.realisedUsd }].slice(-HISTORY_POINTS));
+        const current = Object.values(next).map((b) => withStale(b, now));
+        const point = summarise(current);
+        setHistory((h) =>
+          [...h, { t: now, totalUsd: point.totalUsd, realisedUsd: point.realisedUsd, bots: totalsByBot(current) }].slice(-HISTORY_POINTS),
+        );
         return next;
       });
       setFeed((f) => mergeFeed(f, results.flatMap((r) => r.lines)));

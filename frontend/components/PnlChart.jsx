@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import clsx from "clsx";
-import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePnlHistory } from "@/hooks/usePnlHistory";
 import { formatUSD } from "@/lib/format";
 
@@ -18,6 +18,16 @@ export const RANGES = [
 
 const SHORT = new Set(["live", "1h", "6h", "1d"]);
 
+// One colour per bot line (dashed), distinct from Total (blue) and Realized (green).
+const BOT_COLORS = ["#f59e0b", "#c084fc", "#f43f5e", "#2dd4bf"];
+
+/** Legend and tooltip name of a series key. */
+export function seriesName(key) {
+  if (key === "totalUsd") return "Total";
+  if (key === "realisedUsd") return "Realized";
+  return key.replace(/^bots\./, "").toUpperCase();
+}
+
 /** Axis label: time of day for short ranges, date for long ones (UTC). */
 export function tickLabel(t, range) {
   const iso = new Date(t).toISOString();
@@ -27,13 +37,15 @@ export function tickLabel(t, range) {
 }
 
 /**
- * P&L across all bots in USD. "Live" is this session sampled every poll;
- * longer ranges come from the bots' stored history and survive restarts.
+ * P&L across all bots in USD, plus one dashed line per bot when there are
+ * several. "Live" is this session sampled every poll; longer ranges come
+ * from the bots' stored history and survive restarts.
  */
 export default function PnlChart({ live, names }) {
   const [range, setRange] = useState("live");
   const stored = usePnlHistory(names, range);
   const data = range === "live" ? live : stored.points;
+  const perBot = names?.length > 1 ? names : []; // names is null until the bot list loads
 
   return (
     <div>
@@ -68,10 +80,24 @@ export default function PnlChart({ live, names }) {
               <Tooltip
                 contentStyle={{ background: "#111a2e", border: "1px solid #1e293b" }}
                 labelFormatter={(t) => new Date(t).toISOString().replace("T", " ").slice(0, 19) + " UTC"}
-                formatter={(v, name) => [formatUSD(v, { cents: true }), name === "totalUsd" ? "Total" : "Realized"]}
+                formatter={(v, name) => [formatUSD(v, { cents: true }), seriesName(name)]}
               />
+              {perBot.length ? <Legend formatter={seriesName} wrapperStyle={{ fontSize: 11 }} /> : null}
               <Line type="monotone" dataKey="totalUsd" stroke="#38bdf8" dot={false} strokeWidth={2} isAnimationActive={false} />
               <Line type="monotone" dataKey="realisedUsd" stroke="#22c55e" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              {perBot.map((bot, i) => (
+                <Line
+                  key={bot}
+                  type="monotone"
+                  dataKey={`bots.${bot}`}
+                  stroke={BOT_COLORS[i % BOT_COLORS.length]}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  strokeWidth={1.5}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>

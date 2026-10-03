@@ -44,8 +44,12 @@ type Position struct {
 	PremiumReceived float64 // credit received (positive)
 	CurrentMid      float64
 	CurrentGreeks   Greeks
-	LimitOrderID    string // pending limit close, if any
-	LimitPrice      float64
+	// MarkLive is true once CurrentMid and CurrentGreeks come from a live
+	// quote. Positions loaded from the exchange start with Deribit's mark and
+	// greeks but no live quote; rules that need fresh data wait for one.
+	MarkLive     bool
+	LimitOrderID string // pending limit close, if any
+	LimitPrice   float64
 }
 
 type Greeks struct {

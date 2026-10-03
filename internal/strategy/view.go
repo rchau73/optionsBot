@@ -266,7 +266,7 @@ func (s *Strategy) strangleViews(now, loopAt time.Time) []StrangleView {
 func (s *Strategy) legView(pos *orders.Position, spot float64, now, loopAt time.Time) LegView {
 	mark, greeks := pos.CurrentMid, pos.CurrentGreeks
 	lv := LegView{MarkSource: "last_cycle", MarkAsOf: loopAt}
-	if inst, ok := s.md.GetInstrument(pos.Instrument); ok && inst.Mid > 0 {
+	if inst, ok := s.md.GetInstrument(pos.Instrument); ok && inst.HasQuote() && inst.Mid > 0 {
 		mark, greeks = inst.Mid, toOrderGreeks(inst)
 		lv.Bid, lv.Ask = inst.Bid, inst.Ask
 		lv.MarkSource, lv.MarkAsOf = "live", inst.UpdatedAt

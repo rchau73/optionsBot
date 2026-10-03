@@ -243,18 +243,20 @@ function sum(rows, field) {
 }
 
 /**
- * Sums several bots' P&L histories into one USD series. Bucket times are
- * aligned to the clock by the bots, so equal timestamps mean the same bucket;
+ * Sums several bots' P&L histories into one USD series, keeping each bot's
+ * own total under `bots` (series entries name their bot with `bot`). Bucket
+ * times are aligned to the clock by the bots, so equal timestamps mean the same bucket;
  * a bot with no point in a bucket contributes its previous value (P&L is a level).
  * series: [{ points: [{ t, total_usd, realised_usd }] }]
  * Returns [{ t (ms), totalUsd, realisedUsd }] sorted by time.
  */
 export function combineHistories(series) {
   const times = [...new Set(series.flatMap((s) => (s.points ?? []).map((p) => Date.parse(p.t))))].sort((a, b) => a - b);
-  const cursors = series.map((s) => ({ points: s.points ?? [], i: 0, last: null }));
+  const cursors = series.map((s, n) => ({ bot: s.bot ?? `bot${n + 1}`, points: s.points ?? [], i: 0, last: null }));
   return times.map((t) => {
     let totalUsd = 0;
     let realisedUsd = 0;
+    const bots = {};
     for (const c of cursors) {
       while (c.i < c.points.length && Date.parse(c.points[c.i].t) <= t) {
         c.last = c.points[c.i];
@@ -263,8 +265,14 @@ export function combineHistories(series) {
       if (c.last) {
         totalUsd += c.last.total_usd ?? 0;
         realisedUsd += c.last.realised_usd ?? 0;
+        bots[c.bot] = c.last.total_usd ?? 0;
       }
     }
-    return { t, totalUsd, realisedUsd };
+    return { t, totalUsd, realisedUsd, bots };
   });
+}
+
+/** Each bot's own total P&L in USD: { btc: 305, eth: -12 }. */
+export function totalsByBot(bots) {
+  return Object.fromEntries(bots.map((b) => [b.name, summarise([b]).totalUsd]));
 }

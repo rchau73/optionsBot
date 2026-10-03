@@ -43,6 +43,7 @@ type Strategy struct {
 	pnl     *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
+	noQuote  map[string]bool    // held instruments already warned about missing quotes (decision loop only)
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes) and the IM limit the book was last resized to (NaN: never).
 	lastRisk     *risk.Status
@@ -84,6 +85,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		history:          d.History,
 		pnl:              newPnLBook(),
 		lastSkip:         make(map[slotKey]string),
+		noQuote:          make(map[string]bool),
 		killSwitchCh:     make(chan struct{}),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
@@ -97,6 +99,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	s.loadGammaPriceHistory(ctx)
 	s.logStartupState(ctx)
 	s.reconcilePositions(ctx)
+	s.trackPositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
 
 	// Startup applies the margin policy like any cycle: the first confirmed
@@ -146,6 +149,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 		return
 	}
 
+	s.trackPositions(ctx)
 	s.refreshMarks()
 	s.gamma.PushPrice(underlyingPrice)
 
@@ -204,11 +208,36 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	}
 }
 
+// trackPositions makes sure every held instrument has a ticker, whatever
+// its expiry. Positions loaded at startup can sit in expiries the strategy
+// would not open today.
+func (s *Strategy) trackPositions(ctx context.Context) {
+	positions := s.state.AllPositions()
+	names := make([]string, 0, len(positions))
+	for _, pos := range positions {
+		names = append(names, pos.Instrument)
+	}
+	if err := s.md.Track(ctx, names); err != nil {
+		slog.Warn("cannot subscribe to held instruments", "err", err)
+	}
+}
+
 // refreshMarks copies the latest mid and greeks onto every open position.
+// An instrument without a live quote is skipped: its empty mid and greeks
+// would zero the mark, blinding the stop-loss and firing delta drift. The
+// position keeps its last known mark, flagged not live (see EvaluateLeg).
 func (s *Strategy) refreshMarks() {
 	for _, pos := range s.state.AllPositions() {
-		if inst, ok := s.md.GetInstrument(pos.Instrument); ok {
+		inst, ok := s.md.GetInstrument(pos.Instrument)
+		if ok && inst.HasQuote() {
 			s.state.UpdatePositionMid(pos.ID, inst.Mid, toOrderGreeks(inst))
+			delete(s.noQuote, pos.Instrument)
+			continue
+		}
+		if !s.noQuote[pos.Instrument] {
+			s.noQuote[pos.Instrument] = true
+			slog.Warn("no live quote for a held position: keeping its last known mark",
+				"instrument", pos.Instrument, "mark", pos.CurrentMid, "mark_live", pos.MarkLive)
 		}
 	}
 }
