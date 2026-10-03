@@ -92,11 +92,17 @@ func BSGamma(spot, strike, tYears, vol float64) float64 {
 
 // ── Per-expiry GEX computation ────────────────────────────────────────────────
 
-// ComputeExpiryGEX calculates the signed GEX profile for one expiry's instruments.
-// It mirrors Python's compute_gex_proxy: gamma × OI × spot².
+// ComputeExpiryGEX calculates the signed GEX profile for one expiry's
+// instruments as of now. See ComputeExpiryGEXAt.
 func ComputeExpiryGEX(instruments []InstrumentGEXInput) []StrikeGEX {
-	now := time.Now()
+	return ComputeExpiryGEXAt(instruments, time.Now())
+}
 
+// ComputeExpiryGEXAt calculates the signed GEX profile for one expiry's
+// instruments at time now. It mirrors Python's compute_gex_proxy:
+// gamma × OI × spot². An instrument without IV adds its open interest but no
+// gamma, as in the script.
+func ComputeExpiryGEXAt(instruments []InstrumentGEXInput, now time.Time) []StrikeGEX {
 	// Accumulate per strike
 	type acc struct {
 		callOI, putOI, gexCall, gexPut float64
@@ -210,7 +216,37 @@ func ConsolidateProfiles(profiles []ExpiryProfile) []WeightedStrike {
 	return out
 }
 
-// ── Gamma flip (mirrors Python's find_gamma_flip) ─────────────────────────────
+// ── Gamma flip ────────────────────────────────────────────────────────────────
+
+// gammaCrossings returns every strike level where weighted_signed_gex
+// changes sign (or is exactly zero), lowest first, interpolated linearly
+// between the two bracketing strikes.
+func gammaCrossings(strikes []WeightedStrike) []float64 {
+	var out []float64
+	for i := 1; i < len(strikes); i++ {
+		prev, curr := strikes[i-1], strikes[i]
+		switch {
+		case prev.WeightedGEX == 0:
+			out = append(out, prev.Strike)
+		case curr.WeightedGEX == 0:
+			out = append(out, curr.Strike)
+		case (prev.WeightedGEX < 0 && curr.WeightedGEX > 0) || (prev.WeightedGEX > 0 && curr.WeightedGEX < 0):
+			ratio := math.Abs(prev.WeightedGEX) / (math.Abs(prev.WeightedGEX) + math.Abs(curr.WeightedGEX))
+			out = append(out, prev.Strike+(curr.Strike-prev.Strike)*ratio)
+		}
+	}
+	return out
+}
+
+// FirstGammaFlip returns the lowest crossing, scanning strikes upward —
+// exactly what GestaoCarteira's find_gamma_flip returns.
+func FirstGammaFlip(strikes []WeightedStrike) (float64, bool) {
+	c := gammaCrossings(strikes)
+	if len(c) == 0 {
+		return 0, false
+	}
+	return c[0], true
+}
 
 // FindGammaFlip finds the strike price where weighted_signed_gex crosses zero,
 // interpolated linearly between the two bracketing strikes, returning the
@@ -219,41 +255,13 @@ func ConsolidateProfiles(profiles []ExpiryProfile) []WeightedStrike {
 // operationally meaningful gamma flip level.
 // Returns (0, false) if no crossing is found.
 func FindGammaFlip(strikes []WeightedStrike, spot float64) (float64, bool) {
-	if len(strikes) < 2 {
-		return 0, false
-	}
-	bestFlip := 0.0
-	bestDist := math.Inf(1)
-	found := false
-
-	for i := 1; i < len(strikes); i++ {
-		prev := strikes[i-1]
-		curr := strikes[i]
-
-		var flip float64
-		var hasCrossing bool
-		switch {
-		case prev.WeightedGEX == 0:
-			flip, hasCrossing = prev.Strike, true
-		case curr.WeightedGEX == 0:
-			flip, hasCrossing = curr.Strike, true
-		case (prev.WeightedGEX < 0 && curr.WeightedGEX > 0) ||
-			(prev.WeightedGEX > 0 && curr.WeightedGEX < 0):
-			ratio := math.Abs(prev.WeightedGEX) / (math.Abs(prev.WeightedGEX) + math.Abs(curr.WeightedGEX))
-			flip = prev.Strike + (curr.Strike-prev.Strike)*ratio
-			hasCrossing = true
-		}
-
-		if hasCrossing {
-			dist := math.Abs(flip - spot)
-			if !found || dist < bestDist {
-				bestFlip = flip
-				bestDist = dist
-				found = true
-			}
+	best, found := 0.0, false
+	for _, flip := range gammaCrossings(strikes) {
+		if !found || math.Abs(flip-spot) < math.Abs(best-spot) {
+			best, found = flip, true
 		}
 	}
-	return bestFlip, found
+	return best, found
 }
 
 // ── Regime and key levels ─────────────────────────────────────────────────────
@@ -330,24 +338,36 @@ func RegimeLabel(score float64) string {
 
 // BuildSnapshot assembles a complete GEX snapshot from the consolidated
 // strike profile. This is what the strategy queries.
+// It uses MethodNearestFlip; see BuildSnapshotWith.
 func BuildSnapshot(consolidated []WeightedStrike, spot float64) Snapshot {
+	return BuildSnapshotWith(consolidated, spot, MethodNearestFlip)
+}
+
+// BuildSnapshotWith assembles the snapshot with the given method:
+//
+//   - MethodScript (GestaoCarteira's deribit_tc_export_v3.py): the regime is
+//     the sign of the summed weighted GEX; the flip is the lowest crossing.
+//   - MethodNearestFlip: the flip is the crossing nearest spot and the regime
+//     is spot vs flip (the sum's sign when no flip is found).
+func BuildSnapshotWith(consolidated []WeightedStrike, spot float64, method string) Snapshot {
 	score := 0.0
 	for _, s := range consolidated {
 		score += s.WeightedGEX
 	}
 
-	flip, flipFound := FindGammaFlip(consolidated, spot)
-
-	// When the gamma flip is found, use spot vs flip to classify the regime —
-	// this reflects the local GEX sign near current price. The aggregate score
-	// is kept for logging/magnitude but is structurally biased negative in BTC
-	// due to persistent put-skew across the full chain.
 	regime := RegimeLabel(score)
-	if flipFound {
-		if spot > flip {
-			regime = "POSITIVE/PINNING"
-		} else {
-			regime = "NEGATIVE/ACCELERATION"
+	var flip float64
+	var flipFound bool
+	if method == MethodScript {
+		flip, flipFound = FirstGammaFlip(consolidated)
+	} else {
+		flip, flipFound = FindGammaFlip(consolidated, spot)
+		if flipFound {
+			if spot > flip {
+				regime = "POSITIVE/PINNING"
+			} else {
+				regime = "NEGATIVE/ACCELERATION"
+			}
 		}
 	}
 

@@ -85,11 +85,26 @@ func runLive(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	gw := gateway.New(cfg)
+	gw := gateway.New(cfg, gateway.WithName("trading"))
 	if err := gw.Connect(ctx); err != nil {
 		return fmt.Errorf("gateway connect: %w", err)
 	}
 	defer gw.Close()
+
+	// Market structure (open interest → GEX) always comes from mainnet: it
+	// describes the real dealers whose hedging moves the BTC index, which
+	// testnet mirrors. Testnet open interest belongs to test accounts and
+	// says nothing about the market. On testnet a second, public-only
+	// connection reads it (no credentials; private methods refused).
+	marketGW := gw
+	if !cfg.IsLive() {
+		pub := gateway.New(cfg, gateway.WithEndpoint(config.MainnetWSEndpoint), gateway.PublicOnly(), gateway.WithName("mainnet-public"))
+		if err := pub.Connect(ctx); err != nil {
+			return fmt.Errorf("mainnet market-data connect: %w", err)
+		}
+		defer pub.Close()
+		marketGW = pub
+	}
 
 	// If the gateway gives up reconnecting, stop the bot cleanly and exit
 	// non-zero so the supervisor restarts it; startup reconciles positions.
@@ -98,6 +113,9 @@ func runLive(cfg *config.Config) error {
 		select {
 		case err := <-gw.Fatal():
 			gatewayErr <- err
+			cancel()
+		case err := <-marketGW.Fatal(): // the mainnet data connection gave up
+			gatewayErr <- fmt.Errorf("market data: %w", err)
 			cancel()
 		case <-ctx.Done():
 		}
@@ -116,9 +134,12 @@ func runLive(cfg *config.Config) error {
 	}
 	defer orderLog.Close()
 
-	// The GEX manager polls public/get_book_summary_by_currency every 60s and
-	// classifies the market-wide gamma regime the strategy uses to shed legs.
-	gexMgr := gex.NewManager(gw, md, cfg.Underlying, 5, cfg.GammaRegimeBandPct, cfg.GEXStrikeRangePct)
+	// The GEX manager polls public/get_book_summary_by_currency (mainnet) every
+	// 60 s and classifies the gamma regime the strategy uses to shed legs and
+	// the margin policy uses to cap margin.
+	gexMgr := gex.NewManager(marketGW, gex.Params{
+		Underlying: cfg.Underlying, NExpiries: 5, StrikeRangePct: cfg.GEXStrikeRangePct, Method: cfg.GEXMethod,
+	}, cfg.GammaRegimeBandPct)
 	gexMgr.StartBackground(ctx, 60*time.Second)
 
 	// P&L history for the monitor chart; data/ is a mounted volume in Docker,

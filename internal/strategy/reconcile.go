@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -137,7 +137,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			underlying = inst.Underlying
 		} else {
 			var parseErr error
-			underlying, expiry, strike, optType, parseErr = parseInstrumentName(rp.InstrumentName)
+			underlying, expiry, strike, optType, parseErr = marketdata.ParseOptionName(rp.InstrumentName)
 			if parseErr != nil {
 				slog.Warn("reconcile: cannot parse instrument", "name", rp.InstrumentName, "err", parseErr)
 				continue
@@ -259,33 +259,6 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 		"positions", len(shorts),
 		"strangles", len(s.state.AllStrangles()),
 	)
-}
-
-// parseInstrumentName splits a Deribit option name such as BTC-27JUN25-70000-C.
-func parseInstrumentName(name string) (underlying string, expiry time.Time, strike float64, optType string, err error) {
-	// Format: BTC-27JUN25-70000-C
-	parts := strings.Split(name, "-")
-	if len(parts) != 4 {
-		return "", time.Time{}, 0, "", fmt.Errorf("expected 4 parts in %q", name)
-	}
-	underlying = parts[0]
-	expiry, err = time.Parse("02Jan06", parts[1])
-	if err != nil {
-		return "", time.Time{}, 0, "", fmt.Errorf("parse expiry %q: %w", parts[1], err)
-	}
-	strike, err = strconv.ParseFloat(parts[2], 64)
-	if err != nil {
-		return "", time.Time{}, 0, "", fmt.Errorf("parse strike %q: %w", parts[2], err)
-	}
-	switch parts[3] {
-	case "C":
-		optType = "call"
-	case "P":
-		optType = "put"
-	default:
-		return "", time.Time{}, 0, "", fmt.Errorf("unknown option type %q", parts[3])
-	}
-	return
 }
 
 func absInt(x int) int {

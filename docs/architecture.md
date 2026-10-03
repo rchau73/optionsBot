@@ -34,7 +34,7 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `internal/config` | `config.yaml` (strategy) + `.env` (platform), defaults, `Validate`, `RequireCredentials` | — |
 | `internal/gateway` | The only Deribit connection: priority queue, rate limiter, circuit breaker, retries, reply routing, reconnect | config |
 | `internal/marketdata` | Option chain, ticker/index/DVOL subscriptions, IV percentile, shared expiry-window rule | gateway (interface) |
-| `internal/gex` | Market-wide gamma exposure regime from open interest | gateway, marketdata (interfaces) |
+| `internal/gex` | Market-wide gamma exposure regime from **mainnet** open interest; pure `Build` + 60 s refresher | gateway (interface), marketdata (name parsing) |
 | `internal/risk` | Margin policy, pure: IM limit by DVOL IV-percentile band, negative-gamma override, changes confirmed on daily closes, fixed MM limit | — |
 | `internal/strategy` | Decision loop: entry, fill tracking, exits, margin policy, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex, risk (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
@@ -129,7 +129,16 @@ See the [data model](data_model.png).
 
 ## 8. GEX regime
 
-See [seq_gex](seq_gex.png). Every 60 s the GEX manager pulls open interest and mark IV for the chain, computes Black-Scholes gamma × OI × spot² per strike over the nearest five expiries, weights and consolidates them, finds the **gamma flip**, and classifies the regime by spot vs flip with a hysteresis band. `GammaMonitor` combines the regime with a trend from daily closes (swing pivots + SMA9/21). Trading uses only `GammaDecision.Action`: shed puts in a confirmed negative regime with a bear trend, shed calls with a bull trend, otherwise trade both legs. Entry and repair apply the same gate.
+See [seq_gex](seq_gex.png). **Data source:** open interest always comes from **mainnet**. Testnet mirrors mainnet's prices (index, DVOL, option marks and IVs match), but its open interest belongs to test accounts — 4–5× mainnet's on a typical day — and its "dealers" hedge nothing in the real market, so a testnet GEX says nothing about the moves the bot's positions face. On testnet the bot therefore opens a second, **public-only** gateway to mainnet: it never authenticates, refuses every `private/*` method, and has its own rate limiter; orders, positions and margin stay on the trading gateway. On live both are the same connection.
+
+Every 60 s the GEX manager pulls `public/get_book_summary_by_currency` (open interest, mark IV, each expiry's future price), reads strike/expiry/type from the instrument names, computes Black-Scholes gamma × OI × spot² per strike over the nearest five expiries, weights each expiry by its open-interest share × a weekday/month-end weight, consolidates them and finds the **gamma flip**. `gex_method` picks the rules:
+
+| `gex_method` | Expiries | Strike window centre | Flip | Regime | Hysteresis |
+|---|---|---|---|---|---|
+| `script` (default) | 5 nearest of the chain | each expiry's own future | lowest zero crossing | sign of the summed weighted GEX | none |
+| `nearest_flip` | 5 nearest with OI and IV | latest future price | crossing nearest spot | spot vs flip | `gamma_regime_band_pct` |
+
+`script` reproduces GestaoCarteira's `deribit_tc_export_v3.py`; `tests/gex_parity_test.go` feeds captured mainnet data to `gex.Build` and requires the script's own flip, regime, score and strikes (computed by its functions on the same data with the clock frozen). `GammaMonitor` combines the regime with a trend from daily closes (swing pivots + SMA9/21). Trading uses only `GammaDecision.Action`: shed puts in a confirmed negative regime with a bear trend, shed calls with a bull trend, otherwise trade both legs. Entry and repair apply the same gate.
 
 ## 9. Hedge reporting
 

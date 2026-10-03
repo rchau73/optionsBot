@@ -1,17 +1,19 @@
 sequenceDiagram
     autonumber
     participant G as GEX Manager (background)
-    participant D as Deribit
-    participant MD as MarketData
+    participant D as Deribit mainnet (public-only gateway)
     participant GM as GammaMonitor
     participant S as Strategy
 
     loop every 60 s
-        G->>D: public/get_book_summary_by_currency (OI, mark IV, spot)
-        G->>MD: AllInstruments() (strikes, expiries)
-        G->>G: Black-Scholes gamma × OI × spot² per strike, nearest 5 expiries
-        G->>G: weight expiries, consolidate, find gamma flip
-        G->>G: regime = spot vs flip, with hysteresis band
+        G->>D: public/get_book_summary_by_currency (OI, mark IV, future price per expiry)
+        G->>G: strike, expiry, type from instrument names · nearest 5 expiries · strikes ±gex_strike_range_pct
+        G->>G: Black-Scholes gamma × OI × spot² per strike · weight expiries · consolidate
+        alt gex_method = script (default)
+            G->>G: flip = lowest crossing · regime = sign of summed GEX
+        else gex_method = nearest_flip
+            G->>G: flip = crossing nearest spot · regime = spot vs flip, hysteresis band
+        end
         G->>G: publish new immutable Snapshot
     end
 
