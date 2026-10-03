@@ -103,7 +103,9 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `killswitch.go` | cancel all → flatten at market with retries → stay idle |
 | `entry.go`, `rollout.go`, `gamma.go`, `margin.go` | pure decision functions shared with the backtest |
 
-**Rollout priority** (`EvaluateLeg`, pure): stop-loss → DTE roll → delta drift → ROI take-profit. Rollouts only *close*; replacement legs are opened by repair (single leg) or entry (whole strangle), so there is exactly one fill-tracked way to open a leg.
+**Marks.** Every cycle the strategy subscribes to the ticker of any held instrument that has none (`marketdata.Track`: positions loaded at startup can sit in expiries the bot would not open today), then copies live quotes onto positions. An instrument that has never had a quote is skipped, so the position keeps its last known mark (Deribit's, from reconcile) instead of a zero, and is flagged not live until a quote arrives.
+
+**Rollout priority** (`EvaluateLeg`, pure): stop-loss → DTE roll → delta drift → ROI take-profit. Delta drift and take-profit need a live mark; stop-loss and the DTE roll act on the last known one, so a missing quote can neither trigger a close nor blind the stop-loss. Rollouts only *close*; replacement legs are opened by repair (single leg) or entry (whole strangle), so there is exactly one fill-tracked way to open a leg.
 
 **Margin policy and sizing.** All margin figures are Deribit's: the account-wide USD totals when cross collateral is on, otherwise the currency's own (`AccountSummary.MarginUsage`, used for both the live summary and simulations so they compare).
 

@@ -158,13 +158,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			EntryTime:       now,
 			PremiumReceived: rp.AveragePrice * qty,
 			CurrentMid:      rp.MarkPrice,
-			CurrentGreeks: orders.Greeks{
-				Delta: rp.Delta,
-				Gamma: rp.Gamma,
-				Theta: rp.Theta,
-				Vega:  rp.Vega,
-				Rho:   rp.Rho,
-			},
+			CurrentGreeks:   PerOptionGreeks(rp),
 		}
 		s.state.AddPosition(pos)
 		byExpiry[expiry] = append(byExpiry[expiry], pos)
@@ -266,4 +260,21 @@ func absInt(x int) int {
 		return -x
 	}
 	return x
+}
+
+// PerOptionGreeks converts the greeks private/get_positions reports for a
+// position (size-weighted, with size negative for a short) into the greeks
+// of one option, as tickers report them: a 1,239-contract short put with
+// position delta +114 is a put of delta −0.092.
+func PerOptionGreeks(rp orders.RawPosition) orders.Greeks {
+	if rp.Size == 0 {
+		return orders.Greeks{}
+	}
+	return orders.Greeks{
+		Delta: rp.Delta / rp.Size,
+		Gamma: rp.Gamma / rp.Size,
+		Theta: rp.Theta / rp.Size,
+		Vega:  rp.Vega / rp.Size,
+		Rho:   rp.Rho / rp.Size,
+	}
 }

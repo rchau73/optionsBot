@@ -55,6 +55,8 @@ type MarketData interface {
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
+	// Track subscribes to the tickers of instruments that have none yet.
+	Track(ctx context.Context, instruments []string) error
 }
 
 // TradeJournal records every order event, with its market snapshot, and the

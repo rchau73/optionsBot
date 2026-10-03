@@ -214,10 +214,18 @@ func (f *fakeExchange) orderIDFor(instrument string, n int) string {
 
 type fakeMarket struct {
 	mu          sync.Mutex
+	tracked     []string // instruments passed to Track
 	price       float64
 	instruments map[string]*marketdata.Instrument
 	dvolCloses  []marketdata.DayIV
 	dvolToday   marketdata.DayIV
+}
+
+func (m *fakeMarket) Track(_ context.Context, names []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tracked = append(m.tracked, names...)
+	return nil
 }
 
 func (m *fakeMarket) DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV) {
@@ -428,7 +436,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 			Name: name, Underlying: "BTC", Strike: strike, Expiry: expiry, OptionType: typ,
 			TickSize: 0.0001, MinTradeAmount: 0.1,
 			Bid: 0.019, Ask: 0.021, Mid: 0.02, UnderlyingPrice: 100000,
-			Greeks: marketdata.Greeks{Delta: delta},
+			Greeks: marketdata.Greeks{Delta: delta}, UpdatedAt: time.Now(), // has a live quote
 		}
 	}
 	f.market = &fakeMarket{price: 100000, instruments: map[string]*marketdata.Instrument{

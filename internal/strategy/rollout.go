@@ -50,6 +50,14 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		}
 	}
 
+	// Delta drift and take-profit need a live quote: without one, delta and
+	// mid are only the last known values (or zero), and acting on them would
+	// close a leg for no reason. Stop-loss (on the last known mark) and the
+	// time roll above still apply.
+	if !pos.MarkLive {
+		return RolloutDecision{Action: ActionNone, LegID: pos.ID}
+	}
+
 	// Rule 4.2 — Delta drift below threshold
 	absDelta := absDelta(pos.CurrentGreeks.Delta)
 	if absDelta < deltaDriftThreshold && dte >= 25 {

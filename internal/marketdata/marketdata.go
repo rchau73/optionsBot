@@ -37,6 +37,9 @@ type Manager struct {
 	mu              sync.RWMutex
 	instruments     map[string]*Instrument
 	underlyingPrice float64
+
+	subMu      sync.Mutex      // serialises Track calls
+	subscribed map[string]bool // instruments with a ticker subscription
 }
 
 func New(cfg *config.Config, gw gatewayClient) *Manager {
@@ -45,6 +48,7 @@ func New(cfg *config.Config, gw gatewayClient) *Manager {
 		gw:          gw,
 		dvol:        NewDVOLTracker(cfg.IVPercentileWindow),
 		instruments: make(map[string]*Instrument),
+		subscribed:  make(map[string]bool),
 	}
 }
 
@@ -70,7 +74,59 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err := m.gw.Subscribe(ctx, channels); err != nil {
 		return fmt.Errorf("subscribe: %w", err)
 	}
+	m.subMu.Lock()
+	for _, ch := range channels {
+		if name, ok := tickerInstrument(ch); ok {
+			m.subscribed[name] = true
+		}
+	}
+	m.subMu.Unlock()
 	return nil
+}
+
+// Track subscribes to the tickers of instruments that have none yet, e.g.
+// a position loaded from the exchange in an expiry the strategy would not
+// open today. Without a ticker such a position would have no live mark at
+// all. Already-tracked and unknown names are skipped; it is cheap to call
+// every cycle.
+func (m *Manager) Track(ctx context.Context, instruments []string) error {
+	m.subMu.Lock()
+	defer m.subMu.Unlock()
+	var channels, names []string
+	for _, name := range instruments {
+		if m.subscribed[name] {
+			continue
+		}
+		if _, known := m.GetInstrument(name); !known {
+			continue
+		}
+		names = append(names, name)
+		channels = append(channels, tickerChannelPrefix+name+".100ms")
+	}
+	if len(channels) == 0 {
+		return nil
+	}
+	if err := m.gw.Subscribe(ctx, channels); err != nil {
+		return fmt.Errorf("track %v: %w", names, err)
+	}
+	for _, name := range names {
+		m.subscribed[name] = true
+	}
+	slog.Info("subscribed to tickers of held instruments", "instruments", names)
+	return nil
+}
+
+// tickerInstrument extracts the instrument from "ticker.<name>.100ms".
+func tickerInstrument(channel string) (string, bool) {
+	if !strings.HasPrefix(channel, tickerChannelPrefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(channel, tickerChannelPrefix)
+	i := strings.LastIndex(rest, ".")
+	if i <= 0 {
+		return "", false
+	}
+	return rest[:i], true
 }
 
 // subscriptionChannels lists the index and DVOL channels plus one ticker per

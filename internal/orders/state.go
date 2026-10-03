@@ -163,12 +163,16 @@ func (s *StateManager) UpdatePositionQty(id string, newQty, newPremiumReceived f
 	}
 }
 
+// UpdatePositionMid sets a position's mark and greeks from a live quote and
+// marks them live. Call it only with real market data: an instrument with no
+// quote must leave the last known mark in place.
 func (s *StateManager) UpdatePositionMid(id string, mid float64, greeks Greeks) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if p, ok := s.positions[id]; ok {
 		p.CurrentMid = mid
 		p.CurrentGreeks = greeks
+		p.MarkLive = true
 	}
 }
 

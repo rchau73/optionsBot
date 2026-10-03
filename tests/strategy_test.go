@@ -82,6 +82,7 @@ func makePos(optType string, dte int, premiumReceived, currentMid, delta float64
 			Delta: delta,
 			Gamma: 0.001,
 		},
+		MarkLive: true,
 	}
 }
 
@@ -129,6 +130,27 @@ func TestEvaluateLeg_ROITakeProfit(t *testing.T) {
 	}
 	if dec.Reason != orders.TriggerRolloutROI {
 		t.Errorf("expected trigger %q, got %q", orders.TriggerRolloutROI, dec.Reason)
+	}
+}
+
+// Without a live quote, delta and mid are only the last known values (or
+// zero): delta drift and take-profit must wait, while the stop-loss and the
+// time roll still act on what is known.
+func TestEvaluateLeg_WithoutLiveQuote(t *testing.T) {
+	drift := makePos("put", 30, 100, 0, 0) // mark and delta zeroed: what a missing quote looks like
+	drift.MarkLive = false
+	if dec := strategy.EvaluateLeg(drift, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionNone {
+		t.Errorf("no delta-drift or take-profit close without a live quote, got %v (%s)", dec.Action, dec.Reason)
+	}
+	stop := makePos("put", 30, 100, 300, 0)
+	stop.MarkLive = false
+	if dec := strategy.EvaluateLeg(stop, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionStopLoss {
+		t.Errorf("the stop-loss must still fire on the last known mark, got %v", dec.Action)
+	}
+	roll := makePos("put", 15, 100, 60, 0)
+	roll.MarkLive = false
+	if dec := strategy.EvaluateLeg(roll, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionRollNextMonth {
+		t.Errorf("the time roll must still apply, got %v", dec.Action)
 	}
 }
 
