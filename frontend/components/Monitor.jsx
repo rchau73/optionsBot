@@ -16,7 +16,7 @@ const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "s
 
 /** The single monitor page: header, KPIs, positions, working orders, feed, P&L. */
 export default function Monitor() {
-  const { bots, feed, history, error, pollMs } = useMonitor();
+  const { names, bots, feed, history, error, pollMs } = useMonitor();
   const [filters, setFilters] = useState(NO_FILTERS);
 
   const rows = useMemo(() => legRows(bots), [bots]);
@@ -45,8 +45,8 @@ export default function Monitor() {
             <ActivityFeed feed={feed} />
           </Panel>
           <div className="space-y-3">
-            <Panel title="P&L this session (USD)">
-              <PnlChart history={history} />
+            <Panel title="P&L (USD, all bots)">
+              <PnlChart live={history} names={names} />
             </Panel>
             <Panel title="Working orders (placed, not filled yet)">
               <p className="mb-2 text-xs text-muted">

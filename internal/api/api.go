@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -34,22 +35,38 @@ const (
 	maxEventLimit     = 500
 )
 
+// PnLHistory provides bucketed P&L history (see history.Store).
+type PnLHistory interface {
+	Range(from, to time.Time, buckets int) []history.Point
+}
+
 // Server is the monitor API for one bot process.
 type Server struct {
 	strategy StrategySource
 	events   EventSource
+	history  PnLHistory // nil → empty history
 	started  time.Time
 	mux      *http.ServeMux
 }
 
+// Option configures a Server.
+type Option func(*Server)
+
+// WithPnLHistory serves /api/pnl/history from h.
+func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = h } }
+
 // New builds the API. Use Handler for tests, ListenAndServe to run it.
-func New(src StrategySource, events EventSource) *Server {
+func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s := &Server{strategy: src, events: events, started: time.Now(), mux: http.NewServeMux()}
+	for _, opt := range opts {
+		opt(s)
+	}
 	s.mux.HandleFunc("GET /api/health", s.health)
 	s.mux.HandleFunc("GET /api/status", s.status)
 	s.mux.HandleFunc("GET /api/positions", s.positions)
 	s.mux.HandleFunc("GET /api/orders", s.pendingOrders)
 	s.mux.HandleFunc("GET /api/pnl", s.pnl)
+	s.mux.HandleFunc("GET /api/pnl/history", s.pnlHistory)
 	s.mux.HandleFunc("GET /api/events", s.recentEvents)
 	return s
 }
@@ -123,6 +140,45 @@ func (s *Server) pendingOrders(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) pnl(w http.ResponseWriter, _ *http.Request) {
 	v := s.strategy.View()
 	writeJSON(w, map[string]any{"as_of": v.AsOf, "strategy_id": v.StrategyID, "spot": v.Market.Spot, "pnl": v.PnL})
+}
+
+// HistoryRanges maps the chart's range names to how far back they reach.
+var HistoryRanges = map[string]time.Duration{
+	"15m": 15 * time.Minute,
+	"1h":  time.Hour,
+	"6h":  6 * time.Hour,
+	"1d":  24 * time.Hour,
+	"1w":  7 * 24 * time.Hour,
+	"1m":  30 * 24 * time.Hour,
+	"all": 366 * 24 * time.Hour,
+}
+
+// historyBuckets caps how many points one history response carries.
+const historyBuckets = 300
+
+// pnlHistory serves the P&L history for ?range=<name>, reduced to at most
+// historyBuckets points so the browser never downloads raw history.
+func (s *Server) pnlHistory(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("range")
+	if name == "" {
+		name = "1d"
+	}
+	span, ok := HistoryRanges[name]
+	if !ok {
+		http.Error(w, "range must be one of 15m, 1h, 6h, 1d, 1w, 1m, all", http.StatusBadRequest)
+		return
+	}
+	to := time.Now()
+	from := to.Add(-span)
+	points := []history.Point{}
+	if s.history != nil {
+		points = s.history.Range(from, to, historyBuckets)
+	}
+	writeJSON(w, map[string]any{
+		"as_of": to, "range": name, "from": from, "to": to,
+		"bucket_sec": int(history.BucketWidth(span, historyBuckets).Seconds()),
+		"points":     points,
+	})
 }
 
 // recentEvents serves journal events after ?since=<seq>, oldest first; the

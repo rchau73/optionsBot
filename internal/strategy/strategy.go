@@ -34,7 +34,8 @@ type Strategy struct {
 	hedge       HedgeReporter
 	gamma       *GammaMonitor
 	marginGuard *MarginGuard
-	oi          OISource // may be nil
+	oi          OISource    // may be nil
+	history     PnLRecorder // may be nil
 	pnl         *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
@@ -66,6 +67,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		gamma:            gamma,
 		marginGuard:      NewMarginGuard(cfg.MaxMarginPct, cfg.Leverage),
 		oi:               d.OI,
+		history:          d.History,
 		pnl:              newPnLBook(),
 		lastSkip:         make(map[slotKey]string),
 		killSwitchCh:     make(chan struct{}),

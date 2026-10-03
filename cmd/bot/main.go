@@ -18,11 +18,15 @@ import (
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/hedge"
+	"optionsbot/internal/history"
 	"optionsbot/internal/logger"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
+
+// pnlHistoryPath is where the P&L history for the monitor chart is kept.
+const pnlHistoryPath = "data/pnl_history.jsonl"
 
 func main() {
 	// Flags
@@ -112,6 +116,14 @@ func runLive(cfg *config.Config) error {
 	gexMgr := gex.NewManager(gw, md, cfg.Underlying, 5, cfg.GammaRegimeBandPct, cfg.GEXStrikeRangePct)
 	gexMgr.StartBackground(ctx, 60*time.Second)
 
+	// P&L history for the monitor chart; data/ is a mounted volume in Docker,
+	// so it survives restarts and rebuilds.
+	pnlHistory, err := history.Open(pnlHistoryPath, 366*24*time.Hour, time.Now())
+	if err != nil {
+		return fmt.Errorf("pnl history: %w", err)
+	}
+	defer pnlHistory.Close()
+
 	strat := strategy.New(cfg, strategy.Deps{
 		Market:   md,
 		Exchange: exec,
@@ -120,6 +132,7 @@ func runLive(cfg *config.Config) error {
 		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
 		GEX:      gexMgr,
 		OI:       gexMgr,
+		History:  pnlHistory,
 	})
 
 	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)
@@ -138,7 +151,7 @@ func runLive(cfg *config.Config) error {
 
 	// Read-only monitor API for the frontend (off unless BOT_API_ADDR is set).
 	if cfg.APIAddr != "" {
-		mon := api.New(strat, orderLog)
+		mon := api.New(strat, orderLog, api.WithPnLHistory(pnlHistory))
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
 				slog.Error("monitor API stopped", "addr", cfg.APIAddr, "err", err)

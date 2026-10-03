@@ -160,6 +160,9 @@ func (s *Strategy) logPnL() {
 			OpenLegs:      l.OpenLegs,
 			ClosedLegs:    l.ClosedLegs,
 		})
+		if l.Slot == nil && s.history != nil {
+			s.history.RecordPnL(now, l.Realised, l.Unrealised, spot)
+		}
 		if l.Slot == nil {
 			slog.Info("pnl", "strategy_id", s.strategyID(),
 				"realised", l.Realised, "unrealised", l.Unrealised, "total_usd", total*spot,

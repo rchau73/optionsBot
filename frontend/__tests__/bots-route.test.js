@@ -49,6 +49,13 @@ describe("read-only proxy", () => {
     expect(await res.json()).toEqual({ events: [] });
   });
 
+  test("forwards the P&L history endpoint", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"points":[]}', { status: 200 }));
+    const res = await call("btc", ["pnl", "history"], "?range=1w");
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/pnl/history?range=1w", expect.anything());
+    expect(res.status).toBe(200);
+  });
+
   test("refuses unknown bots and endpoints", async () => {
     global.fetch = jest.fn();
     expect((await call("eth", ["status"])).status).toBe(404);

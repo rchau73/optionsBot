@@ -16,11 +16,13 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
 	"optionsbot/internal/api"
+	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -34,10 +36,17 @@ func main() {
 	defer cancel()
 
 	sim := newSimulation(*underlying)
+	hist, err := demoHistory(*underlying, sim.spot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer hist.Close()
+	sim.history = hist
 	go sim.run(ctx)
 
 	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr)
-	if err := api.New(sim, sim.journal).ListenAndServe(ctx, *addr); err != nil {
+	if err := api.New(sim, sim.journal, api.WithPnLHistory(hist)).ListenAndServe(ctx, *addr); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -55,7 +64,30 @@ type simulation struct {
 	realised   float64
 	closed     int
 	journal    *orders.Logger
+	history    *history.Store
 	started    time.Time
+}
+
+// demoHistory opens a throwaway history file pre-filled with 30 days of a
+// synthetic P&L walk (one point every 10 minutes), so every chart range shows data.
+func demoHistory(underlying string, spot float64) (*history.Store, error) {
+	path := filepath.Join(os.TempDir(), "optionsbot-monitor-demo-"+underlying+".jsonl")
+	os.Remove(path) // fresh history on every demo start
+	h, err := history.Open(path, 366*24*time.Hour, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	realised, unrealised := 0.0, 0.0
+	for t := time.Now().AddDate(0, 0, -30); t.Before(time.Now()); t = t.Add(10 * time.Minute) {
+		realised += 0.00004 + rand.NormFloat64()*0.0002
+		unrealised = 0.6*unrealised + rand.NormFloat64()*0.002
+		h.RecordPnL(t, realised, unrealised, spot)
+	}
+	// Reopen so later points continue from this level (it becomes the base).
+	if err := h.Close(); err != nil {
+		return nil, err
+	}
+	return history.Open(path, 366*24*time.Hour, time.Now())
 }
 
 type simLeg struct {
@@ -119,6 +151,13 @@ func (s *simulation) step() {
 			moneyness = -moneyness
 		}
 		l.mark = math.Max(0.0005, l.entry*math.Exp(moneyness*12)*(1+rand.NormFloat64()*0.01))
+	}
+	if s.history != nil {
+		unrealised := 0.0
+		for _, l := range s.legs {
+			unrealised += l.entry*l.qty - l.mark*l.qty
+		}
+		s.history.RecordPnL(time.Now(), s.realised, unrealised, s.spot)
 	}
 	switch r := rand.Float64(); {
 	case r < 0.04:

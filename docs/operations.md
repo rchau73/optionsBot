@@ -40,7 +40,7 @@ docker compose exec bot-btc sh       # shell inside the container (runs as a non
 
 ## Live monitor
 
-`docker compose up -d` also starts the **monitor** at <http://localhost:3000> (this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
+`docker compose up -d` also starts the **monitor** at <http://localhost:3000> (this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. The P&L chart's longer ranges (1h to all) read each bot's `data/pnl_history.jsonl`, which lives in the mounted `data/<underlying>/` folder and survives restarts and rebuilds; delete it to start the history over. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
 
 ## Watch the logs
 

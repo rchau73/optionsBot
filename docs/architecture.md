@@ -38,6 +38,7 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `internal/strategy` | Decision loop: entry, fill tracking, exits, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
+| `internal/history` | P&L history: append-only `data/pnl_history.jsonl`, reloaded on start (corrupt lines skipped), bucketed range queries | — |
 | `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls | strategy, orders (interfaces) |
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
 | `internal/logger` | `slog` JSON to stdout + `bot.log` | — |
@@ -152,5 +153,5 @@ See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 
 - **Backtest ≠ live loop.** The backtest engine re-implements the day loop around the shared pure functions instead of running `strategy.Strategy` itself, so order-lifecycle behaviour (pending fills, amends, partial fills) is only tested live/testnet and in the end-to-end tests. Running the real strategy against `SimExecutor` is the planned next step.
 - **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only; results on it validate mechanics, not profitability.
-- **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions.
+- **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions. The only persisted state is the P&L history for the monitor chart (`data/pnl_history.jsonl`); trading never reads it.
 - **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating.

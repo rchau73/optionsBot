@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"time"
 
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
@@ -79,6 +80,12 @@ type OISource interface {
 	OpenInterest() *gex.OISnapshot
 }
 
+// PnLRecorder persists the strategy's total P&L over time (for charts).
+// realised is counted since this process started.
+type PnLRecorder interface {
+	RecordPnL(t time.Time, realised, unrealised, spot float64)
+}
+
 // Deps groups the collaborators a Strategy needs.
 type Deps struct {
 	Market   MarketData
@@ -88,6 +95,7 @@ type Deps struct {
 	State   *orders.StateManager
 	Journal TradeJournal
 	Hedge   HedgeReporter
-	GEX     GEXSource // optional: nil until a GEX manager is wired
-	OI      OISource  // optional: open interest for journal snapshots
+	GEX     GEXSource   // optional: nil until a GEX manager is wired
+	OI      OISource    // optional: open interest for journal snapshots
+	History PnLRecorder // optional: P&L history for the monitor chart
 }

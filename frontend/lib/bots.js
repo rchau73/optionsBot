@@ -25,7 +25,7 @@ export function configuredBots() {
 }
 
 /** The API endpoints the proxy may forward to — read-only, nothing else. */
-export const ALLOWED_ENDPOINTS = ["health", "status", "positions", "orders", "pnl", "events"];
+export const ALLOWED_ENDPOINTS = ["health", "status", "positions", "orders", "pnl", "pnl/history", "events"];
 
 /** Poll interval for the browser (MONITOR_POLL_MS, 500–60000 ms, default 1000). */
 export function pollIntervalMs(raw = process.env.MONITOR_POLL_MS) {

@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npm run build
+RUN NEXT_OUTPUT=standalone npm run build
 
 # ── Run: Next.js standalone server, non-root ──────────────────────────────────
 FROM node:20-alpine

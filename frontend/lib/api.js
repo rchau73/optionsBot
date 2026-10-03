@@ -37,3 +37,8 @@ export async function fetchBotEvents(name, since, signal) {
   const { events } = await getJSON(`/api/bots/${encodeURIComponent(name)}/events?since=${since}&limit=200`, signal);
   return events;
 }
+
+/** Bucketed P&L history of one bot for a range (15m, 1h, 6h, 1d, 1w, 1m, all). */
+export async function fetchPnlHistory(name, range, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/pnl/history?range=${encodeURIComponent(range)}`, signal);
+}
