@@ -4,7 +4,7 @@ import "time"
 
 // MarketContext captures portfolio-level Greeks and market trend at order time.
 type MarketContext struct {
-	Trend    string  // "bull", "bear", or "neutral"
+	Trend    string // "bull", "bear", or "neutral"
 	NetDelta float64
 	NetGamma float64
 	NetVega  float64
@@ -33,10 +33,10 @@ type OrderLog struct {
 	IV           float64 `json:"iv"`
 	IVPercentile float64 `json:"iv_percentile"`
 	// GEX / Gamma regime (market-wide, from open-interest GEX computation)
-	GammaRegime       string  `json:"gamma_regime,omitempty"`
-	GammaRegimeScore  float64 `json:"gamma_regime_score,omitempty"`
-	GammaFlip         float64 `json:"gamma_flip,omitempty"`
-	GammaFlipFound    bool    `json:"gamma_flip_found,omitempty"`
+	GammaRegime      string  `json:"gamma_regime,omitempty"`
+	GammaRegimeScore float64 `json:"gamma_regime_score,omitempty"`
+	GammaFlip        float64 `json:"gamma_flip,omitempty"`
+	GammaFlipFound   bool    `json:"gamma_flip_found,omitempty"`
 	// Intrinsic / Extrinsic
 	UnderlyingPrice float64 `json:"underlying_price"`
 	Strike          float64 `json:"strike"`
@@ -58,13 +58,13 @@ type OrderLog struct {
 	PortVega    float64 `json:"port_net_vega,omitempty"`
 	PortTheta   float64 `json:"port_net_theta,omitempty"`
 	// ROI (closing only)
-	CloseReason      string  `json:"close_reason,omitempty"`   // human-readable close trigger
+	CloseReason      string  `json:"close_reason,omitempty"` // human-readable close trigger
 	PremiumReceived  float64 `json:"premium_received,omitempty"`
 	CloseCost        float64 `json:"close_cost,omitempty"`
 	PnLUSD           float64 `json:"pnl_usd,omitempty"`
-	PnLUSDFmt        string  `json:"pnl_usd_fmt,omitempty"`    // e.g. "-1,234.56" (BTC × spot)
+	PnLUSDFmt        string  `json:"pnl_usd_fmt,omitempty"` // e.g. "-1,234.56" (BTC × spot)
 	ROIPct           float64 `json:"roi_pct,omitempty"`
-	ROIPctFmt        string  `json:"roi_pct_fmt,omitempty"`    // e.g. "-7.1429%"
+	ROIPctFmt        string  `json:"roi_pct_fmt,omitempty"` // e.g. "-7.1429%"
 	HoldDays         int     `json:"hold_days,omitempty"`
 	ThetaCapturedUSD float64 `json:"theta_captured_usd,omitempty"`
 	ROIAnnualized    float64 `json:"roi_annualized,omitempty"`
@@ -79,8 +79,8 @@ const (
 	TriggerStopLoss200Pct = "stop_loss_200pct"
 	TriggerGammaClose     = "gamma_close"
 	TriggerKillSwitch     = "kill_switch"
-	TriggerReconciled     = "reconciled"     // position loaded from exchange on startup
-	TriggerTimeout        = "order_timeout"  // limit order cancelled after fill-timeout elapsed
+	TriggerReconciled     = "reconciled"    // position loaded from exchange on startup
+	TriggerTimeout        = "order_timeout" // limit order cancelled after fill-timeout elapsed
 )
 
 // Order direction and type constants.

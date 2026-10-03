@@ -14,19 +14,19 @@ var ErrCircuitOpen = errors.New("circuit breaker open")
 type cbState int
 
 const (
-	cbClosed   cbState = iota
+	cbClosed cbState = iota
 	cbOpen
 	cbHalfOpen
 )
 
 // CircuitBreaker implements a three-state circuit breaker.
 type CircuitBreaker struct {
-	mu         sync.Mutex
-	state      cbState
-	failures   int
-	threshold  int
-	openUntil  time.Time
-	openDur    time.Duration
+	mu        sync.Mutex
+	state     cbState
+	failures  int
+	threshold int
+	openUntil time.Time
+	openDur   time.Duration
 }
 
 func NewCircuitBreaker(cfg config.CircuitConfig) *CircuitBreaker {

@@ -15,12 +15,12 @@ type JSONRPCRequest struct {
 
 // JSONRPCResponse is the standard Deribit JSON-RPC 2.0 response envelope.
 type JSONRPCResponse struct {
-	JsonRPC string          `json:"jsonrpc"`
-	ID      int64           `json:"id"`
-	Result  interface{}     `json:"result"`
-	Error   *RPCError       `json:"error,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  *Notification   `json:"params,omitempty"`
+	JsonRPC string        `json:"jsonrpc"`
+	ID      int64         `json:"id"`
+	Result  interface{}   `json:"result"`
+	Error   *RPCError     `json:"error,omitempty"`
+	Method  string        `json:"method,omitempty"`
+	Params  *Notification `json:"params,omitempty"`
 }
 
 type RPCError struct {

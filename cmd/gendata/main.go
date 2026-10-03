@@ -100,7 +100,7 @@ func main() {
 	defer f.Close()
 
 	w := csv.NewWriter(f)
-	_ = w.Write([]string{"date", "instrument", "underlying", "underlying_price", "strike", "expiry", "option_type", "bid", "ask", "mid", "delta", "gamma", "theta", "vega", "iv", "dvol_index"})
+	w.Write([]string{"date", "instrument", "underlying", "underlying_price", "strike", "expiry", "option_type", "bid", "ask", "mid", "delta", "gamma", "theta", "vega", "iv", "dvol_index"})
 
 	const annualVol = 0.70
 	const r = 0.05
@@ -161,7 +161,7 @@ func main() {
 					}
 					instrument := fmt.Sprintf("BTC-%s-%d-%s", expLabel, int(K), cp)
 
-					_ = w.Write([]string{
+					w.Write([]string{
 						td.Format("2006-01-02"),
 						instrument,
 						"BTC",
@@ -185,7 +185,12 @@ func main() {
 		}
 	}
 
+	// csv.Writer errors are sticky: any failed Write above surfaces here.
 	w.Flush()
+	if err := w.Error(); err != nil {
+		fmt.Fprintln(os.Stderr, "write csv:", err)
+		os.Exit(1)
+	}
 	fmt.Printf("wrote %d rows to data/historical/options.csv\n", rows)
 }
 

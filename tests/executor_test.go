@@ -65,12 +65,8 @@ func TestParsePriceTooLow_MalformedNumber(t *testing.T) {
 // tick before retrying. This ensures the retry price satisfies both the tick
 // constraint and the exchange minimum.
 
-// retryPrice mirrors the adjustment in executor.Submit:
-// ceil(minPrice / tick) * tick, then eliminate float residue.
-func retryPrice(minPrice, tick float64) float64 {
-	n := math.Ceil(minPrice / tick)
-	return math.Round(n*tick*1e8) / 1e8
-}
+// retryPrice is the adjustment executor.Submit applies before retrying.
+func retryPrice(minPrice, tick float64) float64 { return orders.CeilToStep(minPrice, tick) }
 
 func TestRetryPrice_AlreadyOnTickBoundary(t *testing.T) {
 	// 0.0046 is not a multiple of 0.0005, so ceil rounds up to 0.005.

@@ -11,12 +11,12 @@ import (
 
 // Report is the structured hedge report output.
 type Report struct {
-	Timestamp        time.Time `json:"timestamp"`
-	UnderlyingPrice  float64   `json:"underlying_price"`
-	NetDelta         float64   `json:"net_delta"`
-	UncoveredQty     float64   `json:"uncovered_qty"`
-	SuggestedInst    string    `json:"suggested_instrument"`
-	Tranches         []Tranche `json:"tranches"`
+	Timestamp       time.Time `json:"timestamp"`
+	UnderlyingPrice float64   `json:"underlying_price"`
+	NetDelta        float64   `json:"net_delta"`
+	UncoveredQty    float64   `json:"uncovered_qty"`
+	SuggestedInst   string    `json:"suggested_instrument"`
+	Tranches        []Tranche `json:"tranches"`
 }
 
 type Tranche struct {
@@ -27,10 +27,10 @@ type Tranche struct {
 // Reporter generates hedge reports and writes them to hedge_report.json.
 // It never places orders — reporting only.
 type Reporter struct {
-	mu              sync.Mutex
-	path            string
-	lastDelta       float64
-	threshold       float64 // fractional change threshold to trigger refresh
+	mu        sync.Mutex
+	path      string
+	lastDelta float64
+	threshold float64 // fractional change threshold to trigger refresh
 }
 
 func New(path string, threshold float64) *Reporter {

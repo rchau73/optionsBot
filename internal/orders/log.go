@@ -362,10 +362,13 @@ func (l *Logger) write(rec OrderLog) {
 		slog.Error("order log marshal error", "err", err)
 		return
 	}
+	data = append(data, '\n')
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = l.w.Write(data)
-	_, _ = l.w.Write([]byte("\n"))
+	// orders.log is the audit trail of every fill; a failed write must be visible.
+	if _, err := l.w.Write(data); err != nil {
+		slog.Error("order log write failed", "order_id", rec.OrderID, "instrument", rec.Instrument, "err", err)
+	}
 }
 
 func (l *Logger) Close() error {

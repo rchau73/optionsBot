@@ -20,23 +20,23 @@ import (
 // InstrumentGEXInput is all the data needed to compute one instrument's GEX
 // contribution. Sourced from public/get_book_summary_by_currency + instrument chain.
 type InstrumentGEXInput struct {
-	Instrument  string
-	Strike      float64
-	Expiry      time.Time
-	OptionType  string // "call" or "put"
-	Spot        float64
+	Instrument   string
+	Strike       float64
+	Expiry       time.Time
+	OptionType   string // "call" or "put"
+	Spot         float64
 	OpenInterest float64
-	MarkIV      float64 // annualised, fractional (e.g. 0.75 for 75%)
+	MarkIV       float64 // annualised, fractional (e.g. 0.75 for 75%)
 }
 
 // StrikeGEX holds the aggregated GEX contribution for one strike price.
 type StrikeGEX struct {
-	Strike       float64
-	CallOI       float64
-	PutOI        float64
-	GEXCall      float64 // Σ BSGamma × OI × spot² for calls at this strike
-	GEXPut       float64 // same for puts
-	GEXSigned    float64 // GEXCall − GEXPut (positive = call-dominant)
+	Strike    float64
+	CallOI    float64
+	PutOI     float64
+	GEXCall   float64 // Σ BSGamma × OI × spot² for calls at this strike
+	GEXPut    float64 // same for puts
+	GEXSigned float64 // GEXCall − GEXPut (positive = call-dominant)
 }
 
 // ExpiryProfile is the per-expiry intermediate result before consolidation.
@@ -52,25 +52,25 @@ type ExpiryProfile struct {
 
 // Snapshot is the fully consolidated GEX result the strategy queries.
 type Snapshot struct {
-	ComputedAt       time.Time
-	Spot             float64
-	RegimeScore      float64 // Σ weighted_signed_gex — positive=pinning, negative=acceleration
-	Regime           string  // "POSITIVE/PINNING" | "NEGATIVE/ACCELERATION" | "NEUTRAL"
-	GammaFlip        float64 // strike where weighted_signed_gex crosses zero; 0 if not found
-	GammaFlipFound   bool
+	ComputedAt     time.Time
+	Spot           float64
+	RegimeScore    float64 // Σ weighted_signed_gex — positive=pinning, negative=acceleration
+	Regime         string  // "POSITIVE/PINNING" | "NEGATIVE/ACCELERATION" | "NEUTRAL"
+	GammaFlip      float64 // strike where weighted_signed_gex crosses zero; 0 if not found
+	GammaFlipFound bool
 	// Weighted per-strike profile (sorted ascending by Strike)
-	Strikes          []WeightedStrike
+	Strikes []WeightedStrike
 	// Derived key levels
-	AggCallWall  float64 // strike with highest weighted call dominance
-	AggPutWall   float64 // strike with highest weighted put dominance
+	AggCallWall float64 // strike with highest weighted call dominance
+	AggPutWall  float64 // strike with highest weighted put dominance
 }
 
 // WeightedStrike is one row in the consolidated, cross-expiry GEX profile.
 type WeightedStrike struct {
-	Strike          float64
-	WeightedCallOI  float64
-	WeightedPutOI   float64
-	WeightedGEX     float64 // consolidated signed GEX for this strike
+	Strike         float64
+	WeightedCallOI float64
+	WeightedPutOI  float64
+	WeightedGEX    float64 // consolidated signed GEX for this strike
 }
 
 // ── Black-Scholes Gamma ───────────────────────────────────────────────────────

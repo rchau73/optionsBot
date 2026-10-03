@@ -14,13 +14,13 @@ import (
 // SimExecutor is the backtest simulated order executor. It fills limit orders on
 // the next tick where the price condition is met, and market orders immediately.
 type SimExecutor struct {
-	mu           sync.Mutex
-	cfg          config.Backtest
-	equity       float64
-	instruments  map[string]*marketdata.Tick // latest tick per instrument
-	pendingLimits []pendingLimit
-	nextOrderID  int
-	commission   float64
+	mu              sync.Mutex
+	cfg             config.Backtest
+	equity          float64
+	instruments     map[string]*marketdata.Tick // latest tick per instrument
+	pendingLimits   []pendingLimit
+	nextOrderID     int
+	commission      float64
 	totalCommission float64
 }
 
