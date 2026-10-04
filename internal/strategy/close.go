@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"optionsbot/internal/orders"
 )
@@ -94,6 +95,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 	case ActionStopLoss:
 		// Market order: getting out matters more than the price.
 		startQty := pos.Qty
+		s.noteStopped(pos, time.Now())
 		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerStopLoss200Pct, 0)
 		if err != nil {
 			slog.Error("stop loss close failed", "err", err, "instrument", pos.Instrument)

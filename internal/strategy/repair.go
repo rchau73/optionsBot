@@ -15,7 +15,11 @@ import (
 // It skips a leg the GEX regime is actively shedding (same rule as entry) and
 // a strangle whose remaining leg is already inside the rollout window — that
 // leg is about to roll, and a fresh partner would roll straight after it.
-func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec GammaDecision) {
+//
+// A leg that was stopped out is only re-sold once the market has calmed
+// (RepairBlockReason); a leg closed by a take-profit or delta-drift roll is
+// reopened at once — that is how the strategy rolls.
+func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec GammaDecision, m marginState) {
 	instruments := s.md.AllInstruments()
 
 	for _, st := range s.state.AllStrangles() {
@@ -34,6 +38,17 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		}
 		if present.DTE() <= s.cfg.RolloutDTE {
 			continue
+		}
+		key := stopKey(st.ID, missingType)
+		if at, stopped := s.stopped[key]; stopped {
+			if reason := RepairBlockReason(at, time.Now(), time.Duration(s.cfg.RepairCooldownHours)*time.Hour, m.status); reason != "" {
+				if s.repairHeld[key] != reason {
+					s.repairHeld[key] = reason
+					slog.Info("repair held: leg was stopped out", "strangle_id", st.ID, "missing", missingType, "reason", reason)
+					s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, missingType+" stopped out, "+reason)
+				}
+				continue
+			}
 		}
 
 		delta := st.EntryDelta
@@ -77,6 +92,8 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			s.finalizePending(ps)
 			continue
 		}
+		delete(s.stopped, key)
+		delete(s.repairHeld, key)
 		s.addPending(ps)
 		slog.Info("repair: missing leg order submitted",
 			"strangle_id", st.ID, "missing", missingType,

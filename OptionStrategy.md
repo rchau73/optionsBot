@@ -71,7 +71,7 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
    - places **limit** sell orders and follows them until they fill. If the market moves away it re-prices a few times; if they still don't fill it cancels and tries again later.
 3. **Watches every position, every cycle** (every ~40 seconds with the shipped config) and applies the exit rules in order of urgency (section 4).
 4. **Reads market structure.** It estimates how option dealers are positioned (*gamma exposure*, GEX). When dealers are likely to *amplify* moves (negative gamma) and the trend is clearly down, it stops selling puts and closes existing ones, because that's the side under threat. Calls get the same treatment in a confirmed up-trend.
-5. **Repairs.** If a strangle has lost one leg (stopped out, rolled, or only one leg filled), it re-sells the missing leg at the same expiry and size, unless the market regime says that side is dangerous.
+5. **Repairs.** If a strangle has lost one leg (rolled, or only one leg filled), it re-sells the missing leg at the same expiry and size, unless the market regime says that side is dangerous. A leg lost to a **stop-loss** is different: the market just moved hard against it, and selling it again at once sells into the same move. It waits until the market is calm again — no regime change pending, dealers not amplifying moves, and at least 3 days since the stop. In a two-week stress simulation (BTC −25 % and +31 %) this kept about 0.05–0.07 BTC that the immediate re-sale lost.
 6. **Keeps a decision diary.** Every order, fill, close and skipped opportunity is written down together with the market at that moment: BTC price, the volatility index (DVOL), whether the option was in or out of the money and by how much, how much open interest sat at that strike, and the dealer-positioning regime. Every minute it also writes the profit and loss of each slot, realised and open. This is what lets you judge, afterwards, which settings earn money and under which conditions.
 7. **Reports, never hedges.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file. A human decides whether to act on it.
 
@@ -170,6 +170,7 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 | `rollout_dte` | 15 days | when to stop holding | exits earlier, less gamma risk | holds longer, more decay, more risk |
 | `roi_take_profit` | 50 % | how much profit is "enough" | holds longer for more | banks sooner, re-sells more often |
 | `stop_loss_multiplier` | 2× | how much loss to tolerate | fewer stop-outs, bigger losses | more stop-outs, smaller losses |
+| `repair_cooldown_hours` | 72 h | how long a stopped-out side stays empty | longer pause after a loss | re-enters sooner |
 | `delta_drift_threshold` | 0.10 | when a far leg is "dead" | refreshes legs sooner | lets legs drift further |
 | `iv_margin_bands` | 50 / 35 / 20 % by DVOL band | how much of the account is at work, by market calm | larger positions | smaller positions |
 | `iv_band_confirm_days` | 2 days | how long a new regime must last before resizing | slower, ignores more spikes | faster, reacts to more noise |

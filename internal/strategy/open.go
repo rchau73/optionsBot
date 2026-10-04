@@ -114,6 +114,7 @@ const (
 	SkipMarginLimit   = "margin_limit"
 	SkipMarginUnknown = "margin_unknown" // Deribit margin data unavailable: fail safe
 	SkipRiskFrozen    = "risk_frozen"    // DVOL band or gamma regime change awaiting confirmation
+	SkipRepairHeld    = "repair_held"    // a stopped-out leg waits for a calmer market
 	SkipNoExpiry      = "no_expiry"
 	SkipNoStrike      = "no_strike"
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error

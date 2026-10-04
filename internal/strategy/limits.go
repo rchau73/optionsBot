@@ -173,6 +173,9 @@ func (s *Strategy) reduceForMM(ctx context.Context, m marginState) {
 			lot = inst.MinTradeAmount
 		}
 		keep := MMKeepQty(pos.Qty, lot, mmPct, m.status.MaxMMPct)
+		if keep <= qtyEpsilon {
+			s.noteStopped(pos, time.Now()) // closed out entirely: same as a stop-loss
+		}
 		if excess := pos.Qty - keep; excess > qtyEpsilon {
 			if _, err := s.buyToClose(ctx, pos, excess, orders.TriggerMarginMM, 0); err != nil {
 				slog.Error("MM reduction failed", "instrument", pos.Instrument, "qty", excess, "err", err)
