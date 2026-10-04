@@ -110,15 +110,20 @@ func runLive(cfg *config.Config) error {
 
 	// If the gateway gives up reconnecting, stop the bot cleanly and exit
 	// non-zero so the supervisor restarts it; startup reconciles positions.
-	gatewayErr := make(chan error, 1)
+	fatalErr := make(chan error, 1)
+	fail := func(err error) {
+		select {
+		case fatalErr <- err:
+		default: // already failing for another reason
+		}
+		cancel()
+	}
 	go func() {
 		select {
 		case err := <-gw.Fatal():
-			gatewayErr <- err
-			cancel()
+			fail(fmt.Errorf("gateway: %w", err))
 		case err := <-marketGW.Fatal(): // the mainnet data connection gave up
-			gatewayErr <- fmt.Errorf("market data: %w", err)
-			cancel()
+			fail(fmt.Errorf("market data: %w", err))
 		case <-ctx.Done():
 		}
 	}()
@@ -212,12 +217,23 @@ func runLive(cfg *config.Config) error {
 		"iv_percentile_window", cfg.IVPercentileWindow,
 	)
 
+	// If the decision loop stops cycling, exit so the supervisor restarts the
+	// bot (startup reconciles positions). A cycle is normally eval_interval_ms;
+	// every exchange call is bounded by the gateway's request timeout, so a
+	// healthy cycle never comes close to this limit.
+	stallAfter := max(10*time.Duration(cfg.EvalIntervalMS)*time.Millisecond, 10*time.Minute)
+	go strategy.WatchProgress(ctx, strat.Progress, stallAfter, 30*time.Second, func(idle time.Duration) {
+		slog.Error("decision loop stalled: exiting for a supervised restart",
+			"idle", idle.Round(time.Second), "limit", stallAfter)
+		fail(fmt.Errorf("decision loop stalled for %s", idle.Round(time.Second)))
+	})
+
 	if err := strat.Run(ctx); err != nil {
 		slog.Info("bot stopped", "reason", err)
 	}
 	select {
-	case err := <-gatewayErr:
-		return fmt.Errorf("gateway: %w", err)
+	case err := <-fatalErr:
+		return err
 	default:
 		return nil
 	}

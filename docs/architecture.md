@@ -54,7 +54,8 @@ A detailed look at how the bot is built: packages, goroutines, data flow and the
 | `gateway.readLoop` | one per connection; stops when the connection context is cancelled | `pending` map (mutex), notification channel |
 | `gateway.dispatchLoop` | one per connection — the **only writer** to the socket | write mutex |
 | `gateway.heartbeatLoop`, `metricsLoop` | one per connection | — |
-| `gateway.reconnect` | at most one at a time (atomic flag), runs on the root context | — |
+| `gateway.reconnect` | at most one at a time (atomic flag); drops during it re-arm it (`reconnectWanted`); runs on the root context | — |
+| watchdog (`main`) | one; reads `Strategy.Progress()` every 30 s | root context |
 | `marketdata.processNotifications` | one, until the root context ends | instrument map (RWMutex) |
 | `gex` background refresh | one, every 60 s | published snapshot (immutable, RWMutex) |
 | `strategy.Run` | one — **every trading decision runs here**, so decisions never race | book (StateManager), pending map |
@@ -69,10 +70,11 @@ Rules: every goroutine stops on a context; no lock is held across a network call
 See [seq_gateway](seq_gateway.png), [rate limiter](gateway_ratelimiter.png), [circuit breaker](gateway_circuitbreaker.png).
 
 - **Call path:** `Call(ctx, method, params, priority)` → priority queue (high lane drained first) → rate limiter (matching-engine pool for buy/sell/edit/cancel, non-matching pool for everything else) → circuit breaker (skipped for high priority) → write. The writer never waits for the reply; `readLoop` routes each reply to its caller by request ID.
-- **Every request is answered exactly once:** reply, RPC error, timeout (30 s from the `Call`, queue time included), `ErrConnectionLost`, or `ErrCircuitOpen`. Requests that expire in the queue are dropped, never sent late.
+- **Every request is answered exactly once:** reply, RPC error, timeout (30 s from the `Call`, queue time included), `ErrConnectionLost`, or `ErrCircuitOpen`. Requests that expire in the queue are dropped, never sent late. The caller also holds its own deadline, so even a request that is never sent (no connection, no dispatcher) times out instead of waiting forever.
 - **Circuit breaker** counts transport failures, timeouts and exchange-health errors (10028, 10040, 10041, 11051, 13888). Business rejections (bad price, no funds) prove the exchange is up and reset it.
 - **Retries** (full-jitter exponential backoff) only for idempotent reads (`public/*`, `private/get_*`); orders are never retried, because a "failed" order may already be on the book.
-- **Reconnect** runs on the root context: backoff, dial, auth, restore subscriptions. When it gives up, `Fatal()` tells `main` to shut down so the supervisor restarts the process and reconcile rebuilds state.
+- **Reconnect** runs on the root context: backoff, dial, auth, restore subscriptions. Only one runs at a time, but a drop during a reconnect is never lost (`reconnectWanted`): the running reconnect goes round again. A failed subscription restore counts as a failed attempt, and channels still owed from an interrupted restore are carried over. When it gives up, `Fatal()` tells `main` to shut down so the supervisor restarts the process and reconcile rebuilds state.
+- **Decision-loop watchdog** (`strategy.WatchProgress`, in `main`): if no decision cycle completes for max(10 × `eval_interval_ms`, 10 min), the bot logs `decision loop stalled` and exits non-zero for a supervised restart — a stalled loop checks no stop-loss. A halted bot (kill switch) is idle on purpose and never trips it.
 - **Heartbeats:** Deribit `test_request`s are answered directly on the socket, bypassing the queue.
 
 ## 5. Market data

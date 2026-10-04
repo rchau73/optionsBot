@@ -7,6 +7,19 @@ import { formatCoin, formatPct, formatPrice, formatUSD, slotLabel, isNumber } fr
 export const STALE_AFTER_SEC = 5;
 
 /**
+ * The bot answers but its decision loop has not completed a cycle for 3
+ * cycle intervals (at least 2 minutes): no exits or stop-losses are being
+ * checked. A halted bot (kill switch) is idle on purpose and never "stalled".
+ */
+export function loopStalled(status, now = Date.now()) {
+  if (!status?.loop_at || status.halted) return false;
+  const last = Date.parse(status.loop_at);
+  if (!Number.isFinite(last) || last <= 0) return false; // no cycle yet (zero time)
+  const limitMs = Math.max(3 * (status.eval_interval_ms || 0), 120_000);
+  return now - last > limitMs;
+}
+
+/**
  * Flattens every bot's strangles into one row per open leg.
  * bots: [{ name, status, positions }] as returned by the bot APIs.
  */
