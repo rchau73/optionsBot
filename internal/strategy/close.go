@@ -21,6 +21,12 @@ import (
 // answer at once, so there is never a resting close order to track.
 func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64) (float64, error) {
 	qty = math.Min(qty, pos.Qty)
+	if s.instrumentUnconfirmed(pos.Instrument) {
+		// An earlier order may have closed it already: sending another could
+		// leave the account long. Resolved next cycle (cancel by label, then
+		// the book is matched to the exchange).
+		return 0, fmt.Errorf("buy to close %s: an earlier order's outcome is still unknown", pos.Instrument)
+	}
 	slot := s.slotOf(pos.ID) // before the close can remove the strangle
 	order := orders.Order{
 		Instrument:    pos.Instrument,
@@ -28,7 +34,7 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 		OrderType:     orders.TypeMarket,
 		Qty:           qty,
 		TriggerReason: reason,
-		Label:         s.orderLabel(slot),
+		Label:         s.uniqueOrderLabel(slot),
 	}
 	if limitPrice > 0 {
 		order.OrderType = orders.TypeLimit
@@ -41,6 +47,9 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 
 	fill, err := s.exch.Submit(ctx, order)
 	if err != nil {
+		if orders.MaybePlaced(err) {
+			s.noteUnconfirmed(order.Label, pos.Instrument, slot, err)
+		}
 		return 0, fmt.Errorf("buy to close %s: %w", pos.Instrument, err)
 	}
 	filled := math.Min(fill.Qty, pos.Qty)

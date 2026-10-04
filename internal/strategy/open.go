@@ -140,6 +140,9 @@ func (s *Strategy) noteSkip(dte int, delta float64, reason, detail string) {
 // A one-legged strangle still occupies its slot: repair completes it.
 func (s *Strategy) occupiedSlots() map[slotKey]bool {
 	occupied := s.pendingSlots()
+	for _, u := range s.unconfirmed {
+		occupied[u.slot] = true // its order may be on the book
+	}
 	for _, st := range s.state.AllStrangles() {
 		occupied[makeSlotKey(st.TargetDTE, st.EntryDelta)] = true
 	}
@@ -293,6 +296,7 @@ func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument) error {
 // with the market snapshot at that moment.
 func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrument, qty float64, slot *orders.SlotRef) (*pendingLeg, error) {
 	price := entryLimitPrice(inst)
+	label := s.uniqueOrderLabel(slot)
 	fill, err := s.exch.Submit(ctx, orders.Order{
 		Instrument:    inst.Name,
 		Direction:     orders.DirectionSell,
@@ -301,9 +305,12 @@ func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrume
 		LimitPrice:    price,
 		TickSize:      inst.EffectiveTick(price),
 		TriggerReason: orders.TriggerEntry,
-		Label:         s.orderLabel(slot),
+		Label:         label,
 	})
 	if err != nil {
+		if orders.MaybePlaced(err) {
+			s.noteUnconfirmed(label, inst.Name, slot, err)
+		}
 		return nil, err
 	}
 	s.journal.LogSubmit(orders.PendingOrderRecord{

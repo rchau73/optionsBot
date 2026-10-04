@@ -33,6 +33,8 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 
 	if err := s.exch.CancelAllOrders(kctx, s.cfg.Underlying); err != nil {
 		slog.Error("kill switch: cancel all orders failed", "err", err)
+	} else {
+		clear(s.unconfirmed) // every order is cancelled: nothing unknown can still fill
 	}
 	for _, ps := range s.pendingSnapshot() {
 		s.removePending(ps.id)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
@@ -47,6 +48,75 @@ type fakeExchange struct {
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
 	onSubmit func(o orders.Order, id string) orders.Fill
+
+	// Like a real exchange, positions follow fills (byID/applied track how
+	// much of each order is already in positions).
+	byID    map[string]orders.Order
+	applied map[string]float64
+
+	// loseReply makes Submit put the order on the book but answer with a
+	// lost connection — the reply never reached the bot.
+	loseReply       func(o orders.Order) bool
+	cancelledLabels []string
+	cancelLabelErr  error
+}
+
+// applyFillLocked moves positions by a fill of qty on o. Caller holds mu.
+func (f *fakeExchange) applyFillLocked(o orders.Order, id string, qty, price float64) {
+	if f.byID == nil {
+		f.byID, f.applied = map[string]orders.Order{}, map[string]float64{}
+	}
+	f.byID[id] = o
+	if qty <= 0 {
+		return
+	}
+	f.applied[id] += qty
+	signed := qty
+	if o.Direction == orders.DirectionSell {
+		signed = -qty
+	}
+	for i := range f.positions {
+		p := &f.positions[i]
+		if p.InstrumentName != o.Instrument {
+			continue
+		}
+		if (p.Size < 0) == (signed < 0) { // adding to the position: average the price
+			p.AveragePrice = (p.AveragePrice*math.Abs(p.Size) + price*qty) / (math.Abs(p.Size) + qty)
+		}
+		p.Size += signed
+		switch {
+		case math.Abs(p.Size) < 1e-9:
+			f.positions = append(f.positions[:i], f.positions[i+1:]...)
+		case p.Size < 0:
+			p.Direction = orders.DirectionSell
+		default:
+			p.Direction = orders.DirectionBuy
+		}
+		return
+	}
+	dir := orders.DirectionBuy
+	if signed < 0 {
+		dir = orders.DirectionSell
+	}
+	f.positions = append(f.positions, orders.RawPosition{InstrumentName: o.Instrument, Size: signed, Direction: dir, AveragePrice: price, MarkPrice: price})
+}
+
+func (f *fakeExchange) CancelByLabel(_ context.Context, _ string, label string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.cancelLabelErr != nil {
+		return 0, f.cancelLabelErr
+	}
+	f.cancelledLabels = append(f.cancelledLabels, label)
+	n := 0
+	for id, o := range f.byID {
+		if st := f.orderStates[id]; o.Label == label && st.State == "open" {
+			st.State = "cancelled"
+			f.orderStates[id] = st
+			n++
+		}
+	}
+	return n, nil
 }
 
 func newFakeExchange() *fakeExchange {
@@ -65,6 +135,11 @@ func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, e
 	id := fmt.Sprintf("o-%d", f.nextID)
 	f.submitted = append(f.submitted, o)
 
+	if f.loseReply != nil && f.loseReply(o) {
+		f.applyFillLocked(o, id, 0, 0)
+		f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "open"}
+		return orders.Fill{}, fmt.Errorf("private/sell: %w", gateway.ErrConnectionLost)
+	}
 	var fill orders.Fill
 	switch {
 	case f.onSubmit != nil:
@@ -80,6 +155,7 @@ func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, e
 		state = "filled"
 	}
 	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: state, FilledAmount: fill.Qty, AvgPrice: fill.FillPrice}
+	f.applyFillLocked(o, id, fill.Qty, fill.FillPrice)
 	return fill, nil
 }
 
@@ -166,11 +242,14 @@ func (f *fakeExchange) GetDailyCloses(context.Context, string, int) ([]orders.Da
 	return f.dailyCloses, nil
 }
 
-// fill marks a resting order as filled.
+// fill marks a resting order as filled (positions follow).
 func (f *fakeExchange) fill(id string, qty, price float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: qty, AvgPrice: price}
+	if o, ok := f.byID[id]; ok {
+		f.applyFillLocked(o, id, qty-f.applied[id], price)
+	}
 }
 
 // orders returns a copy of the submitted orders matching keep.
@@ -951,10 +1030,15 @@ func TestStrategy_EveryDecisionIsJournaledWithMarketSnapshot(t *testing.T) {
 	f.startRun()
 
 	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.journal.events(orders.EventSubmitted)) == 2 })
+	labels := map[string]bool{}
 	for _, o := range f.exch.sells() {
-		if o.Label != "short-strangle:45d:0.16" {
-			t.Errorf("order label = %q, want strategy and slot", o.Label)
+		if !strings.HasPrefix(o.Label, "short-strangle:45d:0.16:") {
+			t.Errorf("order label = %q, want strategy and slot, then a per-order id", o.Label)
 		}
+		labels[o.Label] = true
+	}
+	if len(labels) != len(f.exch.sells()) {
+		t.Error("every order needs its own label, so it can be cancelled alone")
 	}
 	f.exch.fill(f.exch.orderIDFor(f.call, 0), 0.1, 0.021)
 	f.exch.fill(f.exch.orderIDFor(f.put, 0), 0.1, 0.021)
@@ -1001,7 +1085,7 @@ func TestStrategy_StopLossRealisesPnLPerSlot(t *testing.T) {
 	if closed.ctx.Slot == nil || closed.ctx.Slot.DTE != 45 || closed.ctx.Market.Moneyness == "" {
 		t.Errorf("close must carry its slot and snapshot: %+v", closed.ctx)
 	}
-	if b := f.exch.buys()[0]; b.Label != "short-strangle:45d:0.16" {
+	if b := f.exch.buys()[0]; !strings.HasPrefix(b.Label, "short-strangle:45d:0.16:") {
 		t.Errorf("close order label = %q", b.Label)
 	}
 

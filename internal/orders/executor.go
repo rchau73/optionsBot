@@ -213,6 +213,31 @@ func submitPriority(reason string) int {
 }
 
 // Cancel cancels an open order by order ID.
+// CancelByLabel cancels every open order of currency carrying label and
+// returns how many were cancelled. Used to make sure an order whose submit
+// outcome is unknown can no longer fill.
+func (e *Executor) CancelByLabel(ctx context.Context, currency, label string) (int, error) {
+	return call[int](ctx, e.gw, "private/cancel_by_label", map[string]any{
+		"label":    label,
+		"currency": currency,
+	}, gateway.PriorityHigh)
+}
+
+// MaybePlaced reports whether a failed order submit may still have reached
+// the exchange: the connection dropped or the reply timed out after the
+// request may have been written. A Deribit rejection (RPC error) or an open
+// circuit breaker (never sent) is a definite "not placed".
+func MaybePlaced(err error) bool {
+	if err == nil {
+		return false
+	}
+	var rpcErr *gateway.RPCError
+	if errors.As(err, &rpcErr) || errors.Is(err, gateway.ErrCircuitOpen) || errors.Is(err, ErrForbidden) {
+		return false
+	}
+	return true
+}
+
 func (e *Executor) Cancel(ctx context.Context, orderID string) error {
 	_, err := call[any](ctx, e.gw, "private/cancel", map[string]any{
 		"order_id": orderID,
