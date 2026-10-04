@@ -214,6 +214,10 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	m := s.marginNow(ctx, gammaDec)
 	s.applyMarginPolicy(ctx, m)
 
+	// Uneven strangles (partial fills, a double fill) carry an unintended
+	// directional bet: trim the larger leg. Risk-reducing, so not frozen.
+	s.balanceStrangles(ctx)
+
 	// Repair skips a leg only when GEX is actively shedding that leg type,
 	// using the same GammaDecision as entry, so the two never disagree.
 	// It restores a structure already held, so a freeze does not stop it;

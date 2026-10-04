@@ -136,9 +136,21 @@ func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, e
 	f.submitted = append(f.submitted, o)
 
 	if f.loseReply != nil && f.loseReply(o) {
-		f.applyFillLocked(o, id, 0, 0)
-		f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "open"}
-		return orders.Fill{}, fmt.Errorf("private/sell: %w", gateway.ErrConnectionLost)
+		// The order reached the book; only the reply is lost. A market or IOC
+		// order executes at once (it can't rest and be cancelled later); a
+		// plain limit order rests.
+		if o.OrderType == orders.TypeMarket || o.TimeInForce == orders.TimeInForceIOC {
+			px := o.LimitPrice
+			if px == 0 {
+				px = 0.04
+			}
+			f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: o.Qty, AvgPrice: px}
+			f.applyFillLocked(o, id, o.Qty, px)
+		} else {
+			f.applyFillLocked(o, id, 0, 0)
+			f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "open"}
+		}
+		return orders.Fill{}, fmt.Errorf("private/%s: %w", o.Direction, gateway.ErrConnectionLost)
 	}
 	var fill orders.Fill
 	switch {
@@ -240,6 +252,16 @@ func (f *fakeExchange) GetDailyCloses(context.Context, string, int) ([]orders.Da
 		return nil, errors.New("no history in tests")
 	}
 	return f.dailyCloses, nil
+}
+
+// partial records a partial fill of a resting order (it stays open).
+func (f *fakeExchange) partial(id string, qty, price float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "open", FilledAmount: qty, AvgPrice: price}
+	if o, ok := f.byID[id]; ok {
+		f.applyFillLocked(o, id, qty-f.applied[id], price)
+	}
 }
 
 // fill marks a resting order as filled (positions follow).
@@ -656,10 +678,7 @@ func TestStrategy_PartialEntryFillBooksFilledQty(t *testing.T) {
 	if requested < 0.3 {
 		t.Fatalf("test needs a multi-lot entry, got %v", requested)
 	}
-	callID := f.exch.orderIDFor(f.call, 0)
-	f.exch.mu.Lock()
-	f.exch.orderStates[callID] = orders.OrderStateInfo{OrderID: callID, State: "open", FilledAmount: 0.1, AvgPrice: 0.021}
-	f.exch.mu.Unlock()
+	f.exch.partial(f.exch.orderIDFor(f.call, 0), 0.1, 0.021) // the exchange's position follows the fill
 
 	eventually(t, 3*time.Second, "partial call booked", func() bool { return f.position(f.call) != nil })
 	if q := f.position(f.call).Qty; q != 0.1 {
@@ -750,7 +769,10 @@ func TestStrategy_ReconcileLoadsPositionsAndCancelsOnlyOwnCurrency(t *testing.T)
 	f.withOpenStrangle(0.1, 0.02)
 	f.startRun()
 
-	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	// Reconcile adds the positions, then groups them: wait for the grouping.
+	eventually(t, 2*time.Second, "positions reconciled and regrouped", func() bool {
+		return len(f.state.AllPositions()) == 2 && len(f.state.AllStrangles()) == 1
+	})
 	f.exch.mu.Lock()
 	cancelAll := append([]string(nil), f.exch.cancelAll...)
 	f.exch.mu.Unlock()

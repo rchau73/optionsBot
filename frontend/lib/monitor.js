@@ -181,6 +181,7 @@ const CLOSE_LABELS = {
   kill_switch: "Kill switch",
   rebalance_downsize: "Rebalance",
   margin_mm_limit: "MM limit",
+  rebalance_legs: "Balance legs",
 };
 
 /**
