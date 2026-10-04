@@ -65,9 +65,12 @@ type Gateway struct {
 	pq   *PriorityQueue
 	subs *SubscriptionRegistry
 
-	reconnecting atomic.Bool
-	connMu       sync.Mutex
-	connCancel   context.CancelFunc // stops the goroutines of the current connection
+	reconnecting    atomic.Bool
+	reconnectWanted atomic.Bool // a drop asked for a reconnect (see reconnect)
+	restore         []string    // channels still to restore; reconnect goroutine only
+	requestTimeout  time.Duration
+	connMu          sync.Mutex
+	connCancel      context.CancelFunc // stops the goroutines of the current connection
 
 	fatal chan error // receives once when the gateway gives up reconnecting
 
@@ -89,6 +92,12 @@ type Option func(*Gateway)
 // bot points its market-data gateway at mainnet).
 func WithEndpoint(url string) Option {
 	return func(g *Gateway) { g.endpoint = url }
+}
+
+// WithRequestTimeout overrides how long a call may wait for its reply
+// (default 30 s). Tests use it to exercise timeouts quickly.
+func WithRequestTimeout(d time.Duration) Option {
+	return func(g *Gateway) { g.requestTimeout = d }
 }
 
 // PublicOnly makes a gateway for public market data: it skips
@@ -118,6 +127,8 @@ func New(cfg *config.Config, opts ...Option) *Gateway {
 		subs:     NewSubscriptionRegistry(cfg.RateLimit.MaxSubscriptions),
 		fatal:    make(chan error, 1),
 		log:      slog.Default(),
+
+		requestTimeout: requestTimeout,
 	}
 	for _, opt := range opts {
 		opt(g)
@@ -178,14 +189,38 @@ func (g *Gateway) connectOnce(rootCtx context.Context) error {
 	return nil
 }
 
+// reconnect re-establishes the connection after a drop. A drop that happens
+// while a reconnect is already running is never lost: it sets
+// reconnectWanted, and the running reconnect goes round again. (Ignoring it
+// once left the bot with no connection and every call waiting.)
 func (g *Gateway) reconnect(rootCtx context.Context) {
-	if !g.reconnecting.CompareAndSwap(false, true) {
-		return
+	g.reconnectWanted.Store(true)
+	for {
+		if !g.reconnecting.CompareAndSwap(false, true) {
+			return // the running reconnect will see reconnectWanted
+		}
+		for g.reconnectWanted.Swap(false) {
+			if !g.reconnectOnce(rootCtx) {
+				g.reconnecting.Store(false)
+				return // gave up: Fatal() reported it
+			}
+		}
+		g.reconnecting.Store(false)
+		// A drop between the last check and releasing the flag found the flag
+		// still set and returned; pick its request up here.
+		if !g.reconnectWanted.Load() {
+			return
+		}
 	}
-	defer g.reconnecting.Store(false)
+}
 
-	// Save the channel list: the new connection starts with no subscriptions.
-	channels := g.subs.All()
+// reconnectOnce connects with backoff and restores the subscriptions. A
+// failed restore counts as a failed attempt: a connection without its
+// subscriptions has no market data. Returns false once it gives up.
+func (g *Gateway) reconnectOnce(rootCtx context.Context) bool {
+	// Channels to restore: whatever is still owed from an interrupted
+	// restore, plus what the dropped connection had.
+	g.restore = mergeChannels(g.restore, g.subs.All())
 	g.subs.Clear()
 
 	base := time.Duration(g.cfg.Heartbeat.ReconnectBackoffBaseMS) * time.Millisecond
@@ -198,20 +233,23 @@ func (g *Gateway) reconnect(rootCtx context.Context) {
 		select {
 		case <-time.After(backoff):
 		case <-rootCtx.Done():
-			return
+			return true
 		}
 		if err := g.connectOnce(rootCtx); err != nil {
 			g.log.Warn("reconnect attempt failed", "attempt", attempt, "err", err)
 			continue
 		}
-		g.log.Info("reconnected successfully", "attempt", attempt)
-		if len(channels) > 0 {
-			g.log.Info("restoring subscriptions after reconnect", "channels", len(channels))
-			if err := g.Subscribe(rootCtx, channels); err != nil {
-				g.log.Error("re-subscribe failed after reconnect", "err", err)
+		if len(g.restore) > 0 {
+			g.log.Info("restoring subscriptions after reconnect", "channels", len(g.restore), "attempt", attempt)
+			if err := g.Subscribe(rootCtx, g.restore); err != nil {
+				g.log.Error("re-subscribe failed after reconnect; reconnecting again", "attempt", attempt, "err", err)
+				g.subs.Clear()
+				continue
 			}
 		}
-		return
+		g.restore = nil
+		g.log.Info("reconnected successfully", "attempt", attempt)
+		return true
 	}
 
 	err := fmt.Errorf("reconnect failed after %d attempts", g.cfg.Heartbeat.ReconnectMaxAttempts)
@@ -220,6 +258,20 @@ func (g *Gateway) reconnect(rootCtx context.Context) {
 	case g.fatal <- err:
 	default:
 	}
+	return false
+}
+
+// mergeChannels returns a ∪ b without duplicates, keeping a's order first.
+func mergeChannels(a, b []string) []string {
+	seen := make(map[string]bool, len(a)+len(b))
+	out := make([]string, 0, len(a)+len(b))
+	for _, ch := range append(append([]string(nil), a...), b...) {
+		if !seen[ch] {
+			seen[ch] = true
+			out = append(out, ch)
+		}
+	}
+	return out
 }
 
 // readLoop reads every message on conn and routes it: heartbeats are answered
@@ -354,7 +406,7 @@ func (g *Gateway) send(ctx context.Context, req Request) {
 
 // addPending registers a written request and arms its reply timeout.
 func (g *Gateway) addPending(id int64, method string, reply chan callResult, deadline time.Time) {
-	timeout := requestTimeout
+	timeout := g.requestTimeout
 	if !deadline.IsZero() {
 		timeout = time.Until(deadline)
 	}
@@ -445,18 +497,35 @@ func (g *Gateway) Call(ctx context.Context, method string, params any, priority 
 func (g *Gateway) callOnce(ctx context.Context, method string, params any, priority int) (JSONRPCResponse, error) {
 	id := g.idCounter.Add(1)
 	reply := make(chan callResult, 1) // buffered: the replier never blocks
+	deadline := time.Now().Add(g.requestTimeout)
 	req := Request{
 		Priority: priority,
 		Payload:  JSONRPCRequest{JsonRPC: "2.0", ID: id, Method: method, Params: params},
-		Deadline: time.Now().Add(requestTimeout),
+		Deadline: deadline,
 		reply:    reply,
 	}
-	if err := g.pq.Enqueue(ctx, req); err != nil {
+	// The caller's own deadline. Normally the reply, the pending timer or a
+	// connection loss answers first; this one also covers a request that is
+	// never sent (no connection, dispatcher gone), so no call waits forever.
+	// A request still queued when it fires is dropped unsent (send checks
+	// Deadline).
+	hard := time.NewTimer(time.Until(deadline) + time.Second)
+	defer hard.Stop()
+
+	enqCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	if err := g.pq.Enqueue(enqCtx, req); err != nil {
+		if ctx.Err() == nil {
+			return JSONRPCResponse{}, fmt.Errorf("%s: %w (queue full)", method, ErrRequestTimeout)
+		}
 		return JSONRPCResponse{}, fmt.Errorf("%s: enqueue: %w", method, err)
 	}
 	select {
 	case r := <-reply:
 		return r.resp, r.err
+	case <-hard.C:
+		g.takePending(id)
+		return JSONRPCResponse{}, fmt.Errorf("%s: %w (never answered)", method, ErrRequestTimeout)
 	case <-ctx.Done():
 		g.takePending(id) // stop the timer; a late reply is dropped
 		return JSONRPCResponse{}, ctx.Err()

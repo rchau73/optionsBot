@@ -1,4 +1,5 @@
 import Badge from "./Badge";
+import { loopStalled } from "@/lib/monitor";
 import { ageSeconds, formatAge, formatPct, formatUSD } from "@/lib/format";
 
 /** One chip per bot: environment, market context and data freshness. */
@@ -23,6 +24,11 @@ function BotChip({ bot }) {
       <span className="font-semibold">{bot.name.toUpperCase()}</span>
       {s ? <Badge tone={live ? "live" : "testnet"}>{live ? "LIVE" : (s.environment || "testnet").toUpperCase()}</Badge> : null}
       {s?.halted ? <Badge tone="bad">HALTED</Badge> : null}
+      {!bot.stale && loopStalled(s) ? (
+        <Badge tone="bad" title={`no decision cycle since ${s.loop_at}: exits and stop-losses are not being checked`}>
+          LOOP STALLED
+        </Badge>
+      ) : null}
       {bot.stale ? (
         <Badge tone="warn" title={bot.error ?? "no update in the last seconds"}>
           {bot.error ? "OFFLINE" : "STALE"}

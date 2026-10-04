@@ -17,8 +17,9 @@ type View struct {
 	StrategyID  string    `json:"strategy_id"`
 	Underlying  string    `json:"underlying"`
 	Environment string    `json:"environment"`
-	Halted      bool      `json:"halted"` // kill switch has fired
-	LoopAt      time.Time `json:"loop_at"`
+	Halted      bool      `json:"halted"`  // kill switch has fired
+	LoopAt      time.Time `json:"loop_at"` // last completed decision cycle
+	EvalEveryMS int       `json:"eval_interval_ms"`
 
 	Market  orders.MarketSnapshot `json:"market"`
 	Trend   string                `json:"trend"`
@@ -215,6 +216,7 @@ func (s *Strategy) View() View {
 		Environment: s.cfg.Environment,
 		Halted:      pub.halted,
 		LoopAt:      pub.at,
+		EvalEveryMS: s.cfg.EvalIntervalMS,
 		Market: BuildMarketSnapshot(SnapshotInput{
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
 			GEX: s.gamma.CurrentGEXSnapshot(),

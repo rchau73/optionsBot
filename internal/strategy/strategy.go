@@ -94,6 +94,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 // Run restores state from the exchange and then evaluates the book every
 // eval_interval_ms until ctx is cancelled or the kill switch fires.
 func (s *Strategy) Run(ctx context.Context) error {
+	s.markStarted()
 	go s.heartbeat(ctx)
 
 	s.loadGammaPriceHistory(ctx)
