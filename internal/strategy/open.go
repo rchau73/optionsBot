@@ -54,7 +54,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 		skipAll(SkipMarginLimit, fmt.Sprintf("IM %.1f%% ≥ limit %.0f%% (%s)", m.usage.IMPct(), m.status.LimitIMPct, m.status.Reason))
 		return nil
 	}
-	share := headroom / float64(needsOpen)
+	share := EntryShare(headroom, SlotShare(m.status.LimitIMPct, m.usage.MarginBalance, len(slots)), needsOpen)
 	instruments := s.md.AllInstruments()
 
 	for _, slot := range slots {
