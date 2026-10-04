@@ -129,6 +129,15 @@ Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i ./bo
 | `skip slot: no suitable expiry` | no listed expiry inside the slot's DTE window | widen `max_dte_deviation` or change the slot DTE |
 | testnet fills look odd | testnet quotes are thin or synthetic | use testnet to prove mechanics, not profitability |
 
+## Book vs exchange
+
+Two log lines mean the bot corrected itself; both are `ERROR` so they stand out:
+
+- `order submit outcome unknown` — an order went out as the connection dropped. The bot cancels it by its label (`unconfirmed order resolved` when done) and sends nothing else for that slot or instrument meanwhile.
+- `position drift` — the exchange's position differs from the bot's book (an unknown order filled before it could be cancelled, a manual trade, a close whose reply was lost). The bot adopts the exchange's size (journaled as `reconciled`), so the position is managed by the stop-loss and rolls.
+
+They mostly appear after network outages. On a laptop, prevent sleep while the bots run (`caffeinate -s`, or disable sleep on power): on 2026-10-04 both connections dropped six times overnight.
+
 ## Margin policy
 
 The bot sizes and limits itself on Deribit's own margin figures (see *Margin policy and sizing* in [architecture.md](architecture.md)). What to know when running it:

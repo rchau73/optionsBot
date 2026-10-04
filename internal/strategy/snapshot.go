@@ -292,3 +292,10 @@ func (s *Strategy) orderLabel(slot *orders.SlotRef) string {
 	}
 	return fmt.Sprintf("%s:%dd:%.2f", s.strategyID(), slot.DTE, slot.Delta)
 }
+
+// uniqueOrderLabel is orderLabel plus a per-order suffix, so one order can be
+// found (and cancelled) by its label alone when its submit outcome is unknown.
+// Deribit allows 64 characters; the executor truncates beyond that.
+func (s *Strategy) uniqueOrderLabel(slot *orders.SlotRef) string {
+	return s.orderLabel(slot) + ":" + s.state.NextID("o")
+}

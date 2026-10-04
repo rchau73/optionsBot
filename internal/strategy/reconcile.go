@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
-	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -126,41 +125,12 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	byExpiry := map[time.Time][]*orders.Position{}
 
 	for _, rp := range shorts {
-		var strike float64
-		var expiry time.Time
-		var optType, underlying string
-
-		if inst, ok := s.md.GetInstrument(rp.InstrumentName); ok {
-			strike = inst.Strike
-			expiry = inst.Expiry
-			optType = inst.OptionType
-			underlying = inst.Underlying
-		} else {
-			var parseErr error
-			underlying, expiry, strike, optType, parseErr = marketdata.ParseOptionName(rp.InstrumentName)
-			if parseErr != nil {
-				slog.Warn("reconcile: cannot parse instrument", "name", rp.InstrumentName, "err", parseErr)
-				continue
-			}
+		pos, err := s.positionFromRaw(rp, now)
+		if err != nil {
+			slog.Warn("reconcile: cannot parse instrument", "name", rp.InstrumentName, "err", err)
+			continue
 		}
-
-		qty := math.Abs(rp.Size)
-		pos := &orders.Position{
-			ID:              s.state.NextID("pos"),
-			Instrument:      rp.InstrumentName,
-			Underlying:      underlying,
-			Strike:          strike,
-			Expiry:          expiry,
-			OptionType:      optType,
-			Side:            rp.Direction,
-			Qty:             qty,
-			EntryPrice:      rp.AveragePrice,
-			UnderlyingPrice: rp.IndexPrice,
-			EntryTime:       now,
-			PremiumReceived: rp.AveragePrice * qty,
-			CurrentMid:      rp.MarkPrice,
-			CurrentGreeks:   PerOptionGreeks(rp),
-		}
+		expiry := pos.Expiry
 		s.state.AddPosition(pos)
 		byExpiry[expiry] = append(byExpiry[expiry], pos)
 

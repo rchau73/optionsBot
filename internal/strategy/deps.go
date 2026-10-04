@@ -20,6 +20,8 @@ type OrderPlacer interface {
 	Submit(ctx context.Context, order orders.Order) (orders.Fill, error)
 	Cancel(ctx context.Context, orderID string) error
 	CancelAllOrders(ctx context.Context, currency string) error
+	// CancelByLabel cancels the open orders carrying label; returns how many.
+	CancelByLabel(ctx context.Context, currency, label string) (int, error)
 }
 
 // OrderTracker follows resting limit orders until they fill.

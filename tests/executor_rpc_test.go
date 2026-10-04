@@ -282,3 +282,15 @@ func TestGetDailyCloses(t *testing.T) {
 		})
 	}
 }
+
+func TestCancelByLabel_HighPriorityPerCurrency(t *testing.T) {
+	fc := &fakeCaller{replies: []fakeReply{{result: `2`}}}
+	n, err := orders.NewExecutor(fc).CancelByLabel(context.Background(), "BTC", "short-strangle:25d:0.16:o-1")
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	c := fc.calls[0]
+	if c.method != "private/cancel_by_label" || c.params["label"] != "short-strangle:25d:0.16:o-1" || c.params["currency"] != "BTC" || c.priority != gateway.PriorityHigh {
+		t.Errorf("call = %+v", c)
+	}
+}

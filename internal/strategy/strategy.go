@@ -49,6 +49,12 @@ type Strategy struct {
 	// the freeze and regime conditions still apply, the cooldown does not.
 	stopped    map[string]time.Time
 	repairHeld map[string]string
+	// Orders whose submit outcome is unknown, by label; position differences
+	// seen per instrument; instruments to match to the exchange this cycle
+	// (decision loop only). See orphans.go.
+	unconfirmed map[string]unconfirmedOrder
+	drift       map[string]int
+	forceCheck  map[string]bool
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes) and the IM limit the book was last resized to (NaN: never).
 	lastRisk     *risk.Status
@@ -93,6 +99,9 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		noQuote:          make(map[string]bool),
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
+		unconfirmed:      make(map[string]unconfirmedOrder),
+		drift:            make(map[string]int),
+		forceCheck:       make(map[string]bool),
 		killSwitchCh:     make(chan struct{}),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
@@ -179,6 +188,10 @@ func (s *Strategy) evaluate(ctx context.Context) {
 
 	// Order lifecycle first: fills here change what the rules below see.
 	s.checkPendingOrders(ctx)
+	// Then make sure the book is the exchange's: cancel orders whose submit
+	// outcome is unknown, and adopt any position the book does not match.
+	s.resolveUnconfirmed(ctx)
+	s.checkPositions(ctx)
 
 	if gammaDec.Action != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)
