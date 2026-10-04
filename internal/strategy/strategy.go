@@ -44,6 +44,11 @@ type Strategy struct {
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
 	noQuote  map[string]bool    // held instruments already warned about missing quotes (decision loop only)
+	// Legs lost to a stop-loss, by strangle and type, and the last reason
+	// their repair was held (decision loop only). In memory: after a restart
+	// the freeze and regime conditions still apply, the cooldown does not.
+	stopped    map[string]time.Time
+	repairHeld map[string]string
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes) and the IM limit the book was last resized to (NaN: never).
 	lastRisk     *risk.Status
@@ -86,6 +91,8 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		pnl:              newPnLBook(),
 		lastSkip:         make(map[slotKey]string),
 		noQuote:          make(map[string]bool),
+		stopped:          make(map[string]time.Time),
+		repairHeld:       make(map[string]string),
 		killSwitchCh:     make(chan struct{}),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
@@ -199,7 +206,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// It restores a structure already held, so a freeze does not stop it;
 	// a maintenance-margin breach does.
 	if !m.mmBreached() {
-		s.repairIncompleteStrangles(ctx, gammaDec)
+		s.repairIncompleteStrangles(ctx, gammaDec, m)
 	}
 
 	s.hedge.MaybeReport(s.state.TotalNetDelta(), underlyingPrice, s.suggestedHedgeInst())

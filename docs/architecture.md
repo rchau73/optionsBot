@@ -98,7 +98,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `open.go` | slot occupancy, expiry choice (with fallback), strike choice, PM-aware sizing, premium floor, GEX leg gate, submitting entry legs |
 | `pending.go` | fill tracking: partial fills, amend on ask drift, timeout → cancel + read back final fill → book filled legs |
 | `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
-| `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window |
+| `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed) |
 | `reconcile.go` | rebuild the book from the exchange; startup account log |
 | `limits.go` | margin policy each cycle: evaluate `internal/risk`, journal changes, reduce at market on an MM breach, size entries with `private/simulate_portfolio` |
 | `rebalance.go` | resize strangles toward a newly confirmed IM limit (downsize at market only while IM is above it, upsize via a complement entry) |

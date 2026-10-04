@@ -35,9 +35,13 @@ type Config struct {
 	DTEDeltaMatrix []DTEDeltaEntry `yaml:"dte_delta_matrix"`
 	// Legacy fields — kept for backward-compatible configs and backtest scenario sweeps.
 	// Ignored by Slots() when dte_delta_matrix is set.
-	TargetDTE           []int   `yaml:"target_dte"`
-	EntryDelta          float64 `yaml:"entry_delta"`
-	RolloutDTE          int     `yaml:"rollout_dte"`
+	TargetDTE  []int   `yaml:"target_dte"`
+	EntryDelta float64 `yaml:"entry_delta"`
+	RolloutDTE int     `yaml:"rollout_dte"`
+	// RepairCooldownHours: a leg closed by a stop-loss is re-sold no sooner
+	// than this, and only when entries are not frozen and the confirmed gamma
+	// regime is not negative.
+	RepairCooldownHours int     `yaml:"repair_cooldown_hours"`
 	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
 	ROITakeProfit       float64 `yaml:"roi_take_profit"`
 	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`
@@ -166,6 +170,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.RiskPolicy(false).Validate(); err != nil {
 		return err
+	}
+	if c.RepairCooldownHours < 0 {
+		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
 	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
@@ -306,6 +313,9 @@ func Load(path string) (*Config, error) {
 	// config.yaml is the authority; no default override so users can explicitly disable.
 	// DeltaSlippage == 0 is valid: disables the tolerance filter entirely.
 
+	if cfg.RepairCooldownHours == 0 {
+		cfg.RepairCooldownHours = 72
+	}
 	if cfg.GEXMethod == "" {
 		cfg.GEXMethod = "script"
 	}

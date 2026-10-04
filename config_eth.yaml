@@ -20,6 +20,7 @@ rollout_dte:            15      # roll entire strangle when DTE ≤ this
 delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left)
 roi_take_profit:        0.50    # roll leg when ROI ≥ 50% of premium received
 stop_loss_multiplier:   2.0     # emergency close when loss ≥ 2× premium received
+repair_cooldown_hours:  72      # a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative
 
 # ── Gamma monitor ─────────────────────────────────────────────────────────────
 gamma_trend_lookback_days: 120

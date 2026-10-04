@@ -230,3 +230,13 @@ func TestConfigLoad_RepositoryConfigsAreValid(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigLoad_RepairCooldown(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil || cfg.RepairCooldownHours != 72 {
+		t.Errorf("default repair_cooldown_hours = %d (%v), want 72", cfg.RepairCooldownHours, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "repair_cooldown_hours: -1\n")); err == nil || !strings.Contains(err.Error(), "repair_cooldown_hours") {
+		t.Errorf("a negative cooldown must be rejected, got %v", err)
+	}
+}
