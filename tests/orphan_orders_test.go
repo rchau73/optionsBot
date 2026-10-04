@@ -78,9 +78,11 @@ func TestStrategy_OrphanFillIsAdoptedAndNotRepairedAgain(t *testing.T) {
 
 	eventually(t, 2*time.Second, "lost order sent", func() bool { return len(f.exch.sells()) == 1 })
 	f.exch.fill("o-1", 0.1, 0.021) // it fills on the exchange, untracked
-	eventually(t, 2*time.Second, "orphan fill adopted into the book", func() bool {
+	// Adoption adds the position, then attaches it to its strangle.
+	eventually(t, 2*time.Second, "orphan fill adopted into the book and the strangle", func() bool {
 		p := f.position(f.put)
-		return p != nil && math.Abs(p.Qty-0.1) < 1e-9
+		st := f.state.AllStrangles()
+		return p != nil && math.Abs(p.Qty-0.1) < 1e-9 && len(st) == 1 && st[0].PutLeg != nil
 	})
 	st := f.state.AllStrangles()
 	if len(st) != 1 || st[0].PutLeg == nil || st[0].CallLeg == nil {
@@ -130,7 +132,7 @@ func TestStrategy_LostCloseReplyIsNotSentTwice(t *testing.T) {
 	}
 	f.startRun()
 	eventually(t, 2*time.Second, "stop-loss sent", func() bool { return len(f.exch.buys()) == 1 })
-	f.exch.fill("o-1", 0.1, 0.04) // it executed; the reply was lost
+	// The market buy executed on the exchange; only its reply was lost.
 	eventually(t, 2*time.Second, "book follows the exchange", func() bool { return f.position(f.call) == nil })
 	time.Sleep(100 * time.Millisecond)
 	if n := len(f.exch.buys()); n != 1 {

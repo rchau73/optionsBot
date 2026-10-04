@@ -19,6 +19,7 @@ const (
 	TriggerTimeout           = "order_timeout"      // limit order cancelled after fill-timeout elapsed
 	TriggerRebalanceDownsize = "rebalance_downsize" // position exceeds the confirmed IM limit — partial close
 	TriggerMarginMM          = "margin_mm_limit"    // maintenance margin above max_mm_pct — immediate partial close
+	TriggerRebalanceLegs     = "rebalance_legs"     // strangle legs of different sizes — excess of the larger leg bought back
 )
 
 // Order direction and type constants.
