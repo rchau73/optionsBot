@@ -152,6 +152,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			Strike:          strike,
 			Expiry:          expiry,
 			OptionType:      optType,
+			Side:            rp.Direction,
 			Qty:             qty,
 			EntryPrice:      rp.AveragePrice,
 			UnderlyingPrice: rp.IndexPrice,

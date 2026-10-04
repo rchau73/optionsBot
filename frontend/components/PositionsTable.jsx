@@ -39,6 +39,7 @@ export default function PositionsTable({ groups }) {
             <th className="px-2 py-1">Instrument</th>
             <th className="px-2 py-1">Slot</th>
             <th className="px-2 py-1">Type</th>
+            <th className="px-2 py-1" title="SELL = short (premium collected, profits as the option loses value); BUY = long (premium paid, e.g. an iron-condor wing)">Side</th>
             <th className="px-2 py-1 text-right">Strike</th>
             <th className="px-2 py-1 text-right">DTE</th>
             <th className="px-2 py-1 text-right">Qty</th>
@@ -46,7 +47,12 @@ export default function PositionsTable({ groups }) {
             <th className="px-2 py-1 text-right">Bid / Ask</th>
             <th className="px-2 py-1 text-right" title="Mid price used to value the leg, from the live ticker">Mark</th>
             <th className="px-2 py-1 text-right" title="Premium received minus the cost to buy back at the mark">Unrealized P&L</th>
-            <th className="px-2 py-1 text-right">Captured</th>
+            <th
+              className="px-2 py-1 text-right"
+              title="Unrealized P&L as % of the premium: +50% = half the premium is profit; 0% = break-even; -100% = the loss equals the premium. The stop-loss fires at -(stop_loss_multiplier) × 100%, e.g. -200%."
+            >
+              P&L %
+            </th>
             <th className="px-2 py-1 text-right" title="Mark at which the stop-loss fires">Stop @</th>
             <th className="px-2 py-1">Moneyness</th>
             <th className="px-2 py-1 text-right">Δ</th>
@@ -58,7 +64,7 @@ export default function PositionsTable({ groups }) {
         {groups.map((g) => (
           <tbody key={g.key} className="border-b border-line">
             <tr className="bg-slate-800/40">
-              <td colSpan={9} className="px-2 py-1 font-semibold">
+              <td colSpan={10} className="px-2 py-1 font-semibold">
                 {g.key} <span className="text-xs font-normal text-muted">· {g.legs} legs</span>
               </td>
               <td className={clsx("px-2 py-1 text-right font-semibold", pnlClass(g.pnlUsd))}>
@@ -73,6 +79,9 @@ export default function PositionsTable({ groups }) {
                 <td className="px-2 py-1 text-xs text-muted">{r.slot}</td>
                 <td className="px-2 py-1">
                   <Badge tone={r.type === "call" ? "call" : "put"}>{r.type}</Badge>
+                </td>
+                <td className="px-2 py-1">
+                  <Badge tone={r.side === "buy" ? "good" : "warn"}>{r.side === "buy" ? "BUY" : "SELL"}</Badge>
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.strike, 0)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.dte, 1)}</td>
@@ -91,7 +100,7 @@ export default function PositionsTable({ groups }) {
                   <Live value={r.pnl}>{formatCoin(r.pnl, r.unit)}</Live>
                   <div className="text-xs">{formatUSD(r.pnlUsd)}</div>
                 </td>
-                <td className="px-2 py-1 text-right tabular-nums">{formatPct(r.roiPct, 0)}</td>
+                <td className={clsx("px-2 py-1 text-right tabular-nums", pnlClass(r.roiPct))}>{formatPct(r.roiPct, 0, { signed: true })}</td>
                 <td className={clsx("px-2 py-1 text-right tabular-nums", isNumber(r.lossMultiple) && r.lossMultiple > 1 && "text-warn")}>
                   {formatPrice(r.stopMark)}
                 </td>

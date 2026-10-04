@@ -65,6 +65,7 @@ type LegView struct {
 	PositionID string    `json:"position_id"`
 	Instrument string    `json:"instrument"`
 	OptionType string    `json:"option_type"`
+	Side       string    `json:"side"` // sell (short) or buy (long)
 	Strike     float64   `json:"strike"`
 	Expiry     time.Time `json:"expiry"`
 	DTE        float64   `json:"dte"`
@@ -80,7 +81,7 @@ type LegView struct {
 	MarkAsOf        time.Time     `json:"mark_as_of"`
 	PremiumReceived float64       `json:"premium_received"`
 	UnrealisedPnL   float64       `json:"unrealised_pnl"`
-	ROIPct          float64       `json:"roi_pct"`        // share of premium captured, %
+	ROIPct          float64       `json:"roi_pct"`        // unrealised P&L as % of premium (shown as "P&L %")
 	LossMultiple    float64       `json:"loss_multiple"`  // loss ÷ premium; stop-loss fires at stop_loss_multiplier
 	StopLossMark    float64       `json:"stop_loss_mark"` // mark price at which the stop-loss fires
 	Moneyness       string        `json:"moneyness"`
@@ -277,6 +278,10 @@ func (s *Strategy) legView(pos *orders.Position, spot float64, now, loopAt time.
 	priced.CurrentMid, priced.CurrentGreeks = mark, greeks
 
 	lv.PositionID, lv.Instrument, lv.OptionType = pos.ID, pos.Instrument, pos.OptionType
+	lv.Side = pos.Side
+	if lv.Side == "" {
+		lv.Side = orders.DirectionSell // the strangle book only holds shorts
+	}
 	lv.Strike, lv.Expiry, lv.DTE = pos.Strike, pos.Expiry, maxf(pos.Expiry.Sub(now).Hours()/24, 0)
 	lv.Qty, lv.EntryPrice, lv.Mark = pos.Qty, pos.EntryPrice, mark
 	lv.PremiumReceived = pos.PremiumReceived

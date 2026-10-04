@@ -57,6 +57,25 @@ describe("PositionsTable", () => {
     expect(screen.getAllByText("last cycle")).toHaveLength(1); // only the put has no live ticker
   });
 
+  test("shows each leg's side and its P&L % of premium, signed", () => {
+    render(<PositionsTable groups={groupRows(legRows([bot()]), "slot")} />);
+    expect(screen.getByText("Side")).toBeInTheDocument();
+    expect(screen.getAllByText("SELL")).toHaveLength(2);
+    const pnlPct = screen.getByText("P&L %");
+    expect(pnlPct).toHaveAttribute("title", expect.stringContaining("% of the premium"));
+    expect(screen.getByText("+25%")).toHaveClass("text-profit");
+  });
+
+  test("a bought leg (e.g. an iron-condor wing) shows BUY, and a losing leg is red", () => {
+    const b = bot();
+    const leg = b.positions.strangles[0].legs[0];
+    leg.side = "buy";
+    leg.roi_pct = -40;
+    render(<PositionsTable groups={groupRows(legRows([b]), "slot")} />);
+    expect(screen.getByText("BUY")).toBeInTheDocument();
+    expect(screen.getByText("-40%")).toHaveClass("text-loss");
+  });
+
   test("explains an empty table", () => {
     render(<PositionsTable groups={[]} />);
     expect(screen.getByText(/No open positions/)).toBeInTheDocument();

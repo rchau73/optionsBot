@@ -40,6 +40,7 @@ export function legRows(bots) {
           dteTarget: st.slot?.dte,
           instrument: leg.instrument,
           type: leg.option_type,
+          side: leg.side ?? "sell", // older bots: the strangle book only holds shorts
           strike: leg.strike,
           dte: leg.dte,
           qty: leg.qty,
