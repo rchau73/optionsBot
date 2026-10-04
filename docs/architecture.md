@@ -120,7 +120,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | MM limit | MM ≥ `max_mm_pct` (35 %): reduce every position at market each cycle until under, regardless of any freeze; repairs and entries blocked |
 | Fail safe | margin unknown, simulation failed or units disagree → no new risk; unknown DVOL → lowest band, no rebalance; no confirmed regime yet (first days after deploying) → frozen |
 
-Each vacant slot gets an equal share of the IM headroom (limit × margin balance − IM in use). `private/simulate_portfolio` — Deribit allows one call per second, so the executor spaces them — prices one strangle lot added to the real portfolio (legs offsetting), the size is scaled to the share, and a second simulation confirms post-trade IM and MM fit; otherwise the size shrinks or the slot is skipped (`margin_limit`). Every freeze, unfreeze, limit change, rebalance and MM breach is journaled as a `risk_limit` event.
+Each vacant slot gets its **slot share** of the limit (limit × margin balance ÷ all slots — the same target the rebalance uses), capped by an equal part of the remaining headroom (limit × margin balance − IM in use, ÷ vacant slots). A single vacant slot therefore never takes all the headroom. `private/simulate_portfolio` — Deribit allows one call per second, so the executor spaces them — prices one strangle lot added to the real portfolio (legs offsetting), the size is scaled to the share, and a second simulation confirms post-trade IM and MM fit; otherwise the size shrinks or the slot is skipped (`margin_limit`). Every freeze, unfreeze, limit change, rebalance and MM breach is journaled as a `risk_limit` event.
 
 ## 7. Orders and state
 

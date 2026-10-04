@@ -31,7 +31,7 @@ import (
 func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 	strangles := s.state.AllStrangles()
 	limit := m.status.LimitIMPct
-	share := limit / 100 * m.usage.MarginBalance / float64(len(s.cfg.Slots()))
+	share := SlotShare(limit, m.usage.MarginBalance, len(s.cfg.Slots()))
 	over := m.usage.IMPct() > limit
 	headroom := m.usage.Headroom(limit)
 

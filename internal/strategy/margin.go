@@ -19,6 +19,28 @@ func EntryLots(headroom, imPerLot float64) int {
 	return int(math.Floor(headroom/imPerLot + 1e-9))
 }
 
+// SlotShare is the initial margin one slot may use: the IM limit (as % of
+// margin balance) split equally between all configured slots. Entries and
+// the rebalance both size a strangle to it, so a strangle opened into an
+// otherwise full book is not later cut back.
+func SlotShare(limitIMPct, marginBalance float64, slots int) float64 {
+	if slots <= 0 {
+		return 0
+	}
+	return limitIMPct / 100 * marginBalance / float64(slots)
+}
+
+// EntryShare is the IM a vacant slot may use now: its slot share, but never
+// more than an equal part of the remaining headroom. Without the cap, one
+// vacant slot in a full book would take all the headroom (e.g. 12 % of
+// balance instead of 20 % ÷ 3 slots ≈ 6.7 %).
+func EntryShare(headroom, slotShare float64, vacant int) float64 {
+	if vacant <= 0 || headroom <= 0 {
+		return 0
+	}
+	return min(headroom/float64(vacant), slotShare)
+}
+
 // TargetLots is the size a held strangle should have so its initial margin
 // fits share, when each lot uses imPerLot. The IM limit never closes a
 // strangle completely (at least one lot stays); the MM limit can.

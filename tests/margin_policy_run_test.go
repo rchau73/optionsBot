@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"optionsbot/internal/config"
 	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
@@ -256,5 +257,25 @@ func TestMarginUsage_SegregatedUsesCurrencyFigures(t *testing.T) {
 	u := orders.AccountSummary{Currency: "ETH", InitialMargin: 2, MaintenanceMargin: 1, MarginBalance: 10}.MarginUsage()
 	if u.Unit != "ETH" || u.IMPct() != 20 || u.MMPct() != 10 {
 		t.Errorf("usage = %+v", u)
+	}
+}
+
+// A vacant slot in an otherwise full book is sized to its slot share
+// (limit ÷ slots), not handed all the remaining headroom.
+func TestMarginPolicy_EntryCappedAtSlotShare(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 45, Deltas: []float64{0.16, 0.18}}}
+	f.withOpenStrangle(0.2, 0.02) // fills one slot at its share (2 lots)
+	f.exch.imPerLot = 0.5         // slot share = 20% × 10 ÷ 2 = 1.0 → 2 lots; headroom 2.0 would allow 4
+	f.startRun()
+
+	eventually(t, 2*time.Second, "vacant slot entered", func() bool { return len(f.exch.sells()) == 2 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.2) > 1e-9 {
+			t.Errorf("entry qty = %v, want 0.2 (its slot share), not 0.4 (all the headroom)", o.Qty)
+		}
+	}
+	if n := len(f.exch.buys()); n != 0 {
+		t.Errorf("the existing strangle is at its share: no rebalance, got %d buys", n)
 	}
 }

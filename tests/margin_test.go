@@ -57,3 +57,21 @@ func TestMMKeepQty(t *testing.T) {
 		}
 	}
 }
+
+func TestSlotAndEntryShare(t *testing.T) {
+	// The BTC book on 2026-10-03: limit 20 % of 1.8022 BTC, 3 slots, IM 8.1 %.
+	slot := strategy.SlotShare(20, 1.8022, 3)
+	if !near(slot, 0.120147, 1e-6) {
+		t.Fatalf("slot share = %v, want 20%% × 1.8022 ÷ 3", slot)
+	}
+	headroom := 0.20*1.8022 - 0.1466 // ≈ 0.214 BTC
+	if got := strategy.EntryShare(headroom, slot, 1); got != slot {
+		t.Errorf("one vacant slot gets its slot share, not all the headroom: %v", got)
+	}
+	if got := strategy.EntryShare(0.05, slot, 2); !near(got, 0.025, 1e-12) {
+		t.Errorf("little headroom is split between the vacant slots: %v", got)
+	}
+	if strategy.EntryShare(0, slot, 1) != 0 || strategy.EntryShare(1, slot, 0) != 0 || strategy.SlotShare(20, 1, 0) != 0 {
+		t.Error("no headroom, no vacancy or no slots → nothing")
+	}
+}
