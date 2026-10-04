@@ -387,6 +387,7 @@ func (s *Strategy) newPosition(instrument, optionType string, expiry time.Time, 
 		Underlying:      s.cfg.Underlying,
 		Expiry:          expiry,
 		OptionType:      optionType,
+		Side:            orders.DirectionSell, // entries and repairs sell
 		Qty:             qty,
 		EntryPrice:      fillPrice,
 		EntryTime:       now,

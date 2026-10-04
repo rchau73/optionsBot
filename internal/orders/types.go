@@ -31,12 +31,15 @@ const (
 
 // Position represents an open short options leg.
 type Position struct {
-	ID              string
-	Instrument      string
-	Underlying      string
-	Strike          float64
-	Expiry          time.Time
-	OptionType      string
+	ID         string
+	Instrument string
+	Underlying string
+	Strike     float64
+	Expiry     time.Time
+	OptionType string
+	// Side is how the leg was opened: DirectionSell (short, what the strangle
+	// strategy holds) or DirectionBuy (long, e.g. a future iron-condor wing).
+	Side            string
 	Qty             float64
 	EntryPrice      float64 // option premium received per unit (BTC)
 	UnderlyingPrice float64 // spot price of BTC/ETH at time of entry

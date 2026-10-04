@@ -285,3 +285,20 @@ func TestView_LegWithoutLiveTickerIsMarkedLastCycle(t *testing.T) {
 		}
 	}
 }
+
+// Each leg carries its side, so long legs (future iron-condor wings) are
+// told apart from shorts in the monitor.
+func TestView_LegsCarryTheirSide(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.startRun()
+	eventually(t, 2*time.Second, "positions loaded", func() bool { return len(f.strat.View().Strangles) == 1 })
+	for _, l := range f.strat.View().Strangles[0].Legs {
+		if l.Side != orders.DirectionSell {
+			t.Errorf("%s side = %q, want sell (reconciled from the exchange's direction)", l.Instrument, l.Side)
+		}
+	}
+	if p := f.position(f.call); p == nil || p.Side != orders.DirectionSell {
+		t.Errorf("reconcile must keep the exchange's direction: %+v", p)
+	}
+}
