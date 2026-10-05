@@ -9,9 +9,18 @@ import (
 // use the same rule: the expiry the strategy will trade is always one the
 // manager has subscribed to.
 
-// DaysToExpiry returns whole calendar days from now to expiry, rounded.
+// DaysToExpiry returns the whole days left until expiry, rounded down (0
+// once expired). It is the single definition of DTE: entry uses it to pick an
+// expiry and the exit rules (Position.DTEAt) to decide when to roll. With two
+// different roundings an expiry 15.5 days out counted as 16 at entry (allowed)
+// and 15 at exit (roll now), so a strangle could be opened and rolled on
+// consecutive cycles, over and over.
 func DaysToExpiry(expiry, now time.Time) int {
-	return int(math.Round(expiry.Sub(now).Hours() / 24))
+	d := expiry.Sub(now).Hours() / 24
+	if d < 0 {
+		return 0
+	}
+	return int(math.Floor(d))
 }
 
 // ExpiryWindow returns the inclusive DTE range an entry for targetDTE may use:
