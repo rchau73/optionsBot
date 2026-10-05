@@ -9,7 +9,7 @@ import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
-import AccountPanel from "./AccountPanel";
+import AccountPanel, { AccountSummary } from "./AccountPanel";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows } from "@/lib/account";
@@ -28,6 +28,8 @@ export default function Monitor() {
     [bots, rows],
   );
   const kpi = summarise(bots);
+  const account = pickAccount(bots, polledAt);
+  const risk = riskRows(bots);
 
   return (
     <div className="min-h-screen">
@@ -39,8 +41,13 @@ export default function Monitor() {
           </div>
         ) : null}
         <KpiStrip kpi={kpi} />
-        <Panel title="Account & collateral (shared by all bots)">
-          <AccountPanel account={pickAccount(bots, polledAt)} risk={riskRows(bots)} />
+        <Panel
+          title="Account & collateral (shared by all bots)"
+          collapsible
+          storageKey="monitor.panel.account"
+          summary={<AccountSummary account={account} risk={risk} />}
+        >
+          <AccountPanel account={account} risk={risk} />
         </Panel>
         <Panel title="Open positions" right={<Filters filters={filters} options={options} onChange={setFilters} />}>
           <PositionsTable groups={groups} />

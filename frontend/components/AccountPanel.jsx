@@ -2,13 +2,29 @@ import clsx from "clsx";
 import Badge from "./Badge";
 import MarginBar from "./MarginBar";
 import StatTile from "./StatTile";
-import { LIQUIDATION_MM_PCT, marginLevel, marginModelLabel, worstMMPct } from "@/lib/account";
+import { LIQUIDATION_MM_PCT, accountSummary, marginLevel, marginModelLabel, worstMMPct } from "@/lib/account";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
 import { formatAge, formatPct, formatUSD } from "@/lib/format";
 
 const ACCOUNT_STALE_SEC = Math.max(STALE_AFTER_SEC, 30); // the bot polls the account every ~10 s
+const isStale = (ageSec) => ageSec == null || ageSec > ACCOUNT_STALE_SEC;
 
 const amount = (v) => (typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "—");
+
+/** The collapsed account panel's header line (see accountSummary). */
+export function AccountSummary({ account, risk }) {
+  const summary = accountSummary(account, risk);
+  const stale = summary.missing || isStale(account.ageSec);
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span className="tabular-nums">{summary.text}</span>
+      {summary.level === "danger" ? <Badge tone="bad">MARGIN HIGH</Badge> : null}
+      {summary.level === "warn" ? <Badge tone="warn">MARGIN WARN</Badge> : null}
+      {summary.frozen.length ? <Badge tone="warn">FROZEN {summary.frozen.join(", ")}</Badge> : null}
+      {stale ? <Badge tone="warn">STALE</Badge> : null}
+    </span>
+  );
+}
 
 /** Collateral per asset and margin usage, as reported by Deribit, and the margin policy each bot applies. */
 export default function AccountPanel({ account, risk = [] }) {
@@ -23,7 +39,7 @@ export default function AccountPanel({ account, risk = [] }) {
   const imMarkers = risk.map((r) => ({ pct: r.limitIMPct, label: `${r.bot.toUpperCase()} IM limit ${r.limitIMPct}%` }));
   const mmMarkers = risk.length ? [{ pct: risk[0].maxMMPct, label: `MM limit ${risk[0].maxMMPct}%` }] : [];
   const { snapshot: s, bot, ageSec, error } = account;
-  const stale = ageSec == null || ageSec > ACCOUNT_STALE_SEC;
+  const stale = isStale(ageSec);
   const worst = worstMMPct(s);
   return (
     <div className="space-y-3">
