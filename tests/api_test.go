@@ -302,3 +302,15 @@ func TestView_LegsCarryTheirSide(t *testing.T) {
 		t.Errorf("reconcile must keep the exchange's direction: %+v", p)
 	}
 }
+
+// The monitor shows when a working order times out (cancelled, fills booked):
+// the view carries submitted_at + order_fill_timeout_sec.
+func TestView_PendingOrderCarriesItsTimeout(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.startRun()
+	eventually(t, 2*time.Second, "entry pending", func() bool { return len(f.strat.View().Pending) == 1 })
+	p := f.strat.View().Pending[0]
+	if want := p.SubmittedAt.Add(60 * time.Second); !p.TimeoutAt.Equal(want) {
+		t.Errorf("timeout_at = %v, want submitted_at + 60 s = %v", p.TimeoutAt, want)
+	}
+}

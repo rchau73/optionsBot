@@ -87,6 +87,7 @@ describe("PendingOrders", () => {
     render(<PendingOrders bots={[bot()]} />);
     expect(screen.getByText("BTC-30OCT26-110000-C")).toBeInTheDocument();
     expect(screen.getByText("0/0.1")).toBeInTheDocument();
+    expect(screen.getByText(/^in 1m 1[45]s$/)).toBeInTheDocument(); // time left before the fill timeout
   });
 
   test("empty state", () => {

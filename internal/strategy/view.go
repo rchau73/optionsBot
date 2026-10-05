@@ -95,6 +95,7 @@ type PendingView struct {
 	Slot        orders.SlotRef   `json:"slot"`
 	Repair      bool             `json:"repair"`
 	SubmittedAt time.Time        `json:"submitted_at"`
+	TimeoutAt   time.Time        `json:"timeout_at"` // cancelled (and fills booked) at this time if not filled
 	Adjustments int              `json:"adjustments"`
 	Legs        []PendingLegView `json:"legs"`
 }
@@ -141,6 +142,7 @@ func (s *Strategy) publish() {
 		pv := PendingView{
 			ID: ps.id, Slot: *ps.slot(), Repair: ps.repairStrangleID != "",
 			SubmittedAt: ps.submittedAt, Adjustments: ps.adjustments,
+			TimeoutAt: ps.submittedAt.Add(time.Duration(s.cfg.OrderFillTimeoutSec) * time.Second),
 		}
 		for _, l := range ps.legs() {
 			pv.Legs = append(pv.Legs, PendingLegView{
