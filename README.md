@@ -142,6 +142,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `iv_band_confirm_days` | 2 | consecutive UTC daily closes a DVOL band or gamma regime change must hold before the limit moves; until then new entries are frozen |
 | `max_mm_pct` | 35 | maintenance-margin limit (% of margin balance), enforced at once by reducing positions; below 100 (Deribit liquidates at 100) |
 | `max_dte_deviation` | 2 | days an expiry may differ from the slot DTE |
+| `expiry_stretch` | 1.5 | slots keep separate expiries: when another slot holds a slot's expiry, it takes the nearest free one up to target DTE × this (1–3), otherwise it waits. Deribit lists weeklies only a few weeks out, then month-/quarter-ends, so nearby slots (45/60) would often share one |
 | `delta_slippage` | 0 | max distance from the target delta (0 = take the closest) |
 | `min_premium_btc` | 0 | skip legs whose price is below this (0 = off) |
 | `min_trade_amount` | 0.05 | fallback lot size when the exchange does not provide one |

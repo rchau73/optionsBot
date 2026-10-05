@@ -430,8 +430,16 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
-		expiry, ok := strategy.SelectExpiry(instruments, date, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE)
-		if !ok {
+		held := map[time.Time]bool{}
+		for _, st := range e.state.AllStrangles() {
+			for _, leg := range []*orders.Position{st.CallLeg, st.PutLeg} {
+				if leg != nil {
+					held[leg.Expiry] = true
+				}
+			}
+		}
+		expiry, pick := strategy.SelectSlotExpiry(instruments, date, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE, e.cfg.ExpiryStretch, held)
+		if pick == marketdata.PickNone || pick == marketdata.PickAllHeld {
 			slog.Debug("skip entry: no suitable expiry",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"available_expiries", len(expiries))

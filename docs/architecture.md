@@ -81,7 +81,9 @@ See [seq_gateway](seq_gateway.png), [rate limiter](gateway_ratelimiter.png), [ci
 
 See [marketdata_flow](marketdata_flow.png).
 
-- Loads the option chain once, seeds a year of daily DVOL, and subscribes to the index price, DVOL and the tickers of **tradable** expiries only: per slot, `NearestExpiry` in `ExpiryWindow(target, deviation, rollout_dte)` — the exact rule the strategy uses — plus the next three expiries for rollouts.
+- Loads the option chain once, seeds a year of daily DVOL, and subscribes to the index price, DVOL and the tickers of **tradable** expiries only: per slot, every expiry in `ExpiryWindow(target, deviation, rollout_dte)` up to `StretchHi(target, deviation, expiry_stretch)` — every expiry `PickExpiry` could choose for it — plus the next three expiries for rollouts.
+
+**One expiry per slot.** Deribit lists weeklies only a few weeks out, then month- and quarter-ends, so the windows of nearby slots overlap (on 2026-10-05 both the 45- and 60-day slots picked Nov 27). `PickExpiry` gives a vacant slot its window's nearest expiry unless another slot already holds it (open, pending or unconfirmed); then the nearest free expiry up to target × `expiry_stretch` (60 → Dec 25 at 81 days), otherwise the slot waits and journals `no_free_expiry`. In a stress simulation on Deribit's real calendar this removed expiry sharing (46 % of strangles shared one before) with P&L unchanged within noise and a lower peak maintenance margin.
 - Ticker pushes update bid/ask/mid (mark price when there are no quotes, common on testnet), greeks and IV. The spot comes from `deribit_price_index`, not the per-option underlying price.
 - `DVOLTracker` keeps **one value per UTC day**; the IV percentile ranks today against the configured number of days.
 
@@ -155,7 +157,7 @@ See [hedge_flow](hedge_flow.png). When |net delta| ≥ `hedge_report_threshold` 
 
 See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 
-`HistoricalFeed` replays `data/historical/options.csv` (prices in USD in the synthetic data from `cmd/gendata`) grouped by day; `Engine` runs the pure strategy functions (`EvaluateLeg`, `SelectExpiry`, `SelectStrike`, `GammaMonitor`) **at the simulated date**; margin is an approximation (`ApproxIMLimitPct`: premium as margin, capped by the DVOL band's IM limit, no confirmation or gamma rule) because Deribit's simulator is not available offline; `SimExecutor` fills market orders with slippage and limits per the configured rule; results are written to `data/results/`. `--sweep` runs five scenarios in parallel (each applied as a slot matrix); walk-forward splits the period into train/validate windows and flags > 30 % Sharpe degradation as overfit.
+`HistoricalFeed` replays `data/historical/options.csv` (prices in USD in the synthetic data from `cmd/gendata`) grouped by day; `Engine` runs the pure strategy functions (`EvaluateLeg`, `SelectSlotExpiry`, `SelectStrike`, `GammaMonitor`) **at the simulated date**; margin is an approximation (`ApproxIMLimitPct`: premium as margin, capped by the DVOL band's IM limit, no confirmation or gamma rule) because Deribit's simulator is not available offline; `SimExecutor` fills market orders with slippage and limits per the configured rule; results are written to `data/results/`. `--sweep` runs five scenarios in parallel (each applied as a slot matrix); walk-forward splits the period into train/validate windows and flags > 30 % Sharpe degradation as overfit.
 
 ## 11. Configuration
 

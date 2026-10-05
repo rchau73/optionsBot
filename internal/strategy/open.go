@@ -62,12 +62,23 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 
-		expiry, ok := s.slotExpiry(instruments, slot.TargetDTE, slot.EntryDelta)
-		if !ok {
+		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, s.heldExpiries())
+		switch pick {
+		case marketdata.PickNone:
 			slog.Info("skip slot: no suitable expiry available",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta)
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, "")
 			continue
+		case marketdata.PickAllHeld:
+			hi := marketdata.StretchHi(slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.ExpiryStretch)
+			slog.Info("skip slot: its expiry is held by another slot and no free one up to the stretch",
+				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "max_dte", hi)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoFreeExpiry, fmt.Sprintf("every expiry up to %d DTE is held by another slot", hi))
+			continue
+		case marketdata.PickStretched:
+			slog.Info("slot: own expiry held by another slot, using the next free one",
+				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
+				"expiry", expiry.Format("2006-01-02"), "dte", marketdata.DaysToExpiry(expiry, time.Now()))
 		}
 
 		call, err := SelectStrike(instruments, expiry, "call", slot.EntryDelta, s.cfg.DeltaSlippage)
@@ -116,6 +127,7 @@ const (
 	SkipRiskFrozen    = "risk_frozen"    // DVOL band or gamma regime change awaiting confirmation
 	SkipRepairHeld    = "repair_held"    // a stopped-out leg waits for a calmer market
 	SkipNoExpiry      = "no_expiry"
+	SkipNoFreeExpiry  = "no_free_expiry" // its expiry is held by another slot and none is free up to the stretch
 	SkipNoStrike      = "no_strike"
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
 )
@@ -149,44 +161,27 @@ func (s *Strategy) occupiedSlots() map[slotKey]bool {
 	return occupied
 }
 
-// slotExpiry picks the expiry for a slot. When the primary expiry already holds
-// a strangle at the same delta (another slot landed there), it falls back to
-// the next suitable expiry so two slots never stack on one expiry.
-func (s *Strategy) slotExpiry(instruments []*marketdata.Instrument, targetDTE int, delta float64) (time.Time, bool) {
-	expiry, ok := SelectExpiry(instruments, time.Now(), targetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE)
-	if !ok {
-		return time.Time{}, false
-	}
-	occupied := s.occupiedExpiriesForDelta(delta)
-	if !occupied[expiry] {
-		return expiry, true
-	}
-	expiry, ok = SelectExpiryFallback(instruments, time.Now(), targetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, occupied)
-	if ok {
-		slog.Debug("slot: using fallback expiry",
-			"target_dte", targetDTE, "entry_delta", delta,
-			"fallback_expiry", expiry.Format("2006-01-02"))
-	}
-	return expiry, ok
-}
-
-// occupiedExpiriesForDelta returns the expiries that already hold a strangle
-// opened at delta (compared in hundredths, so 0.16 == 0.160000001).
-func (s *Strategy) occupiedExpiriesForDelta(delta float64) map[time.Time]bool {
-	dKey := makeSlotKey(0, delta).DeltaX100
-	occupied := make(map[time.Time]bool)
+// heldExpiries returns the expiries other slots already use: open strangles
+// (either leg), pending entries, and orders whose submit outcome is unknown.
+// A vacant slot avoids them (SelectSlotExpiry) so slots stay on separate dates.
+func (s *Strategy) heldExpiries() map[time.Time]bool {
+	held := make(map[time.Time]bool)
 	for _, st := range s.state.AllStrangles() {
-		if makeSlotKey(0, st.EntryDelta).DeltaX100 != dKey {
-			continue
-		}
-		if st.CallLeg != nil {
-			occupied[st.CallLeg.Expiry] = true
-		}
-		if st.PutLeg != nil {
-			occupied[st.PutLeg.Expiry] = true
+		for _, leg := range []*orders.Position{st.CallLeg, st.PutLeg} {
+			if leg != nil {
+				held[leg.Expiry] = true
+			}
 		}
 	}
-	return occupied
+	for _, ps := range s.pendingSnapshot() {
+		held[ps.expiry] = true
+	}
+	for _, u := range s.unconfirmed {
+		if inst, ok := s.md.GetInstrument(u.instrument); ok {
+			held[inst.Expiry] = true
+		}
+	}
+	return held
 }
 
 // openStrangle submits limit sells for both legs (or one leg when GEX is

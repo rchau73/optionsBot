@@ -268,6 +268,7 @@ func TestMarginPolicy_EntryCappedAtSlotShare(t *testing.T) {
 	f.cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 45, Deltas: []float64{0.16, 0.18}}}
 	f.withOpenStrangle(0.2, 0.02) // fills one slot at its share (2 lots)
 	f.exch.imPerLot = 0.5         // slot share = 20% × 10 ÷ 2 = 1.0 → 2 lots; headroom 2.0 would allow 4
+	f.withSecondExpiry()          // the vacant slot needs its own expiry
 	f.startRun()
 
 	eventually(t, 2*time.Second, "vacant slot entered", func() bool { return len(f.exch.sells()) == 2 })
@@ -318,11 +319,21 @@ func TestMarginPolicy_NormalEntryIsNotCapped(t *testing.T) {
 func TestMarginPolicy_SecondEntryInACycleIsNotShrunkByTheFirst(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 45, Deltas: []float64{0.16, 0.18}}}
-	f.exch.imPerLot = 0.5         // slot share = 20% × 10 ÷ 2 = 1.0 → 2 lots per slot
-	f.exch.simCountsOrders = true // the first entry's resting orders count in the next simulation
+	f.exch.imPerLot = 0.5               // slot share = 20% × 10 ÷ 2 = 1.0 → 2 lots per slot
+	f.exch.simCountsOrders = true       // the first entry's resting orders count in the next simulation
+	call2, put2 := f.withSecondExpiry() // one expiry per slot
 	f.startRun()
 
 	eventually(t, 2*time.Second, "both slots entered", func() bool { return len(f.exch.sells()) == 4 })
+	onSecond := 0
+	for _, o := range f.exch.sells() {
+		if o.Instrument == call2 || o.Instrument == put2 {
+			onSecond++
+		}
+	}
+	if onSecond != 2 {
+		t.Errorf("the second slot must use the second expiry: %d of its legs there", onSecond)
+	}
 	for _, o := range f.exch.sells() {
 		if math.Abs(o.Qty-0.2) > 1e-9 {
 			t.Errorf("%s qty = %v, want 0.2 for both slots", o.Instrument, o.Qty)

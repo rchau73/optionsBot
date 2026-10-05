@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"time"
 
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
@@ -115,12 +114,9 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 // openComplementStrangle opens addQty more of st's slot through normal entry.
 func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strangle, addQty, targetQty float64) {
 	instruments := s.md.AllInstruments()
-	expiry, ok := SelectExpiry(instruments, time.Now(), st.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE)
-	if !ok {
-		slog.Warn("rebalance: no expiry found for complement strangle, skipping upsize",
-			"strangle_id", st.ID, "target_dte", st.TargetDTE)
-		return
-	}
+	// The complement adds to this strangle, so it uses this strangle's
+	// expiry — never a fresh pick, which could land on another slot's date.
+	expiry := st.CallLeg.Expiry
 	call, callErr := SelectStrike(instruments, expiry, "call", st.EntryDelta, s.cfg.DeltaSlippage)
 	put, putErr := SelectStrike(instruments, expiry, "put", st.EntryDelta, s.cfg.DeltaSlippage)
 	if callErr != nil || putErr != nil {
