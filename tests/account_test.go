@@ -69,8 +69,40 @@ func TestAccount_PollsAllCurrenciesInOneCall(t *testing.T) {
 	if s.Totals == nil || s.Totals.InitialMarginUSD != 30000 || !near(s.Totals.IMPct, 20, 1e-9) || !near(s.Totals.MMPct, 14, 1e-9) {
 		t.Errorf("cross-collateral totals = %+v", s.Totals)
 	}
-	if len(rpc.calls) != 1 {
-		t.Errorf("one call per poll, got %v", rpc.calls)
+	// One summary call, then positions per held currency (not the empty
+	// ETH). BTC's positions reply is missing here, so the read stops there:
+	// the list is marked unavailable but the summary stays.
+	if len(rpc.calls) != 2 || rpc.calls[1] != "private/get_positions:BTC" {
+		t.Errorf("calls per poll = %v", rpc.calls)
+	}
+	if s.Positions != nil || s.PositionsError == "" {
+		t.Errorf("a failed positions read must say so, not show an empty list: %+v %q", s.Positions, s.PositionsError)
+	}
+}
+
+// Every position on the account is listed — any kind, including what no bot
+// manages (a long put bought by hand still uses margin).
+func TestAccount_ListsEveryPosition(t *testing.T) {
+	rpc := &scriptedRPC{replies: map[string]string{
+		"private/get_account_summaries": summariesJSON,
+		"private/get_positions:BTC": `[
+		  {"instrument_name":"BTC-25DEC26-60000-P","kind":"option","direction":"buy","size":1.7,"average_price":0.067,"mark_price":0.0045,"total_profit_loss":-0.106,"delta":-0.13,"initial_margin":0,"maintenance_margin":0},
+		  {"instrument_name":"BTC-27NOV26-98000-C","kind":"option","direction":"sell","size":-0.8,"average_price":0.02,"mark_price":0.018,"total_profit_loss":0.0016,"delta":-0.18,"initial_margin":0.03,"maintenance_margin":0.02},
+		  {"instrument_name":"BTC-PERPETUAL","kind":"future","direction":"zero","size":0}]`,
+		"private/get_positions:USDC": `[]`,
+	}}
+	p := account.NewPoller(rpc)
+	p.Refresh(context.Background())
+	s := p.Status().Snapshot
+	if s.PositionsError != "" || len(s.Positions) != 2 {
+		t.Fatalf("want 2 non-zero positions, got %+v (%s)", s.Positions, s.PositionsError)
+	}
+	long := s.Positions[0]
+	if long.Instrument != "BTC-25DEC26-60000-P" || long.Direction != "buy" || long.Size != 1.7 || long.TotalPnL != -0.106 || long.Currency != "BTC" || long.Kind != "option" {
+		t.Errorf("long put = %+v", long)
+	}
+	if s.Positions[1].InitialMargin != 0.03 || s.Positions[1].MaintenanceMargin != 0.02 {
+		t.Errorf("per-position margin must be Deribit's: %+v", s.Positions[1])
 	}
 }
 
