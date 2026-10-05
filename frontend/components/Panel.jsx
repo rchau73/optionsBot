@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
+
+// The remembered open/closed choice lives in localStorage; reading it through
+// useSyncExternalStore keeps the server render (no storage) and the browser in
+// step, and follows changes made in other tabs.
+const listeners = new Set();
+const subscribe = (fn) => {
+  listeners.add(fn);
+  window.addEventListener("storage", fn);
+  return () => {
+    listeners.delete(fn);
+    window.removeEventListener("storage", fn);
+  };
+};
 
 const readOpen = (key) => {
   try {
-    const v = window.localStorage.getItem(key);
-    return v == null ? null : v === "1";
+    return window.localStorage.getItem(key); // "1", "0" or null
   } catch {
     return null; // private mode, blocked storage: fall back to the default
   }
@@ -17,6 +29,7 @@ const writeOpen = (key, open) => {
   } catch {
     // remembering is a convenience only
   }
+  listeners.forEach((fn) => fn());
 };
 
 /**
@@ -25,20 +38,15 @@ const writeOpen = (key, open) => {
  * browser under `storageKey`.
  */
 export default function Panel({ title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
-
-  useEffect(() => {
-    if (!collapsible || !storageKey) return;
-    const saved = readOpen(storageKey);
-    if (saved != null) setOpen(saved);
-  }, [collapsible, storageKey]);
+  const [local, setLocal] = useState(null); // this session's choice when storage is unavailable
+  const getSnapshot = useCallback(() => (collapsible && storageKey ? readOpen(storageKey) : null), [collapsible, storageKey]);
+  const saved = useSyncExternalStore(subscribe, getSnapshot, () => null);
+  const open = local ?? (saved == null ? defaultOpen : saved === "1");
 
   const toggle = () => {
-    setOpen((o) => {
-      if (storageKey) writeOpen(storageKey, !o);
-      return !o;
-    });
+    setLocal(!open);
+    if (storageKey) writeOpen(storageKey, !open);
   };
 
   const heading = <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>;
