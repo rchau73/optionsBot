@@ -29,12 +29,45 @@ func newRecentRing(size int) *recentRing {
 	return &recentRing{buf: make([]RecentEvent, 0, size), counts: map[string]int{}}
 }
 
-func (r *recentRing) add(event string, line []byte) {
+// add records a live event and returns its sequence number.
+func (r *recentRing) add(event string, line []byte) uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.seq++
 	r.counts[event]++
-	e := RecentEvent{Seq: r.seq, Event: event, At: time.Now(), Data: append(json.RawMessage(nil), line...)}
+	r.put(RecentEvent{Seq: r.seq, Event: event, At: time.Now(), Data: append(json.RawMessage(nil), line...)})
+	return r.seq
+}
+
+// addAt records a replayed event with its original sequence and time.
+func (r *recentRing) addAt(event string, line []byte, seq uint64, at time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.seq = seq
+	r.counts[event]++
+	r.put(RecentEvent{Seq: seq, Event: event, At: at, Data: append(json.RawMessage(nil), line...)})
+}
+
+// restore continues from a replayed journal: its counts, last events and
+// sequence, so the monitor's feed and totals carry on after a restart.
+func (r *recentRing) restore(events []RecentEvent, counts map[string]int, seq uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.buf, r.next = r.buf[:0], 0
+	for _, e := range events {
+		r.put(e)
+	}
+	r.counts = make(map[string]int, len(counts))
+	for k, v := range counts {
+		r.counts[k] = v
+	}
+	r.seq = seq
+}
+
+func (r *recentRing) put(e RecentEvent) {
+	if cap(r.buf) == 0 {
+		return
+	}
 	if len(r.buf) < cap(r.buf) {
 		r.buf = append(r.buf, e)
 		return

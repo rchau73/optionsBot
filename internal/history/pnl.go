@@ -38,10 +38,6 @@ type Store struct {
 	file   *os.File
 	points []Point // ordered by time
 	maxAge time.Duration
-	// baseRealised is the realised P&L recorded before this process started.
-	// The bot counts realised P&L from its own start, so it is added on top
-	// to keep the history continuous across restarts.
-	baseRealised float64
 }
 
 // Open loads the history at path (creating the file and its directory if
@@ -59,10 +55,7 @@ func Open(path string, maxAge time.Duration, now time.Time) (*Store, error) {
 		return nil, fmt.Errorf("open pnl history %s: %w", path, err)
 	}
 	s.file = f
-	if n := len(s.points); n > 0 {
-		s.baseRealised = s.points[n-1].Realised
-	}
-	slog.Info("pnl history loaded", "path", path, "points", len(s.points), "base_realised", s.baseRealised)
+	slog.Info("pnl history loaded", "path", path, "points", len(s.points))
 	return s, nil
 }
 
@@ -99,12 +92,13 @@ func (s *Store) load(path string, now time.Time) error {
 	return nil
 }
 
-// RecordPnL appends a point. realised is the P&L realised since this process
-// started; the store adds what was realised before.
+// RecordPnL appends a point. realised is cumulative: the bot restores it
+// from the journal at startup, so the store adds nothing of its own (it once
+// carried its last point forward — two sources that could disagree).
 func (s *Store) RecordPnL(t time.Time, realised, unrealised, spot float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r := s.baseRealised + realised
+	r := realised
 	p := Point{
 		T: t, Realised: r, Unrealised: unrealised, Total: r + unrealised,
 		Spot: spot, RealisedUSD: r * spot, TotalUSD: (r + unrealised) * spot,
@@ -183,4 +177,25 @@ func (s *Store) Close() error {
 	err := s.file.Close()
 	s.file = nil
 	return err
+}
+
+// Archive moves the existing files among paths into dir (created if needed)
+// and returns where each went. Nothing is deleted: a reset history can be
+// brought back by moving the files again.
+func Archive(paths []string, dir string) ([]string, error) {
+	var moved []string
+	for _, p := range paths {
+		if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return moved, fmt.Errorf("archive dir: %w", err)
+		}
+		dst := filepath.Join(dir, filepath.Base(p))
+		if err := os.Rename(p, dst); err != nil {
+			return moved, fmt.Errorf("archive %s: %w", p, err)
+		}
+		moved = append(moved, dst)
+	}
+	return moved, nil
 }

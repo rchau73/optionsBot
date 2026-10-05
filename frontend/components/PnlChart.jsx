@@ -4,6 +4,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import { Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePnlHistory } from "@/hooks/usePnlHistory";
+import { prefillLive } from "@/lib/monitor";
 import { formatDateTime, formatUSD } from "@/lib/format";
 import { localParts } from "@/lib/time";
 
@@ -40,13 +41,16 @@ export function tickLabel(t, range) {
 
 /**
  * P&L across all bots in USD, plus one dashed line per bot when there are
- * several. "Live" is this session sampled every poll; longer ranges come
- * from the bots' stored history and survive restarts.
+ * several. "Live" is the last 15 minutes of stored history followed by this
+ * session's samples; longer ranges come from the bots' stored history. The
+ * stored history survives restarts of the bots and of the monitor.
  */
 export default function PnlChart({ live, names }) {
   const [range, setRange] = useState("live");
   const stored = usePnlHistory(names, range);
-  const data = range === "live" ? live : stored.points;
+  // Live starts from the last 15 minutes of stored history, then this session.
+  const seed = usePnlHistory(names, range === "live" ? "15m" : null);
+  const data = range === "live" ? prefillLive(seed.points, live) : stored.points;
   const perBot = names?.length > 1 ? names : []; // names is null until the bot list loads
 
   return (

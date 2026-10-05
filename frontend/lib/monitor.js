@@ -129,6 +129,7 @@ export function summarise(bots) {
     unrealisedUsd: 0,
     totalUsd: 0,
     halted: false,
+    since: null, // earliest journal history across bots (ISO), null when unknown
   };
   for (const b of bots) {
     const s = b.status;
@@ -142,6 +143,7 @@ export function summarise(bots) {
     kpi.closed += c.closed ?? 0;
     kpi.skipped += c.skipped ?? 0;
     kpi.halted ||= Boolean(s.halted);
+    if (s.history_since && (!kpi.since || Date.parse(s.history_since) < Date.parse(kpi.since))) kpi.since = s.history_since;
     const total = (s.pnl ?? []).find((p) => p.slot == null);
     const spot = s.market?.spot;
     if (total && isNumber(spot)) {
@@ -266,6 +268,16 @@ function sum(rows, field) {
  * series: [{ points: [{ t, total_usd, realised_usd }] }]
  * Returns [{ t (ms), totalUsd, realisedUsd }] sorted by time.
  */
+/**
+ * The Live view: stored history before this session's first sample, then the
+ * session's own samples — so a reload shows real progress at once instead of
+ * an empty chart.
+ */
+export function prefillLive(stored, live) {
+  const first = live.length ? live[0].t : Infinity;
+  return [...stored.filter((p) => p.t < first), ...live];
+}
+
 export function combineHistories(series) {
   const times = [...new Set(series.flatMap((s) => (s.points ?? []).map((p) => Date.parse(p.t))))].sort((a, b) => a - b);
   const cursors = series.map((s, n) => ({ bot: s.bot ?? `bot${n + 1}`, points: s.points ?? [], i: 0, last: null }));

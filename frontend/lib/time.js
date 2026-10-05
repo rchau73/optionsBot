@@ -28,6 +28,12 @@ export function localClock(t) {
   return p ? `${p.hour}:${p.minute}:${p.second}` : null;
 }
 
+/** "2026-10-02" in the display zone, or null. */
+export function localDate(t) {
+  const p = localParts(t);
+  return p ? `${p.year}-${p.month}-${p.day}` : null;
+}
+
 /** "2026-10-02 09:34:56 BRT", or null. */
 export function localDateTime(t) {
   const p = localParts(t);

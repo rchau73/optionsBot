@@ -44,17 +44,18 @@ describe("PnlChart ranges", () => {
     global.fetch = realFetch;
   });
 
-  test("Live uses the session data; other ranges load stored history per bot", async () => {
+  test("Live is pre-filled from the last 15 minutes of stored history; other ranges load their own", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ points: [] }),
     });
     render(<PnlChart live={[]} names={["btc", "eth"]} />);
     expect(screen.getByText("Collecting data…")).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=15m", expect.anything());
 
     fireEvent.click(screen.getByRole("tab", { name: "1w" }));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(4));
     expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1w", expect.anything());
     expect(await screen.findByText("No history for this range yet.")).toBeInTheDocument();
   });

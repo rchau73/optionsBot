@@ -94,7 +94,7 @@ type OISource interface {
 }
 
 // PnLRecorder persists the strategy's total P&L over time (for charts).
-// realised is counted since this process started.
+// realised is cumulative since the journal began (restored at startup).
 type PnLRecorder interface {
 	RecordPnL(t time.Time, realised, unrealised, spot float64)
 }

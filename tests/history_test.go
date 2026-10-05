@@ -27,17 +27,19 @@ func openHistory(t *testing.T, path string, now time.Time) *history.Store {
 	return h
 }
 
-func TestHistory_SurvivesRestartAndContinuesRealisedPnL(t *testing.T) {
+func TestHistory_SurvivesRestartWithoutDoubleCountingRealised(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data", "pnl_history.jsonl") // dir is created
 	h := openHistory(t, path, t0)
 	h.RecordPnL(t0, 0.001, 0.0005, 100000)
 	h.RecordPnL(t0.Add(time.Minute), 0.002, -0.001, 100000)
 	h.Close()
 
-	// After a restart the bot's own realised P&L starts again from 0.
+	// After a restart the bot restores its realised P&L from the journal
+	// (0.002) and adds a new close (0.0005): it passes the cumulative 0.0025.
+	// The store must not add its own last point on top (it once did).
 	h = openHistory(t, path, t0.Add(time.Hour))
 	defer h.Close()
-	h.RecordPnL(t0.Add(2*time.Minute), 0.0005, 0, 100000)
+	h.RecordPnL(t0.Add(2*time.Minute), 0.0025, 0, 100000)
 
 	pts := h.Range(t0.Add(-time.Hour), t0.Add(time.Hour), 1000)
 	if len(pts) != 3 {
@@ -45,10 +47,38 @@ func TestHistory_SurvivesRestartAndContinuesRealisedPnL(t *testing.T) {
 	}
 	last := pts[2]
 	if !near(last.Realised, 0.0025, 1e-12) || !near(last.Total, 0.0025, 1e-12) || !near(last.TotalUSD, 250, 1e-6) {
-		t.Errorf("realised must continue across restarts (0.002 + 0.0005): %+v", last)
+		t.Errorf("realised is the bot's cumulative figure, not doubled: %+v", last)
 	}
 	if !near(pts[1].Total, 0.001, 1e-12) || !near(pts[1].RealisedUSD, 200, 1e-6) {
 		t.Errorf("point 2 = %+v", pts[1])
+	}
+}
+
+func TestHistory_ArchiveMovesNeverDeletes(t *testing.T) {
+	dir := t.TempDir()
+	journal := filepath.Join(dir, "orders.log")
+	pnl := filepath.Join(dir, "data", "pnl_history.jsonl")
+	if err := os.MkdirAll(filepath.Dir(pnl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(journal, []byte("journal\n"), 0o644)
+	os.WriteFile(pnl, []byte("pnl\n"), 0o644)
+	arch := filepath.Join(dir, "data", "archive", "20261005T120000Z")
+
+	moved, err := history.Archive([]string{journal, pnl, filepath.Join(dir, "missing.log")}, arch)
+	if err != nil || len(moved) != 2 {
+		t.Fatalf("moved %v, err %v (a missing file is skipped)", moved, err)
+	}
+	for _, p := range []string{journal, pnl} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should have moved", p)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(arch, "orders.log")); string(b) != "journal\n" {
+		t.Errorf("archived journal content = %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(arch, "pnl_history.jsonl")); string(b) != "pnl\n" {
+		t.Errorf("archived pnl content = %q", b)
 	}
 }
 

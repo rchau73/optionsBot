@@ -2,15 +2,15 @@ package strategy
 
 import (
 	"log/slog"
-	"math"
 	"sync"
 	"time"
 
 	"optionsbot/internal/orders"
 )
 
-// pnlBook accumulates realised P&L per slot since the process started.
-// It is written by the decision loop and read by the heartbeat goroutine.
+// pnlBook accumulates realised P&L per slot since the journal began: it is
+// restored from orders.log at startup (RestorePnL), then grows with every
+// close. Written by the decision loop, read by the heartbeat goroutine.
 type pnlBook struct {
 	mu       sync.Mutex
 	realised map[orders.SlotRef]float64
@@ -46,11 +46,19 @@ func (b *pnlBook) snapshot() (map[orders.SlotRef]float64, map[orders.SlotRef]int
 }
 
 // keyOf normalises a slot for map lookups (delta compared in hundredths).
-func keyOf(slot *orders.SlotRef) orders.SlotRef {
-	if slot == nil {
-		return orders.SlotRef{}
+func keyOf(slot *orders.SlotRef) orders.SlotRef { return orders.SlotKey(slot) }
+
+// RestorePnL seeds realised P&L and close counts per slot from a journal
+// replay, so they continue across restarts. Call before Run.
+func (s *Strategy) RestorePnL(realised map[orders.SlotRef]float64, closed map[orders.SlotRef]int) {
+	s.pnl.mu.Lock()
+	defer s.pnl.mu.Unlock()
+	for k, v := range realised {
+		s.pnl.realised[keyOf(&k)] += v
 	}
-	return orders.SlotRef{DTE: slot.DTE, Delta: math.Round(slot.Delta*100) / 100}
+	for k, v := range closed {
+		s.pnl.closed[keyOf(&k)] += v
+	}
 }
 
 // PnLLine is one row of a P&L report: a slot, or the strategy total.
@@ -108,7 +116,7 @@ func ComputePnL(slots []orders.SlotRef, positions []*orders.Position, slotOfPos 
 }
 
 // PnLReport returns P&L per configured slot followed by the strategy total
-// (realised since the process started, unrealised marked to mid), in the
+// (realised since the journal began, unrealised marked to mid), in the
 // underlying coin. Safe to call from any goroutine.
 func (s *Strategy) PnLReport() []PnLLine {
 	return s.pnlWithMarks(nil)

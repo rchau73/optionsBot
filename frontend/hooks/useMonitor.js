@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchBotEvents, fetchBotState, fetchMonitorConfig } from "@/lib/api";
+import { fetchBotEvents, fetchBotState, fetchBotTrades, fetchMonitorConfig } from "@/lib/api";
+import { mergeTrades } from "@/lib/trades";
 import { STALE_AFTER_SEC, describeEvent, mergeFeed, summarise, totalsByBot } from "@/lib/monitor";
 
 const HISTORY_POINTS = 900; // 15 minutes at 1 s
@@ -9,7 +10,8 @@ const HISTORY_POINTS = 900; // 15 minutes at 1 s
 /**
  * Polls every configured bot (interval from the server's MONITOR_POLL_MS)
  * and keeps the latest state, a merged activity feed and a session P&L history.
- * Returns { names, bots, feed, history, error, pollMs }.
+ * Returns { names, bots, feed, history, trades, error, pollMs }; trades is
+ * every open and close per bot from the journals (fetched incrementally).
  */
 export function useMonitor() {
   const [names, setNames] = useState(null);
@@ -20,6 +22,8 @@ export function useMonitor() {
   const [history, setHistory] = useState([]);
   const [polledAt, setPolledAt] = useState(0); // time of the last poll, for staleness
   const lastSeq = useRef({});
+  const [trades, setTrades] = useState({}); // bot → trades, oldest first
+  const tradesRef = useRef({});
 
   // Discover the bots once (retry until the server answers).
   useEffect(() => {
@@ -59,7 +63,14 @@ export function useMonitor() {
         if ((lastSeq.current[name] ?? 0) > counted) lastSeq.current[name] = 0;
         const events = await fetchBotEvents(name, lastSeq.current[name] ?? 0, controller.signal);
         if (events.length) lastSeq.current[name] = events[events.length - 1].seq;
+        // Trades: only those after the last one held; a reset journal starts over.
         const unit = state.status.underlying ?? name.toUpperCase();
+        let held = tradesRef.current[name] ?? [];
+        if (held.length && held[held.length - 1].seq > counted) held = [];
+        const page = await fetchBotTrades(name, held.length ? held[held.length - 1].seq : 0, controller.signal).catch(() => null);
+        if (page) {
+          tradesRef.current[name] = mergeTrades(held, (page.trades ?? []).map((t) => ({ ...t, bot: name, unit })));
+        }
         return { name, ...state, updatedAt: Date.now(), error: null, lines: events.map((e) => describeEvent(name, e, unit)) };
       } catch (e) {
         return { name, error: e.message, lines: [] };
@@ -83,6 +94,10 @@ export function useMonitor() {
         return next;
       });
       setFeed((f) => mergeFeed(f, results.flatMap((r) => r.lines)));
+      setTrades((prev) => {
+        const changed = names.some((n) => (prev[n]?.length ?? 0) !== (tradesRef.current[n]?.length ?? 0));
+        return changed ? { ...tradesRef.current } : prev;
+      });
       setPolledAt(Date.now());
       timer = setTimeout(tick, intervalMs);
     };
@@ -95,7 +110,7 @@ export function useMonitor() {
   }, [names, intervalMs]);
 
   const bots = (names ?? []).map((n) => withStale(states[n] ?? { name: n }, polledAt));
-  return { names, bots, feed, history, error, pollMs: intervalMs, polledAt };
+  return { names, bots, feed, history, trades, error, pollMs: intervalMs, polledAt };
 }
 
 /** A bot is stale when its last good update is older than STALE_AFTER_SEC at `now`. */

@@ -11,6 +11,7 @@ import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
 import AccountPanel, { AccountSummary } from "./AccountPanel";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
+import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
@@ -20,7 +21,8 @@ const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "s
 
 /** The single monitor page: header, KPIs, positions, working orders, feed, P&L. */
 export default function Monitor() {
-  const { names, bots, feed, history, error, pollMs, polledAt } = useMonitor();
+  const { names, bots, feed, history, trades, error, pollMs, polledAt } = useMonitor();
+  const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
   const [filters, setFilters] = useState(NO_FILTERS);
 
   const rows = useMemo(() => legRows(bots), [bots]);
@@ -63,6 +65,9 @@ export default function Monitor() {
         >
           <OtherPositions data={others} />
         </Panel>
+        <Panel title="Trade history & profitability" collapsible storageKey="monitor.panel.trades" summary={tradeHistorySummary(allTrades)}>
+          <TradeHistory trades={allTrades} />
+        </Panel>
         <div className="grid gap-3 lg:grid-cols-3">
           <Panel title="Activity" className="lg:col-span-2">
             <ActivityFeed feed={feed} />
@@ -81,7 +86,7 @@ export default function Monitor() {
           </div>
         </div>
         <p className="text-center text-xs text-muted">
-          Read-only · refreshes every {pollMs / 1000}s · times in {DISPLAY_TZ_LABEL} (UTC−3) · counts are since each bot started · educational study, not investment advice
+          Read-only · refreshes every {pollMs / 1000}s · times in {DISPLAY_TZ_LABEL} (UTC−3) · history and counts restored from each bot&apos;s journal · educational study, not investment advice
         </p>
       </main>
     </div>
