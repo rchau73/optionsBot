@@ -302,6 +302,17 @@ func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (Acco
 // positions (instrument → size in coin; negative = short) added to the current
 // portfolio. Calls are spaced at least simulateSpacing apart.
 func (e *Executor) SimulatePortfolio(ctx context.Context, currency string, positions map[string]float64) (AccountSummary, error) {
+	return e.simulate(ctx, currency, positions, true)
+}
+
+// SimulateAlone asks Deribit for the margin of positions on their own, as if
+// the account held nothing else: the standalone cost of a trade, without
+// the offsets the rest of the book gives it.
+func (e *Executor) SimulateAlone(ctx context.Context, currency string, positions map[string]float64) (AccountSummary, error) {
+	return e.simulate(ctx, currency, positions, false)
+}
+
+func (e *Executor) simulate(ctx context.Context, currency string, positions map[string]float64, addToBook bool) (AccountSummary, error) {
 	e.simMu.Lock()
 	at := time.Now()
 	if at.Before(e.nextSim) {
@@ -321,7 +332,7 @@ func (e *Executor) SimulatePortfolio(ctx context.Context, currency string, posit
 	}
 	sum, err := call[AccountSummary](ctx, e.gw, "private/simulate_portfolio", map[string]any{
 		"currency":            currency,
-		"add_positions":       true,
+		"add_positions":       addToBook,
 		"simulated_positions": positions,
 	}, gateway.PriorityLow)
 	if err == nil && sum.Currency == "" {

@@ -279,3 +279,33 @@ func TestMarginPolicy_EntryCappedAtSlotShare(t *testing.T) {
 		t.Errorf("the existing strangle is at its share: no rebalance, got %d buys", n)
 	}
 }
+
+// The example from the design discussion: the book offsets the new strangle,
+// so each lot looks almost free (0.001 BTC of IM) although on its own it costs
+// 0.5. Margin alone would allow 2,000 lots; the cap keeps it at 2× the slot's
+// normal size (2.0 ÷ 0.5 = 4 lots → 8 lots).
+func TestMarginPolicy_EntryCappedAtTwiceNormalSize(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.MaxLegSizeMultiple = 2
+	f.exch.imPerLot = 0.001
+	f.exch.aloneIMPerLot = 0.5
+	f.startRun()
+
+	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.8) > 1e-9 {
+			t.Errorf("entry qty = %v, want 0.8 (2 × the normal 4 lots), not 200 BTC", o.Qty)
+		}
+	}
+}
+
+func TestMarginPolicy_NormalEntryIsNotCapped(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.MaxLegSizeMultiple = 2
+	f.exch.imPerLot = 0.5 // no offset: book and standalone cost agree → 4 lots
+	f.startRun()
+	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
+	if q := f.exch.sells()[0].Qty; math.Abs(q-0.4) > 1e-9 {
+		t.Errorf("an ordinary entry keeps its margin-based size: %v", q)
+	}
+}

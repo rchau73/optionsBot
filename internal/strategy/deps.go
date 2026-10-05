@@ -39,6 +39,8 @@ type AccountReader interface {
 	// SimulatePortfolio returns the account summary Deribit would report with
 	// positions (instrument → coin size, negative = short) added to the book.
 	SimulatePortfolio(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
+	// SimulateAlone is the margin of positions on their own (no book offsets).
+	SimulateAlone(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
 }
 
 // Exchange is everything the strategy needs from Deribit.

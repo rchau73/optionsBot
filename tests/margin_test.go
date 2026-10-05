@@ -75,3 +75,27 @@ func TestSlotAndEntryShare(t *testing.T) {
 		t.Error("no headroom, no vacancy or no slots → nothing")
 	}
 }
+
+func TestCapLots(t *testing.T) {
+	cases := []struct {
+		name         string
+		lots, normal int
+		multiple     float64
+		want         int
+		bound        bool
+	}{
+		{"normal day: well inside", 12, 12, 2, 12, false},
+		{"hedge day: capped at 2x", 166, 12, 2, 24, true},
+		{"exactly at the cap", 24, 12, 2, 24, false},
+		{"unknown normal size: no cap", 166, 0, 2, 166, false},
+		{"cap disabled", 166, 12, 0, 166, false},
+		{"at least one lot", 5, 0, 2, 5, false},
+		{"tiny normal still allows one lot", 3, 1, 0.5, 1, true},
+	}
+	for _, c := range cases {
+		got, bound := strategy.CapLots(c.lots, c.normal, c.multiple)
+		if got != c.want || bound != c.bound {
+			t.Errorf("%s: CapLots(%d, %d, %v) = %d, %v; want %d, %v", c.name, c.lots, c.normal, c.multiple, got, bound, c.want, c.bound)
+		}
+	}
+}

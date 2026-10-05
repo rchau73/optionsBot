@@ -240,3 +240,13 @@ func TestConfigLoad_RepairCooldown(t *testing.T) {
 		t.Errorf("a negative cooldown must be rejected, got %v", err)
 	}
 }
+
+func TestConfigLoad_MaxLegSizeMultiple(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil || cfg.MaxLegSizeMultiple != 2 {
+		t.Errorf("default max_leg_size_multiple = %v (%v), want 2", cfg.MaxLegSizeMultiple, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "max_leg_size_multiple: 0.5\n")); err == nil || !strings.Contains(err.Error(), "max_leg_size_multiple") {
+		t.Errorf("a multiple below 1 must be rejected, got %v", err)
+	}
+}
