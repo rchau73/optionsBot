@@ -37,7 +37,7 @@ This isn't bureaucracy for its own sake — it's the same reason a senior dev sk
 - **All exchange I/O goes through `gateway.Gateway`.** No package opens its own HTTP/WebSocket connection to Deribit — that would bypass rate limits, the circuit breaker and priorities.
 - **The strategy depends on interfaces, not concrete types.** New dependencies of `strategy` get a small interface (defined where it's consumed) so the backtest `SimExecutor` and test fakes can stand in.
 - **One decision source for GEX gating:** trading decisions use `GammaDecision.Action`, never raw `gamma.Trend()`. Entry and repair must stay consistent with each other.
-- **Rollout priority is fixed:** stop-loss → DTE expiry → delta drift → ROI take-profit. Stop-loss and kill-switch orders use the high-priority queue. Rollout reopens use `old.Qty`, never budget-derived sizing.
+- **Rollout priority is fixed:** stop-loss → DTE expiry → delta exit → delta drift → ROI take-profit. Stop-loss and kill-switch orders use the high-priority queue. Rollout reopens use `old.Qty`, never budget-derived sizing.
 - **`hedge` never auto-executes.** Adding order placement there is a product decision, not a refactor.
 - **`.env` vs `config.yaml` stay separate:** `.env` = Deribit platform (credentials, rate limits, retry, circuit breaker, `DERIBIT_ENV`); `config.yaml` = strategy and execution logic. Never reintroduce env-var overrides for logic params.
 - **Testnet is the default.** Nothing should make `live` the default or skip the explicit `DERIBIT_ENV=live` opt-in.

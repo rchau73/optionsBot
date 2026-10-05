@@ -116,7 +116,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 			"loss_pct", fmt.Sprintf("%.2f", pos.LossPct()),
 		)
 
-	case ActionRollNextMonth, ActionRollSameLeg:
+	case ActionRollNextMonth, ActionRollSameLeg, ActionDeltaExit:
 		// Pay at most the current ask: a marketable limit that fills like a
 		// market order in a normal book but cannot sweep a thin one.
 		inst, ok := s.md.GetInstrument(pos.Instrument)
@@ -124,6 +124,10 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 			slog.Warn("rollout close skipped: no ask quote, retrying next cycle",
 				"instrument", pos.Instrument, "reason", d.Reason)
 			return
+		}
+		if d.Action == ActionDeltaExit {
+			// Held like a stop-loss: repair re-sells it only once calm.
+			s.noteStopped(pos, time.Now())
 		}
 		filled, err := s.buyToClose(ctx, pos, pos.Qty, d.Reason, inst.Ask)
 		if err != nil {

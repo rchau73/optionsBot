@@ -176,6 +176,7 @@ const CLOSE_LABELS = {
   stop_loss: "Stop-loss",
   dte_rollout: "Roll (time)",
   delta_drift: "Roll (delta drift)",
+  delta_exit: "Delta exit",
   roi_target: "Take-profit",
   gamma_regime: "GEX shed",
   kill_switch: "Kill switch",

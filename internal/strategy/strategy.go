@@ -203,6 +203,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 			s.cfg.DeltaDriftThreshold,
 			s.cfg.ROITakeProfit,
 			s.cfg.StopLossMultiplier,
+			s.cfg.DeltaExitThreshold,
 		)
 		if decision.Action != ActionNone {
 			s.handleRollout(ctx, decision)

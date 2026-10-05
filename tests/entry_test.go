@@ -215,7 +215,7 @@ func TestSelectExpiry_NeverPicksWhatTheExitRuleWouldRollAtOnce(t *testing.T) {
 		t.Error("15.5 days left is DTE 15: inside the rollout window, must not be entered")
 	}
 	pos := &orders.Position{Expiry: expiry}
-	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2); dec.Action != strategy.ActionRollNextMonth {
+	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2, 0); dec.Action != strategy.ActionRollNextMonth {
 		t.Errorf("and the exit rule agrees it is inside the window: %v", dec.Action)
 	}
 	// From 16 days left it is a valid entry, and not rolled.
@@ -225,7 +225,7 @@ func TestSelectExpiry_NeverPicksWhatTheExitRuleWouldRollAtOnce(t *testing.T) {
 		t.Error("16 days left must be a valid entry")
 	}
 	pos.Expiry, pos.MarkLive = later, true
-	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2); dec.Action == strategy.ActionRollNextMonth {
+	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2, 0); dec.Action == strategy.ActionRollNextMonth {
 		t.Error("a position the entry rule accepts must not be rolled at once")
 	}
 }

@@ -131,6 +131,7 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 	}{
 		{"MM limit at liquidation", "max_mm_pct: 35", "max_mm_pct: 100", "max_mm_pct"},
 		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
+		{"delta exit at the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_exit_threshold: 0.16", "delta_exit_threshold"},
 		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
 	}
 	for _, tc := range raw {
