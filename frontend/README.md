@@ -78,3 +78,4 @@ Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/global
 - **Never expose it publicly.** It shows positions and P&L; Docker binds it to `127.0.0.1`.
 - Every number carries its unit (BTC/ETH, USD, %); missing data shows "—", never 0; stale data is flagged.
 - No business logic in Next.js routes — the Go bot is the single backend.
+- **Times: stored in UTC, shown in BRT.** The bot, its journal, history files and API are UTC; the page converts only for display, in one place (`lib/time.js`, `America/Sao_Paulo`, UTC−3). Change the zone there, never in the data.

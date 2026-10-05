@@ -29,7 +29,7 @@ describe("format", () => {
     expect(formatAge(null)).toBe("never");
     expect(formatAge(5)).toBe("5s ago");
     expect(formatAge(125)).toBe("2m ago");
-    expect(formatTime("2026-10-02T12:34:56Z")).toBe("12:34:56 UTC");
+    expect(formatTime("2026-10-02T12:34:56Z")).toBe("09:34:56 BRT"); // stored UTC, shown in BRT
   });
 });
 

@@ -1,3 +1,4 @@
+import { DISPLAY_TZ_LABEL, localClock, localDateTime } from "./time";
 // Pure formatting helpers. Every number on screen carries its unit.
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -61,10 +62,17 @@ export function formatCountdown(iso, now = Date.now()) {
   return `in ${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 }
 
+/** Clock time in the display zone (BRT): "09:34:56 BRT". */
 export function formatTime(iso) {
   if (!iso) return MISSING;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? MISSING : d.toISOString().slice(11, 19) + " UTC";
+  const clock = localClock(iso);
+  return clock ? `${clock} ${DISPLAY_TZ_LABEL}` : MISSING;
+}
+
+/** Full timestamp in the display zone: "2026-10-02 09:34:56 BRT". */
+export function formatDateTime(iso) {
+  if (!iso || (typeof iso === "string" && iso.startsWith("0001-"))) return MISSING;
+  return localDateTime(iso) ?? MISSING;
 }
 
 export function slotLabel(slot) {

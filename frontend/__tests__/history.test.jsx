@@ -29,10 +29,12 @@ describe("combineHistories", () => {
 
 describe("tickLabel", () => {
   const t = Date.parse("2026-10-01T12:34:56Z");
-  test("time for short ranges, date for long ones", () => {
-    expect(tickLabel(t, "live")).toBe("12:34:56");
-    expect(tickLabel(t, "1d")).toBe("12:34");
-    expect(tickLabel(t, "1w")).toBe("10-01 12h");
+  test("time for short ranges, date for long ones, in BRT (UTC−3)", () => {
+    expect(tickLabel(t, "live")).toBe("09:34:56");
+    expect(tickLabel(t, "1d")).toBe("09:34");
+    expect(tickLabel(t, "1w")).toBe("10-01 09h");
+    // 01:00 UTC is still the previous evening in BRT
+    expect(tickLabel(Date.parse("2026-10-02T01:00:00Z"), "1w")).toBe("10-01 22h");
   });
 });
 

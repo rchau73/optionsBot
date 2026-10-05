@@ -13,6 +13,7 @@ import AccountPanel, { AccountSummary } from "./AccountPanel";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows } from "@/lib/account";
+import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
@@ -70,7 +71,7 @@ export default function Monitor() {
           </div>
         </div>
         <p className="text-center text-xs text-muted">
-          Read-only · refreshes every {pollMs / 1000}s · counts are since each bot started · educational study, not investment advice
+          Read-only · refreshes every {pollMs / 1000}s · times in {DISPLAY_TZ_LABEL} (UTC−3) · counts are since each bot started · educational study, not investment advice
         </p>
       </main>
     </div>
