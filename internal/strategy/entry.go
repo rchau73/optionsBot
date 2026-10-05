@@ -71,17 +71,11 @@ func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optTyp
 	return best, nil
 }
 
-// SelectExpiryFallback is SelectExpiry restricted to expiries not in
-// occupiedExpiries. It is used when the primary expiry already holds a
-// strangle at the same delta.
-func SelectExpiryFallback(
-	instruments []*marketdata.Instrument,
-	now time.Time,
-	targetDTE, maxDeviationDays, rolloutDTE int,
-	occupiedExpiries map[time.Time]bool,
-) (time.Time, bool) {
-	lo, hi := marketdata.ExpiryWindow(targetDTE, maxDeviationDays, rolloutDTE)
-	return marketdata.NearestExpiry(instruments, now, lo, hi, occupiedExpiries)
+// SelectSlotExpiry is the expiry a vacant slot enters: its own window's
+// expiry unless another slot holds it, then the nearest free one up to
+// targetDTE × stretch, else none (wait). See marketdata.PickExpiry.
+func SelectSlotExpiry(instruments []*marketdata.Instrument, now time.Time, targetDTE, maxDeviationDays, rolloutDTE int, stretch float64, held map[time.Time]bool) (time.Time, marketdata.ExpiryPick) {
+	return marketdata.PickExpiry(instruments, now, targetDTE, maxDeviationDays, rolloutDTE, stretch, held)
 }
 
 // AvailableExpiries returns sorted unique expiries across all instruments.

@@ -48,3 +48,41 @@ func NearestExpiry(instruments []*Instrument, now time.Time, lo, hi int, skip ma
 	}
 	return best, !best.IsZero()
 }
+
+// StretchHi is the farthest DTE a slot may use when its own expiry is held
+// by another slot: targetDTE × stretch, never below the window's top.
+func StretchHi(targetDTE, maxDeviation int, stretch float64) int {
+	_, hi := ExpiryWindow(targetDTE, maxDeviation, 0)
+	return max(hi, int(math.Floor(float64(targetDTE)*stretch)))
+}
+
+// ExpiryPick says how PickExpiry chose.
+type ExpiryPick int
+
+const (
+	PickNone      ExpiryPick = iota // no listed expiry in the slot's window
+	PickWindow                      // the slot's own expiry (nearest in its window)
+	PickStretched                   // its own was held by another slot: the nearest free one, possibly beyond the window
+	PickAllHeld                     // its own was held and no free expiry up to StretchHi: wait
+)
+
+// PickExpiry chooses a slot's expiry so slots stay on separate dates.
+// Deribit lists weeklies only a few weeks out, then month- and quarter-ends,
+// so the ±maxDeviation windows of nearby slots (45 and 60 days) often pick
+// the same month-end. held lists expiries other slots already use (open or
+// pending). When the slot's own expiry is held, the nearest free expiry up
+// to StretchHi is used; when none is free the slot waits rather than stack.
+func PickExpiry(instruments []*Instrument, now time.Time, targetDTE, maxDeviation, rolloutDTE int, stretch float64, held map[time.Time]bool) (time.Time, ExpiryPick) {
+	lo, hi := ExpiryWindow(targetDTE, maxDeviation, rolloutDTE)
+	own, ok := NearestExpiry(instruments, now, lo, hi, nil)
+	switch {
+	case !ok:
+		return time.Time{}, PickNone
+	case !held[own]:
+		return own, PickWindow
+	}
+	if free, ok := NearestExpiry(instruments, now, lo, StretchHi(targetDTE, maxDeviation, stretch), held); ok {
+		return free, PickStretched
+	}
+	return time.Time{}, PickAllHeld
+}

@@ -254,17 +254,21 @@ func (m *Manager) seedDVOLHistory(ctx context.Context, now time.Time) error {
 }
 
 // selectRelevantExpiries returns the expiries the strategy may trade: for
-// each target DTE the expiry SelectExpiry would pick (same window rule), plus
-// the next three expiries beyond the largest target for rollouts.
+// each target DTE every expiry PickExpiry could choose — its window and the
+// stretch beyond it used when another slot holds its own expiry — plus the
+// next three expiries beyond the largest target for rollouts.
 func (m *Manager) selectRelevantExpiries(now time.Time) map[time.Time]bool {
 	all := m.AllInstruments()
 	result := make(map[time.Time]bool)
 
 	maxTarget := 0
 	for _, slot := range m.cfg.Slots() {
-		lo, hi := ExpiryWindow(slot.TargetDTE, m.cfg.MaxDTEDeviation, m.cfg.RolloutDTE)
-		if exp, ok := NearestExpiry(all, now, lo, hi, nil); ok {
-			result[exp] = true
+		lo, _ := ExpiryWindow(slot.TargetDTE, m.cfg.MaxDTEDeviation, m.cfg.RolloutDTE)
+		hi := StretchHi(slot.TargetDTE, m.cfg.MaxDTEDeviation, m.cfg.ExpiryStretch)
+		for _, inst := range all {
+			if d := DaysToExpiry(inst.Expiry, now); d >= lo && d <= hi {
+				result[inst.Expiry] = true
+			}
 		}
 		maxTarget = max(maxTarget, slot.TargetDTE)
 	}

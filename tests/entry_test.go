@@ -104,15 +104,15 @@ func TestSelectExpiry_RolloutDTE_PreferNearestAboveFloor(t *testing.T) {
 	}
 }
 
-// ── SelectExpiryFallback rollout guard tests ──────────────────────────────────
+// ── SelectSlotExpiry rollout guard tests ──────────────────────────────────
 
-func TestSelectExpiryFallback_RolloutDTE_Respected(t *testing.T) {
+func TestSelectSlotExpiry_RolloutDTE_Respected(t *testing.T) {
 	// DTE=8 is below rollout floor, DTE=12 is the fallback.
 	occupied := map[time.Time]bool{}
 	insts := makeInstruments(8, 12, 20)
-	expiry, ok := strategy.SelectExpiryFallback(insts, time.Now(), 15, 10, 9, occupied)
-	if !ok {
-		t.Fatal("expected DTE=12 as fallback")
+	expiry, pick := strategy.SelectSlotExpiry(insts, time.Now(), 15, 10, 9, 1, occupied)
+	if pick != marketdata.PickWindow {
+		t.Fatal("expected DTE=12")
 	}
 	dte := int(time.Until(expiry).Hours() / 24)
 	if dte <= 9 {
@@ -120,7 +120,7 @@ func TestSelectExpiryFallback_RolloutDTE_Respected(t *testing.T) {
 	}
 }
 
-func TestSelectExpiryFallback_OccupiedAndBelowFloor_Skipped(t *testing.T) {
+func TestSelectSlotExpiry_HeldAndBelowFloor_Skipped(t *testing.T) {
 	// DTE=12 is occupied, DTE=7 is below rollout floor — only DTE=18 is valid.
 	now := time.Now().UTC().Truncate(24 * time.Hour)
 	exp12 := now.AddDate(0, 0, 12)
@@ -131,9 +131,9 @@ func TestSelectExpiryFallback_OccupiedAndBelowFloor_Skipped(t *testing.T) {
 		{Name: "C", Expiry: exp18},
 	}
 	occupied := map[time.Time]bool{exp12: true}
-	expiry, ok := strategy.SelectExpiryFallback(insts, time.Now(), 15, 10, 9, occupied)
-	if !ok {
-		t.Fatal("expected DTE=18 as the only valid fallback")
+	expiry, pick := strategy.SelectSlotExpiry(insts, time.Now(), 15, 10, 9, 1, occupied)
+	if pick != marketdata.PickStretched {
+		t.Fatal("expected DTE=18 as the only free expiry")
 	}
 	if !expiry.Equal(exp18) {
 		t.Errorf("expected expiry at DTE≈18, got %v", expiry)

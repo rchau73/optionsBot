@@ -66,9 +66,12 @@ type Config struct {
 	IVBandConfirmDays    int         `yaml:"iv_band_confirm_days"`
 	SpreadAlertThreshold float64     `yaml:"spread_alert_threshold"`
 
-	EvalIntervalMS      int     `yaml:"eval_interval_ms"`
-	ReportIntervalSec   int     `yaml:"report_interval_sec"` // heartbeat + P&L journal period
-	MaxDTEDeviation     int     `yaml:"max_dte_deviation"`
+	EvalIntervalMS    int `yaml:"eval_interval_ms"`
+	ReportIntervalSec int `yaml:"report_interval_sec"` // heartbeat + P&L journal period
+	MaxDTEDeviation   int `yaml:"max_dte_deviation"`
+	// ExpiryStretch: when a slot's own expiry is held by another slot, it may
+	// use the nearest free expiry up to target DTE × this; otherwise it waits.
+	ExpiryStretch       float64 `yaml:"expiry_stretch"`
 	DeltaSlippage       float64 `yaml:"delta_slippage"`
 	MinTradeAmount      float64 `yaml:"min_trade_amount"`
 	MinPremiumBTC       float64 `yaml:"min_premium_btc"`
@@ -200,6 +203,9 @@ func (c *Config) Validate() error {
 				c.DeltaExitThreshold, sl.TargetDTE, sl.EntryDelta)
 		}
 	}
+	if c.ExpiryStretch < 1 || c.ExpiryStretch > 3 {
+		return fmt.Errorf("expiry_stretch %.2f must be between 1 (no stretch: wait) and 3", c.ExpiryStretch)
+	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
 	}
@@ -316,6 +322,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.ReportIntervalSec <= 0 {
 		cfg.ReportIntervalSec = 60
+	}
+	if cfg.ExpiryStretch == 0 {
+		cfg.ExpiryStretch = 1.5
 	}
 	if cfg.MaxDTEDeviation <= 0 {
 		cfg.MaxDTEDeviation = 2
