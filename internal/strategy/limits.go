@@ -238,11 +238,20 @@ func (s *Strategy) simulateAlone(ctx context.Context, positions map[string]float
 // headroom. One simulation prices a lot; a second confirms the final size.
 func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share, slotShare float64, m marginState) (float64, error) {
 	limit, maxMM := m.status.LimitIMPct, m.status.MaxMMPct
+	// The cost of a lot is measured between two simulations of the same
+	// moment: the book now (orders placed earlier this cycle included, as
+	// Deribit counts resting orders) and the book plus one lot. Against the
+	// summary read at the start of the cycle, a top-up sent a second earlier
+	// made one ETH lot look like 25 ETH of margin.
+	base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
+	if err != nil {
+		return 0, err
+	}
 	oneLot, err := s.simulate(ctx, map[string]float64{call: -lot, put: -lot}, m.usage.Unit)
 	if err != nil {
 		return 0, err
 	}
-	imPerLot := oneLot.IM - m.usage.IM
+	imPerLot := oneLot.IM - base.IM
 	lots := EntryLots(share, imPerLot)
 	if lots < 1 {
 		return 0, fmt.Errorf("one lot adds %.6f %s of IM, more than this slot's headroom %.6f", imPerLot, m.usage.Unit, share)
@@ -261,7 +270,7 @@ func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share, 
 		if risk.Fits(post, limit, maxMM) {
 			slog.Info("entry sized with simulate_portfolio",
 				"call", call, "put", put, "qty", qty, "im_per_lot", imPerLot, "unit", m.usage.Unit,
-				"im_pct_before", fmt.Sprintf("%.2f", m.usage.IMPct()), "im_pct_after", fmt.Sprintf("%.2f", post.IMPct()),
+				"im_pct_before", fmt.Sprintf("%.2f", base.IMPct()), "im_pct_after", fmt.Sprintf("%.2f", post.IMPct()),
 				"mm_pct_after", fmt.Sprintf("%.2f", post.MMPct()), "limit_im_pct", limit, "max_mm_pct", maxMM)
 			return qty, nil
 		}

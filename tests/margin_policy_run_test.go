@@ -44,8 +44,9 @@ func TestMarginPolicy_EntrySizedWithDeribitSimulation(t *testing.T) {
 	f.exch.mu.Lock()
 	sims := append([]map[string]float64(nil), f.exch.simCalls...)
 	f.exch.mu.Unlock()
-	if len(sims) < 2 || sims[0][f.call] != -0.1 || sims[1][f.call] != -0.4 || sims[1][f.put] != -0.4 {
-		t.Errorf("one lot is priced, then the final size confirmed: %v", sims)
+	// The book as it is now, the book plus one lot, then the final size.
+	if len(sims) < 3 || len(sims[0]) != 0 || sims[1][f.call] != -0.1 || sims[2][f.call] != -0.4 || sims[2][f.put] != -0.4 {
+		t.Errorf("baseline, then one lot priced, then the final size confirmed: %v", sims)
 	}
 }
 
@@ -307,5 +308,24 @@ func TestMarginPolicy_NormalEntryIsNotCapped(t *testing.T) {
 	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
 	if q := f.exch.sells()[0].Qty; math.Abs(q-0.4) > 1e-9 {
 		t.Errorf("an ordinary entry keeps its margin-based size: %v", q)
+	}
+}
+
+// Regression (2026-10-05, ETH): an order placed earlier in the cycle (a
+// top-up) counts in Deribit's simulation but not in the summary read at the
+// start of the cycle, so one lot looked 25× its cost and the next entry got
+// 2 ETH. Two slots opening in the same cycle must get the same size.
+func TestMarginPolicy_SecondEntryInACycleIsNotShrunkByTheFirst(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 45, Deltas: []float64{0.16, 0.18}}}
+	f.exch.imPerLot = 0.5         // slot share = 20% × 10 ÷ 2 = 1.0 → 2 lots per slot
+	f.exch.simCountsOrders = true // the first entry's resting orders count in the next simulation
+	f.startRun()
+
+	eventually(t, 2*time.Second, "both slots entered", func() bool { return len(f.exch.sells()) == 4 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.2) > 1e-9 {
+			t.Errorf("%s qty = %v, want 0.2 for both slots", o.Instrument, o.Qty)
+		}
 	}
 }

@@ -41,12 +41,15 @@ type fakeExchange struct {
 	// aloneIMPerLot is one lot's IM on its own (SimulateAlone); 0 = imPerLot.
 	// Smaller imPerLot than aloneIMPerLot means the book offsets the trade.
 	aloneIMPerLot float64
-	mmRatio       float64 // MM as a share of IM in simulations
-	simErr        error
-	simCalls      []map[string]float64
-	nextID        int
-	dailyCloses   []orders.DailyClose
-	amended       []string
+	// simCountsOrders makes SimulatePortfolio include resting sell orders'
+	// margin, as Deribit does (the summary read before them does not).
+	simCountsOrders bool
+	mmRatio         float64 // MM as a share of IM in simulations
+	simErr          error
+	simCalls        []map[string]float64
+	nextID          int
+	dailyCloses     []orders.DailyClose
+	amended         []string
 
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
@@ -234,6 +237,13 @@ func (f *fakeExchange) SimulatePortfolio(_ context.Context, currency string, pos
 		return orders.AccountSummary{}, f.simErr
 	}
 	out := f.summary
+	if f.simCountsOrders {
+		for id, o := range f.byID {
+			if st := f.orderStates[id]; st.State == "open" && o.Direction == orders.DirectionSell {
+				out.InitialMargin += (o.Qty - st.FilledAmount) / 0.1 * f.imPerLot / 2
+			}
+		}
+	}
 	for _, size := range positions {
 		dIM := -size / 0.1 * f.imPerLot / 2
 		out.InitialMargin += dIM

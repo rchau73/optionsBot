@@ -57,14 +57,22 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			lot = s.cfg.MinTradeAmount
 		}
 
-		// Buying one lot back (positive size) frees this strangle's IM per lot.
+		// Buying one lot back (positive size) frees this strangle's IM per
+		// lot — measured against the book now, which includes complements
+		// sent earlier in this pass.
+		base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
+		if err != nil {
+			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
+			done = false
+			continue
+		}
 		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage.Unit)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			done = false
 			continue
 		}
-		imPerLot := m.usage.IM - freed.IM
+		imPerLot := base.IM - freed.IM
 		targetLots := TargetLots(share, imPerLot)
 		if targetLots == 0 {
 			slog.Info("rebalance: strangle adds no IM (portfolio netting), size kept", "strangle_id", st.ID)
