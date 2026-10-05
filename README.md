@@ -132,7 +132,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `strategy_id` | `short-strangle` | names the strategy in `orders.log` and in Deribit order labels (`<id>:<dte>d:<delta>`) |
 | `dte_delta_matrix` | — | slots: each `dte` with one or more `deltas`; one strangle per (DTE, delta) |
 | `rollout_dte` | — | roll a leg when days to expiry ≤ this; every slot DTE must be above it |
-| `delta_drift_threshold` | — | roll a leg when \|delta\| falls below this (little premium left) |
+| `delta_drift_threshold` | — | roll a leg when \|delta\| falls below this (little premium left). At most 75% of every entry delta, or a new leg would be rolled by the first small move, over and over |
 | `roi_take_profit` | — | roll a leg once this share of the premium is captured (0.5 = 50 %) |
 | `stop_loss_multiplier` | — | close at market when the loss reaches this × premium received |
 | `delta_exit_threshold` | 0.30 | close a short leg (IOC at the ask) when its \|delta\| reaches this — before the stop; the leg is then held like a stopped one. Must be above every entry delta |

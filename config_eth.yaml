@@ -17,7 +17,7 @@ entry_delta:  0.0
 
 # ── Rollout & risk rules ──────────────────────────────────────────────────────
 rollout_dte:            15      # roll entire strangle when DTE ≤ this
-delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left)
+delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left); at most 75% of every entry delta
 roi_take_profit:        0.50    # roll leg when ROI ≥ 50% of premium received
 stop_loss_multiplier:   2.0     # emergency close when loss ≥ 2× premium received
 delta_exit_threshold:   0.30    # close a short leg when |delta| reaches this (the move is real); re-sold only once calm, like a stop

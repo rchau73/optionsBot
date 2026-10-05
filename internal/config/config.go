@@ -183,7 +183,18 @@ func (c *Config) Validate() error {
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
 	}
+	if c.DeltaDriftThreshold < 0 {
+		return fmt.Errorf("delta_drift_threshold %.2f must not be negative", c.DeltaDriftThreshold)
+	}
 	for _, sl := range slots {
+		// A leg sold near the drift threshold falls below it with the first
+		// small move, is rolled, re-sold and rolled again — paying spread
+		// each time (a simulation with 0.10 entries and drift 0.10 rolled 436
+		// times in 4 months). Keep the threshold well below every entry delta.
+		if c.DeltaDriftThreshold > MaxDriftToEntryRatio*sl.EntryDelta+1e-9 {
+			return fmt.Errorf("delta_drift_threshold %.2f is too close to slot %d DTE's entry delta %.2f (max %.0f%% of it, %.3f): a new leg would be rolled by the first small move, over and over",
+				c.DeltaDriftThreshold, sl.TargetDTE, sl.EntryDelta, MaxDriftToEntryRatio*100, MaxDriftToEntryRatio*sl.EntryDelta)
+		}
 		if c.DeltaExitThreshold <= sl.EntryDelta || c.DeltaExitThreshold >= 1 {
 			return fmt.Errorf("delta_exit_threshold %.2f must be above every entry delta (slot %d DTE at %.2f) and below 1 — a new leg would be exited at once",
 				c.DeltaExitThreshold, sl.TargetDTE, sl.EntryDelta)
@@ -200,6 +211,10 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// MaxDriftToEntryRatio caps delta_drift_threshold at this fraction of the
+// smallest entry delta (0.16 entries allow up to 0.12).
+const MaxDriftToEntryRatio = 0.75
 
 // DefaultIVMarginBands is the margin policy used when config sets none:
 // rich premium allows more initial margin, calm markets less.

@@ -61,6 +61,7 @@ Never reintroduce env-var overrides for logic parameters.
 - **GEX gating:** trading decisions use `GammaDecision.Action`, never raw `gamma.Trend()`. Entry and repair skip a leg only when the action sheds that leg type.
 - **Kill switch:** cancel all orders for the currency → flatten at market with retries on a detached context → stay idle (don't exit; Docker would restart into trading).
 - **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency`, load positions, regroup, match slots) → margin policy (rebalance only when the limit rests on confirmed data and nothing is frozen) → entries.
+- **Exit thresholds bracket the entry delta:** `delta_drift_threshold` ≤ 75 % of every entry delta (`config.MaxDriftToEntryRatio`) and `delta_exit_threshold` above every entry delta — `Validate` rejects anything else, because a leg sold at a threshold is rolled or exited on the next cycle, over and over.
 - **DTE has one definition:** `marketdata.DaysToExpiry` — whole days left, rounded down. Entry (`NearestExpiry`/`SelectExpiry`) and the exit rules (`Position.DTEAt`) both use it, so an expiry the entry accepts (DTE > `rollout_dte`) is never rolled on the next cycle. Never compute DTE another way.
 - **Time:** pure functions take `now`; never call `time.Now()` inside them (the backtest replays the past).
 

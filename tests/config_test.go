@@ -131,6 +131,9 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 	}{
 		{"MM limit at liquidation", "max_mm_pct: 35", "max_mm_pct: 100", "max_mm_pct"},
 		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
+		{"drift threshold at the entry delta (open-and-roll churn)", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: 0.16", "delta_drift_threshold"},
+		{"drift threshold just above 75% of the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: 0.121", "too close"},
+		{"negative drift threshold", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: -0.1", "delta_drift_threshold"},
 		{"delta exit at the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_exit_threshold: 0.16", "delta_exit_threshold"},
 		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
 	}
@@ -249,5 +252,25 @@ func TestConfigLoad_MaxLegSizeMultiple(t *testing.T) {
 	}
 	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "max_leg_size_multiple: 0.5\n")); err == nil || !strings.Contains(err.Error(), "max_leg_size_multiple") {
 		t.Errorf("a multiple below 1 must be rejected, got %v", err)
+	}
+}
+
+// Today's settings (drift 0.10 under 0.16 entries) and the 75 % edge pass;
+// both shipped configs must load.
+func TestConfig_DriftThresholdBelowEntryDeltaIsAccepted(t *testing.T) {
+	for _, drift := range []string{"0.10", "0.12", "0"} {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		body := strings.Replace(validConfigBase+validSlots, "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: "+drift, 1)
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadWithDummyCreds(t, path); err != nil {
+			t.Errorf("drift %s: %v", drift, err)
+		}
+	}
+	for _, f := range []string{"../config_btc.yaml", "../config_eth.yaml"} {
+		if _, err := loadWithDummyCreds(t, f); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
 	}
 }
