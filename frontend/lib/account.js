@@ -61,6 +61,23 @@ export function pendingLabel(p) {
  * One row per bot with the margin policy it applies (from /api/status `risk`).
  * Bots without policy data (older builds, not started yet) are left out.
  */
+/**
+ * The one-line state shown while the account panel is collapsed: IM vs limit
+ * per bot, the worst MM, and what needs attention.
+ */
+export function accountSummary(account, risk = []) {
+  const pct = (v) => (typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(1)}%` : "—");
+  const parts = risk.map((r) => `${r.bot.toUpperCase()} IM ${pct(r.imPct)} / ${r.limitIMPct}%`);
+  const mm = account ? worstMMPct(account.snapshot) : null;
+  parts.push(`MM ${pct(mm)}`);
+  return {
+    text: parts.join(" · "),
+    level: marginLevel(mm),
+    frozen: risk.filter((r) => r.frozen).map((r) => r.bot.toUpperCase()),
+    missing: !account,
+  };
+}
+
 export function riskRows(bots) {
   return bots
     .filter((b) => b.status?.risk?.status)
