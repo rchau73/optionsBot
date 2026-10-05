@@ -55,6 +55,16 @@ docker compose exec bot-btc sh       # shell inside the container (runs as a non
 
 ## Watch the logs
 
+**History across restarts.** Each bot replays its journal (`orders.log`) at startup, so realized P&L, close and order counts, the activity feed and the trade history continue where they stopped (`history restored from the journal` in the log gives the totals). To start a fresh history — e.g. after changing the strategy — archive it; nothing is deleted:
+
+```bash
+docker compose stop bot-btc
+docker compose run --rm --no-deps bot-btc --config /app/config.yaml --env-file /app/.env --reset-history
+docker compose start bot-btc
+```
+
+The journal and `data/pnl_history.jsonl` move to `data/btc/data/archive/<UTC time>/`; move them back to restore that history.
+
 `bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `docker compose logs` shows one stream; the files themselves are in `data/<underlying>/`. Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks.
 
 ```bash

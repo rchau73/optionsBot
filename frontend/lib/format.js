@@ -1,4 +1,4 @@
-import { DISPLAY_TZ_LABEL, localClock, localDateTime } from "./time";
+import { DISPLAY_TZ_LABEL, localClock, localDate, localDateTime } from "./time";
 // Pure formatting helpers. Every number on screen carries its unit.
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -67,6 +67,12 @@ export function formatTime(iso) {
   if (!iso) return MISSING;
   const clock = localClock(iso);
   return clock ? `${clock} ${DISPLAY_TZ_LABEL}` : MISSING;
+}
+
+/** Date in the display zone: "2026-10-02". */
+export function formatDate(iso) {
+  if (!iso || (typeof iso === "string" && iso.startsWith("0001-"))) return MISSING;
+  return localDate(iso) ?? MISSING;
 }
 
 /** Full timestamp in the display zone: "2026-10-02 09:34:56 BRT". */

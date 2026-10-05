@@ -16,7 +16,7 @@ export function usePnlHistory(names, range) {
   const [state, setState] = useState({ range: null, points: [], error: null });
 
   useEffect(() => {
-    if (!names?.length || range === "live") return undefined;
+    if (!names?.length || !range || range === "live") return undefined;
     let timer;
     const controller = new AbortController();
     const load = async () => {
@@ -34,6 +34,6 @@ export function usePnlHistory(names, range) {
     };
   }, [names, range]);
 
-  if (state.range !== range) return { points: [], error: null, loading: range !== "live" };
+  if (state.range !== range) return { points: [], error: null, loading: Boolean(range) && range !== "live" };
   return { points: state.points, error: state.error, loading: false };
 }

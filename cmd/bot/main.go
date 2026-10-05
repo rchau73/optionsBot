@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -26,6 +27,10 @@ import (
 	"optionsbot/internal/strategy"
 )
 
+// journalPath is the decision journal: every decision, fill and close. It is
+// replayed at startup so P&L, counts and the trade history continue.
+const journalPath = "orders.log"
+
 // pnlHistoryPath is where the P&L history for the monitor chart is kept.
 const pnlHistoryPath = "data/pnl_history.jsonl"
 
@@ -43,6 +48,7 @@ func main() {
 	cfgPath := flag.String("config", "config.yaml", "config file path")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	envFile := flag.String("env-file", ".env", "platform settings file (credentials, DERIBIT_ENV, limits)")
+	resetHistory := flag.Bool("reset-history", false, "archive the journal and P&L history to data/archive/<time>/ and exit (nothing is deleted)")
 	flag.Parse()
 
 	// Platform settings. Variables already set in the environment win, so a
@@ -55,6 +61,17 @@ func main() {
 	if err := logger.Init("bot.log", *debug); err != nil {
 		fmt.Fprintf(os.Stderr, "logger init: %v\n", err)
 		os.Exit(1)
+	}
+
+	if *resetHistory {
+		dir := filepath.Join("data", "archive", time.Now().UTC().Format("20060102T150405Z"))
+		moved, err := history.Archive([]string{journalPath, pnlHistoryPath}, dir)
+		if err != nil {
+			slog.Error("reset history failed", "err", err, "moved", moved)
+			os.Exit(1)
+		}
+		slog.Info("history archived; the next start begins a fresh history", "to", dir, "files", moved)
+		return
 	}
 
 	cfg, err := config.Load(*cfgPath)
@@ -135,11 +152,18 @@ func runLive(cfg *config.Config) error {
 
 	exec := orders.NewExecutor(gw)
 
-	orderLog, err := orders.NewLogger("orders.log", cfg.SpreadAlertThreshold)
+	// Replay the journal before appending to it: realised P&L, closes, event
+	// counts, the activity feed and the trade history continue across restarts.
+	replay, err := orders.ReplayFile(journalPath, orders.RecentEvents)
+	if err != nil {
+		return fmt.Errorf("journal replay: %w", err)
+	}
+	orderLog, err := orders.NewLogger(journalPath, cfg.SpreadAlertThreshold)
 	if err != nil {
 		return fmt.Errorf("order logger init: %w", err)
 	}
 	defer orderLog.Close()
+	orderLog.Restore(replay)
 
 	// The GEX manager polls public/get_book_summary_by_currency (mainnet) every
 	// 60 s and classifies the gamma regime the strategy uses to shed legs and
@@ -173,6 +197,14 @@ func runLive(cfg *config.Config) error {
 		History:  pnlHistory,
 		Regimes:  regimes,
 	})
+	strat.RestorePnL(replay.Realised, replay.Closed)
+	realised := 0.0
+	for _, v := range replay.Realised {
+		realised += v
+	}
+	slog.Info("history restored from the journal",
+		"events", replay.Events, "trades", len(replay.Trades), "closes", replay.Counts[orders.EventClosed],
+		"realised", fmt.Sprintf("%.6f", realised), "since", replay.FirstAt, "skipped_lines", replay.Skipped)
 
 	// Kill switch: `kill -USR1 <pid>` (or `docker kill -s USR1 <container>`)
 	// flattens every position at market and halts trading.

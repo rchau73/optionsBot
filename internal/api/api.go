@@ -31,9 +31,17 @@ type EventSource interface {
 	EventCounts() map[string]int
 }
 
+// TradeSource provides the journal's opens and closes (orders.Logger).
+type TradeSource interface {
+	Trades(after uint64, limit int) []orders.Trade
+	HistorySince() time.Time
+}
+
 const (
 	defaultEventLimit = 200
 	maxEventLimit     = 500
+	defaultTradeLimit = 1000
+	maxTradeLimit     = 5000
 )
 
 // PnLHistory provides bucketed P&L history (see history.Store).
@@ -79,6 +87,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/pnl/history", s.pnlHistory)
 	s.mux.HandleFunc("GET /api/events", s.recentEvents)
 	s.mux.HandleFunc("GET /api/account", s.accountSummary)
+	s.mux.HandleFunc("GET /api/trades", s.trades)
 	return s
 }
 
@@ -136,8 +145,35 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"open_legs":        openLegs,
 		"pending":          len(v.Pending),
 		"event_counts":     s.events.EventCounts(),
+		"history_since":    s.historySince(),
 		"pnl":              v.PnL,
 	})
+}
+
+// historySince is when the journal's history begins (null when unknown).
+func (s *Server) historySince() any {
+	if ts, ok := s.events.(TradeSource); ok && !ts.HistorySince().IsZero() {
+		return ts.HistorySince()
+	}
+	return nil
+}
+
+// trades serves the journal's opens and closes with seq > after, oldest
+// first (a client pages forward with the last seq it has). Read from memory,
+// restored from orders.log at startup.
+func (s *Server) trades(w http.ResponseWriter, r *http.Request) {
+	ts, ok := s.events.(TradeSource)
+	if !ok {
+		writeJSON(w, map[string]any{"trades": []orders.Trade{}, "history_since": nil})
+		return
+	}
+	after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
+	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+	if err != nil || limit <= 0 {
+		limit = defaultTradeLimit
+	}
+	limit = min(limit, maxTradeLimit)
+	writeJSON(w, map[string]any{"trades": ts.Trades(after, limit), "history_since": s.historySince()})
 }
 
 func (s *Server) positions(w http.ResponseWriter, _ *http.Request) {

@@ -21,10 +21,15 @@ type Logger struct {
 	w                    io.Writer
 	spreadAlertThreshold float64
 	recent               *recentRing // last events, for the monitor API
+
+	tradesMu sync.RWMutex
+	trades   []Trade   // every open and close since the journal began
+	since    time.Time // first journal event (zero until one is written)
 }
 
-// recentEvents is how many journal events the logger keeps in memory.
-const recentEvents = 500
+// RecentEvents is how many journal events the logger keeps in memory (and a
+// replay restores) for the monitor's activity feed.
+const RecentEvents = 500
 
 // NewLogger appends JSON lines to the file at path and mirrors them to stdout,
 // so `docker logs` shows fills alongside the bot log.
@@ -40,7 +45,7 @@ func NewLogger(path string, spreadAlertThreshold float64) (*Logger, error) {
 
 // NewWriterLogger writes JSON lines to w only (used by tests and tools).
 func NewWriterLogger(w io.Writer, spreadAlertThreshold float64) *Logger {
-	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold, recent: newRecentRing(recentEvents)}
+	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold, recent: newRecentRing(RecentEvents)}
 }
 
 // closeReasonLabel maps internal trigger constants to human-readable close reasons.
@@ -267,9 +272,45 @@ func (l *Logger) Recent(after uint64, limit int) []RecentEvent {
 	return l.recent.since(after, limit)
 }
 
-// EventCounts returns how many events of each type were journaled since start.
+// EventCounts returns how many events of each type the journal holds
+// (replayed history included).
 func (l *Logger) EventCounts() map[string]int {
 	return l.recent.countsCopy()
+}
+
+// Restore continues the journal's in-memory views from a replay of the file
+// it appends to: counts, last events, sequence and trades. Call before the
+// first live event.
+func (l *Logger) Restore(rp Replay) {
+	l.recent.restore(rp.Recent, rp.Counts, rp.Events)
+	l.tradesMu.Lock()
+	defer l.tradesMu.Unlock()
+	l.trades = append([]Trade(nil), rp.Trades...)
+	l.since = rp.FirstAt
+}
+
+// Trades returns opens and closes with Seq > after, oldest first, at most
+// limit (the oldest ones, so a client can page forward).
+func (l *Logger) Trades(after uint64, limit int) []Trade {
+	l.tradesMu.RLock()
+	defer l.tradesMu.RUnlock()
+	out := []Trade{}
+	for _, t := range l.trades {
+		if t.Seq > after {
+			out = append(out, t)
+			if limit > 0 && len(out) == limit {
+				break
+			}
+		}
+	}
+	return out
+}
+
+// HistorySince is when the journal's history begins (zero if empty).
+func (l *Logger) HistorySince() time.Time {
+	l.tradesMu.RLock()
+	defer l.tradesMu.RUnlock()
+	return l.since
 }
 
 // writeJSON appends one JSON line; failures are logged with ctxLog's fields.
@@ -279,7 +320,21 @@ func (l *Logger) writeJSON(event string, v any, ctxLog *slog.Logger) {
 		ctxLog.Error("order log marshal error", "err", err)
 		return
 	}
-	l.recent.add(event, data)
+	seq := l.recent.add(event, data)
+	if event == EventFilled || event == EventClosed {
+		if rec, ok := v.(OrderLog); ok {
+			if t, ok := tradeOf(seq, rec); ok {
+				l.tradesMu.Lock()
+				l.trades = append(l.trades, t)
+				l.tradesMu.Unlock()
+			}
+		}
+	}
+	l.tradesMu.Lock()
+	if l.since.IsZero() {
+		l.since = time.Now()
+	}
+	l.tradesMu.Unlock()
 	data = append(data, '\n')
 	l.mu.Lock()
 	defer l.mu.Unlock()
