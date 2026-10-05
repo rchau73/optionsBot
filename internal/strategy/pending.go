@@ -284,29 +284,59 @@ func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bo
 // filled is therefore always tracked, even when its partner never did.
 func (s *Strategy) abandonPending(ctx context.Context, ps *pendingStrangle, reason string) {
 	for _, leg := range ps.legs() {
-		if leg.done || leg.orderID == "" {
-			continue
-		}
-		if err := s.exch.Cancel(ctx, leg.orderID); err != nil {
-			slog.Error("pending: cancel failed — order may still be working",
-				"pending_id", ps.id, "order_id", leg.orderID, "instrument", leg.instrument, "err", err)
-		}
-		// The order may have (partly) filled between our last poll and the cancel.
-		if st, err := s.exch.GetOrderState(ctx, leg.orderID); err == nil {
-			leg.applyState(st)
-		} else {
-			slog.Warn("pending: could not confirm final fill after cancel; startup reconcile will catch any fill",
-				"order_id", leg.orderID, "err", err)
-		}
-		leg.done = true
-
-		s.journal.LogCancelled(leg.record(orders.TriggerTimeout, leg.limitPrice),
-			s.instrumentContext(leg.instrument, ps.slot()))
-		slog.Info("pending: leg abandoned",
-			"pending_id", ps.id, "instrument", leg.instrument, "order_id", leg.orderID,
-			"reason", reason, "filled_qty", leg.filledQty, "requested_qty", leg.qty)
+		s.cancelLeg(ctx, ps, leg, orders.TriggerTimeout, reason)
 	}
 	s.finalizePending(ps)
+}
+
+// cancelLeg cancels one working leg and reads back what filled before the
+// cancel landed, so a late fill is still booked when the strangle finalizes.
+func (s *Strategy) cancelLeg(ctx context.Context, ps *pendingStrangle, leg *pendingLeg, trigger, reason string) {
+	if leg.done || leg.orderID == "" {
+		return
+	}
+	if err := s.exch.Cancel(ctx, leg.orderID); err != nil {
+		slog.Error("pending: cancel failed — order may still be working",
+			"pending_id", ps.id, "order_id", leg.orderID, "instrument", leg.instrument, "err", err)
+	}
+	// The order may have (partly) filled between our last poll and the cancel.
+	if st, err := s.exch.GetOrderState(ctx, leg.orderID); err == nil {
+		leg.applyState(st)
+	} else {
+		slog.Warn("pending: could not confirm final fill after cancel; startup reconcile will catch any fill",
+			"order_id", leg.orderID, "err", err)
+	}
+	leg.done = true
+
+	s.journal.LogCancelled(leg.record(trigger, leg.limitPrice),
+		s.instrumentContext(leg.instrument, ps.slot()))
+	slog.Info("pending: leg abandoned",
+		"pending_id", ps.id, "instrument", leg.instrument, "order_id", leg.orderID,
+		"reason", reason, "filled_qty", leg.filledQty, "requested_qty", leg.qty)
+}
+
+// cancelShedSide cancels every pending entry or repair with a working sell
+// of the option type a GEX shed is closing. Left working, such an order could
+// fill during the shed and be bought straight back at market — paying the
+// spread for nothing. The whole entry is cancelled (its other leg too) and
+// finalized at once, so whatever filled before the cancel is booked now and
+// shed in this same cycle, never left waiting for a partner order; the other
+// side is re-entered on its own by the next entry or repair, which the shed
+// does not block.
+func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
+	for _, ps := range s.pendingSnapshot() {
+		hit := false
+		for _, leg := range ps.legs() {
+			hit = hit || (leg.optionType == optType && !leg.done)
+		}
+		if !hit {
+			continue
+		}
+		for _, leg := range ps.legs() {
+			s.cancelLeg(ctx, ps, leg, orders.TriggerGammaClose, "GEX shed of "+optType+"s")
+		}
+		s.finalizePending(ps)
+	}
 }
 
 // finalizePending turns the filled part of a finished pending strangle into
