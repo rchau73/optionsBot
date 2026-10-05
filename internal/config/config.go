@@ -41,7 +41,10 @@ type Config struct {
 	// RepairCooldownHours: a leg closed by a stop-loss is re-sold no sooner
 	// than this, and only when entries are not frozen and the confirmed gamma
 	// regime is not negative.
-	RepairCooldownHours int     `yaml:"repair_cooldown_hours"`
+	RepairCooldownHours int `yaml:"repair_cooldown_hours"`
+	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
+	// share ÷ the strangle's standalone margin per lot).
+	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
 	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
 	ROITakeProfit       float64 `yaml:"roi_take_profit"`
 	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`
@@ -170,6 +173,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.RiskPolicy(false).Validate(); err != nil {
 		return err
+	}
+	if c.MaxLegSizeMultiple < 1 {
+		return fmt.Errorf("max_leg_size_multiple %.2f must be at least 1", c.MaxLegSizeMultiple)
 	}
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
@@ -313,6 +319,9 @@ func Load(path string) (*Config, error) {
 	// config.yaml is the authority; no default override so users can explicitly disable.
 	// DeltaSlippage == 0 is valid: disables the tolerance filter entirely.
 
+	if cfg.MaxLegSizeMultiple == 0 {
+		cfg.MaxLegSizeMultiple = 2
+	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
 	}

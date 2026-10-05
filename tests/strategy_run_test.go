@@ -38,12 +38,15 @@ type fakeExchange struct {
 	summary     orders.AccountSummary
 	summaryErr  error
 	imPerLot    float64 // IM of one strangle lot (both legs) in simulate_portfolio
-	mmRatio     float64 // MM as a share of IM in simulations
-	simErr      error
-	simCalls    []map[string]float64
-	nextID      int
-	dailyCloses []orders.DailyClose
-	amended     []string
+	// aloneIMPerLot is one lot's IM on its own (SimulateAlone); 0 = imPerLot.
+	// Smaller imPerLot than aloneIMPerLot means the book offsets the trade.
+	aloneIMPerLot float64
+	mmRatio       float64 // MM as a share of IM in simulations
+	simErr        error
+	simCalls      []map[string]float64
+	nextID        int
+	dailyCloses   []orders.DailyClose
+	amended       []string
 
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
@@ -233,6 +236,27 @@ func (f *fakeExchange) SimulatePortfolio(_ context.Context, currency string, pos
 	out := f.summary
 	for _, size := range positions {
 		dIM := -size / 0.1 * f.imPerLot / 2
+		out.InitialMargin += dIM
+		out.MaintenanceMargin += dIM * f.mmRatio
+	}
+	return out, nil
+}
+
+// SimulateAlone prices positions on their own: no account margin added.
+func (f *fakeExchange) SimulateAlone(_ context.Context, _ string, positions map[string]float64) (orders.AccountSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.simErr != nil {
+		return orders.AccountSummary{}, f.simErr
+	}
+	per := f.aloneIMPerLot
+	if per == 0 {
+		per = f.imPerLot
+	}
+	out := f.summary
+	out.InitialMargin, out.MaintenanceMargin = 0, 0
+	for _, size := range positions {
+		dIM := math.Abs(size) / 0.1 * per / 2
 		out.InitialMargin += dIM
 		out.MaintenanceMargin += dIM * f.mmRatio
 	}

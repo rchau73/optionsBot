@@ -294,3 +294,13 @@ func TestCancelByLabel_HighPriorityPerCurrency(t *testing.T) {
 		t.Errorf("call = %+v", c)
 	}
 }
+
+func TestSimulateAlone_DoesNotAddTheBook(t *testing.T) {
+	fc := &fakeCaller{replies: []fakeReply{{result: `{"currency":"BTC","initial_margin":0.05}`}}}
+	if _, err := orders.NewExecutor(fc).SimulateAlone(context.Background(), "BTC", map[string]float64{"BTC-X-C": -0.1}); err != nil {
+		t.Fatal(err)
+	}
+	if c := fc.calls[0]; c.method != "private/simulate_portfolio" || c.params["add_positions"] != false {
+		t.Errorf("call = %+v, want add_positions=false", c)
+	}
+}

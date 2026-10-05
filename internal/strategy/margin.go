@@ -41,6 +41,24 @@ func EntryShare(headroom, slotShare float64, vacant int) float64 {
 	return min(headroom/float64(vacant), slotShare)
 }
 
+// CapLots limits lots to multiple × normalLots, the size the slot would get
+// if the strangle stood alone. Portfolio margin can price a new leg almost
+// free when it offsets the book (a short call against short puts after a
+// drop), and dividing the slot's share by that tiny cost gives a huge size.
+// The offset holds only while the rest of the book does: once the puts are
+// closed the calls stand alone. Returns the lots and whether the cap bound.
+// normalLots ≤ 0 (unknown) or multiple ≤ 0 means no cap.
+func CapLots(lots, normalLots int, multiple float64) (int, bool) {
+	if normalLots <= 0 || multiple <= 0 {
+		return lots, false
+	}
+	maxLots := max(1, int(math.Floor(multiple*float64(normalLots)+1e-9)))
+	if lots > maxLots {
+		return maxLots, true
+	}
+	return lots, false
+}
+
 // TargetLots is the size a held strangle should have so its initial margin
 // fits share, when each lot uses imPerLot. The IM limit never closes a
 // strangle completely (at least one lot stays); the MM limit can.

@@ -171,6 +171,7 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 | `rollout_dte` | 15 days | when to stop holding | exits earlier, less gamma risk | holds longer, more decay, more risk |
 | `roi_take_profit` | 50 % | how much profit is "enough" | holds longer for more | banks sooner, re-sells more often |
 | `stop_loss_multiplier` | 2× | how much loss to tolerate | fewer stop-outs, bigger losses | more stop-outs, smaller losses |
+| `max_leg_size_multiple` | 2× | biggest new position vs a normal one | bigger positions when margin allows | smaller, steadier positions |
 | `repair_cooldown_hours` | 72 h | how long a stopped-out side stays empty | longer pause after a loss | re-enters sooner |
 | `delta_drift_threshold` | 0.10 | when a far leg is "dead" | refreshes legs sooner | lets legs drift further |
 | `iv_margin_bands` | 50 / 35 / 20 % by DVOL band | how much of the account is at work, by market calm | larger positions | smaller positions |

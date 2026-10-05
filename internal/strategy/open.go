@@ -91,7 +91,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}
-		qty, err := s.sizeEntry(ctx, call.Name, put.Name, lot, share, m)
+		qty, err := s.sizeEntry(ctx, call.Name, put.Name, lot, share, SlotShare(m.status.LimitIMPct, m.usage.MarginBalance, len(slots)), m)
 		if err != nil {
 			slog.Info("skip entry: no size fits the margin limits",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)

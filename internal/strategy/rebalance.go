@@ -70,6 +70,11 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			slog.Info("rebalance: strangle adds no IM (portfolio netting), size kept", "strangle_id", st.ID)
 			continue
 		}
+		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage.Unit); err != nil {
+			slog.Warn("rebalance: standalone simulation failed, will retry", "strangle_id", st.ID, "err", err)
+			done = false
+			continue
+		}
 		targetQty := float64(targetLots) * lot
 
 		addQty := orders.FloorToStep(math.Min(targetQty-st.CallLeg.Qty, targetQty-st.PutLeg.Qty), lot)

@@ -202,10 +202,41 @@ func (s *Strategy) simulate(ctx context.Context, positions map[string]float64, u
 	return u, nil
 }
 
+// capToNormalSize limits lots to max_leg_size_multiple × the slot's normal
+// size: its slot share ÷ the strangle's margin per lot on its own (Deribit,
+// add_positions=false). See CapLots.
+func (s *Strategy) capToNormalSize(ctx context.Context, call, put string, lot float64, lots int, slotShare float64, unit string) (int, error) {
+	alone, err := s.simulateAlone(ctx, map[string]float64{call: -lot, put: -lot}, unit)
+	if err != nil {
+		return 0, err
+	}
+	normal := TargetLots(slotShare, alone.IM)
+	capped, bound := CapLots(lots, normal, s.cfg.MaxLegSizeMultiple)
+	if bound {
+		slog.Warn("size capped at a multiple of the slot's normal size: the book's offsets made each lot look almost free",
+			"call", call, "put", put, "margin_allowed_lots", lots, "normal_lots", normal,
+			"max_leg_size_multiple", s.cfg.MaxLegSizeMultiple, "lots", capped)
+	}
+	return capped, nil
+}
+
+// simulateAlone is simulate for positions on their own (no book offsets).
+func (s *Strategy) simulateAlone(ctx context.Context, positions map[string]float64, unit string) (risk.Usage, error) {
+	sum, err := s.exch.SimulateAlone(ctx, s.cfg.Underlying, positions)
+	if err != nil {
+		return risk.Usage{}, fmt.Errorf("%w: simulate_portfolio (alone): %w", errMarginUnknown, err)
+	}
+	u := sum.MarginUsage()
+	if u.Unit != unit {
+		return risk.Usage{}, fmt.Errorf("%w: standalone simulation unit %s differs from account unit %s", errMarginUnknown, u.Unit, unit)
+	}
+	return u, nil
+}
+
 // sizeEntry picks the largest strangle size whose post-trade margin, as
 // Deribit simulates it, stays inside both limits and within share of the IM
 // headroom. One simulation prices a lot; a second confirms the final size.
-func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share float64, m marginState) (float64, error) {
+func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share, slotShare float64, m marginState) (float64, error) {
 	limit, maxMM := m.status.LimitIMPct, m.status.MaxMMPct
 	oneLot, err := s.simulate(ctx, map[string]float64{call: -lot, put: -lot}, m.usage.Unit)
 	if err != nil {
@@ -215,6 +246,9 @@ func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share f
 	lots := EntryLots(share, imPerLot)
 	if lots < 1 {
 		return 0, fmt.Errorf("one lot adds %.6f %s of IM, more than this slot's headroom %.6f", imPerLot, m.usage.Unit, share)
+	}
+	if lots, err = s.capToNormalSize(ctx, call, put, lot, lots, slotShare, m.usage.Unit); err != nil {
+		return 0, err
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		qty := float64(lots) * lot
