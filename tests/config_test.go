@@ -131,6 +131,8 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 	}{
 		{"MM limit at liquidation", "max_mm_pct: 35", "max_mm_pct: 100", "max_mm_pct"},
 		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
+		{"negative flip buffer", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngamma_flip_buffer_sd: -1", "gamma_flip_buffer_sd"},
+		{"flip buffer too wide", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngamma_flip_buffer_sd: 4", "gamma_flip_buffer_sd"},
 		{"expiry stretch below 1", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nexpiry_stretch: 0.5", "expiry_stretch"},
 		{"expiry stretch above 3", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nexpiry_stretch: 4", "expiry_stretch"},
 		{"drift threshold at the entry delta (open-and-roll churn)", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: 0.16", "delta_drift_threshold"},

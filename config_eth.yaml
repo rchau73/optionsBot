@@ -26,6 +26,7 @@ repair_cooldown_hours:  72      # a stopped-out leg is re-sold no sooner than th
 # ── Gamma monitor ─────────────────────────────────────────────────────────────
 gamma_trend_lookback_days: 120
 swing_pivot_n:             5    # bars required on each side to confirm a swing pivot
+gamma_flip_buffer_sd:      1.0  # shed a leg only when spot is this many daily std devs (DVOL/sqrt(365)) below the gamma flip — BTC ~1.9%, ETH ~2.6% today
 gex_method:                script # script = GestaoCarteira deribit_tc_export_v3.py rules (regime = sign of weighted GEX, flip = lowest crossing); nearest_flip = spot vs nearest flip, with hysteresis
 gex_strike_range_pct:      0.15 # GEX inputs: only strikes within ±15% of each expiry's underlying (as the script); 0 = all strikes
 gamma_regime_band_pct:     0.025 # nearest_flip only: hysteresis band around the gamma flip

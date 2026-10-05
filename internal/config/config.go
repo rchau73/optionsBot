@@ -55,10 +55,13 @@ type Config struct {
 	GammaTrendLookbackDays int     `yaml:"gamma_trend_lookback_days"`
 	SwingPivotN            int     `yaml:"swing_pivot_n"`
 	GammaRegimeBandPct     float64 `yaml:"gamma_regime_band_pct"`
-	GEXStrikeRangePct      float64 `yaml:"gex_strike_range_pct"`
-	GEXMethod              string  `yaml:"gex_method"` // script (default) | nearest_flip
-	IVPercentileWindow     int     `yaml:"iv_percentile_window"`
-	HedgeReportThreshold   float64 `yaml:"hedge_report_threshold"`
+	// GammaFlipBufferSD: a leg is shed only once spot is this many daily
+	// standard deviations (DVOL ÷ √365) below the gamma flip.
+	GammaFlipBufferSD    float64 `yaml:"gamma_flip_buffer_sd"`
+	GEXStrikeRangePct    float64 `yaml:"gex_strike_range_pct"`
+	GEXMethod            string  `yaml:"gex_method"` // script (default) | nearest_flip
+	IVPercentileWindow   int     `yaml:"iv_percentile_window"`
+	HedgeReportThreshold float64 `yaml:"hedge_report_threshold"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
 	// fixed MM limit, band/regime changes confirmed on daily closes.
 	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
@@ -208,6 +211,9 @@ func (c *Config) Validate() error {
 	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
+	}
+	if c.GammaFlipBufferSD < 0 || c.GammaFlipBufferSD > 3 {
+		return fmt.Errorf("gamma_flip_buffer_sd %.2f must be between 0 and 3 daily standard deviations", c.GammaFlipBufferSD)
 	}
 	if c.GEXMethod != "script" && c.GEXMethod != "nearest_flip" {
 		return fmt.Errorf("gex_method %q must be script or nearest_flip", c.GEXMethod)
@@ -360,6 +366,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.DeltaExitThreshold == 0 {
 		cfg.DeltaExitThreshold = 0.30
+	}
+	if cfg.GammaFlipBufferSD == 0 {
+		cfg.GammaFlipBufferSD = 1
 	}
 	if cfg.GEXMethod == "" {
 		cfg.GEXMethod = "script"

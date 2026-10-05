@@ -191,7 +191,7 @@ func TestEvaluateLeg_PriorityOrder(t *testing.T) {
 // (flipFound=false) the action is always None regardless of regime or trend.
 func TestResolveGammaAction_NoFlipFound(t *testing.T) {
 	for _, trend := range []int{-1, 0, 1} {
-		got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", false, 60000, 64500, trend)
+		got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", false, 60000, 64500, trend, 0)
 		if got != strategy.GammaActionNone {
 			t.Errorf("no flip, trend=%d: expected ActionNone, got %v", trend, got)
 		}
@@ -203,7 +203,7 @@ func TestResolveGammaAction_NoFlipFound(t *testing.T) {
 // flip. The raw spot ≥ flip check must override → ActionNone, not CloseCalls.
 func TestResolveGammaAction_SpotAboveFlip_BullTrend(t *testing.T) {
 	// spot=64600 > flip=64500, regime still NEGATIVE (within 2% hysteresis band)
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64600, 64500, 1)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64600, 64500, 1, 0)
 	if got != strategy.GammaActionNone {
 		t.Errorf("spot above flip with bull trend: expected ActionNone (both legs), got %v", got)
 	}
@@ -212,7 +212,7 @@ func TestResolveGammaAction_SpotAboveFlip_BullTrend(t *testing.T) {
 // TestResolveGammaAction_SpotAboveFlip_BearTrend verifies the symmetric case:
 // spot above flip + bear trend must also give ActionNone (not ClosePuts).
 func TestResolveGammaAction_SpotAboveFlip_BearTrend(t *testing.T) {
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64600, 64500, -1)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64600, 64500, -1, 0)
 	if got != strategy.GammaActionNone {
 		t.Errorf("spot above flip with bear trend: expected ActionNone (both legs), got %v", got)
 	}
@@ -221,7 +221,7 @@ func TestResolveGammaAction_SpotAboveFlip_BearTrend(t *testing.T) {
 // TestResolveGammaAction_SpotAtFlipBoundary verifies that spot exactly equal to
 // the flip (≥ boundary) is treated as full-strangle territory.
 func TestResolveGammaAction_SpotAtFlipBoundary(t *testing.T) {
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64500, 64500, -1)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 64500, 64500, -1, 0)
 	if got != strategy.GammaActionNone {
 		t.Errorf("spot == flip: expected ActionNone, got %v", got)
 	}
@@ -233,7 +233,7 @@ func TestResolveGammaAction_SpotAtFlipBoundary(t *testing.T) {
 func TestResolveGammaAction_HysteresisHeldPositive(t *testing.T) {
 	// spot=64200 < flip=64500, but lastRegime=POSITIVE held by hysteresis (within band)
 	for _, trend := range []int{-1, 0, 1} {
-		got := strategy.ResolveGammaAction("POSITIVE/PINNING", true, 64200, 64500, trend)
+		got := strategy.ResolveGammaAction("POSITIVE/PINNING", true, 64200, 64500, trend, 0)
 		if got != strategy.GammaActionNone {
 			t.Errorf("hysteresis-held POSITIVE, trend=%d: expected ActionNone, got %v", trend, got)
 		}
@@ -244,7 +244,7 @@ func TestResolveGammaAction_HysteresisHeldPositive(t *testing.T) {
 // clearly below the flip AND regime is NEGATIVE, a bear trend closes puts.
 func TestResolveGammaAction_ConfirmedNegative_BearTrend(t *testing.T) {
 	// spot=63000, flip=64500, regime=NEGATIVE — genuinely in negative territory
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, -1)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, -1, 0)
 	if got != strategy.GammaActionClosePuts {
 		t.Errorf("confirmed negative + bear: expected GammaActionClosePuts, got %v", got)
 	}
@@ -253,7 +253,7 @@ func TestResolveGammaAction_ConfirmedNegative_BearTrend(t *testing.T) {
 // TestResolveGammaAction_ConfirmedNegative_BullTrend verifies that a bull trend
 // below the flip closes calls (price rising toward OTM calls).
 func TestResolveGammaAction_ConfirmedNegative_BullTrend(t *testing.T) {
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, 1)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, 1, 0)
 	if got != strategy.GammaActionCloseCalls {
 		t.Errorf("confirmed negative + bull: expected GammaActionCloseCalls, got %v", got)
 	}
@@ -262,7 +262,7 @@ func TestResolveGammaAction_ConfirmedNegative_BullTrend(t *testing.T) {
 // TestResolveGammaAction_ConfirmedNegative_NeutralTrend verifies that when the
 // trend is neutral (no confirmation), no leg is closed even in NEGATIVE regime.
 func TestResolveGammaAction_ConfirmedNegative_NeutralTrend(t *testing.T) {
-	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, 0)
+	got := strategy.ResolveGammaAction("NEGATIVE/ACCELERATION", true, 63000, 64500, 0, 0)
 	if got != strategy.GammaActionNone {
 		t.Errorf("confirmed negative + neutral trend: expected ActionNone (wait), got %v", got)
 	}

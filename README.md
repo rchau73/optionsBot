@@ -137,6 +137,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `stop_loss_multiplier` | — | close at market when the loss reaches this × premium received |
 | `delta_exit_threshold` | 0.30 | close a short leg (IOC at the ask) when its \|delta\| reaches this — before the stop; the leg is then held like a stopped one. Must be above every entry delta |
 | `max_leg_size_multiple` | 2 | a new leg is at most this × its slot's normal size (slot share ÷ the strangle's margin per lot on its own) — book offsets can make a leg look almost free |
+| `gamma_flip_buffer_sd` | 1 | GEX sheds a leg only when spot is this many daily standard deviations (DVOL ÷ √365) below the gamma flip — about 1.9 % for BTC and 2.6 % for ETH at today's DVOL; scales with each asset's volatility (0–3) |
 | `repair_cooldown_hours` | 72 | a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative (rolled legs reopen at once) |
 | `iv_margin_bands` | ≥70 → 50, ≥30 → 35, ≥0 → 20 | initial-margin limit (% of Deribit's margin balance) by DVOL IV-percentile band; the lowest band must start at 0. A confirmed negative gamma regime forces the lowest band |
 | `iv_band_confirm_days` | 2 | consecutive UTC daily closes a DVOL band or gamma regime change must hold before the limit moves; until then new entries are frozen |
