@@ -4,7 +4,8 @@ import { useState } from "react";
 import clsx from "clsx";
 import { Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePnlHistory } from "@/hooks/usePnlHistory";
-import { formatUSD } from "@/lib/format";
+import { formatDateTime, formatUSD } from "@/lib/format";
+import { localParts } from "@/lib/time";
 
 export const RANGES = [
   ["live", "Live"],
@@ -28,12 +29,13 @@ export function seriesName(key) {
   return key.replace(/^bots\./, "").toUpperCase();
 }
 
-/** Axis label: time of day for short ranges, date for long ones (UTC). */
+/** Axis label in the display zone (BRT): time of day for short ranges, date for long ones. */
 export function tickLabel(t, range) {
-  const iso = new Date(t).toISOString();
-  if (range === "live" || range === "1h") return iso.slice(11, 19);
-  if (SHORT.has(range)) return iso.slice(11, 16);
-  return `${iso.slice(5, 10)} ${iso.slice(11, 13)}h`;
+  const p = localParts(t);
+  if (!p) return "";
+  if (range === "live" || range === "1h") return `${p.hour}:${p.minute}:${p.second}`;
+  if (SHORT.has(range)) return `${p.hour}:${p.minute}`;
+  return `${p.month}-${p.day} ${p.hour}h`;
 }
 
 /**
@@ -79,7 +81,7 @@ export default function PnlChart({ live, names }) {
               <ReferenceLine y={0} stroke="#475569" />
               <Tooltip
                 contentStyle={{ background: "#111a2e", border: "1px solid #1e293b" }}
-                labelFormatter={(t) => new Date(t).toISOString().replace("T", " ").slice(0, 19) + " UTC"}
+                labelFormatter={(t) => formatDateTime(t)}
                 formatter={(v, name) => [formatUSD(v, { cents: true }), seriesName(name)]}
               />
               {perBot.length ? <Legend formatter={seriesName} wrapperStyle={{ fontSize: 11 }} /> : null}
