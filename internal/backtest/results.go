@@ -29,6 +29,7 @@ type Summary struct {
 	Rollout19DTE           int     `json:"rollout_19dte"`
 	RolloutDeltaDrift      int     `json:"rollout_delta_drift"`
 	RolloutROI             int     `json:"rollout_roi"`
+	DeltaExits             int     `json:"delta_exits"`
 	AvgThetaCapturedUSD    float64 `json:"avg_theta_captured_usd"`
 	AvgIVAtEntry           float64 `json:"avg_iv_at_entry"`
 	AvgIVPercentileAtEntry float64 `json:"avg_iv_percentile_at_entry"`

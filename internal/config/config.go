@@ -48,6 +48,9 @@ type Config struct {
 	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
 	ROITakeProfit       float64 `yaml:"roi_take_profit"`
 	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`
+	// DeltaExitThreshold: a short leg whose |delta| reaches this is bought
+	// back and held like a stopped leg (must be above every entry delta).
+	DeltaExitThreshold float64 `yaml:"delta_exit_threshold"`
 
 	GammaTrendLookbackDays int     `yaml:"gamma_trend_lookback_days"`
 	SwingPivotN            int     `yaml:"swing_pivot_n"`
@@ -179,6 +182,12 @@ func (c *Config) Validate() error {
 	}
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
+	}
+	for _, sl := range slots {
+		if c.DeltaExitThreshold <= sl.EntryDelta || c.DeltaExitThreshold >= 1 {
+			return fmt.Errorf("delta_exit_threshold %.2f must be above every entry delta (slot %d DTE at %.2f) and below 1 — a new leg would be exited at once",
+				c.DeltaExitThreshold, sl.TargetDTE, sl.EntryDelta)
+		}
 	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
@@ -324,6 +333,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
+	}
+	if cfg.DeltaExitThreshold == 0 {
+		cfg.DeltaExitThreshold = 0.30
 	}
 	if cfg.GEXMethod == "" {
 		cfg.GEXMethod = "script"

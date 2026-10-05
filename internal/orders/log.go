@@ -52,6 +52,8 @@ func closeReasonLabel(trigger string) string {
 		return "dte_rollout"
 	case TriggerRolloutDelta:
 		return "delta_drift"
+	case TriggerDeltaExit:
+		return "delta_exit"
 	case TriggerRolloutROI:
 		return "roi_target"
 	case TriggerGammaClose:

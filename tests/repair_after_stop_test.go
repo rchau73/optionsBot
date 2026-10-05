@@ -26,7 +26,7 @@ func TestRepairBlockReason(t *testing.T) {
 	}{
 		{"frozen", stop.Add(100 * time.Hour), risk.Status{Frozen: true, FreezeReason: "DVOL moved"}, "entries frozen"},
 		{"negative gamma", stop.Add(100 * time.Hour), risk.Status{RegimeUsed: true, RegimeNegative: true}, "negative gamma"},
-		{"cooldown", stop.Add(24 * time.Hour), calm, "cooldown after stop-loss until Oct 9 12:00 UTC"},
+		{"cooldown", stop.Add(24 * time.Hour), calm, "cooldown after stop-out until Oct 9 12:00 UTC"},
 		{"calm and cooled down", stop.Add(72 * time.Hour), calm, ""},
 		{"no GEX source: regime ignored", stop.Add(80 * time.Hour), risk.Status{RegimeNegative: true}, ""},
 	}

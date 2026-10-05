@@ -89,7 +89,7 @@ func makePos(optType string, dte int, premiumReceived, currentMid, delta float64
 func TestEvaluateLeg_StopLoss(t *testing.T) {
 	// Loss of 200%: position cost 3x the premium received
 	pos := makePos("call", 30, 100, 300, 0.50) // mid=300, premium=100 → loss = 200%
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionStopLoss {
 		t.Errorf("expected ActionStopLoss, got %v", dec.Action)
 	}
@@ -100,7 +100,7 @@ func TestEvaluateLeg_StopLoss(t *testing.T) {
 
 func TestEvaluateLeg_19DTE(t *testing.T) {
 	pos := makePos("call", 15, 100, 60, 0.20) // DTE=15, loss=40%
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionRollNextMonth {
 		t.Errorf("expected ActionRollNextMonth, got %v", dec.Action)
 	}
@@ -112,7 +112,7 @@ func TestEvaluateLeg_19DTE(t *testing.T) {
 func TestEvaluateLeg_DeltaDrift(t *testing.T) {
 	// Delta drifted below 0.10, DTE >= 25
 	pos := makePos("put", 30, 100, 50, 0.05)
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionRollSameLeg {
 		t.Errorf("expected ActionRollSameLeg for delta drift, got %v", dec.Action)
 	}
@@ -124,7 +124,7 @@ func TestEvaluateLeg_DeltaDrift(t *testing.T) {
 func TestEvaluateLeg_ROITakeProfit(t *testing.T) {
 	// ROI = (100 - 40) / 100 = 60% >= 50%, DTE >= 25
 	pos := makePos("call", 30, 100, 40, 0.15)
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionRollSameLeg {
 		t.Errorf("expected ActionRollSameLeg for ROI take-profit, got %v", dec.Action)
 	}
@@ -139,17 +139,17 @@ func TestEvaluateLeg_ROITakeProfit(t *testing.T) {
 func TestEvaluateLeg_WithoutLiveQuote(t *testing.T) {
 	drift := makePos("put", 30, 100, 0, 0) // mark and delta zeroed: what a missing quote looks like
 	drift.MarkLive = false
-	if dec := strategy.EvaluateLeg(drift, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionNone {
+	if dec := strategy.EvaluateLeg(drift, time.Now(), 19, 0.10, 0.50, 2.0, 0); dec.Action != strategy.ActionNone {
 		t.Errorf("no delta-drift or take-profit close without a live quote, got %v (%s)", dec.Action, dec.Reason)
 	}
 	stop := makePos("put", 30, 100, 300, 0)
 	stop.MarkLive = false
-	if dec := strategy.EvaluateLeg(stop, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionStopLoss {
+	if dec := strategy.EvaluateLeg(stop, time.Now(), 19, 0.10, 0.50, 2.0, 0); dec.Action != strategy.ActionStopLoss {
 		t.Errorf("the stop-loss must still fire on the last known mark, got %v", dec.Action)
 	}
 	roll := makePos("put", 15, 100, 60, 0)
 	roll.MarkLive = false
-	if dec := strategy.EvaluateLeg(roll, time.Now(), 19, 0.10, 0.50, 2.0); dec.Action != strategy.ActionRollNextMonth {
+	if dec := strategy.EvaluateLeg(roll, time.Now(), 19, 0.10, 0.50, 2.0, 0); dec.Action != strategy.ActionRollNextMonth {
 		t.Errorf("the time roll must still apply, got %v", dec.Action)
 	}
 }
@@ -157,7 +157,7 @@ func TestEvaluateLeg_WithoutLiveQuote(t *testing.T) {
 func TestEvaluateLeg_NoAction(t *testing.T) {
 	// Healthy position: 40 DTE, delta=0.16, ROI=30%, no loss
 	pos := makePos("call", 40, 100, 70, 0.16)
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionNone {
 		t.Errorf("expected ActionNone, got %v", dec.Action)
 	}
@@ -166,7 +166,7 @@ func TestEvaluateLeg_NoAction(t *testing.T) {
 func TestEvaluateLeg_PriorityOrder(t *testing.T) {
 	// Stop loss takes priority over 19 DTE
 	pos := makePos("call", 10, 100, 350, 0.50)
-	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0)
+	dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0)
 	if dec.Action != strategy.ActionStopLoss {
 		t.Errorf("stop loss should take priority over 19 DTE, got %v", dec.Action)
 	}

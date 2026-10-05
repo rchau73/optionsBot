@@ -14,6 +14,7 @@ const (
 	TriggerRolloutDelta      = "rollout_delta_drift"
 	TriggerRolloutROI        = "rollout_roi"
 	TriggerStopLoss200Pct    = "stop_loss_200pct"
+	TriggerDeltaExit         = "delta_exit" // short leg's |delta| reached delta_exit_threshold — closed, held like a stop
 	TriggerGammaClose        = "gamma_close"
 	TriggerKillSwitch        = "kill_switch"
 	TriggerReconciled        = "reconciled"         // position loaded from exchange on startup

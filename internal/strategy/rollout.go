@@ -22,13 +22,16 @@ const (
 	ActionRollNextMonth               // close and reopen at next monthly expiry
 	ActionRollSameLeg                 // close and reopen same leg at delta 0.16, same month
 	ActionStopLoss                    // emergency market close
+	ActionDeltaExit                   // early defensive close; held like a stop-loss
 )
 
-// EvaluateLeg applies rollout rules 4.1–4.5 in priority order and returns the
-// highest-priority applicable decision for a single leg.
+// EvaluateLeg applies the exit rules in priority order — stop-loss, DTE roll,
+// delta exit, delta drift, take-profit — and returns the highest-priority
+// applicable decision for a single leg.
 //
 // now is the evaluation time: time.Now() live, the simulated date in a backtest.
-func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDriftThreshold, roiTakeProfit, stopLossMultiplier float64) RolloutDecision {
+// deltaExit ≤ 0 disables the delta exit.
+func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDriftThreshold, roiTakeProfit, stopLossMultiplier, deltaExit float64) RolloutDecision {
 	dte := pos.DTEAt(now)
 
 	// Rule 4.5 — Emergency stop-loss (highest priority)
@@ -58,8 +61,22 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{Action: ActionNone, LegID: pos.ID}
 	}
 
-	// Rule 4.2 — Delta drift below threshold
 	absDelta := absDelta(pos.CurrentGreeks.Delta)
+
+	// Delta exit — the move against the leg is real (a 0.16-delta short now
+	// at 0.30): close before the 2× stop, at a smaller loss. Re-selling at
+	// once would sell into the same move, so the leg is held like a stopped
+	// one. In stress simulations this beat both the stop alone and a
+	// roll-and-re-sell, in trends and in chop.
+	if deltaExit > 0 && absDelta >= deltaExit {
+		return RolloutDecision{
+			Action: ActionDeltaExit,
+			Reason: orders.TriggerDeltaExit,
+			LegID:  pos.ID,
+		}
+	}
+
+	// Rule 4.2 — Delta drift below threshold
 	if absDelta < deltaDriftThreshold && dte >= 25 {
 		return RolloutDecision{
 			Action: ActionRollSameLeg,

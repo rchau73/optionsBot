@@ -38,6 +38,7 @@ type Engine struct {
 	rollout19DTE       int
 	rolloutDelta       int
 	rolloutROI         int
+	deltaExits         int
 
 	ivAtEntry    []float64
 	ivPctAtEntry []float64
@@ -174,6 +175,7 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 			e.cfg.DeltaDriftThreshold,
 			e.cfg.ROITakeProfit,
 			e.cfg.StopLossMultiplier,
+			e.cfg.DeltaExitThreshold,
 		)
 		if dec.Action == strategy.ActionNone {
 			slog.Debug("position hold", "instrument", pos.Instrument, "action", "none",
@@ -272,6 +274,8 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 		e.rolloutDelta++
 	case orders.TriggerRolloutROI:
 		e.rolloutROI++
+	case orders.TriggerDeltaExit:
+		e.deltaExits++
 	}
 
 	fill, err := e.exec.Submit(ctx, orders.Order{
@@ -307,8 +311,9 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 		}
 	}
 
-	// Reopen if needed
-	if dec.Action == strategy.ActionStopLoss || dec.Action == strategy.ActionRollNextMonth {
+	// Reopen if needed (the backtest does not model the live repair hold
+	// after a stop-loss or delta exit; it reopens at the next expiry)
+	if dec.Action == strategy.ActionStopLoss || dec.Action == strategy.ActionDeltaExit || dec.Action == strategy.ActionRollNextMonth {
 		instList := make([]*marketdata.Instrument, 0, len(instruments))
 		for _, v := range instruments {
 			instList = append(instList, v)
@@ -598,6 +603,7 @@ func (e *Engine) buildSummary() Summary {
 		Rollout19DTE:           e.rollout19DTE,
 		RolloutDeltaDrift:      e.rolloutDelta,
 		RolloutROI:             e.rolloutROI,
+		DeltaExits:             e.deltaExits,
 		AvgThetaCapturedUSD:    Mean(thetas),
 		AvgIVAtEntry:           Mean(e.ivAtEntry),
 		AvgIVPercentileAtEntry: Mean(e.ivPctAtEntry),
