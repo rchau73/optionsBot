@@ -148,6 +148,14 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 // handleGammaAction sheds every leg of the type the GEX regime says is at
 // risk (puts in a confirmed down-move, calls in a confirmed up-move).
 func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
+	// First stop working orders on the shed side from filling into the shed;
+	// anything that filled before the cancel is booked and closed below.
+	switch dec.Action {
+	case GammaActionClosePuts:
+		s.cancelShedSide(ctx, "put")
+	case GammaActionCloseCalls:
+		s.cancelShedSide(ctx, "call")
+	}
 	for _, pos := range s.state.AllPositions() {
 		shouldClose := (dec.Action == GammaActionClosePuts && pos.OptionType == "put") ||
 			(dec.Action == GammaActionCloseCalls && pos.OptionType == "call")
