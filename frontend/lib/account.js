@@ -98,3 +98,30 @@ export function riskRows(bots) {
       };
     });
 }
+
+/**
+ * Positions on the account that no bot manages: every position Deribit
+ * reports (the freshest account snapshot) minus the legs in the bots' books.
+ * They are not traded by any bot but still use margin.
+ * Returns { rows, error, reported } — reported is false for bots too old to
+ * send positions, so "none" is never shown when the list is unknown.
+ */
+export function unmanagedPositions(account, bots) {
+  const snap = account?.snapshot;
+  if (!snap || snap.positions === undefined) return { rows: [], error: null, reported: false };
+  if (snap.positions === null) return { rows: [], error: snap.positions_error || "positions unavailable", reported: true };
+  const managed = new Set(
+    bots.flatMap((b) => (b.positions?.strangles ?? []).flatMap((s) => (s.legs ?? []).map((l) => l.instrument))),
+  );
+  const rows = snap.positions.filter((p) => !managed.has(p.instrument));
+  return { rows, error: snap.positions_error || null, reported: true };
+}
+
+/** Sum of a field per currency: { BTC: −0.106, … }. */
+export function sumByCurrency(rows, field) {
+  const out = {};
+  for (const r of rows) {
+    if (typeof r[field] === "number") out[r.currency] = (out[r.currency] ?? 0) + r[field];
+  }
+  return out;
+}

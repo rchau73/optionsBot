@@ -51,6 +51,37 @@ type Totals struct {
 	MMPct                float64 `json:"mm_pct"`
 }
 
+// Position is one open position on the account, of any kind, as Deribit
+// reports it (private/get_positions). Prices, P&L and margin are in Currency
+// (the coin for inverse instruments). Size is signed: negative = short.
+type Position struct {
+	Currency          string  `json:"currency"`
+	Instrument        string  `json:"instrument"`
+	Kind              string  `json:"kind"` // option | future | …
+	Direction         string  `json:"direction"`
+	Size              float64 `json:"size"`
+	AveragePrice      float64 `json:"average_price"`
+	MarkPrice         float64 `json:"mark_price"`
+	TotalPnL          float64 `json:"total_pnl"`
+	Delta             float64 `json:"delta"` // position delta
+	InitialMargin     float64 `json:"initial_margin"`
+	MaintenanceMargin float64 `json:"maintenance_margin"`
+}
+
+// PositionRow is the subset of private/get_positions we read.
+type PositionRow struct {
+	InstrumentName    string  `json:"instrument_name"`
+	Kind              string  `json:"kind"`
+	Direction         string  `json:"direction"`
+	Size              float64 `json:"size"`
+	AveragePrice      float64 `json:"average_price"`
+	MarkPrice         float64 `json:"mark_price"`
+	TotalProfitLoss   float64 `json:"total_profit_loss"`
+	Delta             float64 `json:"delta"`
+	InitialMargin     float64 `json:"initial_margin"`
+	MaintenanceMargin float64 `json:"maintenance_margin"`
+}
+
 // Snapshot is one poll of the account.
 type Snapshot struct {
 	AsOf               time.Time `json:"as_of"`
@@ -60,6 +91,11 @@ type Snapshot struct {
 	Totals             *Totals   `json:"totals,omitempty"`
 	Assets             []Asset   `json:"assets"`
 	Source             string    `json:"source"` // get_account_summaries | get_account_summary
+	// Positions is every open position on the account (all currencies the
+	// account holds, all kinds) — including what no bot manages, which
+	// still uses margin. Nil with PositionsError set when the read failed.
+	Positions      []Position `json:"positions"`
+	PositionsError string     `json:"positions_error,omitempty"`
 }
 
 // Status is the cached snapshot plus how fresh it is.
@@ -148,6 +184,44 @@ func (p *Poller) Refresh(ctx context.Context) {
 	p.snap, p.err = snap, ""
 }
 
+// attachPositions reads every open position for each currency the account
+// holds (one read-only call per currency, all kinds). A failure leaves the
+// summary in place and records why the list is missing.
+func (p *Poller) attachPositions(ctx context.Context, snap *Snapshot) {
+	positions := []Position{}
+	for _, a := range snap.Assets {
+		resp, err := p.gw.Call(ctx, "private/get_positions", map[string]any{"currency": a.Currency}, gateway.PriorityLow)
+		if err != nil {
+			snap.PositionsError = fmt.Sprintf("get_positions %s: %v", a.Currency, err)
+			return
+		}
+		var rows []PositionRow
+		if err := json.Unmarshal(resp.Result, &rows); err != nil {
+			snap.PositionsError = fmt.Sprintf("decode positions %s: %v", a.Currency, err)
+			return
+		}
+		positions = append(positions, BuildPositions(a.Currency, rows)...)
+	}
+	snap.Positions = positions
+}
+
+// BuildPositions keeps the non-zero positions, sorted by instrument (pure).
+func BuildPositions(currency string, rows []PositionRow) []Position {
+	var out []Position
+	for _, r := range rows {
+		if r.Size == 0 {
+			continue
+		}
+		out = append(out, Position{
+			Currency: currency, Instrument: r.InstrumentName, Kind: r.Kind, Direction: r.Direction,
+			Size: r.Size, AveragePrice: r.AveragePrice, MarkPrice: r.MarkPrice, TotalPnL: r.TotalProfitLoss,
+			Delta: r.Delta, InitialMargin: r.InitialMargin, MaintenanceMargin: r.MaintenanceMargin,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Instrument < out[j].Instrument })
+	return out
+}
+
 func (p *Poller) fetch(ctx context.Context) (*Snapshot, error) {
 	p.mu.RLock()
 	legacy := p.useLegacy
@@ -156,6 +230,7 @@ func (p *Poller) fetch(ctx context.Context) (*Snapshot, error) {
 	if !legacy {
 		snap, err := p.fetchAll(ctx)
 		if err == nil {
+			p.attachPositions(ctx, snap)
 			return snap, nil
 		}
 		if ctx.Err() != nil {
@@ -166,7 +241,11 @@ func (p *Poller) fetch(ctx context.Context) (*Snapshot, error) {
 		p.useLegacy = true
 		p.mu.Unlock()
 	}
-	return p.fetchEach(ctx)
+	snap, err := p.fetchEach(ctx)
+	if err == nil {
+		p.attachPositions(ctx, snap)
+	}
+	return snap, err
 }
 
 // fetchAll uses private/get_account_summaries: every currency in one call.

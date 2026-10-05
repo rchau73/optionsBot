@@ -10,9 +10,10 @@ import PendingOrders from "./PendingOrders";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
 import AccountPanel, { AccountSummary } from "./AccountPanel";
+import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import { useMonitor } from "@/hooks/useMonitor";
 import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
-import { pickAccount, riskRows } from "@/lib/account";
+import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
@@ -31,6 +32,7 @@ export default function Monitor() {
   const kpi = summarise(bots);
   const account = pickAccount(bots, polledAt);
   const risk = riskRows(bots);
+  const others = unmanagedPositions(account, bots);
 
   return (
     <div className="min-h-screen">
@@ -52,6 +54,14 @@ export default function Monitor() {
         </Panel>
         <Panel title="Open positions" right={<Filters filters={filters} options={options} onChange={setFilters} />}>
           <PositionsTable groups={groups} />
+        </Panel>
+        <Panel
+          title="Not managed by the bot (still uses margin)"
+          collapsible
+          storageKey="monitor.panel.others"
+          summary={otherPositionsSummary(others)}
+        >
+          <OtherPositions data={others} />
         </Panel>
         <div className="grid gap-3 lg:grid-cols-3">
           <Panel title="Activity" className="lg:col-span-2">
