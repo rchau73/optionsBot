@@ -77,6 +77,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if d.GEX != nil {
 		gamma.SetGEXSource(d.GEX)
 	}
+	gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, d.Market.DVOL)
 	regimes := d.Regimes
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
