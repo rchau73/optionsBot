@@ -3,6 +3,7 @@ package orders
 import (
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/risk"
 )
 
@@ -71,11 +72,7 @@ func (p *Position) DTE() int { return p.DTEAt(time.Now()) }
 // DTEAt returns whole calendar days to expiry as of now (0 once expired).
 // The backtest passes its simulated date.
 func (p *Position) DTEAt(now time.Time) int {
-	d := p.Expiry.Sub(now).Hours() / 24
-	if d < 0 {
-		return 0
-	}
-	return int(d)
+	return marketdata.DaysToExpiry(p.Expiry, now) // the same rule entry uses
 }
 
 // MtMPnL returns mark-to-market PnL: premium received minus current close cost.

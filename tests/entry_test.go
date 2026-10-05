@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"optionsbot/internal/marketdata"
+	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
 
@@ -16,7 +17,10 @@ func makeInstruments(dteDays ...int) []*marketdata.Instrument {
 	now := time.Now()
 	var out []*marketdata.Instrument
 	for _, d := range dteDays {
-		expiry := now.Add(time.Duration(d) * 24 * time.Hour)
+		// d whole days plus an hour: DTE counts whole days left (rounded down),
+		// and an expiry exactly d days from a slightly earlier "now" would be
+		// d−1 by the time the test reads it.
+		expiry := now.Add(time.Duration(d)*24*time.Hour + time.Hour)
 		out = append(out, &marketdata.Instrument{
 			Name:   "BTC-TEST",
 			Expiry: expiry,
@@ -197,5 +201,44 @@ func TestAvailableAndNextMonthlyExpiry(t *testing.T) {
 	}
 	if _, ok := strategy.NextMonthlyExpiry(ref, nil); ok {
 		t.Error("no expiries → not found")
+	}
+}
+
+// Regression (found in a ±40 % stress simulation): entry counted DTE rounded,
+// the exit rules rounded down, so an expiry 15.5 days out passed entry ("16",
+// above rollout_dte 15) and was rolled on the next cycle ("15"), over and over.
+func TestSelectExpiry_NeverPicksWhatTheExitRuleWouldRollAtOnce(t *testing.T) {
+	now := time.Date(2026, 10, 8, 4, 0, 0, 0, time.UTC)
+	expiry := time.Date(2026, 10, 23, 16, 0, 0, 0, time.UTC) // 15.5 days out
+	insts := []*marketdata.Instrument{{Name: "BTC-X", Expiry: expiry}}
+	if _, ok := strategy.SelectExpiry(insts, now, 25, 10, 15); ok {
+		t.Error("15.5 days left is DTE 15: inside the rollout window, must not be entered")
+	}
+	pos := &orders.Position{Expiry: expiry}
+	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2); dec.Action != strategy.ActionRollNextMonth {
+		t.Errorf("and the exit rule agrees it is inside the window: %v", dec.Action)
+	}
+	// From 16 days left it is a valid entry, and not rolled.
+	later := expiry.Add(12 * time.Hour) // 16.0 days out
+	insts[0].Expiry = later
+	if _, ok := strategy.SelectExpiry(insts, now, 25, 10, 15); !ok {
+		t.Error("16 days left must be a valid entry")
+	}
+	pos.Expiry, pos.MarkLive = later, true
+	if dec := strategy.EvaluateLeg(pos, now, 15, 0.10, 0.5, 2); dec.Action == strategy.ActionRollNextMonth {
+		t.Error("a position the entry rule accepts must not be rolled at once")
+	}
+}
+
+func TestDaysToExpiry_WholeDaysLeftRoundedDown(t *testing.T) {
+	now := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	for hours, want := range map[float64]int{-5: 0, 0: 0, 23.9: 0, 24: 1, 371.9: 15, 372: 15, 384: 16} {
+		exp := now.Add(time.Duration(hours * float64(time.Hour)))
+		if got := marketdata.DaysToExpiry(exp, now); got != want {
+			t.Errorf("%v hours → DTE %d, want %d", hours, got, want)
+		}
+		if got := (&orders.Position{Expiry: exp}).DTEAt(now); got != want {
+			t.Errorf("Position.DTEAt must use the same rule: %v hours → %d, want %d", hours, got, want)
+		}
 	}
 }
