@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -71,24 +73,143 @@ func (s *Strategy) logStartupState(ctx context.Context) {
 // slots by DTE distance + delta distance×100, preferring the exact slot the position
 // was opened under. Exported so it can be unit-tested without a full Strategy.
 func MatchSlotToPosition(call, put *orders.Position, expiry, now time.Time, slots []config.StrangleSlot) config.StrangleSlot {
-	actualDTE := int(expiry.Sub(now).Hours() / 24)
+	best := slots[0]
+	bestScore := math.MaxFloat64
+	for _, sl := range slots {
+		if score := slotScore(call, put, expiry, now, sl); score < bestScore {
+			bestScore = score
+			best = sl
+		}
+	}
+	return best
+}
+
+// slotScore is how far a strangle sits from a slot: DTE distance plus delta
+// distance × 100 (lower is closer).
+func slotScore(call, put *orders.Position, expiry, now time.Time, sl config.StrangleSlot) float64 {
 	refDelta := 0.0
 	if call != nil {
 		refDelta = math.Abs(call.CurrentGreeks.Delta)
 	} else if put != nil {
 		refDelta = math.Abs(put.CurrentGreeks.Delta)
 	}
-	best := slots[0]
-	bestScore := math.MaxFloat64
-	for _, sl := range slots {
-		dteDist := float64(absInt(sl.TargetDTE - actualDTE))
-		deltaDist := math.Abs(sl.EntryDelta-refDelta) * 100
-		if score := dteDist + deltaDist; score < bestScore {
-			bestScore = score
-			best = sl
+	dteDist := float64(absInt(sl.TargetDTE - marketdata.DaysToExpiry(expiry, now)))
+	return dteDist + math.Abs(sl.EntryDelta-refDelta)*100
+}
+
+// ReconciledStrangle is one strangle rebuilt from exchange positions; Call
+// or Put is nil for a one-legged strangle (repair completes it).
+type ReconciledStrangle struct {
+	Call, Put *orders.Position
+	Expiry    time.Time
+	Slot      config.StrangleSlot
+}
+
+// GroupPositions rebuilds strangles from short positions after a restart.
+// An expiry can hold several strangles (two slots on one month-end, plus
+// top-ups), so on each expiry calls and puts are paired by size — legs
+// opened together have the same size — and, among equal sizes, by rank from
+// the money (nearest call with nearest put); any leg left over becomes a
+// one-legged strangle. Every position lands in
+// exactly one strangle. Each strangle gets the closest slot not yet taken
+// (closest pairs first); only when every slot is taken may two share one.
+//
+// It replaced a one-strangle-per-expiry rule that kept only the last call and
+// put of an expiry: the other legs were loaded but in no strangle, so the
+// startup rebalance undercounted the book and added top-ups at every restart,
+// and leg balancing bought back legs it saw as excess.
+func GroupPositions(positions []*orders.Position, now time.Time, slots []config.StrangleSlot) []ReconciledStrangle {
+	type side struct{ calls, puts []*orders.Position }
+	byExpiry := map[time.Time]*side{}
+	var expiries []time.Time
+	for _, p := range positions {
+		sd := byExpiry[p.Expiry]
+		if sd == nil {
+			sd = &side{}
+			byExpiry[p.Expiry] = sd
+			expiries = append(expiries, p.Expiry)
+		}
+		if p.OptionType == "call" {
+			sd.calls = append(sd.calls, p)
+		} else {
+			sd.puts = append(sd.puts, p)
 		}
 	}
-	return best
+	sort.Slice(expiries, func(i, j int) bool { return expiries[i].Before(expiries[j]) })
+
+	nearestFirst := func(ps []*orders.Position) {
+		sort.SliceStable(ps, func(i, j int) bool {
+			di, dj := math.Abs(ps[i].CurrentGreeks.Delta), math.Abs(ps[j].CurrentGreeks.Delta)
+			if di != dj {
+				return di > dj
+			}
+			return ps[i].Instrument < ps[j].Instrument
+		})
+	}
+	var out []ReconciledStrangle
+	for _, exp := range expiries {
+		sd := byExpiry[exp]
+		nearestFirst(sd.calls)
+		nearestFirst(sd.puts)
+		// Legs opened together have the same size, so pair the closest
+		// sizes first; among equal sizes, the same rank from the money.
+		type pair struct {
+			c, p     int
+			qty, rnk float64
+		}
+		var cands []pair
+		for i, c := range sd.calls {
+			for j, p := range sd.puts {
+				cands = append(cands, pair{i, j, math.Abs(c.Qty - p.Qty), math.Abs(float64(i - j))})
+			}
+		}
+		sort.SliceStable(cands, func(a, b int) bool {
+			if cands[a].qty != cands[b].qty {
+				return cands[a].qty < cands[b].qty
+			}
+			return cands[a].rnk < cands[b].rnk
+		})
+		usedC, usedP := map[int]bool{}, map[int]bool{}
+		for _, cd := range cands {
+			if usedC[cd.c] || usedP[cd.p] {
+				continue
+			}
+			usedC[cd.c], usedP[cd.p] = true, true
+			out = append(out, ReconciledStrangle{Call: sd.calls[cd.c], Put: sd.puts[cd.p], Expiry: exp})
+		}
+		for i, c := range sd.calls {
+			if !usedC[i] {
+				out = append(out, ReconciledStrangle{Call: c, Expiry: exp})
+			}
+		}
+		for j, p := range sd.puts {
+			if !usedP[j] {
+				out = append(out, ReconciledStrangle{Put: p, Expiry: exp})
+			}
+		}
+	}
+
+	// Slots: repeatedly take the closest (strangle, free slot) pair.
+	taken := map[int]bool{}
+	assigned := make([]bool, len(out))
+	for range out {
+		bi, bs, best := -1, -1, math.MaxFloat64
+		for i, st := range out {
+			if assigned[i] {
+				continue
+			}
+			for j, sl := range slots {
+				if taken[j] && len(taken) < len(slots) {
+					continue
+				}
+				if sc := slotScore(st.Call, st.Put, st.Expiry, now, sl); sc < best {
+					bi, bs, best = i, j, sc
+				}
+			}
+		}
+		out[bi].Slot, assigned[bi], taken[bs] = slots[bs], true, true
+	}
+	return out
 }
 
 // reconcilePositions rebuilds the in-memory book from the exchange on startup.
@@ -122,7 +243,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	}
 
 	now := time.Now()
-	byExpiry := map[time.Time][]*orders.Position{}
+	var loaded []*orders.Position
 
 	for _, rp := range shorts {
 		pos, err := s.positionFromRaw(rp, now)
@@ -130,9 +251,8 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			slog.Warn("reconcile: cannot parse instrument", "name", rp.InstrumentName, "err", err)
 			continue
 		}
-		expiry := pos.Expiry
 		s.state.AddPosition(pos)
-		byExpiry[expiry] = append(byExpiry[expiry], pos)
+		loaded = append(loaded, pos)
 
 		slog.Info("reconcile: loaded position",
 			"instrument", pos.Instrument,
@@ -148,20 +268,11 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 		)
 	}
 
-	// Reconstruct strangles from matched call+put pairs per expiry.
-	// Single-leg positions are registered as partial strangles so that
-	// repairIncompleteStrangles can detect and fill the missing leg.
-	for expiry, positions := range byExpiry {
-		var call, put *orders.Position
-		for _, p := range positions {
-			switch p.OptionType {
-			case "call":
-				call = p
-			case "put":
-				put = p
-			}
-		}
-		bestSlot := MatchSlotToPosition(call, put, expiry, now, s.cfg.Slots())
+	// Reconstruct strangles: every position in exactly one strangle, pairs
+	// matched by delta on each expiry (GroupPositions). Single legs are
+	// registered as partial strangles so repair can fill the missing leg.
+	for _, g := range GroupPositions(loaded, now, s.cfg.Slots()) {
+		call, put, expiry, bestSlot := g.Call, g.Put, g.Expiry, g.Slot
 		stID := s.state.NextID("st")
 		s.state.AddStrangle(&orders.Strangle{
 			ID: stID, TargetDTE: bestSlot.TargetDTE, EntryDelta: bestSlot.EntryDelta,
@@ -217,6 +328,23 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 		if !callActive && !putActive {
 			s.state.RemoveStrangle(st.ID)
 			slog.Info("reconcile: removed stale strangle", "strangle_id", st.ID, "target_dte", st.TargetDTE)
+		}
+	}
+
+	// Invariant: every loaded short belongs to exactly one strangle. A leg
+	// outside every strangle is invisible to sizing and balancing.
+	inStrangle := map[string]int{}
+	for _, st := range s.state.AllStrangles() {
+		for _, leg := range []*orders.Position{st.CallLeg, st.PutLeg} {
+			if leg != nil {
+				inStrangle[leg.ID]++
+			}
+		}
+	}
+	for _, p := range loaded {
+		if inStrangle[p.ID] != 1 {
+			slog.Error("reconcile: position not in exactly one strangle — sizing and balancing would misread the book",
+				"instrument", p.Instrument, "qty", p.Qty, "strangles", inStrangle[p.ID])
 		}
 	}
 

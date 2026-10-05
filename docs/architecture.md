@@ -91,7 +91,7 @@ See [marketdata_flow](marketdata_flow.png).
 
 See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](seq_entry.png), [exit](seq_exit.png), [rollout rules](strategy_rollout.png), [position states](strategy_position_states.png), [kill switch](seq_kill_switch.png).
 
-**Startup:** seed price history → log account → **reconcile** (cancel this currency's stale orders, load open shorts, regroup into strangles by expiry, match each to its slot) → wait for the index price → **rebalance** to the current budget → fill vacant slots.
+**Startup:** seed price history → log account → **reconcile** (cancel this currency's stale orders, load open shorts, regroup them into strangles with `GroupPositions` — one expiry may hold several strangles, so calls and puts are paired by size, then rank from the money, leftovers stay one-legged and every position lands in exactly one strangle — and match each to the closest free slot) → wait for the index price → **rebalance** to the current budget → fill vacant slots.
 
 **Each cycle (`eval_interval_ms`):** refresh marks → evaluate the GEX regime → poll pending orders → GEX sheds at-risk legs → rollout rules per position → repair one-legged strangles → hedge report → open vacant slots.
 
