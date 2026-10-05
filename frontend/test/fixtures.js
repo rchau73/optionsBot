@@ -44,7 +44,8 @@ export const positions = {
 export const orders = {
   pending: [
     {
-      id: "ps-1", slot: { dte: 25, delta: 0.16 }, repair: false, submitted_at: new Date().toISOString(), adjustments: 1,
+      id: "ps-1", slot: { dte: 25, delta: 0.16 }, repair: false, submitted_at: new Date().toISOString(),
+      timeout_at: new Date(Date.now() + 75_000).toISOString(), adjustments: 1,
       legs: [{ order_id: "o-7", instrument: "BTC-30OCT26-110000-C", option_type: "call", qty: 0.1, filled_qty: 0, limit_price: 0.011 }],
     },
   ],

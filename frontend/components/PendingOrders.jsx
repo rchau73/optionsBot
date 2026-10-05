@@ -1,4 +1,4 @@
-import { ageSeconds, formatAge, formatPrice, slotLabel } from "@/lib/format";
+import { ageSeconds, formatAge, formatCountdown, formatPrice, slotLabel } from "@/lib/format";
 
 /** Entry and repair orders still working on the book. */
 export default function PendingOrders({ bots }) {
@@ -17,7 +17,9 @@ export default function PendingOrders({ bots }) {
           <th className="px-2 py-1">Slot</th>
           <th className="px-2 py-1 text-right">Filled</th>
           <th className="px-2 py-1 text-right">Limit</th>
-          <th className="px-2 py-1 text-right">Re-priced</th>
+          <th className="px-2 py-1 text-right" title="Unfilled orders are cancelled at this time; filled legs are kept">
+            Timeout
+          </th>
           <th className="px-2 py-1 text-right">Age</th>
         </tr>
       </thead>
@@ -33,7 +35,7 @@ export default function PendingOrders({ bots }) {
               {l.filled_qty}/{l.qty}
             </td>
             <td className="px-2 py-1 text-right tabular-nums">{formatPrice(l.limit_price)}</td>
-            <td className="px-2 py-1 text-right tabular-nums">{p.adjustments}×</td>
+            <td className="px-2 py-1 text-right tabular-nums">{formatCountdown(p.timeout_at)}</td>
             <td className="px-2 py-1 text-right text-muted">{formatAge(ageSeconds(p.submitted_at))}</td>
           </tr>
         ))}

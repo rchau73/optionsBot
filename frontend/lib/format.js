@@ -50,6 +50,17 @@ export function formatAge(seconds) {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
+/** Time left until iso: "in 1m 05s", "due" once passed, "—" when unknown. */
+export function formatCountdown(iso, now = Date.now()) {
+  if (!iso || iso.startsWith("0001-")) return MISSING;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return MISSING;
+  const s = Math.ceil((t - now) / 1000);
+  if (s <= 0) return "due";
+  if (s < 60) return `in ${s}s`;
+  return `in ${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
 export function formatTime(iso) {
   if (!iso) return MISSING;
   const d = new Date(iso);

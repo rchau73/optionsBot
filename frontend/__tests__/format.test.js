@@ -1,4 +1,4 @@
-import { ageSeconds, formatAge, formatCoin, formatPct, formatPrice, formatTime, formatUSD, slotLabel } from "@/lib/format";
+import { ageSeconds, formatAge, formatCountdown, formatCoin, formatPct, formatPrice, formatTime, formatUSD, slotLabel } from "@/lib/format";
 
 describe("format", () => {
   test("missing values render as a dash, never zero", () => {
@@ -31,4 +31,17 @@ describe("format", () => {
     expect(formatAge(125)).toBe("2m ago");
     expect(formatTime("2026-10-02T12:34:56Z")).toBe("12:34:56 UTC");
   });
+});
+
+describe("formatCountdown", () => {
+  const now = Date.parse("2026-10-05T12:00:00Z");
+  test.each([
+    ["2026-10-05T12:00:45Z", "in 45s"],
+    ["2026-10-05T12:01:05Z", "in 1m 05s"],
+    ["2026-10-05T12:00:00Z", "due"],
+    ["2026-10-05T11:59:00Z", "due"],
+    ["0001-01-01T00:00:00Z", "—"],
+    [undefined, "—"],
+    ["garbage", "—"],
+  ])("%s → %s", (iso, want) => expect(formatCountdown(iso, now)).toBe(want));
 });
