@@ -61,7 +61,7 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 				"strangle_id", st.ID, "missing", missingType, "err", err)
 			continue
 		}
-		if err := s.checkPremiumFloor(inst); err != nil {
+		if err := s.checkPremiumFloor(inst, s.cfg.RepairPriceFloor); err != nil {
 			slog.Debug("repair: premium below floor", "strangle_id", st.ID, "err", err)
 			continue
 		}

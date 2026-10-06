@@ -98,7 +98,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | File | What it owns |
 |---|---|
 | `open.go` | slot occupancy, expiry choice (with fallback), strike choice, PM-aware sizing, premium floor, GEX leg gate, submitting entry legs |
-| `pending.go` | fill tracking: partial fills, amend on ask drift, timeout → cancel + read back final fill → book filled legs |
+| `pending.go` | fill tracking: partial fills, price step-down (ask → mid → `entry_price_floor`/`repair_price_floor`, `pricing.go`) and ask-drift amends, timeout → cancel + read back final fill → book filled legs |
 | `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
 | `balance.go` | strangles whose legs differ by ≥ 1 lot (partial fills, a double fill): buy back the excess of the larger leg, IOC at the ask; risk-reducing, so not frozen |
 | `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed) |

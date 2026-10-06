@@ -84,7 +84,13 @@ type Config struct {
 	MinPremiumBTC       float64 `yaml:"min_premium_btc"`
 	OrderFillTimeoutSec int     `yaml:"order_fill_timeout_sec"`
 	OrderSlippagePct    float64 `yaml:"order_slippage_pct"`
-	OrderMaxAdjustments int     `yaml:"order_max_adjustments"`
+	// EntryPriceFloor / RepairPriceFloor: how far a resting sell steps down
+	// from the ask before order_fill_timeout_sec — "ask", "mid" or "bid".
+	// Entries and rebalance upsizes default to mid; repairs, which restore a
+	// one-sided strangle's hedge, to the bid.
+	EntryPriceFloor     string `yaml:"entry_price_floor"`
+	RepairPriceFloor    string `yaml:"repair_price_floor"`
+	OrderMaxAdjustments int    `yaml:"order_max_adjustments"`
 
 	Backtest Backtest `yaml:"backtest"`
 
@@ -192,6 +198,11 @@ func (c *Config) Validate() error {
 	}
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
+	}
+	for key, v := range map[string]string{"entry_price_floor": c.EntryPriceFloor, "repair_price_floor": c.RepairPriceFloor} {
+		if v != "ask" && v != "mid" && v != "bid" {
+			return fmt.Errorf("%s %q must be ask, mid or bid", key, v)
+		}
 	}
 	if c.RebalanceRetryMinutes < 0 {
 		return fmt.Errorf("rebalance_retry_minutes %d must not be negative", c.RebalanceRetryMinutes)
@@ -349,6 +360,12 @@ func Load(path string) (*Config, error) {
 		cfg.OrderFillTimeoutSec = 90
 	}
 	// MinPremiumBTC == 0 disables the floor (accept any premium).
+	if cfg.EntryPriceFloor == "" {
+		cfg.EntryPriceFloor = "mid"
+	}
+	if cfg.RepairPriceFloor == "" {
+		cfg.RepairPriceFloor = "bid"
+	}
 	if cfg.OrderSlippagePct <= 0 {
 		cfg.OrderSlippagePct = 0.05
 	}
