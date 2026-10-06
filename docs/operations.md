@@ -65,7 +65,7 @@ docker compose start bot-btc
 
 The journal and `data/pnl_history.jsonl` move to `data/btc/data/archive/<UTC time>/`; move them back to restore that history.
 
-`bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `docker compose logs` shows one stream; the files themselves are in `data/<underlying>/`. Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks.
+`bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `docker compose logs` shows one stream; the files themselves are in `data/<underlying>/`. Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks. Sells carry a `trigger_reason` saying why they were sent: `entry` (a vacant slot), `repair` (re-selling the missing leg of a one-legged strangle) or `rebalance_upsize` (a complement bringing a slot up to the IM limit).
 
 ```bash
 docker compose logs -f bot-btc                                    # everything, one underlying

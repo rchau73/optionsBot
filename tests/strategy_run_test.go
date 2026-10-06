@@ -468,8 +468,8 @@ func (j *recordingJournal) LogAmend(r orders.PendingOrderRecord, _ float64, ctx 
 func (j *recordingJournal) LogCancelled(r orders.PendingOrderRecord, ctx orders.EventContext) {
 	j.add(journalEntry{event: orders.EventCancelled, instrument: r.Instrument, trigger: r.TriggerReason, ctx: ctx})
 }
-func (j *recordingJournal) LogOpen(pos *orders.Position, _ orders.Fill, ctx orders.EventContext) {
-	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, ctx: ctx})
+func (j *recordingJournal) LogOpen(pos *orders.Position, _ orders.Fill, trigger string, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, trigger: trigger, ctx: ctx})
 }
 func (j *recordingJournal) LogClose(pos *orders.Position, _ orders.Fill, trigger, orderType string, ctx orders.EventContext) {
 	j.add(journalEntry{event: orders.EventClosed, instrument: pos.Instrument, trigger: trigger, orderType: orderType, ctx: ctx})

@@ -144,6 +144,17 @@ func (s *Strategy) complementPending() bool {
 	return false
 }
 
+// trigger is the journal reason of this pending strangle's sells.
+func (ps *pendingStrangle) trigger() string {
+	switch {
+	case ps.repairStrangleID != "":
+		return orders.TriggerRepair
+	case ps.complement:
+		return orders.TriggerRebalanceUpsize
+	}
+	return orders.TriggerEntry
+}
+
 // underfilled reports whether any submitted leg filled less than requested.
 func (ps *pendingStrangle) underfilled() bool {
 	for _, l := range ps.legs() {
@@ -285,7 +296,7 @@ func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bo
 			slog.Warn("pending: amend failed", "order_id", leg.orderID, "err", err)
 			continue
 		}
-		s.journal.LogAmend(leg.record(orders.TriggerEntry, newPrice), leg.limitPrice,
+		s.journal.LogAmend(leg.record(ps.trigger(), newPrice), leg.limitPrice,
 			s.eventContext(inst, ps.slot()))
 		slog.Info("pending: order amended due to price drift",
 			"pending_id", ps.id,
@@ -384,7 +395,7 @@ func (s *Strategy) finalizePending(ps *pendingStrangle) {
 		s.state.AddPosition(pos)
 		s.journal.LogOpen(pos,
 			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Timestamp: now},
-			s.instrumentContext(leg.instrument, ps.slot()))
+			ps.trigger(), s.instrumentContext(leg.instrument, ps.slot()))
 		return pos
 	}
 	callPos, putPos := build(ps.call), build(ps.put)

@@ -140,7 +140,7 @@ func TestOrderLog_EveryEventCarriesItsContext(t *testing.T) {
 	rec.LimitPrice = 0.019
 	l.LogAmend(rec, 0.021, ctx)
 	l.LogCancelled(rec, ctx)
-	l.LogOpen(samplePosition(), orders.Fill{OrderID: "o-1", FillPrice: 0.02, Qty: 0.1}, ctx)
+	l.LogOpen(samplePosition(), orders.Fill{OrderID: "o-1", FillPrice: 0.02, Qty: 0.1}, orders.TriggerEntry, ctx)
 	l.LogReconciled(samplePosition(), ctx)
 	l.LogSkipped("no_expiry", orders.EventContext{StrategyID: "short-strangle", Slot: ctx.Slot, Market: orders.MarketSnapshot{Spot: 90000, DVOL: 58}})
 
