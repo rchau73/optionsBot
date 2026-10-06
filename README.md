@@ -21,6 +21,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Backtesting](#backtesting)
+- [Stress test](#stress-test)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -191,6 +192,27 @@ The engine replays the CSV day by day and applies the same pure decision functio
 
 CSV columns: `date, instrument, underlying, underlying_price, strike, expiry, option_type, bid, ask, mid, delta, gamma, theta, vega, iv, dvol_index`. The generator produces USD prices with monthly expiries — good for testing mechanics, not for judging profitability. Real Deribit history is available from the API (candles, DVOL, expired instruments) or vendors such as Tardis.dev.
 
+## Stress test
+
+How the **live book** would fare through a violent move, under the bot's real rules. `cmd/stress` starts from a snapshot of the running bot and replays scripted paths, one decision every 4 hours, applying the same pure functions as the bot — the exit rules with the delta exit (`EvaluateLeg`), GEX shedding with the flip buffer, the margin policy (DVOL bands, MM reduction), repair holds, expiry and strike selection, sizing and the 2× cap. Prices (Black–Scholes on a DVOL smile), spreads, margin and fills are modelled, with Deribit's fee (0.03 % per contract); results are net. It never connects to Deribit and places no orders.
+
+```bash
+scripts/stress_inputs.sh btc                                # snapshot → data/stress/btc/ (monitor must be up)
+go run ./cmd/stress -dir data/stress/btc -shock crash -calm 14             # day-by-day table + summary
+go run ./cmd/stress -dir data/stress/btc -shock rally40 -calm 14 -quiet    # summary only
+scripts/stress_inputs.sh eth && go run ./cmd/stress -dir data/stress/eth -currency ETH -volscale 1.4 -shock chop -calm 14
+```
+
+| `-shock` | path (after `-calm N` quiet days with DVOL sliding to its lows) |
+|---|---|
+| `crash` / `rally` | two weeks, about −25 % / +25 %, DVOL spikes, volume surges |
+| `crash40` / `rally40` | the same, about −40 % / +40 % |
+| `chop` | two weeks of violent back-and-forth with no trend |
+| `quiet` | the squeeze was a false alarm: two more quiet weeks |
+| `normalN` / `longN` | ordinary random days (seed N), realised vol = `-vrp` × DVOL |
+
+Inputs (`scripts/stress_inputs.sh`): `positions.json` and `account.json` from the bot (via the monitor), `market.json` with a year of DVOL and perpetual daily closes from Deribit's public mainnet API. The summary line gives equity in coin and USD versus simply holding the coin, realised P&L net of fees, stops, GEX sheds, rolls, peak IM and MM, and the worst day. Flags default to today's bot; `-condor` and its sub-flags re-test the squeeze-protection condor proposal (rejected — kept for comparison). Limits: one path per scenario, decisions every 4 hours (no intraday gaps), modelled prices and fills; day 0 can show a jump where the model's marks differ from the live ones. Use it to compare rule changes on the same paths, not to forecast P&L.
+
 ## Testing and CI
 
 ```bash
@@ -213,6 +235,8 @@ Regression tests for critical fixes were mutation-checked: they fail when the fi
 ```
 cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
+cmd/stress/           stress test of the live book through scripted shocks (see Stress test)
+scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/config/      config.yaml + .env loading and validation
 internal/gateway/     Deribit WebSocket client (queue, limits, breaker, retry, reconnect)
 internal/marketdata/  option chain, subscriptions, DVOL / IV percentile, expiry window

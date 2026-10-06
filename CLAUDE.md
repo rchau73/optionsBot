@@ -17,6 +17,7 @@ DERIBIT_ENV=live ./bot --config config_btc.yaml    # live — real capital, expl
 ./bot --mode=backtest --config config_btc.yaml --sweep=true --from=… --to=…
 ./bot --debug                                      # per-cycle diagnostics
 go test ./tests/... -run TestStrategy_ -v          # one group
+scripts/stress_inputs.sh btc && go run ./cmd/stress -dir data/stress/btc -shock crash -calm 14   # stress test of the live book (README "Stress test")
 ```
 
 All tests live in `tests/` (package `tests`), not next to the source. Notable files: `strategy_run_test.go` (end-to-end `Strategy.Run` against a fake exchange), `margin_policy_run_test.go` + `risk_test.go` (margin policy end to end and its pure rules), `gateway_test.go` (real `Gateway` against a mock Deribit WebSocket), `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
@@ -45,6 +46,7 @@ Never reintroduce env-var overrides for logic parameters.
 - **`internal/api`** — read-only monitor API (`BOT_API_ADDR`): `/api/status|positions|orders|pnl|events`, built from `Strategy.View()` (loop-published snapshots, never calls Deribit) and the journal's in-memory recent events. Never add endpoints that change trading state without auth + confirmation + audit. `cmd/monitor-demo` serves it with simulated data. `/api/account` serves `internal/account` (cached `private/get_account_summaries` plus `private/get_positions` for each held currency, all kinds — so positions no bot manages, which still use margin, are visible; polled every `BOT_ACCOUNT_POLL_SEC`; margin figures are Deribit's, never recomputed). The strategy itself reads only short options. `/api/pnl/history?range=` serves `internal/history` (append-only `data/pnl_history.jsonl`, written by `strategy/pnl.go` each report interval; trading never reads it).
 - **`internal/hedge`** — writes `hedge_report.json` when |net delta| ≥ threshold. **Never places orders.**
 - **`internal/backtest`** — CSV feed, `SimExecutor`, day-loop `Engine` using the pure rules at the simulated date, sweep (scenarios applied as slot matrices), walk-forward.
+- **`cmd/stress`** — research tool, not the bot: replays the live book (snapshot from `scripts/stress_inputs.sh`) through scripted shocks with the bot's pure rules and modelled prices/fills/fees. Keep its defaults equal to today's bot when a rule changes, and re-run it to compare rule changes on the same paths.
 
 ### Trading rules (keep these true)
 
