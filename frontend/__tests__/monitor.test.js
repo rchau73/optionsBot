@@ -1,4 +1,4 @@
-import { describeEvent, filterRows, groupRows, legRows, mergeFeed, summarise } from "@/lib/monitor";
+import { consolidateRows, describeEvent, filterRows, groupRows, legRows, mergeFeed, summarise } from "@/lib/monitor";
 import { withStale } from "@/hooks/useMonitor";
 import { bot, positions } from "@/test/fixtures";
 
@@ -89,5 +89,47 @@ describe("describeEvent", () => {
     const merged = mergeFeed([a], [a, b, null]);
     expect(merged.map((e) => e.id)).toEqual(["btc:2", "btc:1"]);
     expect(mergeFeed([], [a, b], 1)).toHaveLength(1);
+  });
+});
+
+describe("consolidateRows", () => {
+  const leg = (over) => ({
+    key: "k", bot: "btc", unit: "BTC", slot: "60d · Δ0.18", instrument: "BTC-27NOV26-99000-C", side: "sell",
+    type: "call", qty: 1.3, entry: 0.0125, pnl: 0.001, pnlUsd: 86, stopMark: 0.0375, markSource: "live", ...over,
+  });
+
+  it("merges positions of one bot, slot and strike", () => {
+    const [row, ...rest] = consolidateRows([leg(), leg({ qty: 0.1, entry: 0.013, pnl: 0.0001, pnlUsd: 8.6, stopMark: 0.039 })]);
+    expect(rest).toHaveLength(0);
+    expect(row.positions).toBe(2);
+    expect(row.qty).toBe(1.4);
+    expect(row.entry).toBeCloseTo((1.3 * 0.0125 + 0.1 * 0.013) / 1.4, 10);
+    expect(row.pnl).toBeCloseTo(0.0011, 10);
+    expect(row.pnlUsd).toBeCloseTo(94.6, 6);
+    expect(row.roiPct).toBeCloseTo((0.0011 / (1.3 * 0.0125 + 0.1 * 0.013)) * 100, 6);
+    expect(row.stopMark).toBe(0.0375); // the first position to stop
+  });
+
+  it("keeps different slots, strikes, bots and sides apart", () => {
+    const rows = consolidateRows([
+      leg(),
+      leg({ slot: "45d · Δ0.16" }),
+      leg({ instrument: "BTC-27NOV26-100000-C" }),
+      leg({ bot: "eth" }),
+      leg({ side: "buy" }),
+    ]);
+    expect(rows).toHaveLength(5);
+    expect(rows.every((r) => r.positions === 1)).toBe(true);
+  });
+
+  it("is not live when any merged position is not", () => {
+    const [row] = consolidateRows([leg(), leg({ markSource: "last_cycle" })]);
+    expect(row.markSource).toBe("last_cycle");
+  });
+
+  it("keeps missing P&L missing, never a silent 0", () => {
+    const [row] = consolidateRows([leg({ pnl: null, pnlUsd: null }), leg({ pnl: null, pnlUsd: null })]);
+    expect(row.pnl).toBeNull();
+    expect(row.roiPct).toBeNull();
   });
 });

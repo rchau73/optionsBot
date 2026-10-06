@@ -13,7 +13,7 @@ import AccountPanel, { AccountSummary } from "./AccountPanel";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
-import { filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
+import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
@@ -25,7 +25,7 @@ export default function Monitor() {
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
   const [filters, setFilters] = useState(NO_FILTERS);
 
-  const rows = useMemo(() => legRows(bots), [bots]);
+  const rows = useMemo(() => consolidateRows(legRows(bots)), [bots]);
   const groups = useMemo(() => groupRows(filterRows(rows, filters), filters.groupBy), [rows, filters]);
   const options = useMemo(
     () => ({ bots: bots.map((b) => b.name), strategies: [...new Set(rows.map((r) => r.strategyId))] }),
