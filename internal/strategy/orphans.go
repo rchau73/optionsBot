@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"time"
 
 	"optionsbot/internal/marketdata"
@@ -104,9 +105,12 @@ func (s *Strategy) checkPositions(ctx context.Context) {
 			exch[rp.InstrumentName] = rp
 		}
 	}
-	book := map[string]*orders.Position{}
+	// An instrument can back several positions (a filled rebalance
+	// complement, or two slots on the same expiry and strike); the exchange
+	// reports their sum, so the book is compared by its sum too.
+	book := map[string][]*orders.Position{}
 	for _, p := range s.state.AllPositions() {
-		book[p.Instrument] = p
+		book[p.Instrument] = append(book[p.Instrument], p)
 	}
 	inflight := map[string]float64{}
 	for _, ps := range s.pendingSnapshot() {
@@ -128,10 +132,7 @@ func (s *Strategy) checkPositions(ctx context.Context) {
 	defer clear(s.forceCheck) // a forced check applies to this cycle only
 	for _, name := range names {
 		have := math.Abs(exch[name].Size)
-		want := inflight[name]
-		if p := book[name]; p != nil {
-			want += p.Qty
-		}
+		want := inflight[name] + totalQty(book[name])
 		if math.Abs(have-want) < qtyEpsilon {
 			delete(s.drift, name)
 			continue
@@ -146,25 +147,39 @@ func (s *Strategy) checkPositions(ctx context.Context) {
 	}
 }
 
-// adoptPosition makes the book hold qty of name, as the exchange does.
-func (s *Strategy) adoptPosition(name string, pos *orders.Position, rp orders.RawPosition, qty float64) {
-	before := 0.0
-	if pos != nil {
-		before = pos.Qty
-	}
+// adoptPosition makes the book hold qty of name in total, as the exchange
+// does. A shortfall is taken from the newest positions first (the likeliest
+// to be unbooked or double-booked); an excess is added to the newest one at
+// the exchange's average price, or adopted as a new position.
+func (s *Strategy) adoptPosition(name string, held []*orders.Position, rp orders.RawPosition, qty float64) {
+	before := totalQty(held)
 	slog.Error("position drift: the exchange holds a different size than the book — adopting the exchange's",
-		"instrument", name, "exchange_qty", qty, "book_qty", before)
+		"instrument", name, "exchange_qty", qty, "book_qty", before, "book_positions", len(held))
 
+	sort.Slice(held, func(i, j int) bool { return held[i].EntryTime.After(held[j].EntryTime) })
+	diff := qty - before
 	switch {
-	case qty <= qtyEpsilon && pos != nil: // closed outside the bot
-		s.state.RemovePosition(pos.ID)
-		s.state.RemoveStrangleContaining(pos.ID)
-	case pos != nil:
-		s.state.UpdatePositionQty(pos.ID, qty, rp.AveragePrice*qty)
-		if p, ok := s.state.GetPosition(pos.ID); ok {
-			s.journal.LogReconciled(p, s.instrumentContext(name, s.slotOf(pos.ID)))
+	case diff < 0:
+		for _, pos := range held {
+			if diff > -qtyEpsilon {
+				break
+			}
+			cut := math.Min(pos.Qty, -diff)
+			diff += cut
+			left := pos.Qty - cut
+			if left <= qtyEpsilon { // closed outside the bot
+				s.state.RemovePosition(pos.ID)
+				s.state.RemoveStrangleContaining(pos.ID)
+				continue
+			}
+			s.state.UpdatePositionQty(pos.ID, left, pos.PremiumReceived*left/pos.Qty)
+			s.logAdopted(name, pos.ID)
 		}
-	case qty > qtyEpsilon:
+	case len(held) > 0:
+		pos := held[0]
+		s.state.UpdatePositionQty(pos.ID, pos.Qty+diff, pos.PremiumReceived+rp.AveragePrice*diff)
+		s.logAdopted(name, pos.ID)
+	default:
 		p, err := s.positionFromRaw(rp, time.Now())
 		if err != nil {
 			slog.Error("position drift: cannot adopt unknown instrument", "instrument", name, "err", err)
@@ -175,6 +190,22 @@ func (s *Strategy) adoptPosition(name string, pos *orders.Position, rp orders.Ra
 		slot := s.attachToStrangle(p)
 		s.journal.LogReconciled(p, s.instrumentContext(name, slot))
 	}
+}
+
+// logAdopted journals a book position whose size was set from the exchange.
+func (s *Strategy) logAdopted(name, id string) {
+	if p, ok := s.state.GetPosition(id); ok {
+		s.journal.LogReconciled(p, s.instrumentContext(name, s.slotOf(id)))
+	}
+}
+
+// totalQty sums the sizes of positions.
+func totalQty(ps []*orders.Position) float64 {
+	sum := 0.0
+	for _, p := range ps {
+		sum += p.Qty
+	}
+	return sum
 }
 
 // attachToStrangle puts an adopted leg in the strangle of its expiry that
