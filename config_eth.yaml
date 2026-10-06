@@ -60,6 +60,8 @@ min_premium_btc:       0.001    # minimum premium per leg in BTC; 0 = accept any
 order_fill_timeout_sec: 90      # cancel and resubmit at fresh market price after this many seconds
 order_slippage_pct:    0.05     # amend price if ask drifts more than this % from limit
 order_max_adjustments: 3        # max price amendments before giving up on a limit order
+entry_price_floor:     mid      # entries/rebalance upsizes: ask, then mid after 1/3 of the timeout (ask|mid|bid)
+repair_price_floor:    bid      # repairs: ask, mid at 1/3, bid at 2/3 of the timeout — restores the hedge (ask|mid|bid)
 spread_alert_threshold: 0.05    # log a warning when bid/ask spread exceeds 5%
 
 # ── Backtest ──────────────────────────────────────────────────────────────────

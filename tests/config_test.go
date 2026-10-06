@@ -249,6 +249,16 @@ func TestConfigLoad_RepairCooldown(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_PriceFloors(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil || cfg.EntryPriceFloor != "mid" || cfg.RepairPriceFloor != "bid" {
+		t.Errorf("default floors = %q / %q (%v), want mid / bid", cfg.EntryPriceFloor, cfg.RepairPriceFloor, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "repair_price_floor: market\n")); err == nil || !strings.Contains(err.Error(), "repair_price_floor") {
+		t.Errorf("an unknown floor must be rejected, got %v", err)
+	}
+}
+
 func TestConfigLoad_RebalanceRetry(t *testing.T) {
 	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
 	if err != nil || cfg.RebalanceRetryMinutes != 15 {

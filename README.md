@@ -151,7 +151,8 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `eval_interval_ms` | 35000 | decision-loop period |
 | `report_interval_sec` | 60 | heartbeat and P&L journal line period |
 | `order_fill_timeout_sec` | 90 | cancel unfilled entry legs after this |
-| `order_slippage_pct` / `order_max_adjustments` | 0.05 / 3 | amend a resting entry when the ask drifts by more than this, at most N times |
+| `order_slippage_pct` / `order_max_adjustments` | 0.05 / 3 | follow the ask when it drifts up by more than this, at most N times (moves down are not capped) |
+| `entry_price_floor` / `repair_price_floor` | mid / bid | a resting sell offers at the ask for the first third of `order_fill_timeout_sec`, then at mid (rounded up to a tick), then at this floor for the last third; the premium floor is checked at this price. Without a bid the order stays at the ask |
 | `gamma_trend_lookback_days`, `swing_pivot_n` | — / 3 | trend detection from daily closes |
 | `gex_method` | `script` | `script` = GestaoCarteira's rules (regime = sign of weighted GEX, flip = lowest crossing); `nearest_flip` = crossing nearest spot, regime = spot vs flip, with hysteresis |
 | `gex_strike_range_pct` | 0 | strikes used for GEX: ±this of each expiry's underlying (shipped configs: 0.15, as the script; 0 = all) |

@@ -214,12 +214,12 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	// Check the premium floor for every leg before submitting any order, so a
 	// cheap put can never leave a lone call behind.
 	if openCall {
-		if err := s.checkPremiumFloor(call); err != nil {
+		if err := s.checkPremiumFloor(call, s.cfg.EntryPriceFloor); err != nil {
 			return err
 		}
 	}
 	if openPut {
-		if err := s.checkPremiumFloor(put); err != nil {
+		if err := s.checkPremiumFloor(put, s.cfg.EntryPriceFloor); err != nil {
 			return err
 		}
 	}
@@ -280,8 +280,10 @@ func entryLimitPrice(inst *marketdata.Instrument) float64 {
 	return math.Max(inst.Mid, inst.Ask)
 }
 
-func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument) error {
-	price := entryLimitPrice(inst)
+// checkPremiumFloor rejects a leg whose lowest price — where the step-down
+// can take it (see StepDownPrice) — is under min_premium_btc.
+func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument, floor string) error {
+	price := FloorPrice(inst.Bid, entryLimitPrice(inst), inst.EffectiveTick(inst.Ask), floor)
 	if s.cfg.MinPremiumBTC > 0 && price < s.cfg.MinPremiumBTC {
 		return fmt.Errorf("%s premium %.6f below floor %.6f — skipping (%s)",
 			inst.OptionType, price, s.cfg.MinPremiumBTC, inst.Name)

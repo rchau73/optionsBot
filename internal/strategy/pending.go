@@ -155,6 +155,14 @@ func (ps *pendingStrangle) trigger() string {
 	return orders.TriggerEntry
 }
 
+// priceFloor is how far this pending strangle's sells may step down.
+func (s *Strategy) priceFloor(trigger string) string {
+	if trigger == orders.TriggerRepair {
+		return s.cfg.RepairPriceFloor
+	}
+	return s.cfg.EntryPriceFloor
+}
+
 // underfilled reports whether any submitted leg filled less than requested.
 func (ps *pendingStrangle) underfilled() bool {
 	for _, l := range ps.legs() {
@@ -260,36 +268,43 @@ func (s *Strategy) handlePendingStrangle(ctx context.Context, ps *pendingStrangl
 		return
 	}
 
-	if ps.adjustments >= s.cfg.OrderMaxAdjustments {
-		slog.Debug("pending: max price adjustments reached, waiting for timeout or fill",
-			"pending_id", ps.id, "adjustments", ps.adjustments,
-			"remaining_before_timeout", (timeout - age).Round(time.Second))
-		return
-	}
-	if s.amendDriftedLegs(ctx, ps) {
+	if s.repriceLegs(ctx, ps, age, timeout) {
 		ps.adjustments++
 	}
 }
 
-// amendDriftedLegs re-prices resting sells whose ask has moved more than
-// order_slippage_pct away from the limit. It tracks the ask, not the bid:
-// with a wide spread (testnet bid ≈ 0) the bid would produce huge false drift.
-func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bool {
-	amended := false
+// repriceLegs moves resting sells to StepDownPrice: the ask, then mid, then
+// the trigger's price floor as the fill timeout runs, following the ask when
+// it moves more than order_slippage_pct. Moves down are never capped (two
+// planned steps, plus any fall of the market toward the order); a re-price up
+// to a higher ask counts toward order_max_adjustments. It returns true when a
+// leg was re-priced up. The price never goes below min_premium_btc.
+func (s *Strategy) repriceLegs(ctx context.Context, ps *pendingStrangle, age, timeout time.Duration) bool {
+	floor := s.priceFloor(ps.trigger())
+	repricedUp := false
 	for _, leg := range ps.legs() {
-		if leg.done {
+		if leg.done || leg.limitPrice <= 0 {
 			continue
 		}
 		inst, ok := s.md.GetInstrument(leg.instrument)
-		if !ok || inst.Ask <= 0 || leg.limitPrice <= 0 {
+		if !ok || !inst.HasQuote() {
 			continue
 		}
-		drift := math.Abs(inst.Ask-leg.limitPrice) / leg.limitPrice
-		if drift <= s.cfg.OrderSlippagePct {
-			continue
+		tick := inst.EffectiveTick(inst.Ask)
+		newPrice := StepDownPrice(inst.Bid, inst.Ask, tick, age, timeout, floor)
+		if s.cfg.MinPremiumBTC > 0 {
+			newPrice = math.Max(newPrice, orders.CeilToStep(s.cfg.MinPremiumBTC, tick))
 		}
-		newPrice := orders.RoundToStep(inst.Ask, inst.EffectiveTick(inst.Ask))
+		newPrice = orders.RoundToStep(newPrice, inst.EffectiveTick(newPrice))
 		if newPrice <= 0 {
+			continue
+		}
+		down := newPrice < leg.limitPrice-tick/2
+		drift := math.Abs(newPrice-leg.limitPrice) / leg.limitPrice
+		if !down && drift <= s.cfg.OrderSlippagePct {
+			continue
+		}
+		if !down && ps.adjustments >= s.cfg.OrderMaxAdjustments {
 			continue
 		}
 		if err := s.exch.AmendOrder(ctx, leg.orderID, leg.qty, newPrice); err != nil {
@@ -298,19 +313,26 @@ func (s *Strategy) amendDriftedLegs(ctx context.Context, ps *pendingStrangle) bo
 		}
 		s.journal.LogAmend(leg.record(ps.trigger(), newPrice), leg.limitPrice,
 			s.eventContext(inst, ps.slot()))
-		slog.Info("pending: order amended due to price drift",
+		reason := "ask drift"
+		if down {
+			reason = "step down"
+		}
+		slog.Info("pending: order re-priced",
 			"pending_id", ps.id,
 			"instrument", leg.instrument,
+			"reason", reason,
+			"price_floor", floor,
 			"old_price", fmt.Sprintf("%.6f", leg.limitPrice),
 			"new_price", fmt.Sprintf("%.6f", newPrice),
-			"drift_pct", fmt.Sprintf("%.2f%%", drift*100),
-			"adjustment", ps.adjustments+1,
+			"bid", inst.Bid, "ask", inst.Ask,
+			"age", age.Round(time.Second),
+			"adjustments", ps.adjustments,
 			"max_adjustments", s.cfg.OrderMaxAdjustments,
 		)
 		leg.limitPrice = newPrice
-		amended = true
+		repricedUp = repricedUp || !down
 	}
-	return amended
+	return repricedUp
 }
 
 // abandonPending cancels every leg still working, reads back what filled
