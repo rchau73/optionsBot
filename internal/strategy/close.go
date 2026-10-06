@@ -68,8 +68,9 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 	closed := *pos
 	closed.Qty = filled
 	closed.PremiumReceived = pos.PremiumReceived * filled / pos.Qty
+	closed.Fees = pos.Fees * filled / pos.Qty // its share of the opening fees
 	s.journal.LogClose(&closed, fill, reason, order.OrderType, s.instrumentContext(pos.Instrument, slot))
-	s.pnl.record(slot, closed.PremiumReceived-fill.FillPrice*filled)
+	s.pnl.record(slot, orders.ClosedNetPnL(&closed, fill))
 
 	remaining := pos.Qty - filled
 	if remaining <= qtyEpsilon {
@@ -103,7 +104,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 		"delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 		"current_mid", fmt.Sprintf("%.4f", pos.CurrentMid),
 		"premium_received", fmt.Sprintf("%.4f", pos.PremiumReceived),
-		"unrealised_pnl", fmt.Sprintf("%.4f", pos.MtMPnL()),
+		"unrealised_pnl", fmt.Sprintf("%.4f", pos.NetPnL()),
 	)
 
 	switch d.Action {

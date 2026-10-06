@@ -381,6 +381,7 @@ func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrume
 		UnderlyingPrice: inst.UnderlyingPrice,
 		EntryTime:       date,
 		PremiumReceived: fill.FillPrice,
+		Fees:            fill.Fee,
 		CurrentMid:      inst.Mid,
 		CurrentGreeks: orders.Greeks{
 			Delta: inst.Greeks.Delta,
@@ -508,8 +509,8 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			Underlying: call.Underlying, Strike: call.Strike,
 			Expiry: call.Expiry, OptionType: "call", Qty: 1.0,
 			EntryPrice: callFill.FillPrice, UnderlyingPrice: call.UnderlyingPrice, EntryTime: date,
-			PremiumReceived: callFill.FillPrice,
-			CurrentMid:      call.Mid,
+			PremiumReceived: callFill.FillPrice, Fees: callFill.Fee,
+			CurrentMid: call.Mid,
 			CurrentGreeks: orders.Greeks{Delta: call.Greeks.Delta, Gamma: call.Greeks.Gamma,
 				Theta: call.Greeks.Theta, Vega: call.Greeks.Vega, IV: call.Greeks.IV},
 		}
@@ -518,8 +519,8 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			Underlying: put.Underlying, Strike: put.Strike,
 			Expiry: put.Expiry, OptionType: "put", Qty: 1.0,
 			EntryPrice: putFill.FillPrice, UnderlyingPrice: put.UnderlyingPrice, EntryTime: date,
-			PremiumReceived: putFill.FillPrice,
-			CurrentMid:      put.Mid,
+			PremiumReceived: putFill.FillPrice, Fees: putFill.Fee,
+			CurrentMid: put.Mid,
 			CurrentGreeks: orders.Greeks{Delta: put.Greeks.Delta, Gamma: put.Greeks.Gamma,
 				Theta: put.Greeks.Theta, Vega: put.Greeks.Vega, IV: put.Greeks.IV},
 		}
@@ -537,7 +538,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 func (e *Engine) recordTrade(pos *orders.Position, fill orders.Fill, exitDate time.Time, reason string) {
 	holdDays := int(math.Round(exitDate.Sub(pos.EntryTime).Hours() / 24))
 	closeCost := fill.FillPrice * pos.Qty
-	pnl := pos.PremiumReceived - closeCost
+	pnl := orders.ClosedNetPnL(pos, fill) // net: fees were charged to equity at each fill
 	roi := 0.0
 	if pos.PremiumReceived > 0 {
 		roi = pnl / pos.PremiumReceived * 100
@@ -558,7 +559,7 @@ func (e *Engine) recordTrade(pos *orders.Position, fill orders.Fill, exitDate ti
 		PnLUSD:       pnl,
 		ROIPct:       roi,
 		HoldDays:     holdDays,
-		Commission:   e.cfg.Backtest.CommissionPerContract * pos.Qty,
+		Commission:   pos.Fees + fill.Fee,
 	})
 }
 

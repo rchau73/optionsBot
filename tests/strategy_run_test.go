@@ -65,6 +65,9 @@ type fakeExchange struct {
 	loseReply       func(o orders.Order) bool
 	cancelledLabels []string
 	cancelLabelErr  error
+
+	// feePerContract charges every fill (coin per contract), like Deribit.
+	feePerContract float64
 }
 
 // applyFillLocked moves positions by a fill of qty on o. Caller holds mu.
@@ -168,6 +171,7 @@ func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, e
 		fill = orders.Fill{OrderID: id}
 	}
 	fill.OrderID = id
+	fill.Fee = f.feePerContract * fill.Qty
 	state := "open"
 	if fill.Qty >= o.Qty {
 		state = "filled"
@@ -200,6 +204,13 @@ func (f *fakeExchange) GetOrderState(_ context.Context, id string) (orders.Order
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.orderStates[id], nil
+}
+
+// OrderFee is feePerContract × what the order has filled.
+func (f *fakeExchange) OrderFee(_ context.Context, id string) (float64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.feePerContract * f.orderStates[id].FilledAmount, nil
 }
 
 func (f *fakeExchange) AmendOrder(_ context.Context, id string, _ float64, price float64) error {

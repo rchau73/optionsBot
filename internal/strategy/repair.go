@@ -90,7 +90,7 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		}
 
 		if ps.allLegsDone() {
-			s.finalizePending(ps)
+			s.finalizePending(ctx, ps)
 			continue
 		}
 		delete(s.stopped, key)

@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"math"
 	"time"
 
 	"optionsbot/internal/marketdata"
@@ -51,8 +52,12 @@ type Position struct {
 	UnderlyingPrice float64 // spot price of BTC/ETH at time of entry
 	EntryTime       time.Time
 	PremiumReceived float64 // credit received (positive)
-	CurrentMid      float64
-	CurrentGreeks   Greeks
+	// Fees is what Deribit charged to open the current Qty (coin). P&L shown
+	// anywhere is net of it; the exit rules (stop-loss, take-profit) keep
+	// using the gross premium, so their thresholds are unchanged.
+	Fees          float64
+	CurrentMid    float64
+	CurrentGreeks Greeks
 	// MarkLive is true once CurrentMid and CurrentGreeks come from a live
 	// quote. Positions loaded from the exchange start with Deribit's mark and
 	// greeks but no live quote; rules that need fresh data wait for one.
@@ -82,6 +87,20 @@ func (p *Position) DTEAt(now time.Time) int {
 // MtMPnL returns mark-to-market PnL: premium received minus current close cost.
 func (p *Position) MtMPnL() float64 {
 	return p.PremiumReceived - p.CurrentMid*p.Qty
+}
+
+// NetPnL is the mark-to-market P&L after the fees paid to open: what the
+// position would have earned if bought back at the mark, before the closing
+// fee. Every P&L shown or journaled uses it.
+func (p *Position) NetPnL() float64 {
+	return p.MtMPnL() - p.Fees
+}
+
+// ClosedNetPnL is the realised P&L of a buy-back: closed is the closed part
+// (its qty, premium and share of the opening fees), fill the buy-back with
+// its own fee. Every realised P&L the bot books or journals is this.
+func ClosedNetPnL(closed *Position, fill Fill) float64 {
+	return closed.PremiumReceived - fill.FillPrice*closed.Qty - closed.Fees - fill.Fee
 }
 
 // ROIPct returns (premium_received - close_cost) / premium_received.
@@ -178,7 +197,15 @@ type Fill struct {
 	OrderID   string
 	FillPrice float64
 	Qty       float64
+	Fee       float64 // what Deribit charged for this fill (coin; a rebate is negative)
 	Timestamp time.Time
+}
+
+// OptionFee is Deribit's option fee for qty contracts: feePerContract (0.03 %
+// of the underlying, in the option's price unit) capped at 12.5 % of the
+// option price. The backtest uses it; the live bot books Deribit's own fees.
+func OptionFee(feePerContract, optionPrice, qty float64) float64 {
+	return math.Min(feePerContract, 0.125*optionPrice) * qty
 }
 
 // DailyClose holds the closing price for a single UTC day.

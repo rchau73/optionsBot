@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -49,18 +50,30 @@ func TestSimExecutor_MarketOrderFillsImmediately(t *testing.T) {
 	}
 }
 
+// Deribit's option fee in the feed's USD prices: 0.03 % of the underlying
+// per contract, capped at 12.5 % of the option price.
 func TestSimExecutor_CommissionDeducted(t *testing.T) {
-	exec := newTestExec()
-	feedTick(exec, "BTC-PERP", 100, time.Now())
-
-	_, _ = exec.Submit(context.Background(), orders.Order{
-		Instrument: "BTC-PERP",
-		Direction:  orders.DirectionSell,
-		OrderType:  orders.TypeMarket,
-		Qty:        1.0,
-	})
-	if exec.TotalCommission() == 0 {
-		t.Error("expected commission > 0 after fill")
+	cases := []struct {
+		name     string
+		mid, fee float64
+	}{
+		{"0.03 % of the underlying", 2000, 30},            // 0.0003 × 100,000
+		{"capped at 12.5 % of a cheap option", 100, 12.5}, // 0.125 × 100 (fills at mid ± slippage)
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			exec := newTestExec()
+			exec.UpdateTick(&marketdata.Tick{Timestamp: time.Now(), Instrument: "BTC-X-C", Mid: tc.mid, UnderlyingPrice: 100_000})
+			fill, err := exec.Submit(context.Background(), orders.Order{
+				Instrument: "BTC-X-C", Direction: orders.DirectionSell, OrderType: orders.TypeMarket, Qty: 2,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.Abs(fill.Fee-2*tc.fee) > 0.05 || math.Abs(exec.TotalCommission()-fill.Fee) > 1e-9 {
+				t.Errorf("fee = %v (total %v), want ≈ %v for 2 contracts", fill.Fee, exec.TotalCommission(), 2*tc.fee)
+			}
+		})
 	}
 }
 

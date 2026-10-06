@@ -304,3 +304,28 @@ func TestSimulateAlone_DoesNotAddTheBook(t *testing.T) {
 		t.Errorf("call = %+v, want add_positions=false", c)
 	}
 }
+
+// Fees come from Deribit's trades: in the submit reply for an immediate fill,
+// and from private/get_user_trades_by_order for a fill that came later.
+func TestExecutor_FeesFromTrades(t *testing.T) {
+	fc := &fakeCaller{replies: []fakeReply{
+		{result: `{"order":{"order_id":"o-1","filled_amount":0.3,"average_price":0.012,"order_state":"filled"},` +
+			`"trades":[{"fee":0.00006},{"fee":0.00003}]}`},
+		{result: `[{"fee":0.00009},{"fee":-0.00001}]`},
+	}}
+	exec := orders.NewExecutor(fc)
+
+	fill, err := exec.Submit(context.Background(), orders.Order{
+		Instrument: "BTC-27DEC24-100000-C", Direction: orders.DirectionBuy, OrderType: orders.TypeMarket, Qty: 0.3,
+	})
+	if err != nil || fill.Fee < 0.0000899 || fill.Fee > 0.0000901 {
+		t.Errorf("submit fee = %v (%v), want 0.00009 (sum of its trades)", fill.Fee, err)
+	}
+	fee, err := exec.OrderFee(context.Background(), "o-2")
+	if err != nil || fee < 0.0000799 || fee > 0.0000801 {
+		t.Errorf("OrderFee = %v (%v), want 0.00008 (a rebate counts negative)", fee, err)
+	}
+	if c := fc.calls[1]; c.method != "private/get_user_trades_by_order" || c.params["order_id"] != "o-2" {
+		t.Errorf("fee call = %s %v", c.method, c.params)
+	}
+}

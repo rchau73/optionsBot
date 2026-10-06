@@ -77,11 +77,13 @@ func (e *SimExecutor) Submit(ctx context.Context, order orders.Order) (orders.Fi
 				order:      order,
 				submitTime: tick.Timestamp,
 			})
-			// Return provisional fill — will be confirmed on next tick
+			// Return provisional fill — will be confirmed on next tick, which
+			// charges the same fee to equity.
 			return orders.Fill{
 				OrderID:   orderID,
 				FillPrice: order.LimitPrice,
 				Qty:       order.Qty,
+				Fee:       e.fee(tick, order.LimitPrice, order.Qty),
 				Timestamp: tick.Timestamp,
 			}, nil
 		}
@@ -89,7 +91,7 @@ func (e *SimExecutor) Submit(ctx context.Context, order orders.Order) (orders.Fi
 	}
 
 	fillPrice = roundPrice(fillPrice)
-	commission := e.commission * order.Qty
+	commission := e.fee(tick, fillPrice, order.Qty)
 	e.totalCommission += commission
 	e.equity -= commission
 
@@ -97,8 +99,16 @@ func (e *SimExecutor) Submit(ctx context.Context, order orders.Order) (orders.Fi
 		OrderID:   orderID,
 		FillPrice: fillPrice,
 		Qty:       order.Qty,
+		Fee:       commission,
 		Timestamp: tick.Timestamp,
 	}, nil
+}
+
+// fee is Deribit's option fee in the feed's price unit: commission_per_contract
+// is a fraction of the underlying (0.0003 = 0.03 %), so in USD prices it is
+// that × the underlying price, capped at 12.5 % of the option price.
+func (e *SimExecutor) fee(tick *marketdata.Tick, price, qty float64) float64 {
+	return orders.OptionFee(e.commission*tick.UnderlyingPrice, price, qty)
 }
 
 func (e *SimExecutor) processPendingLimits(tick *marketdata.Tick) {
@@ -123,7 +133,7 @@ func (e *SimExecutor) processPendingLimits(tick *marketdata.Tick) {
 		if !filled {
 			remaining = append(remaining, pl)
 		} else {
-			commission := e.commission * pl.order.Qty
+			commission := e.fee(tick, pl.order.LimitPrice, pl.order.Qty)
 			e.totalCommission += commission
 			e.equity -= commission
 		}

@@ -28,6 +28,8 @@ type OrderPlacer interface {
 type OrderTracker interface {
 	GetOrderState(ctx context.Context, orderID string) (orders.OrderStateInfo, error)
 	AmendOrder(ctx context.Context, orderID string, qty, price float64) error
+	// OrderFee is the total fee charged for an order's fills (coin).
+	OrderFee(ctx context.Context, orderID string) (float64, error)
 }
 
 // AccountReader reads account, position and margin data.

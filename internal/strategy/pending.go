@@ -155,6 +155,17 @@ func (ps *pendingStrangle) trigger() string {
 	return orders.TriggerEntry
 }
 
+// orderFee reads what Deribit charged for an order's fills. A failed read
+// books no fee (logged): the fill itself must never be lost over it.
+func (s *Strategy) orderFee(ctx context.Context, orderID string) float64 {
+	fee, err := s.exch.OrderFee(ctx, orderID)
+	if err != nil {
+		slog.Warn("fee unknown: booked as 0, P&L slightly overstated", "order_id", orderID, "err", err)
+		return 0
+	}
+	return fee
+}
+
 // priceFloor is how far this pending strangle's sells may step down.
 func (s *Strategy) priceFloor(trigger string) string {
 	if trigger == orders.TriggerRepair {
@@ -251,7 +262,7 @@ func (s *Strategy) handlePendingStrangle(ctx context.Context, ps *pendingStrangl
 	}
 
 	if ps.allLegsDone() {
-		s.finalizePending(ps)
+		s.finalizePending(ctx, ps)
 		return
 	}
 
@@ -342,7 +353,7 @@ func (s *Strategy) abandonPending(ctx context.Context, ps *pendingStrangle, reas
 	for _, leg := range ps.legs() {
 		s.cancelLeg(ctx, ps, leg, orders.TriggerTimeout, reason)
 	}
-	s.finalizePending(ps)
+	s.finalizePending(ctx, ps)
 }
 
 // cancelLeg cancels one working leg and reads back what filled before the
@@ -391,7 +402,7 @@ func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
 		for _, leg := range ps.legs() {
 			s.cancelLeg(ctx, ps, leg, orders.TriggerGammaClose, "GEX shed of "+optType+"s")
 		}
-		s.finalizePending(ps)
+		s.finalizePending(ctx, ps)
 	}
 }
 
@@ -399,7 +410,7 @@ func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
 // positions. Normal mode creates a strangle (one-legged if only one leg
 // filled — repair then completes it); repair mode fills the missing leg of an
 // existing strangle. Nothing filled → the slot is simply released.
-func (s *Strategy) finalizePending(ps *pendingStrangle) {
+func (s *Strategy) finalizePending(ctx context.Context, ps *pendingStrangle) {
 	s.removePending(ps.id)
 	if ps.complement && ps.underfilled() {
 		s.rearmRebalance(fmt.Sprintf("complement %s filled short of its size", ps.id))
@@ -414,10 +425,12 @@ func (s *Strategy) finalizePending(ps *pendingStrangle) {
 			return nil
 		}
 		s.noteChurn(ps.slot(), false, now)
+		fee := s.orderFee(ctx, leg.orderID)
 		pos := s.newPosition(leg.instrument, leg.optionType, ps.expiry, leg.filledQty, leg.fillPrice, now)
+		pos.Fees = fee
 		s.state.AddPosition(pos)
 		s.journal.LogOpen(pos,
-			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Timestamp: now},
+			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Fee: fee, Timestamp: now},
 			ps.trigger(), s.instrumentContext(leg.instrument, ps.slot()))
 		return pos
 	}

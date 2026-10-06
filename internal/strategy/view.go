@@ -287,8 +287,10 @@ func (s *Strategy) legView(pos *orders.Position, spot float64, now, loopAt time.
 	lv.Strike, lv.Expiry, lv.DTE = pos.Strike, pos.Expiry, maxf(pos.Expiry.Sub(now).Hours()/24, 0)
 	lv.Qty, lv.EntryPrice, lv.Mark = pos.Qty, pos.EntryPrice, mark
 	lv.PremiumReceived = pos.PremiumReceived
-	lv.UnrealisedPnL = priced.MtMPnL()
-	lv.ROIPct = priced.ROIPct() * 100
+	lv.UnrealisedPnL = priced.NetPnL() // net of the fees paid to open
+	if priced.PremiumReceived > 0 {
+		lv.ROIPct = priced.NetPnL() / priced.PremiumReceived * 100
+	}
 	lv.LossMultiple = priced.LossPct()
 	lv.Greeks = greeks
 	if pos.Qty > 0 {

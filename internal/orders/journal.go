@@ -160,7 +160,9 @@ type OrderLog struct {
 	CloseReason     string  `json:"close_reason,omitempty"`
 	PremiumReceived float64 `json:"premium_received,omitempty"` // coin
 	CloseCost       float64 `json:"close_cost,omitempty"`       // coin
-	PnL             float64 `json:"pnl,omitempty"`              // coin
+	PnL             float64 `json:"pnl,omitempty"`              // coin, net of fees
+	Fee             float64 `json:"fee,omitempty"`              // coin: what this fill was charged
+	Fees            float64 `json:"fees,omitempty"`             // coin, closes: opening share + closing fee
 	PnLUSD          float64 `json:"pnl_usd,omitempty"`          // PnL × spot at close
 	PnLUSDFmt       string  `json:"pnl_usd_fmt,omitempty"`      // e.g. "-1,234.56"
 	ROIPct          float64 `json:"roi_pct,omitempty"`

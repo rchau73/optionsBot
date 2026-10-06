@@ -40,7 +40,7 @@ export default function TradeHistory({ trades }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Realized P&L" value={formatUSD(s.realisedUsd)} tone={tone(s.realisedUsd)} sub={coins || "USD at each close"} />
+        <StatTile label="Realized P&L" value={formatUSD(s.realisedUsd)} tone={tone(s.realisedUsd)} sub={coins ? `${coins} · net of fees` : "net of fees · USD at each close"} />
         <StatTile label="Closes" value={s.closes} sub={`${s.opens} opens`} />
         <StatTile label="Win rate" value={s.winRate == null ? "—" : formatPct(s.winRate, 0)} sub={`${s.wins} wins · ${s.losses} losses`} />
         <StatTile label="Avg win" value={s.avgWinUsd == null ? "—" : formatUSD(s.avgWinUsd)} tone="good" />

@@ -181,6 +181,7 @@ func (l *Logger) LogOpen(pos *Position, fill Fill, trigger string, ctx EventCont
 	rec.TriggerReason = trigger
 	rec.Qty = fill.Qty
 	rec.FillPrice = fill.FillPrice
+	rec.Fee = fill.Fee
 	rec.PremiumReceived = fill.FillPrice * fill.Qty
 	l.write(rec)
 }
@@ -198,7 +199,9 @@ func (l *Logger) LogClose(pos *Position, fill Fill, trigger, orderType string, c
 	rec.FillPrice = fill.FillPrice
 
 	closeCost := fill.FillPrice * pos.Qty
-	pnl := pos.PremiumReceived - closeCost
+	pnl := ClosedNetPnL(pos, fill) // net of the opening share and the closing fee
+	rec.Fee = fill.Fee
+	rec.Fees = pos.Fees + fill.Fee
 	holdDays := int(math.Round(rec.Timestamp.Sub(pos.EntryTime).Hours() / 24))
 	roi := 0.0
 	if pos.PremiumReceived > 0 {
