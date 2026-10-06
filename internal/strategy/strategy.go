@@ -334,7 +334,7 @@ func (s *Strategy) logHeartbeat(ctx context.Context) {
 			"iv", fmt.Sprintf("%.4f", pos.CurrentGreeks.IV),
 			"entry_price", fmt.Sprintf("%.4f", pos.EntryPrice),
 			"current_mid", fmt.Sprintf("%.4f", pos.CurrentMid),
-			"pnl", fmt.Sprintf("%.4f", pos.MtMPnL()),
+			"pnl", fmt.Sprintf("%.4f", pos.NetPnL()),
 		)
 	}
 }

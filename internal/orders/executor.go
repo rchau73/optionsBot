@@ -107,6 +107,20 @@ type submitResult struct {
 		AvgPrice   float64 `json:"average_price"`
 		OrderState string  `json:"order_state"`
 	} `json:"order"`
+	Trades []userTrade `json:"trades"`
+}
+
+// userTrade is the part of a Deribit trade the bot books: its fee.
+type userTrade struct {
+	Fee float64 `json:"fee"`
+}
+
+func sumFees(trades []userTrade) float64 {
+	total := 0.0
+	for _, t := range trades {
+		total += t.Fee
+	}
+	return total
 }
 
 // Submit places an order and returns the Fill on success.
@@ -192,6 +206,7 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 		OrderID:   result.Order.OrderID,
 		FillPrice: result.Order.AvgPrice,
 		Qty:       result.Order.FilledAmt,
+		Fee:       sumFees(result.Trades),
 		Timestamp: time.Now(),
 	}, nil
 }
@@ -270,6 +285,19 @@ func (e *Executor) GetOrderState(ctx context.Context, orderID string) (OrderStat
 	return call[OrderStateInfo](ctx, e.gw, "private/get_order_state", map[string]any{
 		"order_id": orderID,
 	}, gateway.PriorityLow)
+}
+
+// OrderFee is the total fee Deribit charged for an order's fills so far
+// (private/get_user_trades_by_order). A resting order fills after its submit
+// reply, so its fee is read when the fill is booked.
+func (e *Executor) OrderFee(ctx context.Context, orderID string) (float64, error) {
+	trades, err := call[[]userTrade](ctx, e.gw, "private/get_user_trades_by_order", map[string]any{
+		"order_id": orderID,
+	}, gateway.PriorityLow)
+	if err != nil {
+		return 0, fmt.Errorf("order fee %s: %w", orderID, err)
+	}
+	return sumFees(trades), nil
 }
 
 // AmendOrder updates the price (and optionally qty) of an open limit order.

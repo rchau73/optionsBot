@@ -260,7 +260,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	}
 
 	if ps.allLegsDone() {
-		s.finalizePending(ps)
+		s.finalizePending(ctx, ps)
 		return nil
 	}
 	s.addPending(ps)

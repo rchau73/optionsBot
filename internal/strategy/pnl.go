@@ -99,7 +99,7 @@ func ComputePnL(slots []orders.SlotRef, positions []*orders.Position, slotOfPos 
 		}
 	}
 	for _, p := range positions {
-		u := p.MtMPnL()
+		u := p.NetPnL()
 		total.Unrealised += u
 		total.OpenLegs++
 		if l, ok := lines[keyOf(slotOfPos[p.ID])]; ok {

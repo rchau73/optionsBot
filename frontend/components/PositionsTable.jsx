@@ -63,10 +63,10 @@ export default function PositionsTable({ groups }) {
             <th className="px-2 py-1 text-right">Entry</th>
             <th className="px-2 py-1 text-right">Bid / Ask</th>
             <th className="px-2 py-1 text-right" title="Mid price used to value the leg, from the live ticker">Mark</th>
-            <th className="px-2 py-1 text-right" title="Premium received minus the cost to buy back at the mark">Unrealized P&L</th>
+            <th className="px-2 py-1 text-right" title="Net: premium received minus the cost to buy back at the mark and the fees paid to open">Unrealized P&L</th>
             <th
               className="px-2 py-1 text-right"
-              title="Unrealized P&L as % of the premium: +50% = half the premium is profit; 0% = break-even; -100% = the loss equals the premium. The stop-loss fires at -(stop_loss_multiplier) × 100%, e.g. -200%."
+              title="Unrealized P&L as % of the premium: +50% = half the premium is profit; 0% = break-even; -100% = the loss equals the premium. Net of opening fees; the stop-loss is judged on the gross premium and fires near -(stop_loss_multiplier) × 100%, e.g. -200%."
             >
               P&L %
             </th>

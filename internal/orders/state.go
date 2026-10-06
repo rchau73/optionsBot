@@ -158,6 +158,9 @@ func (s *StateManager) UpdatePositionQty(id string, newQty, newPremiumReceived f
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if p, ok := s.positions[id]; ok {
+		if newQty < p.Qty && p.Qty > 0 { // the closed part takes its share of the opening fees
+			p.Fees *= newQty / p.Qty
+		}
 		p.Qty = newQty
 		p.PremiumReceived = newPremiumReceived
 	}

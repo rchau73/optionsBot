@@ -263,7 +263,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			"qty", pos.Qty,
 			"avg_price_btc", fmt.Sprintf("%.6f", pos.EntryPrice),
 			"mark_price_btc", fmt.Sprintf("%.6f", pos.CurrentMid),
-			"unrealised_pnl_btc", fmt.Sprintf("%.6f", pos.MtMPnL()),
+			"unrealised_pnl_btc", fmt.Sprintf("%.6f", pos.NetPnL()),
 			"delta", fmt.Sprintf("%.4f", pos.CurrentGreeks.Delta),
 		)
 	}
