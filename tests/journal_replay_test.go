@@ -34,8 +34,8 @@ func jctx(slot *orders.SlotRef, at time.Time) orders.EventContext {
 func writeJournal(l *orders.Logger, start time.Time) {
 	call := &orders.Position{Instrument: "BTC-27NOV26-98000-C", OptionType: "call", Qty: 0.8, PremiumReceived: 0.0124, EntryTime: start}
 	put := &orders.Position{Instrument: "BTC-23OCT26-78000-P", OptionType: "put", Qty: 1.2, PremiumReceived: 0.006, EntryTime: start}
-	l.LogOpen(call, orders.Fill{OrderID: "1", FillPrice: 0.0155, Qty: 0.8}, jctx(slot60, start))
-	l.LogOpen(put, orders.Fill{OrderID: "2", FillPrice: 0.005, Qty: 1.2}, jctx(slot25, start.Add(time.Minute)))
+	l.LogOpen(call, orders.Fill{OrderID: "1", FillPrice: 0.0155, Qty: 0.8}, orders.TriggerEntry, jctx(slot60, start))
+	l.LogOpen(put, orders.Fill{OrderID: "2", FillPrice: 0.005, Qty: 1.2}, orders.TriggerEntry, jctx(slot25, start.Add(time.Minute)))
 	l.LogSkipped("margin_limit", jctx(slot25, start.Add(2*time.Minute)))
 	l.LogClose(call, orders.Fill{OrderID: "3", FillPrice: 0.011, Qty: 0.8}, orders.TriggerRolloutROI, orders.TypeLimit, jctx(slot60, start.Add(time.Hour)))
 	l.LogClose(put, orders.Fill{OrderID: "4", FillPrice: 0.01, Qty: 1.2}, orders.TriggerStopLoss200Pct, orders.TypeMarket, jctx(slot25, start.Add(2*time.Hour)))

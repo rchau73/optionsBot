@@ -10,6 +10,8 @@ import (
 // Trigger reason constants.
 const (
 	TriggerEntry             = "entry"
+	TriggerRepair            = "repair"           // re-sells the missing leg of a one-legged strangle
+	TriggerRebalanceUpsize   = "rebalance_upsize" // complement strangle bringing a slot up to the IM limit
 	TriggerRollout19DTE      = "rollout_19dte"
 	TriggerRolloutDelta      = "rollout_delta_drift"
 	TriggerRolloutROI        = "rollout_roi"

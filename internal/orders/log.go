@@ -170,14 +170,15 @@ func (l *Logger) LogCancelled(r PendingOrderRecord, ctx EventContext) {
 	l.write(rec)
 }
 
-// LogOpen records a short position opened by a fill.
-func (l *Logger) LogOpen(pos *Position, fill Fill, ctx EventContext) {
+// LogOpen records a short position opened by a fill; trigger says why the
+// sell was sent (entry, repair or rebalance upsize).
+func (l *Logger) LogOpen(pos *Position, fill Fill, trigger string, ctx EventContext) {
 	rec := base(EventFilled, ctx)
 	rec.setPosition(pos)
 	rec.OrderID = fill.OrderID
 	rec.Direction = DirectionSell
 	rec.OrderType = TypeLimit
-	rec.TriggerReason = TriggerEntry
+	rec.TriggerReason = trigger
 	rec.Qty = fill.Qty
 	rec.FillPrice = fill.FillPrice
 	rec.PremiumReceived = fill.FillPrice * fill.Qty

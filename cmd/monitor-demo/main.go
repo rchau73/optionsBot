@@ -183,7 +183,7 @@ func (s *simulation) rollRandomLeg(reason string) {
 	s.realised += pos.PremiumReceived - l.mark*l.qty
 	s.closed++
 	l.entry, l.mark = 0.012, 0.012 // re-sold at a fresh premium
-	s.journal.LogOpen(s.position(l), orders.Fill{FillPrice: l.entry, Qty: l.qty, Timestamp: time.Now()}, s.ctx(l, &l.slot))
+	s.journal.LogOpen(s.position(l), orders.Fill{FillPrice: l.entry, Qty: l.qty, Timestamp: time.Now()}, orders.TriggerEntry, s.ctx(l, &l.slot))
 }
 
 func (s *simulation) name(l *simLeg) string {

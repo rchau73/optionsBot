@@ -235,14 +235,14 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	}
 
 	if openCall {
-		leg, err := s.submitEntryLeg(ctx, call, qty, slotRef(targetDTE, entryDelta))
+		leg, err := s.submitEntryLeg(ctx, call, qty, slotRef(targetDTE, entryDelta), ps.trigger())
 		if err != nil {
 			return fmt.Errorf("sell call: %w", err)
 		}
 		ps.call = leg
 	}
 	if openPut {
-		leg, err := s.submitEntryLeg(ctx, put, qty, slotRef(targetDTE, entryDelta))
+		leg, err := s.submitEntryLeg(ctx, put, qty, slotRef(targetDTE, entryDelta), ps.trigger())
 		if err != nil {
 			// The call may already be resting or (partly) filled. Cancel what is
 			// left and keep whatever filled, so no short leg goes untracked.
@@ -290,8 +290,9 @@ func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument) error {
 }
 
 // submitEntryLeg places one limit sell for slot and journals the submission
-// with the market snapshot at that moment.
-func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrument, qty float64, slot *orders.SlotRef) (*pendingLeg, error) {
+// with the market snapshot at that moment; trigger says why (entry, repair or
+// rebalance upsize).
+func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrument, qty float64, slot *orders.SlotRef, trigger string) (*pendingLeg, error) {
 	price := entryLimitPrice(inst)
 	label := s.uniqueOrderLabel(slot)
 	fill, err := s.exch.Submit(ctx, orders.Order{
@@ -301,7 +302,7 @@ func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrume
 		Qty:           qty,
 		LimitPrice:    price,
 		TickSize:      inst.EffectiveTick(price),
-		TriggerReason: orders.TriggerEntry,
+		TriggerReason: trigger,
 		Label:         label,
 	})
 	if err != nil {
@@ -312,7 +313,7 @@ func (s *Strategy) submitEntryLeg(ctx context.Context, inst *marketdata.Instrume
 	}
 	s.journal.LogSubmit(orders.PendingOrderRecord{
 		OrderID: fill.OrderID, Instrument: inst.Name, OptionType: inst.OptionType,
-		Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
+		Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: trigger,
 		Qty: qty, LimitPrice: price, Greeks: toOrderGreeks(inst),
 	}, s.eventContext(inst, slot))
 	return newPendingLeg(fill, inst.Name, inst.OptionType, qty, price), nil

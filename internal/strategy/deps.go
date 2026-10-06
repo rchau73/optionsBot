@@ -69,7 +69,7 @@ type TradeJournal interface {
 	LogSubmit(r orders.PendingOrderRecord, ctx orders.EventContext)
 	LogAmend(r orders.PendingOrderRecord, previousPrice float64, ctx orders.EventContext)
 	LogCancelled(r orders.PendingOrderRecord, ctx orders.EventContext)
-	LogOpen(pos *orders.Position, fill orders.Fill, ctx orders.EventContext)
+	LogOpen(pos *orders.Position, fill orders.Fill, trigger string, ctx orders.EventContext)
 	LogClose(pos *orders.Position, fill orders.Fill, trigger, orderType string, ctx orders.EventContext)
 	LogReconciled(pos *orders.Position, ctx orders.EventContext)
 	LogSkipped(reason string, ctx orders.EventContext)

@@ -66,7 +66,7 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			continue
 		}
 
-		leg, err := s.submitEntryLeg(ctx, inst, present.Qty, slotRef(st.TargetDTE, st.EntryDelta))
+		leg, err := s.submitEntryLeg(ctx, inst, present.Qty, slotRef(st.TargetDTE, st.EntryDelta), orders.TriggerRepair)
 		if err != nil {
 			slog.Warn("repair: order submit failed",
 				"strangle_id", st.ID, "missing", missingType, "err", err)
