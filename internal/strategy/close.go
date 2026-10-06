@@ -27,6 +27,9 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 		// the book is matched to the exchange).
 		return 0, fmt.Errorf("buy to close %s: an earlier order's outcome is still unknown", pos.Instrument)
 	}
+	if qty = s.capToExchange(pos.Instrument, qty); qty <= qtyEpsilon {
+		return 0, nil // nothing short on the exchange: the position check adopts that
+	}
 	slot := s.slotOf(pos.ID) // before the close can remove the strangle
 	order := orders.Order{
 		Instrument:    pos.Instrument,
@@ -56,6 +59,9 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 	if filled <= qtyEpsilon {
 		return 0, nil
 	}
+	s.spendExchangeShort(pos.Instrument, filled)
+	s.boughtBack[pos.Instrument] = true
+	s.noteChurn(slot, true, time.Now())
 
 	// Journal the part that closed, with its share of the premium, so the
 	// logged P&L matches what was realised.

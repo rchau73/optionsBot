@@ -46,6 +46,11 @@ type Config struct {
 	// its size, the rebalance runs again after this long (it would otherwise
 	// wait for the next confirmed limit change or a restart).
 	RebalanceRetryMinutes int `yaml:"rebalance_retry_minutes"`
+	// ChurnMaxRoundTrips / ChurnWindowMinutes: a slot that buys back and
+	// re-sells this many times within the window is paused for the window
+	// (no entries, repairs, upsizes or leg balancing; exits still run).
+	ChurnMaxRoundTrips int `yaml:"churn_max_round_trips"`
+	ChurnWindowMinutes int `yaml:"churn_window_minutes"`
 	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
 	// share ÷ the strangle's standalone margin per lot).
 	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
@@ -203,6 +208,9 @@ func (c *Config) Validate() error {
 		if v != "ask" && v != "mid" && v != "bid" {
 			return fmt.Errorf("%s %q must be ask, mid or bid", key, v)
 		}
+	}
+	if c.ChurnMaxRoundTrips < 0 || c.ChurnWindowMinutes < 0 {
+		return fmt.Errorf("churn_max_round_trips %d and churn_window_minutes %d must not be negative", c.ChurnMaxRoundTrips, c.ChurnWindowMinutes)
 	}
 	if c.RebalanceRetryMinutes < 0 {
 		return fmt.Errorf("rebalance_retry_minutes %d must not be negative", c.RebalanceRetryMinutes)
@@ -387,6 +395,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
+	}
+	if cfg.ChurnMaxRoundTrips == 0 {
+		cfg.ChurnMaxRoundTrips = 3
+	}
+	if cfg.ChurnWindowMinutes == 0 {
+		cfg.ChurnWindowMinutes = 60
 	}
 	if cfg.RebalanceRetryMinutes == 0 {
 		cfg.RebalanceRetryMinutes = 15

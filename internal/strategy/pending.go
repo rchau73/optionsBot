@@ -413,6 +413,7 @@ func (s *Strategy) finalizePending(ps *pendingStrangle) {
 		if leg == nil || leg.filledQty <= qtyEpsilon {
 			return nil
 		}
+		s.noteChurn(ps.slot(), false, now)
 		pos := s.newPosition(leg.instrument, leg.optionType, ps.expiry, leg.filledQty, leg.fillPrice, now)
 		s.state.AddPosition(pos)
 		s.journal.LogOpen(pos,

@@ -53,6 +53,10 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 		if st.CallLeg == nil || st.PutLeg == nil || st.CallLeg.DTE() <= s.cfg.RolloutDTE {
 			continue
 		}
+		if s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
+			done = false // retried once the pause ends
+			continue
+		}
 		callInst, callOk := s.md.GetInstrument(st.CallLeg.Instrument)
 		putInst, putOk := s.md.GetInstrument(st.PutLeg.Instrument)
 		if !callOk || !putOk {

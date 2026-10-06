@@ -96,15 +96,23 @@ const driftConfirmations = 2
 func (s *Strategy) checkPositions(ctx context.Context) {
 	raw, err := s.exch.GetPositions(ctx, s.cfg.Underlying)
 	if err != nil {
+		s.exchSnap = nil // unknown this cycle: buy-backs are not capped
 		slog.Debug("position check skipped", "err", err)
 		return
 	}
 	exch := map[string]orders.RawPosition{}
+	snap := &exchangeSnapshot{short: map[string]float64{}, long: map[string]float64{}}
 	for _, rp := range raw {
-		if rp.Size != 0 && rp.Direction == orders.DirectionSell {
+		switch {
+		case rp.Size == 0:
+		case rp.Direction == orders.DirectionSell:
 			exch[rp.InstrumentName] = rp
+			snap.short[rp.InstrumentName] = math.Abs(rp.Size)
+		case rp.Direction == orders.DirectionBuy:
+			snap.long[rp.InstrumentName] = math.Abs(rp.Size)
 		}
 	}
+	s.exchSnap = snap
 	// An instrument can back several positions (a filled rebalance
 	// complement, or two slots on the same expiry and strike); the exchange
 	// reports their sum, so the book is compared by its sum too.
