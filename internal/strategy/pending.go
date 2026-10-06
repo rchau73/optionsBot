@@ -93,6 +93,7 @@ type pendingStrangle struct {
 	submittedAt      time.Time
 	adjustments      int
 	repairStrangleID string
+	complement       bool // sent by the rebalance to bring its slot up to size
 }
 
 // slot is the (DTE, delta) slot this entry belongs to.
@@ -129,6 +130,28 @@ func (s *Strategy) removePending(id string) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
 	delete(s.pendingStrangles, id)
+}
+
+// complementPending reports whether a rebalance complement is still working.
+func (s *Strategy) complementPending() bool {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	for _, ps := range s.pendingStrangles {
+		if ps.complement {
+			return true
+		}
+	}
+	return false
+}
+
+// underfilled reports whether any submitted leg filled less than requested.
+func (ps *pendingStrangle) underfilled() bool {
+	for _, l := range ps.legs() {
+		if l.filledQty < l.qty-qtyEpsilon {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Strategy) pendingSnapshot() []*pendingStrangle {
@@ -345,6 +368,9 @@ func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
 // existing strangle. Nothing filled → the slot is simply released.
 func (s *Strategy) finalizePending(ps *pendingStrangle) {
 	s.removePending(ps.id)
+	if ps.complement && ps.underfilled() {
+		s.rearmRebalance(fmt.Sprintf("complement %s filled short of its size", ps.id))
+	}
 
 	now := time.Now()
 	mkt := s.marketContext()

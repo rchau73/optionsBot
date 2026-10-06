@@ -56,10 +56,12 @@ type Strategy struct {
 	drift       map[string]int
 	forceCheck  map[string]bool
 	// Margin policy state, decision loop only: the last status (to journal
-	// changes) and the IM limit the book was last resized to (NaN: never).
-	lastRisk     *risk.Status
-	appliedLimit float64
-	pub          published // loop-owned state copied for View()
+	// changes), the IM limit the book was last resized to (NaN: never) and,
+	// after a complement fell short, the earliest time to rebalance again.
+	lastRisk         *risk.Status
+	appliedLimit     float64
+	rebalanceRetryAt time.Time
+	pub              published // loop-owned state copied for View()
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}

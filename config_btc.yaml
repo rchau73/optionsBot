@@ -47,6 +47,7 @@ iv_margin_bands:
 iv_band_confirm_days:   2
 max_mm_pct:             35      # maintenance-margin limit, enforced at once (Deribit liquidates at 100)
 max_leg_size_multiple:  2       # a new leg is at most 2x its slot's normal size (share / standalone margin per lot); stops book offsets from inflating sizes
+rebalance_retry_minutes: 15     # a rebalance upsize that times out short of its size is retried after this long
 
 # ── Order execution ───────────────────────────────────────────────────────────
 eval_interval_ms:      40000    # how often the strategy evaluates open positions

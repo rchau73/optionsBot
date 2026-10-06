@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 )
 
 // rebalancePositions resizes the book toward the confirmed IM limit. It runs
@@ -20,7 +22,12 @@ import (
 //     market — reducing exposure is a risk action, so speed beats price. At
 //     least one lot of each strangle stays (only the MM limit closes fully).
 //   - IM below the limit: open a complement strangle for the missing size
-//     through the normal entry path, capped by the remaining headroom.
+//     through the normal entry path, capped by the remaining headroom. If it
+//     times out short of its size, the rebalance runs again after
+//     rebalance_retry_minutes (rearmRebalance).
+//
+// A slot can hold several strangles (a filled complement is one), so sizes are
+// compared per slot: each strangle is sized against its slot's total.
 //
 // Strangles inside the rollout window are skipped (they roll anyway), and so
 // are one-legged strangles (repair completes them first).
@@ -41,6 +48,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 		"share_per_slot", fmt.Sprintf("%.6f", share), "strangles", len(strangles))
 
 	done := true
+	sent := make(map[slotKey]float64) // complement qty sent this pass, per slot
 	for _, st := range strangles {
 		if st.CallLeg == nil || st.PutLeg == nil || st.CallLeg.DTE() <= s.cfg.RolloutDTE {
 			continue
@@ -83,8 +91,12 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			continue
 		}
 		targetQty := float64(targetLots) * lot
+		key := makeSlotKey(st.TargetDTE, st.EntryDelta)
+		callTotal, putTotal := s.slotLegTotals(key)
+		callTotal += sent[key]
+		putTotal += sent[key]
 
-		addQty := orders.FloorToStep(math.Min(targetQty-st.CallLeg.Qty, targetQty-st.PutLeg.Qty), lot)
+		addQty := orders.FloorToStep(math.Min(targetQty-callTotal, targetQty-putTotal), lot)
 		if addQty >= lot {
 			if over || headroom <= 0 {
 				continue
@@ -92,6 +104,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			addQty = math.Min(addQty, float64(EntryLots(headroom, imPerLot))*lot)
 			if addQty >= lot {
 				headroom -= addQty / lot * imPerLot
+				sent[key] += addQty
 				s.openComplementStrangle(ctx, st, addQty, targetQty)
 			}
 			continue // never upsize and downsize in the same pass
@@ -100,10 +113,14 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			continue // under the limit overall: no reason to cut this strangle
 		}
 		for _, leg := range []struct {
-			pos  *orders.Position
-			inst *marketdata.Instrument
-		}{{st.CallLeg, callInst}, {st.PutLeg, putInst}} {
-			if !s.downsizeLeg(ctx, leg.pos, leg.inst, targetQty, lot) {
+			pos   *orders.Position
+			inst  *marketdata.Instrument
+			total float64
+		}{{st.CallLeg, callInst, callTotal}, {st.PutLeg, putInst, putTotal}} {
+			// Keep what the slot's other strangles leave of the target, and
+			// at least one lot (only the MM limit closes fully).
+			keep := math.Max(targetQty-(leg.total-leg.pos.Qty), lot)
+			if !s.downsizeLeg(ctx, leg.pos, leg.inst, keep, lot) {
 				done = false
 			}
 		}
@@ -133,10 +150,46 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		"call_instrument", call.Name,
 		"put_instrument", put.Name,
 	)
-	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, s.gamma.Evaluate()); err != nil {
+	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, s.gamma.Evaluate(), true); err != nil {
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
+		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err))
 	}
+}
+
+// slotLegTotals sums the call and put quantities of every strangle in a slot,
+// read fresh so closes made earlier in this pass are counted.
+func (s *Strategy) slotLegTotals(key slotKey) (call, put float64) {
+	for _, st := range s.state.AllStrangles() {
+		if makeSlotKey(st.TargetDTE, st.EntryDelta) != key {
+			continue
+		}
+		if st.CallLeg != nil {
+			call += st.CallLeg.Qty
+		}
+		if st.PutLeg != nil {
+			put += st.PutLeg.Qty
+		}
+	}
+	return call, put
+}
+
+// rearmRebalance makes the rebalance run again once rebalance_retry_minutes
+// have passed. A complement that did not fill (or filled in part) leaves the
+// book under the IM limit, and nothing else would trigger a new pass until
+// the next confirmed limit change or a restart. The next pass re-measures
+// the book, so whatever did fill is accounted for.
+func (s *Strategy) rearmRebalance(reason string) {
+	wait := time.Duration(s.cfg.RebalanceRetryMinutes) * time.Minute
+	s.appliedLimit = math.NaN()
+	s.rebalanceRetryAt = time.Now().Add(wait)
+	slog.Warn("rebalance: book still short of the IM limit, will retry",
+		"reason", reason, "retry_in", wait.String())
+	var st risk.Status
+	if s.lastRisk != nil {
+		st = *s.lastRisk
+	}
+	s.logRisk(orders.RiskRebalanceRetry, fmt.Sprintf("%s · retry in %s", reason, wait), st, s.lastUsage(), "")
 }
 
 // downsizeLeg buys back whole lots above targetQty. The strike is kept.

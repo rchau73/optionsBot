@@ -42,6 +42,10 @@ type Config struct {
 	// than this, and only when entries are not frozen and the confirmed gamma
 	// regime is not negative.
 	RepairCooldownHours int `yaml:"repair_cooldown_hours"`
+	// RebalanceRetryMinutes: when a rebalance complement times out short of
+	// its size, the rebalance runs again after this long (it would otherwise
+	// wait for the next confirmed limit change or a restart).
+	RebalanceRetryMinutes int `yaml:"rebalance_retry_minutes"`
 	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
 	// share ÷ the strangle's standalone margin per lot).
 	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
@@ -188,6 +192,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
+	}
+	if c.RebalanceRetryMinutes < 0 {
+		return fmt.Errorf("rebalance_retry_minutes %d must not be negative", c.RebalanceRetryMinutes)
 	}
 	if c.DeltaDriftThreshold < 0 {
 		return fmt.Errorf("delta_drift_threshold %.2f must not be negative", c.DeltaDriftThreshold)
@@ -363,6 +370,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
+	}
+	if cfg.RebalanceRetryMinutes == 0 {
+		cfg.RebalanceRetryMinutes = 15
 	}
 	if cfg.DeltaExitThreshold == 0 {
 		cfg.DeltaExitThreshold = 0.30
