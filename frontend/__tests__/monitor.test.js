@@ -133,3 +133,30 @@ describe("consolidateRows", () => {
     expect(row.roiPct).toBeNull();
   });
 });
+
+describe("group header totals", () => {
+  const leg = (over) => ({
+    key: "k", bot: "btc", unit: "BTC", slot: "45d · Δ0.16", strategyId: "s", instrument: "BTC-27NOV26-100000-C", side: "sell",
+    type: "call", qty: 1, entry: 0.01, spot: 100000, pnl: 0.002, pnlUsd: 200, delta: 0.16, gamma: 0.00002, theta: -30, vega: 80, ...over,
+  });
+
+  it("P&L % is the group's P&L over its premium", () => {
+    const [g] = groupRows([leg(), leg({ instrument: "BTC-27NOV26-76000-P", type: "put", qty: 2, entry: 0.0125, pnl: -0.001, pnlUsd: -100 })]);
+    // premium: 0.01×1 + 0.0125×2 = 0.035 BTC = $3,500; P&L $100
+    expect(g.roiPct).toBeCloseTo((100 / 3500) * 100, 6);
+  });
+
+  it("greeks are per-option × qty, negative for shorts, positive for longs", () => {
+    const [g] = groupRows([leg(), leg({ instrument: "BTC-27NOV26-76000-P", delta: -0.16, qty: 2 }), leg({ side: "buy", qty: 0.5 })]);
+    expect(g.greeks.delta).toBeCloseTo(-0.16 * 1 + 0.16 * 2 + 0.16 * 0.5, 10);
+    expect(g.greeks.theta).toBeCloseTo(30 * 1 + 30 * 2 - 30 * 0.5, 10); // shorts earn theta
+    expect(g.greeks.vega).toBeCloseTo(-80 * 1 - 80 * 2 + 80 * 0.5, 10);
+  });
+
+  it("does not add BTC and ETH deltas; theta and vega (USD) still add", () => {
+    const [g] = groupRows([leg(), leg({ bot: "eth", unit: "ETH" })], "type");
+    expect(g.greeks.delta).toBeNull();
+    expect(g.greeks.gamma).toBeNull();
+    expect(g.greeks.theta).toBeCloseTo(60, 10);
+  });
+});

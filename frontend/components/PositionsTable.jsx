@@ -26,6 +26,23 @@ function Freshness({ row }) {
   return null;
 }
 
+/**
+ * A group's position greeks (per-option greek × qty, short-signed), so they
+ * differ in scale from the per-option greeks on the leg rows below.
+ * Delta and gamma are blank when the group mixes underlyings.
+ */
+function GreekCells({ greeks }) {
+  const title = "Position greeks of the group: each leg's greek × qty, negative for shorts";
+  return (
+    <>
+      <td className="px-2 py-1 text-right font-semibold tabular-nums" title={title}>{formatNumber(greeks.delta, 3)}</td>
+      <td className="px-2 py-1 text-right font-semibold tabular-nums" title={title}>{isNumber(greeks.gamma) ? greeks.gamma.toExponential(1) : "—"}</td>
+      <td className="px-2 py-1 text-right font-semibold tabular-nums" title={title}>{formatNumber(greeks.theta, 1)}</td>
+      <td className="px-2 py-1 text-right font-semibold tabular-nums" title={title}>{formatNumber(greeks.vega, 1)}</td>
+    </>
+  );
+}
+
 /** Open legs, one row per bot + slot + strike (see consolidateRows), grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
 export default function PositionsTable({ groups }) {
   if (!groups.length) {
@@ -71,7 +88,11 @@ export default function PositionsTable({ groups }) {
                 {g.unit ? formatCoin(g.pnl, g.unit) : ""}
                 <div className="text-xs">{formatUSD(g.pnlUsd)}</div>
               </td>
-              <td colSpan={7} />
+              <td className={clsx("px-2 py-1 text-right font-semibold tabular-nums", pnlClass(g.roiPct))} title="Group unrealized P&L as % of the group's premium (in USD)">
+                {formatPct(g.roiPct, 0, { signed: true })}
+              </td>
+              <td colSpan={2} />
+              <GreekCells greeks={g.greeks} />
             </tr>
             {g.rows.map((r) => (
               <tr key={r.key} className="hover:bg-slate-800/30">

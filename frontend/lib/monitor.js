@@ -51,6 +51,7 @@ export function legRows(bots) {
           markSource: leg.mark_source ?? "last_cycle",
           markAsOf: leg.mark_as_of,
           pnl: leg.unrealised_pnl,
+          spot,
           pnlUsd: isNumber(spot) && isNumber(leg.unrealised_pnl) ? leg.unrealised_pnl * spot : null,
           roiPct: leg.roi_pct,
           lossMultiple: leg.loss_multiple,
@@ -144,13 +145,17 @@ export function groupRows(rows, by = "strategy") {
   }
   return [...groups.values()].map((g) => {
     const single = g.units.size === 1 ? [...g.units][0] : null;
+    const premiumUsd = g.rows.reduce((acc, r) => acc + (isNumber(r.spot) ? premiumOf(r) * r.spot : 0), 0);
+    const pnlUsd = sum(g.rows, "pnlUsd");
     return {
       key: g.key,
       rows: g.rows,
       legs: g.rows.length,
       unit: single,
       pnl: single ? sum(g.rows, "pnl") : null,
-      pnlUsd: sum(g.rows, "pnlUsd"),
+      pnlUsd,
+      roiPct: premiumUsd > 0 ? (pnlUsd / premiumUsd) * 100 : null,
+      greeks: positionGreeks(g.rows, single),
     };
   });
 }
@@ -295,6 +300,27 @@ export function mergeFeed(current, incoming, max = 300) {
   const seen = new Set(current.map((e) => e.id));
   const fresh = incoming.filter((e) => e && !seen.has(e.id));
   return [...fresh, ...current].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, max);
+}
+
+/**
+ * Position greeks of a group: each leg's per-option greek × qty, negated for
+ * shorts (a short call has negative delta), as the bot sums its net greeks.
+ * Delta and gamma are in the underlying, so they are only summed within one
+ * unit; theta and vega are in USD and always add up.
+ */
+export function positionGreeks(rows, unit) {
+  const total = (field) =>
+    rows.reduce((acc, r) => {
+      if (!isNumber(r[field]) || !isNumber(r.qty)) return acc;
+      const sign = r.side === "buy" ? 1 : -1;
+      return acc + sign * r[field] * r.qty;
+    }, 0);
+  return {
+    delta: unit ? total("delta") : null,
+    gamma: unit ? total("gamma") : null,
+    theta: total("theta"),
+    vega: total("vega"),
+  };
 }
 
 function sum(rows, field) {
