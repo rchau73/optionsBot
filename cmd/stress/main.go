@@ -660,11 +660,15 @@ func main() {
 	}
 	if !*quiet {
 		fmt.Printf("### %s — %s, %d decisions/day\n\n", mode, *name, *steps)
-		fmt.Println("| Day | Date | " + underlying + " | Δ | DVOL (pct) | Squeeze (low-band days · vol 7/20 · RV 10/20) | GEX live/conf | Limit | Entries | IM / MM % | Equity " + underlying + " | P&L USD | Actions |")
-		fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+		fmt.Println("| Day | Date | " + underlying + " | Δ | DVOL (pct) | Squeeze (low-band days · vol 7/20 · RV 10/20) | GEX live/conf | Limit | Entries | IM / MM % | Equity " + underlying + " | P&L USD | vs holding " + underlying + " / USD | Actions |")
+		fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 	}
 	eq0USD := b.mb0 * s0
+	// Results are judged against simply holding the coin: in coin that is
+	// equity − starting equity; in USD the same coin difference at today's
+	// price (eq·S − eq0·S0 − eq0·(S − S0) = (eq − eq0)·S).
 	worstUSD, worstDay, maxIM, maxMM := 0.0, "", 0.0, 0.0
+	worstVsHold, worstVsDay := 0.0, ""
 	triggerDays := 0
 
 	var actions []string
@@ -1197,6 +1201,10 @@ func main() {
 		if pnl < worstUSD {
 			worstUSD, worstDay = pnl, m.now.Format("Jan 2")
 		}
+		vsHold := (eq - b.mb0) * m.spot
+		if vsHold < worstVsHold {
+			worstVsHold, worstVsDay = vsHold, m.now.Format("Jan 2")
+		}
 		if len(actions) == 0 {
 			actions = []string{"—"}
 		}
@@ -1209,9 +1217,9 @@ func main() {
 			actions = nil
 		}
 		if !*quiet {
-			fmt.Printf("| %d | %s | %.0f | %+.1f%% | %.0f (%.0f) | %s | %s | %.0f%% | %s | %.1f / %.1f | %.4f | %+.0f | %s |\n",
+			fmt.Printf("| %d | %s | %.0f | %+.1f%% | %.0f (%.0f) | %s | %s | %.0f%% | %s | %.1f / %.1f | %.4f | %+.0f | %+.4f / %+.0f | %s |\n",
 				d, m.now.Format("Jan 2"), m.spot, chg, m.dvol, ivToday.Percentile, sq, gexCell, st.LimitIMPct, entries,
-				u.IMPct(), u.MMPct(), eq, pnl, strings.Join(actions, "; "))
+				u.IMPct(), u.MMPct(), eq, pnl, eq-b.mb0, vsHold, strings.Join(actions, "; "))
 			actions = nil
 		}
 	}
@@ -1219,11 +1227,16 @@ func main() {
 	if *breachHold {
 		*name += "+hold"
 	}
-	fmt.Printf("RESULT\t%s\t%.2f\t%.4f\t%.2f\t%.0f\t%.0f\t%d\t%d\t%d\t%.4f\t%.1f\t%.2f\t%d\t%.4f\t%d\n", *name, *breach, eq, (eq/b.mb0-1)*100,
-		eq*m.spot-eq0USD, b.mb0*(m.spot-s0), b.stops, breaches, b.rolls, b.realised, worstMM, worstEq, b.wings, b.wingCost, triggerDays)
+	fmt.Printf("RESULT\t%s\t%.2f\t%.4f\t%.2f\t%.0f\t%.0f\t%d\t%d\t%d\t%.4f\t%.1f\t%.2f\t%d\t%.4f\t%d\t%.4f\t%.0f\n", *name, *breach, eq, (eq/b.mb0-1)*100,
+		eq*m.spot-eq0USD, b.mb0*(m.spot-s0), b.stops, breaches, b.rolls, b.realised, worstMM, worstEq, b.wings, b.wingCost, triggerDays,
+		eq-b.mb0, (eq-b.mb0)*m.spot)
 	fmt.Printf("DTE\t%.2f\t%.4f\t%d\t%.1f\t%.1f\t%.2f\t%d\t%d\n", (eq/b.mb0-1)*100, b.fees, nEntries, sumIM/float64(max(nIM, 1)),
 		100*float64(shared)/float64(max(held, 1)), float64(held)/float64(max(nIM, 1)), sheds, resells)
 	u := underlying
-	fmt.Printf("\n**%s, %s:** equity %.4f → %.4f %s (%+.1f%%) · USD %+.0f vs holding %+.0f · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · max IM %.1f%% · max MM %.1f%% · worst day %s ($%+.0f) · squeeze trigger on %d days\n",
-		mode, *name, b.mb0, eq, u, (eq/b.mb0-1)*100, eq*m.spot-eq0USD, b.mb0*(m.spot-s0), b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, maxIM, maxMM, worstDay, worstUSD, triggerDays)
+	usd0, usd1, hold1 := eq0USD, eq*m.spot, b.mb0*m.spot
+	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days\n",
+		mode, *name, eq-b.mb0, u, (eq-b.mb0)*m.spot, worstVsDay, worstVsHold,
+		u, b.mb0, eq, (eq/b.mb0-1)*100, usd0, usd1, (usd1/usd0-1)*100, hold1, (hold1/usd0-1)*100,
+		u, s0, m.spot, (m.spot/s0-1)*100,
+		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, maxIM, maxMM, worstUSD, worstDay, triggerDays)
 }
