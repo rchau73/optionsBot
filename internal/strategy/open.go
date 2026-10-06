@@ -61,6 +61,10 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 		if occupied[makeSlotKey(slot.TargetDTE, slot.EntryDelta)] {
 			continue
 		}
+		if s.churnPaused(makeSlotKey(slot.TargetDTE, slot.EntryDelta), time.Now()) {
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipChurnPaused, "churn breaker")
+			continue
+		}
 
 		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, s.heldExpiries())
 		switch pick {
@@ -130,6 +134,7 @@ const (
 	SkipNoFreeExpiry  = "no_free_expiry" // its expiry is held by another slot and none is free up to the stretch
 	SkipNoStrike      = "no_strike"
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
+	SkipChurnPaused   = "churn_paused"   // the slot bought back and re-sold too often: paused (safety.go)
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.

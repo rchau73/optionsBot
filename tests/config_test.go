@@ -249,6 +249,16 @@ func TestConfigLoad_RepairCooldown(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_ChurnBreaker(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil || cfg.ChurnMaxRoundTrips != 3 || cfg.ChurnWindowMinutes != 60 {
+		t.Errorf("default churn breaker = %d in %d min (%v), want 3 in 60", cfg.ChurnMaxRoundTrips, cfg.ChurnWindowMinutes, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "churn_window_minutes: -5\n")); err == nil || !strings.Contains(err.Error(), "churn_window_minutes") {
+		t.Errorf("a negative window must be rejected, got %v", err)
+	}
+}
+
 func TestConfigLoad_PriceFloors(t *testing.T) {
 	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
 	if err != nil || cfg.EntryPriceFloor != "mid" || cfg.RepairPriceFloor != "bid" {

@@ -27,7 +27,8 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		if present == nil || missingType == "" {
 			continue // complete, or both legs gone (RemoveStrangleContaining cleans up)
 		}
-		if s.repairPending(st.ID) || s.slotUnconfirmed(makeSlotKey(st.TargetDTE, st.EntryDelta)) {
+		if s.repairPending(st.ID) || s.slotUnconfirmed(makeSlotKey(st.TargetDTE, st.EntryDelta)) ||
+			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
 			continue
 		}
 		if (missingType == "put" && gammaDec.Action == GammaActionClosePuts) ||

@@ -62,6 +62,12 @@ type Strategy struct {
 	appliedLimit     float64
 	rebalanceRetryAt time.Time
 	pub              published // loop-owned state copied for View()
+	// Safety guards (safety.go), decision loop only: this cycle's exchange
+	// positions, instruments bought back since start, and the churn breaker.
+	exchSnap   *exchangeSnapshot
+	boughtBack map[string]bool
+	churn      map[slotKey]*churnLog
+	churnUntil map[slotKey]time.Time
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
@@ -105,6 +111,9 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		unconfirmed:      make(map[string]unconfirmedOrder),
 		drift:            make(map[string]int),
 		forceCheck:       make(map[string]bool),
+		boughtBack:       make(map[string]bool),
+		churn:            make(map[slotKey]*churnLog),
+		churnUntil:       make(map[slotKey]time.Time),
 		killSwitchCh:     make(chan struct{}),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
@@ -195,6 +204,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// outcome is unknown, and adopt any position the book does not match.
 	s.resolveUnconfirmed(ctx)
 	s.checkPositions(ctx)
+	s.flattenLongs(ctx)
 
 	if gammaDec.Action != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
 	"optionsbot/internal/orders"
 )
@@ -22,7 +23,8 @@ import (
 func (s *Strategy) balanceStrangles(ctx context.Context) {
 	for _, st := range s.state.AllStrangles() {
 		call, put := s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
-		if call == nil || put == nil || s.repairPending(st.ID) {
+		if call == nil || put == nil || s.repairPending(st.ID) ||
+			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
 			continue
 		}
 		if call.DTE() <= s.cfg.RolloutDTE {
