@@ -249,6 +249,16 @@ func TestConfigLoad_RepairCooldown(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_RebalanceRetry(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil || cfg.RebalanceRetryMinutes != 15 {
+		t.Errorf("default rebalance_retry_minutes = %d (%v), want 15", cfg.RebalanceRetryMinutes, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "rebalance_retry_minutes: -1\n")); err == nil || !strings.Contains(err.Error(), "rebalance_retry_minutes") {
+		t.Errorf("a negative retry delay must be rejected, got %v", err)
+	}
+}
+
 func TestConfigLoad_MaxLegSizeMultiple(t *testing.T) {
 	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
 	if err != nil || cfg.MaxLegSizeMultiple != 2 {

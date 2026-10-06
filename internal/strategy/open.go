@@ -109,7 +109,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit, err.Error())
 			continue
 		}
-		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec); err != nil {
+		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, false); err != nil {
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipEntryRejected, err.Error())
@@ -186,7 +186,8 @@ func (s *Strategy) heldExpiries() map[time.Time]bool {
 
 // openStrangle submits limit sells for both legs (or one leg when GEX is
 // shedding the other) and tracks them as a pending strangle until they fill.
-func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision) error {
+// complement marks a rebalance upsize (see rebalance.go).
+func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, complement bool) error {
 	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC); an amount off
 	// that grid is rejected, so snap qty down onto it.
 	if exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount); exchStep > 0 {
@@ -230,6 +231,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		expiry:      call.Expiry,
 		underlying:  call.Underlying,
 		submittedAt: time.Now(),
+		complement:  complement,
 	}
 
 	if openCall {

@@ -104,7 +104,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed) |
 | `reconcile.go` | rebuild the book from the exchange; startup account log |
 | `limits.go` | margin policy each cycle: evaluate `internal/risk`, journal changes, reduce at market on an MM breach, size entries with `private/simulate_portfolio` |
-| `rebalance.go` | resize strangles toward a newly confirmed IM limit (downsize at market only while IM is above it, upsize via a complement entry) |
+| `rebalance.go` | resize strangles toward a newly confirmed IM limit (downsize at market only while IM is above it, upsize via a complement entry); sizes are compared per slot (a filled complement is a second strangle in it); a complement that times out short re-runs the rebalance after `rebalance_retry_minutes` |
 | `killswitch.go` | cancel all → flatten at market with retries → stay idle |
 | `entry.go`, `rollout.go`, `gamma.go`, `margin.go` | pure decision functions shared with the backtest |
 

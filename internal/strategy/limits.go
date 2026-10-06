@@ -152,8 +152,14 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if st.Frozen || !st.CanRebalance || st.LimitIMPct == s.appliedLimit {
 		return
 	}
-	if s.rebalancePositions(ctx, m) {
-		s.appliedLimit = st.LimitIMPct
+	if s.complementPending() || time.Now().Before(s.rebalanceRetryAt) {
+		return // a complement is still working, or one fell short recently
+	}
+	// Marked applied first: a complement that fails during the pass re-arms
+	// the rebalance (rearmRebalance), and that must not be overwritten.
+	s.appliedLimit = st.LimitIMPct
+	if !s.rebalancePositions(ctx, m) {
+		s.appliedLimit = math.NaN() // something failed: run again next cycle
 	}
 }
 
