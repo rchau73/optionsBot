@@ -68,6 +68,47 @@ export function legRows(bots) {
   return rows;
 }
 
+/**
+ * Merges legs of the same bot, slot and instrument (strike, expiry and type)
+ * into one row. Partial fills and rebalance top-ups book separate positions
+ * on the same strike; the table shows them as one line with their count.
+ * Qty, premium and P&L add up; entry is qty-weighted; the stop shown is the
+ * position that would stop first (the lowest stop mark).
+ */
+export function consolidateRows(rows) {
+  const byKey = new Map();
+  for (const r of rows) {
+    const k = `${r.bot}:${r.slot}:${r.instrument}:${r.side}`;
+    const prev = byKey.get(k);
+    if (!prev) {
+      byKey.set(k, { ...r, key: k, positions: 1, premium: premiumOf(r) });
+      continue;
+    }
+    const qty = prev.qty + r.qty;
+    const premium = prev.premium + premiumOf(r);
+    const pnl = addNullable(prev.pnl, r.pnl);
+    byKey.set(k, {
+      ...prev,
+      positions: prev.positions + 1,
+      qty: round(qty),
+      premium,
+      entry: qty > 0 ? premium / qty : prev.entry,
+      pnl,
+      pnlUsd: addNullable(prev.pnlUsd, r.pnlUsd),
+      roiPct: isNumber(pnl) && premium > 0 ? (pnl / premium) * 100 : null,
+      lossMultiple: isNumber(pnl) && premium > 0 ? -pnl / premium : null,
+      stopMark: minNullable(prev.stopMark, r.stopMark),
+      markSource: prev.markSource === "live" && r.markSource === "live" ? "live" : r.markSource,
+    });
+  }
+  return [...byKey.values()];
+}
+
+const premiumOf = (r) => (isNumber(r.entry) && isNumber(r.qty) ? r.entry * r.qty : 0);
+const addNullable = (a, b) => (isNumber(a) && isNumber(b) ? a + b : isNumber(a) ? a : b);
+const minNullable = (a, b) => (isNumber(a) && isNumber(b) ? Math.min(a, b) : isNumber(a) ? a : b);
+const round = (v) => Math.round(v * 1e8) / 1e8; // 0.1 + 0.2 shows as 0.3
+
 /** Keeps rows matching every non-empty filter (bot, strategy, type, moneyness). */
 export function filterRows(rows, filters = {}) {
   return rows.filter(

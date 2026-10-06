@@ -26,7 +26,7 @@ function Freshness({ row }) {
   return null;
 }
 
-/** Open legs grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
+/** Open legs, one row per bot + slot + strike (see consolidateRows), grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
 export default function PositionsTable({ groups }) {
   if (!groups.length) {
     return <p className="px-1 py-6 text-center text-sm text-muted">No open positions match the filters.</p>;
@@ -75,7 +75,14 @@ export default function PositionsTable({ groups }) {
             </tr>
             {g.rows.map((r) => (
               <tr key={r.key} className="hover:bg-slate-800/30">
-                <td className="px-2 py-1 font-mono text-xs">{r.instrument}</td>
+                <td className="px-2 py-1 font-mono text-xs">
+                  {r.instrument}
+                  {r.positions > 1 ? (
+                    <span className="ml-1 text-[10px] text-muted" title={`${r.positions} positions on this strike, shown as one (entry is their average; stop is the first to fire)`}>
+                      ×{r.positions}
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-2 py-1 text-xs text-muted">{r.slot}</td>
                 <td className="px-2 py-1">
                   <Badge tone={r.type === "call" ? "call" : "put"}>{r.type}</Badge>
