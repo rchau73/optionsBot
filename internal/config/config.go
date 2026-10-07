@@ -50,7 +50,11 @@ type Config struct {
 	// re-sells this many times within the window is paused for the window
 	// (no entries, repairs, upsizes or leg balancing; exits still run).
 	ChurnMaxRoundTrips int `yaml:"churn_max_round_trips"`
-	ChurnWindowMinutes int `yaml:"churn_window_minutes"`
+	// MarketRecordMinutes: every this many minutes the bot records every
+	// option of its underlying (mainnet quotes) to data/market/ for
+	// backtests and stress tests. 0 → 60; negative → off.
+	MarketRecordMinutes int `yaml:"market_record_minutes"`
+	ChurnWindowMinutes  int `yaml:"churn_window_minutes"`
 	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
 	// share ÷ the strangle's standalone margin per lot).
 	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
@@ -395,6 +399,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
+	}
+	if cfg.MarketRecordMinutes == 0 {
+		cfg.MarketRecordMinutes = 60
 	}
 	if cfg.ChurnMaxRoundTrips == 0 {
 		cfg.ChurnMaxRoundTrips = 3

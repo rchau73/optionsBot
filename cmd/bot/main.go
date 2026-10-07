@@ -24,6 +24,7 @@ import (
 	"optionsbot/internal/logger"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/recorder"
 	"optionsbot/internal/strategy"
 )
 
@@ -33,6 +34,10 @@ const journalPath = "orders.log"
 
 // pnlHistoryPath is where the P&L history for the monitor chart is kept.
 const pnlHistoryPath = "data/pnl_history.jsonl"
+
+// marketHistoryDir holds the recorded market (one gzip CSV per UTC day). It
+// is not part of the trading history: --reset-history leaves it in place.
+const marketHistoryDir = "data/market"
 
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
@@ -172,6 +177,11 @@ func runLive(cfg *config.Config) error {
 		Underlying: cfg.Underlying, NExpiries: 5, StrikeRangePct: cfg.GEXStrikeRangePct, Method: cfg.GEXMethod,
 	}, cfg.GammaRegimeBandPct)
 	gexMgr.StartBackground(ctx, 60*time.Second)
+	// Market history for backtests and stress tests: the GEX poll's mainnet
+	// quotes, once per interval. Reads only what is already fetched.
+	if cfg.MarketRecordMinutes > 0 {
+		go recorder.New(gexMgr, md.DVOL, marketHistoryDir, time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
+	}
 
 	// P&L history for the monitor chart; data/ is a mounted volume in Docker,
 	// so it survives restarts and rebuilds.
