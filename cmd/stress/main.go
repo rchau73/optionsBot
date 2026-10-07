@@ -34,7 +34,7 @@ import (
 
 const (
 	rolloutDTE                     = 15
-	drift, roiTP, stopMult, minPre = 0.10, 0.50, 2.0, 0.001
+	stopMult, minPre               = 2.0, 0.001
 	feePerBTC                      = 0.0003 // Deribit: 0.03 % of the underlying per contract
 	cooldown                       = 72 * time.Hour
 	// Proposed condor rules (squeeze-protection research request).
@@ -42,6 +42,10 @@ const (
 	wingDelta      = 0.05 // wing at least this far out (|Δ| ≤ 0.05) …
 	wingBudgetFrac = 0.30 // … and all wings ≤ 30 % of the credit still to earn
 )
+
+// drift and roiTP are the delta-drift roll and take-profit thresholds
+// (-drift, -tp; default = the bot's config).
+var drift, roiTP = 0.10, 0.50
 
 // underlying is the coin of the simulated book (-currency); lot is its
 // minimum trade (Deribit: 0.1 BTC, 1 ETH).
@@ -463,6 +467,8 @@ func wingStrike(short *leg, m market, insts []*marketdata.Instrument) (*marketda
 
 func main() {
 	name := flag.String("shock", "crash", "path after the calm days: crash | rally | crash40 | rally40 | chop | quiet | normalN | longN (N = random seed)")
+	flag.Float64Var(&roiTP, "tp", 0.50, "take-profit: roll a leg once this share of its premium is earned (roi_take_profit; 1 = off)")
+	flag.Float64Var(&drift, "drift", 0.10, "delta drift: roll a leg whose |delta| falls below this (delta_drift_threshold; 0 = off)")
 	pairStrikes := flag.Bool("pairstrikes", true, "entries pick the call and put as a pair (SelectStrikePair, the bot); false = each leg alone at the target delta")
 	currency := flag.String("currency", "BTC", "coin of the book in -dir (BTC or ETH; use -volscale for ETH-like moves)")
 	condor := flag.Bool("condor", false, "apply the PROPOSED squeeze-protection condor rules")
