@@ -166,3 +166,74 @@ func TestStrategy_RestartWithTwoStranglesOnOneExpirySendsNothing(t *testing.T) {
 		}
 	}
 }
+
+// Tonight's ETH book after a restart: 3300-C backed two strangles (162 with
+// 2350-P in the 45-day slot, 100 with 2250-P in the 60-day slot), but Deribit
+// reports it as one 262 position. The excess is split back onto the lone put,
+// so every strangle is even and nothing is bought back or re-sold.
+func TestGroupPositions_SplitsAStrikeSharedByTwoStrangles(t *testing.T) {
+	c3300 := pos("ETH-27NOV26-3300-C", "call", 3300, nov27, 262, 0.17)
+	c3300.PremiumReceived = 262 * 0.0165
+	in := []*orders.Position{
+		c3300,
+		pos("ETH-27NOV26-2350-P", "put", 2350, nov27, 162, -0.20),
+		pos("ETH-27NOV26-2250-P", "put", 2250, nov27, 100, -0.15),
+		pos("ETH-27NOV26-3400-C", "call", 3400, nov27, 603, 0.14),
+		pos("ETH-27NOV26-2300-P", "put", 2300, nov27, 603, -0.17),
+	}
+	got := strategy.GroupPositions(in, reconNow, liveSlots)
+
+	pairs := map[string]float64{}
+	for _, g := range got {
+		if g.Call == nil || g.Put == nil {
+			t.Fatalf("one-legged strangle %s / %s: the shared strike must be split", legName(g.Call), legName(g.Put))
+		}
+		if math.Abs(g.Call.Qty-g.Put.Qty) > 1e-9 {
+			t.Errorf("%s %v / %s %v is uneven: leg balancing would buy back the excess", legName(g.Call), g.Call.Qty, legName(g.Put), g.Put.Qty)
+		}
+		pairs[g.Call.Instrument+"/"+g.Put.Instrument] = g.Call.Qty
+	}
+	want := map[string]float64{"ETH-27NOV26-3300-C/ETH-27NOV26-2350-P": 162, "ETH-27NOV26-3300-C/ETH-27NOV26-2250-P": 100, "ETH-27NOV26-3400-C/ETH-27NOV26-2300-P": 603}
+	for k, q := range want {
+		if pairs[k] != q {
+			t.Errorf("%s = %v, want %v (got %v)", k, pairs[k], q, pairs)
+		}
+	}
+	var premium float64
+	for _, g := range got {
+		if g.Call.Instrument == "ETH-27NOV26-3300-C" {
+			premium += g.Call.PremiumReceived
+		}
+	}
+	if math.Abs(premium-262*0.0165) > 1e-12 || c3300.Qty != 262 {
+		t.Errorf("premium must be shared out (%v), the input left untouched (qty %v)", premium, c3300.Qty)
+	}
+}
+
+// End to end: a restart on a shared strike neither buys back nor re-sells.
+func TestReconcile_SharedStrikeRestartsWithoutTrading(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.2, 0.02)      // call 0.2, put 0.2
+	f.exch.summary.InitialMargin = 2.0 // at the 20 % limit: no rebalance top-up
+	put2 := f.put + "2"
+	f.market.mu.Lock()
+	p := *f.market.instruments[f.put]
+	p.Name, p.Strike = put2, 85000
+	f.market.instruments[put2] = &p
+	f.market.mu.Unlock()
+	f.exch.positions[0].Size = -0.3 // the call backs both strangles: 0.2 + 0.1
+	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: put2, Size: -0.1, Direction: "sell",
+		AveragePrice: 0.02, MarkPrice: 0.02, Delta: -0.12})
+	f.startRun()
+
+	eventually(t, 2*time.Second, "book loaded", func() bool { return len(f.state.AllStrangles()) == 2 })
+	time.Sleep(300 * time.Millisecond) // ~30 cycles
+	if b, s := len(f.exch.buys()), len(f.exch.sells()); b != 0 || s != 0 {
+		t.Errorf("restart traded: %d buys, %d sells (want none)", b, s)
+	}
+	for _, st := range f.state.AllStrangles() {
+		if st.CallLeg == nil || st.PutLeg == nil || math.Abs(st.CallLeg.Qty-st.PutLeg.Qty) > 1e-9 {
+			t.Errorf("strangle %s not whole and even: %+v / %+v", st.ID, st.CallLeg, st.PutLeg)
+		}
+	}
+}

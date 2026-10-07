@@ -97,6 +97,31 @@ func slotScore(call, put *orders.Position, expiry, now time.Time, sl config.Stra
 	return dteDist + math.Abs(sl.EntryDelta-refDelta)*100
 }
 
+// splitOff moves qty of p into a new position (no ID) with the same
+// instrument, entry price and greeks, and its share of premium and fees.
+func splitOff(p *orders.Position, qty float64) *orders.Position {
+	piece := *p
+	piece.ID = ""
+	piece.Qty = qty
+	piece.PremiumReceived = p.PremiumReceived * qty / p.Qty
+	piece.Fees = p.Fees * qty / p.Qty
+	p.PremiumReceived -= piece.PremiumReceived
+	p.Fees -= piece.Fees
+	p.Qty -= qty
+	return &piece
+}
+
+// closestQty is the index of the position whose size is closest to qty.
+func closestQty(ps []*orders.Position, qty float64) int {
+	best := 0
+	for i, p := range ps {
+		if math.Abs(p.Qty-qty) < math.Abs(ps[best].Qty-qty) {
+			best = i
+		}
+	}
+	return best
+}
+
 // ReconciledStrangle is one strangle rebuilt from exchange positions; Call
 // or Put is nil for a one-legged strangle (repair completes it).
 type ReconciledStrangle struct {
@@ -114,6 +139,16 @@ type ReconciledStrangle struct {
 // exactly one strangle. Each strangle gets the closest slot not yet taken
 // (closest pairs first); only when every slot is taken may two share one.
 //
+// Deribit reports one position per instrument, so a strike that backed two
+// strangles (two slots on one expiry picking the same call, say) comes back
+// as one larger leg. When a pair is uneven and the same expiry has a lone leg
+// of the other type, the larger leg is split: its excess (up to the lone
+// leg's size) becomes a second position paired with the lone leg. Without
+// the split, leg balancing bought the "excess" back and repair re-sold it at
+// every restart (2026-10-06: ETH 3300-C 262 = 162 + 100, two round trips).
+// Split pieces have no ID; the caller stores them and the reduced originals.
+// The input positions are not modified.
+//
 // It replaced a one-strangle-per-expiry rule that kept only the last call and
 // put of an expiry: the other legs were loaded but in no strangle, so the
 // startup rebalance undercounted the book and added top-ups at every restart,
@@ -122,7 +157,9 @@ func GroupPositions(positions []*orders.Position, now time.Time, slots []config.
 	type side struct{ calls, puts []*orders.Position }
 	byExpiry := map[time.Time]*side{}
 	var expiries []time.Time
-	for _, p := range positions {
+	for _, orig := range positions {
+		cp := *orig // work on copies: splitting changes sizes
+		p := &cp
 		sd := byExpiry[p.Expiry]
 		if sd == nil {
 			sd = &side{}
@@ -170,22 +207,55 @@ func GroupPositions(positions []*orders.Position, now time.Time, slots []config.
 			return cands[a].rnk < cands[b].rnk
 		})
 		usedC, usedP := map[int]bool{}, map[int]bool{}
+		var pairs []ReconciledStrangle
 		for _, cd := range cands {
 			if usedC[cd.c] || usedP[cd.p] {
 				continue
 			}
 			usedC[cd.c], usedP[cd.p] = true, true
-			out = append(out, ReconciledStrangle{Call: sd.calls[cd.c], Put: sd.puts[cd.p], Expiry: exp})
+			pairs = append(pairs, ReconciledStrangle{Call: sd.calls[cd.c], Put: sd.puts[cd.p], Expiry: exp})
 		}
+		var loneCalls, lonePuts []*orders.Position
 		for i, c := range sd.calls {
 			if !usedC[i] {
-				out = append(out, ReconciledStrangle{Call: c, Expiry: exp})
+				loneCalls = append(loneCalls, c)
 			}
 		}
 		for j, p := range sd.puts {
 			if !usedP[j] {
-				out = append(out, ReconciledStrangle{Put: p, Expiry: exp})
+				lonePuts = append(lonePuts, p)
 			}
+		}
+		// Split an uneven pair's excess onto a lone leg of the other type.
+		for i := range pairs {
+			pr := &pairs[i]
+			for {
+				larger, smaller, lone := pr.Call, pr.Put, &lonePuts
+				if pr.Put.Qty > pr.Call.Qty {
+					larger, smaller, lone = pr.Put, pr.Call, &loneCalls
+				}
+				excess := larger.Qty - smaller.Qty
+				if excess <= qtyEpsilon || len(*lone) == 0 {
+					break
+				}
+				k := closestQty(*lone, excess)
+				partner := (*lone)[k]
+				*lone = append((*lone)[:k], (*lone)[k+1:]...)
+				piece := splitOff(larger, math.Min(excess, partner.Qty))
+				if piece.OptionType == "call" {
+					pairs = append(pairs, ReconciledStrangle{Call: piece, Put: partner, Expiry: exp})
+				} else {
+					pairs = append(pairs, ReconciledStrangle{Call: partner, Put: piece, Expiry: exp})
+				}
+				pr = &pairs[i] // append may have moved the slice
+			}
+		}
+		out = append(out, pairs...)
+		for _, c := range loneCalls {
+			out = append(out, ReconciledStrangle{Call: c, Expiry: exp})
+		}
+		for _, p := range lonePuts {
+			out = append(out, ReconciledStrangle{Put: p, Expiry: exp})
 		}
 	}
 
@@ -273,6 +343,19 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	// registered as partial strangles so repair can fill the missing leg.
 	for _, g := range GroupPositions(loaded, now, s.cfg.Slots()) {
 		call, put, expiry, bestSlot := g.Call, g.Put, g.Expiry, g.Slot
+		// Store split pieces and the reduced sizes of the legs they came from.
+		for _, leg := range []*orders.Position{call, put} {
+			switch {
+			case leg == nil:
+			case leg.ID == "":
+				leg.ID = s.state.NextID("pos")
+				s.state.AddPosition(leg)
+				slog.Info("reconcile: split a strike shared by two strangles",
+					"instrument", leg.Instrument, "qty", leg.Qty)
+			default:
+				s.state.UpdatePositionQty(leg.ID, leg.Qty, leg.PremiumReceived)
+			}
+		}
 		stID := s.state.NextID("st")
 		s.state.AddStrangle(&orders.Strangle{
 			ID: stID, TargetDTE: bestSlot.TargetDTE, EntryDelta: bestSlot.EntryDelta,
