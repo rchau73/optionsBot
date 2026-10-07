@@ -19,7 +19,9 @@ import (
 // limitPrice 0 sends a market order. A positive limitPrice sends an
 // immediate-or-cancel limit, which caps the price paid but still gives a final
 // answer at once, so there is never a resting close order to track.
-func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64) (float64, error) {
+//
+// detail is the why, with the numbers; it is journaled with the close.
+func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, detail string) (float64, error) {
 	qty = math.Min(qty, pos.Qty)
 	if s.instrumentUnconfirmed(pos.Instrument) {
 		// An earlier order may have closed it already: sending another could
@@ -69,7 +71,9 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 	closed.Qty = filled
 	closed.PremiumReceived = pos.PremiumReceived * filled / pos.Qty
 	closed.Fees = pos.Fees * filled / pos.Qty // its share of the opening fees
-	s.journal.LogClose(&closed, fill, reason, order.OrderType, s.instrumentContext(pos.Instrument, slot))
+	jctx := s.instrumentContext(pos.Instrument, slot)
+	jctx.Detail = detail
+	s.journal.LogClose(&closed, fill, reason, order.OrderType, jctx)
 	s.pnl.record(slot, orders.ClosedNetPnL(&closed, fill))
 
 	remaining := pos.Qty - filled
@@ -112,7 +116,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 		// Market order: getting out matters more than the price.
 		startQty := pos.Qty
 		s.noteStopped(pos, time.Now())
-		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerStopLoss200Pct, 0)
+		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerStopLoss200Pct, 0, d.Detail)
 		if err != nil {
 			slog.Error("stop loss close failed", "err", err, "instrument", pos.Instrument)
 			return
@@ -136,7 +140,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 			// Held like a stop-loss: repair re-sells it only once calm.
 			s.noteStopped(pos, time.Now())
 		}
-		filled, err := s.buyToClose(ctx, pos, pos.Qty, d.Reason, inst.Ask)
+		filled, err := s.buyToClose(ctx, pos, pos.Qty, d.Reason, inst.Ask, d.Detail)
 		if err != nil {
 			slog.Warn("rollout close failed", "err", err, "instrument", pos.Instrument)
 			return
@@ -169,7 +173,9 @@ func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
 		if !shouldClose {
 			continue
 		}
-		if _, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0); err != nil {
+		detail := fmt.Sprintf("GEX shed: regime %s, spot %.0f is more than the %.1f%% buffer below the flip %.0f, trend %s — shedding %ss",
+			dec.Regime, s.md.UnderlyingPrice(), dec.FlipBufferPct, dec.GammaFlip, dec.Trend, pos.OptionType)
+		if _, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail); err != nil {
 			slog.Error("gamma close failed", "err", err, "instrument", pos.Instrument)
 		}
 	}

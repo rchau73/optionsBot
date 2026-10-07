@@ -203,7 +203,8 @@ func (s *Strategy) downsizeLeg(ctx context.Context, pos *orders.Position, inst *
 		return true
 	}
 	oldQty := pos.Qty
-	filled, err := s.buyToClose(ctx, pos, excess, orders.TriggerRebalanceDownsize, 0)
+	detail := fmt.Sprintf("downsize: IM above the confirmed limit — %s cut from %g to the slot target %g", pos.Instrument, pos.Qty, targetQty)
+	filled, err := s.buyToClose(ctx, pos, excess, orders.TriggerRebalanceDownsize, 0, detail)
 	if err != nil {
 		slog.Warn("rebalance: downsize failed",
 			"instrument", inst.Name, "excess_qty", excess, "err", err)

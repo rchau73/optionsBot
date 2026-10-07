@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Badge from "./Badge";
 import StatTile from "./StatTile";
 import { formatCoin, formatDateTime, formatNumber, formatPct, formatPrice, formatUSD } from "@/lib/format";
-import { closeLabel, filterTrades, summarizeTrades } from "@/lib/trades";
+import { closeLabel, filterTrades, positionDelta, summarizeTrades } from "@/lib/trades";
 
 const PAGE = 50;
 const tone = (v) => (v > 0 ? "good" : v < 0 ? "bad" : undefined);
@@ -126,6 +126,7 @@ export default function TradeHistory({ trades }) {
               <th className="px-2 py-1 text-right">Qty</th>
               <th className="px-2 py-1 text-right">Price</th>
               <th className="px-2 py-1">Reason</th>
+              <th className="px-2 py-1 text-right" title="Option greeks at that moment, per contract as Deribit quotes them; position Δ = −Δ × qty for the short">Δ (position) · Θ · Vega</th>
               <th className="px-2 py-1 text-right">P&amp;L</th>
               <th className="px-2 py-1 text-right">P&amp;L %</th>
               <th className="px-2 py-1 text-right">Held</th>
@@ -144,7 +145,16 @@ export default function TradeHistory({ trades }) {
                 <td className="px-2 py-1 text-xs text-muted">{t.slot ? `${t.slot.dte}d · Δ${t.slot.delta}` : "—"}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(t.qty, 1)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatPrice(t.price)}</td>
-                <td className="px-2 py-1 text-xs">{t.kind === "open" ? t.reason : closeLabel(t.reason)}</td>
+                <td className="max-w-[28rem] px-2 py-1 text-xs">
+                  {t.kind === "open" ? t.reason : closeLabel(t.reason)}
+                  {t.detail ? <div className="text-[11px] leading-snug text-muted">{t.detail}</div> : null}
+                </td>
+                <td className="whitespace-nowrap px-2 py-1 text-right text-xs tabular-nums">
+                  {formatNumber(t.delta, 3)} ({formatNumber(positionDelta(t), 2)})
+                  <div className="text-[11px] text-muted">
+                    Θ {formatNumber(t.theta, 1)} · V {formatNumber(t.vega, 1)}
+                  </div>
+                </td>
                 <td className={`px-2 py-1 text-right tabular-nums ${pnlClass(t.pnl)}`}>
                   {t.kind === "close" ? (
                     <>

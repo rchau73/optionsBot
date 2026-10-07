@@ -88,3 +88,12 @@ describe("history carried into the KPIs and the chart", () => {
     expect(prefillLive(stored, []).map((p) => p.t)).toEqual([1, 2, 3]);
   });
 });
+
+describe("positionDelta", () => {
+  it("is −Δ × qty for the short: a short call is negative, a short put positive", () => {
+    const { positionDelta } = require("@/lib/trades");
+    expect(positionDelta({ delta: 0.17, qty: 100 })).toBeCloseTo(-17, 10);
+    expect(positionDelta({ delta: -0.2, qty: 162 })).toBeCloseTo(32.4, 10);
+    expect(positionDelta({ qty: 1 })).toBeNull();
+  });
+});

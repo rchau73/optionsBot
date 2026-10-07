@@ -183,7 +183,8 @@ func (s *Strategy) reduceForMM(ctx context.Context, m marginState) {
 			s.noteStopped(pos, time.Now()) // closed out entirely: same as a stop-loss
 		}
 		if excess := pos.Qty - keep; excess > qtyEpsilon {
-			if _, err := s.buyToClose(ctx, pos, excess, orders.TriggerMarginMM, 0); err != nil {
+			detail := fmt.Sprintf("MM limit: maintenance margin %.1f%% ≥ %.0f%% — cutting %s from %g to %g at market", mmPct, m.status.MaxMMPct, pos.Instrument, pos.Qty, keep)
+			if _, err := s.buyToClose(ctx, pos, excess, orders.TriggerMarginMM, 0, detail); err != nil {
 				slog.Error("MM reduction failed", "instrument", pos.Instrument, "qty", excess, "err", err)
 			}
 		}

@@ -119,6 +119,7 @@ func base(event string, ctx EventContext) OrderLog {
 		Event:      event,
 		Status:     event,
 		StrategyID: ctx.StrategyID,
+		Detail:     ctx.Detail,
 		Slot:       ctx.Slot,
 		Market:     ctx.Market,
 		Portfolio:  ctx.Portfolio,

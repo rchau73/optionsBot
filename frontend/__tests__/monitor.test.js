@@ -160,3 +160,16 @@ describe("group header totals", () => {
     expect(g.greeks.theta).toBeCloseTo(60, 10);
   });
 });
+
+describe("closed events say why", () => {
+  it("adds the delta and the journaled detail", () => {
+    const line = describeEvent("eth", {
+      seq: 1, at: "2026-10-06T22:09:44Z", event: "closed",
+      data: { qty: 100, instrument: "ETH-27NOV26-3300-C", fill_price: 0.016, pnl: -0.03, pnl_usd: -81, delta: 0.1686,
+        close_reason: "rebalance_legs", detail: "leg balance: call 262 vs put 162 — not a stop" },
+    });
+    expect(line.label).toBe("Balance legs");
+    expect(line.text).toContain("Δ 0.169");
+    expect(line.text).toContain("leg balance: call 262 vs put 162 — not a stop");
+  });
+});

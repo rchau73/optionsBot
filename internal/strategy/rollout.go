@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"fmt"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -10,6 +11,7 @@ import (
 type RolloutDecision struct {
 	Action        RolloutAction
 	Reason        string
+	Detail        string // why, with the numbers (journaled)
 	LegID         string
 	WholeStrangle bool
 }
@@ -39,6 +41,7 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{
 			Action: ActionStopLoss,
 			Reason: orders.TriggerStopLoss200Pct,
+			Detail: fmt.Sprintf("stop-loss: loss %.2f× the premium ≥ %.2f× (mark %.4f vs entry %.4f)", pos.LossPct(), stopLossMultiplier, pos.CurrentMid, pos.EntryPrice),
 			LegID:  pos.ID,
 		}
 	}
@@ -48,6 +51,7 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{
 			Action:        ActionRollNextMonth,
 			Reason:        orders.TriggerRollout19DTE,
+			Detail:        fmt.Sprintf("time roll: %d days to expiry ≤ %d — the whole strangle closes", dte, rolloutDTE),
 			LegID:         pos.ID,
 			WholeStrangle: true,
 		}
@@ -72,6 +76,7 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{
 			Action: ActionDeltaExit,
 			Reason: orders.TriggerDeltaExit,
+			Detail: fmt.Sprintf("delta exit: |Δ| %.3f ≥ %.2f — the move against the leg is real; re-sold only once calm", absDelta, deltaExit),
 			LegID:  pos.ID,
 		}
 	}
@@ -81,6 +86,7 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{
 			Action: ActionRollSameLeg,
 			Reason: orders.TriggerRolloutDelta,
+			Detail: fmt.Sprintf("delta drift: |Δ| %.3f < %.2f — little premium left; repair re-sells nearer the money", absDelta, deltaDriftThreshold),
 			LegID:  pos.ID,
 		}
 	}
@@ -90,6 +96,7 @@ func EvaluateLeg(pos *orders.Position, now time.Time, rolloutDTE int, deltaDrift
 		return RolloutDecision{
 			Action: ActionRollSameLeg,
 			Reason: orders.TriggerRolloutROI,
+			Detail: fmt.Sprintf("take-profit: %.0f%% of the premium earned ≥ %.0f%%", pos.ROIPct()*100, roiTakeProfit*100),
 			LegID:  pos.ID,
 		}
 	}
