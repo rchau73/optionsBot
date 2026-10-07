@@ -447,16 +447,9 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
-		call, err := strategy.SelectStrike(instruments, expiry, "call", slot.EntryDelta, e.cfg.DeltaSlippage)
+		call, put, err := strategy.SelectStrikePair(instruments, expiry, slot.EntryDelta, e.cfg.DeltaSlippage)
 		if err != nil {
-			slog.Debug("skip entry: call strike selection failed",
-				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
-				"expiry", expiry.Format("2006-01-02"), "err", err)
-			continue
-		}
-		put, err := strategy.SelectStrike(instruments, expiry, "put", slot.EntryDelta, e.cfg.DeltaSlippage)
-		if err != nil {
-			slog.Debug("skip entry: put strike selection failed",
+			slog.Debug("skip entry: strike selection failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"expiry", expiry.Format("2006-01-02"), "err", err)
 			continue

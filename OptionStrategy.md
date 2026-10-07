@@ -65,7 +65,7 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
 1. **Wakes up and checks the facts.** On every start it asks Deribit what positions actually exist and rebuilds its own records from that. The exchange is always the source of truth.
 2. **Fills its "slots".** The configuration lists slots such as *"a strangle about 25 days out at 0.16 delta"*, *"one 45 days out at 0.16 delta"* and *"one 60 days out at 0.18 delta"*. For each empty slot it:
    - picks the listed expiry closest to the target number of days (never one that is already due to be rolled);
-   - picks the call and put strikes whose delta is closest to the target (e.g. ≈0.16 on each side);
+   - picks the call and put strikes together: both near the target delta (e.g. ≈0.16 on each side, within `delta_slippage`), choosing the pair whose deltas cancel best, so the strangle starts as close to delta-neutral as the listed strikes allow;
    - checks each option is worth at least the minimum premium, so it doesn't take tail risk for crumbs;
    - sizes the position so the account stays inside its margin limit, asking Deribit itself what the margin would be after the trade (section 8);
    - places **limit** sell orders and follows them until they fill. If the market moves away it re-prices a few times; if they still don't fill it cancels and tries again later.

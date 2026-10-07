@@ -113,3 +113,55 @@ func NextMonthlyExpiry(ref time.Time, available []time.Time) (time.Time, bool) {
 	}
 	return best, !best.IsZero()
 }
+
+// SelectStrikePair picks a strangle's call and put together. Each leg must be
+// eligible on its own (SelectStrike: OTM, |delta| within maxDeltaSlippage of
+// targetDelta), and among the eligible pairs it takes the one whose deltas
+// best cancel and stay near the target:
+//
+//	score = | |Δcall| − |Δput| |  +  ½ × ( | |Δcall| − target | + | |Δput| − target | )
+//
+// Picking each leg alone left the book with net delta: on a coarse strike
+// grid (ETH, 50–100 apart) the nearest put can sit at 0.18 while the nearest
+// call sits at 0.145 — on 2026-10-06 that added up to +55 ETH of delta.
+func SelectStrikePair(instruments []*marketdata.Instrument, expiry time.Time, targetDelta, maxDeltaSlippage float64) (call, put *marketdata.Instrument, err error) {
+	if call, err = SelectStrike(instruments, expiry, "call", targetDelta, maxDeltaSlippage); err != nil {
+		return nil, nil, err
+	}
+	if put, err = SelectStrike(instruments, expiry, "put", targetDelta, maxDeltaSlippage); err != nil {
+		return nil, nil, err
+	}
+	calls := eligibleStrikes(instruments, expiry, "call", targetDelta, maxDeltaSlippage)
+	puts := eligibleStrikes(instruments, expiry, "put", targetDelta, maxDeltaSlippage)
+	best := pairScore(call, put, targetDelta)
+	for _, c := range calls {
+		for _, p := range puts {
+			if s := pairScore(c, p, targetDelta); s < best-1e-12 {
+				call, put, best = c, p, s
+			}
+		}
+	}
+	return call, put, nil
+}
+
+// eligibleStrikes are the quoted OTM strikes of optType at expiry whose
+// |delta| is within maxDeltaSlippage of targetDelta (any, when it is 0).
+func eligibleStrikes(instruments []*marketdata.Instrument, expiry time.Time, optType string, targetDelta, maxDeltaSlippage float64) []*marketdata.Instrument {
+	var out []*marketdata.Instrument
+	for _, inst := range instruments {
+		d := math.Abs(inst.Greeks.Delta)
+		if !inst.Expiry.Equal(expiry) || inst.OptionType != optType || inst.Mid == 0 || d > 0.5 {
+			continue
+		}
+		if maxDeltaSlippage > 0 && math.Abs(d-targetDelta) > maxDeltaSlippage {
+			continue
+		}
+		out = append(out, inst)
+	}
+	return out
+}
+
+func pairScore(call, put *marketdata.Instrument, target float64) float64 {
+	c, p := math.Abs(call.Greeks.Delta), math.Abs(put.Greeks.Delta)
+	return math.Abs(c-p) + 0.5*(math.Abs(c-target)+math.Abs(p-target))
+}

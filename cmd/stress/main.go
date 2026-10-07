@@ -463,6 +463,7 @@ func wingStrike(short *leg, m market, insts []*marketdata.Instrument) (*marketda
 
 func main() {
 	name := flag.String("shock", "crash", "path after the calm days: crash | rally | crash40 | rally40 | chop | quiet | normalN | longN (N = random seed)")
+	pairStrikes := flag.Bool("pairstrikes", true, "entries pick the call and put as a pair (SelectStrikePair, the bot); false = each leg alone at the target delta")
 	currency := flag.String("currency", "BTC", "coin of the book in -dir (BTC or ETH; use -volscale for ETH-like moves)")
 	condor := flag.Bool("condor", false, "apply the PROPOSED squeeze-protection condor rules")
 	letWings := flag.Bool("letwings", false, "with -condor: winged spreads keep their defined risk (no spread stop, no GEX shed) until the DTE roll")
@@ -669,6 +670,7 @@ func main() {
 	// price (eq·S − eq0·S0 − eq0·(S − S0) = (eq − eq0)·S).
 	worstUSD, worstDay, maxIM, maxMM := 0.0, "", 0.0, 0.0
 	worstVsHold, worstVsDay := 0.0, ""
+	sumAbsDelta, nDays := 0.0, 0 // book net delta at each day's end (coin)
 	triggerDays := 0
 
 	var actions []string
@@ -1090,6 +1092,9 @@ func main() {
 				}
 				ci, e1 := strategy.SelectStrike(insts, exp, "call", sl.delta, 0.03)
 				pi, e2 := strategy.SelectStrike(insts, exp, "put", sl.delta, 0.03)
+				if *pairStrikes {
+					ci, pi, e1 = strategy.SelectStrikePair(insts, exp, sl.delta, 0.03)
+				}
 				if e1 != nil || e2 != nil || ci.Mid < minPre || pi.Mid < minPre {
 					continue
 				}
@@ -1202,6 +1207,12 @@ func main() {
 			worstUSD, worstDay = pnl, m.now.Format("Jan 2")
 		}
 		vsHold := (eq - b.mb0) * m.spot
+		netDelta := 0.0
+		for _, l := range b.legs() {
+			netDelta += sign(l) * l.CurrentGreeks.Delta * l.Qty
+		}
+		sumAbsDelta += math.Abs(netDelta)
+		nDays++
 		if vsHold < worstVsHold {
 			worstVsHold, worstVsDay = vsHold, m.now.Format("Jan 2")
 		}
@@ -1234,9 +1245,9 @@ func main() {
 		100*float64(shared)/float64(max(held, 1)), float64(held)/float64(max(nIM, 1)), sheds, resells)
 	u := underlying
 	usd0, usd1, hold1 := eq0USD, eq*m.spot, b.mb0*m.spot
-	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days\n",
+	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · avg |net Δ| %.2f %s · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days\n",
 		mode, *name, eq-b.mb0, u, (eq-b.mb0)*m.spot, worstVsDay, worstVsHold,
 		u, b.mb0, eq, (eq/b.mb0-1)*100, usd0, usd1, (usd1/usd0-1)*100, hold1, (hold1/usd0-1)*100,
 		u, s0, m.spot, (m.spot/s0-1)*100,
-		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, maxIM, maxMM, worstUSD, worstDay, triggerDays)
+		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, sumAbsDelta/float64(max(nDays, 1)), u, maxIM, maxMM, worstUSD, worstDay, triggerDays)
 }
