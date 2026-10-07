@@ -56,6 +56,9 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		if delta == 0 {
 			delta = s.cfg.EntryDelta
 		}
+		// Nearest the entry delta, not matched to the open leg: matching re-sells
+		// closer to the money after a move and cost ~30 % of the result against
+		// holding in stress tests (2026-10-07).
 		inst, err := SelectStrike(instruments, present.Expiry, missingType, delta, s.cfg.DeltaSlippage)
 		if err != nil {
 			slog.Debug("repair: no suitable strike for missing leg",
