@@ -31,7 +31,9 @@ type Manager struct {
 	mu         sync.RWMutex
 	snapshot   *Snapshot
 	oi         *OISnapshot
-	lastRegime string // last published regime, used for hysteresis
+	lastRegime string       // last published regime, used for hysteresis
+	summary    []SummaryRow // last book summary, as fetched (never modified)
+	summaryAt  time.Time
 }
 
 // NewManager creates a GEX manager for params.Underlying.
@@ -52,6 +54,14 @@ func (m *Manager) Snapshot() *Snapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.snapshot
+}
+
+// LatestSummary returns the last book summary (every option of the
+// underlying on mainnet) and when it was fetched. Callers must not modify it.
+func (m *Manager) LatestSummary() ([]SummaryRow, time.Time) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.summary, m.summaryAt
 }
 
 // OISnapshot is the open interest per instrument from the last refresh.
@@ -85,6 +95,7 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	}
 	m.mu.Lock()
 	m.oi = oi
+	m.summary, m.summaryAt = rows, oi.AsOf
 	m.mu.Unlock()
 
 	snap, st, err := Build(rows, time.Now(), m.params)

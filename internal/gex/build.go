@@ -28,6 +28,12 @@ type SummaryRow struct {
 	OpenInterest    float64 `json:"open_interest"`
 	UnderlyingPrice float64 `json:"underlying_price"` // that expiry's future
 	MarkIV          float64 `json:"mark_iv"`          // percent, e.g. 45.2
+	// Prices in the coin (null on an empty side → 0); recorded by
+	// internal/recorder, unused by the GEX itself.
+	BidPrice  float64 `json:"bid_price"`
+	AskPrice  float64 `json:"ask_price"`
+	MidPrice  float64 `json:"mid_price"`
+	MarkPrice float64 `json:"mark_price"`
 }
 
 // Params configure Build.
