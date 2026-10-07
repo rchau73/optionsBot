@@ -33,10 +33,10 @@ import (
 )
 
 const (
-	rolloutDTE                     = 15
-	stopMult, minPre               = 2.0, 0.001
-	feePerBTC                      = 0.0003 // Deribit: 0.03 % of the underlying per contract
-	cooldown                       = 72 * time.Hour
+	rolloutDTE       = 15
+	stopMult, minPre = 2.0, 0.001
+	feePerBTC        = 0.0003 // Deribit: 0.03 % of the underlying per contract
+	cooldown         = 72 * time.Hour
 	// Proposed condor rules (squeeze-protection research request).
 	squeezeDays    = 10   // consecutive low-band DVOL closes
 	wingDelta      = 0.05 // wing at least this far out (|Δ| ≤ 0.05) …
