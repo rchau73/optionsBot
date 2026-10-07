@@ -46,7 +46,7 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 			break
 		}
 		for _, pos := range open {
-			if _, err := s.buyToClose(kctx, pos, pos.Qty, orders.TriggerKillSwitch, 0); err != nil {
+			if _, err := s.buyToClose(kctx, pos, pos.Qty, orders.TriggerKillSwitch, 0, "kill switch: flattening every position at market"); err != nil {
 				slog.Error("kill switch close failed", "attempt", attempt, "instrument", pos.Instrument, "err", err)
 			}
 		}

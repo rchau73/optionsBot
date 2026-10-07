@@ -54,7 +54,9 @@ func (s *Strategy) balanceStrangles(ctx context.Context) {
 			"strangle_id", st.ID, "larger", larger.Instrument, "larger_qty", larger.Qty,
 			"smaller", smaller.Instrument, "smaller_qty", smaller.Qty, "excess", excess,
 			"ask", fmt.Sprintf("%.6f", inst.Ask))
-		filled, err := s.buyToClose(ctx, larger, math.Min(excess, larger.Qty), orders.TriggerRebalanceLegs, inst.Ask)
+		detail := fmt.Sprintf("leg balance: %s %s %g vs %s %s %g — buying back the %g excess so call and put are equal (not a stop; risk-reducing)",
+			larger.OptionType, larger.Instrument, larger.Qty, smaller.OptionType, smaller.Instrument, smaller.Qty, excess)
+		filled, err := s.buyToClose(ctx, larger, math.Min(excess, larger.Qty), orders.TriggerRebalanceLegs, inst.Ask, detail)
 		if err != nil {
 			slog.Warn("balance legs: buy back failed, retrying next cycle", "instrument", larger.Instrument, "err", err)
 			continue

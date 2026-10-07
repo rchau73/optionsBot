@@ -1,7 +1,7 @@
 // Pure monitor logic: flatten, filter, group and summarise what the bots
 // report. No React, no fetching — everything here is unit-tested.
 
-import { formatCoin, formatPct, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
+import { formatCoin, formatNumber, formatPct, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
 
 /** Data older than this (seconds) is shown as stale. */
 export const STALE_AFTER_SEC = 5;
@@ -263,7 +263,7 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
     case "closed":
       label = CLOSE_LABELS[d.close_reason] ?? "Closed";
       tone = ["stop_loss", "kill_switch", "margin_mm_limit"].includes(d.close_reason) ? "bad" : (d.pnl ?? 0) >= 0 ? "good" : "bad";
-      text = `Bought back ${d.qty} ${d.instrument} @ ${formatPrice(d.fill_price)} · P&L ${formatCoin(d.pnl, unit)} (${formatUSD(d.pnl_usd)})${where}`;
+      text = `Bought back ${d.qty} ${d.instrument} @ ${formatPrice(d.fill_price)} · P&L ${formatCoin(d.pnl, unit)} (${formatUSD(d.pnl_usd)})${where} · Δ ${formatNumber(d.delta, 3)}${d.detail ? ` — ${d.detail}` : ""}`;
       break;
     case "reconciled":
       text = `${d.qty} ${d.instrument} from exchange${where}`;

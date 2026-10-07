@@ -109,9 +109,12 @@ type MarketSnapshot struct {
 // EventContext is what every journal entry records besides the order itself.
 type EventContext struct {
 	StrategyID string
-	Slot       *SlotRef
-	Market     MarketSnapshot
-	Portfolio  MarketContext
+	// Detail says why, with the numbers (e.g. "stop-loss: loss 2.3× the
+	// premium ≥ 2×"); journaled as "detail".
+	Detail    string
+	Slot      *SlotRef
+	Market    MarketSnapshot
+	Portfolio MarketContext
 }
 
 // PendingOrderRecord describes an order at submission, amendment or cancel.
@@ -141,6 +144,7 @@ type OrderLog struct {
 	OrderType     string    `json:"order_type,omitempty"`
 	TriggerReason string    `json:"trigger_reason,omitempty"`
 	SkipReason    string    `json:"skip_reason,omitempty"`
+	Detail        string    `json:"detail,omitempty"` // why, with the numbers
 	Qty           float64   `json:"qty,omitempty"`
 	LimitPrice    float64   `json:"limit_price,omitempty"`
 	PreviousPrice float64   `json:"previous_price,omitempty"` // amendments

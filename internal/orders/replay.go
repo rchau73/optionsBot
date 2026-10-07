@@ -31,8 +31,14 @@ type Trade struct {
 	OptionType string    `json:"option_type"`
 	Qty        float64   `json:"qty"`
 	Price      float64   `json:"price"`
-	Reason     string    `json:"reason"` // entry, or the close reason (stop_loss, roi_target, …)
-	Premium    float64   `json:"premium"`
+	Reason     string    `json:"reason"`           // entry, or the close reason (stop_loss, roi_target, …)
+	Detail     string    `json:"detail,omitempty"` // why, with the numbers
+	// Per-option greeks at that moment (long-holder view, as Deribit quotes).
+	Delta   float64 `json:"delta"`
+	Gamma   float64 `json:"gamma"`
+	Theta   float64 `json:"theta"`
+	Vega    float64 `json:"vega"`
+	Premium float64 `json:"premium"`
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
 	PnLUSD   float64 `json:"pnl_usd,omitempty"`
@@ -53,6 +59,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Instrument: rec.Instrument, OptionType: rec.OptionType, Qty: rec.Qty, Price: rec.FillPrice,
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
+		Detail: rec.Detail, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
 	case EventFilled:

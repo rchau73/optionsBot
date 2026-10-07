@@ -16,6 +16,15 @@ const CLOSE_LABELS = {
 
 export const closeLabel = (reason) => CLOSE_LABELS[reason] ?? reason ?? "—";
 
+/**
+ * The short position's delta at that moment: the journal keeps the option's
+ * delta as Deribit quotes it (long holder), and the bot is short, so the
+ * position carries −Δ × qty (a short call is negative, a short put positive).
+ */
+export function positionDelta(t) {
+  return typeof t.delta === "number" && typeof t.qty === "number" ? -t.delta * t.qty : null;
+}
+
 /** Merges a page of trades into a bot's list (by seq); a lower seq means the journal was reset. */
 export function mergeTrades(prev, page) {
   if (!page.length) return prev;
