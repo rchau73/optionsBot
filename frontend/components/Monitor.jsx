@@ -9,6 +9,7 @@ import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
+import CoinPnlChart from "./CoinPnlChart";
 import AccountPanel, { AccountSummary } from "./AccountPanel";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
@@ -35,6 +36,7 @@ export default function Monitor() {
   const account = pickAccount(bots, polledAt);
   const risk = riskRows(bots);
   const others = unmanagedPositions(account, bots);
+  const units = Object.fromEntries(bots.map((b) => [b.name, b.status?.underlying ?? b.name.toUpperCase()]));
 
   return (
     <div className="min-h-screen">
@@ -75,6 +77,9 @@ export default function Monitor() {
           <div className="space-y-3">
             <Panel title="P&L (USD, all bots)">
               <PnlChart live={history} names={names} />
+            </Panel>
+            <Panel title="P&L in coin (per bot)">
+              <CoinPnlChart names={names} units={units} />
             </Panel>
             <Panel title="Working orders (placed, not filled yet)">
               <p className="mb-2 text-xs text-muted">

@@ -345,6 +345,14 @@ export function prefillLive(stored, live) {
   return [...stored.filter((p) => p.t < first), ...live];
 }
 
+/**
+ * One bot's stored history in its own coin (BTC, ETH): P&L with the coin's
+ * own price moves taken out — what the strategy adds to the coin stack.
+ */
+export function coinHistory(points) {
+  return (points ?? []).map((p) => ({ t: Date.parse(p.t), total: p.total ?? 0, realised: p.realised ?? 0 }));
+}
+
 export function combineHistories(series) {
   const times = [...new Set(series.flatMap((s) => (s.points ?? []).map((p) => Date.parse(p.t))))].sort((a, b) => a - b);
   const cursors = series.map((s, n) => ({ bot: s.bot ?? `bot${n + 1}`, points: s.points ?? [], i: 0, last: null }));
