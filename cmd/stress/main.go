@@ -82,6 +82,46 @@ type strangle struct {
 	callWing, putWing *leg
 	stopped           map[string]time.Time
 	shed              map[string]time.Time // GEX-shed legs: when
+	shedFlip          map[string]float64   // the flip when that leg was shed (anchored repair)
+	shedBuf           map[string]float64   // the buffer (%) then
+	shedCross         map[string]int       // consecutive steps spot has been back past the anchor
+}
+
+// anchorShed stores the flip and buffer at the moment a leg is shed.
+func anchorShed(s *strangle, typ string, flip, buf float64) {
+	if s.shedFlip == nil {
+		s.shedFlip, s.shedBuf, s.shedCross = map[string]float64{}, map[string]float64{}, map[string]int{}
+	}
+	s.shedFlip[typ], s.shedBuf[typ], s.shedCross[typ] = flip, buf, 0
+}
+
+// shedRepairAllowed is the re-entry rule for a GEX-shed leg under test:
+//   - live: as soon as the live signal stops shedding (today's bot);
+//   - cross: spot back past the LIVE flip ± buffer, after a cooldown;
+//   - anchored: spot back past the flip ± buffer stored at the shed for
+//     crossSteps decisions in a row, or the live regime non-negative for
+//     release (the valve when price never returns).
+func shedRepairAllowed(mode string, s *strangle, typ string, m market, flip, buf float64, shedAt time.Time,
+	cooldown time.Duration, crossSteps int, release time.Duration, nonNegSince time.Time) bool {
+	// Both sides wait for spot back above the flip + buffer: positive-gamma
+	// territory, where the shed was about. (Mirroring it for calls — spot
+	// below flip − buffer — scored the same within noise, 2026-10-08.)
+	past := func(level, b float64) bool { return m.spot > level*(1+b/100) }
+	switch mode {
+	case "cross":
+		return m.now.Sub(shedAt) >= cooldown && past(flip, buf)
+	case "anchored":
+		if past(s.shedFlip[typ], s.shedBuf[typ]) {
+			s.shedCross[typ]++
+		} else {
+			s.shedCross[typ] = 0
+		}
+		if s.shedCross[typ] >= crossSteps {
+			return true
+		}
+		return release > 0 && !nonNegSince.IsZero() && m.now.Sub(nonNegSince) >= release
+	}
+	return true
 }
 
 func markShed(s *strangle, typ string, at time.Time) {
@@ -494,6 +534,14 @@ func main() {
 	flipBufSD := flag.Float64("flipbufsd", 1, "shed only when spot is more than this many daily standard deviations (DVOL/√365) below the flip; overrides -flipbuf")
 	flipBuf := flag.Float64("flipbuf", 0, "shed a leg only when spot is more than this % below the flip")
 	shedHold := flag.Float64("shedhold", 0, "hours repair waits before re-selling a GEX-shed leg")
+	flipRatio := flag.Float64("flipratio", 0.965, "MODEL: the flip starts at spot × this (BTC on 2026-10-05: 0.965); it then moves with √spot")
+	flipJumps := flag.Float64("flipjumps", 0, "MODEL: flip jumps per day (the script's lowest-crossing flip on real OI: ETH ~2/day of ±8–10 %, BTC ~0); 40 % revert within an hour")
+	jumpSize := flag.Float64("jumpsize", 9, "MODEL: size of a flip jump, %")
+	shedRepair := flag.String("shedrepair", "anchored", "re-selling a GEX-shed leg: live (before 2026-10-08: once the live signal stops shedding) | cross (spot back above the LIVE flip + buffer, after -shedcooldown) | anchored (today's bot: spot back above the flip + buffer stored at the shed, for -shedcross steps, or the live regime non-negative for -shedrelease hours)")
+	shedCooldown := flag.Float64("shedcooldown", 5, "with -shedrepair cross: minutes to wait after the shed")
+	shedCrossSteps := flag.Int("shedcross", 2, "with -shedrepair anchored: consecutive decisions spot must stay past the anchor")
+	shedRelease := flag.Float64("shedrelease", 24, "with -shedrepair anchored: hours of non-negative live regime that also release the hold (0 = never)")
+	shedPersist := flag.Int("shedpersist", 2, "decisions in a row the shed signal must hold before shedding (today's bot: 2 snapshots; 1 = shed at once)")
 	botTrend := flag.Bool("bottrend", true, "trend as the bot: bull needs SMA9 > SMA21 and price > SMA9 (swing breakouts not modelled)")
 	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = today's 25/45/60")
 	slotDelta := flag.Float64("slotdelta", 0.16, "with -slots: entry delta of every slot")
@@ -614,6 +662,9 @@ func main() {
 	start := time.Now().UTC().Truncate(24 * time.Hour)
 	m := market{now: start, spot: mk.Spot, dvol: mk.Dvol[len(mk.Dvol)-1][1]}
 	s0 := m.spot
+	flip0 := s0 * *flipRatio // MODEL: the flip starts this far from spot
+	jumpRng := rand.New(rand.NewSource(7))
+	jump, jumpUntil := 0.0, time.Time{} // MODEL: current flip jump and when it ends
 	b := &book{appliedLimit: math.NaN()}
 	for _, st := range pos.Strangles {
 		s := &strangle{slot: slot{st.Slot.DTE, st.Slot.Delta}}
@@ -652,7 +703,6 @@ func main() {
 		closes = append(closes, c[1])
 	}
 	policy := (&config.Config{}).RiskPolicy(true)
-	const flip0 = 83577.0
 
 	wingDeltaMax, wingNeedEM = *wingD, *wingEM
 	mode := "TODAY'S BOT"
@@ -684,6 +734,7 @@ func main() {
 	dayStartSpot, prevDvol := m.spot, m.dvol
 	worstMM, breaches, worstEq := 0.0, 0, 0.0
 	stickyF, sheds, resells := 0.0, 0, 0
+	lastAct, actRun, nonNegSince := strategy.GammaActionNone, 0, time.Time{}
 	sumIM, nIM, nEntries := 0.0, 0, 0
 	shared, held := 0, 0
 	for i := 0; i <= len(path)**steps; i++ {
@@ -711,6 +762,23 @@ func main() {
 		dv.Record(m.now, m.dvol)
 		regimes.Record(m.now, regime)
 		flip := flip0 * math.Sqrt(m.spot/s0)
+		if *flipJumps > 0 && i > 0 { // MODEL: the lowest-crossing flip jumps when open interest shifts
+			if jump != 0 && !m.now.Before(jumpUntil) {
+				jump = 0
+			}
+			if jump == 0 && jumpRng.Float64() < *flipJumps/float64(*steps) {
+				jump = *jumpSize / 100
+				if jumpRng.Float64() < 0.5 {
+					jump = -jump
+				}
+				dur := 24 * time.Hour        // persists until the day's OI is rebuilt …
+				if jumpRng.Float64() < 0.4 { // … or reverts within the hour
+					dur = time.Duration(5+jumpRng.Intn(55)) * time.Minute
+				}
+				jumpUntil = m.now.Add(dur)
+			}
+			flip *= 1 + jump
+		}
 		if *stickyFlip {
 			if i == 0 {
 				stickyF = m.spot * (1 + *flipStart/100)
@@ -839,21 +907,40 @@ func main() {
 			buf = *flipBufSD * m.dvol / math.Sqrt(365)
 		}
 		gexAct := strategy.ResolveGammaAction(regime, true, m.spot, flip, tr, buf)
+		if gexAct != strategy.GammaActionNone && gexAct == lastAct {
+			actRun++
+		} else if gexAct != strategy.GammaActionNone {
+			actRun = 1
+		} else {
+			actRun = 0
+		}
+		lastAct = gexAct
+		if strings.HasPrefix(regime, "NEGATIVE") {
+			nonNegSince = time.Time{}
+		} else if nonNegSince.IsZero() {
+			nonNegSince = m.now
+		}
+		shedAct := gexAct
+		if actRun < *shedPersist {
+			shedAct = strategy.GammaActionNone // the signal has not held long enough
+		}
 		for _, s := range b.strangles {
-			if *letWings && gexAct == strategy.GammaActionClosePuts && s.putWing != nil {
+			if *letWings && shedAct == strategy.GammaActionClosePuts && s.putWing != nil {
 				continue // defined risk already
 			}
-			if *letWings && gexAct == strategy.GammaActionCloseCalls && s.callWing != nil {
+			if *letWings && shedAct == strategy.GammaActionCloseCalls && s.callWing != nil {
 				continue
 			}
-			if gexAct == strategy.GammaActionClosePuts && s.put != nil {
+			if shedAct == strategy.GammaActionClosePuts && s.put != nil {
 				markShed(s, "put", m.now)
+				anchorShed(s, "put", flip, buf)
 				sheds++
 				act("GEX shed %s (%+.4f)", short(s.put), b.closeAll(s.put, m)+b.closeAll(s.putWing, m))
 				b.gex++
 			}
-			if gexAct == strategy.GammaActionCloseCalls && s.call != nil {
+			if shedAct == strategy.GammaActionCloseCalls && s.call != nil {
 				markShed(s, "call", m.now)
+				anchorShed(s, "call", flip, buf)
 				sheds++
 				act("GEX shed %s (%+.4f)", short(s.call), b.closeAll(s.call, m)+b.closeAll(s.callWing, m))
 				b.gex++
@@ -999,6 +1086,11 @@ func main() {
 				shedAt, wasShed := s.shed[missing]
 				if wasShed && m.now.Sub(shedAt) < time.Duration(*shedHold*float64(time.Hour)) {
 					continue // re-sell hold after a GEX shed
+				}
+				if wasShed && !shedRepairAllowed(*shedRepair, s, missing, m, flip, buf, shedAt,
+					time.Duration(*shedCooldown*float64(time.Minute)), *shedCrossSteps,
+					time.Duration(*shedRelease*float64(time.Hour)), nonNegSince) {
+					continue
 				}
 				if wasShed {
 					delete(s.shed, missing)

@@ -66,6 +66,16 @@ func TestConfigLoad_MarginPolicyDefaults(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_GEXShedDefaults(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GEXShedConfirmSnapshots != 2 || cfg.GEXRepairConfirmSnapshots != 2 || cfg.GEXRepairReleaseHours != 24 {
+		t.Errorf("shed defaults = %d/%d/%d, want 2/2/24", cfg.GEXShedConfirmSnapshots, cfg.GEXRepairConfirmSnapshots, cfg.GEXRepairReleaseHours)
+	}
+}
+
 func TestConfigLoad_CustomBands(t *testing.T) {
 	path := writeTempConfig(t, "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 10 }\n  - { min_iv_pct: 50, max_im_pct: 40 }\niv_band_confirm_days: 3\n")
 	cfg, err := loadWithDummyCreds(t, path)
@@ -140,6 +150,9 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 		{"negative drift threshold", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: -0.1", "delta_drift_threshold"},
 		{"delta exit at the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_exit_threshold: 0.16", "delta_exit_threshold"},
 		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
+		{"shed confirm negative", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_shed_confirm_snapshots: -1", "gex_shed_confirm_snapshots"},
+		{"repair confirm too long", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_confirm_snapshots: 11", "gex_repair_confirm_snapshots"},
+		{"shed release over a week", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_release_hours: 200", "gex_repair_release_hours"},
 	}
 	for _, tc := range raw {
 		t.Run(tc.name, func(t *testing.T) {

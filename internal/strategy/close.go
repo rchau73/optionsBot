@@ -157,22 +157,24 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 }
 
 // handleGammaAction sheds every leg of the type the GEX regime says is at
-// risk (puts in a confirmed down-move, calls in a confirmed up-move).
+// risk (puts in a confirmed down-move, calls in a confirmed up-move) once the
+// signal has held (dec.Shed), anchoring each at the flip it was shed at.
 func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
 	// First stop working orders on the shed side from filling into the shed;
 	// anything that filled before the cancel is booked and closed below.
-	switch dec.Action {
+	switch dec.Shed {
 	case GammaActionClosePuts:
 		s.cancelShedSide(ctx, "put")
 	case GammaActionCloseCalls:
 		s.cancelShedSide(ctx, "call")
 	}
 	for _, pos := range s.state.AllPositions() {
-		shouldClose := (dec.Action == GammaActionClosePuts && pos.OptionType == "put") ||
-			(dec.Action == GammaActionCloseCalls && pos.OptionType == "call")
+		shouldClose := (dec.Shed == GammaActionClosePuts && pos.OptionType == "put") ||
+			(dec.Shed == GammaActionCloseCalls && pos.OptionType == "call")
 		if !shouldClose {
 			continue
 		}
+		s.noteShed(pos, dec, time.Now())
 		detail := fmt.Sprintf("GEX shed: regime %s, spot %.0f is more than the %.1f%% buffer below the flip %.0f, trend %s — shedding %ss",
 			dec.Regime, s.md.UnderlyingPrice(), dec.FlipBufferPct, dec.GammaFlip, dec.Trend, pos.OptionType)
 		if _, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail); err != nil {

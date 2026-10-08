@@ -86,7 +86,7 @@ The rules are checked in this order. The first one that applies wins.
 | 2 | **Time roll** | **15 days** or fewer left | buys the leg back; once both legs are gone the slot reopens further out |
 | 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; repair re-sells a fresh leg at the target delta, same expiry |
 | 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; repair re-sells a fresh leg |
-| — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one normal day's move (1σ) below the gamma flip | closes the threatened side at market |
+| — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one normal day's move (1σ) below the gamma flip, on two snapshots in a row | closes the threatened side at market; it is sold again only once the price is back above the flip it was shed at (plus 1σ), or dealer gamma has been non-negative for a day |
 | — | **Kill switch** | operator signal | cancels everything, buys back everything at market, then stops trading |
 
 Rolls and take-profits buy back with a price cap: pay at most the current ask, and whatever doesn't fill immediately is cancelled and retried next cycle. Stop-losses do not wait for a good price.

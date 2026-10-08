@@ -49,6 +49,10 @@ type Strategy struct {
 	// the freeze and regime conditions still apply, the cooldown does not.
 	stopped    map[string]time.Time
 	repairHeld map[string]string
+	// Legs shed by GEX, by strangle and type: the flip they were shed at
+	// (shed.go). In memory like stopped: after a restart a shed leg is
+	// re-sold on the live signal.
+	shedAnchors map[string]*ShedAnchor
 	// Orders whose submit outcome is unknown, by label; position differences
 	// seen per instrument; instruments to match to the exchange this cycle
 	// (decision loop only). See orphans.go.
@@ -86,6 +90,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		gamma.SetGEXSource(d.GEX)
 	}
 	gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, d.Market.DVOL)
+	gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
 	regimes := d.Regimes
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
@@ -108,6 +113,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		noQuote:          make(map[string]bool),
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
+		shedAnchors:      make(map[string]*ShedAnchor),
 		unconfirmed:      make(map[string]unconfirmedOrder),
 		drift:            make(map[string]int),
 		forceCheck:       make(map[string]bool),
@@ -206,7 +212,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	s.checkPositions(ctx)
 	s.flattenLongs(ctx)
 
-	if gammaDec.Action != GammaActionNone {
+	if gammaDec.Shed != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)
 	}
 
