@@ -1,6 +1,6 @@
 flowchart TD
     A(["EvaluateLeg(pos, now, …)"]) --> B{"loss ≥ stop_loss_multiplier<br/>× premium received?"}
-    B -- "yes" --> C["ActionStopLoss<br/>buy MARKET, high priority<br/>partial fill → remainder stays tracked"]
+    B -- "yes" --> C["ActionStopLoss<br/>buy MARKET, high priority<br/>partial fill → remainder stays tracked<br/>(book empty: waits, re-checked each cycle, ≤ 5 min)"]
     B -- "no" --> D{"DTE ≤ rollout_dte?"}
     D -- "yes" --> E["ActionRollNextMonth<br/>close leg: IOC limit at ask<br/>both legs closed → slot freed → fresh entry"]
     D -- "no" --> F{"|delta| < delta_drift_threshold<br/>and DTE ≥ 25?"}

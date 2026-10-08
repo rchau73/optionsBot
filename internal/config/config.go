@@ -61,6 +61,12 @@ type Config struct {
 	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
 	ROITakeProfit       float64 `yaml:"roi_take_profit"`
 	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`
+	// StopSpreadGuardPct: a stop-loss waits while the leg's ask is more than
+	// this % above its mid (an emptied book: a flash wick) and fires once the
+	// spread is back under it, re-checked each cycle — at most
+	// StopSpreadMaxWaitMin minutes, then at market. −1 = off.
+	StopSpreadGuardPct   float64 `yaml:"stop_spread_guard_pct"`
+	StopSpreadMaxWaitMin int     `yaml:"stop_spread_max_wait_minutes"`
 	// DeltaExitThreshold: a short leg whose |delta| reaches this is bought
 	// back and held like a stopped leg (must be above every entry delta).
 	DeltaExitThreshold float64 `yaml:"delta_exit_threshold"`
@@ -263,6 +269,12 @@ func (c *Config) Validate() error {
 	if c.GEXRepairReleaseHours < 1 || c.GEXRepairReleaseHours > 168 {
 		return fmt.Errorf("gex_repair_release_hours %d must be between 1 and 168", c.GEXRepairReleaseHours)
 	}
+	if c.StopSpreadGuardPct != -1 && (c.StopSpreadGuardPct < 1 || c.StopSpreadGuardPct > 100) {
+		return fmt.Errorf("stop_spread_guard_pct %.1f must be between 1 and 100 (ask above mid, %%), or -1 (off)", c.StopSpreadGuardPct)
+	}
+	if c.StopSpreadMaxWaitMin < 1 || c.StopSpreadMaxWaitMin > 60 {
+		return fmt.Errorf("stop_spread_max_wait_minutes %d must be between 1 and 60", c.StopSpreadMaxWaitMin)
+	}
 	if c.GEXMethod != "script" && c.GEXMethod != "nearest_flip" {
 		return fmt.Errorf("gex_method %q must be script or nearest_flip", c.GEXMethod)
 	}
@@ -447,6 +459,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.GEXRepairReleaseHours == 0 {
 		cfg.GEXRepairReleaseHours = 24
+	}
+	if cfg.StopSpreadGuardPct == 0 {
+		cfg.StopSpreadGuardPct = 20
+	}
+	if cfg.StopSpreadMaxWaitMin == 0 {
+		cfg.StopSpreadMaxWaitMin = 5
 	}
 
 	// ── Margin policy defaults (validated in Validate) ────────────────────────

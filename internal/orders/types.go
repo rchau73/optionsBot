@@ -26,6 +26,7 @@ const (
 	TriggerRebalanceDownsize = "rebalance_downsize" // position exceeds the confirmed IM limit — partial close
 	TriggerMarginMM          = "margin_mm_limit"    // maintenance margin above max_mm_pct — immediate partial close
 	TriggerRebalanceLegs     = "rebalance_legs"     // strangle legs of different sizes — excess of the larger leg bought back
+	TriggerRiskFrozen        = "risk_frozen"        // working entry/top-up cancelled: new risk frozen or MM limit reached
 )
 
 // Order direction and type constants.

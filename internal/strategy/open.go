@@ -43,6 +43,9 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	case m.status.Frozen:
 		skipAll(SkipRiskFrozen, m.status.FreezeReason)
 		return nil
+	case s.stopsDeferred:
+		skipAll(SkipStopDeferred, "a stop-loss is waiting for the spread to normalise")
+		return nil
 	case m.mmBreached():
 		skipAll(SkipMarginLimit, fmt.Sprintf("MM %.1f%% ≥ limit %.0f%%", m.usage.MMPct(), m.status.MaxMMPct))
 		return nil
@@ -127,6 +130,7 @@ const (
 	SkipNoStrike      = "no_strike"
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
 	SkipChurnPaused   = "churn_paused"   // the slot bought back and re-sold too often: paused (safety.go)
+	SkipStopDeferred  = "stop_deferred"  // a stop-loss waits for the spread (stopguard.go): no new risk meanwhile
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.

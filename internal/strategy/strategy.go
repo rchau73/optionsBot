@@ -53,6 +53,10 @@ type Strategy struct {
 	// (shed.go). In memory like stopped: after a restart a shed leg is
 	// re-sold on the live signal.
 	shedAnchors map[string]*ShedAnchor
+	// stopDefer: when each position's triggered stop-loss was first deferred
+	// by the spread guard (stopguard.go); stopsDeferred: any this cycle.
+	stopDefer     map[string]time.Time
+	stopsDeferred bool
 	// Orders whose submit outcome is unknown, by label; position differences
 	// seen per instrument; instruments to match to the exchange this cycle
 	// (decision loop only). See orphans.go.
@@ -114,6 +118,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
 		shedAnchors:      make(map[string]*ShedAnchor),
+		stopDefer:        make(map[string]time.Time),
 		unconfirmed:      make(map[string]unconfirmedOrder),
 		drift:            make(map[string]int),
 		forceCheck:       make(map[string]bool),
@@ -216,18 +221,23 @@ func (s *Strategy) evaluate(ctx context.Context) {
 		s.handleGammaAction(ctx, gammaDec)
 	}
 
+	deferred := map[string]bool{}
 	for _, pos := range s.state.AllPositions() {
-		decision := EvaluateLeg(pos, time.Now(),
-			s.cfg.RolloutDTE,
-			s.cfg.DeltaDriftThreshold,
-			s.cfg.ROITakeProfit,
-			s.cfg.StopLossMultiplier,
-			s.cfg.DeltaExitThreshold,
-		)
+		decision := s.evaluateLeg(pos)
+		if decision.Action == ActionStopLoss && s.deferStop(pos, time.Now()) {
+			deferred[pos.ID] = true
+			continue
+		}
 		if decision.Action != ActionNone {
 			s.handleRollout(ctx, decision)
 		}
 	}
+	for id := range s.stopDefer { // the stop no longer applies (or fired)
+		if !deferred[id] {
+			delete(s.stopDefer, id)
+		}
+	}
+	s.stopsDeferred = len(deferred) > 0
 
 	// Margin policy after exits (they free margin) and before anything that
 	// adds risk: MM breach reduces at once, a confirmed limit change resizes.
@@ -242,7 +252,8 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// using the same GammaDecision as entry, so the two never disagree.
 	// It restores a structure already held, so a freeze does not stop it;
 	// a maintenance-margin breach does.
-	if !m.mmBreached() {
+	// A stop-loss waiting for the spread means a flash move: no new risk.
+	if !m.mmBreached() && !s.stopsDeferred {
 		s.repairIncompleteStrangles(ctx, gammaDec, m)
 	}
 
@@ -408,4 +419,15 @@ func (s *Strategy) loadGammaPriceHistory(ctx context.Context) {
 	}
 	s.gamma.SeedDailyCloses(closes)
 	slog.Info("gamma price history seeded", "instrument", instrument, "days", len(closes))
+}
+
+// evaluateLeg runs the exit rules (EvaluateLeg) on pos with today's config.
+func (s *Strategy) evaluateLeg(pos *orders.Position) RolloutDecision {
+	return EvaluateLeg(pos, time.Now(),
+		s.cfg.RolloutDTE,
+		s.cfg.DeltaDriftThreshold,
+		s.cfg.ROITakeProfit,
+		s.cfg.StopLossMultiplier,
+		s.cfg.DeltaExitThreshold,
+	)
 }

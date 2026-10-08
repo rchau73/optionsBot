@@ -85,6 +85,38 @@ type strangle struct {
 	shedFlip          map[string]float64   // the flip when that leg was shed (anchored repair)
 	shedBuf           map[string]float64   // the buffer (%) then
 	shedCross         map[string]int       // consecutive steps spot has been back past the anchor
+	capped            map[string]capOrder  // PROPOSED -stopcap: resting buy-back limit per leg type
+	deferSince        map[string]time.Time // -stopslip: when the leg's stop was first deferred (the bot's spread guard)
+}
+
+// capOrder is a stop that buys back with a limit instead of at market.
+type capOrder struct {
+	limit float64 // per option
+	since time.Time
+}
+
+// capLeg buys l back with a limit at lim (per option): filled at the ask when
+// the ask is at or under it, otherwise left resting on s. Returns the P&L and
+// whether it filled.
+// A negative lim is the spread guard (-stopslip): filled at the ask once the
+// half-spread is at most stopSlip.
+func (b *book) capLeg(s *strangle, l *leg, lim float64, m market) (float64, bool) {
+	mid, _ := m.mark(l)
+	h := halfSpread(m.dvol)
+	if os.Getenv("STRESS_TRACE") != "" {
+		fmt.Fprintf(os.Stderr, "TRACE %s %s spot %.0f premium %.4f mid %.4f bid %.4f ask %.4f spread ±%.0f%%\n", m.now.Format("15:04"), short(l), m.spot, l.PremiumReceived/l.Qty, mid, mid*(1-h), mid*(1+h), h*100)
+	}
+	if (lim >= 0 && mid*(1+h) <= lim) || (lim < 0 && h <= stopSlip) {
+		delete(s.capped, l.OptionType)
+		return b.closeAll(l, m), true
+	}
+	if s.capped == nil {
+		s.capped = map[string]capOrder{}
+	}
+	if _, ok := s.capped[l.OptionType]; !ok {
+		s.capped[l.OptionType] = capOrder{limit: lim, since: m.now}
+	}
+	return 0, false
 }
 
 // anchorShed stores the flip and buffer at the moment a leg is shed.
@@ -267,6 +299,9 @@ type market struct {
 func (m market) mark(l *leg) (float64, float64) {
 	return price(l.OptionType, l.Strike, m.spot, years(l.Expiry, m.now), iv(l.Strike, m.spot, m.dvol))
 }
+
+// stopSlip is the PROPOSED -stopslip spread guard (0 = off).
+var stopSlip float64
 
 // liquidityGap is the half-spread while a flash wick empties the book
 // (0 otherwise): a market order then pays the larger of the two.
@@ -584,6 +619,13 @@ func main() {
 	velWindow := flag.Float64("velwindow", 15, "PROPOSED: with -velguard, minutes the move is measured over")
 	velPause := flag.Float64("velpause", 30, "PROPOSED: with -velguard, minutes after the last shock with no stop, delta exit or roll at market (an MM breach still cuts)")
 	shockFreeze := flag.Float64("shockfreeze", 0, "PROPOSED: with -velguard, hours after the last shock with no entries or repairs")
+	stopCap := flag.Float64("stopcap", 0, "PROPOSED: the stop-loss buys back with a limit at this multiple of the premium instead of at market; unfilled, it rests until the ask comes down to it, and entries and repairs wait meanwhile (0 = market, the bot)")
+	flag.Float64Var(&stopSlip, "stopslip", 0.20, "stop_spread_guard_pct as a fraction (the bot: 0.20): a stop-loss waits while the ask is more than this above the mid, re-checked each decision — it fires once the spread is normal if it still applies — for at most -stopslipwait minutes; entries and repairs wait meanwhile (0 = off: at market)")
+	stopSlipWait := flag.Float64("stopslipwait", 5, "stop_spread_max_wait_minutes: with -stopslip, the longest a stop waits before buying at market")
+	stopSlipMM := flag.Bool("stopslipmm", false, "with -stopslip: the MM cut waits for the spread too")
+	stopCapDelta := flag.Bool("stopcapdelta", false, "with -stopcap: the delta exit is capped the same way")
+	stopCapWait := flag.Float64("stopcapwait", 0, "with -stopcap: minutes after which a resting capped buy-back goes to market (0 = never)")
+	stopCapLoss := flag.Float64("stopcaploss", 0, "with -stopcap: a resting capped buy-back goes to market once the mark reaches this multiple of the premium (0 = never)")
 	shedRepair := flag.String("shedrepair", "anchored", "re-selling a GEX-shed leg: live (before 2026-10-08: once the live signal stops shedding) | cross (spot back above the LIVE flip + buffer, after -shedcooldown) | anchored (today's bot: spot back above the flip + buffer stored at the shed, for -shedcross steps, or the live regime non-negative for -shedrelease hours)")
 	shedCooldown := flag.Float64("shedcooldown", 5, "with -shedrepair cross: minutes to wait after the shed")
 	shedCrossSteps := flag.Int("shedcross", 2, "with -shedrepair anchored: consecutive decisions spot must stay past the anchor")
@@ -1056,9 +1098,36 @@ func main() {
 
 		// Exit rules. With a wing (PROPOSED) the stop is judged on the spread:
 		// spread loss ≥ stopMult × its net credit; the short-leg stop is off.
+		capResting := false
+		capLimit := func(l *leg) float64 { return *stopCap * l.PremiumReceived / l.Qty }
 		for _, s := range b.strangles {
 			if inPause { // PROPOSED: no market exits into a shock
 				continue
+			}
+			for typ, o := range s.capped { // PROPOSED -stopcap: resting buy-backs
+				l := map[string]*leg{"call": s.call, "put": s.put}[typ]
+				if l == nil || l.Qty < 1e-9 {
+					delete(s.capped, typ)
+					continue
+				}
+				mid, _ := m.mark(l)
+				per := l.PremiumReceived / l.Qty
+				switch {
+				case l.DTEAt(m.now) <= rolloutDTE,
+					*stopCapWait > 0 && m.now.Sub(o.since) >= time.Duration(*stopCapWait*float64(time.Minute)),
+					*stopCapLoss > 0 && mid >= *stopCapLoss*per:
+					delete(s.capped, typ)
+					name := short(l)
+					act("CAPPED STOP to market %s (%+.4f)", name, b.closeAll(l, m))
+				default:
+					name := short(l)
+					if pnl, ok := b.capLeg(s, l, o.limit, m); ok {
+						act("CAPPED STOP filled %s (%+.4f)", name, pnl)
+					}
+				}
+			}
+			if len(s.capped) > 0 {
+				capResting = true
 			}
 			for _, pair := range []struct {
 				short *leg
@@ -1066,6 +1135,9 @@ func main() {
 			}{{s.call, s.callWing}, {s.put, s.putWing}} {
 				l := pair.short
 				if l == nil || l.Qty < 1e-9 {
+					continue
+				}
+				if _, resting := s.capped[l.OptionType]; resting {
 					continue
 				}
 				stop := stopMult
@@ -1124,8 +1196,27 @@ func main() {
 					legDrift, legBreach = s.slot.delta*0.10/0.16, s.slot.delta*0.30/0.16
 				}
 				dec := strategy.EvaluateLeg(l, m.now, rolloutDTE, legDrift, roiTP, stop, legBreach)
+				if dec.Action != strategy.ActionStopLoss {
+					delete(s.deferSince, l.OptionType) // the stop no longer applies
+				}
 				switch dec.Action {
 				case strategy.ActionDeltaExit:
+					if *stopCap > 0 && *stopCapDelta && pair.wing == nil {
+						if s.stopped == nil {
+							s.stopped = map[string]time.Time{}
+						}
+						s.stopped[l.OptionType] = m.now
+						breaches++
+						name, d := short(l), l.CurrentGreeks.Delta
+						if pnl, ok := b.capLeg(s, l, capLimit(l), m); ok {
+							act("DELTA exit %s Δ%.2f (%+.4f)", name, d, pnl)
+							b.rolls++
+						} else {
+							act("DELTA exit %s Δ%.2f: capped buy-back resting at %.4f", short(l), l.CurrentGreeks.Delta, s.capped[l.OptionType].limit)
+							capResting = true
+						}
+						continue
+					}
 					act("DELTA exit %s Δ%.2f (%+.4f)", short(l), l.CurrentGreeks.Delta, b.closeAll(l, m)+b.closeAll(pair.wing, m))
 					b.rolls++
 					breaches++
@@ -1140,8 +1231,40 @@ func main() {
 						s.stopped = map[string]time.Time{}
 					}
 					s.stopped[l.OptionType] = m.now
-					act("STOP %s (%+.4f)", short(l), b.closeAll(l, m))
 					b.stops++
+					if stopSlip > 0 && pair.wing == nil { // the bot's spread guard
+						since := s.deferSince[l.OptionType]
+						if halfSpread(m.dvol) > stopSlip && (since.IsZero() || m.now.Sub(since) < time.Duration(*stopSlipWait*float64(time.Minute))) {
+							if since.IsZero() {
+								if s.deferSince == nil {
+									s.deferSince = map[string]time.Time{}
+								}
+								s.deferSince[l.OptionType] = m.now
+								act("STOP %s deferred: spread ±%.0f%%", short(l), halfSpread(m.dvol)*100)
+							}
+							b.stops--
+							delete(s.stopped, l.OptionType)
+							capResting = true
+							break
+						}
+						delete(s.deferSince, l.OptionType)
+					}
+					if *stopCap > 0 && pair.wing == nil {
+						name := short(l)
+						if pnl, ok := b.capLeg(s, l, capLimit(l), m); ok {
+							act("STOP %s (%+.4f)", name, pnl)
+						} else {
+							act("STOP %s: capped buy-back resting at %.4f", short(l), s.capped[l.OptionType].limit)
+							capResting = true
+						}
+						break
+					}
+					if os.Getenv("STRESS_TRACE") != "" {
+						mid, _ := m.mark(l)
+						h := halfSpread(m.dvol)
+						fmt.Fprintf(os.Stderr, "TRACE %s STOP at market %s spot %.0f premium %.4f mid %.4f bid %.4f ask %.4f spread ±%.0f%%\n", m.now.Format("15:04"), short(l), m.spot, l.PremiumReceived/l.Qty, mid, mid*(1-h), mid*(1+h), h*100)
+					}
+					act("STOP %s (%+.4f)", short(l), b.closeAll(l, m))
 				case strategy.ActionRollNextMonth:
 					pnl := 0.0
 					for _, x := range s.all() {
@@ -1161,6 +1284,8 @@ func main() {
 		u := b.usage(m)
 		mmBreach := u.MMPct() >= st.MaxMMPct
 		switch {
+		case mmBreach && *stopSlipMM && halfSpread(m.dvol) > stopSlip:
+			act("MM %.0f%%: cut waits for the spread", u.MMPct())
 		case mmBreach:
 			for _, l := range b.legs() {
 				if l.Side == orders.DirectionBuy {
@@ -1181,7 +1306,7 @@ func main() {
 
 		// Repair (real hold rule for stopped legs). PROPOSED: with the squeeze
 		// on, a repaired short gets its wing too.
-		if !mmBreach && !shockFrozen {
+		if !mmBreach && !shockFrozen && !capResting {
 			for _, s := range b.strangles {
 				present, missing := s.call, "put"
 				if s.call == nil {
@@ -1251,6 +1376,8 @@ func main() {
 			entries = "FROZEN"
 		case shockFrozen:
 			entries = "SHOCK"
+		case capResting:
+			entries = "CAPPED STOP"
 		case mmBreach:
 			entries = "MM breach"
 		default:

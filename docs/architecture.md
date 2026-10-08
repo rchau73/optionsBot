@@ -100,7 +100,8 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `open.go` | slot occupancy, expiry choice (with fallback), strike choice, PM-aware sizing, premium floor, GEX leg gate, submitting entry legs |
 | `pending.go` | fill tracking: partial fills, price step-down (ask → mid → `entry_price_floor`/`repair_price_floor`, `pricing.go`) and ask-drift amends, timeout → cancel + read back final fill → book filled legs |
 | `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
-| `balance.go` | strangles whose legs differ by ≥ 1 lot (partial fills, a double fill): buy back the excess of the larger leg, IOC at the ask; risk-reducing, so not frozen |
+| `balance.go` | strangles whose legs differ by ≥ 1 lot (partial fills, a double fill): buy back the excess of the larger leg, IOC at the ask; risk-reducing, so not frozen; waits while an exit rule is closing the smaller leg |
+| `stopguard.go` | spread guard: a triggered stop-loss waits while the leg's book is empty (ask > `stop_spread_guard_pct` above mid), re-checked each cycle, at most `stop_spread_max_wait_minutes` |
 | `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed); a **GEX-shed** leg waits for spot back above the flip it was shed at plus the buffer on `gex_repair_confirm_snapshots` snapshots, or a non-negative regime for `gex_repair_release_hours` (`shed.go`) |
 | `reconcile.go` | rebuild the book from the exchange; startup account log |
 | `limits.go` | margin policy each cycle: evaluate `internal/risk`, journal changes, reduce at market on an MM breach, size entries with `private/simulate_portfolio` |
@@ -120,7 +121,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 |---|---|
 | IM limit | `iv_margin_bands` by the confirmed DVOL IV-percentile band (default ≥70 → 50 %, ≥30 → 35 %, else 20 % of margin balance) |
 | Negative gamma | a confirmed negative GEX regime forces the lowest band |
-| Confirmation | a band or regime change must hold for `iv_band_confirm_days` (2) consecutive UTC daily closes; a missing day resets the count. Until then: **frozen**, no new entries or upsizes; exits, rolls and repairs continue. A change that reverts before confirmation unfreezes with nothing else changed |
+| Confirmation | a band or regime change must hold for `iv_band_confirm_days` (2) consecutive UTC daily closes; a missing day resets the count. Until then: **frozen**, no new entries or upsizes (working ones are cancelled); exits, rolls and repairs continue. A change that reverts before confirmation unfreezes with nothing else changed |
 | Rebalance | on a confirmed limit change (and at startup): buy back whole lots above each strangle's share while IM is above the limit, at least one lot kept; open complements up to the headroom when below |
 | MM limit | MM ≥ `max_mm_pct` (35 %): reduce every position at market each cycle until under, regardless of any freeze; repairs and entries blocked |
 | Fail safe | margin unknown, simulation failed or units disagree → no new risk; unknown DVOL → lowest band, no rebalance; no confirmed regime yet (first days after deploying) → frozen |

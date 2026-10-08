@@ -145,10 +145,14 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 		return // no margin data: hold, exits still run
 	}
 	if m.mmBreached() {
+		s.cancelNewRisk(ctx, "MM limit reached")
 		s.reduceForMM(ctx, m)
 		return
 	}
 	st := m.status
+	if st.Frozen {
+		s.cancelNewRisk(ctx, "new risk frozen: "+st.FreezeReason)
+	}
 	if st.Frozen || !st.CanRebalance || st.LimitIMPct == s.appliedLimit {
 		return
 	}

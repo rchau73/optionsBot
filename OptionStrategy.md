@@ -83,7 +83,7 @@ The rules are checked in this order. The first one that applies wins.
 
 | Priority | Rule | Trigger (shipped config) | What the bot does |
 |---|---|---|---|
-| 1 | **Stop-loss** | the leg's loss reaches **2× the premium** received for it | buys it back **at market**, immediately, ahead of all other traffic |
+| 1 | **Stop-loss** | the leg's loss reaches **2× the premium** received for it | buys it back **at market**, immediately, ahead of all other traffic; if the book is empty (ask more than 20 % above mid) it waits up to 5 minutes for the spread, re-checking each cycle |
 | 2 | **Time roll** | **15 days** or fewer left | buys the leg back; once both legs are gone the slot reopens further out |
 | 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; repair re-sells a fresh leg at the target delta, same expiry |
 | 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; repair re-sells a fresh leg |
@@ -155,7 +155,7 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 - **Margin limit that follows the market:** the share of the account used as initial margin depends on volatility. When DVOL is high (rich premium, fear already priced in) up to 50 % is allowed; in the middle, 35 %; when it is low (cheap premium, often the calm before a big move), 20 %. When dealer positioning amplifies moves (negative gamma), 20 % applies whatever DVOL says. Every number is Deribit's own margin calculation, including a simulation of each new trade before it is placed.
 - **No knee-jerk reactions:** a change of volatility band or gamma regime must hold for two daily closes before the bot resizes anything. Until then it simply stops opening new positions; if the change reverts (a one-day spike), it carries on as before.
 - **Distance to liquidation:** if maintenance margin reaches 35 % of the account's margin balance (Deribit liquidates at 100 %), positions are bought back at once, whatever else is going on.
-- **Stop-loss on every leg:** 2× premium by default, executed at market with top priority.
+- **Stop-loss on every leg:** 2× premium by default, executed at market with top priority; while the book is empty (ask more than 20 % above mid, a flash wick) it waits up to 5 minutes for the spread to normalise, re-checking each cycle.
 - **Time exit:** nothing is held into the last ~15 days, when gamma risk is highest.
 - **Regime filter:** sheds the threatened side when dealer positioning amplifies moves.
 - **Premium floor:** refuses to sell options too cheap to justify their risk.
@@ -177,23 +177,25 @@ Every rule that opens, closes or holds a position, by market state. **This table
 
 | What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
 |---|---|---|---|---|---|
-| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ | ✅ at the lowest IM limit (20 %) | the shed side is not sold; the other leg opens alone | ⛔ |
-| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry | ⛔ no new top-up · ⚠️ one already working keeps working until its timeout (~2 min) | ⛔ the limit falls: downsize instead | the shed side is not sold | ⛔ |
+| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ and a working entry is cancelled | ✅ at the lowest IM limit (20 %) | the shed side is not sold; the other leg opens alone | ⛔ and a working entry is cancelled |
+| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry | ⛔ and a working top-up is cancelled | ⛔ the limit falls: downsize instead | the shed side is not sold | ⛔ and a working top-up is cancelled |
 | **Downsize to the IM limit** (`rebalance_downsize`) | ✅ when the confirmed limit falls below the IM in use | ⛔ waits for confirmation | ✅ | ✅ | the MM cut acts instead |
-| **Stop-loss** (2× premium, at market) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |
 | **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Rolls** (take-profit, delta drift, DTE) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |
 | **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
-| **Balance legs** (buy back the excess of the larger leg) | ✅ | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
+| **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
+| **While a stop waits for the spread** | no entries, top-ups or repairs until it fires or is dropped | same | same | same | same |
 | **MM cut** (reduce every short at market) | — | — | — | — | ✅ |
 | **Churn breaker** (slot paused after 3 buy-back/re-sell round trips in 60 min) | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 Notes:
 
-- **Stops and rolls never wait.** Whatever the state, a leg that hits its stop, its delta exit or a roll rule is closed. Only *re-selling* waits.
+- **Stops and rolls are not blocked by any state.** Whatever the state, a leg that hits its stop, its delta exit or a roll rule is closed; only *re-selling* waits.
+- **The one wait: an empty book.** When a stop triggers but the option's ask is more than 20 % above its mid (`stop_spread_guard_pct`), market makers have pulled their quotes, as in a flash wick, and a market buy would pay a panic price. The stop waits and is re-checked every cycle: once the spread is normal it fires if it still applies, or the leg is kept if the price came back under the stop. It never waits more than 5 minutes (`stop_spread_max_wait_minutes`), then it buys at market. The MM cut never waits.
 - **"Held" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
 - **Restarts:** the 72 h cooldown and the GEX-shed anchors are kept in memory, so a restart forgets them. The freeze and regime conditions still apply after a restart, because they are rebuilt from the daily closes.
