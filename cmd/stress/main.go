@@ -196,10 +196,37 @@ var shocks = map[string][]day{
 		{-4, 44, true, 1.6}, {-6, 56, true, 2.2}, {-3, 60, true, 2.3}, {+2, 57, true, 2.0}, {-5, 64, true, 2.1}, {-4, 70, true, 2.0}, {-2, 72, true, 1.8},
 		{+3, 66, true, 1.6}, {-3, 69, true, 1.6}, {-4, 74, true, 1.7}, {-1, 72, true, 1.5}, {+2, 68, true, 1.4}, {-2, 65, false, 1.3}, {-1, 63, false, 1.2},
 	},
+	// MODEL: 2025-10-10 — a quiet evening, then (day 2, 21:00 UTC) a wick
+	// of -wick % that recovers within -wickmin minutes (see wickAt), then a
+	// slide at normal speed. The daily returns here are the candle bodies;
+	// day 2's DVOL barely moves (DVOL is interpolated across the day, and
+	// the surprise was the wick): the spike is the wick's (-wickdvol), and
+	// DVOL stays high from day 3.
+	"flash": {
+		{+0.3, 27, false, 0.72},
+		{-3, 31, true, 2.5}, {-2, 48, true, 2.0}, {-1.5, 46, true, 1.7}, {+1, 44, true, 1.5}, {-2, 45, true, 1.5}, {-1.5, 44, true, 1.4},
+		{+0.5, 42, false, 1.3}, {-1, 41, false, 1.2}, {-0.5, 40, false, 1.1}, {+0.5, 39, false, 1.1}, {0, 38, false, 1.0}, {+0.3, 38, false, 1.0}, {-0.2, 37, false, 1.0},
+	},
 	"rally": {
 		{+4, 40, false, 1.5}, {+6, 48, true, 2.0}, {+3, 52, true, 2.1}, {-2, 50, true, 1.8}, {+5, 55, true, 1.9}, {+4, 60, true, 1.9}, {+2, 61, true, 1.7},
 		{-3, 57, true, 1.5}, {+3, 59, true, 1.5}, {+4, 63, true, 1.6}, {+1, 62, false, 1.4}, {-2, 58, false, 1.3}, {+2, 56, false, 1.2}, {+1, 54, false, 1.1},
 	},
+}
+
+// wickAt is how far down a V-shaped wick is at now (1 at the bottom, 0
+// outside it): it falls from bottom − dur/2 and recovers by bottom + dur/2.
+func wickAt(now, bottom time.Time, dur time.Duration) float64 {
+	dt := now.Sub(bottom)
+	if dt < 0 {
+		dt = -dt
+	}
+	if dt == 0 {
+		return 1
+	}
+	if dur <= 0 || dt >= dur/2 {
+		return 0
+	}
+	return 1 - float64(dt)/float64(dur/2)
 }
 
 func normCDF(x float64) float64 { return 0.5 * math.Erfc(-x/math.Sqrt2) }
@@ -241,8 +268,19 @@ func (m market) mark(l *leg) (float64, float64) {
 	return price(l.OptionType, l.Strike, m.spot, years(l.Expiry, m.now), iv(l.Strike, m.spot, m.dvol))
 }
 
+// liquidityGap is the half-spread while a flash wick empties the book
+// (0 otherwise): a market order then pays the larger of the two.
+var liquidityGap float64
+
 // MODEL: half-spread paid when trading at market, widening with DVOL.
 func halfSpread(dvol float64) float64 {
+	if liquidityGap > 0 {
+		return math.Max(liquidityGap, normalHalfSpread(dvol))
+	}
+	return normalHalfSpread(dvol)
+}
+
+func normalHalfSpread(dvol float64) float64 {
 	switch {
 	case dvol < 50:
 		return 0.04
@@ -506,7 +544,7 @@ func wingStrike(short *leg, m market, insts []*marketdata.Instrument) (*marketda
 }
 
 func main() {
-	name := flag.String("shock", "crash", "path after the calm days: crash | rally | crash40 | rally40 | chop | quiet | normalN | longN (N = random seed)")
+	name := flag.String("shock", "crash", "path after the calm days: crash | rally | crash40 | rally40 | chop | quiet | flash | normalN | longN (N = random seed)")
 	flag.Float64Var(&roiTP, "tp", 0.50, "take-profit: roll a leg once this share of its premium is earned (roi_take_profit; 1 = off)")
 	flag.Float64Var(&drift, "drift", 0.10, "delta drift: roll a leg whose |delta| falls below this (delta_drift_threshold; 0 = off)")
 	pairStrikes := flag.Bool("pairstrikes", true, "entries pick the call and put as a pair (SelectStrikePair, the bot); false = each leg alone at the target delta")
@@ -537,6 +575,15 @@ func main() {
 	flipRatio := flag.Float64("flipratio", 0.965, "MODEL: the flip starts at spot × this (BTC on 2026-10-05: 0.965); it then moves with √spot")
 	flipJumps := flag.Float64("flipjumps", 0, "MODEL: flip jumps per day (the script's lowest-crossing flip on real OI: ETH ~2/day of ±8–10 %, BTC ~0); 40 % revert within an hour")
 	jumpSize := flag.Float64("jumpsize", 9, "MODEL: size of a flip jump, %")
+	wickDepth := flag.Float64("wick", 0, "flash: depth of the wick, % (0 = 40 for BTC, 80 for ETH — 2025-10-10 as on the worst venues)")
+	wickMin := flag.Float64("wickmin", 10, "flash: minutes from the wick's start to its full recovery (V-shaped, bottom in the middle)")
+	wickSpread := flag.Float64("wickspread", 0.5, "flash: half-spread paid at market at the bottom of the wick (0.5 = 50 %: the book is empty)")
+	wickDvol := flag.Float64("wickdvol", 2.5, "flash: DVOL multiple at the bottom of the wick")
+	wickKeep := flag.Float64("wickkeep", 0, "flash: fraction of the drop that stays after the wick (0 = full recovery, 1 = a crash that does not come back)")
+	velGuard := flag.Float64("velguard", 0, "PROPOSED: a move of this many daily σ (DVOL ÷ √365) within -velwindow minutes is a shock (0 = off)")
+	velWindow := flag.Float64("velwindow", 15, "PROPOSED: with -velguard, minutes the move is measured over")
+	velPause := flag.Float64("velpause", 30, "PROPOSED: with -velguard, minutes after the last shock with no stop, delta exit or roll at market (an MM breach still cuts)")
+	shockFreeze := flag.Float64("shockfreeze", 0, "PROPOSED: with -velguard, hours after the last shock with no entries or repairs")
 	shedRepair := flag.String("shedrepair", "anchored", "re-selling a GEX-shed leg: live (before 2026-10-08: once the live signal stops shedding) | cross (spot back above the LIVE flip + buffer, after -shedcooldown) | anchored (today's bot: spot back above the flip + buffer stored at the shed, for -shedcross steps, or the live regime non-negative for -shedrelease hours)")
 	shedCooldown := flag.Float64("shedcooldown", 5, "with -shedrepair cross: minutes to wait after the shed")
 	shedCrossSteps := flag.Int("shedcross", 2, "with -shedrepair anchored: consecutive decisions spot must stay past the anchor")
@@ -737,10 +784,33 @@ func main() {
 	lastAct, actRun, nonNegSince := strategy.GammaActionNone, 0, time.Time{}
 	sumIM, nIM, nEntries := 0.0, 0, 0
 	shared, held := 0, 0
+	// The wick's bottom is on a decision (day 2, 21:00 UTC), so even coarse
+	// steps see it; with -steps 1440 the bot sees it minute by minute.
+	var wickBottom time.Time
+	if *name == "flash" {
+		if *wickDepth == 0 {
+			*wickDepth = 40
+			if underlying == "ETH" {
+				*wickDepth = 80
+			}
+		}
+		wickBottom = start.Add(time.Duration(*calm+*warm+1)*24*time.Hour + time.Duration(math.Round(21*float64(*steps)/24))*24*time.Hour/time.Duration(*steps))
+	}
+	wickBase := 0.0 // spot before the wick at the last step (restored on the next)
+	wickKept := false
+	type spotAt struct {
+		t time.Time
+		s float64
+	}
+	var recent []spotAt     // spot over the last -velwindow minutes
+	var lastShock time.Time // last -velguard trigger
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
 		dayEnd := i%*steps == 0
 		chg, regime, volRatio := 0.0, "POSITIVE/PINNING", 1.0
+		if wickBase > 0 {
+			m.spot, wickBase = wickBase, 0
+		}
 		if i > 0 {
 			p := path[d-1]
 			k := (i-1)%*steps + 1
@@ -756,6 +826,42 @@ func main() {
 			chg = (m.spot/dayStartSpot - 1) * 100
 		}
 		m.now = start.Add(time.Duration(i) * 24 * time.Hour / time.Duration(*steps))
+		liquidityGap = 0
+		if !wickBottom.IsZero() {
+			dur := time.Duration(*wickMin * float64(time.Minute))
+			if f := wickAt(m.now, wickBottom, dur); f > 0 {
+				if m.now.After(wickBottom) { // the recovery stops at the kept part
+					f = *wickKeep + (1-*wickKeep)*f
+				}
+				wickBase = m.spot
+				m.spot *= 1 - *wickDepth/100*f
+				m.dvol *= 1 + (*wickDvol-1)*f
+				liquidityGap = *wickSpread * f
+				act("FLASH WICK %.0f%% of the way down: spot %.0f (from %.0f), DVOL %.0f", f*100, m.spot, wickBase, m.dvol)
+			} else if !wickKept && m.now.After(wickBottom) && *wickKeep > 0 {
+				m.spot *= 1 - *wickDepth/100**wickKeep // the kept part of the drop stays
+				wickKept = true
+			}
+		}
+		if *velGuard > 0 { // PROPOSED: velocity guard on the index (uses the pre-move DVOL, as live)
+			window := time.Duration(*velWindow * float64(time.Minute))
+			for len(recent) > 0 && m.now.Sub(recent[0].t) > window {
+				recent = recent[1:]
+			}
+			sd := prevDvol / math.Sqrt(365) / 100
+			for _, p := range recent {
+				if math.Abs(math.Log(m.spot/p.s)) >= *velGuard*sd {
+					if lastShock.IsZero() || m.now.Sub(lastShock) > time.Duration(*velPause*float64(time.Minute)) {
+						act("SHOCK: spot %.0f → %.0f within %.0f min (≥ %.1fσ)", p.s, m.spot, *velWindow, *velGuard)
+					}
+					lastShock = m.now
+					break
+				}
+			}
+			recent = append(recent, spotAt{m.now, m.spot})
+		}
+		inPause := !lastShock.IsZero() && m.now.Sub(lastShock) < time.Duration(*velPause*float64(time.Minute))
+		shockFrozen := !lastShock.IsZero() && m.now.Sub(lastShock) < time.Duration(*shockFreeze*float64(time.Hour))
 		if dayEnd {
 			closes = append(closes, m.spot)
 		}
@@ -951,6 +1057,9 @@ func main() {
 		// Exit rules. With a wing (PROPOSED) the stop is judged on the spread:
 		// spread loss ≥ stopMult × its net credit; the short-leg stop is off.
 		for _, s := range b.strangles {
+			if inPause { // PROPOSED: no market exits into a shock
+				continue
+			}
 			for _, pair := range []struct {
 				short *leg
 				wing  *leg
@@ -1072,7 +1181,7 @@ func main() {
 
 		// Repair (real hold rule for stopped legs). PROPOSED: with the squeeze
 		// on, a repaired short gets its wing too.
-		if !mmBreach {
+		if !mmBreach && !shockFrozen {
 			for _, s := range b.strangles {
 				present, missing := s.call, "put"
 				if s.call == nil {
@@ -1140,6 +1249,8 @@ func main() {
 		switch {
 		case st.Frozen:
 			entries = "FROZEN"
+		case shockFrozen:
+			entries = "SHOCK"
 		case mmBreach:
 			entries = "MM breach"
 		default:
