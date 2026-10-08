@@ -70,11 +70,20 @@ type Config struct {
 	GammaRegimeBandPct     float64 `yaml:"gamma_regime_band_pct"`
 	// GammaFlipBufferSD: a leg is shed only once spot is this many daily
 	// standard deviations (DVOL ÷ √365) below the gamma flip.
-	GammaFlipBufferSD    float64 `yaml:"gamma_flip_buffer_sd"`
-	GEXStrikeRangePct    float64 `yaml:"gex_strike_range_pct"`
-	GEXMethod            string  `yaml:"gex_method"` // script (default) | nearest_flip
-	IVPercentileWindow   int     `yaml:"iv_percentile_window"`
-	HedgeReportThreshold float64 `yaml:"hedge_report_threshold"`
+	GammaFlipBufferSD float64 `yaml:"gamma_flip_buffer_sd"`
+	// GEXShedConfirmSnapshots: a leg is shed only once the signal has held
+	// for this many consecutive GEX snapshots (one per minute; 1 = at once).
+	GEXShedConfirmSnapshots int `yaml:"gex_shed_confirm_snapshots"`
+	// GEXRepairConfirmSnapshots: a GEX-shed leg is re-sold once spot is above
+	// the flip it was shed at plus its buffer on this many consecutive
+	// snapshots, or once the live regime has been non-negative for
+	// GEXRepairReleaseHours.
+	GEXRepairConfirmSnapshots int     `yaml:"gex_repair_confirm_snapshots"`
+	GEXRepairReleaseHours     int     `yaml:"gex_repair_release_hours"`
+	GEXStrikeRangePct         float64 `yaml:"gex_strike_range_pct"`
+	GEXMethod                 string  `yaml:"gex_method"` // script (default) | nearest_flip
+	IVPercentileWindow        int     `yaml:"iv_percentile_window"`
+	HedgeReportThreshold      float64 `yaml:"hedge_report_threshold"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
 	// fixed MM limit, band/regime changes confirmed on daily closes.
 	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
@@ -244,6 +253,15 @@ func (c *Config) Validate() error {
 	}
 	if c.GammaFlipBufferSD < 0 || c.GammaFlipBufferSD > 3 {
 		return fmt.Errorf("gamma_flip_buffer_sd %.2f must be between 0 and 3 daily standard deviations", c.GammaFlipBufferSD)
+	}
+	if c.GEXShedConfirmSnapshots < 1 || c.GEXShedConfirmSnapshots > 10 {
+		return fmt.Errorf("gex_shed_confirm_snapshots %d must be between 1 (shed at once) and 10", c.GEXShedConfirmSnapshots)
+	}
+	if c.GEXRepairConfirmSnapshots < 1 || c.GEXRepairConfirmSnapshots > 10 {
+		return fmt.Errorf("gex_repair_confirm_snapshots %d must be between 1 and 10", c.GEXRepairConfirmSnapshots)
+	}
+	if c.GEXRepairReleaseHours < 1 || c.GEXRepairReleaseHours > 168 {
+		return fmt.Errorf("gex_repair_release_hours %d must be between 1 and 168", c.GEXRepairReleaseHours)
 	}
 	if c.GEXMethod != "script" && c.GEXMethod != "nearest_flip" {
 		return fmt.Errorf("gex_method %q must be script or nearest_flip", c.GEXMethod)
@@ -420,6 +438,15 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.GEXMethod == "" {
 		cfg.GEXMethod = "script"
+	}
+	if cfg.GEXShedConfirmSnapshots == 0 {
+		cfg.GEXShedConfirmSnapshots = 2
+	}
+	if cfg.GEXRepairConfirmSnapshots == 0 {
+		cfg.GEXRepairConfirmSnapshots = 2
+	}
+	if cfg.GEXRepairReleaseHours == 0 {
+		cfg.GEXRepairReleaseHours = 24
 	}
 
 	// ── Margin policy defaults (validated in Validate) ────────────────────────

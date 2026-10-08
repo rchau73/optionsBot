@@ -20,11 +20,12 @@ sequenceDiagram
     S->>GM: PushPrice(index price) — daily closes for swing / SMA trend
     S->>GM: Evaluate()
     GM->>G: Snapshot()
-    GM-->>S: GammaDecision (Action, Regime, Flip, Trend)
-    alt NEGATIVE regime, spot < flip, bear trend
-        S->>S: ClosePuts — close puts, skip put entries and repairs
-    else NEGATIVE regime, spot < flip, bull trend
-        S->>S: CloseCalls — close calls, skip call entries and repairs
+    GM-->>S: GammaDecision (Action = live signal, Shed = signal held on gex_shed_confirm_snapshots snapshots, Regime, Flip, Trend)
+    alt NEGATIVE regime, spot < flip − buffer, bear trend
+        S->>S: ClosePuts — skip put entries and repairs · once Shed: close puts, anchor each at this flip + buffer
+    else NEGATIVE regime, spot < flip − buffer, bull trend
+        S->>S: CloseCalls — skip call entries and repairs · once Shed: close calls, anchor each at this flip + buffer
     else otherwise
         S->>S: ActionNone — trade both legs
     end
+    S->>S: repair a shed leg only when spot > its anchor on gex_repair_confirm_snapshots snapshots<br/>or the regime has been non-negative for gex_repair_release_hours

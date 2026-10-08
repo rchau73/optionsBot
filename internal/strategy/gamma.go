@@ -3,6 +3,7 @@ package strategy
 import (
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"optionsbot/internal/gex"
@@ -18,8 +19,14 @@ const (
 )
 
 // GammaDecision carries both the action and contextual GEX data for logging.
+//
+// Action is the live signal: entry and repair skip a leg type it sheds.
+// Shed is the same action once it has held for the confirm count of GEX
+// snapshots (SetShedConfirm); only Shed closes legs, so a one-snapshot flip
+// jump does not buy back the book.
 type GammaDecision struct {
 	Action         GammaAction
+	Shed           GammaAction
 	Trend          string
 	Regime         string
 	RegimeScore    float64
@@ -32,6 +39,19 @@ type GammaDecision struct {
 	// FlipBufferPct is how far below the flip spot must be (%) before a leg
 	// is shed: gamma_flip_buffer_sd daily standard deviations (0 = none).
 	FlipBufferPct float64
+	// Spot and SnapshotAt are the GEX snapshot's spot and time (zero
+	// without a snapshot): a shed leg's re-sell counts snapshots, not cycles.
+	Spot       float64
+	SnapshotAt time.Time
+	// NonNegativeSince is when the live regime last stopped being negative
+	// (zero while it is negative or before the first snapshot).
+	NonNegativeSince time.Time
+}
+
+// Sheds reports whether the live signal sheds legs of optType.
+func (d GammaDecision) Sheds(optType string) bool {
+	return (optType == "put" && d.Action == GammaActionClosePuts) ||
+		(optType == "call" && d.Action == GammaActionCloseCalls)
 }
 
 // GammaMonitor combines the market-wide GEX regime (from the GEX manager) with
@@ -55,7 +75,20 @@ type GammaMonitor struct {
 	lastAction    GammaAction  // last action announced, so changes are logged once
 	bufferSD      float64      // flip buffer in daily standard deviations (0 = none)
 	dvol          func() float64
+
+	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
+	signal      GammaAction // live signal on the last counted snapshot
+	signalRun   int         // consecutive snapshots it has held
+	lastSnapAt  time.Time   // last snapshot counted
+	nonNegSince time.Time   // see GammaDecision.NonNegativeSince
 }
+
+// SetShedConfirm makes a leg shed only once the live signal has held for n
+// consecutive GEX snapshots (one per minute). The script's flip (lowest
+// crossing) jumps several percent when open interest shifts — ETH about
+// twice a day, 40 % of the jumps reverting within the hour — and shedding on
+// the first snapshot then re-selling bought the book back at the spread.
+func (g *GammaMonitor) SetShedConfirm(n int) { g.shedConfirm = n }
 
 // SetFlipBuffer makes a leg shed only once spot is bufferSD daily standard
 // deviations below the flip, the deviation taken from dvol (the asset's
@@ -183,6 +216,12 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		dec.FlipBufferPct = FlipBufferPct(g.bufferSD, g.dvol())
 	}
 	dec.Action = ResolveGammaAction(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, trend, dec.FlipBufferPct)
+	dec.Spot, dec.SnapshotAt = snap.Spot, snap.ComputedAt
+	g.observe(snap, dec.Action)
+	dec.NonNegativeSince = g.nonNegSince
+	if dec.Action != GammaActionNone && g.signal == dec.Action && g.signalRun >= g.shedConfirm {
+		dec.Shed = dec.Action
+	}
 
 	// Announce a regime action when it changes, not on every cycle it persists.
 	changed := dec.Action != g.lastAction
@@ -211,6 +250,30 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		)
 	}
 	return dec
+}
+
+// observe counts each GEX snapshot once (Evaluate runs several times per
+// snapshot): how long the live signal has held and since when the regime is
+// non-negative.
+func (g *GammaMonitor) observe(snap *gex.Snapshot, action GammaAction) {
+	if !snap.ComputedAt.IsZero() && !snap.ComputedAt.After(g.lastSnapAt) {
+		return
+	}
+	g.lastSnapAt = snap.ComputedAt
+	if action != GammaActionNone && action == g.signal {
+		g.signalRun++
+	} else {
+		g.signal, g.signalRun = action, 1
+	}
+	if strings.HasPrefix(snap.Regime, "NEGATIVE") {
+		g.nonNegSince = time.Time{}
+	} else if g.nonNegSince.IsZero() {
+		g.nonNegSince = snap.ComputedAt
+	}
+	if action != GammaActionNone && g.signalRun < g.shedConfirm && g.signalRun == 1 {
+		slog.Info("gex_shed_pending", "event", "gex_shed_pending", "action", actionLabel(action),
+			"confirm_snapshots", g.shedConfirm, "gex_spot", snap.Spot, "gamma_flip", snap.GammaFlip)
+	}
 }
 
 // Trend returns the current price trend as a human-readable label.
