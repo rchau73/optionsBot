@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import PnlChart, { seriesName, tickLabel } from "@/components/PnlChart";
-import { combineHistories, totalsByBot } from "@/lib/monitor";
+import CoinPnlChart, { coinSeriesName } from "@/components/CoinPnlChart";
+import { coinHistory, combineHistories, totalsByBot } from "@/lib/monitor";
 
 describe("combineHistories", () => {
   test("sums bots per aligned bucket, carrying a bot's last value forward", () => {
@@ -78,4 +79,45 @@ describe("per-bot P&L", () => {
 test("the chart renders before the bot list has loaded (server pre-render)", () => {
   render(<PnlChart live={[]} names={null} />);
   expect(screen.getByText("Collecting data…")).toBeInTheDocument();
+});
+
+describe("coin P&L", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  test("each bot's history in its own coin, without the USD conversion", () => {
+    const points = [
+      { t: "2026-10-08T12:00:00Z", realised: 0.01, total: -0.02, total_usd: -1640, spot: 82000 },
+      { t: "2026-10-08T13:00:00Z", realised: 0.01, total: -0.01, total_usd: -810, spot: 81000 },
+    ];
+    expect(coinHistory(points)).toEqual([
+      { t: Date.parse("2026-10-08T12:00:00Z"), total: -0.02, realised: 0.01 },
+      { t: Date.parse("2026-10-08T13:00:00Z"), total: -0.01, realised: 0.01 },
+    ]);
+    expect(coinHistory(undefined)).toEqual([]);
+    expect(coinSeriesName("realised")).toBe("Realized");
+    expect(coinSeriesName("total")).toBe("Total");
+  });
+
+  test("one chart per bot, labelled with its coin and latest totals", async () => {
+    global.fetch = jest.fn().mockImplementation(async (url) => ({
+      ok: true,
+      json: async () => ({
+        points: url.includes("/btc/")
+          ? [
+              { t: "2026-10-08T12:00:00Z", realised: 0.01, total: 0.02 },
+              { t: "2026-10-08T13:00:00Z", realised: 0.01, total: 0.0125 },
+            ]
+          : [],
+      }),
+    }));
+    render(<CoinPnlChart names={["btc", "eth"]} units={{ btc: "BTC", eth: "ETH" }} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1d", expect.anything()));
+    expect(await screen.findByText("+0.0125 BTC")).toBeInTheDocument();
+    expect(screen.getByText("ETH")).toBeInTheDocument();
+    expect(screen.getByText("No history for this range yet.")).toBeInTheDocument(); // ETH has none
+    expect(screen.queryByRole("tab", { name: "Live" })).toBeNull();
+  });
 });
