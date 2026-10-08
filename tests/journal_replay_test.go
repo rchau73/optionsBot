@@ -218,3 +218,54 @@ func TestStrategy_RestorePnLCarriesRealisedAcrossRestart(t *testing.T) {
 		t.Errorf("slot 45/0.16 = %+v", lines[0])
 	}
 }
+
+// 2026-10-08: about five P&L lines a minute filled the 500-event buffer, so
+// after a restart the activity feed (which hides P&L) came up empty although
+// the journal held every decision. P&L lines are counted and numbered but
+// not kept; decisions survive any number of them, live and after a restart.
+func TestRecent_PnLLinesDoNotCrowdOutDecisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "orders.log")
+	start := time.Date(2026, 10, 7, 17, 0, 0, 0, time.UTC)
+	l, err := orders.NewLogger(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeJournal(l, start) // 5 decisions
+	for i := 0; i < 2000; i++ {
+		l.LogPnL(orders.PnLRecord{Timestamp: start.Add(time.Duration(i) * time.Minute)})
+	}
+	check := func(when string, lg *orders.Logger) {
+		t.Helper()
+		recent := lg.Recent(0, 200)
+		if len(recent) != 5 {
+			t.Errorf("%s: feed has %d events, want the 5 decisions", when, len(recent))
+		}
+		for _, e := range recent {
+			if e.Event == orders.EventPnL {
+				t.Errorf("%s: a P&L line is in the feed", when)
+			}
+		}
+		if c := lg.EventCounts(); c[orders.EventPnL] != 2000 {
+			t.Errorf("%s: P&L lines must still be counted, got %d", when, c[orders.EventPnL])
+		}
+	}
+	check("live", l)
+	l.Close()
+
+	rp, err := orders.ReplayFile(path, orders.RecentEvents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := orders.NewLogger(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	again.Restore(rp)
+	check("after restart", again)
+	again.LogClose(&orders.Position{Instrument: "ETH-X", Qty: 1, PremiumReceived: 0.01, EntryTime: start},
+		orders.Fill{OrderID: "9", FillPrice: 0.004, Qty: 1}, orders.TriggerRolloutROI, orders.TypeLimit, jctx(slot60, start))
+	if r := again.Recent(0, 0); len(r) != 6 || r[5].Seq != 2006 {
+		t.Errorf("numbering continues past the P&L lines: seqs %v", seqs(r))
+	}
+}

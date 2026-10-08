@@ -14,9 +14,14 @@ type RecentEvent struct {
 	Data  json.RawMessage `json:"data"` // the exact orders.log line
 }
 
-// recentRing keeps the last N journal events and counts every event type
+// recentRing keeps the last N journal decisions and counts every event type
 // since start, so the monitor API can serve "what just happened" without
 // reading log files. Safe for concurrent use.
+//
+// Periodic P&L lines are counted and numbered but not kept: about five a
+// minute, they pushed every decision out of the buffer within an hour or
+// two, so after a restart the activity feed (which hides them) came up
+// empty. The P&L chart reads /api/pnl and the P&L history, never this.
 type recentRing struct {
 	mu     sync.Mutex
 	buf    []RecentEvent
@@ -65,7 +70,7 @@ func (r *recentRing) restore(events []RecentEvent, counts map[string]int, seq ui
 }
 
 func (r *recentRing) put(e RecentEvent) {
-	if cap(r.buf) == 0 {
+	if cap(r.buf) == 0 || e.Event == EventPnL {
 		return
 	}
 	if len(r.buf) < cap(r.buf) {
