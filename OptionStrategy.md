@@ -28,9 +28,10 @@ How this bot makes (and loses) money, in plain language. No code knowledge neede
 6. [Worked examples: losses](#6-worked-examples-losses)
 7. [Edge cases the bot handles](#7-edge-cases-the-bot-handles)
 8. [Risk controls](#8-risk-controls)
-9. [The parameters, in plain words](#9-the-parameters-in-plain-words)
-10. [Lessons and recommendations from this study](#10-lessons-and-recommendations-from-this-study)
-11. [Glossary](#11-glossary)
+9. [Market regimes and what the bot does](#9-market-regimes-and-what-the-bot-does)
+10. [The parameters, in plain words](#10-the-parameters-in-plain-words)
+11. [Lessons and recommendations from this study](#11-lessons-and-recommendations-from-this-study)
+12. [Glossary](#12-glossary)
 
 ---
 
@@ -162,7 +163,42 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 - **Testnet by default; live only on explicit opt-in.**
 - **What is *not* covered:** the strangle has no long "wings", and the bot does not hedge automatically, so in a gap the loss is not capped. Covered alternatives, such as iron condors and delta hedging with perpetual futures, are the natural next research step.
 
-## 9. The parameters, in plain words
+## 9. Market regimes and what the bot does
+
+Every rule that opens, closes or holds a position, by market state. **This table is kept up to date with every rule change**; if the code and the table disagree, the code is wrong or the table is late, and either is a bug.
+
+**The states** (more than one can apply at once; the strictest cell wins):
+
+- **Normal:** the confirmed volatility band and gamma regime are unchanged, and the regime is not negative.
+- **Change pending (freeze):** the DVOL band or the gamma regime changed but has not yet held for 2 daily closes (`iv_band_confirm_days`). New risk is frozen until it is confirmed, or until it reverts.
+- **Confirmed negative regime:** the gamma regime has been negative for 2 daily closes. The margin limit drops to the lowest band (20 %).
+- **GEX shedding a side:** a live 60-second signal. The regime is negative, spot is more than 1 daily σ (DVOL ÷ √365) below the gamma flip, and there is a trend: puts are shed in a down-trend, calls in an up-trend. The close itself waits for the signal to hold on 2 snapshots in a row.
+- **MM limit:** maintenance margin is at or above 35 % of the margin balance (`max_mm_pct`).
+
+| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
+|---|---|---|---|---|---|
+| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ | ✅ at the lowest IM limit (20 %) | the shed side is not sold; the other leg opens alone | ⛔ |
+| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry | ⛔ no new top-up · ⚠️ one already working keeps working until its timeout (~2 min) | ⛔ the limit falls: downsize instead | the shed side is not sold | ⛔ |
+| **Downsize to the IM limit** (`rebalance_downsize`) | ✅ when the confirmed limit falls below the IM in use | ⛔ waits for confirmation | ✅ | ✅ | the MM cut acts instead |
+| **Stop-loss** (2× premium, at market) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Rolls** (take-profit, delta drift, DTE) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |
+| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once | ⛔ for the shed side | ⛔ |
+| **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
+| **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
+| **Balance legs** (buy back the excess of the larger leg) | ✅ | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
+| **MM cut** (reduce every short at market) | — | — | — | — | ✅ |
+| **Churn breaker** (slot paused after 3 buy-back/re-sell round trips in 60 min) | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Notes:
+
+- **Stops and rolls never wait.** Whatever the state, a leg that hits its stop, its delta exit or a roll rule is closed. Only *re-selling* waits.
+- **"Held" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.
+- **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
+- **Restarts:** the 72 h cooldown and the GEX-shed anchors are kept in memory, so a restart forgets them. The freeze and regime conditions still apply after a restart, because they are rebuilt from the daily closes.
+
+## 10. The parameters, in plain words
 
 | Setting | Shipped value | Plain meaning | Turn it up → | Turn it down → |
 |---|---|---|---|---|
@@ -180,7 +216,7 @@ All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, 
 | `max_mm_pct` | 35 % | safety distance from liquidation | closer to liquidation | earlier forced reductions |
 | `min_premium_btc` | 0.001 BTC | minimum price worth selling | fewer, richer trades | more, cheaper trades |
 
-## 10. Lessons and recommendations from this study
+## 11. Lessons and recommendations from this study
 
 These are observations from building and reviewing the system, not trading advice.
 
@@ -191,7 +227,7 @@ These are observations from building and reviewing the system, not trading advic
 5. **Use testnet to prove mechanics, not profits.** Testnet prices are thin and sometimes synthetic; it's great for checking that fills, rolls, stops and the kill switch behave, and useless for judging returns.
 6. **Change one thing at a time and write down why.** Tune a parameter, record the reason and the date, and compare before/after. Otherwise you can't tell whether the change or the market made the difference.
 
-## 11. Glossary
+## 12. Glossary
 
 | Term | Meaning |
 |---|---|

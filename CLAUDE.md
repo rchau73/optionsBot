@@ -75,5 +75,6 @@ Never reintroduce env-var overrides for logic parameters.
 ## Documentation
 
 - `README.md` technical overview · `OptionStrategy.md` business explanation · `docs/architecture.md` · `docs/operations.md` · `docs/README.md` (diagram index).
+- `OptionStrategy.md` §9 "Market regimes and what the bot does" is the table of every open/close/hold rule by market state (normal, freeze, confirmed negative regime, GEX shedding, MM limit). Update it in the same PR as any rule change.
 - Diagrams are Mermaid `.mmd` in `docs/` rendered to PNG with `make diagrams`; update both when a flow changes.
 - The planned dashboard lives in `frontend/` with its own `frontend/README.md`; keep UI/UX material out of the backend docs.
