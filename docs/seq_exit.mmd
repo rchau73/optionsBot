@@ -13,7 +13,10 @@ sequenceDiagram
     Note over R: priority: stop-loss → DTE roll → delta drift → ROI take-profit
     R-->>S: RolloutDecision
 
-    alt stop-loss (loss ≥ stop_loss_multiplier × premium)
+    alt stop-loss, book empty (ask > stop_spread_guard_pct above mid, or no bid)
+        S->>J: stop_deferred skip (once) · no entries, top-ups or repairs this cycle
+        Note over S: re-checked next cycle · at market after stop_spread_max_wait_minutes
+    else stop-loss (loss ≥ stop_loss_multiplier × premium)
         S->>X: Submit buy MARKET (high priority, bypasses breaker)
         X->>D: private/buy
         D-->>X: filled_amount

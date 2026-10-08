@@ -406,6 +406,23 @@ func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
 	}
 }
 
+// cancelNewRisk cancels every working entry and top-up (not repairs: they
+// restore a structure already held, and a freeze does not stop them). A freeze
+// or an MM breach blocks new orders but an order already working kept
+// working: on 2026-10-08 a BTC put top-up sent 44 s before a freeze filled
+// two minutes into it. Whatever filled before the cancel is booked now.
+func (s *Strategy) cancelNewRisk(ctx context.Context, why string) {
+	for _, ps := range s.pendingSnapshot() {
+		if ps.repairStrangleID != "" {
+			continue
+		}
+		for _, leg := range ps.legs() {
+			s.cancelLeg(ctx, ps, leg, orders.TriggerRiskFrozen, why)
+		}
+		s.finalizePending(ctx, ps)
+	}
+}
+
 // finalizePending turns the filled part of a finished pending strangle into
 // positions. Normal mode creates a strangle (one-legged if only one leg
 // filled — repair then completes it); repair mode fills the missing leg of an

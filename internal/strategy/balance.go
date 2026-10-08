@@ -19,7 +19,8 @@ import (
 // Buying back reduces risk, so it runs while entries are frozen too. It uses
 // an IOC limit at the ask, like rolls: no resting order, and no fill means
 // try again next cycle. One-legged strangles are repair's job; strangles in
-// the rollout window are about to roll anyway.
+// the rollout window are about to roll anyway; a strangle whose smaller leg
+// an exit rule is closing waits for that close to finish.
 func (s *Strategy) balanceStrangles(ctx context.Context) {
 	for _, st := range s.state.AllStrangles() {
 		call, put := s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
@@ -42,6 +43,16 @@ func (s *Strategy) balanceStrangles(ctx context.Context) {
 		}
 		excess := orders.FloorToStep(larger.Qty-smaller.Qty, lot)
 		if excess < lot-qtyEpsilon {
+			continue
+		}
+		// The smaller leg is being closed by an exit rule (a roll filling in
+		// pieces, a stop waiting for the spread): the difference is that close
+		// in progress, not an uneven strangle. Trimming the other leg to match
+		// shrank an ETH strangle 503 → 303 during a drift roll (2026-10-08);
+		// once the leg is gone, repair restores it at the other leg's size.
+		if s.evaluateLeg(smaller).Action != ActionNone {
+			slog.Debug("balance legs: smaller leg is being closed, waiting",
+				"strangle_id", st.ID, "smaller", smaller.Instrument, "smaller_qty", smaller.Qty)
 			continue
 		}
 		inst, ok := s.md.GetInstrument(larger.Instrument)

@@ -20,6 +20,8 @@ rollout_dte:            15      # roll entire strangle when DTE ≤ this
 delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left); at most 75% of every entry delta
 roi_take_profit:        0.50    # roll leg when ROI ≥ 50% of premium received
 stop_loss_multiplier:   2.0     # emergency close when loss ≥ 2× premium received
+stop_spread_guard_pct:  20      # …but wait while the ask is more than 20% above mid (an emptied book, e.g. a flash wick), re-checking each cycle; -1 = off
+stop_spread_max_wait_minutes: 5 # …at most this long, then at market
 delta_exit_threshold:   0.30    # close a short leg when |delta| reaches this (the move is real); re-sold only once calm, like a stop
 repair_cooldown_hours:  72      # a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative
 

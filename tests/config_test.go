@@ -74,6 +74,13 @@ func TestConfigLoad_GEXShedDefaults(t *testing.T) {
 	if cfg.GEXShedConfirmSnapshots != 2 || cfg.GEXRepairConfirmSnapshots != 2 || cfg.GEXRepairReleaseHours != 24 {
 		t.Errorf("shed defaults = %d/%d/%d, want 2/2/24", cfg.GEXShedConfirmSnapshots, cfg.GEXRepairConfirmSnapshots, cfg.GEXRepairReleaseHours)
 	}
+	if cfg.StopSpreadGuardPct != 20 || cfg.StopSpreadMaxWaitMin != 5 {
+		t.Errorf("stop spread guard defaults = %.0f%%/%d min, want 20%%/5", cfg.StopSpreadGuardPct, cfg.StopSpreadMaxWaitMin)
+	}
+	off, err := loadWithDummyCreds(t, writeTempConfig(t, "stop_spread_guard_pct: -1\n"))
+	if err != nil || off.StopSpreadGuardPct != -1 {
+		t.Errorf("-1 turns the guard off: %v, %v", off.StopSpreadGuardPct, err)
+	}
 }
 
 func TestConfigLoad_CustomBands(t *testing.T) {
@@ -153,6 +160,8 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 		{"shed confirm negative", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_shed_confirm_snapshots: -1", "gex_shed_confirm_snapshots"},
 		{"repair confirm too long", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_confirm_snapshots: 11", "gex_repair_confirm_snapshots"},
 		{"shed release over a week", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_release_hours: 200", "gex_repair_release_hours"},
+		{"stop spread guard over 100", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nstop_spread_guard_pct: 150", "stop_spread_guard_pct"},
+		{"stop spread wait over an hour", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nstop_spread_max_wait_minutes: 90", "stop_spread_max_wait_minutes"},
 	}
 	for _, tc := range raw {
 		t.Run(tc.name, func(t *testing.T) {
