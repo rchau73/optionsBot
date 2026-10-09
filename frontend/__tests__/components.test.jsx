@@ -15,6 +15,19 @@ describe("Header", () => {
     expect(within(chip).getByText(/DVOL 55.2/)).toBeInTheDocument();
   });
 
+  test("shows the gamma flip and its ±1σ band, flagged when spot is below it", () => {
+    const market = { ...status.market, spot: 95000, gamma_flip: 100000, spot_to_flip_pct: -5 };
+    render(<Header bots={[bot({ status: { ...status, market, flip_buffer_pct: 2 } })]} />);
+    const band = screen.getByTestId("flip-band");
+    expect(band).toHaveTextContent("Flip $100,000 (spot -5.0%) · ±1σ (2.0%) $98,000–$102,000");
+    expect(within(band).getByText("below flip −1σ")).toBeInTheDocument();
+  });
+
+  test("no flip, no band", () => {
+    render(<Header bots={[bot()]} />);
+    expect(screen.queryByTestId("flip-band")).not.toBeInTheDocument();
+  });
+
   test("flags live, halted, stale and offline bots", () => {
     render(
       <Header

@@ -186,6 +186,30 @@ func botTrendOf(closes []float64) int {
 	return 0
 }
 
+// botTrendLive is botTrendOf with the live spot as the price, as the bot:
+// the SMAs come from completed daily closes, the price is the last tick.
+func botTrendLive(closes []float64, spot float64) int {
+	n := len(closes)
+	if n < 21 {
+		return 0
+	}
+	sma := func(k int) float64 {
+		t := 0.0
+		for _, c := range closes[n-k:] {
+			t += c
+		}
+		return t / float64(k)
+	}
+	s9, s21 := sma(9), sma(21)
+	switch {
+	case s9 > s21 && spot > s9:
+		return 1
+	case s9 < s21 && spot < s9:
+		return -1
+	}
+	return 0
+}
+
 type day struct {
 	ret, dvol float64
 	negative  bool
@@ -635,6 +659,9 @@ func main() {
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
 	shedPersist := flag.Int("shedpersist", 2, "decisions in a row the shed signal must hold before shedding (today's bot: 2 snapshots; 1 = shed at once)")
 	botTrend := flag.Bool("bottrend", true, "trend as the bot: bull needs SMA9 > SMA21 and price > SMA9 (swing breakouts not modelled)")
+	liveTrend := flag.Bool("livetrend", true, "with -bottrend: the live spot against the daily SMAs, as the bot (detectTrend's lastTickPrice); false = the last daily close (before 2026-10-09)")
+	intraNoise := flag.Float64("intranoise", 0, "MODEL: intraday wiggle around the path, in daily σ (DVOL ÷ √365) — a Brownian bridge that still closes each day on the path (0 = smooth)")
+	sideHold := flag.Float64("sidehold", 0, "REJECTED (2026-10-09: within ±2.5 % at 4–8 h, 12–24 h cost BTC up to 16 %), -negentry trend: a side blocked by the trend stays blocked until the trend has not pointed that way for this many hours (0 = today's bot: released on the first non-bear/non-bull reading)")
 	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = today's 25/45/60")
 	slotDelta := flag.Float64("slotdelta", 0.16, "with -slots: entry delta of every slot")
 	scaled := flag.Bool("scaled", false, "drift and delta-exit thresholds scale with each slot's entry delta (today's ratios: 0.10 and 0.30 at 0.16)")
@@ -867,6 +894,9 @@ func main() {
 	}
 	var recent []spotAt     // spot over the last -velwindow minutes
 	var lastShock time.Time // last -velguard trigger
+	noiseRng := rand.New(rand.NewSource(11))
+	bridge := 0.0 // -intranoise: log offset of spot from the path
+	var sideBlockedAt = map[string]time.Time{}
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
 		dayEnd := i%*steps == 0
@@ -878,7 +908,14 @@ func main() {
 			p := path[d-1]
 			k := (i-1)%*steps + 1
 			volRatio = p.volRatio
+			m.spot /= math.Exp(bridge)
 			m.spot *= math.Pow(1+p.ret/100, 1/float64(*steps))
+			if *intraNoise > 0 { // Brownian bridge: 0 at each day's start and close
+				left := float64(*steps - k)
+				sd := *intraNoise * prevDvol / 100 / math.Sqrt(365) / math.Sqrt(float64(*steps))
+				bridge = bridge*left/(left+1) + math.Sqrt(left/(left+1))*sd*noiseRng.NormFloat64()
+				m.spot *= math.Exp(bridge)
+			}
 			m.dvol = prevDvol + (p.dvol-prevDvol)*float64(k)/float64(*steps)
 			if dayEnd {
 				prevDvol = p.dvol
@@ -1068,6 +1105,9 @@ func main() {
 		tr := trend(closes)
 		if *botTrend {
 			tr = botTrendOf(closes)
+			if *liveTrend {
+				tr = botTrendLive(closes, m.spot)
+			}
 		}
 		// The buffer: the rule sees a flip lowered by flipbuf %, so a leg is
 		// shed only when spot is that far below the real flip.
@@ -1086,11 +1126,20 @@ func main() {
 		lastAct = gexAct
 		// -negentry trend (the bot, regimeside.go): in a confirmed negative regime, no new
 		// short on the side the trend runs toward.
+		for _, typ := range []string{"put", "call"} {
+			switch {
+			case !st.RegimeNegative:
+				delete(sideBlockedAt, typ)
+			case (typ == "put" && tr < 0) || (typ == "call" && tr > 0):
+				sideBlockedAt[typ] = m.now
+			}
+		}
 		trendBlocks := func(typ string) bool {
 			if *negEntry != "trend" || !st.RegimeNegative {
 				return false
 			}
-			return (typ == "put" && tr < 0) || (typ == "call" && tr > 0)
+			at, ok := sideBlockedAt[typ]
+			return ok && m.now.Sub(at) < time.Duration(*sideHold*float64(time.Hour))+time.Nanosecond
 		}
 		if strings.HasPrefix(regime, "NEGATIVE") {
 			nonNegSince = time.Time{}

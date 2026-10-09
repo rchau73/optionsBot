@@ -82,3 +82,21 @@ func TestStrategy_FlipBufferKeepsLegsOnSmallDips(t *testing.T) {
 		}
 	}
 }
+
+// The monitor shows the flip's ±1σ band from the bot's own buffer, so the
+// band on screen is the one the shed and its repair use.
+func TestGammaMonitor_FlipBufferFollowsLiveDVOL(t *testing.T) {
+	g := strategy.NewGammaMonitor(120, 5)
+	if got := g.FlipBuffer(); got != 0 {
+		t.Fatalf("no buffer configured: FlipBuffer = %.4f, want 0", got)
+	}
+	dvol := 36.5
+	g.SetFlipBuffer(1, func() float64 { return dvol })
+	if got, want := g.FlipBuffer(), strategy.FlipBufferPct(1, 36.5); math.Abs(got-want) > 1e-9 {
+		t.Errorf("FlipBuffer = %.4f, want %.4f", got, want)
+	}
+	dvol = 73
+	if got, want := g.FlipBuffer(), strategy.FlipBufferPct(1, 73); math.Abs(got-want) > 1e-9 {
+		t.Errorf("after DVOL moved: FlipBuffer = %.4f, want %.4f", got, want)
+	}
+}

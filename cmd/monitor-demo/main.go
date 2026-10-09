@@ -231,10 +231,11 @@ func (s *simulation) View() strategy.View {
 	v := strategy.View{
 		AsOf: now, StrategyID: strategy.DefaultStrategyID, Underlying: s.underlying, Environment: "testnet (demo)",
 		LoopAt: now, Trend: "neutral",
-		Market:  orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING", GammaFlip: s.spot * 0.96},
-		Account: strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},
-		Risk:    rv,
-		Pending: []strategy.PendingView{},
+		Market:        orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING", GammaFlip: s.spot * 0.96},
+		FlipBufferPct: strategy.FlipBufferPct(1, s.dvol),
+		Account:       strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},
+		Risk:          rv,
+		Pending:       []strategy.PendingView{},
 	}
 	bySlot := map[string]*strategy.StrangleView{}
 	var unrealised, delta float64
