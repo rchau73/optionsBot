@@ -119,7 +119,7 @@ docker kill -s USR1 <container>     # Docker
 kill -USR1 <pid>                    # local process
 ```
 
-What happens: resting orders for the underlying are cancelled, every position is bought back at market (partial fills retried), anything still open is logged as an `ERROR` for manual handling, and the bot then **stays idle** — it does not exit, so Docker's restart policy cannot put it straight back into the market. To resume trading, restart the container deliberately (`docker compose restart bot-btc`).
+What happens: resting orders for the underlying are cancelled, whatever a working entry filled before the cancel is booked, the book is matched to the exchange's short positions, every position is bought back at market (partial fills retried), anything still open is logged as an `ERROR` for manual handling, and the bot then **stays idle** — it does not exit, so Docker's restart policy cannot put it straight back into the market. To resume trading, restart the container deliberately (`docker compose restart bot-btc`).
 
 ## BTC and ETH side by side
 

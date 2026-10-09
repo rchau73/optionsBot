@@ -366,6 +366,15 @@ func (s *Strategy) cancelLeg(ctx context.Context, ps *pendingStrangle, leg *pend
 		slog.Error("pending: cancel failed — order may still be working",
 			"pending_id", ps.id, "order_id", leg.orderID, "instrument", leg.instrument, "err", err)
 	}
+	s.settleLeg(ctx, ps, leg, trigger, reason)
+}
+
+// settleLeg reads back what a cancelled leg filled and marks it done, so the
+// fill is booked when the strangle finalizes.
+func (s *Strategy) settleLeg(ctx context.Context, ps *pendingStrangle, leg *pendingLeg, trigger, reason string) {
+	if leg.done || leg.orderID == "" {
+		return
+	}
 	// The order may have (partly) filled between our last poll and the cancel.
 	if st, err := s.exch.GetOrderState(ctx, leg.orderID); err == nil {
 		leg.applyState(st)

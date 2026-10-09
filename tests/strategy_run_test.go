@@ -197,6 +197,12 @@ func (f *fakeExchange) CancelAllOrders(_ context.Context, currency string) error
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cancelAll = append(f.cancelAll, currency)
+	for id, st := range f.orderStates {
+		if st.State == "open" {
+			st.State = "cancelled"
+			f.orderStates[id] = st
+		}
+	}
 	return nil
 }
 

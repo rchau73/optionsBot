@@ -253,7 +253,8 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// It restores a structure already held, so a freeze does not stop it;
 	// a maintenance-margin breach does.
 	// A stop-loss waiting for the spread means a flash move: no new risk.
-	if !m.mmBreached() && !s.stopsDeferred {
+	// Without a fresh GEX snapshot the side to avoid is unknown: wait.
+	if !m.mmBreached() && !s.stopsDeferred && m.gexWait == "" {
 		s.repairIncompleteStrangles(ctx, gammaDec, m)
 	}
 

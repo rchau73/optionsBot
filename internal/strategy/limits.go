@@ -30,6 +30,8 @@ type marginState struct {
 	status risk.Status
 	usage  risk.Usage
 	err    error // margin unknown: no new risk this cycle
+	// gexWait is why new risk waits for the GEX data (GEXWaitReason), or "".
+	gexWait string
 }
 
 // mmBreached reports whether maintenance margin is at or above its limit.
@@ -127,7 +129,8 @@ func (s *Strategy) logRisk(change, detail string, st risk.Status, u risk.Usage, 
 
 // marginNow reads Deribit's current margin and evaluates the policy.
 func (s *Strategy) marginNow(ctx context.Context, gammaDec GammaDecision) marginState {
-	m := marginState{status: s.riskStatus(time.Now(), gammaDec)}
+	m := marginState{status: s.riskStatus(time.Now(), gammaDec),
+		gexWait: GEXWaitReason(s.riskCfg.UseRegime, gammaDec, time.Now())}
 	sum, err := s.fetchAccount(ctx)
 	if err != nil {
 		m.err = err
@@ -153,7 +156,7 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if st.Frozen {
 		s.cancelNewRisk(ctx, "new risk frozen: "+st.FreezeReason)
 	}
-	if st.Frozen || !st.CanRebalance || st.LimitIMPct == s.appliedLimit {
+	if st.Frozen || !st.CanRebalance || st.LimitIMPct == s.appliedLimit || m.gexWait != "" {
 		return
 	}
 	if s.complementPending() || time.Now().Before(s.rebalanceRetryAt) {

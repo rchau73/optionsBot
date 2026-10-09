@@ -90,16 +90,9 @@ func (s *Strategy) slotUnconfirmed(key slotKey) bool {
 // poll and the position read is not mistaken for drift.
 const driftConfirmations = 2
 
-// checkPositions compares the exchange's short positions with the book
-// (plus fills of entry orders still being tracked) and adopts persistent
-// differences.
-func (s *Strategy) checkPositions(ctx context.Context) {
-	raw, err := s.exch.GetPositions(ctx, s.cfg.Underlying)
-	if err != nil {
-		s.exchSnap = nil // unknown this cycle: buy-backs are not capped
-		slog.Debug("position check skipped", "err", err)
-		return
-	}
+// setExchangeSnapshot records this read of the exchange's positions (the cap
+// for buy-backs, capToExchange) and returns its shorts by instrument.
+func (s *Strategy) setExchangeSnapshot(raw []orders.RawPosition) map[string]orders.RawPosition {
 	exch := map[string]orders.RawPosition{}
 	snap := &exchangeSnapshot{short: map[string]float64{}, long: map[string]float64{}}
 	for _, rp := range raw {
@@ -113,13 +106,58 @@ func (s *Strategy) checkPositions(ctx context.Context) {
 		}
 	}
 	s.exchSnap = snap
-	// An instrument can back several positions (a filled rebalance
-	// complement, or two slots on the same expiry and strike); the exchange
-	// reports their sum, so the book is compared by its sum too.
+	return exch
+}
+
+// bookByInstrument groups the book's positions by instrument. An instrument
+// can back several positions (a filled rebalance complement, or two slots on
+// the same expiry and strike); the exchange reports their sum, so the book is
+// compared by its sum too.
+func (s *Strategy) bookByInstrument() map[string][]*orders.Position {
 	book := map[string][]*orders.Position{}
 	for _, p := range s.state.AllPositions() {
 		book[p.Instrument] = append(book[p.Instrument], p)
 	}
+	return book
+}
+
+// syncBookToExchange makes the book hold exactly the exchange's shorts, at
+// once (no drift confirmation): the kill switch must flatten what the
+// exchange holds, not what the book believes.
+func (s *Strategy) syncBookToExchange(ctx context.Context) error {
+	raw, err := s.exch.GetPositions(ctx, s.cfg.Underlying)
+	if err != nil {
+		return err
+	}
+	exch := s.setExchangeSnapshot(raw)
+	book := s.bookByInstrument()
+	names := map[string]bool{}
+	for n := range exch {
+		names[n] = true
+	}
+	for n := range book {
+		names[n] = true
+	}
+	for name := range names {
+		if have := math.Abs(exch[name].Size); math.Abs(have-totalQty(book[name])) >= qtyEpsilon {
+			s.adoptPosition(name, book[name], exch[name], have)
+		}
+	}
+	return nil
+}
+
+// checkPositions compares the exchange's short positions with the book
+// (plus fills of entry orders still being tracked) and adopts persistent
+// differences.
+func (s *Strategy) checkPositions(ctx context.Context) {
+	raw, err := s.exch.GetPositions(ctx, s.cfg.Underlying)
+	if err != nil {
+		s.exchSnap = nil // unknown this cycle: buy-backs are not capped
+		slog.Debug("position check skipped", "err", err)
+		return
+	}
+	exch := s.setExchangeSnapshot(raw)
+	book := s.bookByInstrument()
 	inflight := map[string]float64{}
 	for _, ps := range s.pendingSnapshot() {
 		for _, l := range ps.legs() {
