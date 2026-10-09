@@ -171,20 +171,20 @@ Every rule that opens, closes or holds a position, by market state. **This table
 
 - **Normal:** the confirmed volatility band and gamma regime are unchanged, and the regime is not negative.
 - **Change pending (freeze):** the DVOL band or the gamma regime changed but has not yet held for 2 daily closes (`iv_band_confirm_days`). New risk is frozen until it is confirmed, or until it reverts.
-- **Confirmed negative regime:** the gamma regime has been negative for 2 daily closes. The margin limit drops to the lowest band (20 %).
+- **Confirmed negative regime:** the gamma regime has been negative for 2 daily closes. The margin limit drops to the lowest band (20 %), and in a trend the side the price runs toward is not sold: no new puts in a down-trend, no new calls in an up-trend (dealers short gamma push the price further the way it is going). With no trend both sides are sold.
 - **GEX shedding a side:** a live 60-second signal. The regime is negative, spot is more than 1 daily σ (DVOL ÷ √365) below the gamma flip, and there is a trend: puts are shed in a down-trend, calls in an up-trend. The close itself waits for the signal to hold on 2 snapshots in a row.
 - **MM limit:** maintenance margin is at or above 35 % of the margin balance (`max_mm_pct`).
 
 | What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
 |---|---|---|---|---|---|
-| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ and a working entry is cancelled | ✅ at the lowest IM limit (20 %) | the shed side is not sold; the other leg opens alone | ⛔ and a working entry is cancelled |
-| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry | ⛔ and a working top-up is cancelled | ⛔ the limit falls: downsize instead | the shed side is not sold | ⛔ and a working top-up is cancelled |
+| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ and a working entry is cancelled | ✅ at the lowest IM limit (20 %); in a trend the threatened side is not sold and the other leg opens alone (`regime_side`) | the shed side is not sold; the other leg opens alone | ⛔ and a working entry is cancelled |
+| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry | ⛔ and a working top-up is cancelled | ✅ up to the lowest IM limit (20 %), both sides or none: in a trend it is held (`regime_side`) and retried every 15 min | the shed side is not sold | ⛔ and a working top-up is cancelled |
 | **Downsize to the IM limit** (`rebalance_downsize`) | ✅ when the confirmed limit falls below the IM in use | ⛔ waits for confirmation | ✅ | ✅ | the MM cut acts instead |
 | **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |
 | **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Rolls** (take-profit, delta drift, DTE) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |
-| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once | ⛔ for the shed side | ⛔ |
+| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`) | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
 | **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
@@ -198,6 +198,7 @@ Notes:
 - **The one wait: an empty book.** When a stop triggers but the option's ask is more than 20 % above its mid (`stop_spread_guard_pct`), market makers have pulled their quotes, as in a flash wick, and a market buy would pay a panic price. The stop waits and is re-checked every cycle: once the spread is normal it fires if it still applies, or the leg is kept if the price came back under the stop. It never waits more than 5 minutes (`stop_spread_max_wait_minutes`), then it buys at market. The MM cut never waits.
 - **"Held" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
+- **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).
 - **Restarts:** the 72 h cooldown and the GEX-shed anchors are kept in memory, so a restart forgets them. The freeze and regime conditions still apply after a restart, because they are rebuilt from the daily closes.
 
 ## 10. The parameters, in plain words

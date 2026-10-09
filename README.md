@@ -146,7 +146,7 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 | `gex_shed_confirm_snapshots` | 2 | a leg is shed only once the signal has held on this many consecutive GEX snapshots (one a minute; 1 = at once) — the script's flip can jump for a minute when open interest shifts |
 | `gex_repair_confirm_snapshots` / `gex_repair_release_hours` | 2 / 24 | a GEX-shed leg is re-sold once spot is back above the flip **it was shed at** plus the buffer on this many consecutive snapshots, or once the live regime has been non-negative this long — not when the live flip jumps under spot (2026-10-06) |
 | `repair_cooldown_hours` | 72 | a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative (rolled legs reopen at once) |
-| `iv_margin_bands` | ≥70 → 50, ≥30 → 35, ≥0 → 20 | initial-margin limit (% of Deribit's margin balance) by DVOL IV-percentile band; the lowest band must start at 0. A confirmed negative gamma regime forces the lowest band |
+| `iv_margin_bands` | ≥70 → 50, ≥30 → 35, ≥0 → 20 | initial-margin limit (% of Deribit's margin balance) by DVOL IV-percentile band; the lowest band must start at 0. A confirmed negative gamma regime forces the lowest band and, in a trend, blocks new shorts on the side the trend runs toward |
 | `iv_band_confirm_days` | 2 | consecutive UTC daily closes a DVOL band or gamma regime change must hold before the limit moves; until then new entries are frozen |
 | `max_mm_pct` | 35 | maintenance-margin limit (% of margin balance), enforced at once by reducing positions; below 100 (Deribit liquidates at 100) |
 | `max_dte_deviation` | 2 | days an expiry may differ from the slot DTE |

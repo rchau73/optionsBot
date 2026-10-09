@@ -28,6 +28,7 @@ type GammaDecision struct {
 	Action         GammaAction
 	Shed           GammaAction
 	Trend          string
+	TrendDir       int // +1 bull, -1 bear, 0 neutral (Trend as a number)
 	Regime         string
 	RegimeScore    float64
 	GammaFlip      float64
@@ -206,6 +207,7 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		GammaFlip:      snap.GammaFlip,
 		GammaFlipFound: snap.GammaFlipFound,
 		Trend:          g.trendLabel(),
+		TrendDir:       trend,
 		SwingHigh:      g.lastSwingHigh(),
 		SwingLow:       g.lastSwingLow(),
 		SMA9:           g.sma(9),

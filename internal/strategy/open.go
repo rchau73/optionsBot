@@ -9,6 +9,7 @@ import (
 
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
 )
 
 // maybeOpenStrangles fills every vacant (DTE, delta) slot within the margin
@@ -108,7 +109,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit, err.Error())
 			continue
 		}
-		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, false); err != nil {
+		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, m.status, false); err != nil {
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipEntryRejected, err.Error())
@@ -131,6 +132,7 @@ const (
 	SkipEntryRejected = "entry_rejected" // premium floor, lot size or order error
 	SkipChurnPaused   = "churn_paused"   // the slot bought back and re-sold too often: paused (safety.go)
 	SkipStopDeferred  = "stop_deferred"  // a stop-loss waits for the spread (stopguard.go): no new risk meanwhile
+	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.
@@ -186,9 +188,10 @@ func (s *Strategy) heldExpiries() map[time.Time]bool {
 }
 
 // openStrangle submits limit sells for both legs (or one leg when GEX is
-// shedding the other) and tracks them as a pending strangle until they fill.
-// complement marks a rebalance upsize (see rebalance.go).
-func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, complement bool) error {
+// shedding the other, or the confirmed regime and trend block it) and tracks
+// them as a pending strangle until they fill. complement marks a rebalance
+// upsize (see rebalance.go).
+func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, st risk.Status, complement bool) error {
 	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC); an amount off
 	// that grid is rejected, so snap qty down onto it.
 	if exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount); exchStep > 0 {
@@ -199,17 +202,21 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		}
 	}
 
-	// Skip a leg only when GEX is actively shedding that leg type.
-	openCall := gammaDec.Action != GammaActionCloseCalls
-	openPut := gammaDec.Action != GammaActionClosePuts
+	// Skip a leg when GEX is actively shedding that leg type, or when the
+	// confirmed negative regime blocks the side the trend runs toward.
+	callWhy, putWhy := gammaDec.avoidsSide("call", st), gammaDec.avoidsSide("put", st)
+	openCall, openPut := callWhy == "", putWhy == ""
+	if !openCall && !openPut {
+		return fmt.Errorf("both legs blocked: %s; %s", callWhy, putWhy)
+	}
 	if !openCall || !openPut {
-		skipped := "put"
+		skipped, why := "put", putWhy
 		if !openCall {
-			skipped = "call"
+			skipped, why = "call", callWhy
 		}
-		slog.Info("single-leg entry due to GEX regime",
-			"regime", gammaDec.Regime, "action", actionLabel(gammaDec.Action),
-			"skipping", skipped, "target_dte", targetDTE)
+		slog.Info("single-leg entry: one side is blocked",
+			"regime", gammaDec.Regime, "action", actionLabel(gammaDec.Action), "trend", gammaDec.Trend,
+			"skipping", skipped, "reason", why, "target_dte", targetDTE)
 	}
 
 	// Check the premium floor for every leg before submitting any order, so a

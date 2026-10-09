@@ -109,7 +109,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			if addQty >= lot {
 				headroom -= addQty / lot * imPerLot
 				sent[key] += addQty
-				s.openComplementStrangle(ctx, st, addQty, targetQty)
+				s.openComplementStrangle(ctx, st, addQty, targetQty, m.status)
 			}
 			continue // never upsize and downsize in the same pass
 		}
@@ -133,7 +133,20 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 }
 
 // openComplementStrangle opens addQty more of st's slot through normal entry.
-func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strangle, addQty, targetQty float64) {
+//
+// A top-up adds both sides or none: while the confirmed negative regime and
+// the trend block one side, a one-sided top-up would leave the slot uneven and
+// balanceStrangles would buy the excess straight back. It is retried instead
+// (rearmRebalance), so the slot fills up once the block lifts.
+func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strangle, addQty, targetQty float64, rs risk.Status) {
+	gammaDec := s.gamma.Evaluate()
+	for _, typ := range []string{"call", "put"} {
+		if why := RegimeSideBlockReason(typ, gammaDec.TrendDir, rs); why != "" {
+			s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRegimeSide, "top-up held: "+why)
+			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
+			return
+		}
+	}
 	instruments := s.md.AllInstruments()
 	// The complement adds to this strangle, so it uses this strangle's
 	// expiry — never a fresh pick, which could land on another slot's date.
@@ -153,7 +166,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		"call_instrument", call.Name,
 		"put_instrument", put.Name,
 	)
-	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, s.gamma.Evaluate(), true); err != nil {
+	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, gammaDec, rs, true); err != nil {
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
 		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err))
