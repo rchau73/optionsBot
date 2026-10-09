@@ -88,6 +88,8 @@ type LegView struct {
 	Moneyness       string        `json:"moneyness"`
 	DistancePct     float64       `json:"distance_to_strike_pct"`
 	Greeks          orders.Greeks `json:"greeks"`
+	// ManualClose: whether the monitor may close this leg by hand now.
+	ManualClose ManualCloseView `json:"manual_close"`
 }
 
 // PendingView is an entry or repair order still working on the book.
@@ -134,6 +136,9 @@ type published struct {
 	risk    RiskView
 	usage   risk.Usage
 	halted  bool
+
+	manualOn  bool   // manual closes enabled (SetManualClose)
+	manualOff string // why not, shown on every leg
 }
 
 // publish copies the loop-owned state for readers. Call on the Run goroutine.
@@ -209,7 +214,8 @@ func (s *Strategy) setHalted() {
 // from any goroutine; it never calls the exchange.
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
-	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted}
+	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted,
+		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff}
 	s.pub.mu.RUnlock()
 
 	now := time.Now()
@@ -229,7 +235,7 @@ func (s *Strategy) View() View {
 		Trend:         pub.trend,
 		Account:       pub.account,
 		Risk:          pub.risk,
-		Strangles:     s.strangleViews(now, pub.at),
+		Strangles:     s.strangleViews(now, &pub),
 		Pending:       pub.pending,
 	}
 	v.Greeks = netGreeks(v.Strangles, pub.trend)
@@ -245,15 +251,21 @@ func (s *Strategy) View() View {
 	return v
 }
 
-func (s *Strategy) strangleViews(now, loopAt time.Time) []StrangleView {
+func (s *Strategy) strangleViews(now time.Time, pub *published) []StrangleView {
 	spot := s.md.UnderlyingPrice()
 	out := make([]StrangleView, 0)
 	for _, st := range s.state.AllStrangles() {
 		sv := StrangleView{ID: st.ID, Slot: orders.SlotRef{DTE: st.TargetDTE, Delta: st.EntryDelta}, OpenedAt: st.OpenedAt}
+		var live []*orders.Position
 		for _, leg := range []*orders.Position{st.CallLeg, st.PutLeg} {
 			if pos := s.livePosition(leg); pos != nil {
-				sv.Legs = append(sv.Legs, s.legView(pos, spot, now, loopAt))
+				live = append(live, pos)
 			}
+		}
+		for _, pos := range live {
+			lv := s.legView(pos, spot, now, pub.at)
+			lv.ManualClose = s.manualCloseView(pos, len(live) == 1, pub)
+			sv.Legs = append(sv.Legs, lv)
 		}
 		if len(sv.Legs) > 0 {
 			out = append(out, sv)

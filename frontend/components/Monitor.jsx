@@ -36,6 +36,7 @@ export default function Monitor() {
   const account = pickAccount(bots, polledAt);
   const risk = riskRows(bots);
   const others = unmanagedPositions(account, bots);
+  const statuses = Object.fromEntries(bots.map((b) => [b.name, b.status]));
   const units = Object.fromEntries(bots.map((b) => [b.name, b.status?.underlying ?? b.name.toUpperCase()]));
 
   return (
@@ -57,7 +58,7 @@ export default function Monitor() {
           <AccountPanel account={account} risk={risk} />
         </Panel>
         <Panel title="Open positions" right={<Filters filters={filters} options={options} onChange={setFilters} />}>
-          <PositionsTable groups={groups} />
+          <PositionsTable groups={groups} statuses={statuses} />
         </Panel>
         <Panel
           title="Not managed by the bot (still uses margin)"

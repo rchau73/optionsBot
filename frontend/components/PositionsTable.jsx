@@ -1,5 +1,7 @@
+import { useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
+import { CloseButton, ConfirmCloseModal } from "./ManualClose";
 import { ageSeconds, formatCoin, formatNumber, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
 
@@ -44,7 +46,8 @@ function GreekCells({ greeks }) {
 }
 
 /** Open legs, one row per bot + slot + strike (see consolidateRows), grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
-export default function PositionsTable({ groups }) {
+export default function PositionsTable({ groups, statuses = {} }) {
+  const [closing, setClosing] = useState(null); // the row whose close is being confirmed
   if (!groups.length) {
     return <p className="px-1 py-6 text-center text-sm text-muted">No open positions match the filters.</p>;
   }
@@ -76,6 +79,7 @@ export default function PositionsTable({ groups }) {
             <th className="px-2 py-1 text-right">Γ</th>
             <th className="px-2 py-1 text-right">Θ</th>
             <th className="px-2 py-1 text-right">Vega</th>
+            <th className="px-2 py-1" title="Manual close at market — only while the regime-side block keeps the bot from selling that side">Action</th>
           </tr>
         </thead>
         {groups.map((g) => (
@@ -93,6 +97,7 @@ export default function PositionsTable({ groups }) {
               </td>
               <td colSpan={2} />
               <GreekCells greeks={g.greeks} />
+              <td />
             </tr>
             {g.rows.map((r) => (
               <tr key={r.key} className="hover:bg-slate-800/30">
@@ -143,11 +148,17 @@ export default function PositionsTable({ groups }) {
                 <td className="px-2 py-1 text-right tabular-nums">{isNumber(r.gamma) ? r.gamma.toExponential(1) : "—"}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.theta, 1)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(r.vega, 1)}</td>
+                <td className="px-2 py-1">
+                  <CloseButton row={r} onOpen={setClosing} />
+                </td>
               </tr>
             ))}
           </tbody>
         ))}
       </table>
+      {closing ? (
+        <ConfirmCloseModal row={closing} status={statuses[closing.bot]} onCancel={() => setClosing(null)} onDone={() => setClosing(null)} />
+      ) : null}
     </div>
   );
 }

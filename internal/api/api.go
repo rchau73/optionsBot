@@ -1,17 +1,24 @@
 // Package api serves a read-only JSON view of a running bot for the monitor
-// UI. It never places orders and never calls the exchange: every response is
-// built from in-memory state the bot already holds, so it adds no load to the
-// trading path or to Deribit's rate limits.
+// UI. Every GET response is built from in-memory state the bot already holds,
+// so it adds no load to the trading path or to Deribit's rate limits.
+//
+// One route changes trading state: POST /api/positions/close (WithManualClose)
+// — bearer token, testnet only, and the strategy re-checks every position
+// against its rule (strategy.ManualCloseBlockReason) on the decision loop; the
+// close is journaled like any other.
 package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"optionsbot/internal/account"
@@ -49,6 +56,11 @@ type PnLHistory interface {
 	Range(from, to time.Time, buckets int) []history.Point
 }
 
+// ManualCloser closes positions by hand on the decision loop (strategy.Strategy).
+type ManualCloser interface {
+	ManualClose(ctx context.Context, ids []string, by string) ([]strategy.ManualCloseResult, error)
+}
+
 // AccountSource provides the cached account/collateral summary.
 type AccountSource interface {
 	Status() account.Status
@@ -60,6 +72,8 @@ type Server struct {
 	events   EventSource
 	history  PnLHistory    // nil → empty history
 	account  AccountSource // nil → no account data
+	closer   ManualCloser  // nil → no manual close route
+	token    string
 	started  time.Time
 	mux      *http.ServeMux
 }
@@ -69,6 +83,12 @@ type Option func(*Server)
 
 // WithPnLHistory serves /api/pnl/history from h.
 func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = h } }
+
+// WithManualClose serves POST /api/positions/close, authorised by token
+// (Authorization: Bearer <token>). An empty token leaves the route off.
+func WithManualClose(c ManualCloser, token string) Option {
+	return func(s *Server) { s.closer, s.token = c, token }
+}
 
 // WithAccount serves /api/account from a.
 func WithAccount(a AccountSource) Option { return func(s *Server) { s.account = a } }
@@ -88,10 +108,54 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/events", s.recentEvents)
 	s.mux.HandleFunc("GET /api/account", s.accountSummary)
 	s.mux.HandleFunc("GET /api/trades", s.trades)
+	if s.closer != nil && s.token != "" {
+		s.mux.HandleFunc("POST /api/positions/close", s.manualClose)
+	}
 	return s
 }
 
-// Handler returns the HTTP handler (read-only GET routes only).
+const (
+	maxCloseIDs     = 20
+	manualCloseWait = 60 * time.Second // a market buy-back is seconds; the loop may be mid-cycle
+)
+
+// manualClose: {"position_ids": [...]} → the strategy's results. Audited in the
+// bot log; each close is journaled by the strategy.
+func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+		slog.Warn("manual close refused: bad token", "remote", r.RemoteAddr)
+		writeError(w, http.StatusUnauthorized, "unauthorised")
+		return
+	}
+	var body struct {
+		PositionIDs []string `json:"position_ids"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "body must be {\"position_ids\": [...]}")
+		return
+	}
+	if len(body.PositionIDs) == 0 || len(body.PositionIDs) > maxCloseIDs {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("between 1 and %d position ids", maxCloseIDs))
+		return
+	}
+	slog.Warn("manual close requested", "positions", body.PositionIDs, "remote", r.RemoteAddr)
+	ctx, cancel := context.WithTimeout(r.Context(), manualCloseWait)
+	defer cancel()
+	res, err := s.closer.ManualClose(ctx, body.PositionIDs, "monitor")
+	if err != nil {
+		code := http.StatusConflict
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, strategy.ErrManualCloseBusy) {
+			code = http.StatusGatewayTimeout
+		}
+		writeError(w, code, err.Error())
+		return
+	}
+	slog.Warn("manual close done", "results", res)
+	writeJSON(w, map[string]any{"results": res})
+}
+
+// Handler returns the HTTP handler.
 func (s *Server) Handler() http.Handler { return s.mux }
 
 // ListenAndServe serves on addr until ctx is cancelled. Bind to localhost or
@@ -283,4 +347,12 @@ func writeJSON(w http.ResponseWriter, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		slog.Warn("monitor API: encode response failed", "err", err)
 	}
+}
+
+// writeError answers {"error": msg} with code, so the monitor can show why.
+func writeError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

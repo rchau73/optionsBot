@@ -21,6 +21,7 @@ const (
 	TriggerDeltaExit         = "delta_exit" // short leg's |delta| reached delta_exit_threshold — closed, held like a stop
 	TriggerGammaClose        = "gamma_close"
 	TriggerKillSwitch        = "kill_switch"
+	TriggerManualClose       = "manual_close"       // closed by hand from the monitor (regime-side block only) — held like a stop
 	TriggerReconciled        = "reconciled"         // position loaded from exchange on startup
 	TriggerTimeout           = "order_timeout"      // limit order cancelled after fill-timeout elapsed
 	TriggerRebalanceDownsize = "rebalance_downsize" // position exceeds the confirmed IM limit — partial close

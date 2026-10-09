@@ -51,6 +51,8 @@ export function legRows(bots) {
         rows.push({
           key: `${bot.name}:${leg.position_id}`,
           bot: bot.name,
+          positionIds: [leg.position_id],
+          manualClose: leg.manual_close ?? null,
           unit,
           strategyId: bot.positions.strategy_id ?? bot.status?.strategy_id ?? "—",
           strangleId: st.id,
@@ -88,6 +90,17 @@ export function legRows(bots) {
 }
 
 /**
+ * One row closes all its positions: allowed only if every one is, and flagged
+ * as rebuilt if any one would be (the reason shown is that one's).
+ */
+export function mergeManualClose(a, b) {
+  if (!a || !b) return null;
+  if (!a.allowed) return a;
+  if (!b.allowed) return b;
+  return b.rebuilt && !a.rebuilt ? b : a;
+}
+
+/**
  * Merges legs of the same bot, slot and instrument (strike, expiry and type)
  * into one row. Partial fills and rebalance top-ups book separate positions
  * on the same strike; the table shows them as one line with their count.
@@ -100,7 +113,7 @@ export function consolidateRows(rows) {
     const k = `${r.bot}:${r.slot}:${r.instrument}:${r.side}`;
     const prev = byKey.get(k);
     if (!prev) {
-      byKey.set(k, { ...r, key: k, positions: 1, premium: premiumOf(r) });
+      byKey.set(k, { ...r, key: k, positions: 1, premium: premiumOf(r), positionIds: [...(r.positionIds ?? [])] });
       continue;
     }
     const qty = prev.qty + r.qty;
@@ -109,6 +122,8 @@ export function consolidateRows(rows) {
     byKey.set(k, {
       ...prev,
       positions: prev.positions + 1,
+      positionIds: [...prev.positionIds, ...(r.positionIds ?? [])],
+      manualClose: mergeManualClose(prev.manualClose, r.manualClose),
       qty: round(qty),
       premium,
       entry: qty > 0 ? premium / qty : prev.entry,
@@ -246,6 +261,7 @@ const CLOSE_LABELS = {
   roi_target: "Take-profit",
   gamma_regime: "GEX shed",
   kill_switch: "Kill switch",
+  manual_close: "Manual close",
   rebalance_downsize: "Rebalance",
   margin_mm_limit: "MM limit",
   rebalance_legs: "Balance legs",

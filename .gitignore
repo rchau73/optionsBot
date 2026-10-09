@@ -1,4 +1,9 @@
+# Secrets: never commit. .env.example is the only template allowed.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 hedge_report.json
 /data/
 bot.log
