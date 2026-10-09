@@ -12,7 +12,8 @@ stateDiagram-v2
     note right of Open
         A strangle with one leg Open and one missing
         is completed by repair (same expiry, entry delta,
-        same size) unless GEX is shedding that leg type;
+        same size) unless GEX is shedding that leg type
+        or a confirmed negative regime blocks it in a trend;
         a GEX-shed leg waits for spot back above the
         flip it was shed at (+ buffer), or a day of
         non-negative regime.

@@ -630,6 +630,9 @@ func main() {
 	shedCooldown := flag.Float64("shedcooldown", 5, "with -shedrepair cross: minutes to wait after the shed")
 	shedCrossSteps := flag.Int("shedcross", 2, "with -shedrepair anchored: consecutive decisions spot must stay past the anchor")
 	shedRelease := flag.Float64("shedrelease", 24, "with -shedrepair anchored: hours of non-negative live regime that also release the hold (0 = never)")
+	negEntry := flag.String("negentry", "trend", "new strangles while the CONFIRMED gamma regime is negative: trend (today's bot: no new puts in a bear trend, no new calls in a bull trend — entries and repairs) | open (both sides, at the lowest IM band; the bot before 2026-10-09) | block (no entries; rolls and their repairs continue)")
+	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
+	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
 	shedPersist := flag.Int("shedpersist", 2, "decisions in a row the shed signal must hold before shedding (today's bot: 2 snapshots; 1 = shed at once)")
 	botTrend := flag.Bool("bottrend", true, "trend as the bot: bull needs SMA9 > SMA21 and price > SMA9 (swing breakouts not modelled)")
 	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = today's 25/45/60")
@@ -667,6 +670,24 @@ func main() {
 			v := dvol * *volScale
 			daily := *vrpFlag * v / math.Sqrt(365)
 			p = append(p, day{ret: rng.NormFloat64() * daily, dvol: v, negative: rng.Float64() < 0.2, volRatio: 1})
+		}
+		if *regimeRun > 0 { // MODEL: regimes that persist, and selloffs that start one (same prices)
+			rr := rand.New(rand.NewSource(seed + 7))
+			stay := 1 - 1 / *regimeRun
+			enter := *regimeShare / (1 - *regimeShare) / *regimeRun
+			neg := false
+			for i := range p {
+				sd := *vrpFlag * p[i].dvol / math.Sqrt(365)
+				switch {
+				case p[i].ret < -sd: // a down day of more than 1σ: dealers short gamma
+					neg = true
+				case neg:
+					neg = rr.Float64() < stay
+				default:
+					neg = rr.Float64() < enter
+				}
+				p[i].negative = neg
+			}
 		}
 		return p
 	}
@@ -1063,6 +1084,14 @@ func main() {
 			actRun = 0
 		}
 		lastAct = gexAct
+		// -negentry trend (the bot, regimeside.go): in a confirmed negative regime, no new
+		// short on the side the trend runs toward.
+		trendBlocks := func(typ string) bool {
+			if *negEntry != "trend" || !st.RegimeNegative {
+				return false
+			}
+			return (typ == "put" && tr < 0) || (typ == "call" && tr > 0)
+		}
 		if strings.HasPrefix(regime, "NEGATIVE") {
 			nonNegSince = time.Time{}
 		} else if nonNegSince.IsZero() {
@@ -1317,6 +1346,9 @@ func main() {
 				if (missing == "put" && gexAct == strategy.GammaActionClosePuts) || (missing == "call" && gexAct == strategy.GammaActionCloseCalls) {
 					continue
 				}
+				if trendBlocks(missing) {
+					continue
+				}
 				shedAt, wasShed := s.shed[missing]
 				if wasShed && m.now.Sub(shedAt) < time.Duration(*shedHold*float64(time.Hour)) {
 					continue // re-sell hold after a GEX shed
@@ -1378,6 +1410,8 @@ func main() {
 			entries = "SHOCK"
 		case capResting:
 			entries = "CAPPED STOP"
+		case *negEntry == "block" && st.RegimeNegative:
+			entries = "NEG REGIME"
 		case mmBreach:
 			entries = "MM breach"
 		default:
@@ -1435,11 +1469,14 @@ func main() {
 					continue
 				}
 				s := &strangle{slot: sl}
-				if gexAct != strategy.GammaActionCloseCalls {
+				if gexAct != strategy.GammaActionCloseCalls && !trendBlocks("call") {
 					s.call = newLeg("call", ci.Strike, exp, lot, orders.DirectionSell, m)
 				}
-				if gexAct != strategy.GammaActionClosePuts {
+				if gexAct != strategy.GammaActionClosePuts && !trendBlocks("put") {
 					s.put = newLeg("put", pi.Strike, exp, lot, orders.DirectionSell, m)
+				}
+				if s.call == nil && s.put == nil {
+					continue
 				}
 				if *condor && (squeezeOn || *always) {
 					for _, pair := range []struct {

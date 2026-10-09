@@ -102,7 +102,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | `close.go` | `buyToClose` (market, or IOC limit at the ask) with partial-fill handling; stop-loss, rollouts, GEX closes |
 | `balance.go` | strangles whose legs differ by ≥ 1 lot (partial fills, a double fill): buy back the excess of the larger leg, IOC at the ask; risk-reducing, so not frozen; waits while an exit rule is closing the smaller leg |
 | `stopguard.go` | spread guard: a triggered stop-loss waits while the leg's book is empty (ask > `stop_spread_guard_pct` above mid), re-checked each cycle, at most `stop_spread_max_wait_minutes` |
-| `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated; skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed); a **GEX-shed** leg waits for spot back above the flip it was shed at plus the buffer on `gex_repair_confirm_snapshots` snapshots, or a non-negative regime for `gex_repair_release_hours` (`shed.go`) |
+| `repair.go` | reopen a missing leg at the strangle's expiry, entry delta and size; GEX-gated and regime-side-gated (`regimeside.go`); skipped inside the rollout window; a **stopped-out** leg waits for a calm market (`stopped.go`: not frozen, no confirmed negative gamma, `repair_cooldown_hours` passed); a **GEX-shed** leg waits for spot back above the flip it was shed at plus the buffer on `gex_repair_confirm_snapshots` snapshots, or a non-negative regime for `gex_repair_release_hours` (`shed.go`) |
 | `reconcile.go` | rebuild the book from the exchange; startup account log |
 | `limits.go` | margin policy each cycle: evaluate `internal/risk`, journal changes, reduce at market on an MM breach, size entries with `private/simulate_portfolio` |
 | `rebalance.go` | resize strangles toward a newly confirmed IM limit (downsize at market only while IM is above it, upsize via a complement entry); sizes are compared per slot (a filled complement is a second strangle in it); a complement that times out short re-runs the rebalance after `rebalance_retry_minutes` |
@@ -120,7 +120,7 @@ See [event loop](strategy_eventloop.png), [startup](seq_startup.png), [entry](se
 | Rule | Behaviour |
 |---|---|
 | IM limit | `iv_margin_bands` by the confirmed DVOL IV-percentile band (default ≥70 → 50 %, ≥30 → 35 %, else 20 % of margin balance) |
-| Negative gamma | a confirmed negative GEX regime forces the lowest band |
+| Negative gamma | a confirmed negative GEX regime forces the lowest band, and in a trend no new short is sold on the side the trend runs toward (`RegimeSideBlockReason`: entries, repairs; a top-up adds both sides or none) |
 | Confirmation | a band or regime change must hold for `iv_band_confirm_days` (2) consecutive UTC daily closes; a missing day resets the count. Until then: **frozen**, no new entries or upsizes (working ones are cancelled); exits, rolls and repairs continue. A change that reverts before confirmation unfreezes with nothing else changed |
 | Rebalance | on a confirmed limit change (and at startup): buy back whole lots above each strangle's share while IM is above the limit, at least one lot kept; open complements up to the headroom when below |
 | MM limit | MM ≥ `max_mm_pct` (35 %): reduce every position at market each cycle until under, regardless of any freeze; repairs and entries blocked |
@@ -148,7 +148,7 @@ Every 60 s the GEX manager pulls `public/get_book_summary_by_currency` (open int
 | `script` (default) | 5 nearest of the chain | each expiry's own future | lowest zero crossing | sign of the summed weighted GEX | none |
 | `nearest_flip` | 5 nearest with OI and IV | latest future price | crossing nearest spot | spot vs flip | `gamma_regime_band_pct` |
 
-`script` reproduces GestaoCarteira's `deribit_tc_export_v3.py`; `tests/gex_parity_test.go` feeds captured mainnet data to `gex.Build` and requires the script's own flip, regime, score and strikes (computed by its functions on the same data with the clock frozen). `GammaMonitor` combines the regime with a trend from daily closes (swing pivots + SMA9/21). Trading uses only `GammaDecision.Action`: shed puts in a confirmed negative regime with a bear trend, shed calls with a bull trend, otherwise trade both legs. Entry and repair apply the same gate.
+`script` reproduces GestaoCarteira's `deribit_tc_export_v3.py`; `tests/gex_parity_test.go` feeds captured mainnet data to `gex.Build` and requires the script's own flip, regime, score and strikes (computed by its functions on the same data with the clock frozen). `GammaMonitor` combines the regime with a trend from daily closes (swing pivots + SMA9/21). Trading uses only `GammaDecision.Action`: shed puts in a confirmed negative regime with a bear trend, shed calls with a bull trend, otherwise trade both legs. Entry and repair apply the same gate. Separately, under a *confirmed* negative regime (the margin policy's), entries, top-ups and repairs do not sell the side the trend runs toward (`regimeside.go`), whatever spot's distance to the flip.
 
 ## 9. Hedge reporting
 

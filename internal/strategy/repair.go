@@ -12,7 +12,8 @@ import (
 // (left by a stop-loss, a GEX close, a single-leg rollout or a partial entry),
 // at the remaining leg's expiry and the strangle's entry delta and size.
 //
-// It skips a leg the GEX regime is actively shedding (same rule as entry) and
+// It skips a leg the GEX regime is actively shedding or the confirmed
+// negative regime blocks in the trend's direction (same rules as entry), and
 // a strangle whose remaining leg is already inside the rollout window — that
 // leg is about to roll, and a fresh partner would roll straight after it.
 //
@@ -42,6 +43,14 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			continue
 		}
 		key := stopKey(st.ID, missingType)
+		if reason := RegimeSideBlockReason(missingType, gammaDec.TrendDir, m.status); reason != "" {
+			if s.repairHeld[key] != reason {
+				s.repairHeld[key] = reason
+				slog.Info("repair held: side blocked by the regime", "strangle_id", st.ID, "missing", missingType, "reason", reason)
+				s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, missingType+" "+reason)
+			}
+			continue
+		}
 		if a, shed := s.shedAnchors[key]; shed {
 			a.Observe(gammaDec.Spot, gammaDec.SnapshotAt)
 			if reason := ShedRepairBlockReason(a, time.Now(), gammaDec.NonNegativeSince,
