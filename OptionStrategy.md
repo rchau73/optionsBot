@@ -174,6 +174,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 - **Confirmed negative regime:** the gamma regime has been negative for 2 daily closes. The margin limit drops to the lowest band (20 %), and in a trend the side the price runs toward is not sold: no new puts in a down-trend, no new calls in an up-trend (dealers short gamma push the price further the way it is going). With no trend both sides are sold.
 - **GEX shedding a side:** a live 60-second signal. The regime is negative, spot is more than 1 daily σ (DVOL ÷ √365) below the gamma flip, and there is a trend: puts are shed in a down-trend, calls in an up-trend. The close itself waits for the signal to hold on 2 snapshots in a row.
 - **MM limit:** maintenance margin is at or above 35 % of the margin balance (`max_mm_pct`).
+- **No fresh GEX data:** the first minute after a start (before the first GEX snapshot), or the last snapshot is more than 5 minutes old. The regime and trend are unknown, so the bot cannot tell which side is safe to sell.
 
 | What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
 |---|---|---|---|---|---|
@@ -189,6 +190,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
 | **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
 | **While a stop waits for the spread** | no entries, top-ups or repairs until it fires or is dropped | same | same | same | same |
+| **Without fresh GEX data** (startup, stale snapshot) | no entries (`gex_wait`), top-ups or repairs; exits, balancing and the MM cut run | same | same | same | same |
 | **MM cut** (reduce every short at market) | — | — | — | — | ✅ |
 | **Churn breaker** (slot paused after 3 buy-back/re-sell round trips in 60 min) | ✅ | ✅ | ✅ | ✅ | ✅ |
 
@@ -199,6 +201,7 @@ Notes:
 - **"Held" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
 - **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).
+- **Kill switch:** it cancels every order, books whatever a working entry had already filled, then buys back every short the *exchange* reports (not only those in the bot's book) and checks the account is flat.
 - **Restarts:** the 72 h cooldown and the GEX-shed anchors are kept in memory, so a restart forgets them. The freeze and regime conditions still apply after a restart, because they are rebuilt from the daily closes.
 
 ## 10. The parameters, in plain words

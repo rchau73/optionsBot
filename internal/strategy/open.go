@@ -44,6 +44,9 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	case m.status.Frozen:
 		skipAll(SkipRiskFrozen, m.status.FreezeReason)
 		return nil
+	case m.gexWait != "":
+		skipAll(SkipGEXWait, m.gexWait)
+		return nil
 	case s.stopsDeferred:
 		skipAll(SkipStopDeferred, "a stop-loss is waiting for the spread to normalise")
 		return nil
@@ -133,6 +136,7 @@ const (
 	SkipChurnPaused   = "churn_paused"   // the slot bought back and re-sold too often: paused (safety.go)
 	SkipStopDeferred  = "stop_deferred"  // a stop-loss waits for the spread (stopguard.go): no new risk meanwhile
 	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
+	SkipGEXWait       = "gex_wait"       // no fresh GEX snapshot: regime and trend unknown, no new risk (gexready.go)
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.

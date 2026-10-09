@@ -18,7 +18,11 @@ const (
 // killSwitch flattens the book and then halts trading:
 //
 //  1. Cancel every resting order first, so no entry can fill after the flatten.
-//  2. Buy back every position at market, retrying partial fills.
+//  2. Book what working entries filled before the cancel (2026-10-09: an
+//     entry had filled 100 of 703 lots; the pending was dropped unread and
+//     the 100 stayed short after "all positions closed").
+//  3. Buy back every position at market, the book first matched to the
+//     exchange's shorts on each attempt, retrying partial fills.
 //  3. Stay idle until the process is stopped. Returning would let the
 //     supervisor (Docker restart: unless-stopped) restart the bot, which would
 //     immediately open new positions — the opposite of a kill switch.
@@ -37,10 +41,16 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 		clear(s.unconfirmed) // every order is cancelled: nothing unknown can still fill
 	}
 	for _, ps := range s.pendingSnapshot() {
-		s.removePending(ps.id)
+		for _, leg := range ps.legs() {
+			s.settleLeg(kctx, ps, leg, orders.TriggerKillSwitch, "kill switch")
+		}
+		s.finalizePending(kctx, ps)
 	}
 
 	for attempt := 1; attempt <= killSwitchAttempts; attempt++ {
+		if err := s.syncBookToExchange(kctx); err != nil {
+			slog.Error("kill switch: could not read the exchange's positions — flattening the book as it is", "attempt", attempt, "err", err)
+		}
 		open := s.state.AllPositions()
 		if len(open) == 0 {
 			break
@@ -52,6 +62,9 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 		}
 	}
 
+	if err := s.syncBookToExchange(kctx); err != nil {
+		slog.Error("kill switch: could not confirm the exchange is flat — check it manually", "err", err)
+	}
 	if left := s.state.AllPositions(); len(left) > 0 {
 		for _, pos := range left {
 			slog.Error("kill switch: position still open — close it manually",

@@ -2,7 +2,7 @@ flowchart TD
     A(["Run(ctx)"]) --> B["seed gamma history · log account<br/>reconcile with exchange · wait for index price<br/>rebalance · first maybeOpenStrangles"]
     B --> C{"select"}
     C -- "ctx.Done" --> Z(["return"])
-    C -- "KillSwitch() (SIGUSR1 via main)" --> K["killSwitch: cancel orders → flatten at market → stay idle"]
+    C -- "KillSwitch() (SIGUSR1 via main)" --> K["killSwitch: cancel orders → book entry fills → flatten the exchange's shorts at market → stay idle"]
     C -- "ticker every eval_interval_ms" --> E["evaluate()"]
     E --> E1{"index price known<br/>and no auth back-off?"}
     E1 -- "no" --> C

@@ -79,7 +79,7 @@ func TestStrategy_ShedHoldsThroughAFlipJumpUntilSpotRecovers(t *testing.T) {
 	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
 		return orders.Fill{Qty: o.Qty, FillPrice: 0.02} // buy-backs and repairs fill
 	}
-	at := time.Now().Add(-time.Hour)
+	at := time.Now() // a minute apart from now: fresh, never stale (GEXStaleAfter)
 	g := &switchGEX{}
 	next := func(spot, flip float64) {
 		at = at.Add(time.Minute)

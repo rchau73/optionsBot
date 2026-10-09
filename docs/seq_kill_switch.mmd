@@ -13,13 +13,19 @@ sequenceDiagram
     Note over S: detached context, 2 min budget — a SIGTERM cannot abort the flatten
     S->>X: CancelAllOrders(currency)
     X->>D: private/cancel_all_by_currency
-    S->>S: drop pending entries
+    loop each pending entry
+        S->>X: GetOrderState (what filled before the cancel)
+        S->>SM: book the filled part
+    end
     loop up to 3 passes while positions remain
+        S->>X: GetPositions(currency)
+        S->>SM: match the book to the exchange's shorts
         S->>X: buy MARKET each position (high priority)
         X->>D: private/buy
         D-->>X: filled_amount
         S->>SM: remove or reduce (partial fills retried)
     end
+    S->>X: GetPositions — confirm the exchange is flat
     alt anything left open
         S->>S: log ERROR per position — close manually
     end
