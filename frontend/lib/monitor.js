@@ -7,6 +7,24 @@ import { formatCoin, formatNumber, formatPct, formatPrice, formatUSD, slotLabel,
 export const STALE_AFTER_SEC = 5;
 
 /**
+ * The gamma flip and its ±1σ band, from a bot's status. σ is the bot's own
+ * shed buffer (flip_buffer_pct = gamma_flip_buffer_sd × DVOL ÷ √365): in a
+ * negative regime a leg is shed once spot is below the band and repaired
+ * once it is back above it. Null without a flip.
+ */
+export function flipBand(status) {
+  const m = status?.market ?? {};
+  if (!isNumber(m.gamma_flip) || m.gamma_flip <= 0) return null;
+  const flip = m.gamma_flip;
+  const buf = isNumber(status.flip_buffer_pct) && status.flip_buffer_pct > 0 ? status.flip_buffer_pct : 0;
+  const low = flip * (1 - buf / 100);
+  const high = flip * (1 + buf / 100);
+  let zone = null;
+  if (isNumber(m.spot) && buf > 0) zone = m.spot < low ? "below" : m.spot > high ? "above" : "inside";
+  return { flip, spotToFlipPct: isNumber(m.spot_to_flip_pct) ? m.spot_to_flip_pct : null, bufferPct: buf, low: buf > 0 ? low : null, high: buf > 0 ? high : null, zone };
+}
+
+/**
  * The bot answers but its decision loop has not completed a cycle for 3
  * cycle intervals (at least 2 minutes): no exits or stop-losses are being
  * checked. A halted bot (kill switch) is idle on purpose and never "stalled".

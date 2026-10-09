@@ -21,11 +21,12 @@ type View struct {
 	LoopAt      time.Time `json:"loop_at"` // last completed decision cycle
 	EvalEveryMS int       `json:"eval_interval_ms"`
 
-	Market  orders.MarketSnapshot `json:"market"`
-	Trend   string                `json:"trend"`
-	Account AccountView           `json:"account"`
-	Risk    RiskView              `json:"risk"`
-	Greeks  orders.MarketContext  `json:"greeks"` // net portfolio greeks (short-signed)
+	Market        orders.MarketSnapshot `json:"market"`
+	FlipBufferPct float64               `json:"flip_buffer_pct"` // the flip's ±1σ shed band, % of spot (0 = no DVOL / no buffer)
+	Trend         string                `json:"trend"`
+	Account       AccountView           `json:"account"`
+	Risk          RiskView              `json:"risk"`
+	Greeks        orders.MarketContext  `json:"greeks"` // net portfolio greeks (short-signed)
 
 	Strangles []StrangleView `json:"strangles"`
 	Pending   []PendingView  `json:"pending"`
@@ -224,11 +225,12 @@ func (s *Strategy) View() View {
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
 			GEX: s.gamma.CurrentGEXSnapshot(),
 		}),
-		Trend:     pub.trend,
-		Account:   pub.account,
-		Risk:      pub.risk,
-		Strangles: s.strangleViews(now, pub.at),
-		Pending:   pub.pending,
+		FlipBufferPct: s.gamma.FlipBuffer(),
+		Trend:         pub.trend,
+		Account:       pub.account,
+		Risk:          pub.risk,
+		Strangles:     s.strangleViews(now, pub.at),
+		Pending:       pub.pending,
 	}
 	v.Greeks = netGreeks(v.Strangles, pub.trend)
 	if v.Pending == nil {

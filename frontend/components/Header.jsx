@@ -1,5 +1,5 @@
 import Badge from "./Badge";
-import { loopStalled } from "@/lib/monitor";
+import { flipBand, loopStalled } from "@/lib/monitor";
 import { ageSeconds, formatAge, formatDateTime, formatPct, formatUSD } from "@/lib/format";
 
 /** One chip per bot: environment, market context and data freshness. */
@@ -43,6 +43,27 @@ function BotChip({ bot }) {
           {s.trend ? ` · ${s.trend}` : ""}
         </span>
       ) : null}
+      {s ? <FlipBand band={flipBand(s)} /> : null}
     </div>
+  );
+}
+
+/** Gamma flip, spot's distance to it, and the ±1σ band the GEX shed uses. */
+function FlipBand({ band }) {
+  if (!band) return null;
+  const sigma = band.bufferPct > 0 ? `±1σ (${formatPct(band.bufferPct, 1)}) ${formatUSD(band.low)}–${formatUSD(band.high)}` : null;
+  return (
+    <span className="flex items-center gap-2 text-muted tabular-nums" data-testid="flip-band">
+      <span title="gamma flip: the price where dealer gamma changes sign">
+        Flip {formatUSD(band.flip)}
+        {band.spotToFlipPct !== null ? ` (spot ${formatPct(band.spotToFlipPct, 1, { signed: true })})` : ""}
+        {sigma ? ` · ${sigma}` : ""}
+      </span>
+      {band.zone === "below" ? (
+        <Badge tone="bad" title="spot is more than 1σ below the flip: in a negative regime with a trend, the bot sheds that side">
+          below flip −1σ
+        </Badge>
+      ) : null}
+    </span>
   );
 }

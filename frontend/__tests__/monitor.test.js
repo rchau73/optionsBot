@@ -1,4 +1,4 @@
-import { consolidateRows, describeEvent, filterRows, groupRows, legRows, mergeFeed, summarise } from "@/lib/monitor";
+import { consolidateRows, describeEvent, filterRows, flipBand, groupRows, legRows, mergeFeed, summarise } from "@/lib/monitor";
 import { withStale } from "@/hooks/useMonitor";
 import { bot, positions } from "@/test/fixtures";
 
@@ -171,5 +171,24 @@ describe("closed events say why", () => {
     expect(line.label).toBe("Balance legs");
     expect(line.text).toContain("Δ 0.169");
     expect(line.text).toContain("leg balance: call 262 vs put 162 — not a stop");
+  });
+});
+
+describe("flipBand", () => {
+  const st = (market, flip_buffer_pct) => ({ market, flip_buffer_pct });
+
+  test("flip ± the bot's buffer, and where spot is", () => {
+    const b = flipBand(st({ spot: 83000, gamma_flip: 83400, spot_to_flip_pct: -0.48 }, 1.91));
+    expect(b.low).toBeCloseTo(83400 * 0.9809);
+    expect(b.high).toBeCloseTo(83400 * 1.0191);
+    expect(b).toMatchObject({ flip: 83400, spotToFlipPct: -0.48, bufferPct: 1.91, zone: "inside" });
+    expect(flipBand(st({ spot: 80000, gamma_flip: 83400 }, 1.91)).zone).toBe("below");
+    expect(flipBand(st({ spot: 90000, gamma_flip: 83400 }, 1.91)).zone).toBe("above");
+  });
+
+  test("no buffer: the flip alone; no flip: nothing", () => {
+    expect(flipBand(st({ spot: 2490, gamma_flip: 2260 }, 0))).toMatchObject({ flip: 2260, low: null, high: null, zone: null });
+    expect(flipBand(st({ spot: 2490 }, 3))).toBeNull();
+    expect(flipBand(undefined)).toBeNull();
   });
 });

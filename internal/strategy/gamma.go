@@ -281,6 +281,15 @@ func (g *GammaMonitor) observe(snap *gex.Snapshot, action GammaAction) {
 // Trend returns the current price trend as a human-readable label.
 func (g *GammaMonitor) Trend() string { return g.trendLabel() }
 
+// FlipBuffer is the shed buffer now, in % of spot (FlipBufferPct at the live
+// DVOL): a leg is shed below flip × (1 − buffer) and repaired above flip × (1 + buffer).
+func (g *GammaMonitor) FlipBuffer() float64 {
+	if g.dvol == nil {
+		return 0
+	}
+	return FlipBufferPct(g.bufferSD, g.dvol())
+}
+
 // CurrentGEXSnapshot returns the live GEX snapshot for use in order log enrichment.
 func (g *GammaMonitor) CurrentGEXSnapshot() *gex.Snapshot { return g.gexSnapshot() }
 
