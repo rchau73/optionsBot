@@ -9,6 +9,7 @@ const CLOSE_LABELS = {
   stop_loss: "Stop-loss",
   gamma_regime: "GEX shed",
   kill_switch: "Kill switch",
+  manual_close: "Manual close",
   rebalance_legs: "Balance legs",
   rebalance_downsize: "Downsize (IM limit)",
   margin_mm_limit: "MM limit cut",

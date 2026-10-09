@@ -1,5 +1,5 @@
 // The only module that talks to the backend. Everything goes through the
-// Next.js read-only proxy at /api/bots/...
+// Next.js proxy at /api/bots/... (read-only, except closePositions).
 
 async function getJSON(url, signal) {
   const res = await fetch(url, { cache: "no-store", signal });
@@ -48,4 +48,25 @@ export async function fetchBotTrades(name, after, signal) {
 /** Bucketed P&L history of one bot for a range (15m, 1h, 6h, 1d, 1w, 1m, all). */
 export async function fetchPnlHistory(name, range, signal) {
   return getJSON(`/api/bots/${encodeURIComponent(name)}/pnl/history?range=${encodeURIComponent(range)}`, signal);
+}
+
+/**
+ * Asks a bot to buy back positions at market (manual close; the bot allows it
+ * only under the regime-side block). Resolves to its per-position results.
+ */
+export async function closePositions(name, positionIds) {
+  const res = await fetch(`/api/bots/${encodeURIComponent(name)}/close`, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ position_ids: positionIds }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body.results ?? [];
 }

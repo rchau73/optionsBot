@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -133,6 +134,9 @@ type Config struct {
 	// AccountPollSec is how often the account/collateral summary is polled
 	// for the monitor (BOT_ACCOUNT_POLL_SEC, default 10).
 	AccountPollSec int
+	// AdminToken (BOT_ADMIN_TOKEN) authorises the monitor's manual closes
+	// (POST /api/positions/close); empty = off. Testnet only.
+	AdminToken string
 }
 
 type Backtest struct {
@@ -502,6 +506,7 @@ func Load(path string) (*Config, error) {
 
 	// ── Platform: monitor API (from env) ──────────────────────────────────────
 	cfg.APIAddr = os.Getenv("BOT_API_ADDR")
+	cfg.AdminToken = strings.TrimSpace(os.Getenv("BOT_ADMIN_TOKEN"))
 	cfg.AccountPollSec = envInt("BOT_ACCOUNT_POLL_SEC", 10)
 	if cfg.AccountPollSec < 2 {
 		cfg.AccountPollSec = 2 // keep the request rate negligible

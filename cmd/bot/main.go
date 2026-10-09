@@ -236,7 +236,19 @@ func runLive(cfg *config.Config) error {
 		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
 		acct := account.NewPoller(gw)
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
-		mon := api.New(strat, orderLog, api.WithPnLHistory(pnlHistory), api.WithAccount(acct))
+		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct)}
+		// Manual close (monitor): testnet only, and only with BOT_ADMIN_TOKEN.
+		switch {
+		case cfg.IsLive():
+			strat.SetManualClose(false, "manual close is testnet-only")
+		case cfg.AdminToken == "":
+			strat.SetManualClose(false, "manual close is off: BOT_ADMIN_TOKEN is not set")
+		default:
+			strat.SetManualClose(true, "")
+			opts = append(opts, api.WithManualClose(strat, cfg.AdminToken))
+			slog.Info("monitor API: manual close enabled (regime-side block only)")
+		}
+		mon := api.New(strat, orderLog, opts...)
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
 				slog.Error("monitor API stopped", "addr", cfg.APIAddr, "err", err)

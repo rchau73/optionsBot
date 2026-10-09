@@ -71,3 +71,46 @@ describe("read-only proxy", () => {
     expect((await res.json()).error).toMatch(/unreachable/);
   });
 });
+
+describe("manual close proxy", () => {
+  const { POST: close } = require("@/app/api/bots/[bot]/close/route");
+  const realFetch = global.fetch;
+  const post = (bot, body, headers = {}) =>
+    close(
+      new Request(`http://localhost:3000/api/bots/${bot}/close`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000", ...headers },
+        body: JSON.stringify(body),
+      }),
+      { params: Promise.resolve({ bot }) },
+    );
+  beforeEach(() => {
+    process.env.BOT_APIS = "btc=http://bot-btc:8081";
+    process.env.BOT_ADMIN_TOKEN = "s3cret";
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    delete process.env.BOT_ADMIN_TOKEN;
+  });
+
+  test("forwards to the bot with the token, which never reaches the browser", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"results":[]}', { status: 200 }));
+    const res = await post("btc", { position_ids: ["p-2"] });
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://bot-btc:8081/api/positions/close",
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ Authorization: "Bearer s3cret" }) }),
+    );
+    expect(await res.text()).not.toContain("s3cret");
+  });
+
+  test("refuses without a token, cross-origin, or with bad ids", async () => {
+    global.fetch = jest.fn();
+    expect((await post("btc", { position_ids: ["p"] }, { origin: "http://evil.example" })).status).toBe(403);
+    expect((await post("btc", { position_ids: [] })).status).toBe(400);
+    expect((await post("nope", { position_ids: ["p"] })).status).toBe(404);
+    delete process.env.BOT_ADMIN_TOKEN;
+    expect((await post("btc", { position_ids: ["p"] })).status).toBe(503);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});

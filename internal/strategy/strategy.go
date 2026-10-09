@@ -79,6 +79,7 @@ type Strategy struct {
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
+	manualCh     chan manualReq // manual closes from the monitor (manualclose.go)
 
 	mu          sync.Mutex // guards lastAuthErr (written by heartbeat and loop)
 	lastAuthErr time.Time
@@ -126,6 +127,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		churn:            make(map[slotKey]*churnLog),
 		churnUntil:       make(map[slotKey]time.Time),
 		killSwitchCh:     make(chan struct{}),
+		manualCh:         make(chan manualReq, 1),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
 }
@@ -165,6 +167,8 @@ func (s *Strategy) Run(ctx context.Context) error {
 			return s.killSwitch(ctx)
 		case <-ticker.C:
 			s.evaluate(ctx)
+		case req := <-s.manualCh:
+			s.runManualClose(ctx, req)
 		}
 	}
 }

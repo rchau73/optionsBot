@@ -193,6 +193,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 | **Without fresh GEX data** (startup, stale snapshot) | no entries (`gex_wait`), top-ups or repairs; exits, balancing and the MM cut run | same | same | same | same |
 | **MM cut** (reduce every short at market) | — | — | — | — | ✅ |
 | **Churn breaker** (slot paused after 3 buy-back/re-sell round trips in 60 min) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Manual close from the monitor** (you, at market) | ⛔ (button gray) | ⛔ | ✅ only the side the trend threatens (the one the bot no longer sells); then held like a stop-loss | ⛔ unless that side is also regime-blocked | ⛔ |
 
 Notes:
 

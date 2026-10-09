@@ -4,6 +4,8 @@ flowchart TD
     C -- "ctx.Done" --> Z(["return"])
     C -- "KillSwitch() (SIGUSR1 via main)" --> K["killSwitch: cancel orders → book entry fills → flatten the exchange's shorts at market → stay idle"]
     C -- "ticker every eval_interval_ms" --> E["evaluate()"]
+    C -- "ManualClose() (monitor API)" --> M["runManualClose: re-check the regime-side block<br/>→ record like a stop → buyToClose at market (manual_close)"]
+    M --> C
     E --> E1{"index price known<br/>and no auth back-off?"}
     E1 -- "no" --> C
     E1 -- "yes" --> E2["refreshMarks (mid + greeks)<br/>gamma.PushPrice · gamma.Evaluate → GammaDecision"]
