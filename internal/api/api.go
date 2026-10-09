@@ -138,6 +138,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"uptime_sec":       int(time.Since(s.started).Seconds()),
 		"market":           v.Market,
 		"trend":            v.Trend,
+		"flip_buffer_pct":  v.FlipBufferPct,
 		"account":          v.Account,
 		"risk":             v.Risk,
 		"greeks":           v.Greeks,
