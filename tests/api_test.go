@@ -39,7 +39,8 @@ func getJSON(t *testing.T, h http.Handler, path string) (int, map[string]any) {
 func sampleView() strategy.View {
 	return strategy.View{
 		AsOf: time.Now(), StrategyID: "short-strangle", Underlying: "BTC", Environment: "testnet",
-		Market: orders.MarketSnapshot{Spot: 100000, DVOL: 55},
+		Market:        orders.MarketSnapshot{Spot: 100000, DVOL: 55},
+		FlipBufferPct: 2.88,
 		Risk: strategy.RiskView{Status: risk.Status{LimitIMPct: 35, MaxMMPct: 35, Frozen: true, Pending: []risk.Pending{{Rule: "dvol_band", Days: 1, Need: 2}}},
 			IMPct: 12, MMPct: 8, Unit: "USD"},
 		Strangles: []strategy.StrangleView{{
@@ -72,6 +73,9 @@ func TestAPI_StatusSummarisesTheBot(t *testing.T) {
 	}
 	if body["market"].(map[string]any)["dvol"].(float64) != 55 {
 		t.Errorf("market = %v", body["market"])
+	}
+	if b, ok := body["flip_buffer_pct"].(float64); !ok || b != 2.88 { // the monitor's flip ±1σ band
+		t.Errorf("flip_buffer_pct = %v", body["flip_buffer_pct"])
 	}
 	rk := body["risk"].(map[string]any)
 	st := rk["status"].(map[string]any)
