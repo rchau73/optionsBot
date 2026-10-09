@@ -10,6 +10,7 @@ make check                     # gofmt + go vet + race tests (what CI runs)
 make test                      # go test ./tests/... -race -count=1
 make cover                     # coverage across ./internal/... (tests live in ./tests)
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
+make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
 
 ./bot --config config_btc.yaml                     # trade on testnet (default)
 DERIBIT_ENV=live ./bot --config config_btc.yaml    # live — real capital, explicit opt-in
@@ -29,6 +30,8 @@ Strict separation — do not mix:
 - `config_*.yaml` — all strategy and execution logic. `config.Load` fills defaults and runs `Validate()`; `RequireCredentials()` is called only for trading, so backtests need no API key.
 
 Never reintroduce env-var overrides for logic parameters.
+
+**Secrets never reach GitHub** (the repository is public): `.env` and every `.env.*` except `.env.example` are ignored; `make hooks` installs `.githooks/pre-commit`, which refuses env/key files and any staged line containing a value of a `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*` variable from the local `.env`; CI runs gitleaks over the full history. Never paste a secret into a commit, PR text, test fixture or log line.
 
 ## Architecture
 

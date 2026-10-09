@@ -100,6 +100,7 @@ Shared state is guarded by mutexes held only for in-memory work, never across a 
 git clone https://github.com/rchau73/optionsBot && cd optionsBot
 cp .env.example .env              # add your testnet key; DERIBIT_ENV=testnet
 make check                        # gofmt + vet + race tests
+make hooks                        # once per clone: blocks committing .env files or any .env secret (the repo is public)
 make build                        # → ./bot
 ./bot --config config_btc.yaml    # trade on testnet
 ./bot --config config_btc.yaml --debug

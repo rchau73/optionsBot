@@ -1,0 +1,28 @@
+#!/bin/sh
+# Refuses commits that would publish a secret (the repository is public).
+# Enable once per clone: make hooks   (git config core.hooksPath .githooks)
+fail=0
+
+# 1. No env or key files, except the template.
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+  case "$f" in
+    .env.example) ;;
+    .env|.env.*|*/.env|*/.env.*|*.pem|*.key)
+      echo "pre-commit: refusing to commit $f (secrets file)"; fail=1 ;;
+  esac
+done
+
+# 2. No real secret value from the local .env in any added line.
+if [ -f .env ]; then
+  added=$(git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++')
+  grep -E '^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD)[A-Z0-9_]*=' .env | while IFS='=' read -r name value; do
+    value=$(printf '%s' "$value" | sed 's/[[:space:]]#.*//; s/^["'\'']//; s/["'\'']$//' | tr -d '[:space:]')
+    [ ${#value} -ge 6 ] || continue
+    if printf '%s' "$added" | grep -qF -- "$value"; then
+      echo "pre-commit: the staged changes contain the value of $name from .env"
+      exit 1
+    fi
+  done || fail=1
+fi
+
+[ $fail -eq 0 ] || { echo "pre-commit: commit refused — remove the secret (git reset <file>) and retry"; exit 1; }

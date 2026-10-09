@@ -62,6 +62,17 @@ jobs:
       - run: npm test -- --ci
       - run: npm run build
 
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # every commit, not just the last
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   vulncheck:
     name: Vulnerability scan
     runs-on: ubuntu-latest
