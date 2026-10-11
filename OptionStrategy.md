@@ -187,6 +187,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 | **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |
 | **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`) | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
+| **Top-up while a slot's leg is held after a stop-loss or manual close** | ⛔ that slot's top-up waits until the repair may run (`repair_held`: top-up held); a strangle missing a leg is never topped up, repair completes it | same | same | same | same |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
 | **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
 | **While a stop waits for the spread** | no entries, top-ups or repairs until it fires or is dropped | same | same | same | same |
