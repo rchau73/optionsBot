@@ -6,10 +6,8 @@ underlying: BTC
 dte_delta_matrix:
   - dte: 25
     deltas: [0.16]
-  - dte: 45
+  - dte: 50
     deltas: [0.16]
-  - dte: 60
-    deltas: [0.18]
 
 # Legacy fields — ignored when dte_delta_matrix is set; kept for backtest sweeps.
 target_dte:   []

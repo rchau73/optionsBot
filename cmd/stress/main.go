@@ -72,7 +72,7 @@ type slot struct {
 	delta float64
 }
 
-var slots = []slot{{25, 0.16}, {45, 0.16}, {60, 0.18}}
+var slots = []slot{{25, 0.16}, {50, 0.16}} // BTC's matrix; ETH runs -slots 30,50
 
 type leg = orders.Position
 
@@ -662,13 +662,14 @@ func main() {
 	liveTrend := flag.Bool("livetrend", true, "with -bottrend: the live spot against the daily SMAs, as the bot (detectTrend's lastTickPrice); false = the last daily close (before 2026-10-09)")
 	intraNoise := flag.Float64("intranoise", 0, "MODEL: intraday wiggle around the path, in daily σ (DVOL ÷ √365) — a Brownian bridge that still closes each day on the path (0 = smooth)")
 	sideHold := flag.Float64("sidehold", 0, "REJECTED (2026-10-09: within ±2.5 % at 4–8 h, 12–24 h cost BTC up to 16 %), -negentry trend: a side blocked by the trend stays blocked until the trend has not pointed that way for this many hours (0 = today's bot: released on the first non-bear/non-bull reading)")
-	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = today's 25/45/60")
+	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = BTC's 25/50 (ETH: 30,50)")
 	slotDelta := flag.Float64("slotdelta", 0.16, "with -slots: entry delta of every slot")
 	scaled := flag.Bool("scaled", false, "drift and delta-exit thresholds scale with each slot's entry delta (today's ratios: 0.10 and 0.30 at 0.16)")
 	distinct := flag.String("distinct", "farther-wait", "expiry per slot: farther-wait (the bot: nearest free expiry up to 1.5× target, else wait) | farther-share | wait | off")
 	flat := flag.Bool("flat", false, "start with no positions (same equity)")
 	days := flag.Int("days", 28, "length of normal paths")
 	warm := flag.Int("warm", 0, "ordinary days (seed 99) before the shock")
+	bandsFlag := flag.String("bands", "", "IM limits (% of margin balance) of the low,mid,high DVOL bands — IV percentile <30, 30–70, ≥70 (e.g. 15,30,50); empty = the bot's 20,35,50; a confirmed negative regime uses the low one")
 	realExp := flag.Bool("realexp", true, "Deribit's expiry calendar (weeklies ~4 weeks, month-ends ~4 months, quarter-ends ~1 year) instead of every Friday")
 	flag.Parse()
 	underlying = *currency
@@ -840,6 +841,14 @@ func main() {
 		closes = append(closes, c[1])
 	}
 	policy := (&config.Config{}).RiskPolicy(true)
+	if *bandsFlag != "" {
+		var lo, mid, hi float64
+		if n, _ := fmt.Sscanf(*bandsFlag, "%g,%g,%g", &lo, &mid, &hi); n != 3 {
+			fmt.Fprintln(os.Stderr, "-bands wants three numbers: low,mid,high")
+			os.Exit(2)
+		}
+		policy.Bands = []risk.Band{{MinIVPct: 70, MaxIMPct: hi}, {MinIVPct: 30, MaxIMPct: mid}, {MinIVPct: 0, MaxIMPct: lo}}
+	}
 
 	wingDeltaMax, wingNeedEM = *wingD, *wingEM
 	mode := "TODAY'S BOT"

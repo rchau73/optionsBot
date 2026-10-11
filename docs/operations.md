@@ -160,7 +160,7 @@ The bot sizes and limits itself on Deribit's own margin figures (see *Margin pol
 - **First days after deploying.** With no recorded regime closes yet, new entries are **frozen** until the regime has been confirmed (2 daily closes by default). Exits, rolls and repairs run normally. The monitor shows the countdown.
 - **Journal.** Every policy change is a `risk_limit` line in `orders.log` (`change`: `frozen`, `unfrozen`, `limit_changed`, `rebalance`, `rebalance_retry`, `mm_breach`) with IM/MM %, limits, DVOL, IV percentile and regime.
 - **Reading a skip.** `risk_frozen` = a band/regime change awaits confirmation; `margin_limit` = no headroom, or no size fits after simulation; `margin_unknown` = Deribit margin data unavailable (fail safe); `repair_held` = a stopped-out leg waits for a calm market (the reason says which condition: frozen, negative gamma, or cooldown until a time).
-- **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing three slots takes a few seconds of the decision cycle.
+- **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing every slot takes a few seconds of the decision cycle.
 - **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands). The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.
 
 ## Two connections on testnet

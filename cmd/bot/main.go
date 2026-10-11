@@ -208,6 +208,7 @@ func runLive(cfg *config.Config) error {
 		Regimes:  regimes,
 	})
 	strat.RestorePnL(replay.Realised, replay.Closed)
+	strat.RestoreStops(replay.Trades) // stopped and hand-closed sides stay held across the restart
 	realised := 0.0
 	for _, v := range replay.Realised {
 		realised += v

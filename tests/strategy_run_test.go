@@ -548,6 +548,8 @@ type strategyFixture struct {
 	cancel   context.CancelFunc
 	runErr   chan error
 	startRun func()
+	// beforeRun, when set, runs on the new Strategy just before Run (e.g. RestoreStops).
+	beforeRun func(*strategy.Strategy)
 }
 
 // newStrategyFixture builds one (45 DTE, 0.16 delta) slot with a matching
@@ -607,6 +609,9 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 			Market: f.market, Exchange: f.exch, State: f.state,
 			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes,
 		})
+		if f.beforeRun != nil {
+			f.beforeRun(f.strat)
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		f.cancel = cancel
 		go func() { f.runErr <- f.strat.Run(ctx) }()

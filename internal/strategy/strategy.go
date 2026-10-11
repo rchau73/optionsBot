@@ -47,8 +47,11 @@ type Strategy struct {
 	// Legs lost to a stop-loss, by strangle and type, and the last reason
 	// their repair was held (decision loop only). In memory: after a restart
 	// the freeze and regime conditions still apply, the cooldown does not.
-	stopped    map[string]time.Time
-	repairHeld map[string]string
+	stopped map[string]time.Time
+	// journalStops: stopped sides read from the journal (RestoreStops),
+	// applied to the reconciled strangles at startup.
+	journalStops map[StopSide]time.Time
+	repairHeld   map[string]string
 	// Legs shed by GEX, by strangle and type: the flip they were shed at
 	// (shed.go). In memory like stopped: after a restart a shed leg is
 	// re-sold on the live signal.
@@ -141,6 +144,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	s.loadGammaPriceHistory(ctx)
 	s.logStartupState(ctx)
 	s.reconcilePositions(ctx)
+	s.applyJournalStops()
 	s.trackPositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
 

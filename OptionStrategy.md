@@ -64,7 +64,7 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
 ## 3. What the bot does, step by step
 
 1. **Wakes up and checks the facts.** On every start it asks Deribit what positions actually exist and rebuilds its own records from that. The exchange is always the source of truth.
-2. **Fills its "slots".** The configuration lists slots such as *"a strangle about 25 days out at 0.16 delta"*, *"one 45 days out at 0.16 delta"* and *"one 60 days out at 0.18 delta"*. For each empty slot it:
+2. **Fills its "slots".** The configuration lists slots such as *"a strangle about 25 days out at 0.16 delta"* and *"one 50 days out at 0.16 delta"* (BTC: 25 and 50 days; ETH: 30 and 50 — two slots since 2026-10-11: in the stress test two slots beat three, mostly because the third, 60-day slot found no listed expiry in its window much of the time and held the least-earning margin). For each empty slot it:
    - picks the listed expiry closest to the target number of days (never one that is already due to be rolled);
    - picks the call and put strikes together: both near the target delta (e.g. ≈0.16 on each side, within `delta_slippage`), choosing the pair whose deltas cancel best, so the strangle starts as close to delta-neutral as the listed strikes allow;
    - checks each option is worth at least the minimum premium, so it doesn't take tail risk for crumbs;
@@ -204,7 +204,7 @@ Notes:
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
 - **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).
 - **Kill switch:** it cancels every order, books whatever a working entry had already filled, then buys back every short the *exchange* reports (not only those in the bot's book) and checks the account is flat.
-- **Restarts:** the 72 h cooldown and the GEX-shed anchors are kept in memory, so a restart forgets them. The freeze and regime conditions still apply after a restart, because they are rebuilt from the daily closes.
+- **Restarts:** a side closed by a stop-loss, delta exit, manual close or MM cut stays held across a restart: the bot rebuilds those holds from its journal at startup, with the original time, so the 72 h cooldown keeps running. The GEX-shed anchors are still kept in memory only, so a restart forgets them. The freeze and regime conditions are rebuilt from the daily closes.
 
 ## 10. The parameters, in plain words
 
