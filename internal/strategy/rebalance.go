@@ -50,6 +50,15 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 	done := true
 	sent := make(map[slotKey]float64) // complement qty sent this pass, per slot
 	for _, st := range strangles {
+		// A closed leg stays linked to its strangle with its last size, so
+		// "has both legs" is read from the book (liveLegs), never from the
+		// links: 2026-10-11 BTC topped up a strangle whose put had been closed
+		// by hand two days earlier, as if it still held 1.2 puts — re-selling
+		// the closed side past every repair hold.
+		if _, missing := s.liveLegs(st); missing != "" {
+			continue
+		}
+		st.CallLeg, st.PutLeg = s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
 		if st.CallLeg == nil || st.PutLeg == nil || st.CallLeg.DTE() <= s.cfg.RolloutDTE {
 			continue
 		}
@@ -146,6 +155,14 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
 			return
 		}
+		// A leg of this slot stopped out (or closed by hand) waits for a calm
+		// market before repair re-sells it; a top-up re-selling that side in
+		// the slot would undo the hold.
+		if why := s.slotStopHold(makeSlotKey(st.TargetDTE, st.EntryDelta), typ, rs); why != "" {
+			s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, "top-up held: "+why)
+			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
+			return
+		}
 	}
 	instruments := s.md.AllInstruments()
 	// The complement adds to this strangle, so it uses this strangle's
@@ -173,18 +190,19 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	}
 }
 
-// slotLegTotals sums the call and put quantities of every strangle in a slot,
-// read fresh so closes made earlier in this pass are counted.
+// slotLegTotals sums the open call and put quantities of every strangle in a
+// slot, read fresh so closes made earlier in this pass are counted (a closed
+// leg's link keeps its last size: only legs still in the book count).
 func (s *Strategy) slotLegTotals(key slotKey) (call, put float64) {
 	for _, st := range s.state.AllStrangles() {
 		if makeSlotKey(st.TargetDTE, st.EntryDelta) != key {
 			continue
 		}
-		if st.CallLeg != nil {
-			call += st.CallLeg.Qty
+		if c := s.livePosition(st.CallLeg); c != nil {
+			call += c.Qty
 		}
-		if st.PutLeg != nil {
-			put += st.PutLeg.Qty
+		if p := s.livePosition(st.PutLeg); p != nil {
+			put += p.Qty
 		}
 	}
 	return call, put
