@@ -209,6 +209,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"open_strangles":   len(v.Strangles),
 		"open_legs":        openLegs,
 		"pending":          len(v.Pending),
+		"held_legs":        v.HeldLegs,
 		"event_counts":     s.events.EventCounts(),
 		"history_since":    s.historySince(),
 		"pnl":              v.PnL,
