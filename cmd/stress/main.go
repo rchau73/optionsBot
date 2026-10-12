@@ -134,11 +134,14 @@ func anchorShed(s *strangle, typ string, flip, buf float64) {
 //     crossSteps decisions in a row, or the live regime non-negative for
 //     release (the valve when price never returns).
 func shedRepairAllowed(mode string, s *strangle, typ string, m market, flip, buf float64, shedAt time.Time,
-	cooldown time.Duration, crossSteps int, release time.Duration, nonNegSince time.Time) bool {
+	cooldown time.Duration, crossSteps int, release time.Duration, nonNegSince time.Time, mirrorCalls bool) bool {
 	// Both sides wait for spot back above the flip + buffer: positive-gamma
 	// territory, where the shed was about. (Mirroring it for calls — spot
 	// below flip − buffer — scored the same within noise, 2026-10-08.)
 	past := func(level, b float64) bool { return m.spot > level*(1+b/100) }
+	if mirrorCalls && typ == "call" { // -direction bias: a call shed on "bias up" waits for spot back below the flip − buffer
+		past = func(level, b float64) bool { return m.spot < level*(1-b/100) }
+	}
 	switch mode {
 	case "cross":
 		return m.now.Sub(shedAt) >= cooldown && past(flip, buf)
@@ -657,6 +660,7 @@ func main() {
 	negRelease := flag.String("negrelease", "none", "PROPOSED: none (today's bot) | aboveflip | aboveflip-put (puts only: the side the script's ACCELERATION BIAS UP calls safe): once spot has held above flip × (1 + buffer) for -negreleasecross decisions, the confirmed negative regime no longer blocks a side (regime-side rule, entries and repairs) nor holds a stopped leg's repair; freeze and cooldown still apply")
 	negReleaseCross := flag.Int("negreleasecross", 2, "with -negrelease aboveflip: consecutive decisions spot must stay above flip × (1 + buffer)")
 	startNeg := flag.Int("startneg", 0, "MODEL: start in a CONFIRMED negative gamma regime (as the bots on 2026-10-11) that lasts this many path days (0 = a confirmed positive regime at the start)")
+	direction := flag.String("direction", "sma", "PROPOSED: side to avoid in a negative regime — sma (today's bot: SMA trend) | bias (the script's ACCELERATION BIAS: spot above flip + buffer → calls, below flip − buffer → puts; sheds and blocks) | biasblock (bias for the regime-side block only; the shed keeps the SMA trend)")
 	negEntry := flag.String("negentry", "trend", "new strangles while the CONFIRMED gamma regime is negative: trend (today's bot: no new puts in a bear trend, no new calls in a bull trend — entries and repairs) | open (both sides, at the lowest IM band; the bot before 2026-10-09) | block (no entries; rolls and their repairs continue)")
 	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
@@ -1136,6 +1140,21 @@ func main() {
 			buf = *flipBufSD * m.dvol / math.Sqrt(365)
 		}
 		gexAct := strategy.ResolveGammaAction(regime, true, m.spot, flip, tr, buf)
+		if *direction != "sma" { // PROPOSED: the script's bias instead of the SMA trend
+			bias := 0
+			if strings.HasPrefix(regime, "NEGATIVE") {
+				switch {
+				case m.spot > flip*(1+buf/100):
+					bias = 1
+				case m.spot < flip*(1-buf/100):
+					bias = -1
+				}
+			}
+			if *direction == "bias" {
+				gexAct = map[int]strategy.GammaAction{1: strategy.GammaActionCloseCalls, -1: strategy.GammaActionClosePuts, 0: strategy.GammaActionNone}[bias]
+			}
+			tr = bias // the regime-side block (trendBlocks) reads tr
+		}
 		if gexAct != strategy.GammaActionNone && gexAct == lastAct {
 			actRun++
 		} else if gexAct != strategy.GammaActionNone {
@@ -1434,7 +1453,7 @@ func main() {
 				}
 				if wasShed && !shedRepairAllowed(*shedRepair, s, missing, m, flip, buf, shedAt,
 					time.Duration(*shedCooldown*float64(time.Minute)), *shedCrossSteps,
-					time.Duration(*shedRelease*float64(time.Hour)), nonNegSince) {
+					time.Duration(*shedRelease*float64(time.Hour)), nonNegSince, *direction == "bias") {
 					continue
 				}
 				if wasShed {
