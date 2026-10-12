@@ -50,8 +50,9 @@ func sampleView() strategy.View {
 				{Instrument: "BTC-X-90000-P", OptionType: "put", Strike: 90000, Qty: 0.1},
 			},
 		}},
-		Pending: []strategy.PendingView{{ID: "ps-1"}},
-		PnL:     []strategy.PnLView{{Realised: 0.001, Total: 0.001}},
+		Pending:  []strategy.PendingView{{ID: "ps-1"}},
+		HeldLegs: []strategy.HeldLegView{{StrangleID: "st-2", Missing: "put", Rule: strategy.HoldRegimeSide, LiveFlip: 98000}},
+		PnL:      []strategy.PnLView{{Realised: 0.001, Total: 0.001}},
 	}
 }
 
@@ -76,6 +77,9 @@ func TestAPI_StatusSummarisesTheBot(t *testing.T) {
 	}
 	if b, ok := body["flip_buffer_pct"].(float64); !ok || b != 2.88 { // the monitor's flip ±1σ band
 		t.Errorf("flip_buffer_pct = %v", body["flip_buffer_pct"])
+	}
+	if h, ok := body["held_legs"].([]any); !ok || len(h) != 1 || h[0].(map[string]any)["rule"] != "regime_side" { // the Missing legs panel
+		t.Errorf("held_legs = %v", body["held_legs"])
 	}
 	rk := body["risk"].(map[string]any)
 	st := rk["status"].(map[string]any)
