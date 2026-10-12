@@ -30,7 +30,9 @@ type View struct {
 
 	Strangles []StrangleView `json:"strangles"`
 	Pending   []PendingView  `json:"pending"`
-	PnL       []PnLView      `json:"pnl"` // per slot, last entry = strategy total
+	// HeldLegs: each one-legged strangle's missing leg and what holds its repair.
+	HeldLegs []HeldLegView `json:"held_legs"`
+	PnL      []PnLView     `json:"pnl"` // per slot, last entry = strategy total
 }
 
 // AccountView is the last account summary the decision loop fetched, in
@@ -136,6 +138,7 @@ type published struct {
 	risk    RiskView
 	usage   risk.Usage
 	halted  bool
+	held    []HeldLegView
 
 	manualOn  bool   // manual closes enabled (SetManualClose)
 	manualOff string // why not, shown on every leg
@@ -214,7 +217,7 @@ func (s *Strategy) setHalted() {
 // from any goroutine; it never calls the exchange.
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
-	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted,
+	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
 		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff}
 	s.pub.mu.RUnlock()
 
@@ -237,6 +240,10 @@ func (s *Strategy) View() View {
 		Risk:          pub.risk,
 		Strangles:     s.strangleViews(now, &pub),
 		Pending:       pub.pending,
+		HeldLegs:      pub.held,
+	}
+	if v.HeldLegs == nil {
+		v.HeldLegs = []HeldLegView{}
 	}
 	v.Greeks = netGreeks(v.Strangles, pub.trend)
 	if v.Pending == nil {
