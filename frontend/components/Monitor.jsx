@@ -7,6 +7,7 @@ import Panel from "./Panel";
 import Filters from "./Filters";
 import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
+import HeldLegs from "./HeldLegs";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
 import CoinPnlChart from "./CoinPnlChart";
@@ -14,6 +15,7 @@ import AccountPanel, { AccountSummary } from "./AccountPanel";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
+import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
@@ -61,6 +63,14 @@ export default function Monitor() {
           <PositionsTable groups={groups} statuses={statuses} />
         </Panel>
         <Panel
+          title="Missing legs: why repair holds them"
+          collapsible
+          storageKey="monitor.panel.held"
+          summary={heldSummary(bots)}
+        >
+          <HeldLegs bots={bots} />
+        </Panel>
+        <Panel
           title="Not managed by the bot (still uses margin)"
           collapsible
           storageKey="monitor.panel.others"
@@ -97,4 +107,15 @@ export default function Monitor() {
       </main>
     </div>
   );
+}
+
+/** "2 held: btc 2" / "none" for the collapsed panel. */
+function heldSummary(bots) {
+  const rows = heldRows(bots);
+  if (!rows.length) return "none";
+  const per = {};
+  for (const r of rows) per[r.bot] = (per[r.bot] ?? 0) + 1;
+  return `${rows.length} held: ${Object.entries(per)
+    .map(([b, n]) => `${b} ${n}`)
+    .join(" · ")}`;
 }

@@ -654,6 +654,9 @@ func main() {
 	shedCooldown := flag.Float64("shedcooldown", 5, "with -shedrepair cross: minutes to wait after the shed")
 	shedCrossSteps := flag.Int("shedcross", 2, "with -shedrepair anchored: consecutive decisions spot must stay past the anchor")
 	shedRelease := flag.Float64("shedrelease", 24, "with -shedrepair anchored: hours of non-negative live regime that also release the hold (0 = never)")
+	negRelease := flag.String("negrelease", "none", "PROPOSED: none (today's bot) | aboveflip | aboveflip-put (puts only: the side the script's ACCELERATION BIAS UP calls safe): once spot has held above flip × (1 + buffer) for -negreleasecross decisions, the confirmed negative regime no longer blocks a side (regime-side rule, entries and repairs) nor holds a stopped leg's repair; freeze and cooldown still apply")
+	negReleaseCross := flag.Int("negreleasecross", 2, "with -negrelease aboveflip: consecutive decisions spot must stay above flip × (1 + buffer)")
+	startNeg := flag.Int("startneg", 0, "MODEL: start in a CONFIRMED negative gamma regime (as the bots on 2026-10-11) that lasts this many path days (0 = a confirmed positive regime at the start)")
 	negEntry := flag.String("negentry", "trend", "new strangles while the CONFIRMED gamma regime is negative: trend (today's bot: no new puts in a bear trend, no new calls in a bull trend — entries and repairs) | open (both sides, at the lowest IM band; the bot before 2026-10-09) | block (no entries; rolls and their repairs continue)")
 	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
@@ -753,6 +756,9 @@ func main() {
 		shocks[*name] = p
 	}
 	path := append(append([]day{}, squeeze[:*calm]...), shocks[*name]...)
+	for i := 0; i < *startNeg && i < len(path); i++ {
+		path[i].negative = true
+	}
 
 	read := func(f string, v any) {
 		data, err := os.ReadFile(*dir + "/" + f)
@@ -834,8 +840,12 @@ func main() {
 	}
 	m.dvol *= *volScale
 	regimes, _ := history.OpenRegimes("")
-	regimes.Record(start.AddDate(0, 0, -2).Add(12*time.Hour), "POSITIVE/PINNING") // MODEL: a confirmed regime at the start
-	regimes.Record(start.AddDate(0, 0, -1).Add(12*time.Hour), "POSITIVE/PINNING")
+	startRegime := "POSITIVE/PINNING" // MODEL: a confirmed regime at the start
+	if *startNeg > 0 {
+		startRegime = "NEGATIVE/ACCELERATION"
+	}
+	regimes.Record(start.AddDate(0, 0, -2).Add(12*time.Hour), startRegime)
+	regimes.Record(start.AddDate(0, 0, -1).Add(12*time.Hour), startRegime)
 	var closes []float64
 	for _, c := range mk.Closes {
 		closes = append(closes, c[1])
@@ -906,6 +916,7 @@ func main() {
 	noiseRng := rand.New(rand.NewSource(11))
 	bridge := 0.0 // -intranoise: log offset of spot from the path
 	var sideBlockedAt = map[string]time.Time{}
+	aboveRun, negReleases := 0, 0 // -negrelease: decisions in a row spot is above flip + buffer; decisions released
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
 		dayEnd := i%*steps == 0
@@ -1143,8 +1154,18 @@ func main() {
 				sideBlockedAt[typ] = m.now
 			}
 		}
+		if m.spot > flip*(1+buf/100) {
+			aboveRun++
+		} else {
+			aboveRun = 0
+		}
+		negReleased := strings.HasPrefix(*negRelease, "aboveflip") && st.RegimeNegative && aboveRun >= *negReleaseCross
+		if negReleased {
+			negReleases++
+		}
+		releases := func(typ string) bool { return negReleased && (*negRelease == "aboveflip" || typ == "put") }
 		trendBlocks := func(typ string) bool {
-			if *negEntry != "trend" || !st.RegimeNegative {
+			if *negEntry != "trend" || !st.RegimeNegative || releases(typ) {
 				return false
 			}
 			at, ok := sideBlockedAt[typ]
@@ -1424,7 +1445,11 @@ func main() {
 					continue
 				}
 				if at, ok := s.stopped[missing]; ok {
-					if strategy.RepairBlockReason(at, m.now, cooldown, st) != "" {
+					rst := st
+					if releases(missing) {
+						rst.RegimeNegative = false // -negrelease: only the regime part of the hold is lifted
+					}
+					if strategy.RepairBlockReason(at, m.now, cooldown, rst) != "" {
 						continue
 					}
 					delete(s.stopped, missing)
@@ -1672,8 +1697,8 @@ func main() {
 	fmt.Printf("RESULT\t%s\t%.2f\t%.4f\t%.2f\t%.0f\t%.0f\t%d\t%d\t%d\t%.4f\t%.1f\t%.2f\t%d\t%.4f\t%d\t%.4f\t%.0f\n", *name, *breach, eq, (eq/b.mb0-1)*100,
 		eq*m.spot-eq0USD, b.mb0*(m.spot-s0), b.stops, breaches, b.rolls, b.realised, worstMM, worstEq, b.wings, b.wingCost, triggerDays,
 		eq-b.mb0, (eq-b.mb0)*m.spot)
-	fmt.Printf("DTE\t%.2f\t%.4f\t%d\t%.1f\t%.1f\t%.2f\t%d\t%d\n", (eq/b.mb0-1)*100, b.fees, nEntries, sumIM/float64(max(nIM, 1)),
-		100*float64(shared)/float64(max(held, 1)), float64(held)/float64(max(nIM, 1)), sheds, resells)
+	fmt.Printf("DTE\t%.2f\t%.4f\t%d\t%.1f\t%.1f\t%.2f\t%d\t%d\t%d\n", (eq/b.mb0-1)*100, b.fees, nEntries, sumIM/float64(max(nIM, 1)),
+		100*float64(shared)/float64(max(held, 1)), float64(held)/float64(max(nIM, 1)), sheds, resells, negReleases)
 	u := underlying
 	usd0, usd1, hold1 := eq0USD, eq*m.spot, b.mb0*m.spot
 	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · avg |net Δ| %.2f %s · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days\n",

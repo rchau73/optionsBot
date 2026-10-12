@@ -30,48 +30,21 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		if present == nil || missingType == "" {
 			continue // complete, or both legs gone (RemoveStrangleContaining cleans up)
 		}
-		if s.repairPending(st.ID) || s.slotUnconfirmed(makeSlotKey(st.TargetDTE, st.EntryDelta)) ||
-			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
-			continue
-		}
-		if gammaDec.Sheds(missingType) {
-			slog.Debug("repair: skipping leg the GEX regime is shedding",
-				"strangle_id", st.ID, "missing", missingType)
-			continue
-		}
-		if present.DTE() <= s.cfg.RolloutDTE {
-			continue
-		}
 		key := stopKey(st.ID, missingType)
-		if reason := RegimeSideBlockReason(missingType, gammaDec.TrendDir, m.status); reason != "" {
-			if s.repairHeld[key] != reason {
-				s.repairHeld[key] = reason
-				slog.Info("repair held: side blocked by the regime", "strangle_id", st.ID, "missing", missingType, "reason", reason)
-				s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, missingType+" "+reason)
-			}
+		switch rule, reason := s.repairGate(st, present, missingType, gammaDec, m, time.Now(), true); rule {
+		case "":
+		case HoldRegimeSide:
+			s.noteRepairHeld(st, missingType, reason, missingType+" "+reason, "repair held: side blocked by the regime")
 			continue
-		}
-		if a, shed := s.shedAnchors[key]; shed {
-			a.Observe(gammaDec.Spot, gammaDec.SnapshotAt)
-			if reason := ShedRepairBlockReason(a, time.Now(), gammaDec.NonNegativeSince,
-				s.cfg.GEXRepairConfirmSnapshots, time.Duration(s.cfg.GEXRepairReleaseHours)*time.Hour); reason != "" {
-				if s.repairHeld[key] != reason {
-					s.repairHeld[key] = reason
-					slog.Info("repair held: leg was shed by GEX", "strangle_id", st.ID, "missing", missingType, "reason", reason)
-					s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, missingType+" "+reason)
-				}
-				continue
-			}
-		}
-		if at, stopped := s.stopped[key]; stopped {
-			if reason := RepairBlockReason(at, time.Now(), time.Duration(s.cfg.RepairCooldownHours)*time.Hour, m.status); reason != "" {
-				if s.repairHeld[key] != reason {
-					s.repairHeld[key] = reason
-					slog.Info("repair held: leg was stopped out", "strangle_id", st.ID, "missing", missingType, "reason", reason)
-					s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, missingType+" stopped out, "+reason)
-				}
-				continue
-			}
+		case HoldGEXShed:
+			s.noteRepairHeld(st, missingType, reason, missingType+" "+reason, "repair held: leg was shed by GEX")
+			continue
+		case HoldStopped:
+			s.noteRepairHeld(st, missingType, reason, missingType+" stopped out, "+reason, "repair held: leg was stopped out")
+			continue
+		default:
+			slog.Debug("repair: held", "strangle_id", st.ID, "missing", missingType, "rule", rule, "reason", reason)
+			continue
 		}
 
 		delta := st.EntryDelta
@@ -128,6 +101,18 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			"qty", leg.qty, "limit", leg.limitPrice,
 			"gex_action", actionLabel(gammaDec.Action))
 	}
+}
+
+// noteRepairHeld logs and journals a held repair once per reason, so a hold
+// that lasts days is one journal line, not one per cycle.
+func (s *Strategy) noteRepairHeld(st *orders.Strangle, missing, reason, journal, msg string) {
+	key := stopKey(st.ID, missing)
+	if s.repairHeld[key] == reason {
+		return
+	}
+	s.repairHeld[key] = reason
+	slog.Info(msg, "strangle_id", st.ID, "missing", missing, "reason", reason)
+	s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, journal)
 }
 
 // liveLegs returns a strangle's remaining open leg and the type of the missing

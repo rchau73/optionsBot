@@ -265,6 +265,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	if !m.mmBreached() && !s.stopsDeferred && m.gexWait == "" {
 		s.repairIncompleteStrangles(ctx, gammaDec, m)
 	}
+	s.recordHeldLegs(gammaDec, m) // what holds each missing leg, for the monitor
 
 	s.hedge.MaybeReport(s.state.TotalNetDelta(), underlyingPrice, s.suggestedHedgeInst())
 
