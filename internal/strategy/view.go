@@ -23,7 +23,10 @@ type View struct {
 
 	Market        orders.MarketSnapshot `json:"market"`
 	FlipBufferPct float64               `json:"flip_buffer_pct"` // the flip's ±1σ shed band, % of spot (0 = no DVOL / no buffer)
-	Trend         string                `json:"trend"`
+	Trend         string                `json:"trend"`           // the direction the rules use (bull | bear | neutral)
+	Direction     string                `json:"direction"`       // its source: sma | bias (gex_direction)
+	SMATrend      string                `json:"sma_trend"`       // recorded for comparison whatever the source
+	Bias          string                `json:"gex_bias"`        // up | down | neutral
 	Account       AccountView           `json:"account"`
 	Risk          RiskView              `json:"risk"`
 	Greeks        orders.MarketContext  `json:"greeks"` // net portfolio greeks (short-signed)
@@ -133,6 +136,8 @@ type published struct {
 	mu      sync.RWMutex
 	at      time.Time
 	trend   string
+	sma     string
+	bias    string
 	pending []PendingView
 	account AccountView
 	risk    RiskView
@@ -162,12 +167,12 @@ func (s *Strategy) publish() {
 		pending = append(pending, pv)
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].SubmittedAt.Before(pending[j].SubmittedAt) })
-	trend := s.gamma.Trend()
+	trend, sma, bias := s.gamma.Trend(), s.gamma.SMATrend(), s.gamma.Bias()
 
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
 	s.pub.at = time.Now()
-	s.pub.trend = trend
+	s.pub.trend, s.pub.sma, s.pub.bias = trend, sma, bias
 	s.pub.pending = pending
 }
 
@@ -217,7 +222,7 @@ func (s *Strategy) setHalted() {
 // from any goroutine; it never calls the exchange.
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
-	pub := published{at: s.pub.at, trend: s.pub.trend, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
+	pub := published{at: s.pub.at, trend: s.pub.trend, sma: s.pub.sma, bias: s.pub.bias, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
 		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff}
 	s.pub.mu.RUnlock()
 
@@ -236,6 +241,9 @@ func (s *Strategy) View() View {
 		}),
 		FlipBufferPct: s.gamma.FlipBuffer(),
 		Trend:         pub.trend,
+		Direction:     s.cfg.GEXDirection,
+		SMATrend:      pub.sma,
+		Bias:          pub.bias,
 		Account:       pub.account,
 		Risk:          pub.risk,
 		Strangles:     s.strangleViews(now, &pub),

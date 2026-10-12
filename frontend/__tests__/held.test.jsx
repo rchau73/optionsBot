@@ -53,7 +53,7 @@ describe("held legs helpers", () => {
   test("rows across bots, missing held_legs is no rows", () => {
     const rows = heldRows([withHeld([regimeSide, shed]), bot()]);
     expect(rows).toHaveLength(2);
-    expect(rows[0].bias).toBe("up");
+    expect(rows[0].gex_bias).toBe("up"); // from spot vs flip when the bot sends none
     expect(rows[0].toAboveFlipPct).toBeLessThan(0); // spot already above the live level
     expect(rows[1].toAnchorPct).toBeGreaterThan(0); // the anchor is higher
   });
@@ -65,7 +65,7 @@ describe("HeldLegs", () => {
     const row = screen.getByTestId("held-eth:st-1:put");
     expect(within(row).getByText("regime side")).toBeInTheDocument();
     expect(within(row).getByText(/no new puts/)).toBeInTheDocument();
-    expect(within(row).getByText(/accel\. up/)).toBeInTheDocument();
+    expect(within(row).getByText(/bias up · SMA bear/)).toBeInTheDocument();
     expect(within(row).getByText("not shed by GEX")).toBeInTheDocument();
 
     const anchored = screen.getByTestId("held-eth:st-2:put");
@@ -73,8 +73,34 @@ describe("HeldLegs", () => {
     expect(within(anchored).getByText(/flip \$2,697 · 0\/2 snapshots · or 24 h non-negative/)).toBeInTheDocument();
   });
 
+  test("a leg shed under the bias rule shows its cooldown and the snapshots counted", () => {
+    const biasShed = {
+      ...regimeSide,
+      strangle_id: "st-3",
+      missing: "call",
+      rule: "gex_shed",
+      gex_bias: "up",
+      sma_trend: "bear",
+      anchor: { mode: "bias", cooldown_until: "2026-10-12T16:00:00Z", clear: 1, need: 2, flip: 2476, level: 2540 },
+    };
+    render(<HeldLegs bots={[withHeld([biasShed])]} />);
+    const row = screen.getByTestId("held-eth:st-3:call");
+    expect(within(row).getByText(/cooldown 2026-10-12 13:00:00 BRT/)).toBeInTheDocument();
+    expect(within(row).getByText(/then bias off the side 1\/2 snapshots/)).toBeInTheDocument();
+  });
+
   test("empty state", () => {
     render(<HeldLegs bots={[bot()]} />);
     expect(screen.getByText("Every strangle has both legs.")).toBeInTheDocument();
+  });
+});
+
+describe("directionText", () => {
+  const { directionText } = require("@/components/Header");
+  test("the source in use first, the other in brackets", () => {
+    expect(directionText({ trend: "bull", direction: "bias", gex_bias: "up", sma_trend: "bear" })).toBe(" · bias up (SMA bear)");
+    expect(directionText({ trend: "bear", direction: "sma", gex_bias: "up", sma_trend: "bear" })).toBe(" · bear (bias up)");
+    expect(directionText({ trend: "bear" })).toBe(" · bear");
+    expect(directionText({})).toBe("");
   });
 });

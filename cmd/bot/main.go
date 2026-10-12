@@ -42,6 +42,7 @@ const marketHistoryDir = "data/market"
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
+const directionHistoryPath = "data/direction_history.jsonl"
 
 func main() {
 	// Flags
@@ -195,6 +196,11 @@ func runLive(cfg *config.Config) error {
 		return fmt.Errorf("regime history: %w", err)
 	}
 	defer regimes.Close()
+	directions, err := history.OpenDirections(directionHistoryPath)
+	if err != nil {
+		return fmt.Errorf("direction history: %w", err)
+	}
+	defer directions.Close()
 
 	strat := strategy.New(cfg, strategy.Deps{
 		Market:   md,
@@ -206,6 +212,8 @@ func runLive(cfg *config.Config) error {
 		OI:       gexMgr,
 		History:  pnlHistory,
 		Regimes:  regimes,
+		// The SMA trend next to the GEX bias, for comparing the two.
+		Directions: directions,
 	})
 	strat.RestorePnL(replay.Realised, replay.Closed)
 	strat.RestoreStops(replay.Trades) // stopped and hand-closed sides stay held across the restart

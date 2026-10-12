@@ -30,14 +30,14 @@ export default function HeldLegs({ bots }) {
             <th className="px-2 py-1">Bot</th>
             <th className="px-2 py-1">Missing</th>
             <th className="px-2 py-1">Held by</th>
-            <th className="px-2 py-1" title="Confirmed regime (daily closes) · the bot's SMA trend · the script's bias (spot vs flip)">
-              Regime · trend · bias
+            <th className="px-2 py-1" title="Confirmed regime (daily closes) · the GEX bias (spot vs flip ± buffer) · the SMA trend">
+              Regime · bias · SMA
             </th>
             <th className="px-2 py-1 text-right" title="Live gamma flip × (1 + 1σ buffer); % = how far spot must still rise">
               Live flip + buffer
             </th>
-            <th className="px-2 py-1 text-right" title="GEX-shed legs only: the flip at the shed × (1 + its buffer), held on N snapshots — or a non-negative live regime for the release hours">
-              Anchor flip + buffer
+            <th className="px-2 py-1 text-right" title="GEX-shed legs only. Bias rule: a cooldown after the shed, then the bias off the shed side on N snapshots. Flip rule: spot above the flip at the shed × (1 + its buffer) on N snapshots, or a non-negative regime for the release hours">
+              Shed release
             </th>
             <th className="px-2 py-1 text-right" title="Stopped or hand-closed legs: no re-sell before this">
               Cooldown until
@@ -61,7 +61,7 @@ export default function HeldLegs({ bots }) {
                 <td className="px-2 py-1 text-xs">
                   <div>{r.confirmed_negative ? "confirmed negative" : "confirmed non-negative"}</div>
                   <div className="text-muted">
-                    trend {r.trend || MISSING} · bias {r.bias ? `accel. ${r.bias}` : MISSING}
+                    bias {r.gex_bias || MISSING} · SMA {r.sma_trend || r.trend || MISSING}
                   </div>
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">
@@ -71,7 +71,14 @@ export default function HeldLegs({ bots }) {
                   </div>
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">
-                  {r.anchor ? (
+                  {r.anchor?.mode === "bias" ? (
+                    <>
+                      <span>cooldown {formatDateTime(r.anchor.cooldown_until)}</span>
+                      <div className="text-xs text-muted">
+                        then bias off the side {r.anchor.clear}/{r.anchor.need} snapshots · shed at flip {formatUSD(r.anchor.flip)}
+                      </div>
+                    </>
+                  ) : r.anchor ? (
                     <>
                       <Level level={r.anchor.level} pct={r.toAnchorPct} />
                       <div className="text-xs text-muted">

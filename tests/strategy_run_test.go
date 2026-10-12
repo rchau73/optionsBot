@@ -540,9 +540,10 @@ type strategyFixture struct {
 	call     string
 	put      string
 	expiry   time.Time
-	gex      strategy.GEXSource     // optional
-	regimes  strategy.RegimeHistory // optional; set with withConfirmedRegime
-	oi       strategy.OISource      // optional
+	gex      strategy.GEXSource         // optional
+	regimes  strategy.RegimeHistory     // optional; set with withConfirmedRegime
+	dirs     strategy.DirectionRecorder // optional
+	oi       strategy.OISource          // optional
 	journal  *recordingJournal
 	logger   *orders.Logger // when set, used as the journal instead of the recorder
 	cancel   context.CancelFunc
@@ -607,7 +608,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		}
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes,
+			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
 		})
 		if f.beforeRun != nil {
 			f.beforeRun(f.strat)

@@ -38,9 +38,13 @@ type Strategy struct {
 	gamma   *GammaMonitor
 	riskCfg risk.Config
 	regimes RegimeHistory
-	oi      OISource    // may be nil
-	history PnLRecorder // may be nil
-	pnl     *pnlBook
+	// directions records the SMA trend next to the GEX bias (optional);
+	// lastDirection is the last recorded state, so only changes are written.
+	directions    DirectionRecorder
+	lastDirection string
+	oi            OISource    // may be nil
+	history       PnLRecorder // may be nil
+	pnl           *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
 	noQuote  map[string]bool    // held instruments already warned about missing quotes (decision loop only)
@@ -99,6 +103,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	}
 	gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, d.Market.DVOL)
 	gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
+	gamma.SetDirection(cfg.GEXDirection)
 	regimes := d.Regimes
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
@@ -113,6 +118,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		gamma:            gamma,
 		riskCfg:          cfg.RiskPolicy(d.GEX != nil),
 		regimes:          regimes,
+		directions:       d.Directions,
 		appliedLimit:     math.NaN(),
 		oi:               d.OI,
 		history:          d.History,
@@ -202,6 +208,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	s.gamma.PushPrice(underlyingPrice)
 
 	gammaDec := s.gamma.Evaluate()
+	s.recordDirection(gammaDec) // the SMA trend next to the GEX bias, on change
 	slog.Debug("gex check",
 		"net_portfolio_gamma", fmt.Sprintf("%.8f", s.state.NetGamma()),
 		"gex_regime", gammaDec.Regime,
@@ -402,6 +409,8 @@ func (s *Strategy) authBackoffActive() bool {
 func (s *Strategy) marketContext() orders.MarketContext {
 	return orders.MarketContext{
 		Trend:    s.gamma.Trend(),
+		SMATrend: s.gamma.SMATrend(),
+		Bias:     s.gamma.Bias(),
 		NetDelta: s.state.TotalNetDelta(),
 		NetGamma: s.state.NetGamma(),
 		NetVega:  s.state.NetVega(),

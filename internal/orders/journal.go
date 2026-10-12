@@ -54,7 +54,11 @@ type SlotRef struct {
 
 // MarketContext is the portfolio state at the moment of an event.
 type MarketContext struct {
-	Trend    string  `json:"trend,omitempty"` // bull | bear | neutral
+	Trend string `json:"trend,omitempty"` // bull | bear | neutral: the direction the rules used
+	// SMATrend and Bias are both direction sources at the event, whichever
+	// the rules used (gex_direction), so decisions can be compared later.
+	SMATrend string  `json:"sma_trend,omitempty"` // bull | bear | neutral
+	Bias     string  `json:"gex_bias,omitempty"`  // up | down | neutral
 	NetDelta float64 `json:"net_delta"`
 	NetGamma float64 `json:"net_gamma"`
 	NetVega  float64 `json:"net_vega"`

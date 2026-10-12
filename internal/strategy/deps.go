@@ -123,4 +123,12 @@ type Deps struct {
 	// Regimes is required for the gamma-regime margin rule when GEX is set;
 	// nil keeps the regime history in memory only.
 	Regimes RegimeHistory
+	// Directions is optional: records the SMA trend next to the GEX bias
+	// whenever either (or the shed signal) changes.
+	Directions DirectionRecorder
+}
+
+// DirectionRecorder keeps the direction sources' history (never read by trading).
+type DirectionRecorder interface {
+	Record(history.DirectionRecord)
 }

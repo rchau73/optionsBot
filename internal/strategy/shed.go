@@ -27,6 +27,47 @@ type ShedAnchor struct {
 	BufferPct float64
 	Above     int       // consecutive snapshots spot has been above Level()
 	lastSnap  time.Time // last snapshot counted
+	// Clear counts consecutive snapshots the GEX bias has not pointed at the
+	// shed side (gex_direction: bias).
+	Clear         int
+	lastClearSnap time.Time
+}
+
+// ObserveBias counts one GEX snapshot for the bias release: clear when the
+// bias does not point at the shed side. A snapshot already counted is ignored.
+func (a *ShedAnchor) ObserveBias(clear bool, snapAt time.Time) {
+	if snapAt.IsZero() || !snapAt.After(a.lastClearSnap) {
+		return
+	}
+	a.lastClearSnap = snapAt
+	if clear {
+		a.Clear++
+	} else {
+		a.Clear = 0
+	}
+}
+
+// BiasRepairBlockReason says why a leg shed under gex_direction: bias may
+// not be re-sold yet, or "" when it may: cooldown has passed since the shed
+// (a spike through the flip is not re-sold into at once) and the bias has
+// left the shed side on confirm snapshots in a row — the move has stalled.
+func BiasRepairBlockReason(a *ShedAnchor, optType string, now time.Time, cooldown time.Duration, confirm int) string {
+	side := "down"
+	if optType == "call" {
+		side = "up"
+	}
+	if until := a.At.Add(cooldown); now.Before(until) {
+		return fmt.Sprintf("shed by GEX (bias %s): cooldown until %s", side, until.UTC().Format("Jan 2 15:04 UTC"))
+	}
+	if a.Clear < confirm {
+		return fmt.Sprintf("shed by GEX (bias %s): waiting for the bias to leave %s on %d snapshots in a row (%d so far)", side, side, confirm, a.Clear)
+	}
+	return ""
+}
+
+// biasPointsAt reports whether bias runs toward the side optType loses on.
+func biasPointsAt(bias int, optType string) bool {
+	return (optType == "put" && bias < 0) || (optType == "call" && bias > 0)
 }
 
 // Level is the spot above which the shed leg may be re-sold.

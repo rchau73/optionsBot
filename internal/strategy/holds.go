@@ -48,12 +48,18 @@ func (s *Strategy) repairGate(st *orders.Strangle, present *orders.Position, mis
 		return HoldRegimeSide, reason
 	}
 	if a, shed := s.shedAnchors[sideKey]; shed {
-		if observe {
-			a.Observe(dec.Spot, dec.SnapshotAt)
-		}
-		if reason := ShedRepairBlockReason(a, now, dec.NonNegativeSince,
-			s.cfg.GEXRepairConfirmSnapshots, s.gexRepairRelease()); reason != "" {
-			return HoldGEXShed, reason
+		if s.cfg.GEXDirection == DirectionBias { // counted for every anchor in repairIncompleteStrangles
+			if reason := BiasRepairBlockReason(a, missing, now, s.biasRepairCooldown(), s.cfg.GEXRepairConfirmSnapshots); reason != "" {
+				return HoldGEXShed, reason
+			}
+		} else {
+			if observe {
+				a.Observe(dec.Spot, dec.SnapshotAt)
+			}
+			if reason := ShedRepairBlockReason(a, now, dec.NonNegativeSince,
+				s.cfg.GEXRepairConfirmSnapshots, s.gexRepairRelease()); reason != "" {
+				return HoldGEXShed, reason
+			}
 		}
 	}
 	if at, stopped := s.stopped[sideKey]; stopped {
@@ -66,6 +72,10 @@ func (s *Strategy) repairGate(st *orders.Strangle, present *orders.Position, mis
 
 func (s *Strategy) gexRepairRelease() time.Duration {
 	return time.Duration(s.cfg.GEXRepairReleaseHours) * time.Hour
+}
+
+func (s *Strategy) biasRepairCooldown() time.Duration {
+	return time.Duration(s.cfg.GEXBiasRepairCooldownHours) * time.Hour
 }
 
 func (s *Strategy) repairCooldown() time.Duration {
@@ -83,7 +93,9 @@ type HeldLegView struct {
 	Rule       string         `json:"rule"` // Hold* constant; "" = repair may sell it this cycle
 	Reason     string         `json:"reason"`
 
-	Trend             string  `json:"trend"`
+	Trend             string  `json:"trend"` // the direction the rules use
+	SMATrend          string  `json:"sma_trend"`
+	Bias              string  `json:"gex_bias"`
 	ConfirmedNegative bool    `json:"confirmed_negative"` // the margin policy's confirmed regime
 	LiveRegime        string  `json:"live_regime"`
 	Spot              float64 `json:"spot"`      // the GEX snapshot's spot
@@ -99,15 +111,21 @@ type HeldLegView struct {
 	NonNegativeSince *time.Time  `json:"non_negative_since,omitempty"` // live regime non-negative since
 }
 
-// AnchorView is the flip a GEX-shed leg was shed at and how far its release is.
+// AnchorView is the flip a GEX-shed leg was shed at and how far its release
+// is. Mode "flip": spot back above Level on Need snapshots, or ReleaseHours
+// of non-negative regime. Mode "bias": after CooldownUntil, the bias off the
+// shed side on Need snapshots (Clear so far).
 type AnchorView struct {
-	ShedAt       time.Time `json:"shed_at"`
-	Flip         float64   `json:"flip"`
-	BufferPct    float64   `json:"buffer_pct"`
-	Level        float64   `json:"level"`         // spot must close above this …
-	Above        int       `json:"above"`         // … on this many snapshots so far …
-	Need         int       `json:"need"`          // … of these
-	ReleaseHours int       `json:"release_hours"` // or the live regime non-negative this long
+	Mode          string     `json:"mode"` // flip | bias
+	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
+	Clear         int        `json:"clear"`
+	ShedAt        time.Time  `json:"shed_at"`
+	Flip          float64    `json:"flip"`
+	BufferPct     float64    `json:"buffer_pct"`
+	Level         float64    `json:"level"`         // spot must close above this …
+	Above         int        `json:"above"`         // … on this many snapshots so far …
+	Need          int        `json:"need"`          // … of these
+	ReleaseHours  int        `json:"release_hours"` // or the live regime non-negative this long
 }
 
 // heldLegViews describes every one-legged strangle's missing leg. Call on
@@ -122,7 +140,7 @@ func (s *Strategy) heldLegViews(dec GammaDecision, m marginState, now time.Time)
 		hv := HeldLegView{
 			StrangleID: st.ID, Slot: orders.SlotRef{DTE: st.TargetDTE, Delta: st.EntryDelta},
 			Missing: missing, OpenLeg: present.Instrument, Expiry: present.Expiry,
-			Trend: dec.Trend, ConfirmedNegative: m.status.RegimeUsed && m.status.RegimeNegative,
+			Trend: dec.Trend, SMATrend: dec.SMATrend, Bias: dec.Bias, ConfirmedNegative: m.status.RegimeUsed && m.status.RegimeNegative,
 			LiveRegime: dec.Regime, Spot: dec.Spot, BufferPct: dec.FlipBufferPct,
 		}
 		if dec.GammaFlipFound {
@@ -135,8 +153,12 @@ func (s *Strategy) heldLegViews(dec GammaDecision, m marginState, now time.Time)
 		}
 		key := stopKey(st.ID, missing)
 		if a, ok := s.shedAnchors[key]; ok {
-			hv.Anchor = &AnchorView{ShedAt: a.At, Flip: a.Flip, BufferPct: a.BufferPct, Level: a.Level(),
+			hv.Anchor = &AnchorView{Mode: "flip", ShedAt: a.At, Flip: a.Flip, BufferPct: a.BufferPct, Level: a.Level(),
 				Above: a.Above, Need: s.cfg.GEXRepairConfirmSnapshots, ReleaseHours: s.cfg.GEXRepairReleaseHours}
+			if s.cfg.GEXDirection == DirectionBias {
+				until := a.At.Add(s.biasRepairCooldown())
+				hv.Anchor.Mode, hv.Anchor.CooldownUntil, hv.Anchor.Clear = "bias", &until, a.Clear
+			}
 		}
 		if at, ok := s.stopped[key]; ok {
 			until := at.Add(s.repairCooldown())

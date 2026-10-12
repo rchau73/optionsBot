@@ -49,7 +49,7 @@ export function heldRows(bots) {
       ...h,
       toAboveFlipPct: distanceToLevel(h.spot, h.above_flip_level),
       toAnchorPct: h.anchor ? distanceToLevel(h.spot, h.anchor.level) : null,
-      bias: scriptBias(h.live_regime, h.spot, h.live_flip),
+      gex_bias: h.gex_bias ?? scriptBias(h.live_regime, h.spot, h.live_flip),
     })),
   );
 }

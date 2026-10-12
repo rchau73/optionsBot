@@ -25,10 +25,19 @@ const (
 // snapshots (SetShedConfirm); only Shed closes legs, so a one-snapshot flip
 // jump does not buy back the book.
 type GammaDecision struct {
-	Action         GammaAction
-	Shed           GammaAction
-	Trend          string
-	TrendDir       int // +1 bull, -1 bear, 0 neutral (Trend as a number)
+	Action GammaAction
+	Shed   GammaAction
+	// Trend/TrendDir is the direction the rules use: the SMA trend, or the
+	// GEX bias under gex_direction: bias (bias up → "bull", down → "bear").
+	Trend    string
+	TrendDir int // +1 bull, -1 bear, 0 neutral (Trend as a number)
+	// Direction is the source of Trend: DirectionSMA or DirectionBias. Both
+	// are always computed and recorded, so the two can be compared.
+	Direction      string
+	SMATrend       string // bull | bear | neutral (detectTrend)
+	SMADir         int
+	Bias           string // up | down | neutral (BiasDir)
+	BiasDir        int
 	Regime         string
 	RegimeScore    float64
 	GammaFlip      float64
@@ -47,6 +56,52 @@ type GammaDecision struct {
 	// NonNegativeSince is when the live regime last stopped being negative
 	// (zero while it is negative or before the first snapshot).
 	NonNegativeSince time.Time
+}
+
+// Direction sources (config gex_direction).
+const (
+	DirectionSMA  = "sma"  // swing levels and SMAs of daily closes (detectTrend)
+	DirectionBias = "bias" // the reference script's ACCELERATION BIAS with the flip buffer (BiasDir)
+)
+
+// BiasDir is the reference script's direction in a negative regime
+// (infer_bias: spot above the flip → ACCELERATION BIAS UP, below → DOWN),
+// with the shed's buffer around the flip: +1 when spot is above
+// flip × (1 + buffer), −1 below flip × (1 − buffer), 0 in between, in a
+// non-negative regime or without a flip. Within the buffer is daily noise.
+func BiasDir(regime string, flipFound bool, spot, flip, bufferPct float64) int {
+	if !flipFound || flip <= 0 || spot <= 0 || !strings.HasPrefix(regime, "NEGATIVE") {
+		return 0
+	}
+	switch {
+	case spot > flip*(1+bufferPct/100):
+		return 1
+	case spot < flip*(1-bufferPct/100):
+		return -1
+	}
+	return 0
+}
+
+// ResolveBiasAction sheds the side the bias runs toward: puts on bias down
+// (a drop accelerating through the flip), calls on bias up (a rally).
+func ResolveBiasAction(bias int) GammaAction {
+	switch bias {
+	case -1:
+		return GammaActionClosePuts
+	case 1:
+		return GammaActionCloseCalls
+	}
+	return GammaActionNone
+}
+
+func biasWord(bias int) string {
+	switch {
+	case bias > 0:
+		return "up"
+	case bias < 0:
+		return "down"
+	}
+	return "neutral"
 }
 
 // Sheds reports whether the live signal sheds legs of optType.
@@ -75,6 +130,7 @@ type GammaMonitor struct {
 	gexSrc        GEXSource    // nil until wired; Evaluate then reports no regime
 	lastAction    GammaAction  // last action announced, so changes are logged once
 	bufferSD      float64      // flip buffer in daily standard deviations (0 = none)
+	direction     string       // DirectionSMA (default) or DirectionBias
 	dvol          func() float64
 
 	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
@@ -90,6 +146,12 @@ type GammaMonitor struct {
 // twice a day, 40 % of the jumps reverting within the hour — and shedding on
 // the first snapshot then re-selling bought the book back at the spread.
 func (g *GammaMonitor) SetShedConfirm(n int) { g.shedConfirm = n }
+
+// SetDirection picks the direction source: DirectionBias, or the SMA trend
+// for anything else.
+func (g *GammaMonitor) SetDirection(d string) { g.direction = d }
+
+func (g *GammaMonitor) usesBias() bool { return g.direction == DirectionBias }
 
 // SetFlipBuffer makes a leg shed only once spot is bufferSD daily standard
 // deviations below the flip, the deviation taken from dvol (the asset's
@@ -200,14 +262,15 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		return GammaDecision{Action: GammaActionNone, Regime: "UNKNOWN"}
 	}
 
-	trend := g.detectTrend()
+	smaDir := g.detectTrend()
 	dec := GammaDecision{
 		Regime:         snap.Regime,
 		RegimeScore:    snap.RegimeScore,
 		GammaFlip:      snap.GammaFlip,
 		GammaFlipFound: snap.GammaFlipFound,
-		Trend:          g.trendLabel(),
-		TrendDir:       trend,
+		Direction:      DirectionSMA,
+		SMATrend:       trendWord(smaDir),
+		SMADir:         smaDir,
 		SwingHigh:      g.lastSwingHigh(),
 		SwingLow:       g.lastSwingLow(),
 		SMA9:           g.sma(9),
@@ -217,7 +280,16 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 	if g.dvol != nil {
 		dec.FlipBufferPct = FlipBufferPct(g.bufferSD, g.dvol())
 	}
-	dec.Action = ResolveGammaAction(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, trend, dec.FlipBufferPct)
+	dec.BiasDir = BiasDir(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, dec.FlipBufferPct)
+	dec.Bias = biasWord(dec.BiasDir)
+	if g.usesBias() {
+		dec.Direction, dec.TrendDir = DirectionBias, dec.BiasDir
+		dec.Action = ResolveBiasAction(dec.BiasDir)
+	} else {
+		dec.TrendDir = smaDir
+		dec.Action = ResolveGammaAction(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, smaDir, dec.FlipBufferPct)
+	}
+	dec.Trend = trendWord(dec.TrendDir)
 	dec.Spot, dec.SnapshotAt = snap.Spot, snap.ComputedAt
 	g.observe(snap, dec.Action)
 	dec.NonNegativeSince = g.nonNegSince
@@ -230,6 +302,7 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 	g.lastAction = dec.Action
 	if changed && dec.Action == GammaActionNone {
 		slog.Info("gex_regime_cleared", "event", "gex_regime_cleared", "regime", snap.Regime, "trend", dec.Trend,
+			"direction", dec.Direction, "sma_trend", dec.SMATrend, "gex_bias", dec.Bias,
 			"gex_spot", snap.Spot, "gamma_flip", snap.GammaFlip, "flip_buffer_pct", dec.FlipBufferPct)
 	}
 	if changed && dec.Action != GammaActionNone {
@@ -242,6 +315,9 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 			"flip_buffer_pct", dec.FlipBufferPct,
 			"shed_below", snap.GammaFlip*(1-dec.FlipBufferPct/100),
 			"trend", dec.Trend,
+			"direction", dec.Direction,
+			"sma_trend", dec.SMATrend,
+			"gex_bias", dec.Bias,
 			"action", actionLabel(dec.Action),
 			"gex_spot", snap.Spot,
 			"tick_price", g.lastTickPrice,
@@ -278,8 +354,28 @@ func (g *GammaMonitor) observe(snap *gex.Snapshot, action GammaAction) {
 	}
 }
 
-// Trend returns the current price trend as a human-readable label.
-func (g *GammaMonitor) Trend() string { return g.trendLabel() }
+// Trend returns the direction the rules use now (bull | bear | neutral): the
+// SMA trend, or the GEX bias under DirectionBias.
+func (g *GammaMonitor) Trend() string {
+	if g.usesBias() {
+		return trendWord(g.biasNow())
+	}
+	return g.trendLabel()
+}
+
+// SMATrend is the SMA trend whatever the direction source (recorded for comparison).
+func (g *GammaMonitor) SMATrend() string { return g.trendLabel() }
+
+// Bias is the GEX bias now (up | down | neutral) whatever the direction source.
+func (g *GammaMonitor) Bias() string { return biasWord(g.biasNow()) }
+
+func (g *GammaMonitor) biasNow() int {
+	snap := g.gexSnapshot()
+	if snap == nil {
+		return 0
+	}
+	return BiasDir(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, g.FlipBuffer())
+}
 
 // FlipBuffer is the shed buffer now, in % of spot (FlipBufferPct at the live
 // DVOL): a leg is shed below flip × (1 − buffer) and repaired above flip × (1 + buffer).
@@ -429,4 +525,12 @@ func actionLabel(a GammaAction) string {
 	default:
 		return "none"
 	}
+}
+
+// shadowAction is what the direction source not in use would shed now.
+func (d GammaDecision) shadowAction() GammaAction {
+	if d.Direction == DirectionBias {
+		return ResolveGammaAction(d.Regime, d.GammaFlipFound, d.Spot, d.GammaFlip, d.SMADir, d.FlipBufferPct)
+	}
+	return ResolveBiasAction(d.BiasDir)
 }
