@@ -661,6 +661,8 @@ func main() {
 	negReleaseCross := flag.Int("negreleasecross", 2, "with -negrelease aboveflip: consecutive decisions spot must stay above flip × (1 + buffer)")
 	startNeg := flag.Int("startneg", 0, "MODEL: start in a CONFIRMED negative gamma regime (as the bots on 2026-10-11) that lasts this many path days (0 = a confirmed positive regime at the start)")
 	direction := flag.String("direction", "sma", "PROPOSED: side to avoid in a negative regime — sma (today's bot: SMA trend) | bias (the script's ACCELERATION BIAS: spot above flip + buffer → calls, below flip − buffer → puts; sheds and blocks) | biasblock (bias for the regime-side block only; the shed keeps the SMA trend)")
+	biasRepair := flag.String("biasrepair", "anchored", "with -direction bias: re-selling a shed leg — anchored (spot back past the shed flip ∓ buffer, 2026-10-12 study) | clear (after -biascooldown hours, once the bias has not pointed at that side for -shedcross decisions)")
+	biasCooldown := flag.Float64("biascooldown", 24, "with -biasrepair clear: hours after a shed before the bias is evaluated again for the re-sell")
 	negEntry := flag.String("negentry", "trend", "new strangles while the CONFIRMED gamma regime is negative: trend (today's bot: no new puts in a bear trend, no new calls in a bull trend — entries and repairs) | open (both sides, at the lowest IM band; the bot before 2026-10-09) | block (no entries; rolls and their repairs continue)")
 	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
@@ -920,6 +922,7 @@ func main() {
 	noiseRng := rand.New(rand.NewSource(11))
 	bridge := 0.0 // -intranoise: log offset of spot from the path
 	var sideBlockedAt = map[string]time.Time{}
+	clearRun := map[string]int{}  // -biasrepair clear: decisions in a row the bias has not pointed at each side
 	aboveRun, negReleases := 0, 0 // -negrelease: decisions in a row spot is above flip + buffer; decisions released
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
@@ -1154,6 +1157,13 @@ func main() {
 				gexAct = map[int]strategy.GammaAction{1: strategy.GammaActionCloseCalls, -1: strategy.GammaActionClosePuts, 0: strategy.GammaActionNone}[bias]
 			}
 			tr = bias // the regime-side block (trendBlocks) reads tr
+			for typ, against := range map[string]int{"put": -1, "call": 1} {
+				if bias != against {
+					clearRun[typ]++
+				} else {
+					clearRun[typ] = 0
+				}
+			}
 		}
 		if gexAct != strategy.GammaActionNone && gexAct == lastAct {
 			actRun++
@@ -1451,7 +1461,11 @@ func main() {
 				if wasShed && m.now.Sub(shedAt) < time.Duration(*shedHold*float64(time.Hour)) {
 					continue // re-sell hold after a GEX shed
 				}
-				if wasShed && !shedRepairAllowed(*shedRepair, s, missing, m, flip, buf, shedAt,
+				if wasShed && *direction == "bias" && *biasRepair == "clear" {
+					if m.now.Sub(shedAt) < time.Duration(*biasCooldown*float64(time.Hour)) || clearRun[missing] < *shedCrossSteps {
+						continue // cooldown, then the bias must have left this side
+					}
+				} else if wasShed && !shedRepairAllowed(*shedRepair, s, missing, m, flip, buf, shedAt,
 					time.Duration(*shedCooldown*float64(time.Minute)), *shedCrossSteps,
 					time.Duration(*shedRelease*float64(time.Hour)), nonNegSince, *direction == "bias") {
 					continue

@@ -85,12 +85,19 @@ type Config struct {
 	// the flip it was shed at plus its buffer on this many consecutive
 	// snapshots, or once the live regime has been non-negative for
 	// GEXRepairReleaseHours.
-	GEXRepairConfirmSnapshots int     `yaml:"gex_repair_confirm_snapshots"`
-	GEXRepairReleaseHours     int     `yaml:"gex_repair_release_hours"`
-	GEXStrikeRangePct         float64 `yaml:"gex_strike_range_pct"`
-	GEXMethod                 string  `yaml:"gex_method"` // script (default) | nearest_flip
-	IVPercentileWindow        int     `yaml:"iv_percentile_window"`
-	HedgeReportThreshold      float64 `yaml:"hedge_report_threshold"`
+	GEXRepairConfirmSnapshots int `yaml:"gex_repair_confirm_snapshots"`
+	GEXRepairReleaseHours     int `yaml:"gex_repair_release_hours"`
+	// GEXDirection: the side to avoid in a negative regime — "sma" (swing
+	// levels and SMAs of daily closes) or "bias" (the reference script's
+	// ACCELERATION BIAS: spot vs flip ± buffer). Under "bias" a shed leg is
+	// re-sold GEXBiasRepairCooldownHours after the shed, once the bias has
+	// left its side on GEXRepairConfirmSnapshots consecutive snapshots.
+	GEXDirection               string  `yaml:"gex_direction"`
+	GEXBiasRepairCooldownHours int     `yaml:"gex_bias_repair_cooldown_hours"`
+	GEXStrikeRangePct          float64 `yaml:"gex_strike_range_pct"`
+	GEXMethod                  string  `yaml:"gex_method"` // script (default) | nearest_flip
+	IVPercentileWindow         int     `yaml:"iv_percentile_window"`
+	HedgeReportThreshold       float64 `yaml:"hedge_report_threshold"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
 	// fixed MM limit, band/regime changes confirmed on daily closes.
 	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
@@ -272,6 +279,12 @@ func (c *Config) Validate() error {
 	}
 	if c.GEXRepairReleaseHours < 1 || c.GEXRepairReleaseHours > 168 {
 		return fmt.Errorf("gex_repair_release_hours %d must be between 1 and 168", c.GEXRepairReleaseHours)
+	}
+	if c.GEXDirection != "sma" && c.GEXDirection != "bias" {
+		return fmt.Errorf("gex_direction %q must be sma or bias", c.GEXDirection)
+	}
+	if c.GEXBiasRepairCooldownHours < 0 || c.GEXBiasRepairCooldownHours > 168 {
+		return fmt.Errorf("gex_bias_repair_cooldown_hours %d must be between 0 and 168", c.GEXBiasRepairCooldownHours)
 	}
 	if c.StopSpreadGuardPct != -1 && (c.StopSpreadGuardPct < 1 || c.StopSpreadGuardPct > 100) {
 		return fmt.Errorf("stop_spread_guard_pct %.1f must be between 1 and 100 (ask above mid, %%), or -1 (off)", c.StopSpreadGuardPct)
@@ -463,6 +476,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.GEXRepairReleaseHours == 0 {
 		cfg.GEXRepairReleaseHours = 24
+	}
+	if cfg.GEXDirection == "" {
+		cfg.GEXDirection = "sma"
 	}
 	if cfg.StopSpreadGuardPct == 0 {
 		cfg.StopSpreadGuardPct = 20

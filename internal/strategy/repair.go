@@ -3,6 +3,7 @@ package strategy
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -24,6 +25,14 @@ import (
 func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec GammaDecision, m marginState) {
 	instruments := s.md.AllInstruments()
 	s.dropStaleAnchors()
+	if s.cfg.GEXDirection == DirectionBias {
+		// Every snapshot counts toward a shed leg's bias release, even while
+		// another rule (the regime-side block) holds the leg, so a bias that
+		// came back to the shed side resets the count.
+		for key, a := range s.shedAnchors {
+			a.ObserveBias(!biasPointsAt(gammaDec.BiasDir, key[strings.LastIndex(key, ":")+1:]), gammaDec.SnapshotAt)
+		}
+	}
 
 	for _, st := range s.state.AllStrangles() {
 		present, missingType := s.liveLegs(st)

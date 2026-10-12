@@ -30,6 +30,8 @@ gamma_flip_buffer_sd:      1.0  # shed a leg only when spot is this many daily s
 gex_shed_confirm_snapshots:   2  # shed only once the signal holds on this many consecutive GEX snapshots (1/min) — the flip can jump for a minute
 gex_repair_confirm_snapshots: 2  # re-sell a shed leg once spot is above the flip it was shed at + buffer on this many consecutive snapshots…
 gex_repair_release_hours:     24 # …or once the live regime has been non-negative this long
+gex_direction:             sma  # side to avoid in a negative regime: sma (SMA trend) | bias (script's ACCELERATION BIAS: spot vs flip ± 1σ). Both are recorded (data/direction_history.jsonl); stress 2026-10-12: bias −16…−139 % vs sma
+gex_bias_repair_cooldown_hours: 24 # with bias: a shed leg waits this long, then is re-sold once the bias has left its side on gex_repair_confirm_snapshots (24 h beat 4 h in 3 of 4 setups)
 gex_method:                script # script = GestaoCarteira deribit_tc_export_v3.py rules (regime = sign of weighted GEX, flip = lowest crossing); nearest_flip = spot vs nearest flip, with hysteresis
 gex_strike_range_pct:      0.15 # GEX inputs: only strikes within ±15% of each expiry's underlying (as the script); 0 = all strikes
 gamma_regime_band_pct:     0.025 # nearest_flip only: hysteresis band around the gamma flip

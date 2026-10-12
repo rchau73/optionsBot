@@ -40,7 +40,7 @@ function BotChip({ bot }) {
         <span className="text-muted tabular-nums">
           {formatUSD(s.market?.spot)} · DVOL {s.market?.dvol ? s.market.dvol.toFixed(1) : "—"} · IV pct {formatPct(s.market?.iv_percentile, 0)}
           {s.market?.gex_regime ? ` · ${s.market.gex_regime}` : ""}
-          {s.trend ? ` · ${s.trend}` : ""}
+          {directionText(s)}
         </span>
       ) : null}
       {s ? <FlipBand band={flipBand(s)} /> : null}
@@ -66,4 +66,11 @@ function FlipBand({ band }) {
       ) : null}
     </span>
   );
+}
+
+/** " · bias up (SMA bear)" under gex_direction bias, " · bear (bias up)" under sma: the source in use first. */
+export function directionText(s) {
+  if (!s?.trend) return "";
+  if (s.direction === "bias") return ` · bias ${s.gex_bias ?? "—"} (SMA ${s.sma_trend ?? "—"})`;
+  return ` · ${s.trend}${s.gex_bias ? ` (bias ${s.gex_bias})` : ""}`;
 }
