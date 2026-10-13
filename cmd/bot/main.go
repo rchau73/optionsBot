@@ -39,6 +39,10 @@ const pnlHistoryPath = "data/pnl_history.jsonl"
 // is not part of the trading history: --reset-history leaves it in place.
 const marketHistoryDir = "data/market"
 
+// linearHistoryDir holds the same record for the underlying's USDC-settled
+// options (prices in USDC), to compare their liquidity with data/market.
+const linearHistoryDir = "data/market_usdc"
+
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
@@ -182,6 +186,8 @@ func runLive(cfg *config.Config) error {
 	// quotes, once per interval. Reads only what is already fetched.
 	if cfg.MarketRecordMinutes > 0 {
 		go recorder.New(gexMgr, md.DVOL, marketHistoryDir, time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
+		go recorder.New(recorder.NewLinearBook(marketGW, cfg.Underlying), md.DVOL, linearHistoryDir,
+			time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
 	}
 
 	// P&L history for the monitor chart; data/ is a mounted volume in Docker,
