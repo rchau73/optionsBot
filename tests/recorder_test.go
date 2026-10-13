@@ -2,13 +2,17 @@ package tests
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/csv"
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/recorder"
 )
@@ -92,5 +96,64 @@ func TestRecorderSnapshotAppendsAndSkipsStale(t *testing.T) {
 
 	if _, err := rec.Snapshot(at.Add(10 * time.Minute)); err == nil {
 		t.Error("a 10-minute-old summary must not be recorded")
+	}
+}
+
+type usdcSummaryCaller struct{ params any }
+
+func (c *usdcSummaryCaller) Call(_ context.Context, method string, params any, _ int) (gateway.JSONRPCResponse, error) {
+	c.params = params
+	if method != "public/get_book_summary_by_currency" {
+		return gateway.JSONRPCResponse{}, fmt.Errorf("unexpected method %s", method)
+	}
+	return gateway.JSONRPCResponse{Result: json.RawMessage(`[
+		{"instrument_name":"BTC_USDC-27NOV26-96000-C","underlying_price":87000,"mark_iv":38,"bid_price":855,"ask_price":875,"mid_price":865,"mark_price":866,"open_interest":4},
+		{"instrument_name":"BTC_USDC-27NOV26-73000-P","underlying_price":87000,"mark_iv":42,"bid_price":1020,"ask_price":1040,"mid_price":1030,"mark_price":1031,"open_interest":2.1},
+		{"instrument_name":"ETH_USDC-27NOV26-3000-C","underlying_price":2500,"mark_iv":60,"mid_price":20},
+		{"instrument_name":"SOL_USDC-27NOV26-200-C","underlying_price":150,"mark_iv":70,"mid_price":2}]`)}, nil
+}
+
+// 2026-10-13: the USDC-settled options are recorded beside the coin-settled
+// ones (data/market_usdc) to compare their liquidity; only the bot's
+// underlying is kept, prices as quoted (USDC).
+func TestLinearBookRecordsTheUnderlyingsUSDCOptions(t *testing.T) {
+	gw := &usdcSummaryCaller{}
+	book := recorder.NewLinearBook(gw, "BTC")
+	if rows, _ := book.LatestSummary(); len(rows) != 0 {
+		t.Fatal("nothing before the first fetch")
+	}
+	if err := book.FetchSummary(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := gw.params.(map[string]any); p["currency"] != "USDC" || p["kind"] != "option" {
+		t.Errorf("params = %v, want the USDC option summary", gw.params)
+	}
+
+	dir := t.TempDir()
+	n, err := recorder.New(book, func() float64 { return 36 }, dir, time.Hour).Snapshot(time.Now())
+	if err != nil || n != 2 {
+		t.Fatalf("snapshot n=%d err=%v, want the 2 BTC_USDC options", n, err)
+	}
+	rows, at := book.LatestSummary()
+	rec := recorder.Rows(rows, at, 36)
+	col := func(name string) int {
+		for i, c := range recorder.Header {
+			if c == name {
+				return i
+			}
+		}
+		t.Fatalf("no column %s", name)
+		return -1
+	}
+	if r := rec[0]; r[col("underlying")] != "BTC_USDC" || r[col("bid")] != "855" || r[col("strike")] != "96000" || r[col("option_type")] != "call" {
+		t.Errorf("row = %v", r)
+	}
+
+	// Run fetches before each snapshot only for sources that fetch on demand:
+	// the GEX manager refreshes itself, and an extra refresh would count as an
+	// extra GEX snapshot.
+	var src recorder.Source = gex.NewManager(gw, gex.Params{Underlying: "BTC"}, 0)
+	if _, ok := src.(recorder.Fetcher); ok {
+		t.Error("the GEX manager must not be refreshed by the recorder")
 	}
 }

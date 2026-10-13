@@ -34,7 +34,8 @@ type Source interface {
 
 // Header is the column layout. It extends the backtest CSV (date … dvol_index)
 // with mark and open_interest; date is the snapshot time (RFC 3339, UTC) and
-// prices are in the coin, as Deribit quotes them.
+// prices are as Deribit quotes them: in the coin, or in USDC for the
+// USDC-settled options (LinearBook).
 var Header = []string{
 	"date", "instrument", "underlying", "underlying_price", "strike", "expiry", "option_type",
 	"bid", "ask", "mid", "mark", "delta", "gamma", "theta", "vega", "iv", "open_interest", "dvol_index",
@@ -68,9 +69,15 @@ func (r *Recorder) Run(ctx context.Context) {
 			return
 		case <-time.After(time.Until(next)):
 		}
+		if f, ok := r.src.(Fetcher); ok {
+			if err := f.FetchSummary(ctx); err != nil {
+				slog.Warn("market snapshot not recorded", "dir", r.dir, "err", err)
+				continue
+			}
+		}
 		n, err := r.Snapshot(time.Now())
 		if err != nil {
-			slog.Warn("market snapshot not recorded", "err", err)
+			slog.Warn("market snapshot not recorded", "dir", r.dir, "err", err)
 			continue
 		}
 		slog.Info("market snapshot recorded", "instruments", n, "dir", r.dir)
