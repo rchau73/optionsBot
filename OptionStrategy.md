@@ -205,7 +205,7 @@ Notes:
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
 - **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).
 - **Kill switch:** it cancels every order, books whatever a working entry had already filled, then buys back every short the *exchange* reports (not only those in the bot's book) and checks the account is flat.
-- **Restarts:** a side closed by a stop-loss, delta exit, manual close or MM cut stays held across a restart: the bot rebuilds those holds from its journal at startup, with the original time, so the 72 h cooldown keeps running. The GEX-shed anchors are still kept in memory only, so a restart forgets them. The freeze and regime conditions are rebuilt from the daily closes.
+- **Restarts:** a side closed by a stop-loss, delta exit, manual close or MM cut stays held across a restart: the bot rebuilds those holds from its journal at startup, with the original time, so the 72 h cooldown keeps running. A side shed by GEX is rebuilt the same way, with the flip and buffer it was shed at, so its repair waits as it would have (before 2026-10-14 a restart forgot it: a deploy 20 minutes after a shed re-sold BTC's put a day early). The freeze and regime conditions are rebuilt from the daily closes.
 
 ## 10. The parameters, in plain words
 

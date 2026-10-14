@@ -55,10 +55,13 @@ type Strategy struct {
 	// journalStops: stopped sides read from the journal (RestoreStops),
 	// applied to the reconciled strangles at startup.
 	journalStops map[StopSide]time.Time
+	// journalSheds: GEX-shed sides read from the journal (RestoreStops),
+	// anchored on the reconciled strangles at startup (applyJournalSheds).
+	journalSheds map[StopSide]JournalShed
 	repairHeld   map[string]string
 	// Legs shed by GEX, by strangle and type: the flip they were shed at
-	// (shed.go). In memory like stopped: after a restart a shed leg is
-	// re-sold on the live signal.
+	// (shed.go). In memory like stopped, and rebuilt from the journal at
+	// startup the same way (applyJournalSheds).
 	shedAnchors map[string]*ShedAnchor
 	// stopDefer: when each position's triggered stop-loss was first deferred
 	// by the spread guard (stopguard.go); stopsDeferred: any this cycle.
@@ -152,6 +155,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	s.logStartupState(ctx)
 	s.reconcilePositions(ctx)
 	s.applyJournalStops()
+	s.applyJournalSheds()
 	s.trackPositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
 

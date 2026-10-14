@@ -50,6 +50,10 @@ type Trade struct {
 	IVPct     float64 `json:"iv_percentile"`
 	Moneyness string  `json:"moneyness,omitempty"`
 	GEXRegime string  `json:"gex_regime,omitempty"`
+	GammaFlip float64 `json:"gamma_flip,omitempty"`
+	// FlipBufferPct is the shed buffer at the event (0 in records journaled
+	// before 2026-10-14).
+	FlipBufferPct float64 `json:"flip_buffer_pct,omitempty"`
 }
 
 // tradeOf turns a filled or closed journal record into a Trade.
@@ -59,6 +63,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Instrument: rec.Instrument, OptionType: rec.OptionType, Qty: rec.Qty, Price: rec.FillPrice,
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
+		GammaFlip: rec.Market.GammaFlip, FlipBufferPct: rec.Market.FlipBufferPct,
 		Detail: rec.Detail, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
