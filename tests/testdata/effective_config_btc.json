@@ -1,0 +1,110 @@
+{
+  "Underlying": "BTC",
+  "StrategyID": "",
+  "DTEDeltaMatrix": [
+    {
+      "DTE": 25,
+      "Deltas": [
+        0.16
+      ]
+    },
+    {
+      "DTE": 50,
+      "Deltas": [
+        0.16
+      ]
+    }
+  ],
+  "TargetDTE": null,
+  "EntryDelta": 0,
+  "RolloutDTE": 15,
+  "RepairCooldownHours": 72,
+  "RebalanceRetryMinutes": 15,
+  "ChurnMaxRoundTrips": 3,
+  "MarketRecordMinutes": 60,
+  "ChurnWindowMinutes": 60,
+  "MaxLegSizeMultiple": 2,
+  "DeltaDriftThreshold": 0.1,
+  "ROITakeProfit": 0.5,
+  "StopLossMultiplier": 2,
+  "StopSpreadGuardPct": 20,
+  "StopSpreadMaxWaitMin": 5,
+  "DeltaExitThreshold": 0.3,
+  "GammaTrendLookbackDays": 120,
+  "SwingPivotN": 5,
+  "GammaRegimeBandPct": 0.025,
+  "GammaFlipBufferSD": 1,
+  "GEXShedConfirmSnapshots": 2,
+  "GEXRepairConfirmSnapshots": 2,
+  "GEXRepairReleaseHours": 24,
+  "GEXDirection": "bias",
+  "GEXBiasRepairCooldownHours": 24,
+  "GEXBiasFlipWindowMinutes": 60,
+  "GEXStrikeRangePct": 0.15,
+  "GEXMethod": "script",
+  "IVPercentileWindow": 252,
+  "HedgeReportThreshold": 0.05,
+  "IVMarginBands": [
+    {
+      "min_iv_pct": 70,
+      "max_im_pct": 50
+    },
+    {
+      "min_iv_pct": 30,
+      "max_im_pct": 35
+    },
+    {
+      "min_iv_pct": 0,
+      "max_im_pct": 20
+    }
+  ],
+  "MaxMMPct": 35,
+  "IVBandConfirmDays": 2,
+  "SpreadAlertThreshold": 0.05,
+  "EvalIntervalMS": 40000,
+  "ReportIntervalSec": 60,
+  "MaxDTEDeviation": 10,
+  "ExpiryStretch": 1.5,
+  "DeltaSlippage": 0.03,
+  "MinTradeAmount": 0.1,
+  "MinPremiumBTC": 0.001,
+  "OrderFillTimeoutSec": 90,
+  "OrderSlippagePct": 0.05,
+  "EntryPriceFloor": "mid",
+  "RepairPriceFloor": "bid",
+  "OrderMaxAdjustments": 3,
+  "Backtest": {
+    "FillModel": "mid",
+    "SlippagePct": 0.001,
+    "LimitFillRule": "next_tick",
+    "CommissionPerContract": 0.0003,
+    "MarginCallLiquidation": true
+  },
+  "Environment": "",
+  "ClientID": "",
+  "ClientSecret": "",
+  "RateLimit": {
+    "WsNonMatchRPS": 0,
+    "WsMatchRPS": 0,
+    "MaxSubscriptions": 0,
+    "SafetyFactor": 0
+  },
+  "Retry": {
+    "InitialMS": 0,
+    "Multiplier": 0,
+    "MaxMS": 0,
+    "MaxRetries": 0
+  },
+  "Circuit": {
+    "Threshold": 0,
+    "OpenSec": 0
+  },
+  "Heartbeat": {
+    "IntervalSec": 0,
+    "ReconnectMaxAttempts": 0,
+    "ReconnectBackoffBaseMS": 0
+  },
+  "APIAddr": "",
+  "AccountPollSec": 0,
+  "AdminToken": ""
+}
