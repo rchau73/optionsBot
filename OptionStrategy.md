@@ -66,7 +66,7 @@ The bot acts like an **insurance seller**. It sells options that pay off only if
 1. **Wakes up and checks the facts.** On every start it asks Deribit what positions actually exist and rebuilds its own records from that. The exchange is always the source of truth.
 2. **Fills its "slots".** The configuration lists slots such as *"a strangle about 25 days out at 0.16 delta"* and *"one 50 days out at 0.16 delta"* (BTC: 25 and 50 days; ETH: 30 and 50 — two slots since 2026-10-11: in the stress test two slots beat three, mostly because the third, 60-day slot found no listed expiry in its window much of the time and held the least-earning margin). For each empty slot it:
    - picks the listed expiry closest to the target number of days (never one that is already due to be rolled);
-   - picks the call and put strikes together: both near the target delta (e.g. ≈0.16 on each side, within `delta_slippage`), choosing the pair whose deltas cancel best, so the strangle starts as close to delta-neutral as the listed strikes allow;
+   - picks the call and put strikes together: both near the target delta (e.g. ≈0.16 on each side, within 0.03), choosing the pair whose deltas cancel best, so the strangle starts as close to delta-neutral as the listed strikes allow;
    - checks each option is worth at least the minimum premium, so it doesn't take tail risk for crumbs;
    - sizes the position so the account stays inside its margin limit, asking Deribit itself what the margin would be after the trade (section 8);
    - places **limit** sell orders and follows them until they fill. If the market moves away it re-prices a few times; if they still don't fill it cancels and tries again later.
@@ -200,7 +200,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 Notes:
 
 - **Stops and rolls are not blocked by any state.** Whatever the state, a leg that hits its stop, its delta exit or a roll rule is closed; only *re-selling* waits.
-- **The one wait: an empty book.** When a stop triggers but the option's ask is more than 20 % above its mid (`stop_spread_guard_pct`), market makers have pulled their quotes, as in a flash wick, and a market buy would pay a panic price. The stop waits and is re-checked every cycle: once the spread is normal it fires if it still applies, or the leg is kept if the price came back under the stop. It never waits more than 5 minutes (`stop_spread_max_wait_minutes`), then it buys at market. The MM cut never waits.
+- **The one wait: an empty book.** When a stop triggers but the option's ask is more than 20 % above its mid, market makers have pulled their quotes, as in a flash wick, and a market buy would pay a panic price. The stop waits and is re-checked every cycle: once the spread is normal it fires if it still applies, or the leg is kept if the price came back under the stop. It never waits more than 5 minutes (`stop_spread_max_wait_minutes`), then it buys at market. The MM cut never waits.
 - **"Held" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.
 - **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.
 - **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).
@@ -211,8 +211,8 @@ Notes:
 
 | Setting | Shipped value | Plain meaning | Turn it up → | Turn it down → |
 |---|---|---|---|---|
-| Slots (`dte_delta_matrix`) | 25 d / 0.16, 45 d / 0.16, 60 d / 0.18 | which strangles to keep open | more positions | fewer positions |
-| Entry delta | 0.16–0.18 | how far from the price to sell | closer: more premium, more risk | further: less premium, safer |
+| Slots (`dte_delta_matrix`) | BTC 25 d and 50 d, ETH 30 d and 50 d, all at 0.16 | which strangles to keep open | more positions | fewer positions |
+| Entry delta | 0.16 | how far from the price to sell | closer: more premium, more risk | further: less premium, safer |
 | `rollout_dte` | 15 days | when to stop holding | exits earlier, less gamma risk | holds longer, more decay, more risk |
 | `roi_take_profit` | 50 % | how much profit is "enough" | holds longer for more | banks sooner, re-sells more often |
 | `stop_loss_multiplier` | 2× | how much loss to tolerate | fewer stop-outs, bigger losses | more stop-outs, smaller losses |
@@ -221,9 +221,10 @@ Notes:
 | `repair_cooldown_hours` | 72 h | how long a stopped-out side stays empty | longer pause after a loss | re-enters sooner |
 | `delta_drift_threshold` | 0.10 | when a far leg is "dead" | refreshes legs sooner | lets legs drift further |
 | `iv_margin_bands` | 50 / 35 / 20 % by DVOL band | how much of the account is at work, by market calm | larger positions | smaller positions |
-| `iv_band_confirm_days` | 2 days | how long a new regime must last before resizing | slower, ignores more spikes | faster, reacts to more noise |
 | `max_mm_pct` | 35 % | safety distance from liquidation | closer to liquidation | earlier forced reductions |
-| `min_premium_btc` | 0.001 BTC | minimum price worth selling | fewer, richer trades | more, cheaper trades |
+| `min_premium` | 0.001 BTC / ETH | minimum price worth selling, in the coin | fewer, richer trades | more, cheaper trades |
+
+Only these settings are in the config files. The rest — how long a new regime must last before resizing (2 daily closes), how orders are worked, the GEX confirmation counts and timers, the stop's empty-book wait, the churn breaker, expiry choice — are fixed in code since 2026-10-14 (README "Configuration" lists them), so there are fewer dials to manage; each is still re-tested in the stress tool before it changes.
 
 ## 11. Lessons and recommendations from this study
 

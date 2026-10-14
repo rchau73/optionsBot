@@ -55,7 +55,7 @@ docker compose exec bot-btc sh       # shell inside the container (runs as a non
 
 ## Watch the logs
 
-**Market history.** Each bot records the option market every `market_record_minutes` (60) to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.
+**Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot. It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it. The log lines carry `dir`.
 
@@ -82,7 +82,7 @@ docker compose logs -f bot-btc | grep '"close_reason":"stop_loss"'
 docker compose logs bot-btc | grep '"close_reason"' \
   | jq '{instrument, close_reason, pnl, pnl_usd_fmt, roi_pct_fmt, hold_days}'
 
-# P&L per strategy slot and total (every report_interval_sec)
+# P&L per strategy slot and total (every 60 s)
 grep '"event":"pnl"' orders.log | jq '{slot, realised, unrealised, total_usd, open_legs}'
 
 # Market conditions at each entry: DVOL, moneyness, open interest
@@ -142,7 +142,7 @@ Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i ./bo
 | `gateway giving up` then exit code 1 | reconnect attempts exhausted | the supervisor restarts it and reconcile restores state |
 | `decision loop stalled` then exit code 1 | no decision cycle for 10+ minutes (stop-losses were not being checked) | the supervisor restarts it; report it — something blocked the loop |
 | monitor shows **LOOP STALLED** | the bot's API answers but its loop has not cycled for 3 intervals (≥ 2 min) | if it persists past the watchdog limit the bot restarts itself; otherwise `docker compose restart bot-<coin>` |
-| `skip slot: no suitable expiry` | no listed expiry inside the slot's DTE window | widen `max_dte_deviation` or change the slot DTE |
+| `skip slot: no suitable expiry` | no listed expiry inside the slot's DTE window | change the slot DTE (the ±10-day window is fixed in code) |
 | testnet fills look odd | testnet quotes are thin or synthetic | use testnet to prove mechanics, not profitability |
 
 ## Book vs exchange

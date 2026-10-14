@@ -128,46 +128,48 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 
 ### Strategy — `config_*.yaml`
 
+Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys became 14). Everything else is fixed in code (`internal/config/fixed.go`, table below); a file that still sets a fixed key fails at startup and names it, so nobody believes a changed value is in force. To make one tunable again, give its field back its `yaml` tag and drop it from `ApplyFixed`. `tests/config_effective_test.go` pins every setting both shipped configs produce, so moving a key between the file and the code cannot change a value unnoticed.
+
 | Key | Default | Meaning |
 |---|---|---|
 | `underlying` | — | `BTC` or `ETH` |
 | `strategy_id` | `short-strangle` | names the strategy in `orders.log` and in Deribit order labels (`<id>:<dte>d:<delta>`) |
 | `dte_delta_matrix` | — | slots: each `dte` with one or more `deltas`; one strangle per (DTE, delta) |
+| `min_premium` | 0 | skip legs whose price is below this, in the underlying's coin (0 = off; was `min_premium_btc`) |
 | `rollout_dte` | — | roll a leg when days to expiry ≤ this; every slot DTE must be above it |
 | `delta_drift_threshold` | — | roll a leg when \|delta\| falls below this (little premium left). At most 75% of every entry delta, or a new leg would be rolled by the first small move, over and over |
 | `roi_take_profit` | — | roll a leg once this share of the premium is captured (0.5 = 50 %) |
 | `stop_loss_multiplier` | — | close at market when the loss reaches this × premium received |
-| `stop_spread_guard_pct` / `stop_spread_max_wait_minutes` | 20 / 5 | a triggered stop waits while the leg's ask is more than this % above its mid (an emptied book: a flash wick), re-checked each cycle, for at most this many minutes, then at market; −1 = off |
 | `delta_exit_threshold` | 0.30 | close a short leg (IOC at the ask) when its \|delta\| reaches this — before the stop; the leg is then held like a stopped one. Must be above every entry delta |
-| `max_leg_size_multiple` | 2 | a new leg is at most this × its slot's normal size (slot share ÷ the strangle's margin per lot on its own) — book offsets can make a leg look almost free |
-| `rebalance_retry_minutes` | 15 | a rebalance complement that times out short of its size re-runs the rebalance after this long (it re-measures the book, sizing each slot as a whole) |
-| `churn_max_round_trips` / `churn_window_minutes` | 3 / 60 | churn breaker: a slot that buys back and re-sells this many times within the window is paused for the window — no entries, repairs, upsizes or leg balancing; exits still run |
-| `market_record_minutes` | 60 | market history for backtests and stress tests: every this many minutes the bot writes every option of its coin, as Deribit **mainnet** quotes it (bid/ask/mid/mark, mark IV, forward, open interest, Black–Scholes greeks, DVOL), to `data/market/YYYY-MM-DD.csv.gz`. It reuses the GEX poll — no extra Deribit call. The coin's USDC-settled options (prices in USDC) go to `data/market_usdc/` the same way, with one extra mainnet call, for a liquidity comparison; negative = off (both) |
-| `gamma_flip_buffer_sd` | 1 | GEX sheds a leg only when spot is this many daily standard deviations (DVOL ÷ √365) below the gamma flip — about 1.9 % for BTC and 2.6 % for ETH at today's DVOL; scales with each asset's volatility (0–3) |
-| `gex_shed_confirm_snapshots` | 2 | a leg is shed only once the signal has held on this many consecutive GEX snapshots (one a minute; 1 = at once) — the script's flip can jump for a minute when open interest shifts |
-| `gex_repair_confirm_snapshots` / `gex_repair_release_hours` | 2 / 24 | a GEX-shed leg is re-sold once spot is back above the flip **it was shed at** plus the buffer on this many consecutive snapshots, or once the live regime has been non-negative this long — not when the live flip jumps under spot (2026-10-06) |
 | `repair_cooldown_hours` | 72 | a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative (rolled legs reopen at once) |
+| `gamma_flip_buffer_sd` | 1 | GEX sheds a leg only when spot is this many daily standard deviations (DVOL ÷ √365) below the gamma flip — about 1.9 % for BTC and 2.6 % for ETH at today's DVOL; scales with each asset's volatility (0–3) |
+| `gex_direction` | `sma` | the side to avoid in a negative regime: `sma` (SMA trend) or `bias` (the script's acceleration bias, spot vs flip ± buffer); BTC trials `bias` since 2026-10-12 |
 | `iv_margin_bands` | ≥70 → 50, ≥30 → 35, ≥0 → 20 | initial-margin limit (% of Deribit's margin balance) by DVOL IV-percentile band; the lowest band must start at 0. A confirmed negative gamma regime forces the lowest band and, in a trend, blocks new shorts on the side the trend runs toward |
-| `iv_band_confirm_days` | 2 | consecutive UTC daily closes a DVOL band or gamma regime change must hold before the limit moves; until then new entries are frozen |
 | `max_mm_pct` | 35 | maintenance-margin limit (% of margin balance), enforced at once by reducing positions; below 100 (Deribit liquidates at 100) |
-| `max_dte_deviation` | 2 | days an expiry may differ from the slot DTE |
-| `expiry_stretch` | 1.5 | slots keep separate expiries: when another slot holds a slot's expiry, it takes the nearest free one up to target DTE × this (1–3), otherwise it waits. Deribit lists weeklies only a few weeks out, then month-/quarter-ends, so nearby slots (45/60) would often share one |
-| `delta_slippage` | 0 | max distance from the target delta (0 = take the closest). An entry picks its call and put **as a pair** within this band, so their deltas cancel as well as the strike grid allows; a repair takes the strike nearest the target |
-| `min_premium_btc` | 0 | skip legs whose price is below this (0 = off) |
-| `min_trade_amount` | 0.05 | fallback lot size when the exchange does not provide one |
-| `eval_interval_ms` | 35000 | decision-loop period |
-| `report_interval_sec` | 60 | heartbeat and P&L journal line period |
-| `order_fill_timeout_sec` | 90 | cancel unfilled entry legs after this |
-| `order_slippage_pct` / `order_max_adjustments` | 0.05 / 3 | follow the ask when it drifts up by more than this, at most N times (moves down are not capped) |
-| `entry_price_floor` / `repair_price_floor` | mid / bid | a resting sell offers at the ask for the first third of `order_fill_timeout_sec`, then at mid (rounded up to a tick), then at this floor for the last third; the premium floor is checked at this price. Without a bid the order stays at the ask |
-| `gamma_trend_lookback_days`, `swing_pivot_n` | — / 3 | trend detection from daily closes |
-| `gex_method` | `script` | `script` = GestaoCarteira's rules (regime = sign of weighted GEX, flip = lowest crossing); `nearest_flip` = crossing nearest spot, regime = spot vs flip, with hysteresis |
-| `gex_strike_range_pct` | 0 | strikes used for GEX: ±this of each expiry's underlying (shipped configs: 0.15, as the script; 0 = all) |
-| `gamma_regime_band_pct` | 0.01 | hysteresis band around the flip (`nearest_flip` only) |
-| `iv_percentile_window` | — | days of DVOL history for the IV percentile |
-| `hedge_report_threshold` | — | \|net delta\| that triggers a hedge report |
-| `spread_alert_threshold` | — | warn when a fill's bid/ask spread exceeds this |
-| `backtest.*` | — | fill model, slippage, limit-fill rule, commission |
+| `max_leg_size_multiple` | 2 | a new leg is at most this × its slot's normal size (slot share ÷ the strangle's margin per lot on its own) — book offsets can make a leg look almost free |
+| `backtest.*` | — | fill model, slippage, limit-fill rule, commission (backtest only) |
+
+**Fixed in code** (`internal/config/fixed.go`; the former key in brackets):
+
+| Value | Rule |
+|---|---|
+| GEX method `script` (`gex_method`), strikes ±15 % (`gex_strike_range_pct`) | GestaoCarteira's rules (regime = sign of weighted GEX, flip = lowest crossing), checked by `tests/gex_parity_test.go`. The `nearest_flip` method and its 0.025 band (`gamma_regime_band_pct`) remain in code, unused |
+| 2 snapshots (`gex_shed_confirm_snapshots`, `gex_repair_confirm_snapshots`) | a leg is shed only once the signal has held on 2 consecutive GEX snapshots (the flip can jump for a minute); a shed leg is re-sold once spot is back above the flip **it was shed at** plus the buffer on 2 snapshots… |
+| 24 h (`gex_repair_release_hours`) | …or once the live regime has been non-negative this long |
+| 24 h (`gex_bias_repair_cooldown_hours`), 60 min (`gex_bias_flip_window_minutes`) | under `bias`: a shed leg waits 24 h; the bias must agree against the live flip and the last hour's median flip |
+| 120 days, 5 bars (`gamma_trend_lookback_days`, `swing_pivot_n`) | SMA trend from daily closes |
+| 252 days (`iv_percentile_window`), 2 closes (`iv_band_confirm_days`) | DVOL IV percentile; a band or regime change must hold on 2 UTC daily closes (until then new risk is frozen) |
+| 20 %, 5 min (`stop_spread_guard_pct`, `stop_spread_max_wait_minutes`) | a triggered stop waits while the ask is more than 20 % above the mid (an emptied book), at most 5 minutes, then at market |
+| 3 in 60 min (`churn_max_round_trips`, `churn_window_minutes`) | churn breaker: a slot that buys back and re-sells 3 times within an hour is paused for the hour (exits still run) |
+| 15 min (`rebalance_retry_minutes`) | a rebalance complement that times out short re-runs the rebalance after this |
+| 90 s, ask → mid → floor (`order_fill_timeout_sec`, `entry_price_floor` mid, `repair_price_floor` bid) | a resting sell offers at the ask for the first third of 90 s, then mid (rounded up to a tick), then the floor — mid for entries and top-ups, bid for repairs; the premium floor is checked at that price. Without a bid it stays at the ask |
+| 5 %, 3 times (`order_slippage_pct`, `order_max_adjustments`) | follow the ask up when it drifts more than 5 %, at most 3 times (moves down are not capped) |
+| ±10 days, × 1.5 (`max_dte_deviation`, `expiry_stretch`) | an expiry may differ from the slot DTE by 10 days; when another slot holds it, the nearest free one up to DTE × 1.5, otherwise wait |
+| 0.03 (`delta_slippage`) | max distance from the target delta. An entry picks its call and put **as a pair** within this band; a repair takes the strike nearest the target |
+| 0.1 (`min_trade_amount`) | lot size only when Deribit gives none (it is read per option) |
+| 40 s, 60 s (`eval_interval_ms`, `report_interval_sec`) | decision-loop period; heartbeat and P&L journal line |
+| 60 min (`market_record_minutes`) | market history for backtests and stress tests: the coin's options as Deribit **mainnet** quotes them (bid/ask/mid/mark, mark IV, forward, open interest, Black–Scholes greeks, DVOL) to `data/market/YYYY-MM-DD.csv.gz`, reusing the GEX poll; the USDC-settled options (prices in USDC) to `data/market_usdc/`, one extra mainnet call, for a liquidity comparison |
+| 5 % (`spread_alert_threshold`), 0.05 (`hedge_report_threshold`) | journal warning on wide fill spreads; `hedge_report.json` from this \|net delta\| |
 
 ### Platform — `.env`
 

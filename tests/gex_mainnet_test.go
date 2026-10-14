@@ -115,7 +115,4 @@ func TestConfigLoad_GEXMethod(t *testing.T) {
 	if err != nil || cfg.GEXMethod != gex.MethodScript {
 		t.Errorf("default gex_method = %q (%v), want script", cfg.GEXMethod, err)
 	}
-	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "gex_method: magic\n")); err == nil || !strings.Contains(err.Error(), "gex_method") {
-		t.Errorf("an unknown method must be rejected, got %v", err)
-	}
 }

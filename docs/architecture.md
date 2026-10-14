@@ -2,6 +2,8 @@
 
 A detailed look at how the bot is built: packages, goroutines, data flow and the invariants that keep it safe. The [README](../README.md) has the overview; [diagrams](README.md) are listed in the docs index.
 
+Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshots` name rule values; since 2026-10-14 most are fixed in `internal/config/fixed.go` rather than set in `config_*.yaml` (README "Configuration" says which).
+
 ## Contents
 1. [Design goals](#1-design-goals)
 2. [Package map](#2-package-map)

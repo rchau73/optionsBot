@@ -27,17 +27,18 @@ type StrangleSlot struct {
 }
 
 // Config holds all runtime configuration.
-// Strategy/logic fields are loaded from config.yaml.
+// Strategy/logic fields are loaded from config.yaml; those tagged yaml:"-"
+// are fixed in code (fixed.go, ApplyFixed) and only tests and sweeps vary them.
 // Platform/connectivity fields are loaded from .env.
 type Config struct {
 	// ── Loaded from config.yaml ───────────────────────────────────────────────
 	Underlying     string          `yaml:"underlying"`
 	StrategyID     string          `yaml:"strategy_id"` // names the strategy in orders.log and order labels
 	DTEDeltaMatrix []DTEDeltaEntry `yaml:"dte_delta_matrix"`
-	// Legacy fields — kept for backward-compatible configs and backtest scenario sweeps.
+	// Legacy fields — set in code by backtest scenario sweeps only.
 	// Ignored by Slots() when dte_delta_matrix is set.
-	TargetDTE  []int   `yaml:"target_dte"`
-	EntryDelta float64 `yaml:"entry_delta"`
+	TargetDTE  []int   `yaml:"-"`
+	EntryDelta float64 `yaml:"-"`
 	RolloutDTE int     `yaml:"rollout_dte"`
 	// RepairCooldownHours: a leg closed by a stop-loss is re-sold no sooner
 	// than this, and only when entries are not frozen and the confirmed gamma
@@ -46,16 +47,16 @@ type Config struct {
 	// RebalanceRetryMinutes: when a rebalance complement times out short of
 	// its size, the rebalance runs again after this long (it would otherwise
 	// wait for the next confirmed limit change or a restart).
-	RebalanceRetryMinutes int `yaml:"rebalance_retry_minutes"`
+	RebalanceRetryMinutes int `yaml:"-"`
 	// ChurnMaxRoundTrips / ChurnWindowMinutes: a slot that buys back and
 	// re-sells this many times within the window is paused for the window
 	// (no entries, repairs, upsizes or leg balancing; exits still run).
-	ChurnMaxRoundTrips int `yaml:"churn_max_round_trips"`
+	ChurnMaxRoundTrips int `yaml:"-"`
 	// MarketRecordMinutes: every this many minutes the bot records every
 	// option of its underlying (mainnet quotes) to data/market/ for
-	// backtests and stress tests. 0 → 60; negative → off.
-	MarketRecordMinutes int `yaml:"market_record_minutes"`
-	ChurnWindowMinutes  int `yaml:"churn_window_minutes"`
+	// backtests and stress tests; negative → off.
+	MarketRecordMinutes int `yaml:"-"`
+	ChurnWindowMinutes  int `yaml:"-"`
 	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
 	// share ÷ the strangle's standalone margin per lot).
 	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
@@ -66,68 +67,68 @@ type Config struct {
 	// this % above its mid (an emptied book: a flash wick) and fires once the
 	// spread is back under it, re-checked each cycle — at most
 	// StopSpreadMaxWaitMin minutes, then at market. −1 = off.
-	StopSpreadGuardPct   float64 `yaml:"stop_spread_guard_pct"`
-	StopSpreadMaxWaitMin int     `yaml:"stop_spread_max_wait_minutes"`
+	StopSpreadGuardPct   float64 `yaml:"-"`
+	StopSpreadMaxWaitMin int     `yaml:"-"`
 	// DeltaExitThreshold: a short leg whose |delta| reaches this is bought
 	// back and held like a stopped leg (must be above every entry delta).
 	DeltaExitThreshold float64 `yaml:"delta_exit_threshold"`
 
-	GammaTrendLookbackDays int     `yaml:"gamma_trend_lookback_days"`
-	SwingPivotN            int     `yaml:"swing_pivot_n"`
-	GammaRegimeBandPct     float64 `yaml:"gamma_regime_band_pct"`
+	GammaTrendLookbackDays int     `yaml:"-"`
+	SwingPivotN            int     `yaml:"-"`
+	GammaRegimeBandPct     float64 `yaml:"-"`
 	// GammaFlipBufferSD: a leg is shed only once spot is this many daily
 	// standard deviations (DVOL ÷ √365) below the gamma flip.
 	GammaFlipBufferSD float64 `yaml:"gamma_flip_buffer_sd"`
 	// GEXShedConfirmSnapshots: a leg is shed only once the signal has held
 	// for this many consecutive GEX snapshots (one per minute; 1 = at once).
-	GEXShedConfirmSnapshots int `yaml:"gex_shed_confirm_snapshots"`
+	GEXShedConfirmSnapshots int `yaml:"-"`
 	// GEXRepairConfirmSnapshots: a GEX-shed leg is re-sold once spot is above
 	// the flip it was shed at plus its buffer on this many consecutive
 	// snapshots, or once the live regime has been non-negative for
 	// GEXRepairReleaseHours.
-	GEXRepairConfirmSnapshots int `yaml:"gex_repair_confirm_snapshots"`
-	GEXRepairReleaseHours     int `yaml:"gex_repair_release_hours"`
+	GEXRepairConfirmSnapshots int `yaml:"-"`
+	GEXRepairReleaseHours     int `yaml:"-"`
 	// GEXDirection: the side to avoid in a negative regime — "sma" (swing
 	// levels and SMAs of daily closes) or "bias" (the reference script's
 	// ACCELERATION BIAS: spot vs flip ± buffer). Under "bias" a shed leg is
 	// re-sold GEXBiasRepairCooldownHours after the shed, once the bias has
 	// left its side on GEXRepairConfirmSnapshots consecutive snapshots.
 	GEXDirection               string `yaml:"gex_direction"`
-	GEXBiasRepairCooldownHours int    `yaml:"gex_bias_repair_cooldown_hours"`
+	GEXBiasRepairCooldownHours int    `yaml:"-"`
 	// GEXBiasFlipWindowMinutes: the bias holds only when it points the same
 	// way against the live flip and the median flip of this many minutes
 	// (strategy.StableBiasDir) — the flip jumps before daily expiries.
-	// 0 → 60; negative → the live flip alone.
-	GEXBiasFlipWindowMinutes int     `yaml:"gex_bias_flip_window_minutes"`
-	GEXStrikeRangePct        float64 `yaml:"gex_strike_range_pct"`
-	GEXMethod                string  `yaml:"gex_method"` // script (default) | nearest_flip
-	IVPercentileWindow       int     `yaml:"iv_percentile_window"`
-	HedgeReportThreshold     float64 `yaml:"hedge_report_threshold"`
+	// Negative → the live flip alone.
+	GEXBiasFlipWindowMinutes int     `yaml:"-"`
+	GEXStrikeRangePct        float64 `yaml:"-"`
+	GEXMethod                string  `yaml:"-"` // script (default) | nearest_flip
+	IVPercentileWindow       int     `yaml:"-"`
+	HedgeReportThreshold     float64 `yaml:"-"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
 	// fixed MM limit, band/regime changes confirmed on daily closes.
 	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
 	MaxMMPct             float64     `yaml:"max_mm_pct"`
-	IVBandConfirmDays    int         `yaml:"iv_band_confirm_days"`
-	SpreadAlertThreshold float64     `yaml:"spread_alert_threshold"`
+	IVBandConfirmDays    int         `yaml:"-"`
+	SpreadAlertThreshold float64     `yaml:"-"`
 
-	EvalIntervalMS    int `yaml:"eval_interval_ms"`
-	ReportIntervalSec int `yaml:"report_interval_sec"` // heartbeat + P&L journal period
-	MaxDTEDeviation   int `yaml:"max_dte_deviation"`
+	EvalIntervalMS    int `yaml:"-"`
+	ReportIntervalSec int `yaml:"-"` // heartbeat + P&L journal period
+	MaxDTEDeviation   int `yaml:"-"`
 	// ExpiryStretch: when a slot's own expiry is held by another slot, it may
 	// use the nearest free expiry up to target DTE × this; otherwise it waits.
-	ExpiryStretch       float64 `yaml:"expiry_stretch"`
-	DeltaSlippage       float64 `yaml:"delta_slippage"`
-	MinTradeAmount      float64 `yaml:"min_trade_amount"`
-	MinPremiumBTC       float64 `yaml:"min_premium_btc"`
-	OrderFillTimeoutSec int     `yaml:"order_fill_timeout_sec"`
-	OrderSlippagePct    float64 `yaml:"order_slippage_pct"`
+	ExpiryStretch       float64 `yaml:"-"`
+	DeltaSlippage       float64 `yaml:"-"`
+	MinTradeAmount      float64 `yaml:"-"`
+	MinPremiumBTC       float64 `yaml:"min_premium"`
+	OrderFillTimeoutSec int     `yaml:"-"`
+	OrderSlippagePct    float64 `yaml:"-"`
 	// EntryPriceFloor / RepairPriceFloor: how far a resting sell steps down
 	// from the ask before order_fill_timeout_sec — "ask", "mid" or "bid".
 	// Entries and rebalance upsizes default to mid; repairs, which restore a
 	// one-sided strangle's hedge, to the bid.
-	EntryPriceFloor     string `yaml:"entry_price_floor"`
-	RepairPriceFloor    string `yaml:"repair_price_floor"`
-	OrderMaxAdjustments int    `yaml:"order_max_adjustments"`
+	EntryPriceFloor     string `yaml:"-"`
+	RepairPriceFloor    string `yaml:"-"`
+	OrderMaxAdjustments int    `yaml:"-"`
 
 	Backtest Backtest `yaml:"backtest"`
 
@@ -239,17 +240,6 @@ func (c *Config) Validate() error {
 	if c.RepairCooldownHours < 0 {
 		return fmt.Errorf("repair_cooldown_hours %d must not be negative", c.RepairCooldownHours)
 	}
-	for key, v := range map[string]string{"entry_price_floor": c.EntryPriceFloor, "repair_price_floor": c.RepairPriceFloor} {
-		if v != "ask" && v != "mid" && v != "bid" {
-			return fmt.Errorf("%s %q must be ask, mid or bid", key, v)
-		}
-	}
-	if c.ChurnMaxRoundTrips < 0 || c.ChurnWindowMinutes < 0 {
-		return fmt.Errorf("churn_max_round_trips %d and churn_window_minutes %d must not be negative", c.ChurnMaxRoundTrips, c.ChurnWindowMinutes)
-	}
-	if c.RebalanceRetryMinutes < 0 {
-		return fmt.Errorf("rebalance_retry_minutes %d must not be negative", c.RebalanceRetryMinutes)
-	}
 	if c.DeltaDriftThreshold < 0 {
 		return fmt.Errorf("delta_drift_threshold %.2f must not be negative", c.DeltaDriftThreshold)
 	}
@@ -267,41 +257,14 @@ func (c *Config) Validate() error {
 				c.DeltaExitThreshold, sl.TargetDTE, sl.EntryDelta)
 		}
 	}
-	if c.ExpiryStretch < 1 || c.ExpiryStretch > 3 {
-		return fmt.Errorf("expiry_stretch %.2f must be between 1 (no stretch: wait) and 3", c.ExpiryStretch)
-	}
 	if c.StopLossMultiplier <= 0 {
 		return fmt.Errorf("stop_loss_multiplier %.2f must be positive", c.StopLossMultiplier)
 	}
 	if c.GammaFlipBufferSD < 0 || c.GammaFlipBufferSD > 3 {
 		return fmt.Errorf("gamma_flip_buffer_sd %.2f must be between 0 and 3 daily standard deviations", c.GammaFlipBufferSD)
 	}
-	if c.GEXShedConfirmSnapshots < 1 || c.GEXShedConfirmSnapshots > 10 {
-		return fmt.Errorf("gex_shed_confirm_snapshots %d must be between 1 (shed at once) and 10", c.GEXShedConfirmSnapshots)
-	}
-	if c.GEXRepairConfirmSnapshots < 1 || c.GEXRepairConfirmSnapshots > 10 {
-		return fmt.Errorf("gex_repair_confirm_snapshots %d must be between 1 and 10", c.GEXRepairConfirmSnapshots)
-	}
-	if c.GEXRepairReleaseHours < 1 || c.GEXRepairReleaseHours > 168 {
-		return fmt.Errorf("gex_repair_release_hours %d must be between 1 and 168", c.GEXRepairReleaseHours)
-	}
 	if c.GEXDirection != "sma" && c.GEXDirection != "bias" {
 		return fmt.Errorf("gex_direction %q must be sma or bias", c.GEXDirection)
-	}
-	if c.GEXBiasFlipWindowMinutes > 1440 {
-		return fmt.Errorf("gex_bias_flip_window_minutes %d must be at most 1440", c.GEXBiasFlipWindowMinutes)
-	}
-	if c.GEXBiasRepairCooldownHours < 0 || c.GEXBiasRepairCooldownHours > 168 {
-		return fmt.Errorf("gex_bias_repair_cooldown_hours %d must be between 0 and 168", c.GEXBiasRepairCooldownHours)
-	}
-	if c.StopSpreadGuardPct != -1 && (c.StopSpreadGuardPct < 1 || c.StopSpreadGuardPct > 100) {
-		return fmt.Errorf("stop_spread_guard_pct %.1f must be between 1 and 100 (ask above mid, %%), or -1 (off)", c.StopSpreadGuardPct)
-	}
-	if c.StopSpreadMaxWaitMin < 1 || c.StopSpreadMaxWaitMin > 60 {
-		return fmt.Errorf("stop_spread_max_wait_minutes %d must be between 1 and 60", c.StopSpreadMaxWaitMin)
-	}
-	if c.GEXMethod != "script" && c.GEXMethod != "nearest_flip" {
-		return fmt.Errorf("gex_method %q must be script or nearest_flip", c.GEXMethod)
 	}
 	if c.Environment != "testnet" && c.Environment != "live" {
 		return fmt.Errorf("DERIBIT_ENV %q must be testnet or live", c.Environment)
@@ -392,6 +355,14 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("config key %q was removed: margin is now limited by %s (as %% of Deribit's margin balance) — see README", old, repl)
 		}
 	}
+	if _, ok := keys["min_premium_btc"]; ok {
+		return nil, errors.New(`config key "min_premium_btc" was renamed min_premium (in the underlying's coin)`)
+	}
+	for key := range keys {
+		if v, ok := fixedKeys[key]; ok {
+			return nil, fmt.Errorf("config key %q is fixed in code now (%s): remove it from the file — see README \"Configuration\"", key, v)
+		}
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
@@ -408,64 +379,11 @@ func Load(path string) (*Config, error) {
 	}
 
 	// ── Logic param defaults (config.yaml is authoritative; these are fallbacks)
-	if cfg.EvalIntervalMS <= 0 {
-		cfg.EvalIntervalMS = 35000
-	}
-	if cfg.ReportIntervalSec <= 0 {
-		cfg.ReportIntervalSec = 60
-	}
-	if cfg.ExpiryStretch == 0 {
-		cfg.ExpiryStretch = 1.5
-	}
-	if cfg.MaxDTEDeviation <= 0 {
-		cfg.MaxDTEDeviation = 2
-	}
-	if cfg.MinTradeAmount <= 0 {
-		cfg.MinTradeAmount = 0.05
-	}
-	if cfg.OrderFillTimeoutSec <= 0 {
-		cfg.OrderFillTimeoutSec = 90
-	}
-	// MinPremiumBTC == 0 disables the floor (accept any premium).
-	if cfg.EntryPriceFloor == "" {
-		cfg.EntryPriceFloor = "mid"
-	}
-	if cfg.RepairPriceFloor == "" {
-		cfg.RepairPriceFloor = "bid"
-	}
-	if cfg.OrderSlippagePct <= 0 {
-		cfg.OrderSlippagePct = 0.05
-	}
-	if cfg.OrderMaxAdjustments <= 0 {
-		cfg.OrderMaxAdjustments = 3
-	}
-	if cfg.SwingPivotN <= 0 {
-		cfg.SwingPivotN = 3
-	}
-	if cfg.GammaRegimeBandPct <= 0 {
-		cfg.GammaRegimeBandPct = 0.01 // 1% band around gamma flip
-	}
-	// GEXStrikeRangePct: 0 disables the filter (all strikes included).
-	// config.yaml is the authority; no default override so users can explicitly disable.
-	// DeltaSlippage == 0 is valid: disables the tolerance filter entirely.
-
 	if cfg.MaxLegSizeMultiple == 0 {
 		cfg.MaxLegSizeMultiple = 2
 	}
 	if cfg.RepairCooldownHours == 0 {
 		cfg.RepairCooldownHours = 72
-	}
-	if cfg.MarketRecordMinutes == 0 {
-		cfg.MarketRecordMinutes = 60
-	}
-	if cfg.ChurnMaxRoundTrips == 0 {
-		cfg.ChurnMaxRoundTrips = 3
-	}
-	if cfg.ChurnWindowMinutes == 0 {
-		cfg.ChurnWindowMinutes = 60
-	}
-	if cfg.RebalanceRetryMinutes == 0 {
-		cfg.RebalanceRetryMinutes = 15
 	}
 	if cfg.DeltaExitThreshold == 0 {
 		cfg.DeltaExitThreshold = 0.30
@@ -473,30 +391,11 @@ func Load(path string) (*Config, error) {
 	if cfg.GammaFlipBufferSD == 0 {
 		cfg.GammaFlipBufferSD = 1
 	}
-	if cfg.GEXMethod == "" {
-		cfg.GEXMethod = "script"
-	}
-	if cfg.GEXShedConfirmSnapshots == 0 {
-		cfg.GEXShedConfirmSnapshots = 2
-	}
-	if cfg.GEXRepairConfirmSnapshots == 0 {
-		cfg.GEXRepairConfirmSnapshots = 2
-	}
-	if cfg.GEXRepairReleaseHours == 0 {
-		cfg.GEXRepairReleaseHours = 24
-	}
 	if cfg.GEXDirection == "" {
 		cfg.GEXDirection = "sma"
 	}
-	if cfg.GEXBiasFlipWindowMinutes == 0 {
-		cfg.GEXBiasFlipWindowMinutes = 60
-	}
-	if cfg.StopSpreadGuardPct == 0 {
-		cfg.StopSpreadGuardPct = 20
-	}
-	if cfg.StopSpreadMaxWaitMin == 0 {
-		cfg.StopSpreadMaxWaitMin = 5
-	}
+	// MinPremiumBTC == 0 disables the floor (accept any premium).
+	cfg.ApplyFixed()
 
 	// ── Margin policy defaults (validated in Validate) ────────────────────────
 	if len(cfg.IVMarginBands) == 0 {
@@ -505,10 +404,6 @@ func Load(path string) (*Config, error) {
 	if cfg.MaxMMPct == 0 {
 		cfg.MaxMMPct = DefaultMaxMMPct
 	}
-	if cfg.IVBandConfirmDays == 0 {
-		cfg.IVBandConfirmDays = DefaultIVBandConfirmDays
-	}
-
 	// ── Platform: rate limits (from .env) ─────────────────────────────────────
 	cfg.RateLimit = RateLimitConfig{
 		WsNonMatchRPS:    envFloat("DERIBIT_RATE_WS_NONMATCH_RPS", 20),

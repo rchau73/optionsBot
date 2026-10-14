@@ -31,6 +31,8 @@ Strict separation — do not mix:
 
 Never reintroduce env-var overrides for logic parameters.
 
+**Few settings** (2026-10-14, the user's call: "far complex to manage"): the YAML holds only what is tuned — slots, exits, `repair_cooldown_hours`, `gamma_flip_buffer_sd`, `gex_direction`, margin bands/MM, `max_leg_size_multiple`, `min_premium`. Every other rule value is fixed in `internal/config/fixed.go` (`ApplyFixed`, run by `Load`); a file that sets a fixed key fails to load (`fixedKeys`). The snake_case names below (e.g. `gex_shed_confirm_snapshots` (2)) name those fixed values — the Go fields keep them, so tests and sweeps can still vary them in code. Do not add a config key for a new rule: fix its value in `fixed.go` and keep a `cmd/stress` flag to study it. `tests/config_effective_test.go` pins every effective setting of both shipped configs (golden `tests/testdata/effective_config_*.json`; regenerate with `UPDATE_GOLDEN=1` only for an intended change).
+
 **Secrets never reach GitHub** (the repository is public): `.env` and every `.env.*` except `.env.example` are ignored; `make hooks` installs `.githooks/pre-commit`, which refuses env/key files and any staged line containing a value of a `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*` variable from the local `.env`; CI runs gitleaks over the full history. Never paste a secret into a commit, PR text, test fixture or log line.
 
 ## Architecture

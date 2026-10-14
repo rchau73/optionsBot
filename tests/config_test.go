@@ -75,32 +75,64 @@ func TestConfigLoad_GEXShedDefaults(t *testing.T) {
 		t.Errorf("shed defaults = %d/%d/%d, want 2/2/24", cfg.GEXShedConfirmSnapshots, cfg.GEXRepairConfirmSnapshots, cfg.GEXRepairReleaseHours)
 	}
 	if cfg.StopSpreadGuardPct != 20 || cfg.StopSpreadMaxWaitMin != 5 {
-		t.Errorf("stop spread guard defaults = %.0f%%/%d min, want 20%%/5", cfg.StopSpreadGuardPct, cfg.StopSpreadMaxWaitMin)
+		t.Errorf("stop spread guard = %.0f%%/%d min, want 20%%/5", cfg.StopSpreadGuardPct, cfg.StopSpreadMaxWaitMin)
 	}
-	off, err := loadWithDummyCreds(t, writeTempConfig(t, "stop_spread_guard_pct: -1\n"))
-	if err != nil || off.StopSpreadGuardPct != -1 {
-		t.Errorf("-1 turns the guard off: %v, %v", off.StopSpreadGuardPct, err)
+}
+
+// Settings fixed in code: a file that still sets one must not load (its
+// owner would believe the value is in force), and the error names the key
+// and the fixed value.
+func TestConfigLoad_RejectsFixedKeys(t *testing.T) {
+	for _, line := range []string{
+		"target_dte: [45]", "entry_delta: 0.16",
+		"gex_method: script", "gex_strike_range_pct: 0.15", "gamma_regime_band_pct: 0.025",
+		"gex_shed_confirm_snapshots: 2", "gex_repair_confirm_snapshots: 2", "gex_repair_release_hours: 24",
+		"gex_bias_repair_cooldown_hours: 24", "gex_bias_flip_window_minutes: 60",
+		"gamma_trend_lookback_days: 120", "swing_pivot_n: 5", "iv_percentile_window: 252", "iv_band_confirm_days: 2",
+		"stop_spread_guard_pct: 20", "stop_spread_max_wait_minutes: 5",
+		"churn_max_round_trips: 3", "churn_window_minutes: 60", "rebalance_retry_minutes: 15",
+		"order_fill_timeout_sec: 90", "order_slippage_pct: 0.05", "order_max_adjustments: 3",
+		"entry_price_floor: mid", "repair_price_floor: bid",
+		"max_dte_deviation: 10", "expiry_stretch: 1.5", "delta_slippage: 0.03", "min_trade_amount: 0.1",
+		"eval_interval_ms: 40000", "report_interval_sec: 60", "market_record_minutes: 60",
+		"spread_alert_threshold: 0.05", "hedge_report_threshold: 0.05",
+	} {
+		key := strings.SplitN(line, ":", 2)[0]
+		_, err := loadWithDummyCreds(t, writeTempConfig(t, line+"\n"))
+		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "fixed in code") {
+			t.Errorf("%s: want a fixed-in-code error naming the key, got %v", key, err)
+		}
+	}
+}
+
+// min_premium_btc was renamed: ETH's floor is in ETH.
+func TestConfigLoad_MinPremium(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, "min_premium: 0.002\n"))
+	if err != nil || cfg.MinPremiumBTC != 0.002 {
+		t.Errorf("min_premium = %v (%v), want 0.002", cfg.MinPremiumBTC, err)
+	}
+	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "min_premium_btc: 0.002\n")); err == nil || !strings.Contains(err.Error(), "renamed min_premium") {
+		t.Errorf("the old key must point to the new one, got %v", err)
 	}
 }
 
 func TestConfigLoad_CustomBands(t *testing.T) {
-	path := writeTempConfig(t, "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 10 }\n  - { min_iv_pct: 50, max_im_pct: 40 }\niv_band_confirm_days: 3\n")
+	path := writeTempConfig(t, "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 10 }\n  - { min_iv_pct: 50, max_im_pct: 40 }\n")
 	cfg, err := loadWithDummyCreds(t, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := cfg.RiskPolicy(false)
-	if p.ConfirmDays != 3 || p.SortedBands()[0].MaxIMPct != 40 {
+	if p.ConfirmDays != 2 || p.SortedBands()[0].MaxIMPct != 40 {
 		t.Errorf("policy = %+v", p)
 	}
 }
 
 func TestConfigLoad_RejectsBadBands(t *testing.T) {
 	cases := map[string]string{
-		"no zero band":     "iv_margin_bands:\n  - { min_iv_pct: 30, max_im_pct: 35 }\n",
-		"limit above 100":  "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 120 }\n",
-		"duplicate floor":  "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 20 }\n  - { min_iv_pct: 0, max_im_pct: 30 }\n",
-		"negative confirm": "iv_band_confirm_days: -1\n",
+		"no zero band":    "iv_margin_bands:\n  - { min_iv_pct: 30, max_im_pct: 35 }\n",
+		"limit above 100": "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 120 }\n",
+		"duplicate floor": "iv_margin_bands:\n  - { min_iv_pct: 0, max_im_pct: 20 }\n  - { min_iv_pct: 0, max_im_pct: 30 }\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -150,18 +182,11 @@ func TestConfigValidate_RejectsUnsafeSettings(t *testing.T) {
 		{"no stop-loss", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 0", "stop_loss_multiplier"},
 		{"negative flip buffer", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngamma_flip_buffer_sd: -1", "gamma_flip_buffer_sd"},
 		{"flip buffer too wide", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngamma_flip_buffer_sd: 4", "gamma_flip_buffer_sd"},
-		{"expiry stretch below 1", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nexpiry_stretch: 0.5", "expiry_stretch"},
-		{"expiry stretch above 3", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nexpiry_stretch: 4", "expiry_stretch"},
 		{"drift threshold at the entry delta (open-and-roll churn)", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: 0.16", "delta_drift_threshold"},
 		{"drift threshold just above 75% of the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: 0.121", "too close"},
 		{"negative drift threshold", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_drift_threshold: -0.1", "delta_drift_threshold"},
 		{"delta exit at the entry delta", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ndelta_exit_threshold: 0.16", "delta_exit_threshold"},
 		{"no underlying", "underlying: BTC", "underlying: \"\"", "underlying"},
-		{"shed confirm negative", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_shed_confirm_snapshots: -1", "gex_shed_confirm_snapshots"},
-		{"repair confirm too long", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_confirm_snapshots: 11", "gex_repair_confirm_snapshots"},
-		{"shed release over a week", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\ngex_repair_release_hours: 200", "gex_repair_release_hours"},
-		{"stop spread guard over 100", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nstop_spread_guard_pct: 150", "stop_spread_guard_pct"},
-		{"stop spread wait over an hour", "stop_loss_multiplier: 2.0", "stop_loss_multiplier: 2.0\nstop_spread_max_wait_minutes: 90", "stop_spread_max_wait_minutes"},
 	}
 	for _, tc := range raw {
 		t.Run(tc.name, func(t *testing.T) {
@@ -276,9 +301,6 @@ func TestConfigLoad_ChurnBreaker(t *testing.T) {
 	if err != nil || cfg.ChurnMaxRoundTrips != 3 || cfg.ChurnWindowMinutes != 60 {
 		t.Errorf("default churn breaker = %d in %d min (%v), want 3 in 60", cfg.ChurnMaxRoundTrips, cfg.ChurnWindowMinutes, err)
 	}
-	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "churn_window_minutes: -5\n")); err == nil || !strings.Contains(err.Error(), "churn_window_minutes") {
-		t.Errorf("a negative window must be rejected, got %v", err)
-	}
 }
 
 func TestConfigLoad_PriceFloors(t *testing.T) {
@@ -286,18 +308,12 @@ func TestConfigLoad_PriceFloors(t *testing.T) {
 	if err != nil || cfg.EntryPriceFloor != "mid" || cfg.RepairPriceFloor != "bid" {
 		t.Errorf("default floors = %q / %q (%v), want mid / bid", cfg.EntryPriceFloor, cfg.RepairPriceFloor, err)
 	}
-	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "repair_price_floor: market\n")); err == nil || !strings.Contains(err.Error(), "repair_price_floor") {
-		t.Errorf("an unknown floor must be rejected, got %v", err)
-	}
 }
 
 func TestConfigLoad_RebalanceRetry(t *testing.T) {
 	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
 	if err != nil || cfg.RebalanceRetryMinutes != 15 {
 		t.Errorf("default rebalance_retry_minutes = %d (%v), want 15", cfg.RebalanceRetryMinutes, err)
-	}
-	if _, err := loadWithDummyCreds(t, writeTempConfig(t, "rebalance_retry_minutes: -1\n")); err == nil || !strings.Contains(err.Error(), "rebalance_retry_minutes") {
-		t.Errorf("a negative retry delay must be rejected, got %v", err)
 	}
 }
 
