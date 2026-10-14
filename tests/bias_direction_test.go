@@ -75,9 +75,8 @@ func TestConfig_GEXDirection(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Error("gex_direction must be sma or bias")
 	}
-	cfg.GEXDirection, cfg.GEXBiasRepairCooldownHours = "bias", 200
-	if err := cfg.Validate(); err == nil {
-		t.Error("gex_bias_repair_cooldown_hours above 168 must be rejected")
+	if cfg.GEXBiasRepairCooldownHours != 24 {
+		t.Errorf("gex_bias_repair_cooldown_hours = %d, want 24 (fixed)", cfg.GEXBiasRepairCooldownHours)
 	}
 }
 
@@ -288,10 +287,6 @@ func TestConfig_GEXBiasFlipWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.GEXBiasFlipWindowMinutes != 60 {
-		t.Errorf("default gex_bias_flip_window_minutes = %d, want 60", cfg.GEXBiasFlipWindowMinutes)
-	}
-	cfg.GEXBiasFlipWindowMinutes = 2000
-	if err := cfg.Validate(); err == nil {
-		t.Error("a window above a day must be rejected")
+		t.Errorf("gex_bias_flip_window_minutes = %d, want 60 (fixed)", cfg.GEXBiasFlipWindowMinutes)
 	}
 }
