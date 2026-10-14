@@ -108,6 +108,9 @@ type MarketSnapshot struct {
 	GEXRegime     string  `json:"gex_regime,omitempty"`
 	GammaFlip     float64 `json:"gamma_flip,omitempty"`
 	SpotToFlipPct float64 `json:"spot_to_flip_pct,omitempty"` // (spot − flip) / flip × 100
+	// FlipBufferPct is the shed buffer around the flip at the event (sd ×
+	// DVOL ÷ √365); a GEX shed's anchor is rebuilt from it after a restart.
+	FlipBufferPct float64 `json:"flip_buffer_pct,omitempty"`
 }
 
 // EventContext is what every journal entry records besides the order itself.

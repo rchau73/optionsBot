@@ -48,6 +48,10 @@ func NewWriterLogger(w io.Writer, spreadAlertThreshold float64) *Logger {
 	return &Logger{w: w, spreadAlertThreshold: spreadAlertThreshold, recent: newRecentRing(RecentEvents)}
 }
 
+// CloseReasonLabel is the close_reason the journal records for a close
+// triggered by trigger (and the Reason a replayed close Trade carries).
+func CloseReasonLabel(trigger string) string { return closeReasonLabel(trigger) }
+
 // closeReasonLabel maps internal trigger constants to human-readable close reasons.
 func closeReasonLabel(trigger string) string {
 	switch trigger {

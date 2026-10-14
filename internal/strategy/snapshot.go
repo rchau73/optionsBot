@@ -28,6 +28,8 @@ type SnapshotInput struct {
 	Chain        []*marketdata.Instrument // option chain, for ATM IV and open interest by strike
 	OI           *gex.OISnapshot          // may be nil (before the first GEX refresh)
 	GEX          *gex.Snapshot            // may be nil
+	// FlipBufferPct is the live shed buffer, recorded with the flip.
+	FlipBufferPct float64
 }
 
 // BuildMarketSnapshot captures the market conditions around one instrument (or
@@ -43,6 +45,7 @@ func BuildMarketSnapshot(in SnapshotInput) orders.MarketSnapshot {
 		snap.GEXRegime = g.Regime
 		if g.GammaFlipFound && g.GammaFlip > 0 {
 			snap.GammaFlip = g.GammaFlip
+			snap.FlipBufferPct = in.FlipBufferPct
 			if in.Spot > 0 {
 				snap.SpotToFlipPct = (in.Spot - g.GammaFlip) / g.GammaFlip * 100
 			}
@@ -240,12 +243,13 @@ func (s *Strategy) strategyID() string {
 // slot-level events) in slot (nil when unknown).
 func (s *Strategy) eventContext(inst *marketdata.Instrument, slot *orders.SlotRef) orders.EventContext {
 	in := SnapshotInput{
-		Now:          time.Now(),
-		Spot:         s.md.UnderlyingPrice(),
-		DVOL:         s.md.DVOL(),
-		IVPercentile: s.md.IVPercentile(),
-		Instrument:   inst,
-		GEX:          s.gamma.CurrentGEXSnapshot(),
+		Now:           time.Now(),
+		Spot:          s.md.UnderlyingPrice(),
+		DVOL:          s.md.DVOL(),
+		IVPercentile:  s.md.IVPercentile(),
+		Instrument:    inst,
+		GEX:           s.gamma.CurrentGEXSnapshot(),
+		FlipBufferPct: s.gamma.FlipBuffer(),
 	}
 	if inst != nil {
 		in.Chain = s.md.AllInstruments()

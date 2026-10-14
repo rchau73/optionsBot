@@ -83,19 +83,30 @@ func expiryDay(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
-// stopReasons are the closes that hold a side's repair (noteStopped).
-var stopReasons = map[string]bool{
-	orders.TriggerStopLoss200Pct: true,
-	orders.TriggerDeltaExit:      true,
-	orders.TriggerManualClose:    true,
-	orders.TriggerMarginMM:       true, // held only when it closed the leg out; a partial cut leaves the leg, so nothing is missing
+// stopReasons are the closes that hold a side's repair (noteStopped). A
+// replayed close carries the journal's close_reason label ("stop_loss"), not
+// the trigger ("stop_loss_200pct"): until 2026-10-14 only the trigger was
+// listed, so a stop-loss was never restored (the others' labels are their
+// triggers). Both spellings are accepted.
+var stopReasons = closeReasons(
+	orders.TriggerStopLoss200Pct,
+	orders.TriggerDeltaExit,
+	orders.TriggerManualClose,
+	orders.TriggerMarginMM, // held only when it closed the leg out; a partial cut leaves the leg, so nothing is missing
+)
+
+// closeReasons is the set of triggers and the close_reason labels the
+// journal records for them.
+func closeReasons(triggers ...string) map[string]bool {
+	out := make(map[string]bool, 2*len(triggers))
+	for _, t := range triggers {
+		out[t], out[orders.CloseReasonLabel(t)] = true, true
+	}
+	return out
 }
 
 // partialReasons trim a leg that stays open: they say nothing about holds.
-var partialReasons = map[string]bool{
-	orders.TriggerRebalanceLegs:     true,
-	orders.TriggerRebalanceDownsize: true,
-}
+var partialReasons = closeReasons(orders.TriggerRebalanceLegs, orders.TriggerRebalanceDownsize)
 
 // StopsFromTrades returns, for each expiry side, when it was last stopped
 // out, as the in-memory record would hold it: the side's latest close was a
@@ -124,9 +135,11 @@ func StopsFromTrades(trades []orders.Trade) map[StopSide]time.Time {
 }
 
 // RestoreStops hands the journal's trades to the strategy; the stop records
-// are rebuilt after the startup reconcile. Call before Run.
+// and GEX shed anchors are rebuilt after the startup reconcile. Call before
+// Run.
 func (s *Strategy) RestoreStops(trades []orders.Trade) {
 	s.journalStops = StopsFromTrades(trades)
+	s.journalSheds = ShedsFromTrades(trades)
 }
 
 // applyJournalStops records a stop for every reconciled strangle missing a

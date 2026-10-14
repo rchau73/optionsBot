@@ -2,8 +2,10 @@ package strategy
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -126,4 +128,76 @@ func (s *Strategy) dropStaleAnchors() {
 			delete(s.shedAnchors, k)
 		}
 	}
+}
+
+// Restoring shed anchors after a restart. Anchors live in memory, so a
+// restart forgot them: on 2026-10-14 the bias shed BTC's put at 11:45, a
+// deploy restarted the bot at 12:05, and repair re-sold the put at 12:14 —
+// 24 h early, paying the spread twice. The journal holds every close with
+// the flip (and, since 2026-10-14, the buffer), so anchors are rebuilt from
+// it the way stop records are.
+
+// JournalShed is a side's last GEX shed as the journal recorded it.
+type JournalShed struct {
+	At        time.Time
+	Flip      float64
+	BufferPct float64 // 0 in records journaled before 2026-10-14: see DVOL
+	DVOL      float64 // at the shed, to rebuild a missing buffer
+}
+
+// shedReasons are a GEX shed's trigger and its close_reason label.
+var shedReasons = closeReasons(orders.TriggerGammaClose)
+
+// ShedsFromTrades returns, for each expiry side, its last GEX shed when the
+// side's latest close was that shed and no repair re-sold the side since —
+// as the in-memory anchor would hold it. Any other later close (a stop, a
+// roll) replaces it; partial trims do not. trades are oldest first.
+func ShedsFromTrades(trades []orders.Trade) map[StopSide]JournalShed {
+	out := make(map[StopSide]JournalShed)
+	for _, t := range trades {
+		_, expiry, _, typ, err := marketdata.ParseOptionName(t.Instrument)
+		if err != nil {
+			continue
+		}
+		side := StopSide{expiryDay(expiry), typ}
+		switch {
+		case t.Kind == "close" && shedReasons[t.Reason]:
+			out[side] = JournalShed{At: t.At, Flip: t.GammaFlip, BufferPct: t.FlipBufferPct, DVOL: t.DVOL}
+		case t.Kind == "close" && !partialReasons[t.Reason]:
+			delete(out, side)
+		case t.Kind == "open" && t.Reason == orders.TriggerRepair:
+			delete(out, side)
+		}
+	}
+	return out
+}
+
+// applyJournalSheds anchors every reconciled strangle missing a side the
+// journal says GEX shed on its expiry, at the shed's time, flip and buffer,
+// so the repair waits as it would have without the restart. A record
+// without a buffer takes today's buffer setting at the shed's DVOL.
+func (s *Strategy) applyJournalSheds() {
+	for _, st := range s.state.AllStrangles() {
+		present, missing := s.liveLegs(st)
+		if present == nil || missing == "" {
+			continue
+		}
+		j, ok := s.journalSheds[StopSide{expiryDay(present.Expiry), missing}]
+		if !ok {
+			continue
+		}
+		key := stopKey(st.ID, missing)
+		if _, held := s.shedAnchors[key]; held {
+			continue
+		}
+		buf := j.BufferPct
+		if buf <= 0 {
+			buf = FlipBufferPct(s.cfg.GammaFlipBufferSD, j.DVOL)
+		}
+		s.shedAnchors[key] = &ShedAnchor{At: j.At, Flip: j.Flip, BufferPct: buf}
+		slog.Warn("shed anchor restored from the journal: repair held as after the shed",
+			"strangle_id", st.ID, "present", present.Instrument, "missing", missing,
+			"shed_at", j.At.UTC().Format(time.RFC3339), "flip", j.Flip, "buffer_pct", buf)
+	}
+	s.journalSheds = nil
 }
