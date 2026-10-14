@@ -23,8 +23,8 @@ delta_exit_threshold:   0.30    # close a short leg when |delta| reaches this (t
 repair_cooldown_hours:  72      # a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative
 
 # ── Gamma monitor ─────────────────────────────────────────────────────────────
-gamma_flip_buffer_sd:      1.0  # shed a leg only when spot is this many daily std devs (DVOL/sqrt(365)) below the gamma flip — BTC ~1.9%, ETH ~2.6% today
-gex_direction:             sma  # side to avoid in a negative regime: sma (SMA trend) | bias (script's ACCELERATION BIAS: spot vs flip ± 1σ). Both are recorded (data/direction_history.jsonl); stress 2026-10-12: bias −16…−139 % vs sma
+gamma_flip_buffer_sd:      1.5  # shed a leg only when spot is this many daily std devs (DVOL/sqrt(365)) beyond the gamma flip — BTC ~3.0%, ETH ~4.0% today (1.0 until 2026-10-14)
+gex_direction:             sma  # side to avoid in a negative regime: sma (SMA trend) | bias (script's ACCELERATION BIAS: spot vs flip ± the buffer). Both are recorded (data/direction_history.jsonl); stress 2026-10-12: bias −16…−139 % vs sma
 
 # ── Margin policy (all figures are Deribit's: % of margin balance) ────────────
 # Initial-margin limit by DVOL IV-percentile band: rich premium allows more,

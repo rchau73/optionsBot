@@ -631,7 +631,7 @@ func main() {
 	stickyFlip := flag.Bool("stickyflip", false, "MODEL: the flip follows spot with a lag (half-life ~4 days) and the regime is NEGATIVE whenever spot is below it")
 	flipStart := flag.Float64("flipstart", 0.6, "with -stickyflip: the flip starts this % above spot")
 	volScale := flag.Float64("volscale", 1, "MODEL: scale implied vol (DVOL, its history) and moves — 1 BTC-like, 1.4 ETH-like, 2.2 SOL-like")
-	flipBufSD := flag.Float64("flipbufsd", 1, "shed only when spot is more than this many daily standard deviations (DVOL/√365) below the flip; overrides -flipbuf")
+	flipBufSD := flag.Float64("flipbufsd", 1.5, "shed only when spot is more than this many daily standard deviations (DVOL/√365) beyond the flip (the bot: 1.5 since 2026-10-14, 1 before); overrides -flipbuf")
 	flipBuf := flag.Float64("flipbuf", 0, "shed a leg only when spot is more than this % below the flip")
 	shedHold := flag.Float64("shedhold", 0, "hours repair waits before re-selling a GEX-shed leg")
 	flipRatio := flag.Float64("flipratio", 0.965, "MODEL: the flip starts at spot × this (BTC on 2026-10-05: 0.965); it then moves with √spot")

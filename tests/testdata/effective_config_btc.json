@@ -33,7 +33,7 @@
   "GammaTrendLookbackDays": 120,
   "SwingPivotN": 5,
   "GammaRegimeBandPct": 0.025,
-  "GammaFlipBufferSD": 1,
+  "GammaFlipBufferSD": 1.5,
   "GEXShedConfirmSnapshots": 2,
   "GEXRepairConfirmSnapshots": 2,
   "GEXRepairReleaseHours": 24,
