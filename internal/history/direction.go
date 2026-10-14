@@ -18,6 +18,7 @@ type DirectionRecord struct {
 	At        time.Time `json:"at"`
 	Spot      float64   `json:"spot"`
 	Flip      float64   `json:"flip,omitempty"`
+	BiasFlip  float64   `json:"bias_flip,omitempty"` // median flip the bias was also held against
 	BufferPct float64   `json:"buffer_pct"`
 	Regime    string    `json:"regime"`
 	Direction string    `json:"direction"` // sma | bias: the source the rules used

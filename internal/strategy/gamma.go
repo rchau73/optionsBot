@@ -3,6 +3,7 @@ package strategy
 import (
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,11 +34,14 @@ type GammaDecision struct {
 	TrendDir int // +1 bull, -1 bear, 0 neutral (Trend as a number)
 	// Direction is the source of Trend: DirectionSMA or DirectionBias. Both
 	// are always computed and recorded, so the two can be compared.
-	Direction      string
-	SMATrend       string // bull | bear | neutral (detectTrend)
-	SMADir         int
-	Bias           string // up | down | neutral (BiasDir)
-	BiasDir        int
+	Direction string
+	SMATrend  string // bull | bear | neutral (detectTrend)
+	SMADir    int
+	Bias      string // up | down | neutral (StableBiasDir)
+	BiasDir   int
+	// BiasFlip is the median flip of the last gex_bias_flip_window_minutes
+	// the bias was also held against (0 = live flip only).
+	BiasFlip       float64
 	Regime         string
 	RegimeScore    float64
 	GammaFlip      float64
@@ -78,6 +82,23 @@ func BiasDir(regime string, flipFound bool, spot, flip, bufferPct float64) int {
 		return 1
 	case spot < flip*(1-bufferPct/100):
 		return -1
+	}
+	return 0
+}
+
+// StableBiasDir is BiasDir held against two flips: the live one and
+// medianFlip, the median of the last window's snapshots. When they disagree
+// the flip itself is moving, not spot, and the bias is neutral. In the last
+// hours before a daily expiry the script's lowest-crossing flip can jump far
+// from spot for minutes (BTC 2026-10-12 83,422 → 72,000 for 20 min,
+// 2026-10-14 → 79,500 for 3 min; both read as "bias up" and shed every call
+// with spot flat). Replayed on 10 days of per-minute snapshots, a 60-minute
+// median removed those sheds (and ETH's three) and kept the real drop of
+// 2026-10-12. medianFlip ≤ 0 → the live flip alone.
+func StableBiasDir(regime string, flipFound bool, spot, flip, medianFlip, bufferPct float64) int {
+	live := BiasDir(regime, flipFound, spot, flip, bufferPct)
+	if medianFlip <= 0 || BiasDir(regime, flipFound, spot, medianFlip, bufferPct) == live {
+		return live
 	}
 	return 0
 }
@@ -123,14 +144,16 @@ func (d GammaDecision) Sheds(optType string) bool {
 // GEX regime score, which uses real open interest across the full chain.
 type GammaMonitor struct {
 	lookbackDays  int
-	swingPivotN   int          // days required on each side to confirm a swing pivot
-	dailyCloses   []pricePoint // one entry per completed UTC day
-	lastTickDate  time.Time    // UTC day of the last processed tick
-	lastTickPrice float64      // most recent price (current day's running close)
-	gexSrc        GEXSource    // nil until wired; Evaluate then reports no regime
-	lastAction    GammaAction  // last action announced, so changes are logged once
-	bufferSD      float64      // flip buffer in daily standard deviations (0 = none)
-	direction     string       // DirectionSMA (default) or DirectionBias
+	swingPivotN   int           // days required on each side to confirm a swing pivot
+	dailyCloses   []pricePoint  // one entry per completed UTC day
+	lastTickDate  time.Time     // UTC day of the last processed tick
+	lastTickPrice float64       // most recent price (current day's running close)
+	gexSrc        GEXSource     // nil until wired; Evaluate then reports no regime
+	lastAction    GammaAction   // last action announced, so changes are logged once
+	bufferSD      float64       // flip buffer in daily standard deviations (0 = none)
+	direction     string        // DirectionSMA (default) or DirectionBias
+	flipWindow    time.Duration // StableBiasDir's median window (0 = live flip only)
+	flips         []flipPoint   // each snapshot's flip within flipWindow, oldest first
 	dvol          func() float64
 
 	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
@@ -152,6 +175,56 @@ func (g *GammaMonitor) SetShedConfirm(n int) { g.shedConfirm = n }
 func (g *GammaMonitor) SetDirection(d string) { g.direction = d }
 
 func (g *GammaMonitor) usesBias() bool { return g.direction == DirectionBias }
+
+// SetBiasFlipWindow holds the bias against the median flip of the last d as
+// well as the live one (StableBiasDir); 0 = the live flip alone.
+func (g *GammaMonitor) SetBiasFlipWindow(d time.Duration) { g.flipWindow = d }
+
+type flipPoint struct {
+	at   time.Time
+	flip float64
+}
+
+// recordFlip keeps snap's flip once per snapshot and drops those older than
+// the window.
+func (g *GammaMonitor) recordFlip(snap *gex.Snapshot) {
+	if g.flipWindow <= 0 || !snap.GammaFlipFound || snap.GammaFlip <= 0 {
+		return
+	}
+	if n := len(g.flips); n > 0 && !snap.ComputedAt.After(g.flips[n-1].at) {
+		return
+	}
+	g.flips = append(g.flips, flipPoint{at: snap.ComputedAt, flip: snap.GammaFlip})
+	cut := snap.ComputedAt.Add(-g.flipWindow)
+	i := 0
+	for i < len(g.flips)-1 && !g.flips[i].at.After(cut) {
+		i++
+	}
+	g.flips = g.flips[i:]
+}
+
+// medianFlip is the median of the recorded flips (0 without any).
+func (g *GammaMonitor) medianFlip() float64 {
+	if len(g.flips) == 0 {
+		return 0
+	}
+	v := make([]float64, len(g.flips))
+	for i, p := range g.flips {
+		v[i] = p.flip
+	}
+	sort.Float64s(v)
+	n := len(v)
+	if n%2 == 1 {
+		return v[n/2]
+	}
+	return (v[n/2-1] + v[n/2]) / 2
+}
+
+// bias is StableBiasDir on snap with the window's median flip.
+func (g *GammaMonitor) bias(snap *gex.Snapshot, bufferPct float64) (dir int, medianFlip float64) {
+	medianFlip = g.medianFlip()
+	return StableBiasDir(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, medianFlip, bufferPct), medianFlip
+}
 
 // SetFlipBuffer makes a leg shed only once spot is bufferSD daily standard
 // deviations below the flip, the deviation taken from dvol (the asset's
@@ -280,7 +353,8 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 	if g.dvol != nil {
 		dec.FlipBufferPct = FlipBufferPct(g.bufferSD, g.dvol())
 	}
-	dec.BiasDir = BiasDir(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, dec.FlipBufferPct)
+	g.recordFlip(snap)
+	dec.BiasDir, dec.BiasFlip = g.bias(snap, dec.FlipBufferPct)
 	dec.Bias = biasWord(dec.BiasDir)
 	if g.usesBias() {
 		dec.Direction, dec.TrendDir = DirectionBias, dec.BiasDir
@@ -318,6 +392,7 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 			"direction", dec.Direction,
 			"sma_trend", dec.SMATrend,
 			"gex_bias", dec.Bias,
+			"bias_flip", dec.BiasFlip,
 			"action", actionLabel(dec.Action),
 			"gex_spot", snap.Spot,
 			"tick_price", g.lastTickPrice,
@@ -374,7 +449,8 @@ func (g *GammaMonitor) biasNow() int {
 	if snap == nil {
 		return 0
 	}
-	return BiasDir(snap.Regime, snap.GammaFlipFound, snap.Spot, snap.GammaFlip, g.FlipBuffer())
+	dir, _ := g.bias(snap, g.FlipBuffer())
+	return dir
 }
 
 // FlipBuffer is the shed buffer now, in % of spot (FlipBufferPct at the live

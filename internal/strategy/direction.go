@@ -21,7 +21,7 @@ func (s *Strategy) recordDirection(dec GammaDecision) {
 	s.lastDirection = key
 	r := history.DirectionRecord{
 		At: dec.SnapshotAt, Spot: dec.Spot, BufferPct: dec.FlipBufferPct, Regime: dec.Regime,
-		Direction: dec.Direction, SMATrend: dec.SMATrend, Bias: dec.Bias,
+		Direction: dec.Direction, SMATrend: dec.SMATrend, Bias: dec.Bias, BiasFlip: dec.BiasFlip,
 		Action: actionLabel(dec.Action), Shed: actionLabel(dec.Shed), OtherAction: actionLabel(other),
 	}
 	if dec.GammaFlipFound {

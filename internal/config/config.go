@@ -92,12 +92,17 @@ type Config struct {
 	// ACCELERATION BIAS: spot vs flip ± buffer). Under "bias" a shed leg is
 	// re-sold GEXBiasRepairCooldownHours after the shed, once the bias has
 	// left its side on GEXRepairConfirmSnapshots consecutive snapshots.
-	GEXDirection               string  `yaml:"gex_direction"`
-	GEXBiasRepairCooldownHours int     `yaml:"gex_bias_repair_cooldown_hours"`
-	GEXStrikeRangePct          float64 `yaml:"gex_strike_range_pct"`
-	GEXMethod                  string  `yaml:"gex_method"` // script (default) | nearest_flip
-	IVPercentileWindow         int     `yaml:"iv_percentile_window"`
-	HedgeReportThreshold       float64 `yaml:"hedge_report_threshold"`
+	GEXDirection               string `yaml:"gex_direction"`
+	GEXBiasRepairCooldownHours int    `yaml:"gex_bias_repair_cooldown_hours"`
+	// GEXBiasFlipWindowMinutes: the bias holds only when it points the same
+	// way against the live flip and the median flip of this many minutes
+	// (strategy.StableBiasDir) — the flip jumps before daily expiries.
+	// 0 → 60; negative → the live flip alone.
+	GEXBiasFlipWindowMinutes int     `yaml:"gex_bias_flip_window_minutes"`
+	GEXStrikeRangePct        float64 `yaml:"gex_strike_range_pct"`
+	GEXMethod                string  `yaml:"gex_method"` // script (default) | nearest_flip
+	IVPercentileWindow       int     `yaml:"iv_percentile_window"`
+	HedgeReportThreshold     float64 `yaml:"hedge_report_threshold"`
 	// Margin policy (see internal/risk): IM limit by IV-percentile band,
 	// fixed MM limit, band/regime changes confirmed on daily closes.
 	IVMarginBands        []risk.Band `yaml:"iv_margin_bands"`
@@ -282,6 +287,9 @@ func (c *Config) Validate() error {
 	}
 	if c.GEXDirection != "sma" && c.GEXDirection != "bias" {
 		return fmt.Errorf("gex_direction %q must be sma or bias", c.GEXDirection)
+	}
+	if c.GEXBiasFlipWindowMinutes > 1440 {
+		return fmt.Errorf("gex_bias_flip_window_minutes %d must be at most 1440", c.GEXBiasFlipWindowMinutes)
 	}
 	if c.GEXBiasRepairCooldownHours < 0 || c.GEXBiasRepairCooldownHours > 168 {
 		return fmt.Errorf("gex_bias_repair_cooldown_hours %d must be between 0 and 168", c.GEXBiasRepairCooldownHours)
@@ -479,6 +487,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.GEXDirection == "" {
 		cfg.GEXDirection = "sma"
+	}
+	if cfg.GEXBiasFlipWindowMinutes == 0 {
+		cfg.GEXBiasFlipWindowMinutes = 60
 	}
 	if cfg.StopSpreadGuardPct == 0 {
 		cfg.StopSpreadGuardPct = 20
