@@ -211,3 +211,87 @@ func callSells(f *strategyFixture) int {
 	}
 	return n
 }
+
+// 2026-10-12 and 10-14: before the daily expiry the script's flip jumped
+// from ~83,500 to 72,000 / 79,500 for minutes with spot flat; the live bias
+// read "up" and the BTC bot shed every call. The bias now also holds against
+// the median flip of the last hour (StableBiasDir).
+func TestStableBiasDir(t *testing.T) {
+	const neg = "NEGATIVE/ACCELERATION"
+	cases := []struct {
+		name               string
+		spot, flip, median float64
+		want               int
+	}{
+		{"flip jumped below spot, median at spot", 83975, 72000, 83422, 0},
+		{"flip returned to spot, median still low", 81377, 81493, 79500, 0},
+		{"real drop: spot under both", 81682, 83496, 83496, -1},
+		{"a level held for the window counts", 83516, 80500, 80500, 1},
+		{"no median: the live flip alone", 83975, 72000, 0, 1},
+	}
+	for _, c := range cases {
+		if got := strategy.StableBiasDir(neg, true, c.spot, c.flip, c.median, 1.98); got != c.want {
+			t.Errorf("%s: bias %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func TestGammaMonitor_FlipJumpDoesNotShedUnderBias(t *testing.T) {
+	for _, window := range []time.Duration{0, time.Hour} {
+		t.Run(window.String(), func(t *testing.T) {
+			g := strategy.NewGammaMonitor(21, 2)
+			src := &switchGEX{}
+			g.SetGEXSource(src)
+			g.SetDirection(strategy.DirectionBias)
+			g.SetShedConfirm(2)
+			g.SetBiasFlipWindow(window)
+			g.SetFlipBuffer(1, func() float64 { return 37.8 }) // 1.98 %, BTC's
+			at := time.Date(2026, 10, 12, 7, 0, 0, 0, time.UTC)
+			step := func(spot, flip float64) strategy.GammaDecision {
+				at = at.Add(time.Minute)
+				src.set(&gex.Snapshot{ComputedAt: at, Regime: "NEGATIVE/ACCELERATION", Spot: spot, GammaFlip: flip, GammaFlipFound: true})
+				return g.Evaluate()
+			}
+			for i := 0; i < 40; i++ {
+				step(83900, 83422)
+			}
+			shed := strategy.GammaActionNone
+			for i := 0; i < 20; i++ { // the pre-expiry jump: 20 minutes
+				if d := step(83975, 72000); d.Shed != strategy.GammaActionNone {
+					shed = d.Shed
+				}
+			}
+			if window == 0 && shed != strategy.GammaActionCloseCalls {
+				t.Fatalf("live flip: the jump sheds calls (the 2026-10-12 shed), got %v", shed)
+			}
+			if window > 0 && shed != strategy.GammaActionNone {
+				t.Fatalf("median window: the jump must not shed, got %v", shed)
+			}
+			step(83900, 83422)
+			var d strategy.GammaDecision
+			for i := 0; i < 2; i++ { // a real drop through the flip
+				d = step(81000, 83422)
+			}
+			if d.Shed != strategy.GammaActionClosePuts || d.Bias != "down" {
+				t.Errorf("real drop: shed %v bias %s, want puts shed on bias down", d.Shed, d.Bias)
+			}
+			if window > 0 && (d.BiasFlip < 80000 || d.BiasFlip > 84000) {
+				t.Errorf("median flip %.0f, want near 83,422", d.BiasFlip)
+			}
+		})
+	}
+}
+
+func TestConfig_GEXBiasFlipWindow(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GEXBiasFlipWindowMinutes != 60 {
+		t.Errorf("default gex_bias_flip_window_minutes = %d, want 60", cfg.GEXBiasFlipWindowMinutes)
+	}
+	cfg.GEXBiasFlipWindowMinutes = 2000
+	if err := cfg.Validate(); err == nil {
+		t.Error("a window above a day must be rejected")
+	}
+}

@@ -31,6 +31,7 @@ gex_shed_confirm_snapshots:   2  # shed only once the signal holds on this many 
 gex_repair_confirm_snapshots: 2  # re-sell a shed leg once spot is above the flip it was shed at + buffer on this many consecutive snapshots…
 gex_repair_release_hours:     24 # …or once the live regime has been non-negative this long
 gex_direction:             bias # LIVE TRIAL from 2026-10-12 (ETH stays on sma as the control) — side to avoid in a negative regime: sma (SMA trend) | bias (script's ACCELERATION BIAS: spot vs flip ± 1σ). Both are recorded (data/direction_history.jsonl); stress 2026-10-12: bias −16…−139 % vs sma
+gex_bias_flip_window_minutes: 60 # with bias: the bias holds only against both the live flip and the median flip of this many minutes (pre-expiry flip jumps shed BTC's calls on 2026-10-12 and 10-14); -1 = live flip alone
 gex_bias_repair_cooldown_hours: 24 # with bias: a shed leg waits this long, then is re-sold once the bias has left its side on gex_repair_confirm_snapshots (24 h beat 4 h in 3 of 4 setups)
 gex_method:                script # script = GestaoCarteira deribit_tc_export_v3.py rules (regime = sign of weighted GEX, flip = lowest crossing); nearest_flip = spot vs nearest flip, with hysteresis
 gex_strike_range_pct:      0.15 # GEX inputs: only strikes within ±15% of each expiry's underlying (as the script); 0 = all strikes

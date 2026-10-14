@@ -175,10 +175,24 @@ func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
 			continue
 		}
 		s.noteShed(pos, dec, time.Now())
-		detail := fmt.Sprintf("GEX shed: regime %s, spot %.0f is more than the %.1f%% buffer below the flip %.0f, trend %s — shedding %ss",
-			dec.Regime, s.md.UnderlyingPrice(), dec.FlipBufferPct, dec.GammaFlip, dec.Trend, pos.OptionType)
+		detail := shedDetail(dec, s.md.UnderlyingPrice(), pos.OptionType)
 		if _, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail); err != nil {
 			slog.Error("gamma close failed", "err", err, "instrument", pos.Instrument)
 		}
 	}
+}
+
+// shedDetail is the journal's reason for a GEX shed, in the terms of the
+// direction source that shed it.
+func shedDetail(dec GammaDecision, spot float64, optType string) string {
+	if dec.Direction == DirectionBias {
+		side := "above"
+		if dec.BiasDir < 0 {
+			side = "below"
+		}
+		return fmt.Sprintf("GEX shed (bias %s): regime %s, spot %.0f is more than the %.1f%% buffer %s the flip %.0f (median %.0f) — shedding %ss",
+			dec.Bias, dec.Regime, spot, dec.FlipBufferPct, side, dec.GammaFlip, dec.BiasFlip, optType)
+	}
+	return fmt.Sprintf("GEX shed: regime %s, spot %.0f is more than the %.1f%% buffer below the flip %.0f, trend %s — shedding %ss",
+		dec.Regime, spot, dec.FlipBufferPct, dec.GammaFlip, dec.Trend, optType)
 }

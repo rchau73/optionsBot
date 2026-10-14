@@ -662,6 +662,7 @@ func main() {
 	startNeg := flag.Int("startneg", 0, "MODEL: start in a CONFIRMED negative gamma regime (as the bots on 2026-10-11) that lasts this many path days (0 = a confirmed positive regime at the start)")
 	direction := flag.String("direction", "sma", "PROPOSED: side to avoid in a negative regime — sma (today's bot: SMA trend) | bias (the script's ACCELERATION BIAS: spot above flip + buffer → calls, below flip − buffer → puts; sheds and blocks) | biasblock (bias for the regime-side block only; the shed keeps the SMA trend)")
 	biasRepair := flag.String("biasrepair", "anchored", "with -direction bias: re-selling a shed leg — anchored (spot back past the shed flip ∓ buffer, 2026-10-12 study) | clear (after -biascooldown hours, once the bias has not pointed at that side for -shedcross decisions)")
+	biasFlipWindow := flag.Float64("biasflipwindow", 60, "with -direction bias: the bias holds only against both the live flip and the median flip of this many minutes (gex_bias_flip_window_minutes, the bot: 60; 0 = live flip alone) — needs -steps fine enough to see minutes")
 	biasCooldown := flag.Float64("biascooldown", 24, "with -biasrepair clear: hours after a shed before the bias is evaluated again for the re-sell")
 	negEntry := flag.String("negentry", "trend", "new strangles while the CONFIRMED gamma regime is negative: trend (today's bot: no new puts in a bear trend, no new calls in a bull trend — entries and repairs) | open (both sides, at the lowest IM band; the bot before 2026-10-09) | block (no entries; rolls and their repairs continue)")
 	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
@@ -923,6 +924,7 @@ func main() {
 	bridge := 0.0 // -intranoise: log offset of spot from the path
 	var sideBlockedAt = map[string]time.Time{}
 	clearRun := map[string]int{}  // -biasrepair clear: decisions in a row the bias has not pointed at each side
+	var biasFlips []flipAt        // -biasflipwindow: decisions' flips within the window
 	aboveRun, negReleases := 0, 0 // -negrelease: decisions in a row spot is above flip + buffer; decisions released
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
@@ -1144,15 +1146,15 @@ func main() {
 		}
 		gexAct := strategy.ResolveGammaAction(regime, true, m.spot, flip, tr, buf)
 		if *direction != "sma" { // PROPOSED: the script's bias instead of the SMA trend
-			bias := 0
-			if strings.HasPrefix(regime, "NEGATIVE") {
-				switch {
-				case m.spot > flip*(1+buf/100):
-					bias = 1
-				case m.spot < flip*(1-buf/100):
-					bias = -1
-				}
+			biasFlips = append(biasFlips, flipAt{m.now, flip})
+			for len(biasFlips) > 1 && !biasFlips[0].at.After(m.now.Add(-time.Duration(*biasFlipWindow*float64(time.Minute)))) {
+				biasFlips = biasFlips[1:]
 			}
+			median := 0.0
+			if *biasFlipWindow > 0 {
+				median = medianFlip(biasFlips)
+			}
+			bias := strategy.StableBiasDir(regime, true, m.spot, flip, median, buf)
 			if *direction == "bias" {
 				gexAct = map[int]strategy.GammaAction{1: strategy.GammaActionCloseCalls, -1: strategy.GammaActionClosePuts, 0: strategy.GammaActionNone}[bias]
 			}
@@ -1739,4 +1741,25 @@ func main() {
 		u, b.mb0, eq, (eq/b.mb0-1)*100, usd0, usd1, (usd1/usd0-1)*100, hold1, (hold1/usd0-1)*100,
 		u, s0, m.spot, (m.spot/s0-1)*100,
 		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, sumAbsDelta/float64(max(nDays, 1)), u, maxIM, maxMM, worstUSD, worstDay, triggerDays)
+}
+
+type flipAt struct {
+	at   time.Time
+	flip float64
+}
+
+func medianFlip(fs []flipAt) float64 {
+	if len(fs) == 0 {
+		return 0
+	}
+	v := make([]float64, len(fs))
+	for i, f := range fs {
+		v[i] = f.flip
+	}
+	sort.Float64s(v)
+	n := len(v)
+	if n%2 == 1 {
+		return v[n/2]
+	}
+	return (v[n/2-1] + v[n/2]) / 2
 }

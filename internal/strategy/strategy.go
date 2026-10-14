@@ -104,6 +104,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, d.Market.DVOL)
 	gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
 	gamma.SetDirection(cfg.GEXDirection)
+	gamma.SetBiasFlipWindow(time.Duration(max(cfg.GEXBiasFlipWindowMinutes, 0)) * time.Minute)
 	regimes := d.Regimes
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
