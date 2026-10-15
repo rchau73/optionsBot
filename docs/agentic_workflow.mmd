@@ -12,8 +12,9 @@ flowchart LR
     DONE["⑩ Done"]
     BLK["Blocked<br/>needs-human"]
 
-    BOTS --> SME --> TRI --> H1 --> READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
-    REV -.->|"blocking · ≤ 2 rounds"| READY
+    BOTS --> SME --> TRI --> H1 --> READY --> DEV --> PR --> REV -->|"no blocking finding<br/>(suggestions stay as comments)"| H2 --> DEP --> DONE
+    REV ==>|"🛑 blocking finding (bug):<br/>review posted + card back to Ready<br/>Dev fixes on the same PR · ≤ 2 rounds"| READY
+    REV -.->|"still blocking after 2 rounds:<br/>agent:needs-human"| H2
     DEP -->|restart| BOTS
     DEV -.->|questions /<br/>failing checks| BLK -.->|answered| READY
     DONE -.->|"⑪ next review verifies;<br/>reopens if not fixed"| SME
