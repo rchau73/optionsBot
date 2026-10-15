@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # setup_github.sh — one-time (idempotent) GitHub setup for the agentic workflow.
 #
-#   1. labels: agent:sme, agent:dev, agent:needs-human, severity:high|medium|low
+#   1. labels: agent:sme, agent:dev, agent:reviewed, agent:needs-human, severity:high|medium|low
 #   2. the Project board "optionsBot · agentic workflow", linked to the repo,
 #      Status columns: Triage → Ready → In progress → In review → Done, Blocked
 #   3. a ruleset on main: changes only through pull requests with green CI;
@@ -20,6 +20,7 @@ log "repo $slug"
 label() { gh label create "$1" -R "$slug" --color "$2" --description "$3" --force >/dev/null && log "label $1"; }
 label "agent:sme"         "5319e7" "Opened by the SME agent (daily review)"
 label "agent:dev"         "1d76db" "Pull request opened by the Dev agent"
+label "agent:reviewed"     "0e8a16" "Reviewer agent found no blocking issue: ready to merge"
 label "agent:needs-human" "d93f0b" "An agent stopped and needs a person"
 label "severity:high"     "b60205" "Capital at risk or the bot not doing its job"
 label "severity:medium"   "fbca04" "Money left on the table or a rule misbehaving"

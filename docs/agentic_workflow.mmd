@@ -6,21 +6,23 @@ flowchart LR
     READY["④ Ready"]
     DEV["⑤ Dev agent · 15 min<br/>developer skill<br/>edit · test · commit"]
     PR["⑥ PR · In review<br/>checks re-run · CI"]
-    H2(["⑦ You review<br/>& merge · <b>gate 2</b>"])
-    DEP["⑧ Deploy · 15 min<br/>testnet only<br/>health check"]
-    DONE["⑨ Done"]
+    REV["⑦ Reviewer agent · 15 min<br/>developer skill · Review mode<br/><b>read-only</b> · verified findings"]
+    H2(["⑧ You review<br/>& merge · <b>gate 2</b>"])
+    DEP["⑨ Deploy · 15 min<br/>testnet only<br/>health check"]
+    DONE["⑩ Done"]
     BLK["Blocked<br/>needs-human"]
 
-    BOTS --> SME --> TRI --> H1 --> READY --> DEV --> PR --> H2 --> DEP --> DONE
+    BOTS --> SME --> TRI --> H1 --> READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
+    REV -.->|"blocking · ≤ 2 rounds"| READY
     DEP -->|restart| BOTS
     DEV -.->|questions /<br/>failing checks| BLK -.->|answered| READY
-    DONE -.->|"⑩ next review verifies;<br/>reopens if not fixed"| SME
+    DONE -.->|"⑪ next review verifies;<br/>reopens if not fixed"| SME
 
     classDef agent fill:#ede7f6,stroke:#5e35b1,color:#000
     classDef human fill:#fff3e0,stroke:#ef6c00,color:#000,stroke-width:2px
     classDef gh fill:#e3f2fd,stroke:#1565c0,color:#000
     classDef run fill:#e8f5e9,stroke:#2e7d32,color:#000
-    class SME,DEV,DEP agent
+    class SME,DEV,REV,DEP agent
     class H1,H2 human
     class TRI,READY,PR,DONE,BLK gh
     class BOTS run

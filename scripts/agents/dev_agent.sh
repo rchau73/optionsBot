@@ -63,6 +63,9 @@ if [[ -n "$existing_pr" ]]; then
   gh pr view "$existing_pr" -R "$slug" --json reviews,comments \
     -q '"\n\n# Review feedback on PR #'"$existing_pr"' (address it)\n\(.reviews | map("### review by \(.author.login): \(.state)\n\(.body)") | join("\n\n"))\n\(.comments | map("### \(.author.login)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
   gh api "repos/$slug/pulls/$existing_pr/comments" -q '.[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
+  # From main's skill: the branch may predate this instruction.
+  { echo; echo "# How to answer the review (developer skill, from main)"; echo
+    grep -m1 '^\*\*When `.agent-task.md` carries review feedback\*\*' "$AGENT_REPO_DIR/.claude/skills/developer/SKILL.md"; } >> "$run_dir/task.md"
 fi
 cp "$run_dir/task.md" "$wt/.agent-task.md"
 echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"
