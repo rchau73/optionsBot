@@ -54,6 +54,7 @@ func main() {
 	btFrom := flag.String("from", "2022-01-01", "backtest start date (YYYY-MM-DD)")
 	btTo := flag.String("to", "2024-12-31", "backtest end date (YYYY-MM-DD)")
 	sweep := flag.Bool("sweep", false, "run parameter sweep in backtest mode")
+	sweepLadders := flag.Bool("sweep-ladders", false, "run the DTE ladder sweep (slot occupancy, return on margin, worst week) in backtest mode")
 	csvPath := flag.String("csv", "data/historical/options.csv", "historical data CSV path")
 	cfgPath := flag.String("config", "config.yaml", "config file path")
 	debug := flag.Bool("debug", false, "enable debug logging")
@@ -91,7 +92,7 @@ func main() {
 	}
 
 	if *mode == "backtest" {
-		runBacktest(cfg, *btFrom, *btTo, *sweep, *csvPath)
+		runBacktest(cfg, *btFrom, *btTo, *sweep, *sweepLadders, *csvPath)
 		return
 	}
 
@@ -314,7 +315,7 @@ func runLive(cfg *config.Config) error {
 	}
 }
 
-func runBacktest(cfg *config.Config, fromStr, toStr string, sweep bool, csvPath string) {
+func runBacktest(cfg *config.Config, fromStr, toStr string, sweep, sweepLadders bool, csvPath string) {
 	from, err := time.Parse("2006-01-02", fromStr)
 	if err != nil {
 		slog.Error("invalid from date", "err", err)
@@ -327,6 +328,16 @@ func runBacktest(cfg *config.Config, fromStr, toStr string, sweep bool, csvPath 
 	}
 
 	outputDir := "data/results"
+
+	if sweepLadders {
+		slog.Info("running DTE ladder sweep", "from", fromStr, "to", toStr)
+		if _, err := backtest.RunLadderSweep(cfg, csvPath, from, to, outputDir); err != nil {
+			slog.Error("ladder sweep failed", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("ladder sweep complete", "output", outputDir+"/ladder_comparison.csv")
+		return
+	}
 
 	if sweep {
 		slog.Info("running parameter sweep", "from", fromStr, "to", toStr)
