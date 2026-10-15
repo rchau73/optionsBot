@@ -98,6 +98,9 @@ func isNegativeRegime(regime string) bool { return strings.HasPrefix(regime, "NE
 func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
 	prev, first := s.lastRisk, s.lastRisk == nil
 	s.lastRisk = &st
+	if !first && prev.LimitIMPct != st.LimitIMPct {
+		s.resetRebalanceBackoff()
+	}
 	if !first && prev.Frozen == st.Frozen && prev.LimitIMPct == st.LimitIMPct && prev.Reason == st.Reason {
 		return
 	}

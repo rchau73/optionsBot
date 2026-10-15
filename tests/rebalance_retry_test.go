@@ -2,10 +2,12 @@ package tests
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"optionsbot/internal/orders"
+	"optionsbot/internal/strategy"
 )
 
 // A rebalance complement that times out short of its size re-arms the
@@ -92,4 +94,124 @@ func TestRebalanceRetry_PartialFillSendsOnlyTheRest(t *testing.T) {
 	if len(f.state.AllStrangles()) != 2 {
 		t.Errorf("the filled part is its own strangle in the slot, got %d strangles", len(f.state.AllStrangles()))
 	}
+}
+
+// Back-off (#85): on a book where nobody trades at mid the same complement was
+// re-sent every 15 minutes for nothing (2026-10-14 BTC: 12 orders in 1.5 h,
+// zero fills). From the 3rd unfilled complement in a row the wait doubles.
+
+func TestRebalanceRetryWait(t *testing.T) {
+	base, max := 15*time.Minute, 60*time.Minute
+	cases := []struct {
+		name     string
+		unfilled int
+		after    int
+		max      time.Duration
+		want     time.Duration
+	}{
+		{"no unfilled complement", 0, 3, max, 15 * time.Minute},
+		{"one unfilled", 1, 3, max, 15 * time.Minute},
+		{"two unfilled", 2, 3, max, 15 * time.Minute},
+		{"three unfilled: doubled", 3, 3, max, 30 * time.Minute},
+		{"four unfilled: doubled again", 4, 3, max, 60 * time.Minute},
+		{"many unfilled: capped", 20, 3, max, 60 * time.Minute},
+		{"back-off off", 10, 0, max, 15 * time.Minute},
+		{"cap below base never shortens the wait", 5, 3, time.Minute, 15 * time.Minute},
+	}
+	for _, c := range cases {
+		if got := strategy.RebalanceRetryWait(base, c.max, c.unfilled, c.after); got != c.want {
+			t.Errorf("%s: RebalanceRetryWait(%d unfilled, after %d) = %s, want %s", c.name, c.unfilled, c.after, got, c.want)
+		}
+	}
+}
+
+// Scenario: repeated unfilled complements — given 3 complements in a row
+// ended unfilled, when the next retry is due, then it waits 30 minutes
+// instead of 15, and a single rebalance_retry line records the count.
+func TestRebalanceRetry_RepeatedUnfilledComplementsBackOff(t *testing.T) {
+	if got := strategy.RebalanceRetryWait(15*time.Minute, 60*time.Minute, 3, 3); got != 30*time.Minute {
+		t.Fatalf("3 unfilled in a row: wait %s, want 30m", got)
+	}
+
+	// End to end with the back-off from the first unfilled complement, so the
+	// test does not wait out real retries.
+	f := newStrategyFixture(t)
+	f.upshiftToTwoLots()
+	f.cfg.RebalanceRetryMinutes = 15
+	f.cfg.RebalanceBackoffAfter = 1
+	f.cfg.RebalanceRetryMaxMinutes = 60
+	f.startRun()
+
+	eventually(t, 3*time.Second, "retry scheduled after the timeout",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
+	time.Sleep(200 * time.Millisecond) // ~20 cycles
+	retries := f.journal.riskChanges(orders.RiskRebalanceRetry)
+	if len(retries) != 1 {
+		t.Fatalf("one rebalance_retry line per unfilled complement, got %d", len(retries))
+	}
+	if d := retries[0].Detail; !strings.Contains(d, "1 complements in a row unfilled") || !strings.Contains(d, "backed off to 30m0s") {
+		t.Errorf("retry line must carry the count and the backed-off wait, got %q", d)
+	}
+	if n := len(f.exch.sells()); n != 2 {
+		t.Errorf("no new complement inside the backed-off wait: want 2 sells, got %d", n)
+	}
+}
+
+// A fill resets the count: the book does trade at our price.
+func TestRebalanceRetry_FillResetsBackoff(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.exch.imPerLot = 2.0 / 3 * 0.999 // slot share fits 3 lots: complement 0.2
+	f.cfg.OrderFillTimeoutSec = 0
+	f.cfg.RebalanceRetryMinutes = 15
+	f.cfg.RebalanceBackoffAfter = 1
+	f.cfg.RebalanceRetryMaxMinutes = 60
+	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
+		if o.Direction == orders.DirectionSell {
+			return orders.Fill{Qty: 0.1, FillPrice: 0.02} // half of each leg fills
+		}
+		return orders.Fill{Qty: o.Qty, FillPrice: 0.01}
+	}
+	f.startRun()
+
+	eventually(t, 3*time.Second, "retry scheduled after the partial fill",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
+	if d := f.journal.riskChanges(orders.RiskRebalanceRetry)[0].Detail; !strings.Contains(d, "retry in 15m0s") {
+		t.Errorf("a complement that filled something retries at the base wait, got %q", d)
+	}
+}
+
+// Scenario: risk reductions are untouched — given an MM breach, when it fires
+// during a back-off, then it executes at once.
+func TestRebalanceRetry_MMBreachDuringBackoffExecutesAtOnce(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.upshiftToTwoLots()
+	f.cfg.RebalanceRetryMinutes = 15
+	f.cfg.RebalanceBackoffAfter = 1
+	f.cfg.RebalanceRetryMaxMinutes = 60
+	f.startRun()
+
+	eventually(t, 3*time.Second, "backed-off retry scheduled",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
+	f.exch.setMargin(4, 4) // MM 40 % of the margin balance, above the 35 % limit
+	eventually(t, 3*time.Second, "MM cut bought back at once despite the back-off",
+		func() bool { return len(f.exch.buys()) > 0 })
+}
+
+// A confirmed limit change resets the back-off: the new limit gets a pass at
+// once, not after the backed-off wait.
+func TestRebalanceRetry_LimitChangeResetsBackoff(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.upshiftToTwoLots()
+	f.cfg.RebalanceRetryMinutes = 15
+	f.cfg.RebalanceBackoffAfter = 1
+	f.cfg.RebalanceRetryMaxMinutes = 60
+	f.startRun()
+
+	eventually(t, 3*time.Second, "backed-off retry scheduled",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
+	passes := len(f.journal.riskChanges(orders.RiskRebalance))
+	f.market.setIVHistory([]float64{80, 80, 10, 10}, 10) // back to the 20 % band, confirmed
+	eventually(t, 3*time.Second, "rebalance toward the new limit despite the back-off",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalance)) > passes })
 }

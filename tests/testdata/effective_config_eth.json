@@ -20,6 +20,8 @@
   "RolloutDTE": 15,
   "RepairCooldownHours": 72,
   "RebalanceRetryMinutes": 15,
+  "RebalanceBackoffAfter": 3,
+  "RebalanceRetryMaxMinutes": 60,
   "ChurnMaxRoundTrips": 3,
   "MarketRecordMinutes": 60,
   "ChurnWindowMinutes": 60,

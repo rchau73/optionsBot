@@ -184,6 +184,16 @@ func (ps *pendingStrangle) underfilled() bool {
 	return false
 }
 
+// filledAny reports whether any leg filled something.
+func (ps *pendingStrangle) filledAny() bool {
+	for _, l := range ps.legs() {
+		if l.filledQty > qtyEpsilon {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Strategy) pendingSnapshot() []*pendingStrangle {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
@@ -438,8 +448,11 @@ func (s *Strategy) cancelNewRisk(ctx context.Context, why string) {
 // existing strangle. Nothing filled → the slot is simply released.
 func (s *Strategy) finalizePending(ctx context.Context, ps *pendingStrangle) {
 	s.removePending(ps.id)
-	if ps.complement && ps.underfilled() {
-		s.rearmRebalance(fmt.Sprintf("complement %s filled short of its size", ps.id))
+	if ps.complement {
+		s.noteComplementOutcome(ps.filledAny())
+		if ps.underfilled() {
+			s.rearmRebalance(fmt.Sprintf("complement %s filled short of its size", ps.id))
+		}
 	}
 
 	now := time.Now()
