@@ -40,7 +40,7 @@ while read -r it num; do
   [[ -n "$it" ]] || continue
   p="" h="" labels=""
   read -r p h labels < <(gh pr list -R "$slug" --head "agent/issue-$num" --state open \
-    --json number,headRefOid,labels -q '.[0] | "\(.number) \(.headRefOid) \([.labels[].name] | join(","))"' < /dev/null || true) || true
+    --json number,headRefOid,labels -q '.[0] // empty | "\(.number) \(.headRefOid) \([.labels[].name] | join(","))"' < /dev/null || true) || true
   [[ -n "${p:-}" && "${labels:-}" == *agent:dev* ]] || continue
   agent_reviews "$p" < /dev/null | grep -q "^sha=$h " && continue
   item="$it"; issue="$num"; pr="$p"; head="$h"; break
