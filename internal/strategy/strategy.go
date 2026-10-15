@@ -67,6 +67,9 @@ type Strategy struct {
 	// by the spread guard (stopguard.go); stopsDeferred: any this cycle.
 	stopDefer     map[string]time.Time
 	stopsDeferred bool
+	// warmupHeld: the bias shed last journaled as held by the flip window's
+	// warm-up (biaswarmup.go; decision loop only).
+	warmupHeld GammaAction
 	// Orders whose submit outcome is unknown, by label; position differences
 	// seen per instrument; instruments to match to the exchange this cycle
 	// (decision loop only). See orphans.go.
@@ -248,6 +251,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	if gammaDec.Shed != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)
 	}
+	s.noteBiasWarmup(gammaDec)
 
 	deferred := map[string]bool{}
 	for _, pos := range s.state.AllPositions() {

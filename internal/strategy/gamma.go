@@ -41,7 +41,15 @@ type GammaDecision struct {
 	BiasDir   int
 	// BiasFlip is the median flip of the last gex_bias_flip_window_minutes
 	// the bias was also held against (0 = live flip only).
-	BiasFlip       float64
+	BiasFlip float64
+	// BiasWarmupUntil is when the flip window will cover its span, while it
+	// does not yet (zero once it does, or outside gex_direction: bias).
+	// Until then the median is only the last few flips — after a restart, a
+	// flip jump fills it at once — so the bias sheds nothing; WarmupHeld is
+	// the shed it held back (GammaActionNone when none).
+	BiasWarmupUntil time.Time
+	WarmupHeld      GammaAction
+
 	Regime         string
 	RegimeScore    float64
 	GammaFlip      float64
@@ -154,6 +162,7 @@ type GammaMonitor struct {
 	direction     string        // DirectionSMA (default) or DirectionBias
 	flipWindow    time.Duration // StableBiasDir's median window (0 = live flip only)
 	flips         []flipPoint   // each snapshot's flip within flipWindow, oldest first
+	flipsSince    time.Time     // first flip of the unbroken record (startup, or after a gap longer than the window)
 	dvol          func() float64
 
 	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
@@ -191,11 +200,15 @@ func (g *GammaMonitor) recordFlip(snap *gex.Snapshot) {
 	if g.flipWindow <= 0 || !snap.GammaFlipFound || snap.GammaFlip <= 0 {
 		return
 	}
-	if n := len(g.flips); n > 0 && !snap.ComputedAt.After(g.flips[n-1].at) {
+	n := len(g.flips)
+	if n > 0 && !snap.ComputedAt.After(g.flips[n-1].at) {
 		return
 	}
-	g.flips = append(g.flips, flipPoint{at: snap.ComputedAt, flip: snap.GammaFlip})
 	cut := snap.ComputedAt.Add(-g.flipWindow)
+	if n == 0 || !g.flips[n-1].at.After(cut) { // nothing within the window: the record starts over
+		g.flipsSince = snap.ComputedAt
+	}
+	g.flips = append(g.flips, flipPoint{at: snap.ComputedAt, flip: snap.GammaFlip})
 	i := 0
 	for i < len(g.flips)-1 && !g.flips[i].at.After(cut) {
 		i++
@@ -218,6 +231,24 @@ func (g *GammaMonitor) medianFlip() float64 {
 		return v[n/2]
 	}
 	return (v[n/2-1] + v[n/2]) / 2
+}
+
+// biasWarmupUntil is when the flip record will span the whole window, while
+// it does not yet; zero once it does, without a window or outside
+// DirectionBias. After the 2026-10-14 16:57 restart the window held ten
+// minutes of a pre-expiry flip jump (79,500), its median was the jump itself,
+// and BTC's calls were shed on it.
+func (g *GammaMonitor) biasWarmupUntil(snap *gex.Snapshot) time.Time {
+	if !g.usesBias() || g.flipWindow <= 0 {
+		return time.Time{}
+	}
+	if g.flipsSince.IsZero() { // no flip yet: warm-up runs from this snapshot
+		return snap.ComputedAt.Add(g.flipWindow)
+	}
+	if until := g.flipsSince.Add(g.flipWindow); snap.ComputedAt.Before(until) {
+		return until
+	}
+	return time.Time{}
 }
 
 // bias is StableBiasDir on snap with the window's median flip.
@@ -367,8 +398,13 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 	dec.Spot, dec.SnapshotAt = snap.Spot, snap.ComputedAt
 	g.observe(snap, dec.Action)
 	dec.NonNegativeSince = g.nonNegSince
+	dec.BiasWarmupUntil = g.biasWarmupUntil(snap)
 	if dec.Action != GammaActionNone && g.signal == dec.Action && g.signalRun >= g.shedConfirm {
-		dec.Shed = dec.Action
+		if dec.BiasWarmupUntil.IsZero() {
+			dec.Shed = dec.Action
+		} else {
+			dec.WarmupHeld = dec.Action // entries and repairs still skip the side (Action)
+		}
 	}
 
 	// Announce a regime action when it changes, not on every cycle it persists.
