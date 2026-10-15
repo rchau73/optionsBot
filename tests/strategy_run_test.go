@@ -467,6 +467,9 @@ type journalEntry struct {
 	trigger    string
 	orderType  string
 	reason     string
+	qty        float64 // opens: the fill; cancels: the requested size
+	targetQty  float64 // opens: the order's requested size
+	filledQty  float64 // cancels: what filled before the cancel
 	ctx        orders.EventContext
 }
 
@@ -483,10 +486,12 @@ func (j *recordingJournal) LogAmend(r orders.PendingOrderRecord, _ float64, ctx 
 	j.add(journalEntry{event: orders.EventAmended, instrument: r.Instrument, ctx: ctx})
 }
 func (j *recordingJournal) LogCancelled(r orders.PendingOrderRecord, ctx orders.EventContext) {
-	j.add(journalEntry{event: orders.EventCancelled, instrument: r.Instrument, trigger: r.TriggerReason, ctx: ctx})
+	j.add(journalEntry{event: orders.EventCancelled, instrument: r.Instrument, trigger: r.TriggerReason,
+		qty: r.Qty, filledQty: r.FilledQty, ctx: ctx})
 }
-func (j *recordingJournal) LogOpen(pos *orders.Position, _ orders.Fill, trigger string, ctx orders.EventContext) {
-	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, trigger: trigger, ctx: ctx})
+func (j *recordingJournal) LogOpen(pos *orders.Position, fill orders.Fill, trigger string, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, trigger: trigger,
+		qty: fill.Qty, targetQty: fill.TargetQty, ctx: ctx})
 }
 func (j *recordingJournal) LogClose(pos *orders.Position, _ orders.Fill, trigger, orderType string, ctx orders.EventContext) {
 	j.add(journalEntry{event: orders.EventClosed, instrument: pos.Instrument, trigger: trigger, orderType: orderType, ctx: ctx})
@@ -740,6 +745,45 @@ func TestStrategy_PartialEntryFillBooksFilledQty(t *testing.T) {
 	eventually(t, 3*time.Second, "partial call booked", func() bool { return f.position(f.call) != nil })
 	if q := f.position(f.call).Qty; q != 0.1 {
 		t.Errorf("booked qty = %v, want the filled 0.1 (requested %v)", q, requested)
+	}
+}
+
+// Scenario (#86) "partial entry fill": the journal records what filled
+// against the entry's target, on the open and on the cancel of the rest.
+func TestStrategy_PartialEntryFillJournalsFilledOfTarget(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.OrderFillTimeoutSec = 1
+	f.exch.imPerLot = 0.001 // budget allows several lots
+	f.startRun()
+
+	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
+	target := f.exch.sells()[0].Qty
+	if target < 0.3 {
+		t.Fatalf("test needs a multi-lot entry, got %v", target)
+	}
+	f.exch.partial(f.exch.orderIDFor(f.call, 0), 0.1, 0.021)
+
+	var open journalEntry
+	eventually(t, 3*time.Second, "partial call journaled", func() bool {
+		for _, e := range f.journal.events(orders.EventFilled) {
+			if e.instrument == f.call {
+				open = e
+				return true
+			}
+		}
+		return false
+	})
+	if open.qty != 0.1 || open.targetQty != target {
+		t.Errorf("open journaled %v filled of %v target, want 0.1 of %v", open.qty, open.targetQty, target)
+	}
+	var cancelled *journalEntry
+	for _, e := range f.journal.events(orders.EventCancelled) {
+		if e.instrument == f.call {
+			cancelled = &e
+		}
+	}
+	if cancelled == nil || cancelled.filledQty != 0.1 || cancelled.qty != target {
+		t.Errorf("cancel should record 0.1 filled of %v, got %+v", target, cancelled)
 	}
 }
 

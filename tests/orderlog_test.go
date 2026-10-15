@@ -224,3 +224,33 @@ func TestOrderLog_SpreadWarningOnlyWherePaid(t *testing.T) {
 		t.Errorf("wide spread warned %d times, want once (submit only)", n)
 	}
 }
+
+// Scenario (#86) "partial entry fill": 208 of a 719-lot target filled before
+// the timeout — the open and the cancel both say so in orders.log.
+func TestOrderLog_PartialEntryFillRecordsFilledOfTarget(t *testing.T) {
+	var buf bytes.Buffer
+	l := orders.NewWriterLogger(&buf, 0)
+	ctx := sampleContext()
+	l.LogOpen(samplePosition(), orders.Fill{OrderID: "o-1", FillPrice: 0.02, Qty: 208, TargetQty: 719}, orders.TriggerEntry, ctx)
+	l.LogCancelled(orders.PendingOrderRecord{OrderID: "o-1", Instrument: "ETH-X-C", Qty: 719, FilledQty: 208}, ctx)
+	l.LogCancelled(orders.PendingOrderRecord{OrderID: "o-2", Instrument: "ETH-X-P", Qty: 719}, ctx)
+	l.LogOpen(samplePosition(), orders.Fill{OrderID: "o-3", FillPrice: 0.02, Qty: 1}, orders.TriggerEntry, ctx)
+
+	recs := decodeLogLines(t, &buf)
+	open := recs[0]
+	if open["qty"] != 208.0 || open["target_qty"] != 719.0 {
+		t.Errorf("open: qty %v of target %v, want 208 of 719", open["qty"], open["target_qty"])
+	}
+	if pct := open["fill_pct"].(float64); math.Abs(pct-208.0/719*100) > 1e-9 {
+		t.Errorf("fill_pct = %v, want %v", pct, 208.0/719*100)
+	}
+	if c := recs[1]; c["qty"] != 719.0 || c["filled_qty"] != 208.0 {
+		t.Errorf("cancel: filled %v of %v, want 208 of 719", c["filled_qty"], c["qty"])
+	}
+	if _, ok := recs[2]["filled_qty"]; ok {
+		t.Errorf("a cancel with nothing filled should omit filled_qty: %v", recs[2])
+	}
+	if _, ok := recs[3]["target_qty"]; ok {
+		t.Errorf("an open with no known target should omit target_qty/fill_pct: %v", recs[3])
+	}
+}

@@ -68,7 +68,7 @@ func (l *pendingLeg) record(trigger string, limitPrice float64) orders.PendingOr
 	return orders.PendingOrderRecord{
 		OrderID: l.orderID, Instrument: l.instrument, OptionType: l.optionType,
 		Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: trigger,
-		Qty: l.qty, LimitPrice: limitPrice,
+		Qty: l.qty, LimitPrice: limitPrice, FilledQty: l.filledQty,
 	}
 }
 
@@ -468,7 +468,7 @@ func (s *Strategy) finalizePending(ctx context.Context, ps *pendingStrangle) {
 		pos.Fees = fee
 		s.state.AddPosition(pos)
 		s.journal.LogOpen(pos,
-			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Fee: fee, Timestamp: now},
+			orders.Fill{OrderID: leg.orderID, FillPrice: leg.fillPrice, Qty: leg.filledQty, Fee: fee, Timestamp: now, TargetQty: leg.qty},
 			ps.trigger(), s.instrumentContext(leg.instrument, ps.slot()))
 		return pos
 	}

@@ -135,6 +135,7 @@ type PendingOrderRecord struct {
 	TriggerReason string
 	Qty           float64
 	LimitPrice    float64
+	FilledQty     float64 // cancels: what filled before the cancel (of Qty)
 	Greeks        Greeks
 }
 
@@ -154,6 +155,12 @@ type OrderLog struct {
 	SkipReason    string    `json:"skip_reason,omitempty"`
 	Detail        string    `json:"detail,omitempty"` // why, with the numbers
 	Qty           float64   `json:"qty,omitempty"`
+	// Fill realism of a limit sell (#86): an open records its fill (qty)
+	// against the order's target_qty, fill_pct = qty ÷ target_qty × 100; a
+	// cancel records the filled_qty of its qty (absent = nothing filled).
+	TargetQty     float64   `json:"target_qty,omitempty"`
+	FillPct       float64   `json:"fill_pct,omitempty"`
+	FilledQty     float64   `json:"filled_qty,omitempty"`
 	LimitPrice    float64   `json:"limit_price,omitempty"`
 	PreviousPrice float64   `json:"previous_price,omitempty"` // amendments
 	FillPrice     float64   `json:"fill_price,omitempty"`
