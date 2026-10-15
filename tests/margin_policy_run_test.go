@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
@@ -78,6 +80,17 @@ func TestMarginPolicy_FailSafeWhenMarginDataMissing(t *testing.T) {
 		eventually(t, 2*time.Second, "skip journaled", func() bool { return f.skips("margin_unknown") > 0 })
 		if n := len(f.exch.sells()); n != 0 {
 			t.Errorf("no margin data, no entry: got %d sells", n)
+		}
+	})
+	// Scenario: no sizing on stale margin — the account summary request
+	// times out in the gateway, an entry is due, it is skipped (#87).
+	t.Run("account summary request times out", func(t *testing.T) {
+		f := newStrategyFixture(t)
+		f.exch.summaryErr = fmt.Errorf("private/get_account_summary: %w", gateway.ErrRequestTimeout)
+		f.startRun()
+		eventually(t, 2*time.Second, "skip journaled", func() bool { return f.skips("margin_unknown") > 0 })
+		if n := len(f.exch.sells()); n != 0 {
+			t.Errorf("timed-out margin data, no entry: got %d sells", n)
 		}
 	})
 }

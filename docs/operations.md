@@ -154,6 +154,7 @@ Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i ./bo
 | `forbidden` then a 60 s pause | API key scope revoked | fix the key; the bot backs off instead of spamming |
 | `circuit breaker opened` | exchange overload/maintenance responses | wait; stop-losses still go through (high priority bypasses the breaker) |
 | `gateway giving up` then exit code 1 | reconnect attempts exhausted | the supervisor restarts it and reconcile restores state |
+| `margin_unknown` skips, `websocket read error` / `reconnected successfully` | the connection to Deribit dropped or a request timed out | `curl -s $BOT_API_ADDR/api/status \| jq .connections` shows drops, reconnects and timeouts today per gateway with the last drop's time and error; the same time on both bots (and on `trading` and `mainnet-public`) points at the host or network, not the bot |
 | `decision loop stalled` then exit code 1 | no decision cycle for 10+ minutes (stop-losses were not being checked) | the supervisor restarts it; report it — something blocked the loop |
 | monitor shows **LOOP STALLED** | the bot's API answers but its loop has not cycled for 3 intervals (≥ 2 min) | if it persists past the watchdog limit the bot restarts itself; otherwise `docker compose restart bot-<coin>` |
 | `skip slot: no suitable expiry` | no listed expiry inside the slot's DTE window | change the slot DTE (the ±10-day window is fixed in code) |

@@ -251,7 +251,10 @@ func runLive(cfg *config.Config) error {
 		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
 		acct := account.NewPoller(gw)
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
-		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct)}
+		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw)}
+		if marketGW != gw {
+			opts = append(opts, api.WithConnection("mainnet-public", marketGW))
+		}
 		// Manual close (monitor): testnet only, and only with BOT_ADMIN_TOKEN.
 		switch {
 		case cfg.IsLive():

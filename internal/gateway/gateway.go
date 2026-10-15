@@ -76,6 +76,8 @@ type Gateway struct {
 
 	reqCount   atomic.Int64
 	retryCount atomic.Int64
+
+	conns ConnTracker // drops, reconnects and timeouts for the monitor
 }
 
 // pendingCall is a request that has been written and is waiting for its reply.
@@ -248,6 +250,7 @@ func (g *Gateway) reconnectOnce(rootCtx context.Context) bool {
 			}
 		}
 		g.restore = nil
+		g.conns.Reconnect(time.Now())
 		g.log.Info("reconnected successfully", "attempt", attempt)
 		return true
 	}
@@ -284,6 +287,7 @@ func (g *Gateway) readLoop(rootCtx, connCtx context.Context, cancelConn context.
 				return // connection closed on purpose — no reconnect
 			}
 			g.log.Error("websocket read error", "err", err)
+			g.conns.Drop(time.Now(), err.Error())
 			cancelConn() // stop writing to a dead socket
 			g.failAllPending(ErrConnectionLost)
 			go g.reconnect(rootCtx)
@@ -494,7 +498,12 @@ func (g *Gateway) Call(ctx context.Context, method string, params any, priority 
 	return resp, err
 }
 
-func (g *Gateway) callOnce(ctx context.Context, method string, params any, priority int) (JSONRPCResponse, error) {
+func (g *Gateway) callOnce(ctx context.Context, method string, params any, priority int) (_ JSONRPCResponse, err error) {
+	defer func() {
+		if errors.Is(err, ErrRequestTimeout) {
+			g.conns.Timeout(time.Now())
+		}
+	}()
 	id := g.idCounter.Add(1)
 	reply := make(chan callResult, 1) // buffered: the replier never blocks
 	deadline := time.Now().Add(g.requestTimeout)
