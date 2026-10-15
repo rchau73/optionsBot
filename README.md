@@ -4,6 +4,8 @@
 ![Go](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)
 ![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)
 
+> **🤖 This is also an agentic-development project.** AI agents watch the running bots, file issues, and implement approved issues as tested pull requests, with a person approving what gets built and what gets merged. How it works and its guardrails: **[AGENTIC.md](AGENTIC.md)**.
+
 A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https://www.deribit.com), manages them through their life (fill tracking, take-profit, rolls, stop-loss, regime-based leg shedding, kill switch) and backtests the same rules on historical data.
 
 > **⚠️ Disclaimer — read first.** This is a personal **software-engineering study**: a Go concurrency and system-design exercise that runs against a real derivatives exchange. It is **not** a professional trading tool and **not investment advice**. Selling options can lose far more than the premium collected, and crypto markets are extremely volatile. The bot runs on Deribit **testnet by default**; live trading requires an explicit `DERIBIT_ENV=live`. Use at your own risk.

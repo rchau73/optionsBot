@@ -112,6 +112,20 @@ caffeinate -i ./bot.sh          # macOS: prevent sleep while monitoring
 
 Run it in `tmux`/`screen` so it survives terminal disconnects.
 
+## Agents (SME review, Dev agent, testnet deploy)
+
+The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **testnet**. How it works, permissions and guardrails: [AGENTIC.md](../AGENTIC.md).
+
+```bash
+gh auth refresh -s project              # once
+scripts/agents/setup_github.sh          # once: labels, project board, ruleset on main
+scripts/agents/install.sh               # launchd: SME daily at 09:00; deploy + Dev every 15 min
+launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
+scripts/agents/install.sh --uninstall
+```
+
+Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. Automatic deploys need this checkout on a clean `main` (they never touch work in progress) and every bot on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
+
 ## Kill switch
 
 Flattens every position at market and halts trading:

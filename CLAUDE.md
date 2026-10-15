@@ -84,6 +84,7 @@ Never reintroduce env-var overrides for logic parameters.
 ## Documentation
 
 - `README.md` technical overview · `OptionStrategy.md` business explanation · `docs/architecture.md` · `docs/operations.md` · `docs/README.md` (diagram index).
+- **Agentic workflow** (`AGENTIC.md`, `scripts/agents/`): the SME agent (`sme_review.sh`, daily, read-only, option-bot-specialist skill) files findings as `agent:sme` issues on the project board's Triage column (deduplicated by `sme-fingerprint`, verifies closed issues, reopens if not fixed; amounts redacted if a bot is live); a person moves good ones to Ready; the Dev agent (`dev_agent.sh`, every 15 min, developer skill in Agent mode) implements one in a worktree with edit/test/commit permissions only, the script re-runs all checks and opens the PR (`agent:dev`) or moves the card to Blocked with questions; a person merges (ruleset: PR + green CI); `deploy.sh` redeploys testnet only, from a clean `main` checkout, health-checks and moves cards to Done. Setup: `setup_github.sh`; schedule: `install.sh`. Agents never merge, deploy live or trade.
 - `OptionStrategy.md` §9 "Market regimes and what the bot does" is the table of every open/close/hold rule by market state (normal, freeze, confirmed negative regime, GEX shedding, MM limit). Update it in the same PR as any rule change.
 - Diagrams are Mermaid `.mmd` in `docs/` rendered to PNG with `make diagrams`; update both when a flow changes.
 - The planned dashboard lives in `frontend/` with its own `frontend/README.md`; keep UI/UX material out of the backend docs.
