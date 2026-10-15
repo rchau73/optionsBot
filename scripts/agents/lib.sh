@@ -132,6 +132,18 @@ bots_environment() {
   echo "${any:-unknown}"
 }
 
+# require_tools <tool>... — fails (and notifies) when a tool is not on PATH, so
+# an agent stops before it takes a card instead of blocking it for a broken
+# environment. Run scripts/agents/install.sh again after installing a tool.
+require_tools() {
+  local missing="" t
+  for t in "$@"; do command -v "$t" >/dev/null || missing="$missing $t"; done
+  [[ -z "$missing" ]] && return 0
+  log "missing on PATH:$missing (PATH=$PATH) — re-run scripts/agents/install.sh"
+  notify "optionsBot agents: missing tools" "$missing"
+  return 1
+}
+
 # take_lock <name> — one run at a time; a lock older than 3 h is stale.
 take_lock() {
   local dir="$AGENT_STATE_DIR/$1.lock"

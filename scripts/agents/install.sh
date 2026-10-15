@@ -24,12 +24,15 @@ AT="${1:-09:00}"
 [[ "$AT" =~ ^([01][0-9]|2[0-3]):([0-5][0-9])$ ]] || { echo "time must be HH:MM, got $AT" >&2; exit 1; }
 HOUR=$((10#${AT%%:*})); MIN=$((10#${AT##*:}))
 
-for bin in claude gh curl python3 docker; do
+for bin in claude gh curl python3 docker go gofmt; do
   command -v "$bin" >/dev/null || { echo "$bin not found on PATH" >&2; exit 1; }
 done
 gh auth status >/dev/null 2>&1 || { echo "gh is not logged in" >&2; exit 1; }
-# launchd starts with a bare PATH: carry the directories that hold the tools.
-PATH_FOR_JOBS="$(for b in claude gh docker; do dirname "$(command -v "$b")"; done | sort -u | tr '\n' ':')/usr/bin:/bin:/usr/sbin:/sbin"
+# launchd starts with a bare PATH: carry the directories that hold every tool
+# an agent or a check runs (go was missing on 2026-10-15: the Dev agent could
+# not test and the script's checks failed with "go: command not found").
+PATH_FOR_JOBS="$(for b in claude gh docker go gofmt python3 node npm npx mmdc; do
+  command -v "$b" >/dev/null && dirname "$(command -v "$b")"; done | awk '!seen[$0]++' | tr '\n' ':')/usr/bin:/bin:/usr/sbin:/sbin"
 mkdir -p "$AGENTS" "$REPO/data/agents"
 
 plist() { # label, script, schedule xml

@@ -19,6 +19,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
 take_lock dev || exit 0
+require_tools claude gh git go gofmt python3 || exit 1
 
 slug="$(repo_slug)"
 next="$(items_in_status "Ready" | head -1)"
@@ -125,7 +126,7 @@ check() { # name, command...
   else echo "- [ ] **$name — FAILED**" >> "$checks"; { echo '```'; tail -40 "$run_dir/check.log"; echo '```'; } >> "$checks"; return 1; fi
 }
 ok=1
-check "gofmt" bash -c 'test -z "$(gofmt -l cmd internal tests)"' || ok=0
+check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
 check "go vet ./..." go vet ./... || ok=0
 check "go test -race ./tests/..." go test -race -count=1 ./tests/... || ok=0
 if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
@@ -148,6 +149,8 @@ title="$(gh issue view "$issue" -R "$slug" --json title -q .title)"
 draft=(); [[ $ok -eq 1 ]] || draft=(--draft)
 if [[ -n "$existing_pr" ]]; then
   gh pr edit "$existing_pr" -R "$slug" --body-file "$run_dir/pr.md" >/dev/null
+  # A PR opened as a draft on failing checks becomes reviewable once they pass.
+  [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
   gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
 else
