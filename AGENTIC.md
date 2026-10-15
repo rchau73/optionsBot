@@ -2,7 +2,7 @@
 
 This bot is developed by a small team of AI agents with a person in charge. One agent watches the running bots and reports problems as GitHub issues. Another turns approved issues into tested pull requests. A deploy step ships what I merge to testnet, and the first agent checks the next day that the fix worked. I decide what gets built and what gets merged: **the agents propose, a person approves.**
 
-Everything happens in the open on GitHub, so each step can be audited: the [project board](https://github.com/users/rchau73/projects), the issues labelled [`agent:sme`](https://github.com/rchau73/optionsBot/issues?q=label%3Aagent%3Asme) and the pull requests labelled [`agent:dev`](https://github.com/rchau73/optionsBot/pulls?q=label%3Aagent%3Adev).
+Everything happens in the open on GitHub, so each step can be audited: the [project board](https://github.com/users/rchau73/projects/1), the issues labelled [`agent:sme`](https://github.com/rchau73/optionsBot/issues?q=label%3Aagent%3Asme) and the pull requests labelled [`agent:dev`](https://github.com/rchau73/optionsBot/pulls?q=label%3Aagent%3Adev).
 
 ![The agentic workflow: SME agent → issue → human triage → Dev agent → PR → human review and merge → testnet deploy → SME verifies](docs/agentic_workflow.png)
 
