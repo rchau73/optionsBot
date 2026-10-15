@@ -32,7 +32,13 @@ exec > >(tee -a "$run_dir/run.log") 2>&1
 log "dev: issue #$issue → $branch"
 
 set_status "$item" "In progress"
-gh issue comment "$issue" -R "$slug" --body "🤖 **Dev agent** picked this up on branch \`$branch\`. It will open a pull request for review; it never merges or deploys." >/dev/null
+# The pickup comment says which attempt this is and what came before, so the
+# issue alone tells the story even when a person moved the card back to Ready
+# on the board (a board move leaves no trace on the issue).
+gh issue view "$issue" -R "$slug" --json comments > "$run_dir/history.json"
+python3 "$AGENT_REPO_DIR/scripts/agents/pickup_comment.py" "$run_dir/history.json" "$branch" \
+  "data/agents/dev/$(basename "$run_dir")" > "$run_dir/pickup.md"
+gh issue comment "$issue" -R "$slug" --body-file "$run_dir/pickup.md" >/dev/null
 
 block() { # reason file
   { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"; } > "$run_dir/blocked.md"
@@ -106,7 +112,9 @@ if [[ $rc -ne 0 || "$result" != "done" ]]; then
   if [[ "$result" == "needs_human" ]]; then
     cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
   else
-    { echo "The agent did not finish (exit $rc, result '${result:-none}'). Last lines:"; echo
+    why="the agent did not finish (exit $rc, result '${result:-none}')"
+    grep -qiE "session limit|usage limit" "$run_dir/agent.md" && why="the Claude usage limit was reached (exit $rc): move the card back to Ready after it resets"
+    { echo "Stopped because $why."; echo; echo "Last lines:"; echo
       tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
   fi
   block "$run_dir/reason.md"

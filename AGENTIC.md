@@ -56,7 +56,7 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 - **Data exposure:** this repo is public. On testnet, issues carry full evidence, because the money is fake. If a bot runs live, the SME agent is told to leave balances, sizes and P&L out of issues; the full report stays local (`data/sme/`, gitignored).
 - **Stop instead of guessing:** the Dev agent stops when an issue is ambiguous, needs a product decision, or would change live order behaviour beyond what the issue says. It posts its questions and moves the card to **Blocked**.
 - **Idempotent and bounded:** one Dev task at a time, with locks and stale-lock recovery. Issues are de-duplicated by a stable fingerprint. A failed deploy commit is not retried in a loop.
-- **Audit trail:** every agent action is an issue, a comment, a commit or a PR, labelled `agent:*`, with its run log in `data/agents/`.
+- **Audit trail:** every agent action is an issue, a comment, a commit or a PR, labelled `agent:*`, with its run log in `data/agents/`. Each pickup comment numbers the attempt and says what came before (blocked, sent back by the Reviewer, or a person's comment), so an issue tells its whole story even when a card was moved back on the board.
 
 ## How AI is used in this repo beyond the loop
 
