@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"optionsbot/internal/account"
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
@@ -71,17 +72,23 @@ type AccountSource interface {
 	Status() account.Status
 }
 
+// ConnectionSource provides a gateway's connection stability (gateway.Gateway).
+type ConnectionSource interface {
+	ConnStats() gateway.ConnStats
+}
+
 // Server is the monitor API for one bot process.
 type Server struct {
-	strategy StrategySource
-	events   EventSource
-	history  PnLHistory       // nil → empty history
-	account  AccountSource    // nil → no account data
-	closer   ManualCloser     // nil → no manual close route
-	rebal    ManualRebalancer // nil → no manual rebalance route
-	token    string
-	started  time.Time
-	mux      *http.ServeMux
+	strategy    StrategySource
+	events      EventSource
+	history     PnLHistory                  // nil → empty history
+	account     AccountSource               // nil → no account data
+	closer      ManualCloser                // nil → no manual close route
+	rebal       ManualRebalancer            // nil → no manual rebalance route
+	connections map[string]ConnectionSource // by gateway name; empty → {}
+	token       string
+	started     time.Time
+	mux         *http.ServeMux
 }
 
 // Option configures a Server.
@@ -106,9 +113,17 @@ func WithManualRebalance(r ManualRebalancer, token string) Option {
 // WithAccount serves /api/account from a.
 func WithAccount(a AccountSource) Option { return func(s *Server) { s.account = a } }
 
+// WithConnection adds a gateway's drops, reconnects and timeouts to
+// /api/status under connections.<name> (e.g. "trading", "mainnet-public").
+// Drops at the same moment on both gateways point at the host or network.
+func WithConnection(name string, c ConnectionSource) Option {
+	return func(s *Server) { s.connections[name] = c }
+}
+
 // New builds the API. Use Handler for tests, ListenAndServe to run it.
 func New(src StrategySource, events EventSource, opts ...Option) *Server {
-	s := &Server{strategy: src, events: events, started: time.Now(), mux: http.NewServeMux()}
+	s := &Server{strategy: src, events: events, started: time.Now(), mux: http.NewServeMux(),
+		connections: map[string]ConnectionSource{}}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -255,6 +270,10 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 	for _, st := range v.Strangles {
 		openLegs += len(st.Legs)
 	}
+	conns := make(map[string]gateway.ConnStats, len(s.connections))
+	for name, c := range s.connections {
+		conns[name] = c.ConnStats()
+	}
 	writeJSON(w, map[string]any{
 		"as_of":            v.AsOf,
 		"strategy_id":      v.StrategyID,
@@ -280,6 +299,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"event_counts":     s.events.EventCounts(),
 		"history_since":    s.historySince(),
 		"pnl":              v.PnL,
+		"connections":      conns,
 	})
 }
 

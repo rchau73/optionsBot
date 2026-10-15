@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"optionsbot/internal/api"
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
 	"optionsbot/internal/strategy"
@@ -85,6 +86,45 @@ func TestAPI_StatusSummarisesTheBot(t *testing.T) {
 	st := rk["status"].(map[string]any)
 	if st["limit_im_pct"].(float64) != 35 || st["frozen"] != true || len(st["pending"].([]any)) != 1 || rk["im_pct"].(float64) != 12 {
 		t.Errorf("risk = %v", rk)
+	}
+}
+
+type fixedConn struct{ s gateway.ConnStats }
+
+func (f fixedConn) ConnStats() gateway.ConnStats { return f.s }
+
+// Scenario: a drop is visible — /api/status shows reconnects_today and
+// last_drop_at per gateway (#87).
+func TestAPI_StatusShowsConnectionDrops(t *testing.T) {
+	drop := time.Date(2026, 10, 14, 11, 53, 0, 0, time.UTC)
+	var tr gateway.ConnTracker
+	tr.Drop(drop, "websocket: close 1006 (abnormal closure)")
+	tr.Reconnect(drop.Add(2 * time.Second))
+	h := api.New(staticView{sampleView()}, orders.NewWriterLogger(io.Discard, 0),
+		api.WithConnection("trading", fixedConn{tr.Stats(drop.Add(time.Minute))}),
+		api.WithConnection("mainnet-public", fixedConn{gateway.ConnStats{Day: "2026-10-14"}}),
+	).Handler()
+
+	_, body := getJSON(t, h, "/api/status")
+	conns, ok := body["connections"].(map[string]any)
+	if !ok || len(conns) != 2 {
+		t.Fatalf("connections = %v", body["connections"])
+	}
+	tc := conns["trading"].(map[string]any)
+	if tc["reconnects_today"].(float64) != 1 || tc["drops_today"].(float64) != 1 {
+		t.Errorf("trading counts = %v", tc)
+	}
+	if tc["last_drop_at"] != "2026-10-14T11:53:00Z" || tc["last_drop_reason"] == "" {
+		t.Errorf("trading last drop = %v (%v)", tc["last_drop_at"], tc["last_drop_reason"])
+	}
+	if pc := conns["mainnet-public"].(map[string]any); pc["last_drop_at"] != nil || pc["reconnects_today"].(float64) != 0 {
+		t.Errorf("a gateway that never dropped shows null and 0: %v", pc)
+	}
+
+	// Without gateways wired (monitor demo, tests) the field is {} not null.
+	_, body = getJSON(t, api.New(staticView{sampleView()}, orders.NewWriterLogger(io.Discard, 0)).Handler(), "/api/status")
+	if c, ok := body["connections"].(map[string]any); !ok || len(c) != 0 {
+		t.Errorf("no gateways: connections = %v", body["connections"])
 	}
 }
 
