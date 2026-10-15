@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# dev_agent.sh — the Dev agent: implements one Ready issue as a pull request.
+#
+#   1. takes the oldest issue in the board's Ready column → In progress;
+#   2. creates an isolated worktree on branch agent/issue-<n> (reused when a
+#      PR is already open, so review comments are addressed on the same PR);
+#   3. runs Claude Code headless with the developer skill in agent mode. It
+#      may edit files, run the build/test/lint tools and commit — nothing
+#      else: no push, no gh, no network, no docker, no merge;
+#   4. the script re-runs every check itself (trust, but verify), pushes the
+#      branch and opens (or updates) the PR "Closes #n" → In review.
+#      A failure, or an agent that stops with questions, comments on the
+#      issue, labels it agent:needs-human and moves it to Blocked.
+#
+# A person reviews and merges. The agent never merges or deploys.
+# Env: DEV_MODEL, AGENT_WORK_DIR (~/.optionsbot-agents), AGENT_NOTIFY.
+set -euo pipefail
+# shellcheck source=lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+cd "$AGENT_REPO_DIR"
+take_lock dev || exit 0
+
+slug="$(repo_slug)"
+next="$(items_in_status "Ready" | head -1)"
+[[ -n "$next" ]] || { log "dev: nothing in Ready"; exit 0; }
+item="${next%% *}"; issue="${next##* }"
+branch="agent/issue-$issue"
+run_dir="$AGENT_STATE_DIR/dev/issue-$issue-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$run_dir"
+exec > >(tee -a "$run_dir/run.log") 2>&1
+log "dev: issue #$issue → $branch"
+
+set_status "$item" "In progress"
+gh issue comment "$issue" -R "$slug" --body "🤖 **Dev agent** picked this up on branch \`$branch\`. It will open a pull request for review; it never merges or deploys." >/dev/null
+
+block() { # reason file
+  { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"; } > "$run_dir/blocked.md"
+  gh issue comment "$issue" -R "$slug" --body-file "$run_dir/blocked.md" >/dev/null
+  gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null
+  set_status "$item" "Blocked"
+  notify "Dev agent blocked on #$issue" "$(head -c 120 "$1")"
+  log "dev: blocked #$issue"
+  exit 0
+}
+
+# ── Worktree ────────────────────────────────────────────────────────────────
+git fetch -q origin
+wt="$AGENT_WORK_DIR/issue-$issue"
+[[ -d "$wt" ]] && git worktree remove --force "$wt" 2>/dev/null || true
+if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+  git worktree add -q -B "$branch" "$wt" "origin/$branch"
+  existing_pr="$(gh pr list -R "$slug" --head "$branch" --state open --json number -q '.[0].number' || true)"
+else
+  git worktree add -q -B "$branch" "$wt" origin/main
+  existing_pr=""
+fi
+base="$(git -C "$wt" rev-parse HEAD)"
+
+# ── Task for the agent ──────────────────────────────────────────────────────
+gh issue view "$issue" -R "$slug" --json number,title,body,labels,comments \
+  -q '"# Issue #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(.body)\n\n## Comments\n\(.comments | map("### \(.author.login) (\(.createdAt))\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
+if [[ -n "$existing_pr" ]]; then
+  gh pr view "$existing_pr" -R "$slug" --json reviews,comments \
+    -q '"\n\n# Review feedback on PR #'"$existing_pr"' (address it)\n\(.reviews | map("### review by \(.author.login): \(.state)\n\(.body)") | join("\n\n"))\n\(.comments | map("### \(.author.login)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
+  gh api "repos/$slug/pulls/$existing_pr/comments" -q '.[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
+fi
+cp "$run_dir/task.md" "$wt/.agent-task.md"
+echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"
+
+PROMPT="Use the developer skill in its \"Agent mode\" and implement the GitHub issue described in .agent-task.md
+(read it first; it includes any review feedback to address). You are on branch $branch in an isolated worktree.
+Implement it with tests, run the checks the skill lists, and commit your work (git add + git commit).
+Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
+
+allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
+  "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run ./cmd/stress:*)" "Bash(go mod tidy)"
+  "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
+  "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
+  "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)" )
+denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(gh:*)" "Bash(curl:*)"
+  "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
+model_args=()
+[[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
+
+log "dev: running the agent in $wt"
+set +e
+(cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
+  --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
+  --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
+rc=$?
+set -e
+rm -f "$wt/.agent-task.md"
+log "dev: agent exit $rc"
+
+result="$(grep -m1 '^RESULT:' "$run_dir/agent.md" | sed 's/^RESULT: *//' || true)"
+py 'import re,sys
+t = open(sys.argv[1]).read()
+m = re.search(r"<!-- PR-BODY\s*(.*?)\s*-->", t, re.S)
+open(sys.argv[2], "w").write(m.group(1) if m else t[-6000:])' "$run_dir/agent.md" "$run_dir/pr-body.md"
+
+if [[ $rc -ne 0 || "$result" != "done" ]]; then
+  if [[ "$result" == "needs_human" ]]; then
+    cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
+  else
+    { echo "The agent did not finish (exit $rc, result '${result:-none}'). Last lines:"; echo
+      tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
+  fi
+  block "$run_dir/reason.md"
+fi
+if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
+  echo "The agent reported done but made no commit." > "$run_dir/reason.md"
+  block "$run_dir/reason.md"
+fi
+
+# ── Verify independently ────────────────────────────────────────────────────
+log "dev: verifying"
+checks="$run_dir/checks.md"
+: > "$checks"
+check() { # name, command...
+  local name="$1"; shift
+  if (cd "$wt" && "$@") > "$run_dir/check.log" 2>&1; then echo "- [x] $name" >> "$checks"
+  else echo "- [ ] **$name — FAILED**" >> "$checks"; { echo '```'; tail -40 "$run_dir/check.log"; echo '```'; } >> "$checks"; return 1; fi
+}
+ok=1
+check "gofmt" bash -c 'test -z "$(gofmt -l cmd internal tests)"' || ok=0
+check "go vet ./..." go vet ./... || ok=0
+check "go test -race ./tests/..." go test -race -count=1 ./tests/... || ok=0
+if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
+  check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
+  check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0
+  check "frontend: jest" bash -c 'cd frontend && npx jest' || ok=0
+  check "frontend: next build" bash -c 'cd frontend && npx next build' || ok=0
+fi
+
+# ── Pull request ────────────────────────────────────────────────────────────
+git -C "$wt" push -q -u origin "$branch"
+{
+  echo "Closes #$issue"; echo
+  cat "$run_dir/pr-body.md"; echo
+  echo "## Checks re-run by the Dev agent script"; cat "$checks"; echo
+  echo "_Opened by the **Dev agent** (developer skill, agent mode) for #$issue. It cannot merge or deploy: a person reviews and merges; merging deploys to **testnet** and the SME agent verifies the fix in its next review. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
+  echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+} > "$run_dir/pr.md"
+title="$(gh issue view "$issue" -R "$slug" --json title -q .title)"
+draft=(); [[ $ok -eq 1 ]] || draft=(--draft)
+if [[ -n "$existing_pr" ]]; then
+  gh pr edit "$existing_pr" -R "$slug" --body-file "$run_dir/pr.md" >/dev/null
+  pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
+  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
+else
+  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
+fi
+log "dev: PR $pr_url"
+
+if [[ $ok -eq 1 ]]; then
+  set_status "$item" "In review"
+  gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
+  gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — all checks passed. Ready for review." >/dev/null
+  notify "Dev agent: PR ready for #$issue" "$title"
+else
+  { echo "The implementation is in $pr_url (draft), but the checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
+  block "$run_dir/reason.md"
+fi
+git worktree remove --force "$wt" 2>/dev/null || true

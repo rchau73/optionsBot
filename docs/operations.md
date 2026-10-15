@@ -112,17 +112,19 @@ caffeinate -i ./bot.sh          # macOS: prevent sleep while monitoring
 
 Run it in `tmux`/`screen` so it survives terminal disconnects.
 
-## SME daily review (agent)
+## Agents (SME review, Dev agent, testnet deploy)
 
-Once a day the **Option Bot SME** (`.claude/skills/option-bot-specialist`) reviews what the bots did and reports issues and tuning opportunities — without being asked. `scripts/sme_review.sh` collects each bot's monitor data (read-only GETs through the monitor at `localhost:3000`) and both configs into `data/sme/<date>/`, gives the agent its last 3 reports as memory, runs Claude Code headless, and writes `data/sme/<date>/report.md` with a macOS notification (`SUMMARY` + `SEVERITY`). The agent can only **read** that folder and the docs: no shell, no edits, no network, no MCP (`--permission-mode dontAsk` with Read/Grep/Glob/Skill only). It never trades or changes config; every finding ends in a proposed action for a person.
+The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **testnet**. How it works, permissions and guardrails: [AGENTIC.md](../AGENTIC.md).
 
 ```bash
-scripts/install_sme_review.sh          # daily at 09:00 local via launchd (07:30: pass "07:30")
-launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run it now
-scripts/install_sme_review.sh --uninstall
+gh auth refresh -s project              # once
+scripts/agents/setup_github.sh          # once: labels, project board, ruleset on main
+scripts/agents/install.sh               # launchd: SME daily at 09:00; deploy + Dev every 15 min
+launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
+scripts/agents/install.sh --uninstall
 ```
 
-Run it on the machine that runs the bots, logged in to Claude Code (`claude` uses your login). launchd runs a missed review when the Mac wakes. Logs: `data/sme/<date>/run.log`, `data/sme/launchd.log`. To also file each report as a GitHub issue set `SME_ISSUE_REPO=owner/repo` — refused for a public repo unless `SME_ALLOW_PUBLIC=1`, because the report shows positions and P&L. The checklist and thresholds (liveness, freeze, margin use, one-sided books, execution, exits, MM, P&L, safety events) live in the skill's *Daily review* section — tune them there.
+Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. Automatic deploys need this checkout on a clean `main` (they never touch work in progress) and every bot on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
 
 ## Kill switch
 
