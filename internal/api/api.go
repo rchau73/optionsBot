@@ -61,6 +61,11 @@ type ManualCloser interface {
 	ManualClose(ctx context.Context, ids []string, by string) ([]strategy.ManualCloseResult, error)
 }
 
+// ManualRebalancer runs a rebalance pass, or a dry run of one, on request.
+type ManualRebalancer interface {
+	RequestRebalance(ctx context.Context, dryRun bool, by string) (strategy.RebalanceReport, error)
+}
+
 // AccountSource provides the cached account/collateral summary.
 type AccountSource interface {
 	Status() account.Status
@@ -70,9 +75,10 @@ type AccountSource interface {
 type Server struct {
 	strategy StrategySource
 	events   EventSource
-	history  PnLHistory    // nil → empty history
-	account  AccountSource // nil → no account data
-	closer   ManualCloser  // nil → no manual close route
+	history  PnLHistory       // nil → empty history
+	account  AccountSource    // nil → no account data
+	closer   ManualCloser     // nil → no manual close route
+	rebal    ManualRebalancer // nil → no manual rebalance route
 	token    string
 	started  time.Time
 	mux      *http.ServeMux
@@ -88,6 +94,13 @@ func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = 
 // (Authorization: Bearer <token>). An empty token leaves the route off.
 func WithManualClose(c ManualCloser, token string) Option {
 	return func(s *Server) { s.closer, s.token = c, token }
+}
+
+// WithManualRebalance serves POST /api/rebalance, authorised by token
+// (Authorization: Bearer <token>; the same token as manual close). An empty
+// token leaves the route off.
+func WithManualRebalance(r ManualRebalancer, token string) Option {
+	return func(s *Server) { s.rebal, s.token = r, token }
 }
 
 // WithAccount serves /api/account from a.
@@ -111,19 +124,30 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	if s.closer != nil && s.token != "" {
 		s.mux.HandleFunc("POST /api/positions/close", s.manualClose)
 	}
+	if s.rebal != nil && s.token != "" {
+		s.mux.HandleFunc("POST /api/rebalance", s.manualRebalance)
+	}
 	return s
 }
 
 const (
 	maxCloseIDs     = 20
 	manualCloseWait = 60 * time.Second // a market buy-back is seconds; the loop may be mid-cycle
+	// A pass runs a few margin simulations per strangle (Deribit allows one a
+	// second) plus its orders; the loop may be mid-cycle.
+	manualRebalanceWait = 120 * time.Second
 )
+
+// authorised checks the admin bearer token in constant time.
+func (s *Server) authorised(r *http.Request) bool {
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+}
 
 // manualClose: {"position_ids": [...]} → the strategy's results. Audited in the
 // bot log; each close is journaled by the strategy.
 func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
-	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+	if !s.authorised(r) {
 		slog.Warn("manual close refused: bad token", "remote", r.RemoteAddr)
 		writeError(w, http.StatusUnauthorized, "unauthorised")
 		return
@@ -153,6 +177,46 @@ func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Warn("manual close done", "results", res)
 	writeJSON(w, map[string]any{"results": res})
+}
+
+// manualRebalance: POST /api/rebalance[?dry_run=true] → the pass's report.
+// 409 when the gates refuse it (the reason says which), 429 inside the
+// cooldown, 504 when the decision loop did not take it. Audited in the bot
+// log; a real pass is journaled (risk_limit rebalance_manual).
+func (s *Server) manualRebalance(w http.ResponseWriter, r *http.Request) {
+	if !s.authorised(r) {
+		slog.Warn("manual rebalance refused: bad token", "remote", r.RemoteAddr)
+		writeError(w, http.StatusUnauthorized, "unauthorised")
+		return
+	}
+	dryRun := false
+	if v := r.URL.Query().Get("dry_run"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "dry_run must be true or false")
+			return
+		}
+		dryRun = b
+	}
+	slog.Warn("manual rebalance requested via API", "dry_run", dryRun, "remote", r.RemoteAddr)
+	ctx, cancel := context.WithTimeout(r.Context(), manualRebalanceWait)
+	defer cancel()
+	rep, err := s.rebal.RequestRebalance(ctx, dryRun, "monitor")
+	var refused strategy.RebalanceRefused
+	var cooldown strategy.RebalanceCooldown
+	switch {
+	case err == nil:
+		writeJSON(w, rep)
+	case errors.As(err, &cooldown):
+		w.Header().Set("Retry-After", strconv.Itoa(int(cooldown.RetryAfter.Seconds()+0.999)))
+		writeError(w, http.StatusTooManyRequests, err.Error())
+	case errors.As(err, &refused):
+		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, strategy.ErrRebalanceBusy):
+		writeError(w, http.StatusGatewayTimeout, err.Error())
+	default:
+		writeError(w, http.StatusConflict, err.Error())
+	}
 }
 
 // Handler returns the HTTP handler.

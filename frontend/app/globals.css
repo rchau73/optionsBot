@@ -13,6 +13,7 @@
   --color-put: #c084fc;
   --color-live: #ef4444;
   --color-testnet: #38bdf8;
+  --color-action: #818cf8; /* operator actions that place orders (rebalance) */
 }
 
 html,

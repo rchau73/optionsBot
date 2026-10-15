@@ -70,3 +70,25 @@ export async function closePositions(name, positionIds) {
   if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
   return body.results ?? [];
 }
+
+/**
+ * Manual rebalance of one bot through the monitor's proxy. dryRun: only report
+ * what the pass would do. Returns the bot's report; throws with the bot's
+ * reason when it refuses (frozen, cooldown, no margin data...).
+ */
+export async function rebalanceBot(name, dryRun) {
+  const res = await fetch(`/api/bots/${encodeURIComponent(name)}/rebalance`, {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body;
+}
