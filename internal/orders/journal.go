@@ -158,12 +158,12 @@ type OrderLog struct {
 	// Fill realism of a limit sell (#86): an open records its fill (qty)
 	// against the order's target_qty, fill_pct = qty ÷ target_qty × 100; a
 	// cancel records the filled_qty of its qty (absent = nothing filled).
-	TargetQty     float64   `json:"target_qty,omitempty"`
-	FillPct       float64   `json:"fill_pct,omitempty"`
-	FilledQty     float64   `json:"filled_qty,omitempty"`
-	LimitPrice    float64   `json:"limit_price,omitempty"`
-	PreviousPrice float64   `json:"previous_price,omitempty"` // amendments
-	FillPrice     float64   `json:"fill_price,omitempty"`
+	TargetQty     float64 `json:"target_qty,omitempty"`
+	FillPct       float64 `json:"fill_pct,omitempty"`
+	FilledQty     float64 `json:"filled_qty,omitempty"`
+	LimitPrice    float64 `json:"limit_price,omitempty"`
+	PreviousPrice float64 `json:"previous_price,omitempty"` // amendments
+	FillPrice     float64 `json:"fill_price,omitempty"`
 
 	// Option greeks at the event (long-holder perspective, per contract)
 	Delta float64 `json:"delta"`
