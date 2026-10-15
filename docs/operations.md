@@ -191,7 +191,7 @@ curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/
 curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/api/rebalance"
 ```
 
-It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it. It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders. A real pass is journaled as `risk_limit` `rebalance_manual`.
+It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement or an entry is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it. It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders. A real pass is journaled as `risk_limit` `rebalance_manual`.
 
 ## Two connections on testnet
 

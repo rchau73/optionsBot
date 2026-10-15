@@ -33,18 +33,21 @@ func TestRebalanceBlockReason(t *testing.T) {
 		err     error
 		gexWait string
 		pending bool
+		entry   bool
 		want    string
 	}{
-		{"all clear", ok, use, nil, "", false, ""},
-		{"margin unknown", ok, use, errors.New("timeout"), "", false, "margin data unavailable"},
-		{"MM breach", ok, risk.Usage{MM: 4, MarginBalance: 10}, nil, "", false, "maintenance margin"},
-		{"frozen", risk.Status{LimitIMPct: 20, MaxMMPct: 35, CanRebalance: true, Frozen: true, FreezeReason: "DVOL moved"}, use, nil, "", false, "new risk frozen: DVOL moved"},
-		{"unconfirmed limit", risk.Status{LimitIMPct: 20, MaxMMPct: 35}, use, nil, "", false, "confirmed data"},
-		{"stale GEX", ok, use, nil, "no GEX snapshot yet", false, "waiting for GEX"},
-		{"complement working", ok, use, nil, "", true, "complement is still working"},
+		{"all clear", ok, use, nil, "", false, false, ""},
+		{"margin unknown", ok, use, errors.New("timeout"), "", false, false, "margin data unavailable"},
+		{"MM breach", ok, risk.Usage{MM: 4, MarginBalance: 10}, nil, "", false, false, "maintenance margin"},
+		{"frozen", risk.Status{LimitIMPct: 20, MaxMMPct: 35, CanRebalance: true, Frozen: true, FreezeReason: "DVOL moved"}, use, nil, "", false, false, "new risk frozen: DVOL moved"},
+		{"unconfirmed limit", risk.Status{LimitIMPct: 20, MaxMMPct: 35}, use, nil, "", false, false, "confirmed data"},
+		{"stale GEX", ok, use, nil, "no GEX snapshot yet", false, false, "waiting for GEX"},
+		{"complement working", ok, use, nil, "", true, false, "complement is still working"},
+		{"entry working (#97)", ok, use, nil, "", false, true, "an entry is still working"},
+		{"MM breach while an entry works: the MM cut runs", ok, risk.Usage{MM: 4, MarginBalance: 10}, nil, "", false, true, "maintenance margin"},
 	}
 	for _, c := range cases {
-		got := strategy.RebalanceBlockReason(c.st, c.u, c.err, c.gexWait, c.pending)
+		got := strategy.RebalanceBlockReason(c.st, c.u, c.err, c.gexWait, c.pending, c.entry)
 		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}

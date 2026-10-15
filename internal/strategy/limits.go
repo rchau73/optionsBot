@@ -159,13 +159,34 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if st.Frozen {
 		s.cancelNewRisk(ctx, "new risk frozen: "+st.FreezeReason)
 	}
-	if st.LimitIMPct == s.appliedLimit || s.rebalanceBlockReason(m) != "" {
+	if st.LimitIMPct == s.appliedLimit || time.Now().Before(s.rebalanceRetryAt) {
+		return // nothing to resize, or a complement fell short recently
+	}
+	why := s.rebalanceBlockReason(m)
+	if why == rebalanceWaitEntry {
+		s.noteRebalanceWaitEntry(m)
+	} else {
+		s.waitEntryNoted = false
+	}
+	if why != "" {
 		return
 	}
-	if time.Now().Before(s.rebalanceRetryAt) {
-		return // a complement fell short recently
-	}
 	s.runRebalance(ctx, m)
+}
+
+// noteRebalanceWaitEntry journals, once per wait, that a due rebalance waits
+// for a working entry (#97): sized together, each against the book without
+// the other, an entry and a top-up overshot BTC's IM limit (25.7 % of 20 %).
+func (s *Strategy) noteRebalanceWaitEntry(m marginState) {
+	if s.waitEntryNoted {
+		return
+	}
+	s.waitEntryNoted = true
+	detail := fmt.Sprintf("%s: %s · IM %.1f%% vs limit %.0f%%", SkipRebalanceWaitEntry, rebalanceWaitEntry,
+		m.usage.IMPct(), m.status.LimitIMPct)
+	slog.Info("rebalance waits for a working entry", "im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()),
+		"limit_im_pct", m.status.LimitIMPct)
+	s.journal.LogSkipped(detail, s.eventContext(nil, nil))
 }
 
 // runRebalance runs a real rebalance pass toward the current limit.
@@ -184,14 +205,18 @@ func (s *Strategy) runRebalance(ctx context.Context, m marginState) RebalanceRep
 // automatic rebalance (applyMarginPolicy) and the manual one share it, so the
 // two can never drift apart.
 func (s *Strategy) rebalanceBlockReason(m marginState) string {
-	return RebalanceBlockReason(m.status, m.usage, m.err, m.gexWait, s.complementPending())
+	return RebalanceBlockReason(m.status, m.usage, m.err, m.gexWait, s.complementPending(), s.entryPending())
 }
+
+// rebalanceWaitEntry is RebalanceBlockReason's answer while an entry works.
+const rebalanceWaitEntry = "an entry is still working: its margin is not in the book yet"
 
 // RebalanceBlockReason says why the book may not be resized now, or "" when
 // it may. Pure: the inputs are the margin policy's status, Deribit's usage,
-// a margin read error, the GEX wait reason and whether a complement is still
-// working.
-func RebalanceBlockReason(st risk.Status, u risk.Usage, marginErr error, gexWait string, complementPending bool) string {
+// a margin read error, the GEX wait reason and whether a complement or an
+// entry is still working — one new-risk sizer at a time (#97): each sizes
+// against the book without the other's orders, and together they overshoot.
+func RebalanceBlockReason(st risk.Status, u risk.Usage, marginErr error, gexWait string, complementPending, entryPending bool) string {
 	switch {
 	case marginErr != nil:
 		return "margin data unavailable: " + marginErr.Error()
@@ -205,6 +230,8 @@ func RebalanceBlockReason(st risk.Status, u risk.Usage, marginErr error, gexWait
 		return "waiting for GEX: " + gexWait
 	case complementPending:
 		return "a rebalance complement is still working"
+	case entryPending:
+		return rebalanceWaitEntry
 	}
 	return ""
 }

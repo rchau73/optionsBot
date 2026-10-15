@@ -86,6 +86,7 @@ type Strategy struct {
 	rebalanceRetryAt time.Time
 	unfilledPasses   int
 	pass             rebalancePass
+	waitEntryNoted   bool      // a due rebalance waiting for a working entry was journaled (#97)
 	flattening       bool      // the kill switch is flattening: nothing re-arms the rebalance
 	pub              published // loop-owned state copied for View()
 	// Safety guards (safety.go), decision loop only: this cycle's exchange

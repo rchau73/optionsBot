@@ -53,6 +53,11 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	case m.mmBreached():
 		skipAll(SkipMarginLimit, fmt.Sprintf("MM %.1f%% ≥ limit %.0f%%", m.usage.MMPct(), m.status.MaxMMPct))
 		return nil
+	case s.complementPending():
+		// One new-risk sizer at a time (#97): the top-up's margin is not in
+		// the book yet, so this entry would size into the same room.
+		skipAll(SkipEntryWaitTopup, "a rebalance top-up is still working: its margin is not in the book yet")
+		return nil
 	}
 	headroom := m.usage.Headroom(m.status.LimitIMPct)
 	if headroom <= 0 {
@@ -138,6 +143,10 @@ const (
 	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
 	SkipGEXWait       = "gex_wait"       // no fresh GEX snapshot: regime and trend unknown, no new risk (gexready.go)
 	SkipBiasWarmup    = "bias_warmup"    // a bias shed held: the flip window does not cover its span yet (biaswarmup.go)
+	// One new-risk sizer at a time (#97): an entry waits for a working
+	// rebalance top-up, and a due rebalance for a working entry.
+	SkipEntryWaitTopup     = "entry_wait_topup"
+	SkipRebalanceWaitEntry = "rebalance_wait_entry"
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.
