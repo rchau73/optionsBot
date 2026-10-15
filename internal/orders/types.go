@@ -201,6 +201,9 @@ type Fill struct {
 	Qty       float64
 	Fee       float64 // what Deribit charged for this fill (coin; a rebate is negative)
 	Timestamp time.Time
+	// TargetQty is the size the order asked for (entries, repairs, top-ups);
+	// 0 = not known. The journal records Qty against it (#86).
+	TargetQty float64
 }
 
 // OptionFee is Deribit's option fee for qty contracts: feePerContract (0.03 %

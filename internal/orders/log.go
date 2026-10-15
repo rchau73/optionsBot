@@ -172,6 +172,7 @@ func (l *Logger) LogAmend(r PendingOrderRecord, previousPrice float64, ctx Event
 func (l *Logger) LogCancelled(r PendingOrderRecord, ctx EventContext) {
 	rec := base(EventCancelled, ctx)
 	rec.setPending(r)
+	rec.FilledQty = r.FilledQty
 	l.write(rec)
 }
 
@@ -188,6 +189,10 @@ func (l *Logger) LogOpen(pos *Position, fill Fill, trigger string, ctx EventCont
 	rec.FillPrice = fill.FillPrice
 	rec.Fee = fill.Fee
 	rec.PremiumReceived = fill.FillPrice * fill.Qty
+	if fill.TargetQty > 0 {
+		rec.TargetQty = fill.TargetQty
+		rec.FillPct = fill.Qty / fill.TargetQty * 100
+	}
 	l.write(rec)
 }
 
