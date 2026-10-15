@@ -28,54 +28,74 @@ py() { local code="$1"; shift; python3 -c "$code" "$@"; }
 repo_slug() { gh repo view --json nameWithOwner -q .nameWithOwner; }
 repo_owner() { repo_slug | cut -d/ -f1; }
 
-# project_info → "NUMBER PROJECT_ID STATUS_FIELD_ID" of the board, or fails.
-project_info() {
-  local owner num pid fid
+# The board's ids rarely change, and Project queries are expensive in GitHub's
+# GraphQL budget (a burst of them trips the secondary rate limit), so they are
+# cached in data/agents/project.json for a day. setup_github.sh clears it.
+PROJECT_CACHE="$AGENT_STATE_DIR/project.json"
+
+load_project_cache() {
+  if [[ -f "$PROJECT_CACHE" ]] && [[ -z "$(find "$PROJECT_CACHE" -mmin +1440 2>/dev/null)" ]]; then return 0; fi
+  local owner num pid
   owner="$(repo_owner)"
   num="$(gh project list --owner "$owner" --format json -L 100 |
     py 'import json,sys; t=sys.argv[1]; print(next((str(p["number"]) for p in json.load(sys.stdin)["projects"] if p["title"]==t), ""))' "$PROJECT_TITLE")"
   [[ -n "$num" ]] || { log "project '$PROJECT_TITLE' not found: run scripts/agents/setup_github.sh"; return 1; }
   pid="$(gh project view "$num" --owner "$owner" --format json -q .id)"
-  fid="$(gh project field-list "$num" --owner "$owner" --format json |
-    py 'import json,sys; print(next(f["id"] for f in json.load(sys.stdin)["fields"] if f["name"]=="Status"))')"
-  echo "$num $pid $fid"
+  gh project field-list "$num" --owner "$owner" --format json |
+    py 'import json,sys
+f = next(f for f in json.load(sys.stdin)["fields"] if f["name"] == "Status")
+json.dump({"number": int(sys.argv[1]), "id": sys.argv[2], "status_field": f["id"],
+           "options": {o["name"]: o["id"] for o in f["options"]}}, open(sys.argv[3], "w"))' "$num" "$pid" "$PROJECT_CACHE"
+}
+
+# project_info → "NUMBER PROJECT_ID STATUS_FIELD_ID" of the board, or fails.
+project_info() {
+  load_project_cache || return 1
+  py 'import json,sys; c=json.load(open(sys.argv[1])); print(c["number"], c["id"], c["status_field"])' "$PROJECT_CACHE"
 }
 
 # status_option_id <status name> — option id of a Status column ("In review").
 status_option_id() {
-  local owner num
-  owner="$(repo_owner)"
-  num="$(project_info | cut -d' ' -f1)"
-  gh project field-list "$num" --owner "$owner" --format json |
-    py 'import json,sys; want=sys.argv[1]
-f=next(f for f in json.load(sys.stdin)["fields"] if f["name"]=="Status")
-print(next(o["id"] for o in f["options"] if o["name"]==want))' "$1"
+  load_project_cache || return 1
+  py 'import json,sys; print(json.load(open(sys.argv[1]))["options"][sys.argv[2]])' "$PROJECT_CACHE" "$1"
 }
 
-# items_in_status <status> → lines "ITEM_ID ISSUE_NUMBER" for this repo's issues.
+# board_cards → lines "ITEM_ID ISSUE_NUMBER STATUS" for this repo's issues on the
+# board. Read from the issues' side: the board's own item listing is a search
+# index that lags (a new project listed 0 items for minutes while its issues
+# were already on it), and an agent must not miss a card moved to Ready.
+board_cards() {
+  local slug num
+  slug="$(repo_slug)"
+  num="$(project_info | cut -d' ' -f1)" || return 1
+  gh api graphql -f query='
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number projectItems(first: 10) { nodes { id project { number }
+        fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } }
+    }
+  }
+}' -f owner="${slug%/*}" -f name="${slug#*/}" |
+    py 'import json,sys; num = int(sys.argv[1])
+for i in json.load(sys.stdin)["data"]["repository"]["issues"]["nodes"]:
+    for it in i["projectItems"]["nodes"]:
+        if it["project"]["number"] == num:
+            st = (it.get("fieldValueByName") or {}).get("name") or "-"
+            print(it["id"], i["number"], st)' "$num"
+}
+
+# items_in_status <status> → lines "ITEM_ID ISSUE_NUMBER", oldest issue first.
 items_in_status() {
-  local owner num slug
-  owner="$(repo_owner)"; slug="$(repo_slug)"
-  num="$(project_info | cut -d' ' -f1)"
-  gh project item-list "$num" --owner "$owner" --format json -L 500 |
-    py 'import json,sys; want, slug = sys.argv[1], sys.argv[2]
-for it in json.load(sys.stdin)["items"]:
-    c = it.get("content") or {}
-    if it.get("status") == want and c.get("type") == "Issue" and c.get("repository") == slug:
-        print(it["id"], c["number"])' "$1" "$slug" | sort -k2 -n
+  board_cards | py 'import sys; want = sys.argv[1]
+for line in sys.stdin:
+    item, num, st = line.rstrip("\n").split(" ", 2)
+    if st == want: print(item, num)' "$1" | sort -k2 -n
 }
 
 # item_for_issue <issue number> → project item id (empty when not on the board).
 item_for_issue() {
-  local owner num slug
-  owner="$(repo_owner)"; slug="$(repo_slug)"
-  num="$(project_info | cut -d' ' -f1)"
-  gh project item-list "$num" --owner "$owner" --format json -L 500 |
-    py 'import json,sys; n, slug = int(sys.argv[1]), sys.argv[2]
-for it in json.load(sys.stdin)["items"]:
-    c = it.get("content") or {}
-    if c.get("type") == "Issue" and c.get("number") == n and c.get("repository") == slug:
-        print(it["id"]); break' "$1" "$slug"
+  board_cards | awk -v n="$1" '$2 == n { print $1; exit }'
 }
 
 # set_status <item id> <status name>
@@ -83,7 +103,7 @@ set_status() {
   local info pid fid oid
   info="$(project_info)" || return 1
   pid="$(echo "$info" | cut -d' ' -f2)"; fid="$(echo "$info" | cut -d' ' -f3)"
-  oid="$(status_option_id "$2")"
+  oid="$(status_option_id "$2")" || return 1
   gh project item-edit --id "$1" --project-id "$pid" --field-id "$fid" --single-select-option-id "$oid" >/dev/null
 }
 

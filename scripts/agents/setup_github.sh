@@ -51,6 +51,7 @@ mutation($field: ID!) {
   ]}) { projectV2Field { ... on ProjectV2SingleSelectField { name options { name } } } }
 }' -f field="$fid" >/dev/null
 log "project #$num Status columns set"
+rm -f "$PROJECT_CACHE" # ids may have changed: the agents re-read them
 
 # ── 3. Ruleset on main ──────────────────────────────────────────────────────
 if gh api "repos/$slug/rulesets" -q '.[].name' | grep -qx "main: PR + green CI"; then
