@@ -263,6 +263,12 @@ func runLive(cfg *config.Config) error {
 			opts = append(opts, api.WithManualClose(strat, cfg.AdminToken))
 			slog.Info("monitor API: manual close enabled (regime-side block only)")
 		}
+		// Manual rebalance: live and testnet, with BOT_ADMIN_TOKEN. It runs the
+		// bot's own rebalance with its own gates, as a restart would.
+		if cfg.AdminToken != "" {
+			opts = append(opts, api.WithManualRebalance(strat, cfg.AdminToken))
+			slog.Info("monitor API: manual rebalance enabled", "live", cfg.IsLive())
+		}
 		mon := api.New(strat, orderLog, opts...)
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {

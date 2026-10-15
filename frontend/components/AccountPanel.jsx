@@ -1,7 +1,9 @@
+import { useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
 import MarginBar from "./MarginBar";
 import StatTile from "./StatTile";
+import { RebalanceButton, RebalanceModal } from "./Rebalance";
 import { LIQUIDATION_MM_PCT, accountSummary, marginLevel, marginModelLabel, worstMMPct } from "@/lib/account";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
 import { formatAge, formatPct, formatUSD } from "@/lib/format";
@@ -119,9 +121,11 @@ export default function AccountPanel({ account, risk = [] }) {
 
 /** The margin policy per bot: active IM limit and why, MM limit, freeze and countdowns. */
 function RiskTable({ rows }) {
+  const [rebalancing, setRebalancing] = useState(null);
   if (!rows.length) return null;
   return (
     <div className="overflow-x-auto">
+      {rebalancing ? <RebalanceModal row={rebalancing} onClose={() => setRebalancing(null)} /> : null}
       <table className="w-full min-w-[700px] text-sm">
         <caption className="pb-1 text-left text-xs uppercase text-muted">Margin policy per bot</caption>
         <thead className="text-left text-xs uppercase text-muted">
@@ -131,6 +135,7 @@ function RiskTable({ rows }) {
             <th className="px-2 py-1 text-right">MM used / limit</th>
             <th className="px-2 py-1">Why this limit</th>
             <th className="px-2 py-1">New entries</th>
+            <th className="px-2 py-1" title="After a deposit or withdrawal: resize the book to the current margin balance">Rebalance</th>
           </tr>
         </thead>
         <tbody>
@@ -160,6 +165,9 @@ function RiskTable({ rows }) {
                   <Badge tone="good">allowed</Badge>
                 )}
                 {r.frozen && r.freezeReason ? <div className="text-xs text-muted">{r.freezeReason}</div> : null}
+              </td>
+              <td className="px-2 py-1">
+                <RebalanceButton row={r} onOpen={setRebalancing} />
               </td>
             </tr>
           ))}

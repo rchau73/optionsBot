@@ -32,23 +32,32 @@ import (
 // Strangles inside the rollout window are skipped (they roll anyway), and so
 // are one-legged strangles (repair completes them first).
 //
-// It returns true when the book is done, false when something failed and the
-// rebalance should run again next cycle.
-func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
+// With dryRun it changes nothing — no orders, no journal, no re-arm — and
+// only reports what it would do: Deribit's margin simulations are read-only,
+// so the sizes are the same a real pass would compute (POST /api/rebalance
+// ?dry_run=true).
+//
+// The report's Done is true when the book is done, false when something
+// failed and the rebalance should run again next cycle.
+func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun bool) RebalanceReport {
 	strangles := s.state.AllStrangles()
 	limit := m.status.LimitIMPct
 	share := SlotShare(limit, m.usage.MarginBalance, len(s.cfg.Slots()))
 	over := m.usage.IMPct() > limit
 	headroom := m.usage.Headroom(limit)
+	rep := RebalanceReport{DryRun: dryRun, Done: true, LimitIMPct: limit, IMPct: m.usage.IMPct(),
+		SharePerSlot: share, MarginBalance: m.usage.MarginBalance, Unit: m.usage.Unit, Actions: []RebalanceAction{}}
 
-	s.logRisk(orders.RiskRebalance, fmt.Sprintf("IM %.1f%% vs limit %.0f%% (%s)", m.usage.IMPct(), limit, m.status.Reason),
-		m.status, m.usage, "")
-	slog.Info("rebalance: resizing toward the IM limit",
+	if !dryRun {
+		s.logRisk(orders.RiskRebalance, fmt.Sprintf("IM %.1f%% vs limit %.0f%% (%s)", m.usage.IMPct(), limit, m.status.Reason),
+			m.status, m.usage, "")
+	}
+	slog.Info("rebalance: resizing toward the IM limit", "dry_run", dryRun,
 		"limit_im_pct", limit, "im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()), "unit", m.usage.Unit,
 		"share_per_slot", fmt.Sprintf("%.6f", share), "strangles", len(strangles))
 
-	done := true
 	sent := make(map[slotKey]float64) // complement qty sent this pass, per slot
+	cut := make(map[string]float64)   // dry run only: qty a real pass would have bought back, per slot+type
 	for _, st := range strangles {
 		// A closed leg stays linked to its strangle with its last size, so
 		// "has both legs" is read from the book (liveLegs), never from the
@@ -56,20 +65,31 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 		// by hand two days earlier, as if it still held 1.2 puts — re-selling
 		// the closed side past every repair hold.
 		if _, missing := s.liveLegs(st); missing != "" {
+			rep.add(st, ActionSkipped, "", 0, 0, "one leg missing: repair completes it first")
 			continue
 		}
+		if dryRun {
+			cp := *st // the links below are refreshed in place: never touch the book on a dry run
+			st = &cp
+		}
 		st.CallLeg, st.PutLeg = s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
-		if st.CallLeg == nil || st.PutLeg == nil || st.CallLeg.DTE() <= s.cfg.RolloutDTE {
+		if st.CallLeg == nil || st.PutLeg == nil {
+			continue
+		}
+		if st.CallLeg.DTE() <= s.cfg.RolloutDTE {
+			rep.add(st, ActionSkipped, "", 0, 0, "inside the rollout window: it rolls anyway")
 			continue
 		}
 		if s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
-			done = false // retried once the pause ends
+			rep.Done = false // retried once the pause ends
+			rep.add(st, ActionHeld, "", 0, 0, "slot paused by the churn breaker")
 			continue
 		}
 		callInst, callOk := s.md.GetInstrument(st.CallLeg.Instrument)
 		putInst, putOk := s.md.GetInstrument(st.PutLeg.Instrument)
 		if !callOk || !putOk {
 			slog.Warn("rebalance: instrument not in market data, skipping", "strangle_id", st.ID)
+			rep.add(st, ActionSkipped, "", 0, 0, "instrument not in market data")
 			continue
 		}
 		lot := math.Max(callInst.MinTradeAmount, putInst.MinTradeAmount)
@@ -83,42 +103,47 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 		base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
-			done = false
+			rep.Done = false
+			rep.add(st, ActionSkipped, "", 0, 0, "margin simulation failed: "+err.Error())
 			continue
 		}
 		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage.Unit)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
-			done = false
+			rep.Done = false
+			rep.add(st, ActionSkipped, "", 0, 0, "margin simulation failed: "+err.Error())
 			continue
 		}
 		imPerLot := base.IM - freed.IM
 		targetLots := TargetLots(share, imPerLot)
 		if targetLots == 0 {
 			slog.Info("rebalance: strangle adds no IM (portfolio netting), size kept", "strangle_id", st.ID)
+			rep.add(st, ActionSkipped, "", 0, 0, "adds no IM (portfolio netting): size kept")
 			continue
 		}
 		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage.Unit); err != nil {
 			slog.Warn("rebalance: standalone simulation failed, will retry", "strangle_id", st.ID, "err", err)
-			done = false
+			rep.Done = false
+			rep.add(st, ActionSkipped, "", 0, 0, "standalone margin simulation failed: "+err.Error())
 			continue
 		}
 		targetQty := float64(targetLots) * lot
 		key := makeSlotKey(st.TargetDTE, st.EntryDelta)
 		callTotal, putTotal := s.slotLegTotals(key)
-		callTotal += sent[key]
-		putTotal += sent[key]
+		callTotal += sent[key] - cut[cutKey(key, "call")]
+		putTotal += sent[key] - cut[cutKey(key, "put")]
 
 		addQty := orders.FloorToStep(math.Min(targetQty-callTotal, targetQty-putTotal), lot)
 		if addQty >= lot {
 			if over || headroom <= 0 {
+				rep.add(st, ActionKept, "", 0, targetQty, "below the slot target, but no IM headroom left")
 				continue
 			}
 			addQty = math.Min(addQty, float64(EntryLots(headroom, imPerLot))*lot)
 			if addQty >= lot {
 				headroom -= addQty / lot * imPerLot
 				sent[key] += addQty
-				s.openComplementStrangle(ctx, st, addQty, targetQty, m.status)
+				rep.Actions = append(rep.Actions, s.openComplementStrangle(ctx, st, addQty, targetQty, m.status, dryRun))
 			}
 			continue // never upsize and downsize in the same pass
 		}
@@ -133,36 +158,105 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState) bool {
 			// Keep what the slot's other strangles leave of the target, and
 			// at least one lot (only the MM limit closes fully).
 			keep := math.Max(targetQty-(leg.total-leg.pos.Qty), lot)
-			if !s.downsizeLeg(ctx, leg.pos, leg.inst, keep, lot) {
-				done = false
+			excess := orders.FloorToStep(leg.pos.Qty-keep, lot)
+			if excess < lot {
+				continue
 			}
+			act := RebalanceAction{StrangleID: st.ID, Slot: slotLabel(st), Action: ActionDownsize,
+				Instrument: leg.inst.Name, Qty: excess, TargetQty: keep,
+				Detail: fmt.Sprintf("IM above the limit: buy back %g at market (%g → %g)", excess, leg.pos.Qty, keep)}
+			if dryRun {
+				cut[cutKey(key, leg.pos.OptionType)] += excess
+			} else if !s.downsizeLeg(ctx, leg.pos, leg.inst, keep, lot) {
+				rep.Done = false
+				act.Error = "buy-back failed or filled in part: retried next cycle"
+			}
+			rep.Actions = append(rep.Actions, act)
 		}
 	}
-	return done
+	return rep
 }
 
-// openComplementStrangle opens addQty more of st's slot through normal entry.
+// Rebalance action kinds, as reported by RebalanceReport.
+const (
+	ActionTopUp    = "top_up"   // a complement strangle sold to reach the slot target
+	ActionDownsize = "downsize" // a leg bought back to the slot target
+	ActionHeld     = "held"     // a top-up or slot waits (regime side, stop hold, churn pause)
+	ActionKept     = "kept"     // below target, but the IM limit leaves no headroom
+	ActionSkipped  = "skipped"  // not resized (one-legged, rolling, no data, netting)
+)
+
+// RebalanceAction is one decision of a rebalance pass.
+type RebalanceAction struct {
+	StrangleID string  `json:"strangle_id"`
+	Slot       string  `json:"slot"`
+	Action     string  `json:"action"`
+	Instrument string  `json:"instrument,omitempty"` // downsize: the leg
+	Call       string  `json:"call,omitempty"`       // top-up: the complement's strikes
+	Put        string  `json:"put,omitempty"`
+	Qty        float64 `json:"qty"`        // top-up: qty sold per leg; downsize: qty bought back
+	TargetQty  float64 `json:"target_qty"` // the slot target (top-up) or the leg size kept (downsize)
+	Detail     string  `json:"detail,omitempty"`
+	Error      string  `json:"error,omitempty"` // real pass only: the order failed
+}
+
+// RebalanceReport is what a rebalance pass did, or on a dry run would do.
+type RebalanceReport struct {
+	DryRun        bool              `json:"dry_run"`
+	Done          bool              `json:"done"` // false: part of it runs again (failure, churn pause, short fill)
+	LimitIMPct    float64           `json:"limit_im_pct"`
+	IMPct         float64           `json:"im_pct"`
+	SharePerSlot  float64           `json:"share_per_slot"`
+	MarginBalance float64           `json:"margin_balance"`
+	Unit          string            `json:"unit"`
+	Actions       []RebalanceAction `json:"actions"`
+}
+
+func (r *RebalanceReport) add(st *orders.Strangle, action, instrument string, qty, target float64, detail string) {
+	r.Actions = append(r.Actions, RebalanceAction{StrangleID: st.ID, Slot: slotLabel(st), Action: action,
+		Instrument: instrument, Qty: qty, TargetQty: target, Detail: detail})
+}
+
+func slotLabel(st *orders.Strangle) string {
+	return fmt.Sprintf("%dd/%.2fΔ", st.TargetDTE, st.EntryDelta)
+}
+
+func cutKey(key slotKey, optType string) string { return fmt.Sprintf("%v/%s", key, optType) }
+
+// complementHold says why a top-up of st's slot must wait, with the skip code
+// to journal, or "" when it may go.
 //
 // A top-up adds both sides or none: while the confirmed negative regime and
 // the trend block one side, a one-sided top-up would leave the slot uneven and
-// balanceStrangles would buy the excess straight back. It is retried instead
-// (rearmRebalance), so the slot fills up once the block lifts.
-func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strangle, addQty, targetQty float64, rs risk.Status) {
-	gammaDec := s.gamma.Evaluate()
+// balanceStrangles would buy the excess straight back.
+func (s *Strategy) complementHold(st *orders.Strangle, trendDir int, rs risk.Status) (why, skip string) {
 	for _, typ := range []string{"call", "put"} {
-		if why := RegimeSideBlockReason(typ, gammaDec.TrendDir, rs); why != "" {
-			s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRegimeSide, "top-up held: "+why)
-			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
-			return
+		if why := RegimeSideBlockReason(typ, trendDir, rs); why != "" {
+			return why, SkipRegimeSide
 		}
 		// A leg of this slot stopped out (or closed by hand) waits for a calm
 		// market before repair re-sells it; a top-up re-selling that side in
 		// the slot would undo the hold.
 		if why := s.slotStopHold(makeSlotKey(st.TargetDTE, st.EntryDelta), typ, rs); why != "" {
-			s.noteSkip(st.TargetDTE, st.EntryDelta, SkipRepairHeld, "top-up held: "+why)
-			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
-			return
+			return why, SkipRepairHeld
 		}
+	}
+	return "", ""
+}
+
+// openComplementStrangle opens addQty more of st's slot through normal entry.
+// A held top-up is retried (rearmRebalance), so the slot fills up once the
+// block lifts. With dryRun it only reports what it would send.
+func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strangle, addQty, targetQty float64, rs risk.Status, dryRun bool) RebalanceAction {
+	act := RebalanceAction{StrangleID: st.ID, Slot: slotLabel(st), Action: ActionTopUp, Qty: addQty, TargetQty: targetQty}
+	gammaDec := s.gamma.Evaluate()
+	if why, skip := s.complementHold(st, gammaDec.TrendDir, rs); why != "" {
+		act.Action, act.Detail = ActionHeld, "top-up held: "+why
+		if !dryRun {
+			s.noteSkip(st.TargetDTE, st.EntryDelta, skip, "top-up held: "+why)
+			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
+		}
+		return act
 	}
 	instruments := s.md.AllInstruments()
 	// The complement adds to this strangle, so it uses this strangle's
@@ -172,7 +266,13 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	if err != nil {
 		slog.Warn("rebalance: strike selection failed for complement strangle, skipping upsize",
 			"strangle_id", st.ID, "err", err)
-		return
+		act.Action, act.Detail = ActionSkipped, "strike selection failed: "+err.Error()
+		return act
+	}
+	act.Call, act.Put = call.Name, put.Name
+	act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g", addQty, targetQty)
+	if dryRun {
+		return act
 	}
 	slog.Info("rebalance: opening complement strangle for missing balance",
 		"original_strangle_id", st.ID,
@@ -187,7 +287,9 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
 		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err))
+		act.Error = err.Error()
 	}
+	return act
 }
 
 // slotLegTotals sums the open call and put quantities of every strangle in a
