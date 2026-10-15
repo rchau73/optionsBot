@@ -197,9 +197,14 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 go run ./cmd/gendata                                       # synthetic data → data/historical/options.csv
 ./bot --mode=backtest --config config_btc.yaml --from=2026-01-01 --to=2026-12-31
 ./bot --mode=backtest --config config_btc.yaml --sweep=true --from=2026-01-01 --to=2026-12-31
+./bot --mode=backtest --config config_btc.yaml --sweep-ladders=true --from=2025-01-01 --to=2026-10-15
 ```
 
-The engine replays the CSV day by day and applies the same pure decision functions as the live bot **at the simulated date**. Output in `data/results/`: `summary.json` (Sharpe, Sortino, Calmar, drawdown, win rate, exits by reason), `trades.csv`, `equity_curve.csv`, `drawdown.csv`, `scenario_comparison.csv` (sweep, ranked by Sharpe) and `walk_forward/` (train/validate windows, overfit flag at > 30 % Sharpe degradation).
+The engine replays the CSV day by day and applies the same pure decision functions as the live bot **at the simulated date**. Output in `data/results/`: `summary.json` (Sharpe, Sortino, Calmar, drawdown, win rate, exits by reason), `trades.csv`, `equity_curve.csv`, `drawdown.csv`, `scenario_comparison.csv` (sweep, ranked by Sharpe), `ladder_comparison.csv` (ladder sweep, below) and `walk_forward/` (train/validate windows, overfit flag at > 30 % Sharpe degradation).
+
+As live, rollouts only close: a DTE roll frees the slot once both legs are gone and the slot re-enters through `SelectSlotExpiry`; any other exit is repaired at once on the same strangle and expiry (the live repair hold after a stop is not modelled).
+
+**Ladder sweep** (`--sweep-ladders`, issue #89): runs the DTE ladders 25/50, 30/50, 30/60 and 35/60 (each slot at the config's entry deltas), each with and without weeklies (monthlies = the last Friday of a month), and reports per ladder the share of days each slot held a live leg (`slot_occupancy`, `occupancy_pct`, `min_slot_occupancy_pct`), net P&L, `return_on_margin_pct` (net P&L ÷ mean premium held — the backtest's margin stand-in, comparable between ladders only), the worst 7-day equity change (`worst_week_usd`/`_pct`), max drawdown, trades and `shared_expiry_days` (days two slots held one expiry; the one-expiry-per-slot rule keeps it 0).
 
 CSV columns: `date, instrument, underlying, underlying_price, strike, expiry, option_type, bid, ask, mid, delta, gamma, theta, vega, iv, dvol_index`. The generator produces USD prices with monthly expiries — good for testing mechanics, not for judging profitability. Real Deribit history is available from the API (candles, DVOL, expired instruments) or vendors such as Tardis.dev.
 

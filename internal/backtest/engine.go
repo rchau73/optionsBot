@@ -42,10 +42,14 @@ type Engine struct {
 
 	ivAtEntry    []float64
 	ivPctAtEntry []float64
+
+	monthlyOnly bool       // SetMonthlyOnly: trade monthly expiries only
+	occ         *occupancy // days each slot held a live leg (ladder sweep)
 }
 
 func NewEngine(cfg *config.Config, feed *HistoricalFeed, exec *SimExecutor) *Engine {
 	return &Engine{
+		occ:        newOccupancy(cfg.Slots()),
 		cfg:        cfg,
 		feed:       feed,
 		exec:       exec,
@@ -118,6 +122,9 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 		e.exec.UpdateTick(t)
 		underlyingPrice = t.UnderlyingPrice
 		ivPercentile = t.IVPercentile
+		if e.monthlyOnly && !IsMonthlyExpiry(t.Expiry) {
+			continue // the strategy never sees weeklies or dailies
+		}
 		instruments[t.Instrument] = &marketdata.Instrument{
 			Name:            t.Instrument,
 			Underlying:      t.Underlying,
@@ -228,6 +235,7 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 		DrawdownUSD:   ddUSD,
 		DrawdownPct:   dd,
 	})
+	e.occ.record(date, e.state)
 }
 
 func (e *Engine) handleGamma(ctx context.Context, action strategy.GammaAction, date time.Time, ivPct float64) {
@@ -299,64 +307,46 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 	e.exec.AdjustEquity(pnl)
 	e.state.RemovePosition(pos.ID)
 
-	// Find the parent strangle's delta so reopen uses the same slot delta.
-	posEntryDelta := e.cfg.EntryDelta
-	for _, st := range e.state.AllStrangles() {
-		if (st.CallLeg != nil && st.CallLeg.ID == pos.ID) ||
-			(st.PutLeg != nil && st.PutLeg.ID == pos.ID) {
-			if st.EntryDelta != 0 {
-				posEntryDelta = st.EntryDelta
+	// Rollouts only close, as live: the DTE roll frees the slot once both legs
+	// are gone and the slot re-enters through SelectSlotExpiry (the monthly
+	// roll gap the ladder sweep measures). Any other exit is repaired like the
+	// live repair — same strangle, same expiry, the slot's delta — while that
+	// expiry is still above rollout_dte. The backtest does not model the live
+	// repair hold after a stop-loss or delta exit; it repairs at once.
+	if dec.Action != strategy.ActionRollNextMonth {
+		if st := e.strangleOf(pos.ID); st != nil && pos.DTEAt(date) > e.cfg.RolloutDTE {
+			instList := make([]*marketdata.Instrument, 0, len(instruments))
+			for _, v := range instruments {
+				instList = append(instList, v)
 			}
-			break
-		}
-	}
-
-	// Reopen if needed (the backtest does not model the live repair hold
-	// after a stop-loss or delta exit; it reopens at the next expiry)
-	if dec.Action == strategy.ActionStopLoss || dec.Action == strategy.ActionDeltaExit || dec.Action == strategy.ActionRollNextMonth {
-		instList := make([]*marketdata.Instrument, 0, len(instruments))
-		for _, v := range instruments {
-			instList = append(instList, v)
-		}
-		expiries := strategy.AvailableExpiries(instList)
-		var newExpiry time.Time
-		var ok bool
-		if dec.Action == strategy.ActionRollNextMonth {
-			newExpiry, ok = strategy.NextMonthlyExpiry(date, expiries)
-		} else {
-			for _, e := range expiries {
-				if marketdata.DaysToExpiry(e, date) >= 25 {
-					newExpiry = e
-					ok = true
-					break
-				}
-			}
-		}
-		if ok {
-			e.openLeg(ctx, instList, newExpiry, pos.OptionType, date, ivPct, posEntryDelta)
-		}
-	} else if dec.Action == strategy.ActionRollSameLeg {
-		instList := make([]*marketdata.Instrument, 0, len(instruments))
-		for _, v := range instruments {
-			instList = append(instList, v)
-		}
-		expiries := strategy.AvailableExpiries(instList)
-		for _, exp := range expiries {
-			if marketdata.DaysToExpiry(exp, date) >= 25 {
-				e.openLeg(ctx, instList, exp, pos.OptionType, date, ivPct, posEntryDelta)
-				break
+			if leg := e.openLeg(ctx, instList, pos.Expiry, pos.OptionType, date, ivPct, st.EntryDelta); leg != nil {
+				e.state.SetStrangleLeg(st.ID, pos.OptionType, leg)
 			}
 		}
 	}
+	e.state.RemoveStrangleContaining(pos.ID)
 }
 
-func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrument, expiry time.Time, optType string, date time.Time, ivPct, entryDelta float64) {
+// strangleOf returns the strangle holding posID as a leg, or nil.
+func (e *Engine) strangleOf(posID string) *orders.Strangle {
+	for _, st := range e.state.AllStrangles() {
+		if (st.CallLeg != nil && st.CallLeg.ID == posID) ||
+			(st.PutLeg != nil && st.PutLeg.ID == posID) {
+			return st
+		}
+	}
+	return nil
+}
+
+// openLeg sells one lot of the strike nearest entryDelta on expiry and books
+// it; it returns the new position, or nil when nothing was opened.
+func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrument, expiry time.Time, optType string, date time.Time, ivPct, entryDelta float64) *orders.Position {
 	if entryDelta == 0 {
 		entryDelta = e.cfg.EntryDelta // legacy fallback
 	}
 	inst, err := strategy.SelectStrike(instruments, expiry, optType, entryDelta, e.cfg.DeltaSlippage)
 	if err != nil {
-		return
+		return nil
 	}
 	fill, err := e.exec.Submit(ctx, orders.Order{
 		Instrument:    inst.Name,
@@ -367,7 +357,7 @@ func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrume
 		TriggerReason: orders.TriggerEntry,
 	})
 	if err != nil {
-		return
+		return nil
 	}
 	pos := &orders.Position{
 		ID:              e.state.NextID("pos"),
@@ -398,6 +388,7 @@ func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrume
 	slog.Debug("leg opened", "instrument", inst.Name, "type", inst.OptionType,
 		"strike", fmt.Sprintf("%.0f", inst.Strike), "expiry", inst.Expiry.Format("2006-01-02"),
 		"fill_price", fmt.Sprintf("%.4f", fill.FillPrice), "delta", fmt.Sprintf("%.4f", inst.Greeks.Delta))
+	return pos
 }
 
 func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketdata.Instrument, date time.Time, ivPct float64) {
