@@ -145,6 +145,19 @@ func (s *Strategy) complementPending() bool {
 	return false
 }
 
+// entryPending reports whether an entry for a vacant slot is still working
+// (not a repair, not a complement).
+func (s *Strategy) entryPending() bool {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	for _, ps := range s.pendingStrangles {
+		if !ps.complement && ps.repairStrangleID == "" {
+			return true
+		}
+	}
+	return false
+}
+
 // trigger is the journal reason of this pending strangle's sells.
 func (ps *pendingStrangle) trigger() string {
 	switch {
