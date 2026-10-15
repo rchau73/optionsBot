@@ -32,6 +32,7 @@ const (
 func (s *Strategy) killSwitch(ctx context.Context) error {
 	slog.Warn("kill switch: cancelling orders and flattening all positions at market")
 	s.setHalted()
+	s.flattening = true // a halted bot never retries a top-up
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killSwitchTimeout)
 	defer cancel()
 

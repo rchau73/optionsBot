@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"optionsbot/internal/marketdata"
@@ -49,6 +50,8 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 		SharePerSlot: share, MarginBalance: m.usage.MarginBalance, Unit: m.usage.Unit, Actions: []RebalanceAction{}}
 
 	if !dryRun {
+		s.startRebalancePass()
+		defer s.endRebalancePass()
 		s.logRisk(orders.RiskRebalance, fmt.Sprintf("IM %.1f%% vs limit %.0f%% (%s)", m.usage.IMPct(), limit, m.status.Reason),
 			m.status, m.usage, "")
 	}
@@ -254,7 +257,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		act.Action, act.Detail = ActionHeld, "top-up held: "+why
 		if !dryRun {
 			s.noteSkip(st.TargetDTE, st.EntryDelta, skip, "top-up held: "+why)
-			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why))
+			s.rearmRebalance(fmt.Sprintf("complement for %s held: %s", st.ID, why), false)
 		}
 		return act
 	}
@@ -286,7 +289,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, gammaDec, rs, true); err != nil {
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
-		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err))
+		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err), false)
 		act.Error = err.Error()
 	}
 	return act
@@ -316,23 +319,31 @@ func (s *Strategy) slotLegTotals(key slotKey) (call, put float64) {
 // the next confirmed limit change or a restart. The next pass re-measures
 // the book, so whatever did fill is accounted for.
 //
-// The wait backs off (RebalanceRetryWait) once rebalance_backoff_after
-// complements in a row filled nothing: on a book where nobody trades at mid
-// the same order would otherwise be re-sent every 15 minutes for nothing
-// (2026-10-14 BTC: 12 orders in 1.5 h, zero fills). Exits, stops and the MM
-// cut never wait on it.
-func (s *Strategy) rearmRebalance(reason string) {
+// With backoff the wait grows (RebalanceRetryWait) once rebalance_backoff_after
+// passes in a row filled nothing: on a book where nobody trades at mid the
+// same order would otherwise be re-sent every 15 minutes for nothing
+// (2026-10-14 BTC: 12 orders in 1.5 h, zero fills). A held or failed top-up
+// re-arms without it: the hold says nothing about fills (#93). Exits, stops
+// and the MM cut never wait on it. Nothing re-arms while the kill switch
+// flattens the book.
+func (s *Strategy) rearmRebalance(reason string, backoff bool) {
+	if s.flattening {
+		return
+	}
 	base := time.Duration(s.cfg.RebalanceRetryMinutes) * time.Minute
-	wait := RebalanceRetryWait(base, time.Duration(s.cfg.RebalanceRetryMaxMinutes)*time.Minute,
-		s.unfilledComplements, s.cfg.RebalanceBackoffAfter)
+	wait := base
+	if backoff {
+		wait = RebalanceRetryWait(base, time.Duration(s.cfg.RebalanceRetryMaxMinutes)*time.Minute,
+			s.unfilledPasses, s.cfg.RebalanceBackoffAfter)
+	}
 	s.appliedLimit = math.NaN()
 	s.rebalanceRetryAt = time.Now().Add(wait)
 	detail := fmt.Sprintf("%s · retry in %s", reason, wait)
 	if wait > base {
-		detail = fmt.Sprintf("%s · %d complements in a row unfilled: retry backed off to %s", reason, s.unfilledComplements, wait)
+		detail = fmt.Sprintf("%s · %d passes in a row unfilled: retry backed off to %s", reason, s.unfilledPasses, wait)
 	}
 	slog.Warn("rebalance: book still short of the IM limit, will retry",
-		"reason", reason, "retry_in", wait.String(), "unfilled_in_a_row", s.unfilledComplements)
+		"reason", reason, "retry_in", wait.String(), "unfilled_passes_in_a_row", s.unfilledPasses)
 	var st risk.Status
 	if s.lastRisk != nil {
 		st = *s.lastRisk
@@ -340,26 +351,84 @@ func (s *Strategy) rearmRebalance(reason string) {
 	s.logRisk(orders.RiskRebalanceRetry, detail, st, s.lastUsage(), "")
 }
 
-// noteComplementOutcome counts complements in a row that filled nothing; any
-// fill resets the count (the book does trade at our price).
-func (s *Strategy) noteComplementOutcome(filledAny bool) {
-	if filledAny {
-		s.unfilledComplements = 0
+// rebalancePass collects what the complements of one real rebalance pass
+// did. Only one pass has complements working at a time (a new pass waits for
+// them: RebalanceBlockReason), so one value is enough.
+type rebalancePass struct {
+	sending  bool     // the pass is still sending complements
+	finished int      // complements finalized
+	timedOut int      // of which ended at the fill timeout
+	filled   bool     // any complement filled something
+	short    []string // complements that filled short of their size
+}
+
+// startRebalancePass opens the outcome record of a real pass.
+func (s *Strategy) startRebalancePass() {
+	s.pass = rebalancePass{sending: true}
+}
+
+// endRebalancePass marks the pass as done sending; its outcome is settled
+// now if every complement already finished (filled or rejected at once).
+func (s *Strategy) endRebalancePass() {
+	s.pass.sending = false
+	s.settleRebalancePass()
+}
+
+// noteComplementOutcome records one finalized complement in its pass.
+func (s *Strategy) noteComplementOutcome(ps *pendingStrangle) {
+	s.pass.finished++
+	if ps.timedOut {
+		s.pass.timedOut++
+	}
+	s.pass.filled = s.pass.filled || ps.filledAny()
+	if ps.underfilled() {
+		s.pass.short = append(s.pass.short, ps.id)
+	}
+	s.settleRebalancePass()
+}
+
+// settleRebalancePass applies the outcome of a pass once all its complements
+// are finalized (NextUnfilledPasses). One re-arm per pass that fell short, so
+// the wait matches the count.
+func (s *Strategy) settleRebalancePass() {
+	p := s.pass
+	if p.sending || p.finished == 0 || s.complementPending() {
 		return
 	}
-	s.unfilledComplements++
+	s.pass = rebalancePass{}
+	s.unfilledPasses = NextUnfilledPasses(s.unfilledPasses, p.finished, p.timedOut, p.filled)
+	if len(p.short) > 0 {
+		s.rearmRebalance(fmt.Sprintf("%d complement(s) filled short of their size (%s)",
+			len(p.short), strings.Join(p.short, ", ")), true)
+	}
+}
+
+// NextUnfilledPasses is the count of rebalance passes in a row that filled
+// nothing, after a pass of `finished` complements of which `timedOut` ran to
+// their fill timeout (#93). Any fill resets it (the book does trade at our
+// price); a pass whose every complement timed out unfilled adds one; a pass
+// with a complement the bot cancelled itself (freeze, GEX shed, kill switch)
+// leaves it alone — the market never decided. Pure.
+func NextUnfilledPasses(count, finished, timedOut int, filled bool) int {
+	switch {
+	case filled:
+		return 0
+	case finished > 0 && timedOut == finished:
+		return count + 1
+	}
+	return count
 }
 
 // resetRebalanceBackoff clears the back-off after a limit change: the new
 // limit gets a pass at once, and its retries start again from the base wait.
 func (s *Strategy) resetRebalanceBackoff() {
-	s.unfilledComplements = 0
+	s.unfilledPasses = 0
 	s.rebalanceRetryAt = time.Time{}
 }
 
 // RebalanceRetryWait is how long the rebalance waits before retrying a
-// complement that fell short. Below `after` unfilled complements in a row it
-// is base; from there it doubles with each one (base 15 min, after 3: 15, 15,
+// complement that fell short. Below `after` unfilled passes in a row it is
+// base; from there it doubles with each one (base 15 min, after 3: 15, 15,
 // 30, 60 …), capped at max (never below base). after ≤ 0 turns the back-off
 // off. Pure.
 func RebalanceRetryWait(base, max time.Duration, unfilled, after int) time.Duration {

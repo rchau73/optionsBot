@@ -94,6 +94,7 @@ type pendingStrangle struct {
 	adjustments      int
 	repairStrangleID string
 	complement       bool // sent by the rebalance to bring its slot up to size
+	timedOut         bool // abandoned at the fill timeout (the market had its chance), not cancelled by the bot
 }
 
 // slot is the (DTE, delta) slot this entry belongs to.
@@ -285,6 +286,7 @@ func (s *Strategy) handlePendingStrangle(ctx context.Context, ps *pendingStrangl
 			"timeout_sec", s.cfg.OrderFillTimeoutSec,
 			"adjustments", ps.adjustments,
 		)
+		ps.timedOut = true
 		s.abandonPending(ctx, ps, "fill timeout")
 		return
 	}
@@ -449,10 +451,7 @@ func (s *Strategy) cancelNewRisk(ctx context.Context, why string) {
 func (s *Strategy) finalizePending(ctx context.Context, ps *pendingStrangle) {
 	s.removePending(ps.id)
 	if ps.complement {
-		s.noteComplementOutcome(ps.filledAny())
-		if ps.underfilled() {
-			s.rearmRebalance(fmt.Sprintf("complement %s filled short of its size", ps.id))
-		}
+		s.noteComplementOutcome(ps)
 	}
 
 	now := time.Now()

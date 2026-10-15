@@ -98,7 +98,8 @@ func TestRebalanceRetry_PartialFillSendsOnlyTheRest(t *testing.T) {
 
 // Back-off (#85): on a book where nobody trades at mid the same complement was
 // re-sent every 15 minutes for nothing (2026-10-14 BTC: 12 orders in 1.5 h,
-// zero fills). From the 3rd unfilled complement in a row the wait doubles.
+// zero fills). From the 3rd unfilled pass in a row the wait doubles (#93: passes, not
+// complements — rebalance_pass_test.go).
 
 func TestRebalanceRetryWait(t *testing.T) {
 	base, max := 15*time.Minute, 60*time.Minute
@@ -109,7 +110,7 @@ func TestRebalanceRetryWait(t *testing.T) {
 		max      time.Duration
 		want     time.Duration
 	}{
-		{"no unfilled complement", 0, 3, max, 15 * time.Minute},
+		{"no unfilled pass", 0, 3, max, 15 * time.Minute},
 		{"one unfilled", 1, 3, max, 15 * time.Minute},
 		{"two unfilled", 2, 3, max, 15 * time.Minute},
 		{"three unfilled: doubled", 3, 3, max, 30 * time.Minute},
@@ -125,9 +126,8 @@ func TestRebalanceRetryWait(t *testing.T) {
 	}
 }
 
-// Scenario: repeated unfilled complements — given 3 complements in a row
-// ended unfilled, when the next retry is due, then it waits 30 minutes
-// instead of 15, and a single rebalance_retry line records the count.
+// Scenario (#85): repeated unfilled passes — the back-off doubles the wait
+// and a single rebalance_retry line records the count.
 func TestRebalanceRetry_RepeatedUnfilledComplementsBackOff(t *testing.T) {
 	if got := strategy.RebalanceRetryWait(15*time.Minute, 60*time.Minute, 3, 3); got != 30*time.Minute {
 		t.Fatalf("3 unfilled in a row: wait %s, want 30m", got)
@@ -147,9 +147,9 @@ func TestRebalanceRetry_RepeatedUnfilledComplementsBackOff(t *testing.T) {
 	time.Sleep(200 * time.Millisecond) // ~20 cycles
 	retries := f.journal.riskChanges(orders.RiskRebalanceRetry)
 	if len(retries) != 1 {
-		t.Fatalf("one rebalance_retry line per unfilled complement, got %d", len(retries))
+		t.Fatalf("one rebalance_retry line per unfilled pass, got %d", len(retries))
 	}
-	if d := retries[0].Detail; !strings.Contains(d, "1 complements in a row unfilled") || !strings.Contains(d, "backed off to 30m0s") {
+	if d := retries[0].Detail; !strings.Contains(d, "1 passes in a row unfilled") || !strings.Contains(d, "backed off to 30m0s") {
 		t.Errorf("retry line must carry the count and the backed-off wait, got %q", d)
 	}
 	if n := len(f.exch.sells()); n != 2 {
