@@ -83,6 +83,7 @@ Never reintroduce env-var overrides for logic parameters.
 ## Documentation
 
 - `README.md` technical overview · `OptionStrategy.md` business explanation · `docs/architecture.md` · `docs/operations.md` · `docs/README.md` (diagram index).
+- **SME daily review** (`scripts/sme_review.sh`, scheduled by `scripts/install_sme_review.sh` with launchd): collects the monitor API per bot into `data/sme/<date>/` and runs Claude Code headless with the option-bot-specialist skill's *Daily review* procedure, read-only (`dontAsk`, Read/Grep/Glob/Skill), previous reports as memory; output `report.md` (`SUMMARY`/`SEVERITY` first lines) + macOS notification; GitHub issue only with `SME_ISSUE_REPO`, never to a public repo by default. The agent proposes; it never trades or edits.
 - `OptionStrategy.md` §9 "Market regimes and what the bot does" is the table of every open/close/hold rule by market state (normal, freeze, confirmed negative regime, GEX shedding, MM limit). Update it in the same PR as any rule change.
 - Diagrams are Mermaid `.mmd` in `docs/` rendered to PNG with `make diagrams`; update both when a flow changes.
 - The planned dashboard lives in `frontend/` with its own `frontend/README.md`; keep UI/UX material out of the backend docs.
