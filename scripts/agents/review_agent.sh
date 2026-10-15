@@ -23,6 +23,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
 take_lock review || exit 0
+require_tools claude gh git go python3 || exit 1
 
 slug="$(repo_slug)"
 max_rounds="${REVIEW_MAX_ROUNDS:-2}"
