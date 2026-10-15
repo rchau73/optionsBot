@@ -89,7 +89,12 @@ type Strategy struct {
 
 	killOnce     sync.Once
 	killSwitchCh chan struct{}
-	manualCh     chan manualReq // manual closes from the monitor (manualclose.go)
+	manualCh     chan manualReq    // manual closes from the monitor (manualclose.go)
+	rebalanceCh  chan rebalanceReq // manual rebalances from the monitor (manualrebalance.go)
+
+	manualRebMu   sync.Mutex // guards lastManualReb (set by the loop, read by RequestRebalance)
+	lastManualReb time.Time
+	lastDryRun    time.Time // loop goroutine only
 
 	mu          sync.Mutex // guards lastAuthErr (written by heartbeat and loop)
 	lastAuthErr time.Time
@@ -141,6 +146,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		churnUntil:       make(map[slotKey]time.Time),
 		killSwitchCh:     make(chan struct{}),
 		manualCh:         make(chan manualReq, 1),
+		rebalanceCh:      make(chan rebalanceReq, 1),
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
 }
@@ -184,6 +190,8 @@ func (s *Strategy) Run(ctx context.Context) error {
 			s.evaluate(ctx)
 		case req := <-s.manualCh:
 			s.runManualClose(ctx, req)
+		case req := <-s.rebalanceCh:
+			s.runManualRebalance(ctx, req)
 		}
 	}
 }

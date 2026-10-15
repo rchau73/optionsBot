@@ -165,6 +165,19 @@ The bot sizes and limits itself on Deribit's own margin figures (see *Margin pol
 - **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing every slot takes a few seconds of the decision cycle.
 - **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands). The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.
 
+### Manual rebalance (after a deposit or withdrawal)
+
+The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then. To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
+
+```bash
+# preview: same margin simulations, no orders, nothing journaled
+curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/api/rebalance?dry_run=true"
+# run it
+curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/api/rebalance"
+```
+
+It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it. It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders. A real pass is journaled as `risk_limit` `rebalance_manual`.
+
 ## Two connections on testnet
 
 On testnet the bot keeps **two** WebSocket connections: `gateway=trading` (testnet, authenticated: orders, positions, margin, tickers) and `gateway=mainnet-public` (mainnet, never authenticated: the book summary for GEX and open interest). Logs carry the `gateway` field; the public one starts with `connected (public data only, not authenticated)`. Each has its own rate limiter. If either gives up reconnecting the bot exits non-zero so the supervisor restarts it. `gex_snapshot` lines show `method`, `regime`, `gamma_flip` and `first_expiry` — compare them with GestaoCarteira's `runOptIndicator.sh`, which uses the same rules.

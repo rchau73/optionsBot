@@ -156,18 +156,54 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if st.Frozen {
 		s.cancelNewRisk(ctx, "new risk frozen: "+st.FreezeReason)
 	}
-	if st.Frozen || !st.CanRebalance || st.LimitIMPct == s.appliedLimit || m.gexWait != "" {
+	if st.LimitIMPct == s.appliedLimit || s.rebalanceBlockReason(m) != "" {
 		return
 	}
-	if s.complementPending() || time.Now().Before(s.rebalanceRetryAt) {
-		return // a complement is still working, or one fell short recently
+	if time.Now().Before(s.rebalanceRetryAt) {
+		return // a complement fell short recently
 	}
-	// Marked applied first: a complement that fails during the pass re-arms
-	// the rebalance (rearmRebalance), and that must not be overwritten.
-	s.appliedLimit = st.LimitIMPct
-	if !s.rebalancePositions(ctx, m) {
+	s.runRebalance(ctx, m)
+}
+
+// runRebalance runs a real rebalance pass toward the current limit.
+// Marked applied first: a complement that fails during the pass re-arms the
+// rebalance (rearmRebalance), and that must not be overwritten.
+func (s *Strategy) runRebalance(ctx context.Context, m marginState) RebalanceReport {
+	s.appliedLimit = m.status.LimitIMPct
+	rep := s.rebalancePositions(ctx, m, false)
+	if !rep.Done {
 		s.appliedLimit = math.NaN() // something failed: run again next cycle
 	}
+	return rep
+}
+
+// rebalanceBlockReason is RebalanceBlockReason for the current state. The
+// automatic rebalance (applyMarginPolicy) and the manual one share it, so the
+// two can never drift apart.
+func (s *Strategy) rebalanceBlockReason(m marginState) string {
+	return RebalanceBlockReason(m.status, m.usage, m.err, m.gexWait, s.complementPending())
+}
+
+// RebalanceBlockReason says why the book may not be resized now, or "" when
+// it may. Pure: the inputs are the margin policy's status, Deribit's usage,
+// a margin read error, the GEX wait reason and whether a complement is still
+// working.
+func RebalanceBlockReason(st risk.Status, u risk.Usage, marginErr error, gexWait string, complementPending bool) string {
+	switch {
+	case marginErr != nil:
+		return "margin data unavailable: " + marginErr.Error()
+	case u.MMPct() >= st.MaxMMPct:
+		return fmt.Sprintf("maintenance margin %.1f%% at its %.0f%% limit: the MM cut runs instead", u.MMPct(), st.MaxMMPct)
+	case st.Frozen:
+		return "new risk frozen: " + st.FreezeReason
+	case !st.CanRebalance:
+		return "the IM limit does not rest on confirmed data yet"
+	case gexWait != "":
+		return "waiting for GEX: " + gexWait
+	case complementPending:
+		return "a rebalance complement is still working"
+	}
+	return ""
 }
 
 // reduceForMM buys back part of every position, at market, so maintenance
