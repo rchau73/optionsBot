@@ -6,8 +6,8 @@
 #   scripts/agents/install.sh --uninstall  remove both jobs
 #
 # Jobs: com.optionsbot.sme-review (sme_review.sh) and com.optionsbot.agents-tick
-# (tick.sh: deploy, then the Dev agent). launchd runs a missed calendar job on
-# wake. Logs: data/sme/, data/agents/ and data/agents/launchd-*.log.
+# (tick.sh: deploy, the Reviewer agent, then the Dev agent). launchd runs a
+# missed calendar job on wake. Logs: data/sme/, data/agents/ and data/agents/launchd-*.log.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AGENTS="$HOME/Library/LaunchAgents"
