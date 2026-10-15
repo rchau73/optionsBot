@@ -137,6 +137,7 @@ const (
 	SkipStopDeferred  = "stop_deferred"  // a stop-loss waits for the spread (stopguard.go): no new risk meanwhile
 	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
 	SkipGEXWait       = "gex_wait"       // no fresh GEX snapshot: regime and trend unknown, no new risk (gexready.go)
+	SkipBiasWarmup    = "bias_warmup"    // a bias shed held: the flip window does not cover its span yet (biaswarmup.go)
 )
 
 // noteSkip journals why a slot stayed empty, with the market at that moment.
