@@ -78,11 +78,13 @@ type Strategy struct {
 	forceCheck  map[string]bool
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes), the IM limit the book was last resized to (NaN: never) and,
-	// after a complement fell short, the earliest time to rebalance again.
-	lastRisk         *risk.Status
-	appliedLimit     float64
-	rebalanceRetryAt time.Time
-	pub              published // loop-owned state copied for View()
+	// after a complement fell short, the earliest time to rebalance again and
+	// how many complements in a row filled nothing (RebalanceRetryWait).
+	lastRisk            *risk.Status
+	appliedLimit        float64
+	rebalanceRetryAt    time.Time
+	unfilledComplements int
+	pub                 published // loop-owned state copied for View()
 	// Safety guards (safety.go), decision loop only: this cycle's exchange
 	// positions, instruments bought back since start, and the churn breaker.
 	exchSnap   *exchangeSnapshot

@@ -24,7 +24,9 @@ const (
 	FixedStopSpreadMaxWaitMinutes = 5        // …at most 5 minutes
 	FixedChurnMaxRoundTrips       = 3        // churn breaker: 3 buy-back/re-sell round trips…
 	FixedChurnWindowMinutes       = 60       // …within 60 minutes pause the slot
-	FixedRebalanceRetryMinutes    = 15       // a short rebalance complement retries after this
+	FixedRebalanceRetryMinutes    = 15       // a short rebalance complement retries after this…
+	FixedRebalanceBackoffAfter    = 3        // …doubled from the 3rd complement in a row that filled nothing…
+	FixedRebalanceRetryMaxMinutes = 60       // …up to 60 minutes (2026-10-14 BTC: 12 unfilled top-up orders in 1.5 h)
 	FixedOrderFillTimeoutSec      = 90       // a resting sell is cancelled after this
 	FixedOrderSlippagePct         = 0.05     // re-price up when the ask drifts this far above the limit
 	FixedOrderMaxAdjustments      = 3        // at most this many re-prices up
@@ -100,6 +102,8 @@ func (c *Config) ApplyFixed() {
 	c.ChurnMaxRoundTrips = FixedChurnMaxRoundTrips
 	c.ChurnWindowMinutes = FixedChurnWindowMinutes
 	c.RebalanceRetryMinutes = FixedRebalanceRetryMinutes
+	c.RebalanceBackoffAfter = FixedRebalanceBackoffAfter
+	c.RebalanceRetryMaxMinutes = FixedRebalanceRetryMaxMinutes
 	c.OrderFillTimeoutSec = FixedOrderFillTimeoutSec
 	c.OrderSlippagePct = FixedOrderSlippagePct
 	c.OrderMaxAdjustments = FixedOrderMaxAdjustments

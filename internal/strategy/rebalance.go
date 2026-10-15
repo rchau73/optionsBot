@@ -315,17 +315,65 @@ func (s *Strategy) slotLegTotals(key slotKey) (call, put float64) {
 // book under the IM limit, and nothing else would trigger a new pass until
 // the next confirmed limit change or a restart. The next pass re-measures
 // the book, so whatever did fill is accounted for.
+//
+// The wait backs off (RebalanceRetryWait) once rebalance_backoff_after
+// complements in a row filled nothing: on a book where nobody trades at mid
+// the same order would otherwise be re-sent every 15 minutes for nothing
+// (2026-10-14 BTC: 12 orders in 1.5 h, zero fills). Exits, stops and the MM
+// cut never wait on it.
 func (s *Strategy) rearmRebalance(reason string) {
-	wait := time.Duration(s.cfg.RebalanceRetryMinutes) * time.Minute
+	base := time.Duration(s.cfg.RebalanceRetryMinutes) * time.Minute
+	wait := RebalanceRetryWait(base, time.Duration(s.cfg.RebalanceRetryMaxMinutes)*time.Minute,
+		s.unfilledComplements, s.cfg.RebalanceBackoffAfter)
 	s.appliedLimit = math.NaN()
 	s.rebalanceRetryAt = time.Now().Add(wait)
+	detail := fmt.Sprintf("%s · retry in %s", reason, wait)
+	if wait > base {
+		detail = fmt.Sprintf("%s · %d complements in a row unfilled: retry backed off to %s", reason, s.unfilledComplements, wait)
+	}
 	slog.Warn("rebalance: book still short of the IM limit, will retry",
-		"reason", reason, "retry_in", wait.String())
+		"reason", reason, "retry_in", wait.String(), "unfilled_in_a_row", s.unfilledComplements)
 	var st risk.Status
 	if s.lastRisk != nil {
 		st = *s.lastRisk
 	}
-	s.logRisk(orders.RiskRebalanceRetry, fmt.Sprintf("%s · retry in %s", reason, wait), st, s.lastUsage(), "")
+	s.logRisk(orders.RiskRebalanceRetry, detail, st, s.lastUsage(), "")
+}
+
+// noteComplementOutcome counts complements in a row that filled nothing; any
+// fill resets the count (the book does trade at our price).
+func (s *Strategy) noteComplementOutcome(filledAny bool) {
+	if filledAny {
+		s.unfilledComplements = 0
+		return
+	}
+	s.unfilledComplements++
+}
+
+// resetRebalanceBackoff clears the back-off after a limit change: the new
+// limit gets a pass at once, and its retries start again from the base wait.
+func (s *Strategy) resetRebalanceBackoff() {
+	s.unfilledComplements = 0
+	s.rebalanceRetryAt = time.Time{}
+}
+
+// RebalanceRetryWait is how long the rebalance waits before retrying a
+// complement that fell short. Below `after` unfilled complements in a row it
+// is base; from there it doubles with each one (base 15 min, after 3: 15, 15,
+// 30, 60 …), capped at max (never below base). after ≤ 0 turns the back-off
+// off. Pure.
+func RebalanceRetryWait(base, max time.Duration, unfilled, after int) time.Duration {
+	if after <= 0 || unfilled < after {
+		return base
+	}
+	if max < base {
+		max = base
+	}
+	wait := base
+	for i := after; i <= unfilled && wait < max; i++ {
+		wait *= 2
+	}
+	return min(wait, max)
 }
 
 // downsizeLeg buys back whole lots above targetQty. The strike is kept.

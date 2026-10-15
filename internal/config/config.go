@@ -48,6 +48,12 @@ type Config struct {
 	// its size, the rebalance runs again after this long (it would otherwise
 	// wait for the next confirmed limit change or a restart).
 	RebalanceRetryMinutes int `yaml:"-"`
+	// RebalanceBackoffAfter / RebalanceRetryMaxMinutes: from this many
+	// complements in a row that filled nothing, the retry wait doubles per
+	// unfilled complement (15 → 30 → 60 min), up to the max. A fill or a limit
+	// change resets it.
+	RebalanceBackoffAfter    int `yaml:"-"`
+	RebalanceRetryMaxMinutes int `yaml:"-"`
 	// ChurnMaxRoundTrips / ChurnWindowMinutes: a slot that buys back and
 	// re-sells this many times within the window is paused for the window
 	// (no entries, repairs, upsizes or leg balancing; exits still run).
