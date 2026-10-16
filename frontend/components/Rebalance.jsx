@@ -100,7 +100,7 @@ export function RebalanceModal({ row, onClose }) {
                 {orders.length ? `Would send ${orders.length} order(s):` : "Nothing to send: the book already matches the limit."}
               </p>
             )}
-            <ul className="mb-3 max-h-64 space-y-1 overflow-y-auto" data-testid="rebalance-actions">
+            <ul className="mb-3 max-h-[max(16rem,40vh)] space-y-1 overflow-y-auto" data-testid="rebalance-actions">
               {report.actions.map((a, i) => (
                 <li key={`${a.strangle_id}-${a.action}-${a.instrument ?? ""}-${i}`} className="flex flex-wrap items-baseline gap-2">
                   <Badge tone={ACTION_TONE[a.action] ?? "muted"}>{ACTION_LABEL[a.action] ?? a.action}</Badge>

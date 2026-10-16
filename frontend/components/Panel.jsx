@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import { useCallback, useId, useState, useSyncExternalStore } from "react";
 
 // The remembered open/closed choice lives in localStorage; reading it through
@@ -35,9 +36,10 @@ const writeOpen = (key, open) => {
 /**
  * A titled card. With `collapsible`, the header toggles the body; `summary`
  * is shown in the header while collapsed, and the choice is remembered per
- * browser under `storageKey`.
+ * browser under `storageKey`. With `fill`, the body stretches to the panel's
+ * height (e.g. its grid row), so a scrolling child can take the rest of it.
  */
-export default function Panel({ title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true }) {
+export default function Panel({ title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true, fill = false }) {
   const bodyId = useId();
   const [local, setLocal] = useState(null); // this session's choice when storage is unavailable
   const getSnapshot = useCallback(() => (collapsible && storageKey ? readOpen(storageKey) : null), [collapsible, storageKey]);
@@ -51,7 +53,7 @@ export default function Panel({ title, right, children, className = "", collapsi
 
   const heading = <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>;
   return (
-    <section className={`rounded-lg border border-line bg-panel ${className}`}>
+    <section className={clsx("rounded-lg border border-line bg-panel", fill && "flex flex-col", className)}>
       <header className={`flex items-center justify-between gap-3 px-4 py-2 ${open ? "border-b border-line" : ""}`}>
         {collapsible ? (
           <button
@@ -74,7 +76,7 @@ export default function Panel({ title, right, children, className = "", collapsi
         {right}
       </header>
       {open ? (
-        <div id={bodyId} className="p-3">
+        <div id={bodyId} className={clsx("p-3", fill && "flex min-h-0 flex-1 flex-col")}>
           {children}
         </div>
       ) : null}

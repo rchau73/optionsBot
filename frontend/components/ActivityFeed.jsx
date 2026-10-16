@@ -19,12 +19,18 @@ const MATCH = {
   skipped: (e) => e.event === "skipped",
 };
 
-/** Live list of what the bots did, newest first, each with its market context. */
+/**
+ * Live list of what the bots did, newest first, each with its market context.
+ * Inside a `fill` Panel the list takes the rest of the panel: on lg screens the
+ * whole grid row (never less than 20rem or 70 % of the window), scrolling
+ * inside it — absolute, so its events never make the row taller. Below lg the
+ * panels stack and the list is bounded by the window height instead.
+ */
 export default function ActivityFeed({ feed }) {
   const [kind, setKind] = useState("all");
   const lines = feed.filter(MATCH[kind]);
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-2 flex gap-1" role="tablist">
         {KINDS.map(([k, text]) => (
           <button
@@ -44,19 +50,24 @@ export default function ActivityFeed({ feed }) {
       {lines.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted">Nothing yet — events appear here as the bots act.</p>
       ) : (
-        <ol className="max-h-[520px] space-y-1 overflow-y-auto pr-1">
-          {lines.map((e) => (
-            <li key={e.id} className="rounded border border-line/60 px-2 py-1 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="tabular-nums text-xs text-muted">{formatTime(e.at)}</span>
-                <span className="text-xs font-semibold uppercase">{e.bot}</span>
-                <Badge tone={e.tone}>{e.label}</Badge>
-                <span>{e.text}</span>
-              </div>
-              {e.context.length ? <div className="mt-0.5 text-xs text-muted">{e.context.join(" · ")}</div> : null}
-            </li>
-          ))}
-        </ol>
+        <div className="relative flex-1 lg:min-h-[max(20rem,70vh)]" data-testid="activity-box">
+          <ol
+            className="max-h-[max(20rem,60vh)] space-y-1 overflow-y-auto pr-1 lg:absolute lg:inset-0 lg:max-h-none"
+            data-testid="activity-list"
+          >
+            {lines.map((e) => (
+              <li key={e.id} className="rounded border border-line/60 px-2 py-1 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="tabular-nums text-xs text-muted">{formatTime(e.at)}</span>
+                  <span className="text-xs font-semibold uppercase">{e.bot}</span>
+                  <Badge tone={e.tone}>{e.label}</Badge>
+                  <span>{e.text}</span>
+                </div>
+                {e.context.length ? <div className="mt-0.5 text-xs text-muted">{e.context.join(" · ")}</div> : null}
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
     </div>
   );
