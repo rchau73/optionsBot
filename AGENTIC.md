@@ -42,7 +42,7 @@ The Dev, Reviewer and Deploy steps answer *"is it built right?"*. The SME agent 
 | Collect | A script, not the agent, pulls each bot's status, positions, orders, events, trades, P&L (and its 1-week history) and account margin from the monitor API, plus the configs and the agent's previous reports. The agent itself has no network. |
 | Analyse | **Risk:** margin used against the limit, MM, one-sided books, stops. **Return:** idle margin, unfilled orders, fees, P&L by slot and exit reason. Always read in market context: DVOL, GEX regime, trend. |
 | Diagnose | It traces each problem through the journal (what the bot saw, decided and got, with timestamps) to the rule that caused it. |
-| Write the case | One issue per finding, in the [ticket template](#what-a-ticket-looks-like): cost, evidence, options, metrics, Gherkin acceptance criteria, a recommendation. A finding seen again becomes a comment, not a duplicate. |
+| Write the case | One issue per **new** problem, in the [ticket template](#what-a-ticket-looks-like): cost, evidence, options, metrics, Gherkin acceptance criteria, a recommendation. A problem an open ticket already tracks (whoever filed it) is matched by root cause, not wording, and gets a comment only when there is new data. |
 | Verify | It re-checks every recently closed issue against its acceptance criteria, and comments "fixed" or reopens it. |
 
 **Its first unattended run (2026-10-15)** filed 9 issues. By the end of the same day 8 were closed: 7 by changes built, reviewed and deployed through this loop, and 1 by the exchange listing a new expiry.
@@ -94,7 +94,7 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 - **Testnet only:** automatic deploys refuse to run if any bot is live. Live deploys stay manual.
 - **Data exposure:** this repo is public. On testnet, issues carry full evidence, because the money is fake. If a bot runs live, the SME agent is told to leave balances, sizes and P&L out of issues; the full report stays local (`data/sme/`, gitignored).
 - **Stop instead of guessing:** the Dev agent stops when an issue is ambiguous, needs a product decision, or would change live order behaviour beyond what the issue says. It posts its questions and moves the card to **Blocked**.
-- **Idempotent and bounded:** one Dev task at a time, with locks and stale-lock recovery. Issues are de-duplicated by a stable fingerprint. A failed deploy commit is not retried in a loop.
+- **Idempotent and bounded:** one Dev task at a time, with locks and stale-lock recovery. **No duplicate tickets:** the SME agent reads every open issue (any label, with its body and last comments) and those closed in the last 14 days, and reports a problem already tracked as an update to that ticket, posted only when the data says something new. Tickets parked in Triage for a week or two to collect data are not re-filed or re-posted daily. The script adds two checks of its own, on the fingerprint and on near-identical titles. A failed deploy commit is not retried in a loop.
 - **Audit trail:** every agent action is an issue, a comment, a commit or a PR, labelled `agent:*`, with its run log in `data/agents/`. Each pickup comment numbers the attempt and says what came before (blocked, sent back by the Reviewer, or a human's comment), so an issue tells its whole story even when a card was moved back on the board.
 
 ## How AI is used in this repo beyond the loop

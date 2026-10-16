@@ -57,14 +57,23 @@ ENVIRONMENT="$(bots_environment)"
 REDACT=0; [[ "$ENVIRONMENT" == "live" ]] && REDACT=1
 echo "- environment: $ENVIRONMENT (issue bodies redacted: $REDACT)" >> "$manifest"
 
+ISSUES="$AGENT_REPO_DIR/scripts/agents/sme_issues.py"
 slug=""
 if [[ "$PUBLISH" == "1" ]] && slug="$(repo_slug 2>/dev/null)"; then
-  gh issue list -R "$slug" --label agent:sme --state open -L 100 --json number,title,body \
-    -q '[.[] | {number, title, fingerprint: (.body | capture("sme-fingerprint: (?<f>[a-z0-9-]+)").f // "")}]' > "$OUT/open_issues.json" || echo '[]' > "$OUT/open_issues.json"
+  # Every issue, not only agent:sme ones: a ticket a human filed (often parked
+  # in Triage to collect data) is the same problem when the agent sees it
+  # again (2026-10-16: #106 and #107 re-filed #86/#103). Bodies and last
+  # comments let the agent match by problem, not by title.
+  board_cards > "$OUT/board.txt" 2>/dev/null || : > "$OUT/board.txt"
+  if gh issue list -R "$slug" --state open -L 200 --json number,title,labels,body,comments > "$OUT/open_raw.json"; then
+    python3 "$ISSUES" shape "$OUT/open_raw.json" "$OUT/board.txt" "$OUT/open_issues.json"
+  else echo '[]' > "$OUT/open_issues.json"; fi
   since="$(date -v-14d +%Y-%m-%d 2>/dev/null || date -d '-14 days' +%Y-%m-%d)"
-  gh issue list -R "$slug" --label agent:sme --state closed -L 50 --search "closed:>=$since" --json number,title,closedAt,body \
-    -q '[.[] | {number, title, closedAt, fingerprint: (.body | capture("sme-fingerprint: (?<f>[a-z0-9-]+)").f // "")}]' > "$OUT/closed_issues.json" || echo '[]' > "$OUT/closed_issues.json"
-  echo "- open SME issues: open_issues.json · closed in the last 14 days: closed_issues.json" >> "$manifest"
+  if gh issue list -R "$slug" --state closed -L 100 --search "closed:>=$since" --json number,title,labels,body,comments,closedAt > "$OUT/closed_raw.json"; then
+    python3 "$ISSUES" shape "$OUT/closed_raw.json" "$OUT/board.txt" "$OUT/closed_issues.json" closed
+  else echo '[]' > "$OUT/closed_issues.json"; fi
+  rm -f "$OUT/open_raw.json" "$OUT/closed_raw.json"
+  echo "- open issues (every label, with board column, body and last comments): open_issues.json · closed in the last 14 days: closed_issues.json" >> "$manifest"
 else
   PUBLISH=0
   echo '[]' > "$OUT/open_issues.json"; echo '[]' > "$OUT/closed_issues.json"
@@ -73,7 +82,8 @@ fi
 # ── 2. Review (read-only agent) ─────────────────────────────────────────────
 PROMPT="Use the option-bot-specialist skill and run its \"Daily review (agent mode)\" procedure.
 Today's data is in $OUT/ (start with $OUT/MANIFEST.md; earlier reports are in $OUT/previous/;
-the open and recently closed SME issues are in $OUT/open_issues.json and $OUT/closed_issues.json).
+every open issue and those closed in the last 14 days, with bodies and last comments, are in
+$OUT/open_issues.json and $OUT/closed_issues.json — never open a duplicate of one of them).
 Environment: $ENVIRONMENT. Redact amounts in issue bodies: $REDACT.
 You may also read CLAUDE.md, OptionStrategy.md and docs/ for how the bot works.
 Print only the report in the exact output shape the skill defines, ending with the FINDINGS-JSON block."
@@ -105,7 +115,7 @@ severity="$(grep -m1 '^SEVERITY:' "$OUT/report.md" | sed 's/^SEVERITY: *//' || t
 log "$severity — $summary"
 
 # ── 3. Publish (the script acts, never the agent) ───────────────────────────
-footer="_Opened by the **SME agent** (option-bot-specialist skill, read-only) from the $DATE daily review. A person triages it; moving it to **Ready** hands it to the Dev agent. See [AGENTIC.md](../blob/main/AGENTIC.md)._"
+footer="_Opened by the **SME agent** (option-bot-specialist skill, read-only) from the $DATE daily review. A human triages it; moving it to **Ready** hands it to the Dev agent. See [AGENTIC.md](../blob/main/AGENTIC.md)._"
 if [[ "$PUBLISH" == "1" ]]; then
   n="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))["issues"]))' "$OUT/findings.json")"
   i=0
@@ -114,16 +124,26 @@ if [[ "$PUBLISH" == "1" ]]; then
 open(sys.argv[3],"w").write(f["body"])
 print(f["fingerprint"]); print(f["severity"]); print(f["title"])' "$OUT/findings.json" "$i" "$OUT/issue-body.md" > "$OUT/issue-meta.txt"
     fp="$(sed -n 1p "$OUT/issue-meta.txt")"; sev="$(sed -n 2p "$OUT/issue-meta.txt")"; title="$(sed -n 3p "$OUT/issue-meta.txt")"
-    existing="$(py 'import json,sys; print(next((str(o["number"]) for o in json.load(open(sys.argv[1])) if o["fingerprint"]==sys.argv[2]), ""))' "$OUT/open_issues.json" "$fp")"
-    if [[ -n "$existing" ]]; then
-      { echo "**Seen again in the $DATE review.**"; echo; cat "$OUT/issue-body.md"; } > "$OUT/issue-comment.md"
-      gh issue comment "$existing" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "commented #$existing ($fp)"
-    else
-      { cat "$OUT/issue-body.md"; echo; echo "<!-- sme-fingerprint: $fp -->"; echo; echo "$footer"; } > "$OUT/issue-full.md"
-      url="$(gh issue create -R "$slug" --title "$title" --label agent:sme --label "severity:$sev" --body-file "$OUT/issue-full.md")"
-      log "opened $url ($fp)"
-      add_to_board "$url" "Triage" >/dev/null || log "could not add $url to the board"
-    fi
+    where="$(python3 "$ISSUES" route "$OUT/findings.json" "$i" "$OUT/open_issues.json" "$OUT/closed_issues.json")"
+    num="${where#* }"
+    case "$where" in
+      comment\ *)
+        py 'import json,sys; open(sys.argv[3],"w").write(json.load(open(sys.argv[1]))["issues"][int(sys.argv[2])]["update"])' "$OUT/findings.json" "$i" "$OUT/issue-update.md"
+        { echo "**Seen again in the $DATE review — what is new:**"; echo; cat "$OUT/issue-update.md"; } > "$OUT/issue-comment.md"
+        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "commented #$num ($fp)" ;;
+      quiet\ *)
+        log "seen again, nothing new: #$num ($fp), no comment" ;;
+      guard\ *)
+        # The agent called it new, but an issue with a near-identical title exists.
+        { echo "**Seen again in the $DATE review** (filed as new by the SME agent; matched to this issue by title, so no duplicate was opened)."
+          echo; echo "<details><summary>The finding as written</summary>"; echo; cat "$OUT/issue-body.md"; echo; echo "</details>"; } > "$OUT/issue-comment.md"
+        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "duplicate guard: commented #$num instead of opening \"$title\"" ;;
+      *)
+        { cat "$OUT/issue-body.md"; echo; echo "<!-- sme-fingerprint: $fp -->"; echo; echo "$footer"; } > "$OUT/issue-full.md"
+        url="$(gh issue create -R "$slug" --title "$title" --label agent:sme --label "severity:$sev" --body-file "$OUT/issue-full.md")"
+        log "opened $url ($fp)"
+        add_to_board "$url" "Triage" >/dev/null || log "could not add $url to the board" ;;
+    esac
     i=$((i + 1))
   done
   for fp in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1])).get("resolved", [])))' "$OUT/findings.json"); do
