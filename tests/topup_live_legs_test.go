@@ -29,14 +29,29 @@ func anyPutSells(f *strategyFixture) int {
 // closePutByHand closes the fixture's put from the monitor (bear trend,
 // confirmed negative regime) with a top-up due and held by the regime-side
 // rule, re-armed every pass, then turns the trend neutral.
-func (f *strategyFixture) closePutByHandThenNeutral(t *testing.T, id string) {
+//
+// The put's position ID is read from the view right before each close
+// request: the Run goroutine loads the book strangle by strangle, so the put
+// may not be listed yet, and a close that finds the ID gone ("not in the
+// book") is asked again with the current ID (#113). Any other refusal fails.
+func (f *strategyFixture) closePutByHandThenNeutral(t *testing.T, instrument string) {
 	t.Helper()
 	f.strat.SetManualClose(true, "")
 	eventually(t, 2*time.Second, "top-up held by the regime side", func() bool { return f.skips(strategy.SkipRegimeSide) > 0 })
-	res, err := f.strat.ManualClose(context.Background(), []string{id}, "test")
-	if err != nil || len(res) != 1 || res[0].Error != "" {
-		t.Fatalf("ManualClose = %+v, %v", res, err)
-	}
+	eventually(t, 2*time.Second, "the put closed by hand", func() bool {
+		put, ok := legView(t, f.strat, instrument)
+		if !ok {
+			return false
+		}
+		res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, "test")
+		if err == nil && len(res) == 1 && strings.Contains(res[0].Error, "not in the book") {
+			return false
+		}
+		if err != nil || len(res) != 1 || res[0].Error != "" {
+			t.Fatalf("ManualClose = %+v, %v", res, err)
+		}
+		return true
+	})
 	f.market.mu.Lock()
 	f.market.price = 106000 // above SMA9, below SMA21: neutral, the regime-side block lifts
 	f.market.mu.Unlock()
@@ -52,11 +67,12 @@ func TestRebalance_TopUpSkipsAStrangleWithAClosedLeg(t *testing.T) {
 	f.startRun()
 
 	eventually(t, 2*time.Second, "positions loaded", func() bool { _, ok := legView(t, f.strat, f.put); return ok })
-	put, _ := legView(t, f.strat, f.put)
-	f.closePutByHandThenNeutral(t, put.PositionID)
+	f.closePutByHandThenNeutral(t, f.put)
 
+	// The slot writes one repair_held line: its detail is the regime side when
+	// a cycle ran between the close and the trend turning neutral (#113).
 	eventually(t, 2*time.Second, "repair held", func() bool {
-		return f.skips(strategy.SkipRepairHeld+": put stopped out, confirmed negative gamma regime") > 0
+		return f.skips(strategy.SkipRepairHeld+": put ") > 0
 	})
 	time.Sleep(200 * time.Millisecond) // many cycles and rebalance passes on a neutral trend
 	if n := anyPutSells(f); n != 0 {
@@ -99,14 +115,32 @@ func TestRebalance_TopUpHeldWhileASlotLegIsStopped(t *testing.T) {
 	f.startRun()
 
 	eventually(t, 2*time.Second, "positions loaded", func() bool { _, ok := legView(t, f.strat, put2); return ok })
-	put, _ := legView(t, f.strat, f.put)
-	f.closePutByHandThenNeutral(t, put.PositionID)
+	f.closePutByHandThenNeutral(t, f.put)
 
+	// Every held pass journals its re-arm with the reason. The slot's
+	// repair_held skip is not asserted: noteSkip writes one line per reason
+	// per slot, and a cycle that runs between the close and the trend turning
+	// neutral writes it for the repair (held by the regime side) first (#113).
+	eventually(t, 2*time.Second, "the held top-up journaled with its reason", func() bool {
+		return heldTopUpRetries(f, "held: put stopped out, confirmed negative gamma regime") > 0
+	})
 	time.Sleep(300 * time.Millisecond) // many cycles and rebalance passes on a neutral trend
 	if n := anyPutSells(f); n != 0 {
 		t.Errorf("no put may be sold into the slot while its stopped put is held: %d put sells", n)
 	}
-	if f.skips(strategy.SkipRepairHeld+": top-up held: put stopped out, confirmed negative gamma regime") == 0 {
-		t.Error("the held top-up must be journaled with its reason")
+	if n := heldTopUpRetries(f, "held: put stopped out, confirmed negative gamma regime"); n < 2 {
+		t.Errorf("every pass on a neutral trend must hold the top-up again: %d held passes", n)
 	}
+}
+
+// heldTopUpRetries counts the journaled rebalance re-arms of a held top-up
+// whose detail carries this reason.
+func heldTopUpRetries(f *strategyFixture, reason string) int {
+	n := 0
+	for _, r := range f.journal.riskChanges(orders.RiskRebalanceRetry) {
+		if strings.Contains(r.Detail, "complement for ") && strings.Contains(r.Detail, reason) {
+			n++
+		}
+	}
+	return n
 }
