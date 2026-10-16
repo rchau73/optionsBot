@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -64,6 +65,7 @@ func (s *Strategy) RestorePnL(realised map[orders.SlotRef]float64, closed map[or
 // PnLLine is one row of a P&L report: a slot, or the strategy total.
 type PnLLine struct {
 	Slot       *orders.SlotRef // nil = strategy total
+	Retired    bool            // Slot is not in the matrix (zero SlotRef = no known slot)
 	Realised   float64         // coin
 	Unrealised float64         // coin
 	OpenLegs   int
@@ -72,8 +74,10 @@ type PnLLine struct {
 
 // ComputePnL combines realised P&L per slot (zero SlotRef = unknown slot)
 // with the unrealised P&L of the open positions, marked to mid. slotOfPos maps
-// a position ID to its slot. The result lists each configured slot, then the
-// strategy total, which also includes anything without a known slot.
+// a position ID to its slot. The result lists each configured slot, then one
+// Retired row per other slot that holds P&L (a slot since removed from the
+// matrix, or the zero SlotRef for anything without a known slot), then the
+// strategy total — so the rows always add up to the total (#108).
 func ComputePnL(slots []orders.SlotRef, positions []*orders.Position, slotOfPos map[string]*orders.SlotRef,
 	realised map[orders.SlotRef]float64, closed map[orders.SlotRef]int) []PnLLine {
 
@@ -88,34 +92,51 @@ func ComputePnL(slots []orders.SlotRef, positions []*orders.Position, slotOfPos 
 		lines[k] = &PnLLine{Slot: &ref}
 		order = append(order, k)
 	}
+	// line returns the row of slot k, adding a Retired row for a slot that is
+	// not configured.
+	var retired []orders.SlotRef
+	line := func(k orders.SlotRef) *PnLLine {
+		if l, ok := lines[k]; ok {
+			return l
+		}
+		ref := k
+		l := &PnLLine{Slot: &ref, Retired: true}
+		lines[k] = l
+		retired = append(retired, k)
+		return l
+	}
 	total := &PnLLine{}
 
 	for k, v := range realised {
 		total.Realised += v
 		total.ClosedLegs += closed[k]
-		if l, ok := lines[keyOf(&k)]; ok {
-			l.Realised += v
-			l.ClosedLegs += closed[k]
-		}
+		l := line(keyOf(&k))
+		l.Realised += v
+		l.ClosedLegs += closed[k]
 	}
 	for _, p := range positions {
 		u := p.NetPnL()
 		total.Unrealised += u
 		total.OpenLegs++
-		if l, ok := lines[keyOf(slotOfPos[p.ID])]; ok {
-			l.Unrealised += u
-			l.OpenLegs++
-		}
+		l := line(keyOf(slotOfPos[p.ID]))
+		l.Unrealised += u
+		l.OpenLegs++
 	}
 
-	out := make([]PnLLine, 0, len(order)+1)
-	for _, k := range order {
+	sort.Slice(retired, func(i, j int) bool {
+		if retired[i].DTE != retired[j].DTE {
+			return retired[i].DTE < retired[j].DTE
+		}
+		return retired[i].Delta < retired[j].Delta
+	})
+	out := make([]PnLLine, 0, len(order)+len(retired)+1)
+	for _, k := range append(order, retired...) {
 		out = append(out, *lines[k])
 	}
 	return append(out, *total)
 }
 
-// PnLReport returns P&L per configured slot followed by the strategy total
+// PnLReport returns P&L per configured slot, then per retired slot, then the strategy total
 // (realised since the journal began, unrealised marked to mid), in the
 // underlying coin. Safe to call from any goroutine.
 func (s *Strategy) PnLReport() []PnLLine {
@@ -158,6 +179,7 @@ func (s *Strategy) logPnL() {
 			Timestamp:     now,
 			StrategyID:    s.strategyID(),
 			Slot:          l.Slot,
+			Retired:       l.Retired,
 			Realised:      l.Realised,
 			Unrealised:    l.Unrealised,
 			Total:         total,

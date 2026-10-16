@@ -120,8 +120,11 @@ type PendingLegView struct {
 }
 
 // PnLView is PnLLine with JSON names; Slot is nil for the strategy total.
+// Retired rows are slots no longer in the matrix (zero slot = no known slot);
+// with them the rows add up to the total.
 type PnLView struct {
 	Slot       *orders.SlotRef `json:"slot"`
+	Retired    bool            `json:"retired,omitempty"`
 	Realised   float64         `json:"realised"`
 	Unrealised float64         `json:"unrealised"`
 	Total      float64         `json:"total"`
@@ -259,7 +262,7 @@ func (s *Strategy) View() View {
 	}
 	for _, l := range s.pnlWithMarks(liveMarks(v.Strangles)) {
 		v.PnL = append(v.PnL, PnLView{
-			Slot: l.Slot, Realised: l.Realised, Unrealised: l.Unrealised,
+			Slot: l.Slot, Retired: l.Retired, Realised: l.Realised, Unrealised: l.Unrealised,
 			Total: l.Realised + l.Unrealised, OpenLegs: l.OpenLegs, ClosedLegs: l.ClosedLegs,
 		})
 	}
