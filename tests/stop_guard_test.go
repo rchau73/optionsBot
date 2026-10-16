@@ -127,7 +127,7 @@ func TestStrategy_FreezeCancelsWorkingEntries(t *testing.T) {
 
 	eventually(t, 2*time.Second, "entry resting", func() bool { return len(f.exch.sells()) == 2 })
 	callID, putID := f.exch.orderIDFor(f.call, 0), f.exch.orderIDFor(f.put, 0)
-	f.market.setIVHistory([]float64{10, 10, 10}, 90) // DVOL jumps bands: new risk frozen
+	f.market.setIVHistory([]float64{90, 90, 90}, 10) // DVOL drops bands: new risk frozen
 
 	eventually(t, 2*time.Second, "both legs cancelled by the freeze", func() bool {
 		return f.exch.wasCancelled(callID) && f.exch.wasCancelled(putID)
