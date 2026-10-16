@@ -168,8 +168,8 @@ func TestComputePnL(t *testing.T) {
 	closed := map[orders.SlotRef]int{slots[0]: 1, {}: 1}
 
 	lines := strategy.ComputePnL(slots, open, slotOf, realised, closed)
-	if len(lines) != 3 || lines[2].Slot != nil {
-		t.Fatalf("want 2 slots + total, got %+v", lines)
+	if len(lines) != 4 || !lines[2].Retired || lines[3].Slot != nil {
+		t.Fatalf("want 2 slots + the unknown-slot row + total, got %+v", lines)
 	}
 	want := []struct {
 		realised, unrealised float64
@@ -177,7 +177,8 @@ func TestComputePnL(t *testing.T) {
 	}{
 		{0.0008, 0.0015, 1, 1},
 		{0, -0.0010, 1, 0},
-		{0.0006, 0.0015, 3, 2}, // total includes the orphan and the unknown-slot close
+		{-0.0002, 0.0010, 1, 1}, // the orphan and the unknown-slot close (#108)
+		{0.0006, 0.0015, 3, 2},  // total
 	}
 	for i, w := range want {
 		l := lines[i]

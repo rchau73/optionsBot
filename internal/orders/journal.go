@@ -198,9 +198,10 @@ type PnLRecord struct {
 	Event         string    `json:"event"` // always "pnl"
 	StrategyID    string    `json:"strategy_id"`
 	Slot          *SlotRef  `json:"slot,omitempty"`
-	Realised      float64   `json:"realised"`   // coin
-	Unrealised    float64   `json:"unrealised"` // coin, open legs marked to mid
-	Total         float64   `json:"total"`      // coin
+	Retired       bool      `json:"retired,omitempty"` // Slot is not in the matrix (#108)
+	Realised      float64   `json:"realised"`          // coin
+	Unrealised    float64   `json:"unrealised"`        // coin, open legs marked to mid
+	Total         float64   `json:"total"`             // coin
 	RealisedUSD   float64   `json:"realised_usd"`
 	UnrealisedUSD float64   `json:"unrealised_usd"`
 	TotalUSD      float64   `json:"total_usd"`
