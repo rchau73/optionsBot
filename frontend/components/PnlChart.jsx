@@ -77,7 +77,7 @@ export default function PnlChart({ live, names }) {
           {range === "live" || stored.loading ? "Collecting data…" : "No history for this range yet."}
         </p>
       ) : (
-        <div className="h-56" aria-label={`P&L, range ${range}`}>
+        <div className="h-[clamp(14rem,30vh,28rem)]"aria-label={`P&L, range ${range}`}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
               <XAxis dataKey="t" tickFormatter={(t) => tickLabel(t, range)} stroke="#94a3b8" fontSize={11} minTickGap={50} />

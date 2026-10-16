@@ -64,7 +64,7 @@ export default function CoinPnlChart({ names, units = {} }) {
             {data.length < 2 ? (
               <p className="py-4 text-center text-sm text-muted">{loading ? "Loading…" : "No history for this range yet."}</p>
             ) : (
-              <div className="h-40" aria-label={`P&L in ${unit}, range ${range}`}>
+              <div className="h-[clamp(10rem,20vh,20rem)]"aria-label={`P&L in ${unit}, range ${range}`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
                     <XAxis dataKey="t" tickFormatter={(t) => tickLabel(t, range)} stroke="#94a3b8" fontSize={11} minTickGap={50} />

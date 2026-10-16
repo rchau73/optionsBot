@@ -82,7 +82,7 @@ export default function Monitor() {
           <TradeHistory trades={allTrades} />
         </Panel>
         <div className="grid gap-3 lg:grid-cols-3">
-          <Panel title="Activity" className="lg:col-span-2">
+          <Panel title="Activity" className="lg:col-span-2" fill>
             <ActivityFeed feed={feed} />
           </Panel>
           <div className="space-y-3">
