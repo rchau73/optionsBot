@@ -53,12 +53,12 @@ func TestRisk_SpikeFreezesThenUnfreezesWithoutChangingLimit(t *testing.T) {
 	closes := ivDays(50, 50, 50)
 	p := policy(false)
 
-	spike := risk.Evaluate(p, closes, liveIV(closes, 90)) // intraday jump to the high band
+	spike := risk.Evaluate(p, closes, liveIV(closes, 10)) // intraday drop to the low band
 	if !spike.Frozen || spike.LimitIMPct != 35 || !strings.Contains(spike.FreezeReason, "DVOL") {
-		t.Errorf("a band change must freeze new risk at once and keep the limit: %+v", spike)
+		t.Errorf("a band change that lowers the limit must freeze new risk at once and keep the limit: %+v", spike)
 	}
 
-	closes = append(closes, ivDays(90)[0]) // one close in the high band...
+	closes = append(closes, ivDays(10)[0]) // one close in the low band...
 	closes[3].Date = policyStart.AddDate(0, 0, 3)
 	back := risk.Evaluate(p, closes, liveIV(closes, 50)) // ...then back to the active band
 	if back.Frozen || back.LimitIMPct != 35 {
@@ -156,11 +156,38 @@ func TestRisk_DVOLChangeUnderNegativeRegimeStillListsPending(t *testing.T) {
 	}
 }
 
-func TestRisk_DVOLChangeUnderPositiveRegimeStillFreezes(t *testing.T) {
-	closes := ivDays(20, 20, 20)
-	st := risk.Evaluate(policy(true), closes, liveIV(closes, 34))
-	if !st.Frozen || !strings.Contains(st.FreezeReason, "DVOL") {
-		t.Errorf("a DVOL change that moves the limit (20 → 35) must freeze: %+v", st)
+func TestRisk_DVOLDropUnderPositiveRegimeStillFreezes(t *testing.T) {
+	closes := ivDays(34, 34, 34)
+	st := risk.Evaluate(policy(true), closes, liveIV(closes, 20))
+	if !st.Frozen || st.LimitIMPct != 35 || !strings.Contains(st.FreezeReason, "DVOL") {
+		t.Errorf("a DVOL change that lowers the limit (35 → 20) must freeze: %+v", st)
+	}
+}
+
+// #105: a pending rise waits for confirmation under the current, stricter
+// limit, so freezing would protect nothing.
+func TestRisk_DVOLRiseDoesNotFreeze(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		from, to float64
+		limit    float64
+	}{
+		{"low to middle band", 20, 34, 20},
+		{"middle to high band", 50, 90, 35},
+		{"low to high band", 10, 90, 20},
+	} {
+		closes := ivDays(c.from, c.from, c.from)
+		st := risk.Evaluate(policy(true), closes, liveIV(closes, c.to))
+		if st.Frozen || st.LimitIMPct != c.limit {
+			t.Errorf("%s: a DVOL rise must not freeze and must keep the limit %v: %+v", c.name, c.limit, st)
+		}
+		// One close in the new band: the rise is listed as pending, still no freeze.
+		closes = append(closes, ivDays(c.to)[0])
+		closes[3].Date = policyStart.AddDate(0, 0, 3)
+		st = risk.Evaluate(policy(true), closes, liveIV(closes, c.to))
+		if st.Frozen || st.LimitIMPct != c.limit || len(st.Pending) != 1 || st.Pending[0].Rule != "dvol_band" {
+			t.Errorf("%s: a pending rise is listed without freezing: %+v", c.name, st)
+		}
 	}
 }
 
@@ -172,11 +199,36 @@ func TestRisk_RegimeTurningPositiveAtLowestBandDoesNotFreeze(t *testing.T) {
 	}
 }
 
-func TestRisk_RegimeTurningPositiveAboveLowestBandFreezes(t *testing.T) {
-	closes := negDays(50, 50, 50)
-	st := risk.Evaluate(policy(true), closes, liveIV(closes, 50)) // limit would go 20 → 35
-	if !st.Frozen || !strings.Contains(st.FreezeReason, "positive") {
-		t.Errorf("a regime change that moves the limit must freeze: %+v", st)
+// Scenario: a pending regime change that would only raise the limit does not
+// freeze (#105, 2026-10-16 ETH: frozen ~8 h a day while the regime hovered at zero).
+func TestRisk_PendingRegimeChangeThatWouldOnlyRaiseTheLimitDoesNotFreeze(t *testing.T) {
+	closes := negDays(50, 50, 50) // confirmed NEGATIVE: limit 20 %; the DVOL band would allow 35 %
+	live := liveIV(closes, 50)    // live regime positive, not yet confirmed
+	st := risk.Evaluate(policy(true), closes, live)
+	if st.Frozen || st.LimitIMPct != 20 || st.BandLimitPct != 35 {
+		t.Errorf("a regime change that can only raise the limit must not freeze: %+v", st)
+	}
+
+	positiveClose := ivDays(50)[0] // one positive close: the change is pending 1/2
+	positiveClose.Date = policyStart.AddDate(0, 0, 3)
+	closes = append(closes, positiveClose)
+	st = risk.Evaluate(policy(true), closes, liveIV(closes, 50))
+	if st.Frozen || st.LimitIMPct != 20 {
+		t.Errorf("pending 1/2: still no freeze, limit unchanged: %+v", st)
+	}
+	if len(st.Pending) != 1 || st.Pending[0].Rule != "gamma_regime" || st.Pending[0].To != "positive/neutral" || st.Pending[0].Days != 1 {
+		t.Errorf("the change is listed under pending: %+v", st.Pending)
+	}
+}
+
+// Scenario: a change that would lower the limit still freezes.
+func TestRisk_RegimeTurningNegativeFromThe35PctBandFreezes(t *testing.T) {
+	closes := ivDays(50, 50, 50) // confirmed positive: limit 35 %
+	live := liveIV(closes, 50)
+	live.Negative = true
+	st := risk.Evaluate(policy(true), closes, live)
+	if !st.Frozen || st.LimitIMPct != 35 || !strings.Contains(st.FreezeReason, "turned negative") {
+		t.Errorf("a regime change that lowers the limit (35 → 20) must freeze: %+v", st)
 	}
 }
 

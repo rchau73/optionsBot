@@ -9,12 +9,13 @@
 //     says: dealer hedging then amplifies moves against short options.
 //   - Changes are confirmed on daily closes only: a band or regime must hold
 //     for ConfirmDays consecutive UTC daily closes before the limit moves, so a
-//     spike does not reshape the book. While a change that would move the
-//     limit is unconfirmed, new risk is frozen. A change that cannot move it
-//     does not freeze: a DVOL band change under a confirmed negative regime
-//     (pinned to the lowest band), or the regime turning positive while DVOL
-//     sits in the lowest band. The regime turning negative always freezes —
-//     it is a danger signal beyond the limit.
+//     spike does not reshape the book. While a change that would lower the
+//     limit is unconfirmed, new risk is frozen. A change that cannot lower it
+//     only stays pending, because the current, stricter limit applies until
+//     it confirms: a DVOL band rise, a band change under a confirmed negative
+//     regime (pinned to the lowest band), the regime turning positive. The
+//     regime turning negative always freezes — it is a danger signal beyond
+//     the limit.
 //   - The maintenance-margin (MM) limit is fixed and acts immediately: it
 //     measures distance to liquidation, which no DVOL level makes safer.
 package risk
@@ -219,14 +220,14 @@ func Evaluate(cfg Config, closes []Day, live Day) Status {
 			// Turning negative freezes even when the limit would not move.
 			freeze = append(freeze, "gamma regime turned negative, not yet confirmed")
 		case live.RegimeKnown && !live.Negative && st.RegimeNegative &&
-			limitFor(bands, band, false) != limitFor(bands, band, true):
+			limitFor(bands, band, false) < limitFor(bands, band, true):
 			freeze = append(freeze, "gamma regime turned positive/neutral, not yet confirmed")
 		}
 	}
 
 	if iv.known && live.IVKnown {
 		if liveBand := cfg.BandIndex(live.IVPct); liveBand != iv.value &&
-			limitFor(bands, liveBand, st.RegimeNegative) != limitFor(bands, iv.value, st.RegimeNegative) {
+			limitFor(bands, liveBand, st.RegimeNegative) < limitFor(bands, iv.value, st.RegimeNegative) {
 			freeze = append(freeze, fmt.Sprintf("DVOL moved to %s (IV percentile %.0f), not yet confirmed", bandLabel(bands[liveBand]), live.IVPct))
 		}
 	}
@@ -251,7 +252,9 @@ func Evaluate(cfg Config, closes []Day, live Day) Status {
 
 // limitFor is the IM limit for a band under a regime: a negative regime pins
 // it to the lowest band. The freeze compares it before and after a pending
-// change, so a change that cannot move the limit does not freeze.
+// change: only a change that would lower the limit freezes (#105). A rise
+// waits for confirmation under the current limit, which is already the
+// stricter one, so freezing it would protect nothing.
 func limitFor(bands []Band, band int, negative bool) float64 {
 	if negative {
 		return bands[len(bands)-1].MaxIMPct

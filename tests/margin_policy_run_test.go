@@ -95,12 +95,12 @@ func TestMarginPolicy_FailSafeWhenMarginDataMissing(t *testing.T) {
 	})
 }
 
-func TestMarginPolicy_DVOLSpikeFreezesEntriesAndRebalance(t *testing.T) {
+func TestMarginPolicy_DVOLDropFreezesEntriesAndRebalance(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.withOpenStrangle(0.5, 0.02)
 	f.exch.imPerLot = 100 // over the limit: a rebalance would downsize...
-	f.exch.setMargin(3, 1)
-	f.market.setIVHistory([]float64{10, 10, 10}, 90) // ...but DVOL just jumped bands
+	f.exch.setMargin(4, 1)
+	f.market.setIVHistory([]float64{50, 50, 50}, 10) // ...but DVOL just dropped a band (35 % → 20 %)
 	f.cfg.DTEDeltaMatrix = append(f.cfg.DTEDeltaMatrix, f.cfg.DTEDeltaMatrix[0])
 	f.cfg.DTEDeltaMatrix[1].DTE = 60 // a vacant slot that would be entered
 	f.startRun()
@@ -115,7 +115,7 @@ func TestMarginPolicy_DVOLSpikeFreezesEntriesAndRebalance(t *testing.T) {
 		t.Error("the frozen slot must be journaled as skipped with its reason")
 	}
 	rec := f.journal.riskChanges(orders.RiskLimitChanged)[0]
-	if !rec.Frozen || rec.LimitIMPct != 20 || !strings.Contains(rec.Detail, "not yet confirmed") {
+	if !rec.Frozen || rec.LimitIMPct != 35 || !strings.Contains(rec.Detail, "not yet confirmed") {
 		t.Errorf("startup record = %+v", rec)
 	}
 }

@@ -85,7 +85,7 @@ func TestStrategy_StoppedLegIsNotResoldWhileFrozen(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.cfg.RepairCooldownHours = 0 // cooldown already over: only the freeze holds it
 	f.stopTheCall()
-	f.market.setIVHistory([]float64{10, 10, 10}, 90) // DVOL just jumped bands → frozen
+	f.market.setIVHistory([]float64{90, 90, 90}, 10) // DVOL just dropped bands → frozen
 	f.startRun()
 
 	eventually(t, 2*time.Second, "call stopped out", func() bool { return len(f.journal.events(orders.EventClosed)) >= 1 })
