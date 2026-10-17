@@ -166,51 +166,19 @@ func markShed(s *strangle, typ string, at time.Time) {
 	s.shed[typ] = at
 }
 
-// botTrendOf is the bot's SMA rule (detectTrend without swing breakouts).
-func botTrendOf(closes []float64) int {
-	n := len(closes)
-	if n < 21 {
-		return 0
-	}
-	sma := func(k int) float64 {
-		t := 0.0
-		for _, c := range closes[n-k:] {
-			t += c
-		}
-		return t / float64(k)
-	}
-	s9, s21, c := sma(9), sma(21), closes[n-1]
-	switch {
-	case s9 > s21 && c > s9:
-		return 1
-	case s9 < s21 && c < s9:
-		return -1
-	}
-	return 0
+// botTrend is the bot's own SMA trend (strategy.SMALevelsOf, what
+// detectTrend runs): swing breakouts first, then SMA9 vs SMA21 with the price
+// beyond SMA9, over the daily closes the bot keeps, read at price (the live
+// spot, or the last close).
+func botTrend(closes []orders.DailyClose, price float64) int {
+	return strategy.SMALevelsOf(botCloses(closes), price, config.FixedSwingPivotN).TrendDir
 }
 
-// botTrendLive is botTrendOf with the live spot as the price, as the bot:
-// the SMAs come from completed daily closes, the price is the last tick.
-func botTrendLive(closes []float64, spot float64) int {
-	n := len(closes)
-	if n < 21 {
-		return 0
-	}
-	sma := func(k int) float64 {
-		t := 0.0
-		for _, c := range closes[n-k:] {
-			t += c
-		}
-		return t / float64(k)
-	}
-	s9, s21 := sma(9), sma(21)
-	switch {
-	case s9 > s21 && spot > s9:
-		return 1
-	case s9 < s21 && spot < s9:
-		return -1
-	}
-	return 0
+// botCloses is the tail of closes the bot's gamma monitor keeps (lookback +
+// pivot neighbours + the days it seeds beyond them).
+func botCloses(closes []orders.DailyClose) []orders.DailyClose {
+	keep := config.FixedGammaTrendLookbackDays + config.FixedSwingPivotN + 2
+	return closes[max(0, len(closes)-keep):]
 }
 
 type day struct {
@@ -670,7 +638,7 @@ func main() {
 	regimeRun := flag.Float64("regimerun", 0, "MODEL, ordinary paths: negative regimes last this many days on average and a >1σ down day starts one (0 = each day independently 20 % negative)")
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
 	shedPersist := flag.Int("shedpersist", 2, "decisions in a row the shed signal must hold before shedding (today's bot: 2 snapshots; 1 = shed at once)")
-	botTrend := flag.Bool("bottrend", true, "trend as the bot: bull needs SMA9 > SMA21 and price > SMA9 (swing breakouts not modelled)")
+	botTrendFlag := flag.Bool("bottrend", true, "trend as the bot (strategy.SMALevelsOf, detectTrend's own rule): bull on a break above the last swing high or SMA9 > SMA21 with price > SMA9, bear on the mirror; false = the old model (SMA9 vs SMA21 with the close beyond SMA21, no swings)")
 	liveTrend := flag.Bool("livetrend", true, "with -bottrend: the live spot against the daily SMAs, as the bot (detectTrend's lastTickPrice); false = the last daily close (before 2026-10-09)")
 	intraNoise := flag.Float64("intranoise", 0, "MODEL: intraday wiggle around the path, in daily σ (DVOL ÷ √365) — a Brownian bridge that still closes each day on the path (0 = smooth)")
 	sideHold := flag.Float64("sidehold", 0, "REJECTED (2026-10-09: within ±2.5 % at 4–8 h, 12–24 h cost BTC up to 16 %), -negentry trend: a side blocked by the trend stays blocked until the trend has not pointed that way for this many hours (0 = today's bot: released on the first non-bear/non-bull reading)")
@@ -683,7 +651,35 @@ func main() {
 	warm := flag.Int("warm", 0, "ordinary days (seed 99) before the shock")
 	bandsFlag := flag.String("bands", "", "IM limits (% of margin balance) of the low,mid,high DVOL bands — IV percentile <30, 30–70, ≥70 (e.g. 15,30,50); empty = the bot's 20,35,50; a confirmed negative regime uses the low one")
 	realExp := flag.Bool("realexp", true, "Deribit's expiry calendar (weeklies ~4 weeks, month-ends ~4 months, quarter-ends ~1 year) instead of every Friday")
+	replayDir := flag.String("replay", "", "REPLAY: folder of recorded mainnet books (data/market/*.csv.gz); runs the bot's rules hour by hour on them instead of a modelled path (see README \"Replay\")")
+	replayFrom := flag.String("from", "", "with -replay: first day traded (YYYY-MM-DD); earlier recordings warm up GEX, DVOL and the regime")
+	replayTo := flag.String("to", "", "with -replay: last day (YYYY-MM-DD, included; empty = the last recording)")
+	replayConfig := flag.String("config", "", "with -replay: the bot's config (default config_<currency>.yaml); stress flags given on the command line change the rule they name")
+	replayEquity := flag.Float64("equity", 0, "with -replay: starting margin balance in the coin (0 = account.json in -dir, else 1)")
+	replayJournal := flag.String("journal", "", "with -replay: the bot's orders.log — prints its own P&L over the same window next to the replay's, and is the book for -start journal")
+	replayStart := flag.String("start", "empty", "with -replay: empty | journal (the journal's open book at -from)")
+	replayTrace := flag.Bool("trace", false, "with -replay: print every action as it happens")
 	flag.Parse()
+	if *replayDir != "" {
+		set := map[string]string{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = f.Value.String() })
+		cfgPath := *replayConfig
+		if cfgPath == "" {
+			cfgPath = "config_" + strings.ToLower(*currency) + ".yaml"
+		}
+		if *replayFrom == "" {
+			fmt.Fprintln(os.Stderr, "-replay needs -from YYYY-MM-DD")
+			os.Exit(2)
+		}
+		err := runReplay(replayOpts{dir: *replayDir, from: *replayFrom, to: *replayTo, configPath: cfgPath,
+			journal: *replayJournal, start: *replayStart, inputs: *dir, equity: *replayEquity,
+			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, set: set})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "replay:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	underlying = *currency
 	if underlying != "BTC" {
 		lot = 1
@@ -856,8 +852,10 @@ func main() {
 	regimes.Record(start.AddDate(0, 0, -2).Add(12*time.Hour), startRegime)
 	regimes.Record(start.AddDate(0, 0, -1).Add(12*time.Hour), startRegime)
 	var closes []float64
+	var dated []orders.DailyClose // the same closes with their days, for the bot's trend
 	for _, c := range mk.Closes {
 		closes = append(closes, c[1])
+		dated = append(dated, orders.DailyClose{Date: time.UnixMilli(int64(c[0])).UTC().Truncate(24 * time.Hour), Close: c[1]})
 	}
 	policy := (&config.Config{}).RiskPolicy(true)
 	if *bandsFlag != "" {
@@ -996,6 +994,7 @@ func main() {
 		shockFrozen := !lastShock.IsZero() && m.now.Sub(lastShock) < time.Duration(*shockFreeze*float64(time.Hour))
 		if dayEnd {
 			closes = append(closes, m.spot)
+			dated = append(dated, orders.DailyClose{Date: m.now.Add(-time.Nanosecond).Truncate(24 * time.Hour), Close: m.spot})
 		}
 		dv.Record(m.now, m.dvol)
 		regimes.Record(m.now, regime)
@@ -1135,11 +1134,12 @@ func main() {
 
 		// GEX shedding (real rule). A shed short takes its wing with it.
 		tr := trend(closes)
-		if *botTrend {
-			tr = botTrendOf(closes)
+		if *botTrendFlag {
+			price := closes[len(closes)-1]
 			if *liveTrend {
-				tr = botTrendLive(closes, m.spot)
+				price = m.spot
 			}
+			tr = botTrend(dated, price)
 		}
 		// The buffer: the rule sees a flip lowered by flipbuf %, so a leg is
 		// shed only when spot is that far below the real flip.
