@@ -7,7 +7,7 @@
 #   add --yes to skip the confirmation
 #
 # A new release must have run in mvp for PROMOTE_SOAK_DAYS (3) — the tagged
-# commit or a later one, per ~/optionsbot-env/history/deploys.tsv — and no open
+# commit or a later one, per <envs>/history/deploys.tsv — and no open
 # issue may carry sme:not-fixed (the SME agent found a merged fix that did not
 # work). Then stable checks out the tag, rebuilds, and every bot's decision loop
 # must report again; if not, stable goes back to its previous release.

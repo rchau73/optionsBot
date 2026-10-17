@@ -14,7 +14,7 @@
 #      issue, labels it agent:needs-human and moves it to Blocked.
 #
 # A person reviews and merges. The agent never merges or deploys.
-# Env: DEV_MODEL, AGENT_WORK_DIR (~/.optionsbot-agents), AGENT_NOTIFY.
+# Env: DEV_MODEL, AGENT_WORK_DIR (<envs>/agent-worktrees), AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

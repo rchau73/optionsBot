@@ -29,7 +29,7 @@ Two local environments run side by side and **share nothing at runtime**. Your d
 
 | | **stable** (pseudo-production) | **mvp** (staging) |
 |---|---|---|
-| Where | `~/optionsbot-env/stable` (its own clone) | `~/optionsbot-env/mvp` (its own clone) |
+| Where | `~/dev/go/optionsBot-env/stable` (its own clone) | `~/dev/go/optionsBot-env/mvp` (its own clone) |
 | Code | a **release tag**, changed only by `scripts/promote.sh` (a person runs it) | `main`: `scripts/agents/deploy.sh` moves it after every merge |
 | Deribit | its own testnet account (`.env` in the clone) | **another** testnet subaccount (`.env` in the clone) |
 | Monitor | <http://localhost:3000> | <http://localhost:3100> |
@@ -37,10 +37,12 @@ Two local environments run side by side and **share nothing at runtime**. Your d
 | Market recorder | on | off (`BOT_RECORD_MARKET=0`): one dataset, no duplicate mainnet calls |
 | Agents | the SME agent judges performance here | the agents run from this clone; the SME agent verifies fixes here |
 
+The environments folder is `optionsBot-env` beside your checkout (`~/dev/go/optionsBot` → `~/dev/go/optionsBot-env`), holding `stable/`, `mvp/`, `history/` (deploys and promotions) and `agent-worktrees/`; set `OPTIONSBOT_ENVS` to put it elsewhere.
+
 **Why separate accounts:** at startup a bot cancels every order of its currency on the account, and every cycle it adopts any short position it finds there. Two environments on one account would cancel each other's orders and manage each other's positions. `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 
 ```bash
-scripts/envctl.sh mvp init              # clone into ~/optionsbot-env/mvp + write deploy.env; then add its .env
+scripts/envctl.sh mvp init              # clone into ~/dev/go/optionsBot-env/mvp + write deploy.env; then add its .env
 scripts/envctl.sh mvp check             # set up, and sharing nothing with stable?
 scripts/envctl.sh stable up             # build and start
 scripts/envctl.sh stable status         # version, containers, monitor URL
@@ -58,7 +60,7 @@ scripts/promote.sh v0.3.0          # tags the commit mvp runs (if the tag is new
 scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the soak
 ```
 
-A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/optionsbot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable). Promotion is testnet-only: a live stable is promoted by hand.
+A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable). Promotion is testnet-only: a live stable is promoted by hand.
 
 ### Inside an environment
 
@@ -74,7 +76,7 @@ data/btc/
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
 ```
 
-`restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/optionsbot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
+`restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
 ## Live monitor
 
@@ -139,7 +141,7 @@ launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
 
-Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. The agents run from the **mvp clone** (`~/optionsbot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
+Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. The agents run from the **mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
 
 ## Kill switch
 

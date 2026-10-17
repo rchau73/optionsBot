@@ -137,7 +137,7 @@ launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
 
-Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from the mvp clone** (`~/optionsbot-env/mvp/scripts/agents/install.sh`), so every deploy also updates the agents' scripts. Logs: `data/sme/<date>/` (reports, collected data) and `data/agents/` (dev runs, reviews, deploys, launchd).
+Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from the mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so every deploy also updates the agents' scripts. Logs: `data/sme/<date>/` (reports, collected data) and `data/agents/` (dev runs, reviews, deploys, launchd).
 
 ## Trade-offs and next steps
 

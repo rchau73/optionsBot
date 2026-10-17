@@ -7,9 +7,9 @@
 
 AGENT_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AGENT_STATE_DIR="$AGENT_REPO_DIR/data/agents"          # gitignored
-AGENT_WORK_DIR="${AGENT_WORK_DIR:-$HOME/.optionsbot-agents}" # worktrees, outside the repo
 # shellcheck source=../env_lib.sh
 source "$AGENT_REPO_DIR/scripts/env_lib.sh"
+AGENT_WORK_DIR="${AGENT_WORK_DIR:-$ENVS_DIR/agent-worktrees}" # worktrees, outside the repo
 # The SME agent judges performance on stable and verifies fixes on mvp, where
 # merged work runs first (see scripts/env_lib.sh).
 MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:$(env_port stable || true)}"
