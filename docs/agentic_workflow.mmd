@@ -4,7 +4,10 @@ flowchart LR
         BOTS[("Testnet bots<br/>BTC · ETH<br/>positions · P&L · margin · journal")]
         SME["<b>① SME agent · daily</b><br/>senior options PM<br/>risk · idle margin · fills · P&L<br/>root cause in the trading rules<br/>business case + acceptance criteria<br/><i>read-only</i>"]
         TRI["② Issue · Triage<br/>cost in coin · USD · days<br/>options + recommendation"]
-        H1(["③ Human decides<br/><b>gate 1</b>"])
+        PRD["⓪ PRD · epics<br/>product-manager + ux-designer<br/>roadmap · MVP · prototypes"]
+        H0(["Human approves<br/>PRD merge · prototype<br/><b>gate 0</b>"])
+        PM["<b>③ PM agent · 15 min</b><br/>senior product manager<br/>one epic per ticket · priority<br/>Ready only if the PRD covers it<br/><i>read-only</i>"]
+        H1(["Human decides<br/>the rest · <b>gate 1</b>"])
     end
 
     subgraph ENG["⚙️ ENGINEERING DELIVERY · build it right"]
@@ -19,7 +22,10 @@ flowchart LR
         BLK["Blocked<br/>needs-human"]
     end
 
-    BOTS ==> SME ==> TRI ==> H1 --> READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
+    PRD ==> H0 ==>|approved epics| PM
+    BOTS ==> SME ==> TRI ==> PM ==>|"approved epic · rule area covered<br/>· prototype approved"| READY
+    PM -->|outside the PRD| H1 --> READY
+    READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
     REV ==>|"🛑 blocking finding (bug): review posted + card back to Ready<br/>Dev fixes on the same PR · ≤ 2 rounds"| READY
     DEP -->|restart| BOTS
     DEV -.->|questions /<br/>failing checks| BLK -.->|answered| READY
@@ -30,10 +36,10 @@ flowchart LR
     classDef human fill:#fff3e0,stroke:#ef6c00,color:#000,stroke-width:2px
     classDef gh fill:#e3f2fd,stroke:#1565c0,color:#000
     classDef run fill:#e8f5e9,stroke:#2e7d32,color:#000
-    class SME sme
+    class SME,PM sme
     class DEV,REV,DEP agent
-    class H1,H2 human
-    class TRI,READY,PR,DONE,BLK gh
+    class H0,H1,H2 human
+    class PRD,TRI,READY,PR,DONE,BLK gh
     class BOTS run
     style BIZ fill:#fffdf3,stroke:#f9a825,stroke-width:3px
     style ENG fill:#fafafa,stroke:#9e9e9e,stroke-width:1px,stroke-dasharray:4 3

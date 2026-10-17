@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # dev_agent.sh — the Dev agent: implements one Ready issue as a pull request.
 #
-#   1. takes the oldest issue in the board's Ready column → In progress;
+#   1. takes the Ready card the PM agent ranked first (Priority, then the
+#      oldest issue; never an epic) → In progress;
 #   2. creates an isolated worktree on branch agent/issue-<n> (reused when a
 #      PR is already open, so review comments are addressed on the same PR);
 #   3. runs Claude Code headless with the developer skill in agent mode. It
@@ -22,7 +23,7 @@ take_lock dev || exit 0
 require_tools claude gh git go gofmt python3 || exit 1
 
 slug="$(repo_slug)"
-next="$(items_in_status "Ready" | head -1)"
+next="$(ready_next)"
 [[ -n "$next" ]] || { log "dev: nothing in Ready"; exit 0; }
 item="${next%% *}"; issue="${next##* }"
 branch="agent/issue-$issue"

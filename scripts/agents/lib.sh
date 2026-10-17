@@ -34,7 +34,8 @@ repo_owner() { repo_slug | cut -d/ -f1; }
 PROJECT_CACHE="$AGENT_STATE_DIR/project.json"
 
 load_project_cache() {
-  if [[ -f "$PROJECT_CACHE" ]] && [[ -z "$(find "$PROJECT_CACHE" -mmin +1440 2>/dev/null)" ]]; then return 0; fi
+  if [[ -f "$PROJECT_CACHE" ]] && [[ -z "$(find "$PROJECT_CACHE" -mmin +1440 2>/dev/null)" ]] &&
+    grep -q '"priority_field"' "$PROJECT_CACHE"; then return 0; fi
   local owner num pid
   owner="$(repo_owner)"
   num="$(gh project list --owner "$owner" --format json -L 100 |
@@ -43,9 +44,13 @@ load_project_cache() {
   pid="$(gh project view "$num" --owner "$owner" --format json -q .id)"
   gh project field-list "$num" --owner "$owner" --format json |
     py 'import json,sys
-f = next(f for f in json.load(sys.stdin)["fields"] if f["name"] == "Status")
+fields = json.load(sys.stdin)["fields"]
+f = next(f for f in fields if f["name"] == "Status")
+p = next((f for f in fields if f["name"] == "Priority"), None)  # setup_github.sh creates it
 json.dump({"number": int(sys.argv[1]), "id": sys.argv[2], "status_field": f["id"],
-           "options": {o["name"]: o["id"] for o in f["options"]}}, open(sys.argv[3], "w"))' "$num" "$pid" "$PROJECT_CACHE"
+           "options": {o["name"]: o["id"] for o in f["options"]},
+           "priority_field": p["id"] if p else None,
+           "priority_options": {o["name"]: o["id"] for o in p["options"]} if p else {}}, open(sys.argv[3], "w"))' "$num" "$pid" "$PROJECT_CACHE"
 }
 
 # project_info → "NUMBER PROJECT_ID STATUS_FIELD_ID" of the board, or fails.
@@ -96,6 +101,57 @@ for line in sys.stdin:
 # item_for_issue <issue number> → project item id (empty when not on the board).
 item_for_issue() {
   board_cards | awk -v n="$1" '$2 == n { print $1; exit }'
+}
+
+# board_json → JSON list of this repo's issues on the board: item, id (node),
+# number, title, state, status, priority, labels, updatedAt, parent (epic
+# issue number or null). Read from the issues' side, like board_cards.
+board_json() {
+  local slug num
+  slug="$(repo_slug)"
+  num="$(project_info | cut -d' ' -f1)" || return 1
+  gh api graphql -f query='
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { id number title state updatedAt labels(first: 20) { nodes { name } } parent { number }
+        projectItems(first: 10) { nodes { id project { number }
+          status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+          priority: fieldValueByName(name: "Priority") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } }
+    }
+  }
+}' -f owner="${slug%/*}" -f name="${slug#*/}" |
+    py 'import json,sys; num = int(sys.argv[1]); out = []
+for i in json.load(sys.stdin)["data"]["repository"]["issues"]["nodes"]:
+    for it in i["projectItems"]["nodes"]:
+        if it["project"]["number"] == num:
+            out.append({"item": it["id"], "id": i["id"], "number": i["number"], "title": i["title"],
+                "state": i["state"], "status": (it.get("status") or {}).get("name") or "-",
+                "priority": (it.get("priority") or {}).get("name"),
+                "labels": [l["name"] for l in i["labels"]["nodes"]], "updatedAt": i["updatedAt"],
+                "parent": (i.get("parent") or {}).get("number")})
+json.dump(out, sys.stdout)' "$num"
+}
+
+# ready_next → "ITEM_ID ISSUE_NUMBER" of the Ready card to build next: highest
+# Priority first (P0…P3, the PM agent's order; none last), then the oldest
+# issue. Epic issues are never built.
+ready_next() {
+  board_json | py 'import json,sys
+cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN" and "epic" not in c["labels"]]
+rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"], 9), c["number"])
+for c in sorted(cards, key=rank)[:1]: print(c["item"], c["number"])'
+}
+
+# set_priority <item id> <P0|P1|P2|P3>
+set_priority() {
+  load_project_cache || return 1
+  local pid fid oid
+  pid="$(project_info | cut -d' ' -f2)"
+  fid="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["priority_field"] or "")' "$PROJECT_CACHE")"
+  oid="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["priority_options"].get(sys.argv[2], ""))' "$PROJECT_CACHE" "$2")"
+  [[ -n "$fid" && -n "$oid" ]] || { log "no Priority field/option $2 on the board: run scripts/agents/setup_github.sh"; return 1; }
+  gh project item-edit --id "$1" --project-id "$pid" --field-id "$fid" --single-select-option-id "$oid" >/dev/null
 }
 
 # set_status <item id> <status name>

@@ -30,6 +30,9 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: Agent scripts (PM board rules)
+        run: python3 -m unittest discover -s scripts/agents -p 'test_*.py'
+
       - name: Tests (race detector, coverage)
         run: go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=coverage.out
 
