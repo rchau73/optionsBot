@@ -39,6 +39,8 @@ Two local environments run side by side and **share nothing at runtime**. Your d
 
 The environments folder is `optionsBot-env` beside your checkout (`~/dev/go/optionsBot` → `~/dev/go/optionsBot-env`), holding `stable/`, `mvp/`, `history/` (deploys and promotions) and `agent-worktrees/`; set `OPTIONSBOT_ENVS` to put it elsewhere.
 
+**Run `scripts/envctl.sh` and `scripts/promote.sh` from your development checkout** (`~/dev/go/optionsBot`), on an up-to-date `main`. Each environment's clone keeps the scripts of the code it runs: stable's are its release tag's, which may predate today's layout or checks. Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `main`.
+
 **Why separate accounts:** at startup a bot cancels every order of its currency on the account, and every cycle it adopts any short position it finds there. Two environments on one account would cancel each other's orders and manage each other's positions. `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 
 ```bash
@@ -51,7 +53,7 @@ scripts/envctl.sh stable stop bot-eth   # any scripts/envctl.sh stable command, 
 scripts/envctl.sh stable down
 ```
 
-Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`. `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**). A plain `scripts/envctl.sh stable up` refuses to run.
+Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`. `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**). A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
 
 ### Releasing to stable
 

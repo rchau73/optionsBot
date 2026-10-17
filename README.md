@@ -108,7 +108,7 @@ make build                        # → ./bot
 ./bot --config config_btc.yaml --debug
 ```
 
-With Docker, as one of the two local environments, **stable** (a promoted release) and **mvp** (`main`). Each has its own clone and its own Deribit account, and they share nothing ([operations guide](docs/operations.md#environments-stable-and-mvp)):
+With Docker, as one of the two local environments, **stable** (a promoted release) and **mvp** (`main`). Each has its own clone and its own Deribit account, and they share nothing ([operations guide](docs/operations.md#environments-stable-and-mvp)). Both live in `optionsBot-env/` beside this checkout. Run these commands **from this checkout**, never from inside an environment's clone:
 
 ```bash
 scripts/envctl.sh stable init && scripts/envctl.sh stable up   # then http://localhost:3000
