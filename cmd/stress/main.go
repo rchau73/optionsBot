@@ -659,6 +659,7 @@ func main() {
 	replayJournal := flag.String("journal", "", "with -replay: the bot's orders.log — prints its own P&L over the same window next to the replay's, and is the book for -start journal")
 	replayStart := flag.String("start", "empty", "with -replay: empty | journal (the journal's open book at -from)")
 	replayTrace := flag.Bool("trace", false, "with -replay: print every action as it happens")
+	replayGEX := flag.String("gex", "", "with -replay: folder of minute GEX records (data/market_gex/*.jsonl.gz, #122) — the GEX side then decides each minute on the last hourly book's prices; empty = market_gex next to the -replay folder if it has any; none = hourly only")
 	flag.Parse()
 	if *replayDir != "" {
 		set := map[string]string{}
@@ -672,7 +673,7 @@ func main() {
 			os.Exit(2)
 		}
 		err := runReplay(replayOpts{dir: *replayDir, from: *replayFrom, to: *replayTo, configPath: cfgPath,
-			journal: *replayJournal, start: *replayStart, inputs: *dir, equity: *replayEquity,
+			journal: *replayJournal, start: *replayStart, inputs: *dir, gexDir: *replayGEX, equity: *replayEquity,
 			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)

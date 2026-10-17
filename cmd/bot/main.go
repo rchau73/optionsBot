@@ -43,6 +43,10 @@ const marketHistoryDir = "data/market"
 // options (prices in USDC), to compare their liquidity with data/market.
 const linearHistoryDir = "data/market_usdc"
 
+// gexHistoryDir holds every GEX snapshot (one JSON line a minute, a gzip file
+// per UTC day) for the replay; like data/market, never reset.
+const gexHistoryDir = "data/market_gex"
+
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
@@ -189,6 +193,11 @@ func runLive(cfg *config.Config) error {
 		go recorder.New(gexMgr, md.DVOL, marketHistoryDir, time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
 		go recorder.New(recorder.NewLinearBook(marketGW, cfg.Underlying), md.DVOL, linearHistoryDir,
 			time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
+		// Every GEX snapshot (one a minute), so the replay can step the GEX
+		// side at the bot's pace (#122).
+		flipBuffer := func() float64 { return strategy.FlipBufferPct(cfg.GammaFlipBufferSD, md.DVOL()) }
+		go recorder.NewGEXRecorder(gexMgr, md.DVOL, flipBuffer,
+			time.Duration(max(cfg.GEXBiasFlipWindowMinutes, 0))*time.Minute, gexHistoryDir).Run(ctx)
 	}
 
 	// P&L history for the monitor chart; data/ is a mounted volume in Docker,

@@ -31,8 +31,16 @@ type Settings struct {
 	// spans ~60 per-minute snapshots; on hourly snapshots it is raised to two
 	// snapshot intervals so the median still holds against a moving flip.
 	FlipWindow time.Duration
-	Book       []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace      func(at time.Time, line string) // every action, as it happens (nil = none)
+	// GEX are the minute GEX records (recorder.ReadGEXDir, #122); nil = the
+	// GEX side is rebuilt from each hourly book. Where they exist the replay
+	// decides at each record, as the bot does once a minute: regime, flip,
+	// bias, shed confirmation and repair anchors at that pace, spot from the
+	// record; option prices, greeks and fills stay those of the last hourly
+	// book (held, not interpolated), so an exit fires on the last book's mark
+	// and fills at its ask. An hour without records falls back to its book.
+	GEX   []recorder.GEXRecord
+	Book  []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -59,7 +67,8 @@ type Day struct {
 // Result sums up a replay.
 type Result struct {
 	Start, End         time.Time
-	Snapshots          int
+	Snapshots          int     // decisions (one per hourly book or minute GEX record)
+	GEXMinutes         int     // of them, decisions on a minute GEX record
 	Equity0, Equity    float64 // margin balance at the start and end (coin)
 	Net                float64 // Equity − Equity0: realised + unrealised, net of fees
 	Realised, Fees     float64
@@ -105,7 +114,7 @@ func (s *strangle) legs() []*orders.Position {
 	return out
 }
 
-// snapSource serves the GEX snapshot of the current hour to the gamma monitor.
+// snapSource serves the GEX snapshot of the current decision to the gamma monitor.
 type snapSource struct{ snap *gex.Snapshot }
 
 func (s *snapSource) Snapshot() *gex.Snapshot { return s.snap }
@@ -159,7 +168,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	e.gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, e.dvol.Current)
 	e.gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
 	e.gamma.SetDirection(cfg.GEXDirection)
-	e.gamma.SetBiasFlipWindow(e.flipWindow(snaps))
+	e.gamma.SetBiasFlipWindow(e.flipWindow(snaps, set.GEX))
 	var seed []orders.DailyClose
 	for _, c := range set.Closes {
 		if len(snaps) == 0 || c.Date.Before(snaps[0].At.UTC().Truncate(24*time.Hour)) {
@@ -174,16 +183,16 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	}
 
 	started := false
-	for _, snap := range snaps {
-		if !set.To.IsZero() && snap.At.After(set.To) {
+	for _, t := range ticks(snaps, set.GEX) {
+		if !set.To.IsZero() && t.at.After(set.To) {
 			break
 		}
-		if !started && !snap.At.Before(set.From) {
+		if !started && !t.at.Before(set.From) {
 			started = true
-			e.res.Start = snap.At
-			e.openBook(snap)
+			e.res.Start = t.at
+			e.openBook(snaps[t.book])
 		}
-		e.step(snap, started)
+		e.step(t.at, snaps[t.book], t.gex, started)
 	}
 	if !started {
 		return Result{}, fmt.Errorf("replay: no snapshot in the window from %s", set.From.Format(time.DateOnly))
@@ -201,13 +210,15 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	return e.res, nil
 }
 
-// flipWindow is the bias's median window for these snapshots (see Settings).
-func (e *engine) flipWindow(snaps []recorder.Snapshot) time.Duration {
+// flipWindow is the bias's median window for these snapshots (see Settings):
+// on minute records the bot's own window holds; on hourly books alone it is
+// raised to two book intervals.
+func (e *engine) flipWindow(snaps []recorder.Snapshot, recs []recorder.GEXRecord) time.Duration {
 	w := e.set.FlipWindow
 	if w == 0 {
 		w = time.Duration(max(e.cfg.GEXBiasFlipWindowMinutes, 0)) * time.Minute
 	}
-	if w <= 0 || len(snaps) < 2 {
+	if w <= 0 || len(recs) > 0 || len(snaps) < 2 {
 		return w
 	}
 	step := snaps[1].At.Sub(snaps[0].At)
@@ -247,54 +258,71 @@ func (e *engine) openBook(snap recorder.Snapshot) {
 	}
 }
 
-// step runs one snapshot through the bot's cycle (strategy.evaluate):
-// marks → GEX → shed → exit rules → margin policy → repairs → entries.
-func (e *engine) step(snap recorder.Snapshot, trading bool) {
-	spot := snap.Spot()
+// step runs one decision at `at` through the bot's cycle (strategy.evaluate):
+// marks → GEX → shed → exit rules → margin policy → repairs → entries. The
+// prices are snap's; the GEX side, spot and DVOL are rec's when there is one
+// (a minute record), else rebuilt from snap.
+func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRecord, trading bool) {
+	spot, dvol := snap.Spot(), snap.DVOL
+	var gexErr error
+	if rec != nil {
+		if rec.Spot > 0 {
+			spot = rec.Spot
+		}
+		if rec.DVOL > 0 {
+			dvol = rec.DVOL
+		}
+		e.src.snap = rec.Snapshot()
+	} else {
+		var g gex.Snapshot
+		g, _, gexErr = gex.Build(snap.SummaryRows(), snap.At, gex.Params{Underlying: e.cfg.Underlying,
+			StrikeRangePct: e.cfg.GEXStrikeRangePct, Method: e.cfg.GEXMethod})
+		if gexErr == nil {
+			e.src.snap = &g
+		}
+	}
 	if spot <= 0 {
 		return
 	}
-	e.now = snap.At
-	if snap.DVOL > 0 {
-		e.dvol.Record(snap.At, snap.DVOL)
+	e.now = at
+	if dvol > 0 {
+		e.dvol.Record(at, dvol)
 	}
 	quotes := snap.ByName()
-	g, _, gexErr := gex.Build(snap.SummaryRows(), snap.At, gex.Params{Underlying: e.cfg.Underlying,
-		StrikeRangePct: e.cfg.GEXStrikeRangePct, Method: e.cfg.GEXMethod})
-	if gexErr == nil {
-		e.src.snap = &g
-	}
-	e.gamma.PushPriceAt(snap.At, spot)
+	e.gamma.PushPriceAt(at, spot)
 	dec := e.gamma.Evaluate()
-	st := e.riskStatus(snap.At, dec)
+	st := e.riskStatus(at, dec)
 	if !trading {
 		return
 	}
-	if e.day != nil && !snap.At.UTC().Truncate(24*time.Hour).Equal(e.day.Date) {
+	if e.day != nil && !at.UTC().Truncate(24*time.Hour).Equal(e.day.Date) {
 		e.closeDay()
 	}
 	if e.day == nil {
-		e.day = &Day{Date: snap.At.UTC().Truncate(24 * time.Hour)}
+		e.day = &Day{Date: at.UTC().Truncate(24 * time.Hour)}
 	}
 	e.res.Snapshots++
-	e.res.End = snap.At
-	e.refreshMarks(snap, quotes, spot)
+	if rec != nil {
+		e.res.GEXMinutes++
+	}
+	e.res.End = at
+	e.refreshMarks(at, quotes, spot)
 
 	if dec.Shed != strategy.GammaActionNone {
-		e.shed(snap.At, dec, quotes)
+		e.shed(at, dec, quotes)
 	}
-	stopsDeferred := e.exits(snap.At, quotes)
+	stopsDeferred := e.exits(at, quotes)
 	u := e.usage(spot)
 	mmBreach := u.MMPct() >= st.MaxMMPct
 	if mmBreach {
-		e.cutForMM(snap.At, u, st, quotes)
+		e.cutForMM(at, u, st, quotes)
 	}
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.
 	if !mmBreach && !stopsDeferred && gexErr == nil {
-		e.repairs(snap, dec, st, quotes)
+		e.repairs(at, snap, dec, st, quotes)
 		if !st.Frozen {
-			e.entries(snap, dec, st, quotes, spot)
+			e.entries(at, snap, dec, st, quotes, spot)
 		}
 	}
 
@@ -371,12 +399,12 @@ func (e *engine) riskStatus(at time.Time, dec strategy.GammaDecision) risk.Statu
 // refreshMarks copies each held leg's recorded quote onto it (refreshMarks):
 // a leg without one keeps its last mark, not live. A leg past its expiry
 // settles at its intrinsic value.
-func (e *engine) refreshMarks(snap recorder.Snapshot, quotes map[string]recorder.Quote, spot float64) {
+func (e *engine) refreshMarks(at time.Time, quotes map[string]recorder.Quote, spot float64) {
 	for _, s := range e.book {
 		for _, p := range s.legs() {
-			if !snap.At.Before(p.Expiry) {
+			if !at.Before(p.Expiry) {
 				v := inversePrice(p.OptionType, spot, p.Strike, 0, 0)
-				e.close(snap.At, s, p, p.Qty, v, 0, "expired")
+				e.close(at, s, p, p.Qty, v, 0, "expired")
 				continue
 			}
 			q, ok := quotes[p.Instrument]
@@ -484,8 +512,8 @@ func (e *engine) cutForMM(at time.Time, u risk.Usage, st risk.Status, quotes map
 
 // repairs re-sells the missing leg of each one-legged strangle when the
 // bot's repair gate (holds.go repairGate) lets it.
-func (e *engine) repairs(snap recorder.Snapshot, dec strategy.GammaDecision, st risk.Status, quotes map[string]recorder.Quote) {
-	at, c := snap.At, e.cfg
+func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.GammaDecision, st risk.Status, quotes map[string]recorder.Quote) {
+	c := e.cfg
 	bias := c.GEXDirection == strategy.DirectionBias
 	if bias { // every anchor counts every snapshot (repairIncompleteStrangles)
 		for k, a := range e.anchors {
@@ -553,8 +581,8 @@ func (e *engine) repairs(snap recorder.Snapshot, dec strategy.GammaDecision, st 
 // entries opens each vacant slot (maybeOpenStrangles): its expiry
 // (SelectSlotExpiry), a strike pair (SelectStrikePair), the sides the GEX
 // signal and the regime-side rule allow, sized by the slot share and capped.
-func (e *engine) entries(snap recorder.Snapshot, dec strategy.GammaDecision, st risk.Status, quotes map[string]recorder.Quote, spot float64) {
-	at, c := snap.At, e.cfg
+func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.GammaDecision, st risk.Status, quotes map[string]recorder.Quote, spot float64) {
+	c := e.cfg
 	slots := c.Slots()
 	occupied := map[config.StrangleSlot]bool{}
 	held := map[time.Time]bool{}

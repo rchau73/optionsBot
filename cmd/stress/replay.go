@@ -60,7 +60,8 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 
 // replayOwnFlags are the replay's own flags (and the shared input folder).
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
-	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true}
+	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
+	"gex": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -79,6 +80,7 @@ func intField(f func(*config.Config) *int) func(*config.Config, string) error {
 
 type replayOpts struct {
 	dir, from, to, configPath, journal, start, inputs string
+	gexDir                                            string // minute GEX records; "" = market_gex beside dir, "none" = hourly
 	equity, flipWindowMin                             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
@@ -126,6 +128,15 @@ func runReplay(o replayOpts) error {
 
 	set := replay.Settings{Cfg: cfg, From: from, To: to, Equity: o.equity,
 		FlipWindow: time.Duration(o.flipWindowMin * float64(time.Minute))}
+	gexDir := o.gexDir
+	if gexDir == "" {
+		gexDir = filepath.Join(filepath.Dir(filepath.Clean(o.dir)), "market_gex")
+	}
+	if gexDir != "none" {
+		if set.GEX, err = recorder.ReadGEXDir(gexDir, time.Time{}, to); err != nil {
+			return err
+		}
+	}
 	set.Closes, set.DVOL = readMarketJSON(filepath.Join(o.inputs, "market.json"))
 	if set.Equity <= 0 {
 		set.Equity = readEquity(filepath.Join(o.inputs, "account.json"), cfg.Underlying)
@@ -164,8 +175,14 @@ func runReplay(o replayOpts) error {
 	if len(changed) > 0 {
 		fmt.Printf(", %s", strings.Join(changed, " "))
 	}
-	fmt.Printf("\n\nStart: %s book, margin balance %.4f %s. Prices, spreads, greeks, OI and DVOL recorded; MODEL: margin (scan ±16 %% spot, IV −20/+30 %%, MM = %.0f %% of IM) and fills (sells at the price floor if the book has a bid, buy-backs at the ask).\n\n",
+	fmt.Printf("\n\nStart: %s book, margin balance %.4f %s. Prices, spreads, greeks, OI and DVOL recorded; MODEL: margin (scan ±16 %% spot, IV −20/+30 %%, MM = %.0f %% of IM) and fills (sells at the price floor if the book has a bid, buy-backs at the ask).\n",
 		o.start, set.Equity, u, replay.MMRatio*100)
+	if res.GEXMinutes > 0 {
+		fmt.Printf("GEX: %d of %d decisions on minute records (%s, %d read): regime, flip, bias, sheds and repair anchors each minute; prices held at the last hourly book.\n\n",
+			res.GEXMinutes, res.Snapshots, gexDir, len(set.GEX))
+	} else {
+		fmt.Printf("GEX: rebuilt from each hourly book (no minute records in the window).\n\n")
+	}
 	if !o.quiet {
 		fmt.Println("| Date | Spot | DVOL | GEX live / confirmed neg | Direction | Limit | IM % | Equity " + u + " | Day P&L | Fees | Trades | Sheds | Repairs | Actions |")
 		fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
