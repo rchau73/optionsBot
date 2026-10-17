@@ -26,6 +26,7 @@ type View struct {
 	Trend         string                `json:"trend"`           // the direction the rules use (bull | bear | neutral)
 	Direction     string                `json:"direction"`       // its source: sma | bias (gex_direction)
 	SMATrend      string                `json:"sma_trend"`       // recorded for comparison whatever the source
+	SMA           SMALevels             `json:"sma"`             // the levels behind SMATrend
 	Bias          string                `json:"gex_bias"`        // up | down | neutral
 	Account       AccountView           `json:"account"`
 	Risk          RiskView              `json:"risk"`
@@ -140,6 +141,7 @@ type published struct {
 	at      time.Time
 	trend   string
 	sma     string
+	levels  SMALevels
 	bias    string
 	pending []PendingView
 	account AccountView
@@ -170,12 +172,12 @@ func (s *Strategy) publish() {
 		pending = append(pending, pv)
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].SubmittedAt.Before(pending[j].SubmittedAt) })
-	trend, sma, bias := s.gamma.Trend(), s.gamma.SMATrend(), s.gamma.Bias()
+	trend, levels, bias := s.gamma.Trend(), s.gamma.SMALevels(), s.gamma.Bias()
 
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
 	s.pub.at = time.Now()
-	s.pub.trend, s.pub.sma, s.pub.bias = trend, sma, bias
+	s.pub.trend, s.pub.sma, s.pub.levels, s.pub.bias = trend, levels.Trend, levels, bias
 	s.pub.pending = pending
 }
 
@@ -225,7 +227,7 @@ func (s *Strategy) setHalted() {
 // from any goroutine; it never calls the exchange.
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
-	pub := published{at: s.pub.at, trend: s.pub.trend, sma: s.pub.sma, bias: s.pub.bias, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
+	pub := published{at: s.pub.at, trend: s.pub.trend, sma: s.pub.sma, levels: s.pub.levels, bias: s.pub.bias, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
 		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff}
 	s.pub.mu.RUnlock()
 
@@ -246,6 +248,7 @@ func (s *Strategy) View() View {
 		Trend:         pub.trend,
 		Direction:     s.cfg.GEXDirection,
 		SMATrend:      pub.sma,
+		SMA:           pub.levels,
 		Bias:          pub.bias,
 		Account:       pub.account,
 		Risk:          pub.risk,

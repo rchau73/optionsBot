@@ -13,7 +13,29 @@ const (
 	EventSkipped    = "skipped"
 	EventPnL        = "pnl"
 	EventRisk       = "risk_limit"
+	EventTrend      = "trend_changed"
 )
+
+// TrendRecord is one change of the SMA trend with the levels behind it. It
+// is journaled whatever the direction source (gex_direction): under bias the
+// SMA trend is recorded for comparison. Levels of 0 are unknown.
+type TrendRecord struct {
+	Timestamp     time.Time `json:"timestamp"`
+	Event         string    `json:"event"` // always "trend_changed"
+	StrategyID    string    `json:"strategy_id"`
+	Direction     string    `json:"direction"` // the source the rules use: sma | bias
+	From          string    `json:"from"`      // bull | bear | neutral
+	To            string    `json:"to"`
+	Reason        string    `json:"reason"` // the condition that set To
+	Detail        string    `json:"detail"`
+	Spot          float64   `json:"spot"`
+	SMA9          float64   `json:"sma9"`
+	SMA21         float64   `json:"sma21"`
+	SwingHigh     float64   `json:"swing_high"`
+	SwingHighDate string    `json:"swing_high_date,omitempty"`
+	SwingLow      float64   `json:"swing_low"`
+	SwingLowDate  string    `json:"swing_low_date,omitempty"`
+}
 
 // Risk changes journaled as EventRisk.
 const (

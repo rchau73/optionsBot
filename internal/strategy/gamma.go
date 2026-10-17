@@ -366,7 +366,8 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		return GammaDecision{Action: GammaActionNone, Regime: "UNKNOWN"}
 	}
 
-	smaDir := g.detectTrend()
+	levels := g.SMALevels()
+	smaDir := levels.TrendDir
 	dec := GammaDecision{
 		Regime:         snap.Regime,
 		RegimeScore:    snap.RegimeScore,
@@ -375,10 +376,10 @@ func (g *GammaMonitor) Evaluate() GammaDecision {
 		Direction:      DirectionSMA,
 		SMATrend:       trendWord(smaDir),
 		SMADir:         smaDir,
-		SwingHigh:      g.lastSwingHigh(),
-		SwingLow:       g.lastSwingLow(),
-		SMA9:           g.sma(9),
-		SMA21:          g.sma(21),
+		SwingHigh:      levels.SwingHigh,
+		SwingLow:       levels.SwingLow,
+		SMA9:           levels.SMA9,
+		SMA21:          levels.SMA21,
 	}
 
 	if g.dvol != nil {
@@ -519,40 +520,78 @@ func (g *GammaMonitor) trendLabel() string {
 	}
 }
 
-// detectTrend uses daily swing levels to determine direction.
-// Bull (+1): current price broke above the last confirmed swing high.
-// Bear (-1): current price broke below the last confirmed swing low.
-// Neutral (0): price is between swing levels, or not enough history yet.
-func (g *GammaMonitor) detectTrend() int {
-	swingHigh := g.lastSwingHigh()
-	swingLow := g.lastSwingLow()
-	sma21 := g.sma(21)
-	sma9 := g.sma(9)
-	if swingHigh == 0 && swingLow == 0 {
-		return 0
-	}
-	price := g.lastTickPrice
+// SMALevels are the levels behind the SMA trend (detectTrend): the SMAs of
+// the daily closes, the last confirmed swing high and low with their days,
+// the price the trend is read at (the live spot) and the condition that set
+// it. The monitor shows them so a person can see how far a trend change is.
+type SMALevels struct {
+	SMA9          float64 `json:"sma9"`
+	SMA21         float64 `json:"sma21"`
+	SwingHigh     float64 `json:"swing_high"`                // 0 = none confirmed
+	SwingHighDate string  `json:"swing_high_date,omitempty"` // UTC day, YYYY-MM-DD
+	SwingLow      float64 `json:"swing_low"`
+	SwingLowDate  string  `json:"swing_low_date,omitempty"`
+	Price         float64 `json:"price"`
+	Trend         string  `json:"trend"` // bull | bear | neutral
+	Reason        string  `json:"reason"`
+	TrendDir      int     `json:"-"`
+}
 
-	BullishBreakout := swingHigh > 0 && price > swingHigh
-	BearishBreakdown := swingLow > 0 && price < swingLow
+// SMA trend reasons (SMATrendOf): which condition set the trend.
+const (
+	TrendReasonNoSwing   = "no confirmed swing yet"
+	TrendReasonBreakout  = "price > swing high"
+	TrendReasonBullSMA   = "SMA9 > SMA21 and price > SMA9"
+	TrendReasonBreakdown = "price < swing low"
+	TrendReasonBearSMA   = "SMA9 < SMA21 and price < SMA9"
+	TrendReasonInside    = "inside the swings, SMAs and price not aligned"
+)
+
+// SMATrendOf is the SMA trend rule, pure: bull (+1) when price broke above
+// the last swing high, or SMA9 > SMA21 with price above SMA9; bear (−1) on
+// the mirror conditions; neutral (0) otherwise or without a confirmed swing.
+// The reason names the condition that fired. A level of 0 is unknown.
+func SMATrendOf(price, swingHigh, swingLow, sma9, sma21 float64) (int, string) {
+	if swingHigh == 0 && swingLow == 0 {
+		return 0, TrendReasonNoSwing
+	}
 	// Price must be above SMA9 (not just SMA21) for a bull signal. When price
 	// is between the two SMAs (sma21 < price < sma9) that is a neutral
 	// consolidation zone, not a confirmed trend. Using "price > sma21" alone
 	// triggered bull even mid-consolidation, causing gamma_close to kill
 	// freshly-opened call legs every eval cycle.
-	BullishSMA := sma21 > 0 && sma9 > sma21 && price > sma9
-	BearishSMA := sma21 > 0 && sma9 < sma21 && price < sma9
-
-	if BullishBreakout || BullishSMA {
-		return 1
+	switch {
+	case swingHigh > 0 && price > swingHigh:
+		return 1, TrendReasonBreakout
+	case sma21 > 0 && sma9 > sma21 && price > sma9:
+		return 1, TrendReasonBullSMA
+	case swingLow > 0 && price < swingLow:
+		return -1, TrendReasonBreakdown
+	case sma21 > 0 && sma9 < sma21 && price < sma9:
+		return -1, TrendReasonBearSMA
 	}
-	if BearishBreakdown || BearishSMA {
-		return -1
-	}
-	return 0
+	return 0, TrendReasonInside
 }
 
-// sma returns the simple moving average of the last 21 daily closes.
+// SMALevels returns the SMA trend's levels now.
+func (g *GammaMonitor) SMALevels() SMALevels {
+	l := SMALevels{SMA9: g.sma(9), SMA21: g.sma(21), Price: g.lastTickPrice}
+	var at time.Time
+	if l.SwingHigh, at = g.lastSwingHigh(); !at.IsZero() {
+		l.SwingHighDate = at.UTC().Format(time.DateOnly)
+	}
+	if l.SwingLow, at = g.lastSwingLow(); !at.IsZero() {
+		l.SwingLowDate = at.UTC().Format(time.DateOnly)
+	}
+	l.TrendDir, l.Reason = SMATrendOf(l.Price, l.SwingHigh, l.SwingLow, l.SMA9, l.SMA21)
+	l.Trend = trendWord(l.TrendDir)
+	return l
+}
+
+// detectTrend is the SMA trend now (SMATrendOf on the current levels).
+func (g *GammaMonitor) detectTrend() int { return g.SMALevels().TrendDir }
+
+// sma returns the simple moving average of the last days daily closes.
 func (g *GammaMonitor) sma(days int) float64 {
 	n := len(g.dailyCloses)
 	if n == 0 {
@@ -569,63 +608,38 @@ func (g *GammaMonitor) sma(days int) float64 {
 	return sum / float64(window)
 }
 
-// lastSwingHigh returns the most recent confirmed daily swing high.
-// A swing high at index i requires dailyCloses[i].price to exceed all closes
-// in the g.swingPivotN days on each side. Returns 0 if none found.
-func (g *GammaMonitor) lastSwingHigh() float64 {
-	h := g.dailyCloses
-	n := g.swingPivotN
-	for i := len(h) - n - 1; i >= n; i-- {
-		p := h[i].price
-		isHigh := true
-		for j := i - n; j < i; j++ {
-			if h[j].price >= p {
-				isHigh = false
-				break
-			}
-		}
-		if isHigh {
-			for j := i + 1; j <= i+n; j++ {
-				if h[j].price >= p {
-					isHigh = false
-					break
-				}
-			}
-		}
-		if isHigh {
-			return p
-		}
-	}
-	return 0
+// lastSwingHigh returns the most recent confirmed daily swing high and its
+// day. A swing high at index i requires dailyCloses[i].price to exceed all
+// closes in the g.swingPivotN days on each side. Returns 0 if none found.
+func (g *GammaMonitor) lastSwingHigh() (float64, time.Time) {
+	return g.lastPivot(func(other, p float64) bool { return other >= p })
 }
 
-// lastSwingLow returns the most recent confirmed daily swing low.
+// lastSwingLow returns the most recent confirmed daily swing low and its day.
 // Returns 0 if none found.
-func (g *GammaMonitor) lastSwingLow() float64 {
+func (g *GammaMonitor) lastSwingLow() (float64, time.Time) {
+	return g.lastPivot(func(other, p float64) bool { return other <= p })
+}
+
+// lastPivot finds the newest close with swingPivotN closes on each side,
+// none of which disqualifies it (disqualifies(other, p) is true).
+func (g *GammaMonitor) lastPivot(disqualifies func(other, p float64) bool) (float64, time.Time) {
 	h := g.dailyCloses
 	n := g.swingPivotN
 	for i := len(h) - n - 1; i >= n; i-- {
 		p := h[i].price
-		isLow := true
-		for j := i - n; j < i; j++ {
-			if h[j].price <= p {
-				isLow = false
+		pivot := true
+		for j := i - n; j <= i+n; j++ {
+			if j != i && disqualifies(h[j].price, p) {
+				pivot = false
 				break
 			}
 		}
-		if isLow {
-			for j := i + 1; j <= i+n; j++ {
-				if h[j].price <= p {
-					isLow = false
-					break
-				}
-			}
-		}
-		if isLow {
-			return p
+		if pivot {
+			return p, h[i].timestamp
 		}
 	}
-	return 0
+	return 0, time.Time{}
 }
 
 func actionLabel(a GammaAction) string {

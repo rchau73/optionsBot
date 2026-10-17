@@ -1,5 +1,5 @@
 import Badge from "./Badge";
-import { flipBand, loopStalled } from "@/lib/monitor";
+import { flipBand, loopStalled, smaLevels } from "@/lib/monitor";
 import { ageSeconds, formatAge, formatDateTime, formatPct, formatUSD } from "@/lib/format";
 
 /** One chip per bot: environment, market context and data freshness. */
@@ -44,7 +44,25 @@ function BotChip({ bot }) {
         </span>
       ) : null}
       {s ? <FlipBand band={flipBand(s)} /> : null}
+      {s ? <SmaLevels sma={smaLevels(s)} /> : null}
     </div>
+  );
+}
+
+/** SMA9, SMA21 and the last swings (with their days), each with spot's distance to it. */
+export function SmaLevels({ sma }) {
+  if (!sma || sma.levels.length === 0) return null;
+  const title = `SMA trend ${sma.trend ?? "—"}${sma.reason ? `: ${sma.reason}` : ""} · % = level vs spot`;
+  return (
+    <span className="text-xs text-muted tabular-nums" data-testid="sma-levels" title={title}>
+      {sma.levels
+        .map((l) => {
+          const dist = l.distancePct !== null ? ` (${formatPct(l.distancePct, 1, { signed: true })})` : "";
+          const day = l.date ? ` ${l.date.slice(5)}` : "";
+          return `${l.label} ${formatUSD(l.value)}${dist}${day}`;
+        })
+        .join(" · ")}
+    </span>
   );
 }
 

@@ -76,6 +76,7 @@ type TradeJournal interface {
 	LogReconciled(pos *orders.Position, ctx orders.EventContext)
 	LogSkipped(reason string, ctx orders.EventContext)
 	LogRisk(r orders.RiskRecord)
+	LogTrend(r orders.TrendRecord)
 	LogPnL(p orders.PnLRecord)
 }
 

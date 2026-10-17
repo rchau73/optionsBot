@@ -287,6 +287,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"trend":            v.Trend,
 		"direction":        v.Direction,
 		"sma_trend":        v.SMATrend,
+		"sma":              v.SMA,
 		"gex_bias":         v.Bias,
 		"flip_buffer_pct":  v.FlipBufferPct,
 		"account":          v.Account,

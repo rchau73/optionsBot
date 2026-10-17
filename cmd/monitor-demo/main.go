@@ -69,6 +69,40 @@ type simulation struct {
 	journal    *orders.Logger
 	history    *history.Store
 	started    time.Time
+	base       float64 // starting spot: the simulated SMAs and swings sit around it
+	trend      string  // last SMA trend, so a change is journaled once
+}
+
+// smaLevels simulates the SMA trend's levels around the starting spot and
+// reads the trend with the bot's own rule. Call with s.mu held.
+func (s *simulation) smaLevels() strategy.SMALevels {
+	day := func(ago int) string { return s.started.UTC().AddDate(0, 0, -ago).Format(time.DateOnly) }
+	l := strategy.SMALevels{
+		SMA9: s.base * 0.997, SMA21: s.base * 1.004, Price: s.spot,
+		SwingHigh: s.base * 1.03, SwingHighDate: day(12),
+		SwingLow: s.base * 0.985, SwingLowDate: day(8),
+	}
+	l.TrendDir, l.Reason = strategy.SMATrendOf(l.Price, l.SwingHigh, l.SwingLow, l.SMA9, l.SMA21)
+	l.Trend = map[int]string{1: "bull", -1: "bear", 0: "neutral"}[l.TrendDir]
+	return l
+}
+
+// journalTrendChange writes a trend_changed event when the simulated SMA
+// trend changes. Call with s.mu held.
+func (s *simulation) journalTrendChange() {
+	l := s.smaLevels()
+	prev := s.trend
+	s.trend = l.Trend
+	if prev == "" || prev == l.Trend {
+		return
+	}
+	s.journal.LogTrend(orders.TrendRecord{
+		StrategyID: strategy.DefaultStrategyID, Direction: strategy.DirectionSMA,
+		From: prev, To: l.Trend, Reason: l.Reason, Spot: l.Price,
+		Detail: fmt.Sprintf("SMA trend %s → %s: %s (demo)", prev, l.Trend, l.Reason),
+		SMA9:   l.SMA9, SMA21: l.SMA21, SwingHigh: l.SwingHigh, SwingHighDate: l.SwingHighDate,
+		SwingLow: l.SwingLow, SwingLowDate: l.SwingLowDate,
+	})
 }
 
 // demoHistory opens a throwaway history file pre-filled with 30 days of a
@@ -109,7 +143,7 @@ func newSimulation(underlying string) *simulation {
 	if underlying == "ETH" {
 		spot = 3500
 	}
-	s := &simulation{underlying: underlying, spot: spot, dvol: 52, journal: orders.NewWriterLogger(io.Discard, 0.05), started: time.Now()}
+	s := &simulation{underlying: underlying, spot: spot, base: spot, dvol: 52, journal: orders.NewWriterLogger(io.Discard, 0.05), started: time.Now()}
 	for i, slot := range []orders.SlotRef{{DTE: 25, Delta: 0.16}, {DTE: 45, Delta: 0.16}, {DTE: 60, Delta: 0.18}} {
 		exp := time.Now().AddDate(0, 0, slot.DTE).Truncate(24 * time.Hour).Add(8 * time.Hour)
 		id := fmt.Sprintf("st-%d", i+1)
@@ -148,6 +182,7 @@ func (s *simulation) step() {
 	defer s.mu.Unlock()
 	s.spot *= 1 + rand.NormFloat64()*0.0015
 	s.dvol = math.Max(30, s.dvol+rand.NormFloat64()*0.2)
+	s.journalTrendChange()
 	for _, l := range s.legs {
 		moneyness := (s.spot - l.strike) / s.spot
 		if l.typ == "put" {
@@ -228,9 +263,10 @@ func (s *simulation) View() strategy.View {
 	rv := s.riskView(now) // reads the account, which takes s.mu itself
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	sma := s.smaLevels()
 	v := strategy.View{
 		AsOf: now, StrategyID: strategy.DefaultStrategyID, Underlying: s.underlying, Environment: "testnet (demo)",
-		LoopAt: now, Trend: "neutral",
+		LoopAt: now, Trend: sma.Trend, Direction: strategy.DirectionSMA, SMATrend: sma.Trend, SMA: sma,
 		Market:        orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING", GammaFlip: s.spot * 0.96},
 		FlipBufferPct: strategy.FlipBufferPct(1, s.dvol),
 		Account:       strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},

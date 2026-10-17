@@ -263,6 +263,15 @@ func (l *Logger) LogRisk(r RiskRecord) {
 	l.writeJSON(EventRisk, r, slog.Default().With("event", EventRisk, "change", r.Change))
 }
 
+// LogTrend records a change of the SMA trend.
+func (l *Logger) LogTrend(r TrendRecord) {
+	r.Event = EventTrend
+	if r.Timestamp.IsZero() {
+		r.Timestamp = time.Now()
+	}
+	l.writeJSON(EventTrend, r, slog.Default().With("event", EventTrend))
+}
+
 // LogPnL writes a periodic P&L line.
 func (l *Logger) LogPnL(p PnLRecord) {
 	p.Event = EventPnL

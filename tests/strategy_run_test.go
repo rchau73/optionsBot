@@ -440,12 +440,26 @@ type recordingJournal struct {
 	entries []journalEntry
 	pnl     []orders.PnLRecord
 	risk    []orders.RiskRecord
+	trends  []orders.TrendRecord
 }
 
 func (j *recordingJournal) LogRisk(r orders.RiskRecord) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.risk = append(j.risk, r)
+}
+
+func (j *recordingJournal) LogTrend(r orders.TrendRecord) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.trends = append(j.trends, r)
+}
+
+// trendChanges returns a copy of the journaled SMA trend changes.
+func (j *recordingJournal) trendChanges() []orders.TrendRecord {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return append([]orders.TrendRecord(nil), j.trends...)
 }
 
 // riskChanges returns the journaled margin-policy records with this change.
