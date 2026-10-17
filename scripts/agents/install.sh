@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install.sh — schedule the agents with launchd on this Mac. Run it from the
-# mvp clone (~/optionsbot-env/mvp/scripts/agents/install.sh): the jobs run the
+# mvp clone (~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh): the jobs run the
 # scripts of the clone they were installed from, and deploy.sh keeps that clone
 # on main.
 #

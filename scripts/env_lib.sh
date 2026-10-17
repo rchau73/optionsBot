@@ -1,9 +1,13 @@
 # env_lib.sh — the local environments (sourced, not run). Bash 3.2-safe.
 #
-#   ~/optionsbot-env/stable   a clone checked out at a release tag; changes only
-#                             through scripts/promote.sh (a person runs it)
-#   ~/optionsbot-env/mvp      a clone on main; deploy.sh moves it after each
-#                             merge, and the agents run from it
+#   <envs>/stable   a clone checked out at a release tag; changes only through
+#                   scripts/promote.sh (a person runs it)
+#   <envs>/mvp      a clone on main; deploy.sh moves it after each merge, and
+#                   the agents run from it
+#
+# <envs> is OPTIONSBOT_ENVS, else optionsBot-env beside the checkout running
+# the script (~/dev/go/optionsBot → ~/dev/go/optionsBot-env); an environment
+# clone (it has a deploy.env) uses its own parent folder.
 #
 # Each clone holds its own .env (its own Deribit account: two environments on
 # one account would cancel each other's orders at startup and adopt each
@@ -14,9 +18,14 @@
 #   BOT_RECORD_MARKET=1       market recorders: on in stable only
 #
 # History (who ran what, when) lives outside both clones, in
-# ~/optionsbot-env/history/: deploys.tsv (mvp) and promotions.tsv (stable).
+# <envs>/history/: deploys.tsv (mvp) and promotions.tsv (stable).
 
-ENVS_DIR="${OPTIONSBOT_ENVS:-$HOME/optionsbot-env}"
+_env_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -f "$_env_repo/deploy.env" ]]; then
+  ENVS_DIR="${OPTIONSBOT_ENVS:-$(dirname "$_env_repo")}"
+else
+  ENVS_DIR="${OPTIONSBOT_ENVS:-$(dirname "$_env_repo")/optionsBot-env}"
+fi
 ENV_HISTORY="$ENVS_DIR/history"
 ENV_NAMES="stable mvp"
 

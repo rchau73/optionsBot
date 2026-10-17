@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # envctl.sh — run a local environment. The only way a stack is started.
 #
-#   scripts/envctl.sh <stable|mvp> init      clone the repo into ~/optionsbot-env/<env>
+#   scripts/envctl.sh <stable|mvp> init      clone the repo into <envs>/<env> (scripts/env_lib.sh)
 #                                           and write its deploy.env (then add its .env)
 #   scripts/envctl.sh <stable|mvp> check     is it set up, and does it share nothing
 #                                           (Deribit account, monitor port) with the other?

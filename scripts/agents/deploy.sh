@@ -8,7 +8,7 @@
 #   2. fast-forwards the mvp clone, rebuilds and restarts its stack (the bots
 #      reconcile with Deribit on every start, so a restart is safe);
 #   3. waits for every bot's decision loop to report again (health check) and
-#      records the deploy in ~/optionsbot-env/history/deploys.tsv — the soak
+#      records the deploy in <envs>/history/deploys.tsv — the soak
 #      clock scripts/promote.sh reads;
 #   4. moves the board's "In review" cards whose issue is now closed (the PR
 #      said "Closes #n") to Done, with a comment naming the commit.
