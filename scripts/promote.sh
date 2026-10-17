@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# promote.sh — move the stable environment to a release. A person runs it.
+#
+#   scripts/promote.sh v0.3.0            promote (tags mvp's deployed commit if the tag is new)
+#   scripts/promote.sh v0.2.0            rollback: a tag stable already ran skips the soak
+#   scripts/promote.sh v0.1.0 --first    the very first promotion (no stable history yet)
+#   add --yes to skip the confirmation
+#
+# A new release must have run in mvp for PROMOTE_SOAK_DAYS (3) — the tagged
+# commit or a later one, per ~/optionsbot-env/history/deploys.tsv — and no open
+# issue may carry sme:not-fixed (the SME agent found a merged fix that did not
+# work). Then stable checks out the tag, rebuilds, and every bot's decision loop
+# must report again; if not, stable goes back to its previous release.
+# Testnet only: a live stable is promoted by hand.
+set -euo pipefail
+# shellcheck source=env_lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/env_lib.sh"
+
+tag="${1:-}"; shift || true
+first=0; yes=0
+for a in "$@"; do
+  case "$a" in --first) first=1 ;; --yes) yes=1 ;; *) echo "unknown option $a" >&2; exit 1 ;; esac
+done
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: promote.sh vMAJOR.MINOR.PATCH [--first] [--yes]" >&2; exit 1; }
+SOAK_DAYS="${PROMOTE_SOAK_DAYS:-3}"
+stable="$(env_dir stable)"; mvp="$(env_dir mvp)"
+promotions="$ENV_HISTORY/promotions.tsv"; deploys="$ENV_HISTORY/deploys.tsv"
+die() { echo "promote: $*" >&2; exit 1; }
+
+why="$(env_check stable)" || die "$why"
+[[ "$(env_file_var "$stable/.env" DERIBIT_ENV)" != "live" ]] || die "stable runs live: promote it by hand"
+[[ -z "$(git -C "$stable" status --porcelain --untracked-files=no)" ]] || die "$stable has local changes"
+git -C "$stable" fetch -q --tags origin
+
+# ── The release ─────────────────────────────────────────────────────────────
+# An existing tag, or a new one on the commit mvp runs (origin/main for --first),
+# created only once every gate has passed and the person has confirmed.
+new_tag=0
+if git -C "$stable" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+  commit="$(git -C "$stable" rev-parse "$tag^{commit}")"
+else
+  new_tag=1
+  if [[ $first -eq 1 ]]; then commit="$(git -C "$stable" rev-parse origin/main)"
+  else commit="$(cat "$ENV_HISTORY/mvp.deployed" 2>/dev/null || true)"; fi
+  [[ -n "$commit" ]] || die "no commit deployed to mvp yet: nothing has soaked"
+fi
+prev=""
+[[ -s "$promotions" ]] && prev="$(tail -1 "$promotions" | cut -f2)"
+
+# ── Gates ───────────────────────────────────────────────────────────────────
+if [[ $first -eq 1 ]]; then
+  [[ ! -s "$promotions" ]] || die "--first is only for the very first promotion (last: $prev)"
+  echo "first promotion: no soak check"
+elif [[ -s "$promotions" ]] && cut -f2 "$promotions" | grep -qx "$tag"; then
+  echo "$tag ran in stable before: rollback, no soak check"
+else
+  # Earliest mvp deploy of this commit or a later one.
+  since=""
+  while IFS=$'\t' read -r at env c; do
+    [[ "$env" == "mvp" ]] || continue
+    if git -C "$stable" merge-base --is-ancestor "$commit" "$c" 2>/dev/null; then since="$at"; break; fi
+  done < <(cat "$deploys" 2>/dev/null || true)
+  [[ -n "$since" ]] || die "$tag (${commit:0:7}) never ran in mvp"
+  python3 - "$since" "$SOAK_DAYS" <<'PY' || exit 1
+import datetime as d, sys
+since = d.datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=d.timezone.utc)
+ready = since + d.timedelta(days=float(sys.argv[2]))
+now = d.datetime.now(d.timezone.utc)
+if now < ready:
+    print(f"promote: in mvp since {since:%Y-%m-%d %H:%M} UTC; the {sys.argv[2]}-day soak ends {ready:%Y-%m-%d %H:%M} UTC", file=sys.stderr)
+    sys.exit(1)
+print(f"soak ok: in mvp since {since:%Y-%m-%d %H:%M} UTC")
+PY
+  slug="$(git -C "$stable" remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
+  open_nf="$(gh issue list -R "$slug" --label sme:not-fixed --state open --json number,title -q '.[] | "#\(.number) \(.title)"')" ||
+    die "could not read the sme:not-fixed issues from GitHub ($slug): not promoting blind"
+  [[ -z "$open_nf" ]] || die "open issues the SME agent found not fixed:
+$open_nf"
+fi
+
+echo "stable: ${prev:-none} → $tag (${commit:0:7}$([[ $new_tag -eq 1 ]] && echo ", new tag"))"
+git -C "$stable" log --oneline "${prev:-$commit~1}..$commit" 2>/dev/null | head -20 | sed 's/^/  /'
+if [[ $yes -ne 1 ]]; then
+  read -r -p "Promote stable to $tag? [y/N] " ok
+  [[ "$ok" == "y" || "$ok" == "Y" ]] || die "cancelled"
+fi
+if [[ $new_tag -eq 1 ]]; then
+  git -C "$stable" tag -a "$tag" "$commit" -m "release $tag"
+  git -C "$stable" push -q origin "$tag"
+  echo "tagged $tag at ${commit:0:7} and pushed it"
+fi
+
+# ── Promote, with rollback on a failed health check ─────────────────────────
+url="$(env_monitor_url stable)"
+run() { git -C "$stable" checkout -q --detach "$1" && env_compose stable up -d --build && wait_healthy "$url" "${PROMOTE_HEALTH_TIMEOUT_SEC:-300}"; }
+if run "$tag"; then
+  env_record promotions.tsv "$tag" "$commit"
+  echo "stable is on $tag and healthy: $url"
+  exit 0
+fi
+echo "promote: $tag failed its health check" >&2
+if [[ -n "$prev" ]] && run "$prev"; then
+  die "rolled back to $prev (healthy). See: scripts/envctl.sh stable logs"
+fi
+die "rollback failed too: check scripts/envctl.sh stable logs"

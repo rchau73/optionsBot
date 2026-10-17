@@ -47,6 +47,17 @@ for b in $bots; do
   fetch "$MONITOR_URL/api/bots/$b/pnl/history?range=1w" "$b-pnl-history-1w.json"
 done
 [[ -n "$bots" ]] && fetch "$MONITOR_URL/api/bots/${bots%% *}/account" account.json
+# The mvp environment runs main (merged, not yet released): closed issues are
+# verified there. Same files under mvp/; absent when mvp is not running.
+mkdir -p "$OUT/mvp"
+echo "- stable (performance, the track record): $MONITOR_URL · mvp (main, where fixes land first): $MVP_MONITOR_URL → mvp/" >> "$manifest"
+if curl -fsS -m 10 "$MVP_MONITOR_URL/api/bots" -o "$OUT/mvp/bots.json" 2>/dev/null; then
+  for b in $(py 'import json,sys; print(" ".join(b["name"] for b in json.load(open(sys.argv[1])).get("bots", [])))' "$OUT/mvp/bots.json" || true); do
+    for ep in status positions events trades pnl; do fetch "$MVP_MONITOR_URL/api/bots/$b/$ep" "mvp/$b-$ep.json"; done
+  done
+else
+  echo "- mvp: not reachable (not running?)" >> "$manifest"
+fi
 cp config_btc.yaml config_eth.yaml "$OUT/" 2>/dev/null || true
 
 prev=$(find data/sme -mindepth 2 -maxdepth 2 -name report.md -not -path "$OUT/*" 2>/dev/null | sort -r | head -n "$KEEP" || true)
@@ -84,6 +95,9 @@ PROMPT="Use the option-bot-specialist skill and run its \"Daily review (agent mo
 Today's data is in $OUT/ (start with $OUT/MANIFEST.md; earlier reports are in $OUT/previous/;
 every open issue and those closed in the last 14 days, with bodies and last comments, are in
 $OUT/open_issues.json and $OUT/closed_issues.json — never open a duplicate of one of them).
+Top-level files are the STABLE environment (a promoted release: judge performance and risk there);
+$OUT/mvp/ holds the same data from the MVP environment (main: merged fixes run there first, so verify
+closed issues against mvp/, and against stable only once a release containing the fix is promoted).
 Environment: $ENVIRONMENT. Redact amounts in issue bodies: $REDACT.
 You may also read CLAUDE.md, OptionStrategy.md and docs/ for how the bot works.
 Print only the report in the exact output shape the skill defines, ending with the FINDINGS-JSON block."
@@ -158,7 +172,11 @@ for v in json.load(open(sys.argv[1])).get("verifications", []):
     gh issue comment "$num" -R "$slug" --body-file "$OUT/verify-comment.md" >/dev/null && log "verified #$num: $verdict"
     if [[ "$verdict" == "not_fixed" ]]; then
       gh issue reopen "$num" -R "$slug" >/dev/null && log "reopened #$num"
+      # scripts/promote.sh refuses a release while any issue carries it.
+      gh issue edit "$num" -R "$slug" --add-label sme:not-fixed >/dev/null || true
       item="$(item_for_issue "$num")"; [[ -n "$item" ]] && set_status "$item" "Triage"
+    elif [[ "$verdict" == "fixed" ]]; then
+      gh issue edit "$num" -R "$slug" --remove-label sme:not-fixed >/dev/null 2>&1 || true
     fi
   done
 fi

@@ -88,6 +88,8 @@ type Server struct {
 	connections map[string]ConnectionSource // by gateway name; empty → {}
 	token       string
 	started     time.Time
+	deployment  string // local environment: stable | mvp | "" (run by hand)
+	version     string // release tag or commit
 	mux         *http.ServeMux
 }
 
@@ -112,6 +114,12 @@ func WithManualRebalance(r ManualRebalancer, token string) Option {
 
 // WithAccount serves /api/account from a.
 func WithAccount(a AccountSource) Option { return func(s *Server) { s.account = a } }
+
+// WithDeployment names the local environment (stable | mvp) and the release
+// the bot runs, reported in /api/status as "deployment" and "version".
+func WithDeployment(name, version string) Option {
+	return func(s *Server) { s.deployment, s.version = name, version }
+}
 
 // WithConnection adds a gateway's drops, reconnects and timeouts to
 // /api/status under connections.<name> (e.g. "trading", "mainnet-public").
@@ -279,6 +287,8 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"strategy_id":      v.StrategyID,
 		"underlying":       v.Underlying,
 		"environment":      v.Environment,
+		"deployment":       s.deployment,
+		"version":          s.version,
 		"halted":           v.Halted,
 		"loop_at":          v.LoopAt,
 		"eval_interval_ms": v.EvalEveryMS,

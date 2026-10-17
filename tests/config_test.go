@@ -275,6 +275,25 @@ func TestConfigLoad_PlatformSettingsFromEnv(t *testing.T) {
 	}
 }
 
+func TestConfigLoad_DeploymentFromEnv(t *testing.T) {
+	cfg, err := loadWithDummyCreds(t, writeTempConfig(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Deployment != "" || cfg.Version != "" || !cfg.RecordMarket {
+		t.Errorf("by hand: deployment %q version %q record %v, want empty, empty, on", cfg.Deployment, cfg.Version, cfg.RecordMarket)
+	}
+	t.Setenv("BOT_DEPLOYMENT", "mvp")
+	t.Setenv("BOT_VERSION", "v0.2.0-3-gabc")
+	t.Setenv("BOT_RECORD_MARKET", "0") // only stable records the market
+	if cfg, err = loadWithDummyCreds(t, writeTempConfig(t, "")); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Deployment != "mvp" || cfg.Version != "v0.2.0-3-gabc" || cfg.RecordMarket {
+		t.Errorf("deployment %q version %q record %v", cfg.Deployment, cfg.Version, cfg.RecordMarket)
+	}
+}
+
 // The shipped configs must always load and validate.
 func TestConfigLoad_RepositoryConfigsAreValid(t *testing.T) {
 	for _, name := range []string{"config_btc.yaml", "config_eth.yaml"} {

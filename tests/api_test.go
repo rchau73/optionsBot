@@ -57,6 +57,19 @@ func sampleView() strategy.View {
 	}
 }
 
+func TestAPI_StatusNamesItsDeployment(t *testing.T) {
+	logger := orders.NewWriterLogger(io.Discard, 0)
+	h := api.New(staticView{sampleView()}, logger, api.WithDeployment("stable", "v0.1.0")).Handler()
+	if _, body := getJSON(t, h, "/api/status"); body["deployment"] != "stable" || body["version"] != "v0.1.0" {
+		t.Errorf("deployment = %v, version = %v", body["deployment"], body["version"])
+	}
+	// Run by hand (no envctl.sh): both empty, never missing.
+	h = api.New(staticView{sampleView()}, logger).Handler()
+	if _, body := getJSON(t, h, "/api/status"); body["deployment"] != "" || body["version"] != "" {
+		t.Errorf("by hand: deployment = %v, version = %v", body["deployment"], body["version"])
+	}
+}
+
 func TestAPI_StatusSummarisesTheBot(t *testing.T) {
 	logger := orders.NewWriterLogger(io.Discard, 0)
 	logger.LogSkipped("no_expiry", orders.EventContext{})

@@ -156,6 +156,16 @@ type Config struct {
 	// AdminToken (BOT_ADMIN_TOKEN) authorises the monitor's manual closes
 	// (POST /api/positions/close); empty = off. Testnet only.
 	AdminToken string
+	// Deployment names the local environment the process runs in
+	// (BOT_DEPLOYMENT: stable | mvp; empty when run by hand) and Version the
+	// release it runs (BOT_VERSION, set by scripts/envctl.sh). Shown by the
+	// monitor so two environments are never confused.
+	Deployment string
+	Version    string
+	// RecordMarket (BOT_RECORD_MARKET, default on) runs the market recorders.
+	// Only one environment records (stable), so the dataset is single and no
+	// mainnet call is duplicated.
+	RecordMarket bool
 }
 
 type Backtest struct {
@@ -436,6 +446,9 @@ func Load(path string) (*Config, error) {
 	cfg.APIAddr = os.Getenv("BOT_API_ADDR")
 	cfg.AdminToken = strings.TrimSpace(os.Getenv("BOT_ADMIN_TOKEN"))
 	cfg.AccountPollSec = envInt("BOT_ACCOUNT_POLL_SEC", 10)
+	cfg.Deployment = strings.TrimSpace(os.Getenv("BOT_DEPLOYMENT"))
+	cfg.Version = strings.TrimSpace(os.Getenv("BOT_VERSION"))
+	cfg.RecordMarket = strings.TrimSpace(os.Getenv("BOT_RECORD_MARKET")) != "0"
 	if cfg.AccountPollSec < 2 {
 		cfg.AccountPollSec = 2 // keep the request rate negligible
 	}
