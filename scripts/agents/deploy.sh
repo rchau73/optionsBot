@@ -10,8 +10,12 @@
 #   3. waits for every bot's decision loop to report again (health check) and
 #      records the deploy in <envs>/history/deploys.tsv — the soak
 #      clock scripts/promote.sh reads;
-#   4. moves the board's "In review" cards whose issue is now closed (the PR
-#      said "Closes #n") to Done, with a comment naming the commit.
+#   4. moves every card whose issue is now closed (the PR said "Closes #n",
+#      or a person closed it) to Done; a card that was In review or In
+#      progress gets a comment naming the deployed commit.
+# With mvp up to date, a tick still moves closed cards to Done (no comment):
+# the board's "Item closed" workflow is off, and an issue closed by hand
+# would otherwise stay in its column (2026-10-17: #131, #133 In progress).
 # Stable is never touched here: a person promotes it (scripts/promote.sh).
 # The agents run from the mvp clone, so this also keeps their scripts current.
 #
@@ -21,6 +25,25 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ "${DEPLOY_ENABLED:-1}" == "1" ]] || { log "deploy: disabled"; exit 0; }
 take_lock deploy || exit 0
+
+# close_out [commit] — every closed issue whose card is not in Done moves to
+# Done. With a commit (just deployed), cards that were In review or In
+# progress are told where it runs. Epics carry no Status and are left alone.
+close_out() {
+  local commit="${1:-}" slug item issue status
+  slug="$(repo_slug)"
+  board_json | py 'import json,sys
+for c in json.load(sys.stdin):
+    if c["state"] == "CLOSED" and c["status"] not in ("Done", "-"):
+        print(c["item"], c["number"], c["status"].replace(" ", "_"))' |
+    while read -r item issue status; do
+      set_status "$item" "Done" || continue
+      if [[ -n "$commit" && ( "$status" == "In_review" || "$status" == "In_progress" ) ]]; then
+        gh issue comment "$issue" -R "$slug" --body "🚀 Deployed to **mvp** (testnet) in $(git -C "$dir" log -1 --format='%h (%s)' "$commit"). The SME agent verifies it there in its next daily review; it reaches **stable** when a person promotes a release containing it (scripts/promote.sh)." >/dev/null
+      fi
+      log "deploy: #$issue (${status//_/ }, closed) → Done"
+    done || true
+}
 
 dir="$(env_dir mvp)"
 if ! why="$(env_check mvp)"; then
@@ -32,7 +55,9 @@ failed="$ENV_HISTORY/mvp.failed"
 git -C "$dir" fetch -q origin main
 target="$(git -C "$dir" rev-parse origin/main)"
 deployed="$(cat "$state" 2>/dev/null || true)"
-[[ "$target" != "$deployed" ]] || { log "deploy: mvp up to date (${target:0:7})"; exit 0; }
+if [[ "$target" == "$deployed" ]]; then
+  log "deploy: mvp up to date (${target:0:7})"; close_out; exit 0
+fi
 [[ "$target" != "$(cat "$failed" 2>/dev/null || true)" ]] || { log "deploy: ${target:0:7} failed before; waiting for a new commit"; exit 0; }
 
 mkdir -p "$AGENT_STATE_DIR/deploy"
@@ -70,11 +95,5 @@ echo "$target" > "$state"
 env_record deploys.tsv mvp "$target"
 log "deploy: mvp ${target:0:7} healthy"
 
-slug="$(repo_slug)"
-items_in_status "In review" | while read -r item issue; do
-  [[ "$(gh issue view "$issue" -R "$slug" --json state -q .state)" == "CLOSED" ]] || continue
-  set_status "$item" "Done"
-  gh issue comment "$issue" -R "$slug" --body "🚀 Deployed to **mvp** (testnet) in $(git -C "$dir" log -1 --format='%h (%s)' "$target"). The SME agent verifies it there in its next daily review; it reaches **stable** when a person promotes a release containing it (scripts/promote.sh)." >/dev/null
-  log "deploy: #$issue → Done"
-done || true
+close_out "$target"
 notify "Deployed to mvp" "${target:0:7}: $(git -C "$dir" log -1 --format=%s "$target")"
