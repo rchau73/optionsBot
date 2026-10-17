@@ -54,6 +54,11 @@ type Config struct {
 	// A fill or a limit change resets it.
 	RebalanceBackoffAfter    int `yaml:"-"`
 	RebalanceRetryMaxMinutes int `yaml:"-"`
+	// RebalanceStartupBandPct: the first rebalance after a startup leaves the
+	// book alone while IM is within this many percentage points of the limit
+	// (either side), so a deploy does not trade on market drift (#123).
+	// Confirmed limit changes and the MM cut ignore it. ≤ 0 turns it off.
+	RebalanceStartupBandPct float64 `yaml:"-"`
 	// ChurnMaxRoundTrips / ChurnWindowMinutes: a slot that buys back and
 	// re-sells this many times within the window is paused for the window
 	// (no entries, repairs, upsizes or leg balancing; exits still run).

@@ -15,7 +15,8 @@ import (
 
 // rebalancePositions resizes the book toward the confirmed IM limit. It runs
 // at startup and whenever a confirmed DVOL band or gamma regime change moves
-// the limit (never while a change is still unconfirmed). Each complete
+// the limit (never while a change is still unconfirmed); at startup only when
+// IM is outside the band around the limit (RebalanceInBand, #123). Each complete
 // strangle's share of the limit is limit × margin balance ÷ slots; its IM per
 // lot is what Deribit's simulator says buying one lot back would free.
 //

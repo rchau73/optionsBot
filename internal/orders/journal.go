@@ -39,13 +39,14 @@ type TrendRecord struct {
 
 // Risk changes journaled as EventRisk.
 const (
-	RiskFrozen          = "frozen"           // a DVOL band or gamma regime change was seen; new risk blocked
-	RiskUnfrozen        = "unfrozen"         // the change reverted before confirmation, or was confirmed
-	RiskLimitChanged    = "limit_changed"    // a confirmed change moved the IM limit
-	RiskRebalance       = "rebalance"        // the book is being resized toward the IM limit
-	RiskRebalanceRetry  = "rebalance_retry"  // a complement fell short: the rebalance runs again after a cooldown
-	RiskRebalanceManual = "rebalance_manual" // a person asked for a rebalance (POST /api/rebalance)
-	RiskMMBreach        = "mm_breach"        // maintenance margin above max_mm_pct: reducing now
+	RiskFrozen          = "frozen"            // a DVOL band or gamma regime change was seen; new risk blocked
+	RiskUnfrozen        = "unfrozen"          // the change reverted before confirmation, or was confirmed
+	RiskLimitChanged    = "limit_changed"     // a confirmed change moved the IM limit
+	RiskRebalance       = "rebalance"         // the book is being resized toward the IM limit
+	RiskRebalanceInBand = "rebalance_in_band" // startup: IM within the band around the limit, the book is not resized (#123)
+	RiskRebalanceRetry  = "rebalance_retry"   // a complement fell short: the rebalance runs again after a cooldown
+	RiskRebalanceManual = "rebalance_manual"  // a person asked for a rebalance (POST /api/rebalance)
+	RiskMMBreach        = "mm_breach"         // maintenance margin above max_mm_pct: reducing now
 )
 
 // RiskRecord is one margin-policy decision with the figures behind it.
