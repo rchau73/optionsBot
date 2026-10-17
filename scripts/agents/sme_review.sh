@@ -115,7 +115,7 @@ severity="$(grep -m1 '^SEVERITY:' "$OUT/report.md" | sed 's/^SEVERITY: *//' || t
 log "$severity — $summary"
 
 # ── 3. Publish (the script acts, never the agent) ───────────────────────────
-footer="_Opened by the **SME agent** (option-bot-specialist skill, read-only) from the $DATE daily review. A human triages it; moving it to **Ready** hands it to the Dev agent. See [AGENTIC.md](../blob/main/AGENTIC.md)._"
+footer="_Opened by the **SME agent** (option-bot-specialist skill, read-only) from the $DATE daily review. The **PM agent** reads it first: it places it in an epic of the approved PRD and moves it to **Ready** (the Dev agent builds it) only when that epic covers it; otherwise a person decides. See [AGENTIC.md](../blob/main/AGENTIC.md)._"
 if [[ "$PUBLISH" == "1" ]]; then
   n="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))["issues"]))' "$OUT/findings.json")"
   i=0

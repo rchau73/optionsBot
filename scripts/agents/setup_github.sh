@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # setup_github.sh — one-time (idempotent) GitHub setup for the agentic workflow.
 #
-#   1. labels: agent:sme, agent:dev, agent:reviewed, agent:needs-human, severity:high|medium|low
+#   1. labels: agent:sme, agent:dev, agent:pm, agent:reviewed, agent:needs-human,
+#      severity:high|medium|low, epic, epic:parked, prototype:review, prototype:approved
 #   2. the Project board "optionsBot · agentic workflow", linked to the repo,
-#      Status columns: Triage → Ready → In progress → In review → Done, Blocked
+#      Status columns: Triage → Ready → In progress → In review → Done, Blocked,
+#      and a Priority field (P0…P3) the PM agent sets and the Dev agent follows
 #   3. a ruleset on main: changes only through pull requests with green CI;
 #      no force pushes, no deletion. The agents cannot merge; a person does.
 #
@@ -25,6 +27,11 @@ label "agent:needs-human" "d93f0b" "An agent stopped and needs a person"
 label "severity:high"     "b60205" "Capital at risk or the bot not doing its job"
 label "severity:medium"   "fbca04" "Money left on the table or a rule misbehaving"
 label "severity:low"      "c2e0c6" "Hygiene"
+label "agent:pm"          "0052cc" "Triaged by the PM agent (product-manager skill)"
+label "epic"              "3e4b9e" "Epic of the approved PRD (docs/product/PRD.md): stories are its sub-issues"
+label "epic:parked"       "bfd4f2" "Epic parked in the PRD: nothing goes to Ready"
+label "prototype:review"  "f9d0c4" "Prototype ready for a person to review (link on the epic)"
+label "prototype:approved" "0e8a16" "A person approved the epic's prototype: its UI stories may go to Ready"
 
 # ── 2. Project board ────────────────────────────────────────────────────────
 num="$(gh project list --owner "$owner" --format json -L 100 |
@@ -35,15 +42,21 @@ if [[ -z "$num" ]]; then
 fi
 gh project link "$num" --owner "$owner" --repo "${slug#*/}" >/dev/null 2>&1 || true
 gh project edit "$num" --owner "$owner" --visibility PUBLIC \
-  --description "SME agent finds → a person triages → Dev agent builds a PR → a person merges → testnet deploy → SME verifies. See AGENTIC.md." >/dev/null
+  --description "A person approves the PRD → SME agent finds → PM agent triages into approved epics → Dev agent builds a PR → a person merges → testnet deploy → SME verifies. See AGENTIC.md." >/dev/null
 
 fid="$(gh project field-list "$num" --owner "$owner" --format json |
   py 'import json,sys; print(next(f["id"] for f in json.load(sys.stdin)["fields"] if f["name"]=="Status"))')"
-# Replace the default Todo/In Progress/Done with the workflow's columns.
+# Replace the default Todo/In Progress/Done with the workflow's columns — only
+# when they differ: rewriting the options can clear every card's column.
+have="$(gh project field-list "$num" --owner "$owner" --format json |
+  py 'import json,sys; print(",".join(o["name"] for o in next(f for f in json.load(sys.stdin)["fields"] if f["name"]=="Status")["options"]))')"
+if [[ "$have" == "Triage,Ready,In progress,In review,Done,Blocked" ]]; then
+  log "project #$num Status columns already set"
+else
 gh api graphql -f query='
 mutation($field: ID!) {
   updateProjectV2Field(input: {fieldId: $field, singleSelectOptions: [
-    {name: "Triage",      color: GRAY,   description: "New finding: a person refines it, then moves it to Ready"},
+    {name: "Triage",      color: GRAY,   description: "New ticket: the PM agent places it in an epic and moves approved work to Ready; the rest waits for a person"},
     {name: "Ready",       color: BLUE,   description: "Approved: the Dev agent picks it up"},
     {name: "In progress", color: YELLOW, description: "The Dev agent is implementing it"},
     {name: "In review",   color: PURPLE, description: "PR open: a person reviews and merges"},
@@ -52,6 +65,14 @@ mutation($field: ID!) {
   ]}) { projectV2Field { ... on ProjectV2SingleSelectField { name options { name } } } }
 }' -f field="$fid" >/dev/null
 log "project #$num Status columns set"
+fi
+if gh project field-list "$num" --owner "$owner" --format json -q '.fields[].name' | grep -qx Priority; then
+  log "Priority field already present"
+else
+  gh project field-create "$num" --owner "$owner" --name Priority --data-type SINGLE_SELECT \
+    --single-select-options "P0,P1,P2,P3" >/dev/null
+  log "Priority field created (P0 first: the Dev agent builds Ready in this order)"
+fi
 rm -f "$PROJECT_CACHE" # ids may have changed: the agents re-read them
 
 # ── 3. Ruleset on main ──────────────────────────────────────────────────────
