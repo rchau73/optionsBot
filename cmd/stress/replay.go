@@ -1,0 +1,251 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"optionsbot/internal/config"
+	"optionsbot/internal/orders"
+	"optionsbot/internal/recorder"
+	"optionsbot/internal/replay"
+	"optionsbot/internal/risk"
+)
+
+// -replay: the bot's rules over the recorded mainnet book (internal/replay)
+// instead of a modelled path. The settings are the bot's config file
+// (-config); a stress flag set on the command line changes the rule it
+// names, so two runs that differ by one flag compare one rule on the same
+// history. Flags of proposals the replay does not model are refused.
+
+// replayFlags maps the stress flags the replay honours onto the config.
+var replayFlags = map[string]func(c *config.Config, v string) error{
+	"direction": func(c *config.Config, v string) error {
+		if v != "sma" && v != "bias" {
+			return fmt.Errorf("-direction %s: the replay runs the bot's sources only (sma | bias)", v)
+		}
+		c.GEXDirection = v
+		return nil
+	},
+	"flipbufsd":    floatField(func(c *config.Config) *float64 { return &c.GammaFlipBufferSD }),
+	"breach":       floatField(func(c *config.Config) *float64 { return &c.DeltaExitThreshold }),
+	"drift":        floatField(func(c *config.Config) *float64 { return &c.DeltaDriftThreshold }),
+	"tp":           floatField(func(c *config.Config) *float64 { return &c.ROITakeProfit }),
+	"cap":          floatField(func(c *config.Config) *float64 { return &c.MaxLegSizeMultiple }),
+	"shedpersist":  intField(func(c *config.Config) *int { return &c.GEXShedConfirmSnapshots }),
+	"shedcross":    intField(func(c *config.Config) *int { return &c.GEXRepairConfirmSnapshots }),
+	"shedrelease":  intField(func(c *config.Config) *int { return &c.GEXRepairReleaseHours }),
+	"biascooldown": intField(func(c *config.Config) *int { return &c.GEXBiasRepairCooldownHours }),
+	"stopslipwait": intField(func(c *config.Config) *int { return &c.StopSpreadMaxWaitMin }),
+	"stopslip": func(c *config.Config, v string) error { // a fraction here, a percentage in the config
+		f, err := strconv.ParseFloat(v, 64)
+		c.StopSpreadGuardPct = f * 100
+		return err
+	},
+	"bands": func(c *config.Config, v string) error {
+		var lo, mid, hi float64
+		if n, _ := fmt.Sscanf(v, "%g,%g,%g", &lo, &mid, &hi); n != 3 {
+			return fmt.Errorf("-bands wants three numbers: low,mid,high")
+		}
+		c.IVMarginBands = []risk.Band{{MinIVPct: 70, MaxIMPct: hi}, {MinIVPct: 30, MaxIMPct: mid}, {MinIVPct: 0, MaxIMPct: lo}}
+		return nil
+	},
+}
+
+// replayOwnFlags are the replay's own flags (and the shared input folder).
+var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
+	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true}
+
+func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
+	return func(c *config.Config, v string) (err error) {
+		*f(c), err = strconv.ParseFloat(v, 64)
+		return err
+	}
+}
+
+func intField(f func(*config.Config) *int) func(*config.Config, string) error {
+	return func(c *config.Config, v string) error {
+		x, err := strconv.ParseFloat(v, 64) // hours and minutes are floats on the stress flags
+		*f(c) = int(x)
+		return err
+	}
+}
+
+type replayOpts struct {
+	dir, from, to, configPath, journal, start, inputs string
+	equity, flipWindowMin                             float64
+	quiet, trace                                      bool
+	set                                               map[string]string // flags given on the command line
+}
+
+func runReplay(o replayOpts) error {
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil))) // the bot's rules log; the replay prints
+	cfg, err := config.Load(o.configPath)
+	if err != nil {
+		return err
+	}
+	var changed []string
+	for name, v := range o.set {
+		if apply, ok := replayFlags[name]; ok {
+			if err := apply(cfg, v); err != nil {
+				return err
+			}
+			changed = append(changed, "-"+name+"="+v)
+		} else if !replayOwnFlags[name] {
+			return fmt.Errorf("-%s is not modelled by -replay (it runs the bot's rules on recorded books)", name)
+		}
+	}
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("settings: %w", err)
+	}
+	from, err := time.Parse(time.DateOnly, o.from)
+	if err != nil {
+		return fmt.Errorf("-from %q: want YYYY-MM-DD", o.from)
+	}
+	to := time.Time{}
+	if o.to != "" {
+		if to, err = time.Parse(time.DateOnly, o.to); err != nil {
+			return fmt.Errorf("-to %q: want YYYY-MM-DD", o.to)
+		}
+		to = to.Add(24*time.Hour - time.Nanosecond) // the whole last day
+	}
+	// Everything recorded before -from warms up the GEX, DVOL and regime.
+	snaps, err := recorder.ReadDir(o.dir, time.Time{}, to)
+	if err != nil {
+		return err
+	}
+	if len(snaps) == 0 {
+		return fmt.Errorf("no recorded snapshot in %s", o.dir)
+	}
+
+	set := replay.Settings{Cfg: cfg, From: from, To: to, Equity: o.equity,
+		FlipWindow: time.Duration(o.flipWindowMin * float64(time.Minute))}
+	set.Closes, set.DVOL = readMarketJSON(filepath.Join(o.inputs, "market.json"))
+	if set.Equity <= 0 {
+		set.Equity = readEquity(filepath.Join(o.inputs, "account.json"), cfg.Underlying)
+	}
+	if set.Equity <= 0 {
+		set.Equity = 1
+	}
+	var trades []orders.Trade
+	if o.journal != "" {
+		rp, err := orders.ReplayFile(o.journal, 0)
+		if err != nil {
+			return err
+		}
+		trades = rp.Trades
+	}
+	switch o.start {
+	case "empty":
+	case "journal":
+		if trades == nil {
+			return fmt.Errorf("-start journal needs -journal orders.log")
+		}
+		set.Book = replay.BookAt(trades, from)
+	default:
+		return fmt.Errorf("-start %q: empty | journal", o.start)
+	}
+	if o.trace {
+		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
+	}
+	res, err := replay.Run(snaps, set)
+	if err != nil {
+		return err
+	}
+	u := cfg.Underlying
+	fmt.Printf("### REPLAY of recorded mainnet books — %s, direction %s, %s → %s, %d snapshots", u, cfg.GEXDirection,
+		res.Start.Format("Jan 02 15:04"), res.End.Format("Jan 02 15:04"), res.Snapshots)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Printf("\n\nStart: %s book, margin balance %.4f %s. Prices, spreads, greeks, OI and DVOL recorded; MODEL: margin (scan ±16 %% spot, IV −20/+30 %%, MM = %.0f %% of IM) and fills (sells at the price floor if the book has a bid, buy-backs at the ask).\n\n",
+		o.start, set.Equity, u, replay.MMRatio*100)
+	if !o.quiet {
+		fmt.Println("| Date | Spot | DVOL | GEX live / confirmed neg | Direction | Limit | IM % | Equity " + u + " | Day P&L | Fees | Trades | Sheds | Repairs | Actions |")
+		fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+		for _, d := range res.Days {
+			acts := strings.Join(d.Actions, "; ")
+			if acts == "" {
+				acts = "—"
+			}
+			fmt.Printf("| %s | %.0f | %.1f | %s / %v | %+d | %.0f%% | %.1f | %.4f | %+.4f | %.4f | %d | %d | %d | %s |\n",
+				d.Date.Format("Jan 02"), d.Spot, d.DVOL, d.Regime, d.ConfirmedNegative, d.Direction, d.LimitPct, d.IMPct,
+				d.Equity, d.PnL, d.Fees, d.Trades, d.Sheds, d.Reps, acts)
+		}
+		fmt.Println()
+	}
+	fmt.Printf("**Replay %s %s:** net %+.4f %s (%+.2f %%) · realised %+.4f · fees %.4f · trades %d (entries %d, repairs %d) · GEX sheds %d · stops %d · delta exits %d · rolls %d · MM cuts %d · unfilled %d · legs open at end %d · worst drawdown %.4f %s · IM max %.1f %% avg %.1f %%\n",
+		u, cfg.GEXDirection, res.Net, u, res.Net/res.Equity0*100, res.Realised, res.Fees, res.Trades, res.Entries, res.Repairs,
+		res.Sheds, res.Stops, res.DeltaExits, res.Rolls, res.MMCuts, res.Unfilled, res.OpenAtEnd, res.MaxDrawdown, u, res.MaxIMPct, res.AvgIMPct)
+	fmt.Printf("REPLAY\t%s\t%s\t%.4f\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%.4f\t%.1f\n", u, cfg.GEXDirection, res.Net, res.Realised, res.Fees,
+		res.Trades, res.Entries, res.Repairs, res.Sheds, res.Stops, res.MaxDrawdown, res.AvgIMPct)
+	if trades != nil {
+		var window []recorder.Snapshot
+		for _, s := range snaps {
+			if !s.At.Before(res.Start) && !s.At.After(res.End) {
+				window = append(window, s)
+			}
+		}
+		a := replay.ActualPnL(trades, window, res.Start, res.End)
+		fmt.Printf("**Journal (what the bot did), same window:** net %+.4f %s = realised %+.4f + unrealised %+.4f → %+.4f · opens %d · closes %d · legs without a recorded quote %d · replay − journal %+.4f %s\n",
+			a.Net, u, a.Realised, a.Unrealised0, a.Unrealised1, a.Opens, a.Closes, a.Unmarked, res.Net-a.Net, u)
+	}
+	return nil
+}
+
+// readMarketJSON reads the daily closes and DVOL of scripts/stress_inputs.sh
+// (both [[ms, value], …]); a missing file seeds nothing.
+func readMarketJSON(path string) (closes, dvol []orders.DailyClose) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "note: %s not read (%v): the SMA trend and IV percentile start from the recording alone\n", path, err)
+		return nil, nil
+	}
+	var mk struct {
+		Dvol   [][2]float64 `json:"dvol"`
+		Closes [][2]float64 `json:"closes"`
+	}
+	if err := json.Unmarshal(data, &mk); err != nil {
+		fmt.Fprintf(os.Stderr, "note: %s unreadable: %v\n", path, err)
+		return nil, nil
+	}
+	day := func(ms float64) time.Time { return time.UnixMilli(int64(ms)).UTC().Truncate(24 * time.Hour) }
+	for _, c := range mk.Closes {
+		closes = append(closes, orders.DailyClose{Date: day(c[0]), Close: c[1]})
+	}
+	for _, d := range mk.Dvol {
+		dvol = append(dvol, orders.DailyClose{Date: day(d[0]), Close: d[1]})
+	}
+	return closes, dvol
+}
+
+// readEquity is the coin's margin balance in account.json (0 if absent).
+func readEquity(path, coin string) float64 {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var acct struct {
+		Snapshot struct {
+			Assets []struct {
+				Currency      string  `json:"currency"`
+				MarginBalance float64 `json:"margin_balance"`
+			} `json:"assets"`
+		} `json:"snapshot"`
+	}
+	if json.Unmarshal(data, &acct) != nil {
+		return 0
+	}
+	for _, a := range acct.Snapshot.Assets {
+		if strings.EqualFold(a.Currency, coin) {
+			return a.MarginBalance
+		}
+	}
+	return 0
+}

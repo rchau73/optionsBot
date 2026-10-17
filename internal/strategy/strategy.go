@@ -459,12 +459,8 @@ func (s *Strategy) loadGammaPriceHistory(ctx context.Context) {
 		slog.Warn("gamma history load failed, starting without history", "instrument", instrument, "err", err)
 		return
 	}
-	closes := make([]pricePoint, len(rawCloses))
-	for i, c := range rawCloses {
-		closes[i] = pricePoint{timestamp: c.Date, price: c.Close}
-	}
-	s.gamma.SeedDailyCloses(closes)
-	slog.Info("gamma price history seeded", "instrument", instrument, "days", len(closes))
+	s.gamma.SeedDailyCloses(rawCloses)
+	slog.Info("gamma price history seeded", "instrument", instrument, "days", len(rawCloses))
 }
 
 // evaluateLeg runs the exit rules (EvaluateLeg) on pos with today's config.

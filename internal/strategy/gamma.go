@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"optionsbot/internal/gex"
+	"optionsbot/internal/orders"
 )
 
 // GammaAction describes what the gamma monitor wants to do.
@@ -152,17 +153,17 @@ func (d GammaDecision) Sheds(optType string) bool {
 // GEX regime score, which uses real open interest across the full chain.
 type GammaMonitor struct {
 	lookbackDays  int
-	swingPivotN   int           // days required on each side to confirm a swing pivot
-	dailyCloses   []pricePoint  // one entry per completed UTC day
-	lastTickDate  time.Time     // UTC day of the last processed tick
-	lastTickPrice float64       // most recent price (current day's running close)
-	gexSrc        GEXSource     // nil until wired; Evaluate then reports no regime
-	lastAction    GammaAction   // last action announced, so changes are logged once
-	bufferSD      float64       // flip buffer in daily standard deviations (0 = none)
-	direction     string        // DirectionSMA (default) or DirectionBias
-	flipWindow    time.Duration // StableBiasDir's median window (0 = live flip only)
-	flips         []flipPoint   // each snapshot's flip within flipWindow, oldest first
-	flipsSince    time.Time     // first flip of the unbroken record (startup, or after a gap longer than the window)
+	swingPivotN   int                 // days required on each side to confirm a swing pivot
+	dailyCloses   []orders.DailyClose // one entry per completed UTC day
+	lastTickDate  time.Time           // UTC day of the last processed tick
+	lastTickPrice float64             // most recent price (current day's running close)
+	gexSrc        GEXSource           // nil until wired; Evaluate then reports no regime
+	lastAction    GammaAction         // last action announced, so changes are logged once
+	bufferSD      float64             // flip buffer in daily standard deviations (0 = none)
+	direction     string              // DirectionSMA (default) or DirectionBias
+	flipWindow    time.Duration       // StableBiasDir's median window (0 = live flip only)
+	flips         []flipPoint         // each snapshot's flip within flipWindow, oldest first
+	flipsSince    time.Time           // first flip of the unbroken record (startup, or after a gap longer than the window)
 	dvol          func() float64
 
 	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
@@ -278,11 +279,6 @@ func FlipBufferPct(bufferSD, dvol float64) float64 {
 	return bufferSD * dvol / math.Sqrt(365)
 }
 
-type pricePoint struct {
-	timestamp time.Time
-	price     float64
-}
-
 func NewGammaMonitor(lookbackDays, swingPivotN int) *GammaMonitor {
 	return &GammaMonitor{lookbackDays: lookbackDays, swingPivotN: swingPivotN}
 }
@@ -294,21 +290,23 @@ func (g *GammaMonitor) SetGEXSource(src GEXSource) {
 
 // SeedDailyCloses pre-populates the daily close history on startup so trend and
 // swing decisions are available immediately without waiting for days to accumulate.
-func (g *GammaMonitor) SeedDailyCloses(closes []pricePoint) {
-	g.dailyCloses = make([]pricePoint, len(closes))
+func (g *GammaMonitor) SeedDailyCloses(closes []orders.DailyClose) {
+	g.dailyCloses = make([]orders.DailyClose, len(closes))
 	copy(g.dailyCloses, closes)
 	if len(closes) > 0 {
 		last := closes[len(closes)-1]
-		g.lastTickPrice = last.price
-		g.lastTickDate = last.timestamp.Truncate(24 * time.Hour)
+		g.lastTickPrice = last.Close
+		g.lastTickDate = last.Date.Truncate(24 * time.Hour)
 	}
 }
 
 // PushPrice records the latest underlying price. On UTC day rollover it commits
 // the previous day's last price into dailyCloses, which drives swing and trend logic.
-func (g *GammaMonitor) PushPrice(price float64) {
-	now := time.Now().UTC()
-	today := now.Truncate(24 * time.Hour)
+func (g *GammaMonitor) PushPrice(price float64) { g.PushPriceAt(time.Now(), price) }
+
+// PushPriceAt is PushPrice at now (cmd/stress -replay runs the recorded past).
+func (g *GammaMonitor) PushPriceAt(now time.Time, price float64) {
+	today := now.UTC().Truncate(24 * time.Hour)
 
 	if g.lastTickDate.IsZero() {
 		// First call — initialise without recording a close yet.
@@ -316,10 +314,10 @@ func (g *GammaMonitor) PushPrice(price float64) {
 		g.lastTickPrice = price
 	} else if today.After(g.lastTickDate) {
 		// Day rolled over: commit the previous day's last price as a daily close.
-		g.dailyCloses = append(g.dailyCloses, pricePoint{g.lastTickDate, g.lastTickPrice})
+		g.dailyCloses = append(g.dailyCloses, orders.DailyClose{Date: g.lastTickDate, Close: g.lastTickPrice})
 		// Keep enough history for lookback + pivot neighbours + 1 buffer day.
 		cutoff := today.AddDate(0, 0, -(g.lookbackDays + g.swingPivotN + 1))
-		for len(g.dailyCloses) > 1 && g.dailyCloses[0].timestamp.Before(cutoff) {
+		for len(g.dailyCloses) > 1 && g.dailyCloses[0].Date.Before(cutoff) {
 			g.dailyCloses = g.dailyCloses[1:]
 		}
 		g.lastTickDate = today
@@ -575,12 +573,20 @@ func SMATrendOf(price, swingHigh, swingLow, sma9, sma21 float64) (int, string) {
 
 // SMALevels returns the SMA trend's levels now.
 func (g *GammaMonitor) SMALevels() SMALevels {
-	l := SMALevels{SMA9: g.sma(9), SMA21: g.sma(21), Price: g.lastTickPrice}
+	return SMALevelsOf(g.dailyCloses, g.lastTickPrice, g.swingPivotN)
+}
+
+// SMALevelsOf is the SMA trend's levels, pure: the SMAs and swings of the
+// completed daily closes (oldest first), the trend read at price (the live
+// spot) by SMATrendOf, and its reason. The bot (detectTrend) and cmd/stress
+// both call it, so the stress trend cannot drift from the bot's.
+func SMALevelsOf(closes []orders.DailyClose, price float64, pivotN int) SMALevels {
+	l := SMALevels{SMA9: smaOf(closes, 9), SMA21: smaOf(closes, 21), Price: price}
 	var at time.Time
-	if l.SwingHigh, at = g.lastSwingHigh(); !at.IsZero() {
+	if l.SwingHigh, at = lastPivot(closes, pivotN, func(other, p float64) bool { return other >= p }); !at.IsZero() {
 		l.SwingHighDate = at.UTC().Format(time.DateOnly)
 	}
-	if l.SwingLow, at = g.lastSwingLow(); !at.IsZero() {
+	if l.SwingLow, at = lastPivot(closes, pivotN, func(other, p float64) bool { return other <= p }); !at.IsZero() {
 		l.SwingLowDate = at.UTC().Format(time.DateOnly)
 	}
 	l.TrendDir, l.Reason = SMATrendOf(l.Price, l.SwingHigh, l.SwingLow, l.SMA9, l.SMA21)
@@ -591,52 +597,37 @@ func (g *GammaMonitor) SMALevels() SMALevels {
 // detectTrend is the SMA trend now (SMATrendOf on the current levels).
 func (g *GammaMonitor) detectTrend() int { return g.SMALevels().TrendDir }
 
-// sma returns the simple moving average of the last days daily closes.
-func (g *GammaMonitor) sma(days int) float64 {
-	n := len(g.dailyCloses)
+// smaOf returns the simple moving average of the last days closes (of all of
+// them when there are fewer).
+func smaOf(closes []orders.DailyClose, days int) float64 {
+	n := len(closes)
 	if n == 0 {
 		return 0
 	}
-	window := days
-	if n < window {
-		window = n
-	}
+	window := min(days, n)
 	sum := 0.0
-	for _, p := range g.dailyCloses[n-window:] {
-		sum += p.price
+	for _, p := range closes[n-window:] {
+		sum += p.Close
 	}
 	return sum / float64(window)
 }
 
-// lastSwingHigh returns the most recent confirmed daily swing high and its
-// day. A swing high at index i requires dailyCloses[i].price to exceed all
-// closes in the g.swingPivotN days on each side. Returns 0 if none found.
-func (g *GammaMonitor) lastSwingHigh() (float64, time.Time) {
-	return g.lastPivot(func(other, p float64) bool { return other >= p })
-}
-
-// lastSwingLow returns the most recent confirmed daily swing low and its day.
-// Returns 0 if none found.
-func (g *GammaMonitor) lastSwingLow() (float64, time.Time) {
-	return g.lastPivot(func(other, p float64) bool { return other <= p })
-}
-
-// lastPivot finds the newest close with swingPivotN closes on each side,
-// none of which disqualifies it (disqualifies(other, p) is true).
-func (g *GammaMonitor) lastPivot(disqualifies func(other, p float64) bool) (float64, time.Time) {
-	h := g.dailyCloses
-	n := g.swingPivotN
+// lastPivot finds the newest close with pivotN closes on each side, none of
+// which disqualifies it (disqualifies(other, p) is true): a swing high when
+// every neighbour is lower, a swing low when every neighbour is higher.
+// Returns 0 if none is found.
+func lastPivot(h []orders.DailyClose, n int, disqualifies func(other, p float64) bool) (float64, time.Time) {
 	for i := len(h) - n - 1; i >= n; i-- {
-		p := h[i].price
+		p := h[i].Close
 		pivot := true
 		for j := i - n; j <= i+n; j++ {
-			if j != i && disqualifies(h[j].price, p) {
+			if j != i && disqualifies(h[j].Close, p) {
 				pivot = false
 				break
 			}
 		}
 		if pivot {
-			return p, h[i].timestamp
+			return p, h[i].Date
 		}
 	}
 	return 0, time.Time{}
