@@ -201,7 +201,7 @@ The bot sizes and limits itself on Deribit's own margin figures (see *Margin pol
 
 ### Manual rebalance (after a deposit or withdrawal)
 
-The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then. To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
+The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then; new entries size on the new balance at once (it is read from Deribit every cycle), and the MM limit still cuts at any time. The bot never moves funds and journals no transfer: the change shows only in `/api/account`, so note a hand transfer where the P&L is reviewed (2026-10-17 ETH: −127 ETH moved by hand, #124). To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
 
 ```bash
 # preview: same margin simulations, no orders, nothing journaled
