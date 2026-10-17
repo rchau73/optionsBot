@@ -23,6 +23,16 @@ describe("Header", () => {
     expect(within(band).getByText("below flip −1σ")).toBeInTheDocument();
   });
 
+  test("names the environment and its release once", () => {
+    render(<Header bots={[bot({ status: { ...status, deployment: "stable", version: "v0.1.0" } }), bot({ name: "eth" })]} />);
+    expect(screen.getByTestId("deployment")).toHaveTextContent("STABLE · v0.1.0");
+  });
+
+  test("no deployment badge for bots started by hand", () => {
+    render(<Header bots={[bot()]} />);
+    expect(screen.queryByTestId("deployment")).not.toBeInTheDocument();
+  });
+
   test("no flip, no band", () => {
     render(<Header bots={[bot()]} />);
     expect(screen.queryByTestId("flip-band")).not.toBeInTheDocument();

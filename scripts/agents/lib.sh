@@ -8,7 +8,14 @@
 AGENT_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AGENT_STATE_DIR="$AGENT_REPO_DIR/data/agents"          # gitignored
 AGENT_WORK_DIR="${AGENT_WORK_DIR:-$HOME/.optionsbot-agents}" # worktrees, outside the repo
-MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:3000}"
+# shellcheck source=../env_lib.sh
+source "$AGENT_REPO_DIR/scripts/env_lib.sh"
+# The SME agent judges performance on stable and verifies fixes on mvp, where
+# merged work runs first (see scripts/env_lib.sh).
+MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:$(env_port stable || true)}"
+[[ "$MONITOR_URL" != "http://127.0.0.1:" ]] || MONITOR_URL="http://127.0.0.1:3000"
+MVP_MONITOR_URL="${MVP_MONITOR_URL:-http://127.0.0.1:$(env_port mvp || true)}"
+[[ "$MVP_MONITOR_URL" != "http://127.0.0.1:" ]] || MVP_MONITOR_URL="http://127.0.0.1:3100"
 PROJECT_TITLE="${PROJECT_TITLE:-optionsBot · agentic workflow}"
 mkdir -p "$AGENT_STATE_DIR" "$AGENT_WORK_DIR"
 
@@ -173,9 +180,10 @@ add_to_board() {
   echo "$id"
 }
 
-# bots_environment → "testnet" | "live" | "unknown" (live if any bot is live).
+# bots_environment [monitor url] → "testnet" | "live" | "unknown" (live if any
+# bot is live). Default: MONITOR_URL (stable).
 bots_environment() {
-  local bots env any=""
+  local MONITOR_URL="${1:-$MONITOR_URL}" bots env any=""
   bots="$(curl -fsS -m 10 "$MONITOR_URL/api/bots" 2>/dev/null |
     py 'import json,sys; print(" ".join(b["name"] for b in json.load(sys.stdin).get("bots", [])))' 2>/dev/null || true)"
   [[ -n "$bots" ]] || { echo unknown; return; }

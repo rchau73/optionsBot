@@ -261,7 +261,7 @@ SEVERITY: <none|low|medium|high>
 - **Fingerprint:** a stable kebab-case id for the *problem*, not the day (`btc-gex-shed-whipsaw`); reuse an open issue's fingerprint when it has one.
 - **existing / update:** see *Never open a duplicate* above. With `existing`, the script comments `update` on that issue (nothing when it is empty) and never opens a new one. As a last guard, a "new" title near-identical to an open or recently closed issue is posted there as a comment.
 - **resolved:** fingerprints of open issues whose problem you no longer see in today's data.
-- **verifications:** for each issue in `closed_issues.json`, check its acceptance criteria against today's data: `fixed`, `not_fixed` (the script reopens it and moves it back to Triage) or `unclear` (not enough data yet — say what is missing).
+- **verifications:** for each issue in `closed_issues.json`, check its acceptance criteria against today's data — the **mvp** environment's (`mvp/`), where a merged fix runs first; stable (the top-level files) runs a promoted release and is where you judge performance and risk: `fixed`, `not_fixed` (the script reopens it, moves it back to Triage and labels it `sme:not-fixed`, which blocks promoting a release to stable) or `unclear` (not enough data yet — say what is missing; e.g. mvp not running).
 - **Redaction:** when the prompt says amounts must be redacted (a live bot), issue bodies and titles carry no balances, position sizes or P&L figures — describe direction and magnitude in words or percentages. The local report keeps the full numbers. On testnet, full evidence is fine.
 - The JSON must be valid (escape quotes and newlines in bodies).
 

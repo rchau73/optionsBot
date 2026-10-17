@@ -108,11 +108,12 @@ make build                        # → ./bot
 ./bot --config config_btc.yaml --debug
 ```
 
-With Docker (one container per underlying, non-root, restart on failure):
+With Docker, as one of the two local environments, **stable** (a promoted release) and **mvp** (`main`). Each has its own clone and its own Deribit account, and they share nothing ([operations guide](docs/operations.md#environments-stable-and-mvp)):
 
 ```bash
-docker compose up -d bot-btc
-docker compose logs -f bot-btc
+scripts/envctl.sh stable init && scripts/envctl.sh stable up   # then http://localhost:3000
+scripts/envctl.sh stable logs -f bot-btc
+scripts/promote.sh v0.3.0                                      # move stable to a release that ran 3 days in mvp
 ```
 
 | Command | What it does |

@@ -189,7 +189,7 @@ func runLive(cfg *config.Config) error {
 	gexMgr.StartBackground(ctx, 60*time.Second)
 	// Market history for backtests and stress tests: the GEX poll's mainnet
 	// quotes, once per interval. Reads only what is already fetched.
-	if cfg.MarketRecordMinutes > 0 {
+	if cfg.MarketRecordMinutes > 0 && cfg.RecordMarket {
 		go recorder.New(gexMgr, md.DVOL, marketHistoryDir, time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
 		go recorder.New(recorder.NewLinearBook(marketGW, cfg.Underlying), md.DVOL, linearHistoryDir,
 			time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
@@ -261,7 +261,8 @@ func runLive(cfg *config.Config) error {
 		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
 		acct := account.NewPoller(gw)
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
-		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw)}
+		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw),
+			api.WithDeployment(cfg.Deployment, cfg.Version)}
 		if marketGW != gw {
 			opts = append(opts, api.WithConnection("mainnet-public", marketGW))
 		}
@@ -292,6 +293,9 @@ func runLive(cfg *config.Config) error {
 
 	slog.Info("bot starting",
 		"environment", cfg.WSEndpoint(),
+		"deployment", cfg.Deployment,
+		"version", cfg.Version,
+		"record_market", cfg.RecordMarket,
 		"underlying", cfg.Underlying,
 		"target_dte", cfg.TargetDTE,
 		"entry_delta", cfg.EntryDelta,

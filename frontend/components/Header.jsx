@@ -7,11 +7,31 @@ export default function Header({ bots, error }) {
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-line bg-panel px-4 py-3">
       <h1 className="mr-2 text-lg font-bold">optionsBot · Live monitor</h1>
+      <Deployment bots={bots} />
       {error ? <Badge tone="bad">{error}</Badge> : null}
       {bots.map((b) => (
         <BotChip key={b.name} bot={b} />
       ))}
     </header>
+  );
+}
+
+/**
+ * The local environment the bots run in (scripts/envctl.sh): STABLE runs a
+ * promoted release, MVP runs main. Shown once, so two monitors side by side are
+ * never confused. Nothing when the bots were started by hand.
+ */
+export function Deployment({ bots }) {
+  const s = bots.find((b) => b.status?.deployment)?.status;
+  if (!s) return null;
+  const stable = s.deployment === "stable";
+  return (
+    <span data-testid="deployment">
+      <Badge tone={stable ? "good" : "warn"} title={stable ? "promoted release (scripts/promote.sh)" : "main: every merge lands here"}>
+        {s.deployment.toUpperCase()}
+        {s.version ? ` · ${s.version}` : ""}
+      </Badge>
+    </span>
   );
 }
 

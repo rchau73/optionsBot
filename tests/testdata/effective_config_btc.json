@@ -108,5 +108,8 @@
   },
   "APIAddr": "",
   "AccountPollSec": 0,
-  "AdminToken": ""
+  "AdminToken": "",
+  "Deployment": "",
+  "Version": "",
+  "RecordMarket": true
 }

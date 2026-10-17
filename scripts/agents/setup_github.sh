@@ -32,6 +32,7 @@ label "epic"              "3e4b9e" "Epic of the approved PRD (docs/product/PRD.m
 label "epic:parked"       "bfd4f2" "Epic parked in the PRD: nothing goes to Ready"
 label "prototype:review"  "f9d0c4" "Prototype ready for a person to review (link on the epic)"
 label "prototype:approved" "0e8a16" "A person approved the epic's prototype: its UI stories may go to Ready"
+label "sme:not-fixed"     "b60205" "The SME agent found the merged fix did not work: blocks scripts/promote.sh"
 
 # ── 2. Project board ────────────────────────────────────────────────────────
 num="$(gh project list --owner "$owner" --format json -L 100 |
