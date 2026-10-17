@@ -20,7 +20,8 @@ import (
 //
 //   - every cycle: work out the policy status and journal any change;
 //   - MM above max_mm_pct: reduce positions at once (frozen or not);
-//   - a confirmed IM limit change (or startup): resize the book toward it;
+//   - a confirmed IM limit change (or startup, unless IM is already within
+//     rebalance_startup_band_pct of the limit): resize the book toward it;
 //   - entries: blocked while frozen, sized with private/simulate_portfolio so
 //     Deribit's post-trade IM and MM stay inside the limits.
 
@@ -100,6 +101,7 @@ func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
 	s.lastRisk = &st
 	if !first && prev.LimitIMPct != st.LimitIMPct {
 		s.resetRebalanceBackoff()
+		s.startupPass = false // a confirmed limit change is met exactly, band or not
 	}
 	if !first && prev.Frozen == st.Frozen && prev.LimitIMPct == st.LimitIMPct && prev.Reason == st.Reason {
 		return
@@ -171,7 +173,34 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if why != "" {
 		return
 	}
+	if s.startupPass && RebalanceInBand(m.usage.IMPct(), st.LimitIMPct, s.cfg.RebalanceStartupBandPct) {
+		s.skipStartupRebalance(m)
+		return
+	}
 	s.runRebalance(ctx, m)
+}
+
+// RebalanceInBand reports whether IM is within bandPct percentage points of
+// the limit, on either side (band ≤ 0: never). Only the first rebalance after
+// a startup asks it: between restarts IM drifts with the market and nothing
+// acts on it, so without the band each deploy cut or topped up the book to
+// the exact target — 2026-10-17 BTC: IM 20.9 % of 20 % cut, 38 min later
+// 19.0 % re-sold, for no change in risk (#123). Pure.
+func RebalanceInBand(imPct, limitPct, bandPct float64) bool {
+	return bandPct > 0 && math.Abs(imPct-limitPct) <= bandPct
+}
+
+// skipStartupRebalance marks the limit as applied without trading and
+// journals why. The next pass runs on a confirmed limit change (exactly, no
+// band); the MM cut never waits on any of this.
+func (s *Strategy) skipStartupRebalance(m marginState) {
+	s.startupPass = false
+	s.appliedLimit = m.status.LimitIMPct
+	band := s.cfg.RebalanceStartupBandPct
+	detail := fmt.Sprintf("startup: IM %.1f%% within ±%g pp of limit %.0f%% — book not resized", m.usage.IMPct(), band, m.status.LimitIMPct)
+	slog.Info("rebalance: startup IM within the band, book not resized",
+		"im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()), "limit_im_pct", m.status.LimitIMPct, "band_pp", band)
+	s.logRisk(orders.RiskRebalanceInBand, detail, m.status, m.usage, "")
 }
 
 // noteRebalanceWaitEntry journals, once per wait, that a due rebalance waits
@@ -194,6 +223,7 @@ func (s *Strategy) noteRebalanceWaitEntry(m marginState) {
 // rebalance (rearmRebalance), and that must not be overwritten.
 func (s *Strategy) runRebalance(ctx context.Context, m marginState) RebalanceReport {
 	s.appliedLimit = m.status.LimitIMPct
+	s.startupPass = false // retries of this pass (rearmRebalance) go to the exact target
 	rep := s.rebalancePositions(ctx, m, false)
 	if !rep.Done {
 		s.appliedLimit = math.NaN() // something failed: run again next cycle

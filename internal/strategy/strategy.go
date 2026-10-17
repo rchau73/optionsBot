@@ -86,6 +86,7 @@ type Strategy struct {
 	// outcome of the pass whose complements are working (rebalance.go).
 	lastRisk         *risk.Status
 	appliedLimit     float64
+	startupPass      bool // the next rebalance is the first since startup: the band applies (#123)
 	rebalanceRetryAt time.Time
 	unfilledPasses   int
 	pass             rebalancePass
@@ -141,6 +142,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		regimes:          regimes,
 		directions:       d.Directions,
 		appliedLimit:     math.NaN(),
+		startupPass:      true,
 		oi:               d.OI,
 		history:          d.History,
 		pnl:              newPnLBook(),
