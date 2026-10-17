@@ -42,9 +42,12 @@ type Strategy struct {
 	// lastDirection is the last recorded state, so only changes are written.
 	directions    DirectionRecorder
 	lastDirection string
-	oi            OISource    // may be nil
-	history       PnLRecorder // may be nil
-	pnl           *pnlBook
+	// lastSMATrend is the SMA trend last seen, so a change is journaled once
+	// (trend.go; decision loop only).
+	lastSMATrend string
+	oi           OISource    // may be nil
+	history      PnLRecorder // may be nil
+	pnl          *pnlBook
 
 	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
 	noQuote  map[string]bool    // held instruments already warned about missing quotes (decision loop only)
@@ -228,6 +231,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	s.trackPositions(ctx)
 	s.refreshMarks()
 	s.gamma.PushPrice(underlyingPrice)
+	s.noteTrendChange(s.gamma.SMALevels()) // journaled once per change
 
 	gammaDec := s.gamma.Evaluate()
 	s.recordDirection(gammaDec) // the SMA trend next to the GEX bias, on change

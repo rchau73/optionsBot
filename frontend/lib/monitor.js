@@ -25,6 +25,31 @@ export function flipBand(status) {
 }
 
 /**
+ * The levels behind the SMA trend, from a bot's status (`sma`), each with
+ * spot's distance to it in % ((level − spot) ÷ spot × 100: positive = the
+ * level is above spot). A level of 0 is unknown and left out. Null without
+ * levels.
+ */
+export function smaLevels(status) {
+  const l = status?.sma;
+  if (!l) return null;
+  const spot = isNumber(status.market?.spot) && status.market.spot > 0 ? status.market.spot : null;
+  const level = (key, label, date) => {
+    const v = l[key];
+    if (!isNumber(v) || v <= 0) return null;
+    return { key, label, value: v, date: date || null, distancePct: spot ? ((v - spot) / spot) * 100 : null };
+  };
+  const levels = [
+    level("sma9", "SMA9"),
+    level("sma21", "SMA21"),
+    level("swing_high", "Swing high", l.swing_high_date),
+    level("swing_low", "Swing low", l.swing_low_date),
+  ].filter(Boolean);
+  if (levels.length === 0 && !l.trend) return null;
+  return { trend: l.trend || null, reason: l.reason || null, levels };
+}
+
+/**
  * The bot answers but its decision loop has not completed a cycle for 3
  * cycle intervals (at least 2 minutes): no exits or stop-losses are being
  * checked. A halted bot (kill switch) is idle on purpose and never "stalled".
@@ -243,6 +268,7 @@ const EVENT_STYLE = {
   reconciled: { label: "Loaded", tone: "neutral" },
   skipped: { label: "Skipped", tone: "muted" },
   risk_limit: { label: "Margin policy", tone: "neutral" },
+  trend_changed: { label: "SMA trend", tone: "neutral" },
 };
 
 const RISK_CHANGES = {
@@ -313,6 +339,13 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
       text = `${d.detail ?? d.change}${usage}`;
       break;
     }
+    case "trend_changed": {
+      label = `SMA trend ${d.to ?? "?"}`;
+      tone = d.to === "neutral" ? "neutral" : "warn";
+      const source = d.direction === "bias" ? " (recorded; rules use the GEX bias)" : "";
+      text = `${d.from ?? "?"} → ${d.to ?? "?"} — ${d.reason ?? "unknown reason"}${source}`;
+      break;
+    }
     default:
       text = ev.event;
   }
@@ -324,9 +357,22 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
     m.gex_regime || null,
     ev.event === "risk_limit" && isNumber(d.dvol) && d.dvol > 0 ? `DVOL ${d.dvol.toFixed(1)} (p${Math.round(d.iv_percentile ?? 0)})` : null,
     ev.event === "risk_limit" ? d.regime || null : null,
+    ...(ev.event === "trend_changed" ? trendContext(d) : []),
   ].filter(Boolean);
 
   return { id: `${bot}:${ev.seq}`, seq: ev.seq, at: ev.at, bot, event: ev.event, label, tone, text, context };
+}
+
+/** The levels a trend_changed event carries, as feed context items. */
+function trendContext(d) {
+  const swing = (name, v, date) => (isNumber(v) && v > 0 ? `${name} ${formatUSD(v)}${date ? ` (${date})` : ""}` : null);
+  return [
+    isNumber(d.spot) && d.spot > 0 ? `spot ${formatUSD(d.spot)}` : null,
+    isNumber(d.sma9) && d.sma9 > 0 ? `SMA9 ${formatUSD(d.sma9)}` : null,
+    isNumber(d.sma21) && d.sma21 > 0 ? `SMA21 ${formatUSD(d.sma21)}` : null,
+    swing("swing high", d.swing_high, d.swing_high_date),
+    swing("swing low", d.swing_low, d.swing_low_date),
+  ];
 }
 
 /** Merges new feed lines into the list, newest first, capped at max. */

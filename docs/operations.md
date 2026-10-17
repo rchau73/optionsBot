@@ -59,7 +59,7 @@ docker compose exec bot-btc sh       # shell inside the container (runs as a non
 
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot. It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it. The log lines carry `dir`.
 
-**Activity feed.** The bot keeps its last 500 decisions in memory for the monitor (`/api/events`); periodic `pnl` lines are counted but not kept there, so they never push decisions out — the feed shows the latest orders, fills, closes, skips and margin changes however long ago they happened, also right after a restart.
+**Activity feed.** The bot keeps its last 500 decisions in memory for the monitor (`/api/events`); periodic `pnl` lines are counted but not kept there, so they never push decisions out — the feed shows the latest orders, fills, closes, skips, margin changes and SMA trend changes (`trend_changed`, journaled once per change with the reason and the levels, whichever `gex_direction` the bot uses) however long ago they happened, also right after a restart.
 
 **History across restarts.** Each bot replays its journal (`orders.log`) at startup, so realized P&L, close and order counts, the activity feed and the trade history continue where they stopped (`history restored from the journal` in the log gives the totals). To start a fresh history — e.g. after changing the strategy — archive it; nothing is deleted:
 
