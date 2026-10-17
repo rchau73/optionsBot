@@ -8,6 +8,8 @@
 #      and a Priority field (P0…P3) the PM agent sets and the Dev agent follows
 #   3. a ruleset on main: changes only through pull requests with green CI;
 #      no force pushes, no deletion. The agents cannot merge; a person does.
+#   4. delete_branch_on_merge: GitHub deletes a PR's branch when it is merged
+#      (scripts/prune_branches.sh deletes the local copies).
 #
 # Needs: gh logged in with the `project` scope (gh auth refresh -s project).
 set -euo pipefail
@@ -105,4 +107,7 @@ else
 JSON
   log "ruleset created: main only through PRs with green CI"
 fi
+# ── 4. Merged branches are deleted ─────────────────────────────────────────
+gh api -X PATCH "repos/$slug" -F delete_branch_on_merge=true >/dev/null
+log "merged PR branches are deleted automatically"
 log "done — board: https://github.com/users/$owner/projects/$num"
