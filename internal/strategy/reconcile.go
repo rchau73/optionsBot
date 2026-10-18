@@ -128,6 +128,9 @@ type ReconciledStrangle struct {
 	Call, Put *orders.Position
 	Expiry    time.Time
 	Slot      config.StrangleSlot
+	// SlotFromJournal: the journal says Slot opened every leg it has a
+	// record for (else the slot is the nearest by total distance).
+	SlotFromJournal bool
 }
 
 // GroupPositions rebuilds strangles from short positions after a restart.
@@ -136,8 +139,9 @@ type ReconciledStrangle struct {
 // opened together have the same size — and, among equal sizes, by rank from
 // the money (nearest call with nearest put); any leg left over becomes a
 // one-legged strangle. Every position lands in
-// exactly one strangle. Each strangle gets the closest slot not yet taken
-// (closest pairs first); only when every slot is taken may two share one.
+// exactly one strangle. Slots are given by assignSlots: the slot the journal
+// says opened the legs (opened, may be nil) first, then the lowest total
+// distance; only when every slot is taken may two share one.
 //
 // Deribit reports one position per instrument, so a strike that backed two
 // strangles (two slots on one expiry picking the same call, say) comes back
@@ -146,6 +150,8 @@ type ReconciledStrangle struct {
 // leg's size) becomes a second position paired with the lone leg. Without
 // the split, leg balancing bought the "excess" back and repair re-sold it at
 // every restart (2026-10-06: ETH 3300-C 262 = 162 + 100, two round trips).
+// Two uneven pairs whose excesses offset (one a call too many, the other a
+// put) are split the same way into one more strangle.
 // Split pieces have no ID; the caller stores them and the reduced originals.
 // The input positions are not modified.
 //
@@ -153,7 +159,7 @@ type ReconciledStrangle struct {
 // put of an expiry: the other legs were loaded but in no strangle, so the
 // startup rebalance undercounted the book and added top-ups at every restart,
 // and leg balancing bought back legs it saw as excess.
-func GroupPositions(positions []*orders.Position, now time.Time, slots []config.StrangleSlot) []ReconciledStrangle {
+func GroupPositions(positions []*orders.Position, now time.Time, slots []config.StrangleSlot, opened OpenSlots) []ReconciledStrangle {
 	type side struct{ calls, puts []*orders.Position }
 	byExpiry := map[time.Time]*side{}
 	var expiries []time.Time
@@ -250,6 +256,30 @@ func GroupPositions(positions []*orders.Position, now time.Time, slots []config.
 				pr = &pairs[i] // append may have moved the slice
 			}
 		}
+		// Uneven pairs that offset each other: Deribit merged a strike of
+		// one strangle into a pair whose other leg it also merged (2026-10-17
+		// BTC 27NOV: calls 2.1 + 0.2 = puts 1.8 + 0.5, true strangles
+		// 1.6/1.6, 0.5/0.5, 0.2/0.2). One pair's excess call and another's
+		// excess put make one more strangle, so leg balancing buys back
+		// nothing that is hedged.
+		for {
+			ci, pi := -1, -1
+			for i, pr := range pairs {
+				switch {
+				case pr.Call.Qty-pr.Put.Qty > qtyEpsilon && ci < 0:
+					ci = i
+				case pr.Put.Qty-pr.Call.Qty > qtyEpsilon && pi < 0:
+					pi = i
+				}
+			}
+			if ci < 0 || pi < 0 {
+				break
+			}
+			q := math.Min(pairs[ci].Call.Qty-pairs[ci].Put.Qty, pairs[pi].Put.Qty-pairs[pi].Call.Qty)
+			call := splitOff(pairs[ci].Call, q)
+			put := splitOff(pairs[pi].Put, q)
+			pairs = append(pairs, ReconciledStrangle{Call: call, Put: put, Expiry: exp})
+		}
 		out = append(out, pairs...)
 		for _, c := range loneCalls {
 			out = append(out, ReconciledStrangle{Call: c, Expiry: exp})
@@ -259,26 +289,7 @@ func GroupPositions(positions []*orders.Position, now time.Time, slots []config.
 		}
 	}
 
-	// Slots: repeatedly take the closest (strangle, free slot) pair.
-	taken := map[int]bool{}
-	assigned := make([]bool, len(out))
-	for range out {
-		bi, bs, best := -1, -1, math.MaxFloat64
-		for i, st := range out {
-			if assigned[i] {
-				continue
-			}
-			for j, sl := range slots {
-				if taken[j] && len(taken) < len(slots) {
-					continue
-				}
-				if sc := slotScore(st.Call, st.Put, st.Expiry, now, sl); sc < best {
-					bi, bs, best = i, j, sc
-				}
-			}
-		}
-		out[bi].Slot, assigned[bi], taken[bs] = slots[bs], true, true
-	}
+	assignSlots(out, now, slots, opened)
 	return out
 }
 
@@ -341,7 +352,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	// Reconstruct strangles: every position in exactly one strangle, pairs
 	// matched by delta on each expiry (GroupPositions). Single legs are
 	// registered as partial strangles so repair can fill the missing leg.
-	for _, g := range GroupPositions(loaded, now, s.cfg.Slots()) {
+	for _, g := range GroupPositions(loaded, now, s.cfg.Slots(), s.journalSlots) {
 		call, put, expiry, bestSlot := g.Call, g.Put, g.Expiry, g.Slot
 		// Store split pieces and the reduced sizes of the legs they came from.
 		for _, leg := range []*orders.Position{call, put} {
@@ -361,9 +372,12 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			ID: stID, TargetDTE: bestSlot.TargetDTE, EntryDelta: bestSlot.EntryDelta,
 			CallLeg: call, PutLeg: put, OpenedAt: now,
 		})
+		detail := reconciledDetail(stID, g)
 		for _, leg := range []*orders.Position{call, put} {
 			if leg != nil {
-				s.journal.LogReconciled(leg, s.instrumentContext(leg.Instrument, slotRef(bestSlot.TargetDTE, bestSlot.EntryDelta)))
+				ctx := s.instrumentContext(leg.Instrument, slotRef(bestSlot.TargetDTE, bestSlot.EntryDelta))
+				ctx.Detail = detail
+				s.journal.LogReconciled(leg, ctx)
 			}
 		}
 		if call != nil && put != nil {
@@ -371,8 +385,11 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 				"strangle_id", stID,
 				"call", call.Instrument,
 				"put", put.Instrument,
+				"call_qty", call.Qty,
+				"put_qty", put.Qty,
 				"target_dte", bestSlot.TargetDTE,
 				"entry_delta", bestSlot.EntryDelta,
+				"slot_from_journal", g.SlotFromJournal,
 				"actual_dte", int(expiry.Sub(now).Hours()/24),
 			)
 		} else {
@@ -435,6 +452,23 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 		"positions", len(shorts),
 		"strangles", len(s.state.AllStrangles()),
 	)
+}
+
+// reconciledDetail says how a rebuilt strangle was paired and why it got
+// its slot, for the journal's reconciled lines.
+func reconciledDetail(stID string, g ReconciledStrangle) string {
+	leg := func(p *orders.Position) string {
+		if p == nil {
+			return "none"
+		}
+		return fmt.Sprintf("%s %.6g", p.Instrument, p.Qty)
+	}
+	why := "nearest by total distance"
+	if g.SlotFromJournal {
+		why = "opened there (journal)"
+	}
+	return fmt.Sprintf("strangle %s: call %s / put %s; slot %dd/%.2f %s",
+		stID, leg(g.Call), leg(g.Put), g.Slot.TargetDTE, g.Slot.EntryDelta, why)
 }
 
 func absInt(x int) int {

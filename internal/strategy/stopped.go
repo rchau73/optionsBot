@@ -135,11 +135,13 @@ func StopsFromTrades(trades []orders.Trade) map[StopSide]time.Time {
 }
 
 // RestoreStops hands the journal's trades to the strategy; the stop records
-// and GEX shed anchors are rebuilt after the startup reconcile. Call before
-// Run.
+// and GEX shed anchors are rebuilt after the startup reconcile, which also
+// gives each strangle the slot that opened it (OpenSlotsFromTrades). Call
+// before Run.
 func (s *Strategy) RestoreStops(trades []orders.Trade) {
 	s.journalStops = StopsFromTrades(trades)
 	s.journalSheds = ShedsFromTrades(trades)
+	s.journalSlots = OpenSlotsFromTrades(trades)
 }
 
 // applyJournalStops records a stop for every reconciled strangle missing a

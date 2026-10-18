@@ -61,6 +61,9 @@ type Strategy struct {
 	// journalSheds: GEX-shed sides read from the journal (RestoreStops),
 	// anchored on the reconciled strangles at startup (applyJournalSheds).
 	journalSheds map[StopSide]JournalShed
+	// journalSlots: the slot that opened each held instrument, read from
+	// the journal (RestoreStops); the startup regrouping prefers it.
+	journalSlots OpenSlots
 	repairHeld   map[string]string
 	// Legs shed by GEX, by strangle and type: the flip they were shed at
 	// (shed.go). In memory like stopped, and rebuilt from the journal at
