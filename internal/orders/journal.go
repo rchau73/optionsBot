@@ -39,15 +39,17 @@ type TrendRecord struct {
 
 // Risk changes journaled as EventRisk.
 const (
-	RiskFrozen          = "frozen"            // a DVOL band or gamma regime change was seen; new risk blocked
-	RiskUnfrozen        = "unfrozen"          // the change reverted before confirmation, or was confirmed
-	RiskLimitChanged    = "limit_changed"     // a confirmed change moved the IM limit
-	RiskRebalance       = "rebalance"         // the book is being resized toward the IM limit
-	RiskRebalanceInBand = "rebalance_in_band" // startup: IM within the band around the limit, the book is not resized (#123)
-	RiskRegimeSeeded    = "regime_seeded"     // brand-new start: no regime history, the live regime taken as confirmed (#147)
-	RiskRebalanceRetry  = "rebalance_retry"   // a complement fell short: the rebalance runs again after a cooldown
-	RiskRebalanceManual = "rebalance_manual"  // a person asked for a rebalance (POST /api/rebalance)
-	RiskMMBreach        = "mm_breach"         // maintenance margin above max_mm_pct: reducing now
+	RiskFrozen          = "frozen"                // a DVOL band or gamma regime change was seen; new risk blocked
+	RiskUnfrozen        = "unfrozen"              // the change reverted before confirmation, or was confirmed
+	RiskLimitChanged    = "limit_changed"         // a confirmed change moved the IM limit
+	RiskRebalance       = "rebalance"             // the book is being resized toward the IM limit
+	RiskRebalanceInBand = "rebalance_in_band"     // startup: IM within the band around the limit, the book is not resized (#123)
+	RiskRegimeSeeded    = "regime_seeded"         // brand-new start: no regime history, the live regime taken as confirmed (#147)
+	RiskRebalanceRetry  = "rebalance_retry"       // a complement fell short: the rebalance runs again after a cooldown
+	RiskRebalanceManual = "rebalance_manual"      // a person asked for a rebalance (POST /api/rebalance)
+	RiskMMBreach        = "mm_breach"             // maintenance margin above max_mm_pct: reducing now
+	RiskIMOverLimit     = "im_over_limit"         // IM above the limit beyond the band, no rebalance due: alert only, no order (#166)
+	RiskIMOverLimitDone = "im_over_limit_cleared" // IM back at or under the limit: the episode ends
 )
 
 // RiskRecord is one margin-policy decision with the figures behind it.
@@ -65,10 +67,15 @@ type RiskRecord struct {
 	IMPct        float64   `json:"im_pct"`
 	MMPct        float64   `json:"mm_pct"`
 	Unit         string    `json:"unit,omitempty"`
-	DVOL         float64   `json:"dvol"`
-	IVPercentile float64   `json:"iv_percentile"`
-	Regime       string    `json:"regime"`
-	Frozen       bool      `json:"frozen"`
+	// MarginBalance is Deribit's margin balance behind IMPct (in Unit);
+	// RefMarginBalance, on im_over_limit records only, the balance at the
+	// last rebalance or confirmed limit change, so a reader sees whether it moved.
+	MarginBalance    float64 `json:"margin_balance,omitempty"`
+	RefMarginBalance float64 `json:"ref_margin_balance,omitempty"`
+	DVOL             float64 `json:"dvol"`
+	IVPercentile     float64 `json:"iv_percentile"`
+	Regime           string  `json:"regime"`
+	Frozen           bool    `json:"frozen"`
 }
 
 // SlotRef identifies the (DTE, delta) strategy slot a record belongs to.

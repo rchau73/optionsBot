@@ -95,6 +95,9 @@ export function riskRows(bots) {
         mmPct: r.error ? null : r.mm_pct,
         unit: r.unit,
         error: r.error || null,
+        // IM over the limit with no rebalance due (#166): alert only, the bot resizes nothing.
+        imOverLimit: Boolean(r.im_over_limit),
+        imOverLimitSince: r.im_over_limit_since || null,
       };
     });
 }

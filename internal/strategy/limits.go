@@ -22,6 +22,8 @@ import (
 //   - MM above max_mm_pct: reduce positions at once (frozen or not);
 //   - a confirmed IM limit change (or startup, unless IM is already within
 //     rebalance_startup_band_pct of the limit): resize the book toward it;
+//   - IM over the limit with no rebalance due (a transfer out, a price move):
+//     journal im_over_limit once per episode, send nothing (imalert.go);
 //   - entries: blocked while frozen, sized with private/simulate_portfolio so
 //     Deribit's post-trade IM and MM stay inside the limits.
 
@@ -111,6 +113,9 @@ func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
 	s.lastRisk = &st
 	if !first && prev.LimitIMPct != st.LimitIMPct {
 		s.resetRebalanceBackoff()
+		if b := s.lastUsage().MarginBalance; b > 0 {
+			s.refBalance = b // the balance the new limit is first measured against (imalert.go)
+		}
 		s.startupPass = false // a confirmed limit change is met exactly, band or not
 	}
 	if !first && prev.Frozen == st.Frozen && prev.LimitIMPct == st.LimitIMPct && prev.Reason == st.Reason {
@@ -134,12 +139,16 @@ func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
 }
 
 func (s *Strategy) logRisk(change, detail string, st risk.Status, u risk.Usage, regime string) {
-	s.journal.LogRisk(orders.RiskRecord{
+	s.journal.LogRisk(s.riskRecord(change, detail, st, u, regime))
+}
+
+func (s *Strategy) riskRecord(change, detail string, st risk.Status, u risk.Usage, regime string) orders.RiskRecord {
+	return orders.RiskRecord{
 		Timestamp: time.Now().UTC(), StrategyID: s.strategyID(), Change: change, Detail: detail,
 		LimitIMPct: st.LimitIMPct, BandLimitPct: st.BandLimitPct, MaxMMPct: st.MaxMMPct,
-		IMPct: u.IMPct(), MMPct: u.MMPct(), Unit: u.Unit,
+		IMPct: u.IMPct(), MMPct: u.MMPct(), Unit: u.Unit, MarginBalance: u.MarginBalance,
 		DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(), Regime: regime, Frozen: st.Frozen,
-	})
+	}
 }
 
 // marginNow reads Deribit's current margin and evaluates the policy.
@@ -162,17 +171,25 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 	if m.err != nil {
 		return // no margin data: hold, exits still run
 	}
+	if rebalanced := s.enforceMarginPolicy(ctx, m); !rebalanced {
+		s.noteIMOverLimit(m, time.Now()) // alert only; a pass that just ran made this IM reading stale
+	}
+}
+
+// enforceMarginPolicy runs the MM cut or the rebalance when one is due and
+// reports whether a rebalance pass ran.
+func (s *Strategy) enforceMarginPolicy(ctx context.Context, m marginState) bool {
 	if m.mmBreached() {
 		s.cancelNewRisk(ctx, "MM limit reached")
 		s.reduceForMM(ctx, m)
-		return
+		return false
 	}
 	st := m.status
 	if st.Frozen {
 		s.cancelNewRisk(ctx, "new risk frozen: "+st.FreezeReason)
 	}
 	if st.LimitIMPct == s.appliedLimit || time.Now().Before(s.rebalanceRetryAt) {
-		return // nothing to resize, or a complement fell short recently
+		return false // nothing to resize, or a complement fell short recently
 	}
 	why := s.rebalanceBlockReason(m)
 	if why == rebalanceWaitEntry {
@@ -181,13 +198,14 @@ func (s *Strategy) applyMarginPolicy(ctx context.Context, m marginState) {
 		s.waitEntryNoted = false
 	}
 	if why != "" {
-		return
+		return false
 	}
 	if s.startupPass && RebalanceInBand(m.usage.IMPct(), st.LimitIMPct, s.cfg.RebalanceStartupBandPct) {
 		s.skipStartupRebalance(m)
-		return
+		return false
 	}
 	s.runRebalance(ctx, m)
+	return true
 }
 
 // RebalanceInBand reports whether IM is within bandPct percentage points of
@@ -206,6 +224,7 @@ func RebalanceInBand(imPct, limitPct, bandPct float64) bool {
 func (s *Strategy) skipStartupRebalance(m marginState) {
 	s.startupPass = false
 	s.appliedLimit = m.status.LimitIMPct
+	s.refBalance = m.usage.MarginBalance
 	band := s.cfg.RebalanceStartupBandPct
 	detail := fmt.Sprintf("startup: IM %.1f%% within ±%g pp of limit %.0f%% — book not resized", m.usage.IMPct(), band, m.status.LimitIMPct)
 	slog.Info("rebalance: startup IM within the band, book not resized",
@@ -233,6 +252,7 @@ func (s *Strategy) noteRebalanceWaitEntry(m marginState) {
 // rebalance (rearmRebalance), and that must not be overwritten.
 func (s *Strategy) runRebalance(ctx context.Context, m marginState) RebalanceReport {
 	s.appliedLimit = m.status.LimitIMPct
+	s.refBalance = m.usage.MarginBalance
 	s.startupPass = false // retries of this pass (rearmRebalance) go to the exact target
 	rep := s.rebalancePositions(ctx, m, false)
 	if !rep.Done {

@@ -211,6 +211,8 @@ curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/
 curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/api/rebalance"
 ```
 
+**When to look:** if IM rises more than 1.5 pp (`rebalance_startup_band_pct`) over the bot's IM limit with no rebalance due — a transfer out, or a price move — the bot journals one `risk_limit` `im_over_limit` line and a WARN (`IM over the limit with no rebalance due`) with IM, the limit, the margin balance now and at the last rebalance or confirmed limit change (`margin_balance`, `ref_margin_balance`), and shows a badge beside the button ("IM over limit since … — review with a dry run"; `risk.im_over_limit` and `risk.im_over_limit_since` in `/api/status`). It sends no order (#166). The episode ends, journaled `im_over_limit_cleared`, once IM is back at or under the limit; a new crossing starts a new one. The episode is kept in memory: a restart in the middle of one journals it once more.
+
 It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement or an entry is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it. It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders. A real pass is journaled as `risk_limit` `rebalance_manual`.
 
 ## Two connections on testnet

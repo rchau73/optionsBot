@@ -57,6 +57,18 @@ type RiskView struct {
 	MarginBalance float64     `json:"margin_balance"`
 	Error         string      `json:"error,omitempty"` // margin unknown this cycle
 	AsOf          time.Time   `json:"as_of"`
+	// IMOverLimit: IM is over the limit with no rebalance due (imalert.go,
+	// #166), since IMOverLimitSince. Nothing is resized: a person decides.
+	IMOverLimit      bool       `json:"im_over_limit"`
+	IMOverLimitSince *time.Time `json:"im_over_limit_since,omitempty"`
+}
+
+// setIMOverLimit sets the episode fields from its start (zero: none).
+func (rv *RiskView) setIMOverLimit(since time.Time) {
+	rv.IMOverLimit, rv.IMOverLimitSince = !since.IsZero(), nil
+	if rv.IMOverLimit {
+		rv.IMOverLimitSince = &since
+	}
 }
 
 // StrangleView is one strangle and its open legs.
@@ -191,6 +203,7 @@ func (s *Strategy) recordAccount(equity, marginUsed float64) {
 // recordRisk publishes the cycle's margin policy decision for the view.
 func (s *Strategy) recordRisk(m marginState) {
 	rv := RiskView{Status: m.status, AsOf: time.Now()}
+	rv.setIMOverLimit(s.imOverSince)
 	if m.err != nil {
 		rv.Error = m.err.Error()
 	} else {

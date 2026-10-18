@@ -6,7 +6,7 @@ import StatTile from "./StatTile";
 import { RebalanceButton, RebalanceModal } from "./Rebalance";
 import { LIQUIDATION_MM_PCT, accountSummary, marginLevel, marginModelLabel, worstMMPct } from "@/lib/account";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
-import { formatAge, formatPct, formatUSD } from "@/lib/format";
+import { formatAge, formatDateTime, formatPct, formatTime, formatUSD } from "@/lib/format";
 
 const ACCOUNT_STALE_SEC = Math.max(STALE_AFTER_SEC, 30); // the bot polls the account every ~10 s
 const isStale = (ageSec) => ageSec == null || ageSec > ACCOUNT_STALE_SEC;
@@ -168,6 +168,13 @@ function RiskTable({ rows }) {
               </td>
               <td className="px-2 py-1">
                 <RebalanceButton row={r} onOpen={setRebalancing} />
+                {r.imOverLimit ? (
+                  <div className="mt-1">
+                    <Badge tone="warn" title={`Since ${formatDateTime(r.imOverLimitSince)}. The bot does not resize the book by itself.`}>
+                      IM over limit since {formatTime(r.imOverLimitSince)} — review with a dry run
+                    </Badge>
+                  </div>
+                ) : null}
               </td>
             </tr>
           ))}

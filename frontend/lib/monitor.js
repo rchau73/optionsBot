@@ -277,6 +277,8 @@ const RISK_CHANGES = {
   limit_changed: { label: "IM limit", tone: "neutral" },
   rebalance: { label: "Rebalance", tone: "neutral" },
   mm_breach: { label: "MM breach", tone: "bad" },
+  im_over_limit: { label: "IM over limit", tone: "warn" },
+  im_over_limit_cleared: { label: "IM back under limit", tone: "neutral" },
 };
 
 const CLOSE_LABELS = {
