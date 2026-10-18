@@ -12,6 +12,7 @@ make cover                     # coverage across ./internal/... (tests live in .
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
 scripts/promote.sh v0.3.0      # stable → a release: 3 days in mvp, no open sme:not-fixed; rollback = an older tag
+scripts/prune_branches.sh      # delete local branches already in main (GitHub deletes merged PR branches itself)
 make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
 
 ./bot --config config_btc.yaml                     # trade on testnet (default)

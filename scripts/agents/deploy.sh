@@ -13,6 +13,8 @@
 #   4. moves every card whose issue is now closed (the PR said "Closes #n",
 #      or a person closed it) to Done; a card that was In review or In
 #      progress gets a comment naming the deployed commit.
+#   5. deletes the mvp clone's local branches already in main (the Dev agent's
+#      agent/issue-<n>; GitHub deletes the remote one at merge).
 # With mvp up to date, a tick still moves closed cards to Done (no comment):
 # the board's "Item closed" workflow is off, and an issue closed by hand
 # would otherwise stay in its column (2026-10-17: #131, #133 In progress).
@@ -96,4 +98,5 @@ env_record deploys.tsv mvp "$target"
 log "deploy: mvp ${target:0:7} healthy"
 
 close_out "$target"
+"$AGENT_REPO_DIR/scripts/prune_branches.sh" "$dir" | tail -1 || true # merged agent branches
 notify "Deployed to mvp" "${target:0:7}: $(git -C "$dir" log -1 --format=%s "$target")"
