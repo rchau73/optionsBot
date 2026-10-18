@@ -129,5 +129,60 @@ class Gate(unittest.TestCase):
         self.assertEqual(pm_board.gate(pm, [card(1, labels=["epic"]), closed], epics(), {}), [])
 
 
+class TestAgentPMTickets(unittest.TestCase):
+    def test_never_to_ready(self):
+        pm = {"decisions": [{"issue": 1, "epic": "E2", "priority": "P1", "action": "ready", "rule_area": "none"}]}
+        a = pm_board.gate(pm, [card(1, labels=["agent:pm"])], epics(), {})[0]
+        self.assertNotIn("move", a)
+        self.assertIn("PM agent's own work", a["refused"])
+
+    def test_placed_ones_leave_triage_to_the_answer_step(self):
+        board = [card(1, labels=["agent:pm"], parent=100), card(2, labels=["agent:pm"])]
+        self.assertEqual(pm_board.pending(board, {}, epics())["triage"], [2])
+
+
+def ticket(n=149, msgs=(), status="Triage", labels=("agent:pm",), body="🧭 **PM** question", state="OPEN"):
+    return {"number": n, "state": state, "status": status, "labels": list(labels), "created": "2026-10-18T01:00:00Z",
+            "body": body, "messages": [{"at": at, "body": b} for at, b in msgs]}
+
+
+class TestAnswered(unittest.TestCase):
+    PM = "🧭 **PM agent** — epic E5"
+    DEV = "🤖 **Dev agent** picked this up"
+
+    def test_a_person_answer_after_the_pm(self):
+        t = ticket(msgs=[("2026-10-18T01:57:00Z", self.PM), ("2026-10-18T02:40:00Z", "1. Yes"),
+                         ("2026-10-18T02:43:00Z", self.DEV), ("2026-10-18T03:08:00Z", "Yes, for the PM")])
+        self.assertEqual(pm_board.answered([t], {}), 149)
+
+    def test_other_agents_do_not_hide_an_answer(self):
+        t = ticket(msgs=[("2026-10-18T01:57:00Z", self.PM), ("2026-10-18T02:40:00Z", "1. Yes"),
+                         ("2026-10-18T02:43:00Z", self.DEV)])
+        self.assertEqual(pm_board.answered([t], {}), 149)
+
+    def test_nothing_after_the_pm_reply(self):
+        t = ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes"), ("2026-10-18T03:00:00Z", "x\n<!-- agent:pm -->")])
+        self.assertIsNone(pm_board.answered([t], {}))
+
+    def test_a_handled_run_is_not_repeated(self):
+        t = ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes")])
+        self.assertIsNone(pm_board.answered([t], {"answered": {"149": "2026-10-18T02:40:00Z"}}))
+
+    def test_a_person_filed_request_counts(self):
+        self.assertEqual(pm_board.answered([ticket(body="Add an epic for X")], {}), 149)
+        self.assertIsNone(pm_board.answered([ticket()], {}))
+
+    def test_skips_other_tickets_and_columns(self):
+        msgs = [("2026-10-18T02:40:00Z", "answer")]
+        for t in (ticket(labels=()), ticket(labels=("agent:pm", "epic")), ticket(status="In progress"),
+                  ticket(status="Done"), ticket(state="CLOSED")):
+            self.assertIsNone(pm_board.answered([dict(t, messages=[{"at": a, "body": b} for a, b in msgs])], {}))
+
+    def test_oldest_answer_first(self):
+        a = ticket(n=1, msgs=[("2026-10-18T05:00:00Z", "late")])
+        b = ticket(n=2, msgs=[("2026-10-18T04:00:00Z", "early")])
+        self.assertEqual(pm_board.answered([a, b], {}), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

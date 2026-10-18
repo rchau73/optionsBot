@@ -4,6 +4,7 @@
     pm_board.py epics   <PRD.md> <out.json>
     pm_board.py pending <board.json> <state.json> <epics.json> <out.json>
     pm_board.py gate    <pm.json> <board.json> <epics.json> <state.json> <out.json>
+    pm_board.py answered <tickets.json> <state.json>
 
 `epics` reads the approved PRD (docs/product/PRD.md on main — a person merged it,
 so every epic there is approved by that merge) into a list of epics. Each epic is
@@ -19,6 +20,10 @@ prototype a person approved (label prototype:approved on the epic issue) before 
 `pending` lists what the agent has to decide this run: Triage cards that are new or
 changed since its last decision, and cards with no epic in any open column.
 
+`answered` prints the `agent:pm` ticket whose person's message the agent must act on
+next (pm_answer.sh): the newest message from a person, on the ticket or its PRD pull
+request, is newer than the PM agent's last comment and than its last run on it.
+
 `gate` turns the agent's decisions into actions, refusing (and saying why) everything
 the PRD has not approved. The agent proposes, this file decides what is allowed, the
 shell script acts. Only Triage cards move to Ready; only cards the PM itself put in
@@ -29,6 +34,11 @@ Standard library only: launchd runs it with the system python3.
 import json
 import re
 import sys
+
+# Every comment comes from the same GitHub account, so an agent's comment is told
+# apart by its header (🧭 PM, 🤖 Dev/Reviewer, 🚀 deploy, **SME …) or a marker.
+AGENT_COMMENT = re.compile(r"^\s*(🧭|🤖|🚀|🔎|🩺|\*\*SME\b)|<!--\s*agent:", re.S)
+PM_COMMENT = re.compile(r"^\s*🧭|<!--\s*agent:pm\s*-->", re.S)
 
 RULE_AREAS = {
     "entry", "exits", "repair", "rebalance", "margin", "gex", "sizing",
@@ -86,6 +96,8 @@ def pending(board, state, epics):
         if "epic" in c["labels"] or c["number"] in epic_numbers or c["state"] != "OPEN":
             continue
         if c["status"] == "Triage":
+            if "agent:pm" in c["labels"] and c.get("parent"):
+                continue  # placed already: a person's answer goes to pm_answer.sh
             # Decided already and unchanged (e.g. waiting for a person): not asked again.
             if c["updatedAt"] > seen.get(str(c["number"]), ""):
                 triage.append(c["number"])
@@ -116,6 +128,8 @@ def gate(pm, board, epics, state):
             a["priority"] = d["priority"]  # cards in flight keep their order
         if c["status"] == "Triage" and d.get("action") == "ready":
             why = ready_refusal(d, c, epic)
+            if not why and "agent:pm" in c["labels"]:
+                why = "an agent:pm ticket is the PM agent's own work (a PRD change or a decision), not the Dev agent's"
             if why:
                 a["refused"] = why
             else:
@@ -159,6 +173,31 @@ def ready_refusal(d, card, epic):
     return ""
 
 
+def is_agent_comment(body):
+    return bool(AGENT_COMMENT.search(body or ""))
+
+
+def answered(tickets, state):
+    """Number of the agent:pm ticket to act on next, or None. Each ticket:
+    {number, state, status, labels, created, body, messages: [{at, body}]}, the
+    messages being the ticket's comments plus its open PRD pull request's comments
+    and reviews. The body counts as a person's message unless an agent wrote it."""
+    done = state.get("answered", {})
+    due = []
+    for t in tickets:
+        if (t["state"] != "OPEN" or "agent:pm" not in t["labels"] or "epic" in t["labels"]
+                or t["status"] in ("In progress", "Done")):
+            continue
+        msgs = list(t.get("messages", []))
+        if t.get("body") and not is_agent_comment(t["body"]):
+            msgs.append({"at": t["created"], "body": t["body"]})
+        person = max((m["at"] for m in msgs if not is_agent_comment(m["body"])), default="")
+        pm = max((m["at"] for m in msgs if PM_COMMENT.search(m["body"] or "")), default="")
+        if person and person > pm and person > done.get(str(t["number"]), ""):
+            due.append((person, t["number"]))
+    return min(due)[1] if due else None
+
+
 def _load(path, default):
     try:
         return json.load(open(path))
@@ -177,6 +216,10 @@ def main(argv):
         pm, board, epics, state = (json.load(open(argv[2])), json.load(open(argv[3])),
                                    json.load(open(argv[4])), _load(argv[5], {}))
         json.dump(gate(pm, board, epics, state), open(argv[6], "w"), indent=1)
+    elif cmd == "answered":
+        n = answered(json.load(open(argv[2])), _load(argv[3], {}))
+        if n is not None:
+            print(n)
     else:
         raise SystemExit(f"unknown command {cmd}")
 
