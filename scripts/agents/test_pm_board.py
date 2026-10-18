@@ -1,6 +1,10 @@
 """Tests of pm_board.py: python3 -m unittest discover -s scripts/agents -p 'test_*.py'"""
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -182,6 +186,162 @@ class TestAnswered(unittest.TestCase):
         a = ticket(n=1, msgs=[("2026-10-18T05:00:00Z", "late")])
         b = ticket(n=2, msgs=[("2026-10-18T04:00:00Z", "early")])
         self.assertEqual(pm_board.answered([a, b], {}), 2)
+
+
+def prd_with(marker_e1, extra=""):
+    return f"## Epics\n### E1 · Engine\n<!-- epic: {marker_e1} -->\n{extra}"
+
+
+class TestPolicyReasons(unittest.TestCase):
+    MAIN = pm_board.parse_epics(prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'))
+
+    def reasons(self, after_marker, declared="no", extra=""):
+        return pm_board.policy_reasons(self.MAIN, pm_board.parse_epics(prd_with(after_marker, extra)), declared)
+
+    def test_wording_change_without_policy_may_self_merge(self):
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'), [])
+
+    def test_narrowing_rule_areas_may_self_merge(self):
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": []}'), [])
+
+    def test_new_rule_area_needs_a_person(self):
+        r = self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits", "margin"]}')
+        self.assertEqual(len(r), 1)
+        self.assertIn("['margin']", r[0])
+
+    def test_new_approved_epic_with_rule_areas_needs_a_person(self):
+        extra = '### E7 · New\n<!-- epic: {"id": "E7", "status": "approved", "rule_areas": ["entry"]} -->\n'
+        self.assertIn("E7", self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}', extra=extra)[0])
+
+    def test_parked_epic_with_rule_areas_may_self_merge(self):
+        extra = '### E7 · New\n<!-- epic: {"id": "E7", "status": "parked", "rule_areas": ["entry"]} -->\n'
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}', extra=extra), [])
+
+    def test_unparking_an_epic_with_rule_areas_needs_a_person(self):
+        main = pm_board.parse_epics(prd_with('{"id": "E1", "status": "parked", "rule_areas": ["exits"]}'))
+        after = pm_board.parse_epics(prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'))
+        self.assertEqual(len(pm_board.policy_reasons(main, after, "no")), 1)
+
+    def test_declared_or_missing_declaration_needs_a_person(self):
+        same = '{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'
+        self.assertIn("declared", self.reasons(same, "yes")[0])
+        self.assertIn("did not say", self.reasons(same, None)[0])
+        self.assertIn("did not say", self.reasons(same, "maybe")[0])
+
+
+def pr(labels=("agent:pm", "pm:self-merge"), state="OPEN", merge="CLEAN", rollup=None):
+    if rollup is None:
+        rollup = [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "SUCCESS"}]
+    return {"state": state, "isDraft": False, "labels": [{"name": l} for l in labels],
+            "mergeStateStatus": merge, "statusCheckRollup": rollup}
+
+
+class TestMergeRefusal(unittest.TestCase):
+    FILES = ["docs/product/PRD.md"]
+
+    def test_clean_prd_pr_is_merged(self):
+        self.assertEqual(pm_board.merge_refusal(pr(), self.FILES, [], False), "")
+
+    def test_label_removed_by_a_person_stops_it(self):
+        self.assertIn("pm:self-merge", pm_board.merge_refusal(pr(labels=("agent:pm",)), self.FILES, [], False))
+
+    def test_needs_human_stops_it(self):
+        labels = ("agent:pm", "pm:self-merge", "agent:needs-human")
+        self.assertIn("needs-human", pm_board.merge_refusal(pr(labels=labels), self.FILES, [], False))
+
+    def test_files_outside_docs_product_stop_it(self):
+        why = pm_board.merge_refusal(pr(), self.FILES + ["internal/risk/risk.go"], [], False)
+        self.assertIn("internal/risk/risk.go", why)
+        self.assertIn("no changed files", pm_board.merge_refusal(pr(), [], [], False))
+
+    def test_strategy_policy_stops_it(self):
+        self.assertIn("delegates", pm_board.merge_refusal(pr(), self.FILES, ["epic E1 delegates x"], False))
+
+    def test_a_waiting_person_message_stops_it(self):
+        self.assertIn("waiting", pm_board.merge_refusal(pr(), self.FILES, [], True))
+
+    def test_ci_must_be_green(self):
+        running = [{"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": ""}]
+        failed = [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "FAILURE"}]
+        status = [{"__typename": "StatusContext", "context": "ci", "state": "PENDING"}]
+        for rollup, word in (([], "no CI"), (running, "running"), (failed, "FAILURE"), (status, "PENDING")):
+            self.assertIn(word, pm_board.merge_refusal(pr(rollup=rollup), self.FILES, [], False))
+        ok = [{"__typename": "StatusContext", "context": "ci", "state": "SUCCESS"},
+              {"__typename": "CheckRun", "name": "gitleaks", "status": "COMPLETED", "conclusion": "SKIPPED"}]
+        self.assertEqual(pm_board.merge_refusal(pr(rollup=ok), self.FILES, [], False), "")
+
+    def test_github_must_report_clean(self):
+        for st in ("BEHIND", "BLOCKED", "DIRTY", "UNKNOWN"):
+            self.assertIn(st, pm_board.merge_refusal(pr(merge=st), self.FILES, [], False))
+
+    def test_closed_pr_is_left_alone(self):
+        self.assertIn("not an open", pm_board.merge_refusal(pr(state="MERGED"), self.FILES, [], False))
+
+
+class TestDeclaredPolicy(unittest.TestCase):
+    def test_reads_the_marker_pm_answer_writes(self):
+        self.assertEqual(pm_board.declared_policy("Closes #149\n<!-- pm:policy=no -->\n_Opened_"), "no")
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=yes -->"), "yes")
+
+    def test_missing_marker_is_no_declaration(self):
+        for body in (None, "", "Closes #149", "<!-- pm:policy=maybe -->"):
+            self.assertIsNone(pm_board.declared_policy(body))
+
+    def test_any_yes_wins(self):
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=no -->\n<!-- pm:policy=yes -->"), "yes")
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=yes -->\n<!-- pm:policy=no -->"), "yes")
+
+
+class TestSelfMergeCLI(unittest.TestCase):
+    """pm_board.py selfmerge as pm_answer.sh calls it: files in, one line out."""
+    SAME = '{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'
+
+    def run_cli(self, body="<!-- pm:policy=no -->", tickets=None, state=None, files="docs/product/PRD.md\n",
+                pr_prd=None):
+        if tickets is None:
+            tickets = [ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes"), ("2026-10-18T03:00:00Z", "🧭 PRD PR opened")],
+                              status="In review")]
+        with tempfile.TemporaryDirectory() as d:
+            def put(name, text):
+                p = os.path.join(d, name)
+                with open(p, "w") as f:
+                    f.write(text)
+                return p
+            args = ["pm_board.py", "selfmerge",
+                    put("pr.json", json.dumps(dict(pr(), body=body))), put("files.txt", files),
+                    put("main.md", prd_with(self.SAME)), put("pr.md", pr_prd or prd_with(self.SAME)),
+                    put("tickets.json", json.dumps(tickets)),
+                    put("state.json", json.dumps(state)) if state is not None else os.path.join(d, "none.json"),
+                    "149"]
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pm_board.main(args)
+            return out.getvalue().strip()
+
+    def test_clean_case_prints_an_empty_line(self):
+        self.assertEqual(self.run_cli(), "")
+
+    def test_a_person_message_newer_than_the_pm_comment_is_refused(self):
+        t = ticket(msgs=[("2026-10-18T03:00:00Z", "🧭 PRD PR opened"), ("2026-10-18T03:10:00Z", "wait")],
+                   status="In review")
+        self.assertIn("waiting", self.run_cli(tickets=[t]))
+
+    def test_a_ticket_missing_from_tickets_is_refused(self):
+        self.assertIn("not an open agent:pm ticket", self.run_cli(tickets=[ticket(n=7)]))
+
+    def test_declared_policy_in_the_body_is_refused(self):
+        # Even with the label still on (its removal failed), the body says "yes": no merge.
+        self.assertIn("declared", self.run_cli(body="<!-- pm:policy=yes -->"))
+
+    def test_body_without_a_declaration_is_refused(self):
+        self.assertIn("did not say", self.run_cli(body="Closes #149"))
+
+    def test_new_rule_areas_are_refused(self):
+        grown = prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits", "margin"]}')
+        self.assertIn("delegates", self.run_cli(pr_prd=grown))
+
+    def test_files_outside_docs_product_are_refused(self):
+        self.assertIn("internal/x.go", self.run_cli(files="docs/product/PRD.md\ninternal/x.go\n"))
 
 
 if __name__ == "__main__":
