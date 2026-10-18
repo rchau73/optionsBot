@@ -12,9 +12,16 @@
 #      epics still parse, pushes the branch and opens (or updates) the PRD pull
 #      request "Closes #n" (label agent:pm) → In review, and comments the link;
 #      when the answer needs no PRD change, or raises questions, it replies on
-#      the ticket instead (questions add agent:needs-human).
+#      the ticket instead (questions add agent:needs-human);
+#   4. (each run, before 1–3) merges its own PRD pull requests labelled
+#      pm:self-merge once CI is green (pm_board.py selfmerge).
 #
-# It never merges: a person's merge of the PRD pull request is the approval.
+# Who merges (the product owner on #151): the PM merges a PRD pull request that
+# changes no strategy policy. One that does — an approved epic gains trading-rule
+# areas (pm_board.py policy), or the agent declares a core-policy change (its
+# POLICY line, missing = yes) — gets agent:needs-human and waits for a person's
+# merge. A person stops any self-merge by removing the pm:self-merge label (or by
+# commenting: a waiting answer is acted on first). Never merges code.
 # Env: PM_MODEL, AGENT_WORK_DIR, AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -49,6 +56,37 @@ print(json.dumps({"number": i["number"], "state": i["state"], "status": st, "lab
                   "created": i["createdAt"], "body": i["body"], "messages": msgs}))' "$tmp/issue.json" "$tmp/pr.json" "$tmp/board.json" >> "$tmp/tickets.jsonl"
 done
 py 'import json,sys; json.dump([json.loads(l) for l in open(sys.argv[1]) if l.strip()], open(sys.argv[2], "w"))' "$tmp/tickets.jsonl" "$tmp/tickets.json"
+
+# ── 1b. Merge the PRD pull requests the PM may merge itself ─────────────────
+# Re-checked at merge time on the exact head commit: label still on, only
+# docs/product/, no strategy policy against today's main, no person's message
+# waiting, CI green, GitHub "CLEAN". No --admin: the ruleset still applies.
+git fetch -q origin
+gh pr list -R "$slug" --label agent:pm --label "pm:self-merge" --state open \
+  --json number,headRefName,headRefOid,state,isDraft,labels,mergeStateStatus,statusCheckRollup > "$tmp/self-merge.json" ||
+  { log "pm-answer: listing self-merge PRs failed"; echo '[]' > "$tmp/self-merge.json"; }
+git show origin/main:docs/product/PRD.md > "$tmp/prd-main.md"
+for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open(sys.argv[1]))]' "$tmp/self-merge.json"); do
+  py 'import json,sys; json.dump(next(p for p in json.load(open(sys.argv[1])) if p["number"] == int(sys.argv[2])), open(sys.argv[3], "w"))' \
+    "$tmp/self-merge.json" "$pr_num" "$tmp/pr-$pr_num.json"
+  head_ref="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefName"])' "$tmp/pr-$pr_num.json")"
+  head_oid="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefOid"])' "$tmp/pr-$pr_num.json")"
+  pr_issue="${head_ref#pm/issue-}"
+  [[ "$head_ref" == pm/issue-* && "$pr_issue" =~ ^[0-9]+$ ]] || { log "pm-answer: PR #$pr_num ($head_ref) is not a PRD branch: not merged"; continue; }
+  gh pr diff "$pr_num" -R "$slug" --name-only > "$tmp/files-$pr_num.txt" || { log "pm-answer: PR #$pr_num: no diff"; continue; }
+  git show "$head_oid:docs/product/PRD.md" > "$tmp/prd-$pr_num.md" 2>/dev/null || { log "pm-answer: PR #$pr_num: head $head_oid not fetched"; continue; }
+  why="$(python3 "$BOARD_PY" selfmerge "$tmp/pr-$pr_num.json" "$tmp/files-$pr_num.txt" "$tmp/prd-main.md" "$tmp/prd-$pr_num.md" \
+    "$tmp/tickets.json" "$STATE" "$pr_issue" 2>&1)" || why="the self-merge check failed: $why"
+  if [[ -n "$why" ]]; then log "pm-answer: PRD PR #$pr_num waits: $why"; continue; fi
+  if gh pr merge "$pr_num" -R "$slug" --merge --match-head-commit "$head_oid" >/dev/null; then
+    log "pm-answer: merged PRD PR #$pr_num (#$pr_issue)"
+    gh issue comment "$pr_issue" -R "$slug" --body "🧭 **PM agent** merged the PRD pull request #$pr_num: CI green, only \`docs/product/\`, no strategy policy change (product owner on #151). The epics follow from \`main\` in the next triage run. To change it, file an issue labelled \`agent:pm\`, or revert #$pr_num. <!-- agent:pm -->" >/dev/null || true
+    notify "PM agent merged PRD PR #$pr_num" "#$pr_issue"
+  else
+    log "pm-answer: merging PRD PR #$pr_num failed (GitHub refused it)"
+  fi
+done
+
 issue="$(python3 "$BOARD_PY" answered "$tmp/tickets.json" "$STATE")"
 [[ -n "$issue" ]] || { log "pm-answer: no new answer on an agent:pm ticket"; exit 0; }
 answer_at="$(py 'import json,sys,re
@@ -60,6 +98,7 @@ item="$(py 'import json,sys; print(next(c["item"] for c in json.load(open(sys.ar
 status="$(py 'import json,sys; print(next(c["status"] for c in json.load(open(sys.argv[1])) if c["number"] == int(sys.argv[2])))' "$tmp/board.json" "$issue")"
 
 branch="pm/issue-$issue"
+existing_pr=""
 run_dir="$PM_DIR/answer-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
@@ -76,13 +115,14 @@ json.dump(s, open(p, "w"), indent=1)' "$STATE" "$issue" "$answer_at"
 }
 reply() { # file, extra label args...
   local f="$1"; shift
-  { echo "🧭 **PM agent**"; echo; cat "$f"; echo; echo "_The PM agent (product-manager skill) reads every answer on \`agent:pm\` tickets and their PRD pull requests. It never merges: your merge of the PRD pull request approves it. See [AGENTIC.md](../blob/main/AGENTIC.md)._"; echo "<!-- agent:pm -->"; } > "$run_dir/comment.md"
+  { echo "🧭 **PM agent**"; echo; cat "$f"; echo; echo "_The PM agent (product-manager skill) reads every answer on \`agent:pm\` tickets and their PRD pull requests. It merges a PRD pull request itself only when it changes no strategy policy; otherwise your merge approves it. See [AGENTIC.md](../blob/main/AGENTIC.md)._"; echo "<!-- agent:pm -->"; } > "$run_dir/comment.md"
   gh issue comment "$issue" -R "$slug" --body-file "$run_dir/comment.md" >/dev/null
   [[ $# -eq 0 ]] || gh issue edit "$issue" -R "$slug" "$@" >/dev/null || true
 }
 fail() { # message
   echo "$1" > "$run_dir/fail.md"
   reply "$run_dir/fail.md" --add-label agent:needs-human
+  [[ -z "$existing_pr" ]] || gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" >/dev/null 2>&1 || true
   mark_done; notify "PM agent: #$issue needs a person" "$1"; log "pm-answer: #$issue — $1"; exit 0
 }
 
@@ -114,7 +154,13 @@ PROMPT="Use the product-manager skill and run its \"Answers → PRD (agent mode)
 The ticket, its comments and any open PRD pull request's feedback are in .agent-task.md (read it first).
 You are on branch $branch in an isolated worktree of the repository; docs/product/PRD.md is the PRD.
 Edit only files under docs/product/ and commit your work (git add docs/product + git commit).
-Do not push, merge or call GitHub. End your answer with the exact RESULT block the skill defines."
+Do not push, merge or call GitHub. End your answer with the exact RESULT block the skill defines,
+with one more line right after the RESULT line: \"POLICY: yes\" or \"POLICY: no\".
+POLICY decides who merges a PRD pull request (product owner on #151): with \"no\" the script merges it
+once CI is green; with \"yes\" (or no line) a person merges it. Say yes when the change touches a strategy
+policy: margin, exits, entry, repair, GEX, orders, the kill switch, an epic's rule_areas, or the autonomy
+line (what agents may do without a person). Wording, scope, segments, pricing, go-to-market, UI and
+roadmap order are not policy. In doubt, say yes."
 allowed=( "Read" "Grep" "Glob" "Skill" "Edit(docs/product/**)" "Write(docs/product/**)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add docs/product:*)" "Bash(git commit:*)"
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(python3 scripts/agents/pm_board.py epics:*)" )
@@ -152,6 +198,11 @@ case "$result" in
     [[ -s "$run_dir/reply.md" ]] || fail "The agent answered '$result' with no comment for the ticket."
     if [[ "$result" == "needs_human" ]]; then reply "$run_dir/reply.md" --add-label agent:needs-human
     else reply "$run_dir/reply.md" --remove-label agent:needs-human; fi
+    # A person spoke and the PR did not change for it ("wait", a question): the
+    # PR is theirs to merge now, or the PM's reply would release the self-merge.
+    if [[ -n "$existing_pr" ]]; then
+      gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" >/dev/null 2>&1 || true
+    fi
     # Ready is the Dev agent's queue: a decision ticket waits in Triage.
     [[ "$status" != "Ready" ]] || set_status "$item" "Triage" || true
     mark_done; log "pm-answer: replied on #$issue ($result)"
@@ -169,26 +220,59 @@ outside="$(git -C "$wt" diff --name-only origin/main...HEAD | grep -v '^docs/pro
 if ! python3 "$BOARD_PY" epics "$wt/docs/product/PRD.md" "$run_dir/epics.json" 2> "$run_dir/epics.err"; then
   fail "The edited PRD has a malformed epic marker ($(tail -1 "$run_dir/epics.err")): not pushed."
 fi
+# Who merges: the PM, unless the change touches a strategy policy (see the header).
+policy="$(grep -m1 '^POLICY:' "$run_dir/agent.md" | sed 's/^POLICY: *//' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]' || true)"
+git -C "$wt" show origin/main:docs/product/PRD.md > "$run_dir/prd-main.md"
+python3 "$BOARD_PY" policy "$run_dir/prd-main.md" "$wt/docs/product/PRD.md" "$policy" > "$run_dir/policy.txt" 2>&1 ||
+  echo "the policy check failed" >> "$run_dir/policy.txt"
+self_merge=0
+if [[ -n "$existing_pr" ]]; then
+  # A revision never puts back a label a person removed.
+  [[ -s "$run_dir/policy.txt" ]] || ! gh pr view "$existing_pr" -R "$slug" --json labels -q '.labels[].name' | grep -qx "pm:self-merge" || self_merge=1
+else
+  [[ -s "$run_dir/policy.txt" ]] || self_merge=1
+fi
 git -C "$wt" push -q -u origin "$branch"
 {
   echo "Closes #$issue"; echo
   if [[ -s "$run_dir/pr-body.md" ]]; then cat "$run_dir/pr-body.md"; else cat "$run_dir/reply.md"; fi; echo
   echo "**Merging this PR approves the PRD change** (the roadmap, its epics and their business requirements). The PM agent then creates or updates the epic issues from \`main\`. To ask for changes, comment here or on #$issue: the PM agent revises this PR in its next run."
-  echo; echo "_Opened by the **PM agent** (product-manager skill, \`scripts/agents/pm_answer.sh\`): only \`docs/product/\` changed, epic markers checked. It never merges. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
+  echo
+  if [[ $self_merge -eq 1 ]]; then
+    echo "**No strategy policy change** (no approved epic gains trading-rule areas; the PM agent declared no core-policy change), so **the PM agent merges this PR itself once CI is green** (product owner on #151). To merge it yourself instead, remove the label \`pm:self-merge\`."
+  elif [[ -s "$run_dir/policy.txt" ]]; then
+    echo "**A person merges this PR** — it touches a strategy policy:"; sed 's/^/- /' "$run_dir/policy.txt"
+  else
+    echo "**A person merges this PR** (the label \`pm:self-merge\` was removed)."
+  fi
+  echo; echo "_Opened by the **PM agent** (product-manager skill, \`scripts/agents/pm_answer.sh\`): only \`docs/product/\` changed, epic markers checked. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
   echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 } > "$run_dir/pr.md"
 title="$(gh issue view "$issue" -R "$slug" --json title -q .title)"
 if [[ -n "$existing_pr" ]]; then
   gh pr edit "$existing_pr" -R "$slug" --body-file "$run_dir/pr.md" >/dev/null
+  if [[ -s "$run_dir/policy.txt" ]]; then
+    gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" --add-label agent:needs-human >/dev/null || true
+  fi
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
   gh pr comment "$existing_pr" -R "$slug" --body "🧭 PM agent revised the PRD for the latest feedback (on this PR or #$issue). <!-- agent:pm -->" >/dev/null
 else
-  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "PRD: $title (#$issue)" --label agent:pm --body-file "$run_dir/pr.md")"
+  labels=(--label agent:pm)
+  if [[ $self_merge -eq 1 ]]; then labels+=(--label "pm:self-merge"); else labels+=(--label agent:needs-human); fi
+  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "PRD: $title (#$issue)" "${labels[@]}" --body-file "$run_dir/pr.md")"
 fi
-log "pm-answer: PR $pr_url"
-{ echo "PRD pull request: $pr_url — **your merge approves it**."; echo
-  [[ -s "$run_dir/reply.md" ]] && cat "$run_dir/reply.md"; } > "$run_dir/opened.md"
-reply "$run_dir/opened.md" --remove-label agent:needs-human
+log "pm-answer: PR $pr_url (self-merge: $self_merge)"
+if [[ $self_merge -eq 1 ]]; then
+  { echo "PRD pull request: $pr_url — no strategy policy change, so **the PM agent merges it once CI is green**. To review it first, remove its \`pm:self-merge\` label or comment."; echo
+    [[ -s "$run_dir/reply.md" ]] && cat "$run_dir/reply.md"; } > "$run_dir/opened.md"
+  reply "$run_dir/opened.md" --remove-label agent:needs-human
+else
+  { echo "PRD pull request: $pr_url — **your merge approves it**."; echo
+    [[ -s "$run_dir/policy.txt" ]] && { echo "It touches a strategy policy:"; sed 's/^/- /' "$run_dir/policy.txt"; echo; }
+    [[ -s "$run_dir/reply.md" ]] && cat "$run_dir/reply.md"; } > "$run_dir/opened.md"
+  if [[ -s "$run_dir/policy.txt" ]]; then reply "$run_dir/opened.md" --add-label agent:needs-human
+  else reply "$run_dir/opened.md" --remove-label agent:needs-human; fi
+fi
 set_status "$item" "In review" || true
 mark_done
 notify "PM agent: PRD PR for #$issue" "$title"

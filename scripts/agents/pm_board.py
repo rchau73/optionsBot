@@ -5,6 +5,8 @@
     pm_board.py pending <board.json> <state.json> <epics.json> <out.json>
     pm_board.py gate    <pm.json> <board.json> <epics.json> <state.json> <out.json>
     pm_board.py answered <tickets.json> <state.json>
+    pm_board.py policy  <main PRD.md> <PR PRD.md> <yes|no|"">
+    pm_board.py selfmerge <pr.json> <files.txt> <main PRD.md> <PR PRD.md> <tickets.json> <state.json> <issue>
 
 `epics` reads the approved PRD (docs/product/PRD.md on main — a person merged it,
 so every epic there is approved by that merge) into a list of epics. Each epic is
@@ -23,6 +25,11 @@ changed since its last decision, and cards with no epic in any open column.
 `answered` prints the `agent:pm` ticket whose person's message the agent must act on
 next (pm_answer.sh): the newest message from a person, on the ticket or its PRD pull
 request, is newer than the PM agent's last comment and than its last run on it.
+
+`policy` prints why a PRD change needs a person's merge (one reason a line; nothing =
+the PM may merge it). `selfmerge` prints why the PM may not merge its open PRD pull
+request now (empty line = merge): label pm:self-merge still on, only docs/product/,
+no strategy policy, no person's message waiting, CI green and GitHub "CLEAN".
 
 `gate` turns the agent's decisions into actions, refusing (and saying why) everything
 the PRD has not approved. The agent proposes, this file decides what is allowed, the
@@ -198,6 +205,79 @@ def answered(tickets, state):
     return min(due)[1] if due else None
 
 
+# The PM merges its own PRD pull request (product owner on #151) unless it changes
+# a strategy policy. The label marks a PR the PM may merge; a person removes it to stop.
+SELF_MERGE_LABEL = "pm:self-merge"
+GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+
+
+def policy_reasons(before, after, declared):
+    """Why a PRD change needs a person's merge, [] when the PM may merge it itself.
+    before/after: parse_epics of the PRD on main and on the PR. declared: the agent's
+    POLICY line — "yes" (it changes a core strategy policy), "no", or None (missing,
+    read as yes). An approved epic that gains trading-rule areas delegates them to
+    the agents, so that is a policy change whatever the agent says."""
+    reasons = []
+    if declared == "yes":
+        reasons.append("the PM agent declared a change to a core strategy policy")
+    elif declared != "no":
+        reasons.append("the PM agent did not say whether it changes a strategy policy")
+    old = {e["id"]: e for e in before}
+    for e in after:
+        if e["status"] != "approved":
+            continue
+        b = old.get(e["id"])
+        had = set(b["rule_areas"]) if b and b["status"] == "approved" else set()
+        new = sorted(set(e["rule_areas"]) - had)
+        if new:
+            reasons.append(f"epic {e['id']} delegates trading-rule areas {new} to the agents")
+    return reasons
+
+
+def checks_refusal(rollup):
+    """Why the PR's CI is not green, or "". rollup: gh's statusCheckRollup (check
+    runs carry status/conclusion, commit statuses carry state)."""
+    if not rollup:
+        return "no CI check reported yet"
+    for c in rollup:
+        if c.get("__typename") == "StatusContext":
+            result = c.get("state")
+        else:
+            if c.get("status") != "COMPLETED":
+                return f"CI check {c.get('name', '?')} still running"
+            result = c.get("conclusion")
+        if result not in GREEN:
+            return f"CI check {c.get('name') or c.get('context', '?')} is {result}"
+    return ""
+
+
+def merge_refusal(pr, files, reasons, due):
+    """Why the PM may not merge its PRD pull request now, or "" when it may.
+    pr: gh pr view JSON (state, isDraft, labels, mergeStateStatus, statusCheckRollup);
+    files: the PR's changed paths; reasons: policy_reasons of the PR's PRD; due: a
+    person's message on the ticket or the PR is still waiting for the PM."""
+    labels = [l["name"] for l in pr.get("labels", [])]
+    if pr.get("state") != "OPEN" or pr.get("isDraft"):
+        return "not an open, ready pull request"
+    if SELF_MERGE_LABEL not in labels or "agent:pm" not in labels:
+        return f"no {SELF_MERGE_LABEL} label: a person merges it"
+    if "agent:needs-human" in labels:
+        return "labelled agent:needs-human"
+    outside = [f for f in files if not f.startswith("docs/product/")]
+    if not files or outside:
+        return f"it changes files outside docs/product/ ({', '.join(outside)})" if outside else "no changed files"
+    if reasons:
+        return "; ".join(reasons)
+    if due:
+        return "a person's message is waiting for the PM agent"
+    why = checks_refusal(pr.get("statusCheckRollup"))
+    if why:
+        return why
+    if pr.get("mergeStateStatus") != "CLEAN":
+        return f"GitHub reports merge state {pr.get('mergeStateStatus')}"
+    return ""
+
+
 def _load(path, default):
     try:
         return json.load(open(path))
@@ -220,6 +300,18 @@ def main(argv):
         n = answered(json.load(open(argv[2])), _load(argv[3], {}))
         if n is not None:
             print(n)
+    elif cmd == "policy":
+        declared = argv[4].strip().lower() if len(argv) > 4 and argv[4].strip() else None
+        for r in policy_reasons(parse_epics(open(argv[2]).read()), parse_epics(open(argv[3]).read()), declared):
+            print(r)
+    elif cmd == "selfmerge":
+        pr, files = json.load(open(argv[2])), [l.strip() for l in open(argv[3]) if l.strip()]
+        reasons = policy_reasons(parse_epics(open(argv[4]).read()), parse_epics(open(argv[5]).read()), "no")
+        tickets, state, issue = json.load(open(argv[6])), _load(argv[7], {}), int(argv[8])
+        mine = [t for t in tickets if t["number"] == issue]
+        why = "its ticket is not an open agent:pm ticket" if not mine else \
+            merge_refusal(pr, files, reasons, answered(mine, state) == issue)
+        print(why)
     else:
         raise SystemExit(f"unknown command {cmd}")
 

@@ -2,12 +2,13 @@
 # setup_github.sh — one-time (idempotent) GitHub setup for the agentic workflow.
 #
 #   1. labels: agent:sme, agent:dev, agent:pm, agent:reviewed, agent:needs-human,
-#      severity:high|medium|low, epic, epic:parked, prototype:review, prototype:approved
+#      severity:high|medium|low, pm:self-merge, epic, epic:parked, prototype:review, prototype:approved
 #   2. the Project board "optionsBot · agentic workflow", linked to the repo,
 #      Status columns: Triage → Ready → In progress → In review → Done, Blocked,
 #      and a Priority field (P0…P3) the PM agent sets and the Dev agent follows
 #   3. a ruleset on main: changes only through pull requests with green CI;
-#      no force pushes, no deletion. The agents cannot merge; a person does.
+#      no force pushes, no deletion. A person merges code; the PM agent merges
+#      only its own PRD pull requests with no strategy policy change (pm_answer.sh).
 #   4. delete_branch_on_merge: GitHub deletes a PR's branch when it is merged
 #      (scripts/prune_branches.sh deletes the local copies).
 #
@@ -30,6 +31,7 @@ label "severity:high"     "b60205" "Capital at risk or the bot not doing its job
 label "severity:medium"   "fbca04" "Money left on the table or a rule misbehaving"
 label "severity:low"      "c2e0c6" "Hygiene"
 label "agent:pm"          "0052cc" "Triaged by the PM agent (product-manager skill)"
+label "pm:self-merge"     "0052cc" "PRD pull request with no strategy policy change: the PM agent merges it once CI is green (remove to merge it yourself)"
 label "epic"              "3e4b9e" "Epic of the approved PRD (docs/product/PRD.md): stories are its sub-issues"
 label "epic:parked"       "bfd4f2" "Epic parked in the PRD: nothing goes to Ready"
 label "prototype:review"  "f9d0c4" "Prototype ready for a person to review (link on the epic)"

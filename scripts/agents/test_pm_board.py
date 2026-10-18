@@ -184,5 +184,95 @@ class TestAnswered(unittest.TestCase):
         self.assertEqual(pm_board.answered([a, b], {}), 2)
 
 
+def prd_with(marker_e1, extra=""):
+    return f"## Epics\n### E1 · Engine\n<!-- epic: {marker_e1} -->\n{extra}"
+
+
+class TestPolicyReasons(unittest.TestCase):
+    MAIN = pm_board.parse_epics(prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'))
+
+    def reasons(self, after_marker, declared="no", extra=""):
+        return pm_board.policy_reasons(self.MAIN, pm_board.parse_epics(prd_with(after_marker, extra)), declared)
+
+    def test_wording_change_without_policy_may_self_merge(self):
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'), [])
+
+    def test_narrowing_rule_areas_may_self_merge(self):
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": []}'), [])
+
+    def test_new_rule_area_needs_a_person(self):
+        r = self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits", "margin"]}')
+        self.assertEqual(len(r), 1)
+        self.assertIn("['margin']", r[0])
+
+    def test_new_approved_epic_with_rule_areas_needs_a_person(self):
+        extra = '### E7 · New\n<!-- epic: {"id": "E7", "status": "approved", "rule_areas": ["entry"]} -->\n'
+        self.assertIn("E7", self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}', extra=extra)[0])
+
+    def test_parked_epic_with_rule_areas_may_self_merge(self):
+        extra = '### E7 · New\n<!-- epic: {"id": "E7", "status": "parked", "rule_areas": ["entry"]} -->\n'
+        self.assertEqual(self.reasons('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}', extra=extra), [])
+
+    def test_unparking_an_epic_with_rule_areas_needs_a_person(self):
+        main = pm_board.parse_epics(prd_with('{"id": "E1", "status": "parked", "rule_areas": ["exits"]}'))
+        after = pm_board.parse_epics(prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'))
+        self.assertEqual(len(pm_board.policy_reasons(main, after, "no")), 1)
+
+    def test_declared_or_missing_declaration_needs_a_person(self):
+        same = '{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'
+        self.assertIn("declared", self.reasons(same, "yes")[0])
+        self.assertIn("did not say", self.reasons(same, None)[0])
+        self.assertIn("did not say", self.reasons(same, "maybe")[0])
+
+
+def pr(labels=("agent:pm", "pm:self-merge"), state="OPEN", merge="CLEAN", rollup=None):
+    if rollup is None:
+        rollup = [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "SUCCESS"}]
+    return {"state": state, "isDraft": False, "labels": [{"name": l} for l in labels],
+            "mergeStateStatus": merge, "statusCheckRollup": rollup}
+
+
+class TestMergeRefusal(unittest.TestCase):
+    FILES = ["docs/product/PRD.md"]
+
+    def test_clean_prd_pr_is_merged(self):
+        self.assertEqual(pm_board.merge_refusal(pr(), self.FILES, [], False), "")
+
+    def test_label_removed_by_a_person_stops_it(self):
+        self.assertIn("pm:self-merge", pm_board.merge_refusal(pr(labels=("agent:pm",)), self.FILES, [], False))
+
+    def test_needs_human_stops_it(self):
+        labels = ("agent:pm", "pm:self-merge", "agent:needs-human")
+        self.assertIn("needs-human", pm_board.merge_refusal(pr(labels=labels), self.FILES, [], False))
+
+    def test_files_outside_docs_product_stop_it(self):
+        why = pm_board.merge_refusal(pr(), self.FILES + ["internal/risk/risk.go"], [], False)
+        self.assertIn("internal/risk/risk.go", why)
+        self.assertIn("no changed files", pm_board.merge_refusal(pr(), [], [], False))
+
+    def test_strategy_policy_stops_it(self):
+        self.assertIn("delegates", pm_board.merge_refusal(pr(), self.FILES, ["epic E1 delegates x"], False))
+
+    def test_a_waiting_person_message_stops_it(self):
+        self.assertIn("waiting", pm_board.merge_refusal(pr(), self.FILES, [], True))
+
+    def test_ci_must_be_green(self):
+        running = [{"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": ""}]
+        failed = [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "FAILURE"}]
+        status = [{"__typename": "StatusContext", "context": "ci", "state": "PENDING"}]
+        for rollup, word in (([], "no CI"), (running, "running"), (failed, "FAILURE"), (status, "PENDING")):
+            self.assertIn(word, pm_board.merge_refusal(pr(rollup=rollup), self.FILES, [], False))
+        ok = [{"__typename": "StatusContext", "context": "ci", "state": "SUCCESS"},
+              {"__typename": "CheckRun", "name": "gitleaks", "status": "COMPLETED", "conclusion": "SKIPPED"}]
+        self.assertEqual(pm_board.merge_refusal(pr(rollup=ok), self.FILES, [], False), "")
+
+    def test_github_must_report_clean(self):
+        for st in ("BEHIND", "BLOCKED", "DIRTY", "UNKNOWN"):
+            self.assertIn(st, pm_board.merge_refusal(pr(merge=st), self.FILES, [], False))
+
+    def test_closed_pr_is_left_alone(self):
+        self.assertIn("not an open", pm_board.merge_refusal(pr(state="MERGED"), self.FILES, [], False))
+
+
 if __name__ == "__main__":
     unittest.main()
