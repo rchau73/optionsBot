@@ -721,15 +721,29 @@ func TestStrategy_PremiumFloorBlocksBothLegs(t *testing.T) {
 
 // When an entry times out with only one leg filled, the filled leg must stay
 // tracked (it is a live short on the exchange) and the other is cancelled.
+//
+// The call fills on submit and the put rests, so the fill can never race the
+// timeout. The test waits for the strangle, not the position: the loop books
+// the position before it links the strangle (#165).
 func TestStrategy_EntryTimeoutKeepsFilledLeg(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.cfg.OrderFillTimeoutSec = 1
+	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
+		if o.Direction == orders.DirectionSell && o.Instrument == f.call {
+			return orders.Fill{Qty: o.Qty, FillPrice: 0.021}
+		}
+		return orders.Fill{} // the put (and anything else) rests unfilled
+	}
 	f.startRun()
 
-	eventually(t, 2*time.Second, "both legs submitted", func() bool { return len(f.exch.sells()) == 2 })
-	f.exch.fill(f.exch.orderIDFor(f.call, 0), 0.1, 0.021)
-
-	eventually(t, 3*time.Second, "filled call booked after timeout", func() bool { return f.position(f.call) != nil })
+	eventually(t, 4*time.Second, "filled call booked in a strangle after the timeout", func() bool {
+		for _, st := range f.state.AllStrangles() {
+			if st.CallLeg != nil && st.CallLeg.Instrument == f.call {
+				return true
+			}
+		}
+		return false
+	})
 	putOrder := f.exch.orderIDFor(f.put, 0)
 	f.exch.mu.Lock()
 	cancelled := strings.Contains(strings.Join(f.exch.cancelled, ","), putOrder)
