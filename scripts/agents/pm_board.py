@@ -5,6 +5,7 @@
     pm_board.py pending <board.json> <state.json> <epics.json> <out.json>
     pm_board.py gate    <pm.json> <board.json> <epics.json> <state.json> <out.json>
     pm_board.py answered <tickets.json> <state.json>
+    pm_board.py deps    < issue body           (prints the issue numbers it depends on)
     pm_board.py policy  <main PRD.md> <PR PRD.md> <yes|no|"">
     pm_board.py selfmerge <pr.json> <files.txt> <main PRD.md> <PR PRD.md> <tickets.json> <state.json> <issue>
 
@@ -293,6 +294,20 @@ def merge_refusal(pr, files, reasons, due):
     return ""
 
 
+DEPENDS = re.compile(r"\bdepends\s+on\s+((?:#\d+(?:\s*(?:,|and|&)\s*)?)+)", re.I)
+
+
+def depends_on(body):
+    """Issue numbers a ticket's body says it depends on ("Depends on #170",
+    "depends on #12, #13 and #14"), in order, without repeats."""
+    out = []
+    for m in DEPENDS.finditer(body or ""):
+        for n in re.findall(r"#(\d+)", m.group(1)):
+            if int(n) not in out:
+                out.append(int(n))
+    return out
+
+
 def _load(path, default):
     try:
         return json.load(open(path))
@@ -311,6 +326,8 @@ def main(argv):
         pm, board, epics, state = (json.load(open(argv[2])), json.load(open(argv[3])),
                                    json.load(open(argv[4])), _load(argv[5], {}))
         json.dump(gate(pm, board, epics, state), open(argv[6], "w"), indent=1)
+    elif cmd == "deps":
+        print(" ".join(str(n) for n in depends_on(sys.stdin.read())))
     elif cmd == "answered":
         n = answered(json.load(open(argv[2])), _load(argv[3], {}))
         if n is not None:

@@ -143,13 +143,32 @@ json.dump(out, sys.stdout)' "$num"
 # ready_next → "ITEM_ID ISSUE_NUMBER" of the Ready card to build next: highest
 # Priority first (P0…P3, the PM agent's order; none last), then the oldest
 # issue. Epic issues and agent:pm tickets (PRD changes and decisions: the PM
-# agent's, pm_answer.sh) are never built.
+# agent's, pm_answer.sh) are never built, nor a card whose body says
+# "Depends on #N" while #N is open (it would be built without #N's code).
 ready_next() {
-  board_json | py 'import json,sys
+  local cands item num deps
+  cands="$(board_json | py 'import json,sys
 cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN"
          and "epic" not in c["labels"] and "agent:pm" not in c["labels"]]
 rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"], 9), c["number"])
-for c in sorted(cards, key=rank)[:1]: print(c["item"], c["number"])'
+for c in sorted(cards, key=rank): print(c["item"], c["number"])')"
+  while read -r item num; do
+    [[ -n "$num" ]] || continue
+    deps="$(gh issue view "$num" -R "$(repo_slug)" --json body -q .body | python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" deps)"
+    if [[ -n "$deps" ]] && open_issues_among $deps; then
+      log "ready: #$num waits for #${deps// / #}" >&2; continue
+    fi
+    echo "$item $num"; return 0
+  done <<< "$cands"
+}
+
+# open_issues_among <n>... — true when any of these issues is still open.
+open_issues_among() {
+  local n
+  for n in "$@"; do
+    [[ "$(gh issue view "$n" -R "$(repo_slug)" --json state -q .state 2>/dev/null)" == "OPEN" ]] && return 0
+  done
+  return 1
 }
 
 # set_priority <item id> <P0|P1|P2|P3>
