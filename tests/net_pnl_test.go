@@ -36,7 +36,57 @@ func TestOptionFee(t *testing.T) {
 // End to end: an entry fills with fees, the stop-loss closes it, and the
 // realised P&L in the view and the journal are both net of both fees.
 func TestNetPnL_EntryAndCloseFeesAreBooked(t *testing.T) {
+	f, qty := stopOneFeeChargedLeg(t)
+
+	want := 0.02*qty - 0.05*qty - 0.0003*qty - 0.0003*qty
+	if got := slotRealised(f); math.Abs(got-want) > 1e-9 {
+		t.Errorf("realised = %v, want %v (premium − buy-back − both fees)", got, want)
+	}
+}
+
+// Scenario (#165): a close fills while the next cycle starts → the realised
+// P&L is booked exactly once. The cycles after the stop must not book it
+// again (the stopped call is held by the repair cooldown, so nothing re-sells
+// and re-stops it).
+func TestNetPnL_CloseBookedOnceWhileNextCycleRuns(t *testing.T) {
+	f, qty := stopOneFeeChargedLeg(t)
+	booked := slotRealised(f)
+
+	// Let the loop complete a few more cycles after the close.
+	after := f.strat.View().LoopAt
+	for i := 0; i < 3; i++ {
+		eventually(t, 2*time.Second, "another decision cycle", func() bool { return f.strat.View().LoopAt.After(after) })
+		after = f.strat.View().LoopAt
+	}
+
+	if n := len(f.journal.events(orders.EventClosed)); n != 1 {
+		t.Errorf("%d closes journaled, want 1", n)
+	}
+	want := 0.02*qty - 0.05*qty - 0.0003*qty - 0.0003*qty
+	if got := slotRealised(f); math.Abs(got-booked) > 1e-12 || math.Abs(got-want) > 1e-9 {
+		t.Errorf("realised = %v after more cycles (%v at the close), want %v once", got, booked, want)
+	}
+	var closedLegs int
+	for _, l := range f.strat.View().PnL {
+		if l.Slot != nil {
+			closedLegs += l.ClosedLegs
+		}
+	}
+	if closedLegs != 1 {
+		t.Errorf("closed legs = %d, want 1", closedLegs)
+	}
+}
+
+// stopOneFeeChargedLeg opens a fee-charged strangle, stops its call and
+// waits until the close is in the realised P&L. It returns the leg size.
+// The repair cooldown is the shipped default (config.Load sets 72 h when the
+// file leaves it out): with the fixture's zero, repair re-sold the stopped
+// call at once and the stop closed it again — two real closes, not one booked
+// twice (#165).
+func stopOneFeeChargedLeg(t *testing.T) (*strategyFixture, float64) {
+	t.Helper()
 	f := newStrategyFixture(t)
+	f.cfg.RepairCooldownHours = 72
 	f.exch.feePerContract = 0.0003
 	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
 		if o.Direction == orders.DirectionBuy {
@@ -54,16 +104,18 @@ func TestNetPnL_EntryAndCloseFeesAreBooked(t *testing.T) {
 	qty := f.state.AllPositions()[0].Qty
 
 	f.market.setQuote(f.call, 0.069, 0.071) // loss 2.5× the premium: stop-loss
-	eventually(t, 2*time.Second, "call stopped", func() bool { return len(f.journal.events(orders.EventClosed)) > 0 })
+	// The close is journaled just before it is booked: wait on the booking.
+	eventually(t, 2*time.Second, "call stop booked", func() bool { return slotRealised(f) != 0 })
+	return f, qty
+}
 
-	want := 0.02*qty - 0.05*qty - 0.0003*qty - 0.0003*qty
+// slotRealised sums the realised P&L of the slot rows of the view.
+func slotRealised(f *strategyFixture) float64 {
 	var realised float64
 	for _, l := range f.strat.View().PnL {
 		if l.Slot != nil {
 			realised += l.Realised
 		}
 	}
-	if math.Abs(realised-want) > 1e-9 {
-		t.Errorf("realised = %v, want %v (premium − buy-back − both fees)", realised, want)
-	}
+	return realised
 }
