@@ -29,7 +29,9 @@ request, is newer than the PM agent's last comment and than its last run on it.
 `policy` prints why a PRD change needs a person's merge (one reason a line; nothing =
 the PM may merge it). `selfmerge` prints why the PM may not merge its open PRD pull
 request now (empty line = merge): label pm:self-merge still on, only docs/product/,
-no strategy policy, no person's message waiting, CI green and GitHub "CLEAN".
+no strategy policy (the agent's declaration read from the PR body's
+`<!-- pm:policy=no -->` marker, missing = yes, plus the rule_areas diff against
+main), no person's message waiting, CI green and GitHub "CLEAN".
 
 `gate` turns the agent's decisions into actions, refusing (and saying why) everything
 the PRD has not approved. The agent proposes, this file decides what is allowed, the
@@ -209,6 +211,19 @@ def answered(tickets, state):
 # a strategy policy. The label marks a PR the PM may merge; a person removes it to stop.
 SELF_MERGE_LABEL = "pm:self-merge"
 GREEN = {"SUCCESS", "NEUTRAL", "SKIPPED"}
+# The agent's POLICY line, kept in the PR body (pm_answer.sh writes
+# `<!-- pm:policy=yes|no -->`) so the merge-time check reads it itself instead of
+# trusting that the label came off.
+POLICY_MARKER = re.compile(r"<!--\s*pm:policy=(yes|no)\s*-->")
+
+
+def declared_policy(body):
+    """The POLICY declaration the PR body records: "yes", "no", or None (no marker,
+    read as yes by policy_reasons). With several markers any "yes" wins."""
+    found = POLICY_MARKER.findall(body or "")
+    if not found:
+        return None
+    return "yes" if "yes" in found else "no"
 
 
 def policy_reasons(before, after, declared):
@@ -306,7 +321,8 @@ def main(argv):
             print(r)
     elif cmd == "selfmerge":
         pr, files = json.load(open(argv[2])), [l.strip() for l in open(argv[3]) if l.strip()]
-        reasons = policy_reasons(parse_epics(open(argv[4]).read()), parse_epics(open(argv[5]).read()), "no")
+        reasons = policy_reasons(parse_epics(open(argv[4]).read()), parse_epics(open(argv[5]).read()),
+                                 declared_policy(pr.get("body")))
         tickets, state, issue = json.load(open(argv[6])), _load(argv[7], {}), int(argv[8])
         mine = [t for t in tickets if t["number"] == issue]
         why = "its ticket is not an open agent:pm ticket" if not mine else \

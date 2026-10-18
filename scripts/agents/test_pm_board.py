@@ -1,6 +1,10 @@
 """Tests of pm_board.py: python3 -m unittest discover -s scripts/agents -p 'test_*.py'"""
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -272,6 +276,72 @@ class TestMergeRefusal(unittest.TestCase):
 
     def test_closed_pr_is_left_alone(self):
         self.assertIn("not an open", pm_board.merge_refusal(pr(state="MERGED"), self.FILES, [], False))
+
+
+class TestDeclaredPolicy(unittest.TestCase):
+    def test_reads_the_marker_pm_answer_writes(self):
+        self.assertEqual(pm_board.declared_policy("Closes #149\n<!-- pm:policy=no -->\n_Opened_"), "no")
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=yes -->"), "yes")
+
+    def test_missing_marker_is_no_declaration(self):
+        for body in (None, "", "Closes #149", "<!-- pm:policy=maybe -->"):
+            self.assertIsNone(pm_board.declared_policy(body))
+
+    def test_any_yes_wins(self):
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=no -->\n<!-- pm:policy=yes -->"), "yes")
+        self.assertEqual(pm_board.declared_policy("<!-- pm:policy=yes -->\n<!-- pm:policy=no -->"), "yes")
+
+
+class TestSelfMergeCLI(unittest.TestCase):
+    """pm_board.py selfmerge as pm_answer.sh calls it: files in, one line out."""
+    SAME = '{"id": "E1", "status": "approved", "rule_areas": ["exits"]}'
+
+    def run_cli(self, body="<!-- pm:policy=no -->", tickets=None, state=None, files="docs/product/PRD.md\n",
+                pr_prd=None):
+        if tickets is None:
+            tickets = [ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes"), ("2026-10-18T03:00:00Z", "🧭 PRD PR opened")],
+                              status="In review")]
+        with tempfile.TemporaryDirectory() as d:
+            def put(name, text):
+                p = os.path.join(d, name)
+                with open(p, "w") as f:
+                    f.write(text)
+                return p
+            args = ["pm_board.py", "selfmerge",
+                    put("pr.json", json.dumps(dict(pr(), body=body))), put("files.txt", files),
+                    put("main.md", prd_with(self.SAME)), put("pr.md", pr_prd or prd_with(self.SAME)),
+                    put("tickets.json", json.dumps(tickets)),
+                    put("state.json", json.dumps(state)) if state is not None else os.path.join(d, "none.json"),
+                    "149"]
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                pm_board.main(args)
+            return out.getvalue().strip()
+
+    def test_clean_case_prints_an_empty_line(self):
+        self.assertEqual(self.run_cli(), "")
+
+    def test_a_person_message_newer_than_the_pm_comment_is_refused(self):
+        t = ticket(msgs=[("2026-10-18T03:00:00Z", "🧭 PRD PR opened"), ("2026-10-18T03:10:00Z", "wait")],
+                   status="In review")
+        self.assertIn("waiting", self.run_cli(tickets=[t]))
+
+    def test_a_ticket_missing_from_tickets_is_refused(self):
+        self.assertIn("not an open agent:pm ticket", self.run_cli(tickets=[ticket(n=7)]))
+
+    def test_declared_policy_in_the_body_is_refused(self):
+        # Even with the label still on (its removal failed), the body says "yes": no merge.
+        self.assertIn("declared", self.run_cli(body="<!-- pm:policy=yes -->"))
+
+    def test_body_without_a_declaration_is_refused(self):
+        self.assertIn("did not say", self.run_cli(body="Closes #149"))
+
+    def test_new_rule_areas_are_refused(self):
+        grown = prd_with('{"id": "E1", "status": "approved", "rule_areas": ["exits", "margin"]}')
+        self.assertIn("delegates", self.run_cli(pr_prd=grown))
+
+    def test_files_outside_docs_product_are_refused(self):
+        self.assertIn("internal/x.go", self.run_cli(files="docs/product/PRD.md\ninternal/x.go\n"))
 
 
 if __name__ == "__main__":

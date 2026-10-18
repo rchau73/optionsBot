@@ -20,8 +20,11 @@
 # changes no strategy policy. One that does — an approved epic gains trading-rule
 # areas (pm_board.py policy), or the agent declares a core-policy change (its
 # POLICY line, missing = yes) — gets agent:needs-human and waits for a person's
-# merge. A person stops any self-merge by removing the pm:self-merge label (or by
-# commenting: a waiting answer is acted on first). Never merges code.
+# merge. The declaration is kept in the PR body (<!-- pm:policy=yes|no -->) and
+# read again at merge time; taking the label off is a precondition of every reply,
+# revision or failure (hold_pr), never best effort. A person stops any self-merge
+# by removing the pm:self-merge label (or by commenting: a waiting answer is acted
+# on first). Never merges code.
 # Env: PM_MODEL, AGENT_WORK_DIR, AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -63,7 +66,7 @@ py 'import json,sys; json.dump([json.loads(l) for l in open(sys.argv[1]) if l.st
 # waiting, CI green, GitHub "CLEAN". No --admin: the ruleset still applies.
 git fetch -q origin
 gh pr list -R "$slug" --label agent:pm --label "pm:self-merge" --state open \
-  --json number,headRefName,headRefOid,state,isDraft,labels,mergeStateStatus,statusCheckRollup > "$tmp/self-merge.json" ||
+  --json number,headRefName,headRefOid,state,isDraft,labels,body,mergeStateStatus,statusCheckRollup > "$tmp/self-merge.json" ||
   { log "pm-answer: listing self-merge PRs failed"; echo '[]' > "$tmp/self-merge.json"; }
 git show origin/main:docs/product/PRD.md > "$tmp/prd-main.md"
 for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open(sys.argv[1]))]' "$tmp/self-merge.json"); do
@@ -119,10 +122,18 @@ reply() { # file, extra label args...
   gh issue comment "$issue" -R "$slug" --body-file "$run_dir/comment.md" >/dev/null
   [[ $# -eq 0 ]] || gh issue edit "$issue" -R "$slug" "$@" >/dev/null || true
 }
+# Takes pm:self-merge off the open PRD pull request — a precondition, not best
+# effort: if GitHub refuses, the run stops before mark_done, so the person's
+# message stays due and keeps blocking the merge (pm_board.py selfmerge).
+hold_pr() { # extra gh pr edit args...
+  [[ -n "$existing_pr" ]] || return 0
+  gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" "$@" >/dev/null ||
+    { log "pm-answer: could not take pm:self-merge off PR #$existing_pr: stopped, the answer stays due"; exit 1; }
+}
 fail() { # message
   echo "$1" > "$run_dir/fail.md"
+  hold_pr
   reply "$run_dir/fail.md" --add-label agent:needs-human
-  [[ -z "$existing_pr" ]] || gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" >/dev/null 2>&1 || true
   mark_done; notify "PM agent: #$issue needs a person" "$1"; log "pm-answer: #$issue — $1"; exit 0
 }
 
@@ -196,13 +207,11 @@ commits="$(git -C "$wt" rev-list --count "$base"..HEAD)"
 case "$result" in
   reply|needs_human)
     [[ -s "$run_dir/reply.md" ]] || fail "The agent answered '$result' with no comment for the ticket."
-    if [[ "$result" == "needs_human" ]]; then reply "$run_dir/reply.md" --add-label agent:needs-human
-    else reply "$run_dir/reply.md" --remove-label agent:needs-human; fi
     # A person spoke and the PR did not change for it ("wait", a question): the
     # PR is theirs to merge now, or the PM's reply would release the self-merge.
-    if [[ -n "$existing_pr" ]]; then
-      gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" >/dev/null 2>&1 || true
-    fi
+    hold_pr
+    if [[ "$result" == "needs_human" ]]; then reply "$run_dir/reply.md" --add-label agent:needs-human
+    else reply "$run_dir/reply.md" --remove-label agent:needs-human; fi
     # Ready is the Dev agent's queue: a decision ticket waits in Triage.
     [[ "$status" != "Ready" ]] || set_status "$item" "Triage" || true
     mark_done; log "pm-answer: replied on #$issue ($result)"
@@ -232,6 +241,8 @@ if [[ -n "$existing_pr" ]]; then
 else
   [[ -s "$run_dir/policy.txt" ]] || self_merge=1
 fi
+# A revision that touches a policy holds the PR before its commit is pushed.
+[[ ! -s "$run_dir/policy.txt" ]] || hold_pr --add-label agent:needs-human
 git -C "$wt" push -q -u origin "$branch"
 {
   echo "Closes #$issue"; echo
@@ -245,15 +256,14 @@ git -C "$wt" push -q -u origin "$branch"
   else
     echo "**A person merges this PR** (the label \`pm:self-merge\` was removed)."
   fi
+  # The agent's declaration, read again by pm_board.py selfmerge at merge time.
+  if [[ "$policy" == "no" ]]; then echo "<!-- pm:policy=no -->"; else echo "<!-- pm:policy=yes -->"; fi
   echo; echo "_Opened by the **PM agent** (product-manager skill, \`scripts/agents/pm_answer.sh\`): only \`docs/product/\` changed, epic markers checked. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
   echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 } > "$run_dir/pr.md"
 title="$(gh issue view "$issue" -R "$slug" --json title -q .title)"
 if [[ -n "$existing_pr" ]]; then
   gh pr edit "$existing_pr" -R "$slug" --body-file "$run_dir/pr.md" >/dev/null
-  if [[ -s "$run_dir/policy.txt" ]]; then
-    gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" --add-label agent:needs-human >/dev/null || true
-  fi
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
   gh pr comment "$existing_pr" -R "$slug" --body "🧭 PM agent revised the PRD for the latest feedback (on this PR or #$issue). <!-- agent:pm -->" >/dev/null
 else
