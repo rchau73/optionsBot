@@ -181,7 +181,7 @@ Read `.agent-task.md`: the ticket, every comment (oldest first), and your open P
 
 Never change a trading rule or code. A story the answer implies goes in the reply as a proposed ticket (title and epic), and triage files it once the PRD merges.
 
-End with this block, exactly:
+End with this block, exactly. Don't put a `<!-- … -->` marker inside it: the script adds the header and marker.
 
 ```
 RESULT: pr | reply | needs_human

@@ -195,7 +195,8 @@ py 'import re,sys
 t = open(sys.argv[1]).read()
 for tag, out in (("PM-REPLY", sys.argv[2]), ("PR-BODY", sys.argv[3])):
     m = re.search(r"<!-- " + tag + r"\s*(.*?)\s*-->", t, re.S)
-    open(out, "w").write(m.group(1) if m else "")' "$run_dir/agent.md" "$run_dir/reply.md" "$run_dir/pr-body.md"
+    # The script adds the marker; one the agent wrote would end the block early.
+    open(out, "w").write(re.sub(r"\s*<!--\s*agent:pm\s*$", "", m.group(1)) if m else "")' "$run_dir/agent.md" "$run_dir/reply.md" "$run_dir/pr-body.md"
 
 if [[ $rc -ne 0 || -z "$result" ]]; then
   why="the agent did not finish (exit $rc, result '${result:-none}')"
@@ -269,7 +270,7 @@ if [[ -n "$existing_pr" ]]; then
 else
   labels=(--label agent:pm)
   if [[ $self_merge -eq 1 ]]; then labels+=(--label "pm:self-merge"); else labels+=(--label agent:needs-human); fi
-  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "PRD: $title (#$issue)" "${labels[@]}" --body-file "$run_dir/pr.md")"
+  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "PRD: ${title#PRD*: } (#$issue)" "${labels[@]}" --body-file "$run_dir/pr.md")"
 fi
 log "pm-answer: PR $pr_url (self-merge: $self_merge)"
 if [[ $self_merge -eq 1 ]]; then
