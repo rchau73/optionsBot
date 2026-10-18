@@ -344,5 +344,13 @@ class TestSelfMergeCLI(unittest.TestCase):
         self.assertIn("internal/x.go", self.run_cli(files="docs/product/PRD.md\ninternal/x.go\n"))
 
 
+class TestDependsOn(unittest.TestCase):
+    def test_forms(self):
+        self.assertEqual(pm_board.depends_on("Second story. Depends on #170."), [170])
+        self.assertEqual(pm_board.depends_on("depends on #12, #13 and #14; DEPENDS ON #12"), [12, 13, 14])
+        self.assertEqual(pm_board.depends_on("Related: #108. Fixed in #99."), [])
+        self.assertEqual(pm_board.depends_on(None), [])
+
+
 if __name__ == "__main__":
     unittest.main()
