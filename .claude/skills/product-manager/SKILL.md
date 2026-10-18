@@ -129,6 +129,8 @@ You run the product side of the delivery flow. The squad (Dev and Reviewer agent
 - Keep Ready short and ordered (WIP: a few cards, top priority first). The Dev agent builds the top card.
 - A ticket you move must be buildable without you: user story, acceptance criteria in Gherkin, metrics, and what must not change. If it isn't, it stays in Triage with the questions.
 
+**Talk through tickets.** Every question, decision request, recommendation and outcome goes in a comment on its ticket, so it is tracked. A question with no ticket (a PRD open question, a new idea) gets a new issue labelled `agent:pm` + `agent:needs-human`. A chat or report may summarise, but it points to the ticket, and you read the ticket's comments for the person's answer. A decision the person gives in chat is recorded on the ticket ("Go from the product owner on …"). Each request names what to decide, the options and your recommendation.
+
 ## Working with the designer
 
 The **ux-designer** skill designs the screens, flows and prototypes. You bring the product side: segment, job-to-be-done, the value the user must feel in the first session, the metric the design must move, the constraints (risk disclosures, regulation, the data the API really has).
