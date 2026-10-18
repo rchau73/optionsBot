@@ -106,6 +106,8 @@ type PnLRecorder interface {
 // change can be confirmed across restarts.
 type RegimeHistory interface {
 	Record(t time.Time, regime string)
+	// Seed starts an empty history at the live regime (a brand-new bot, #147).
+	Seed(now time.Time, regime string, days int) bool
 	Daily() []history.RegimeDay
 }
 

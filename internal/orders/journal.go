@@ -44,6 +44,7 @@ const (
 	RiskLimitChanged    = "limit_changed"     // a confirmed change moved the IM limit
 	RiskRebalance       = "rebalance"         // the book is being resized toward the IM limit
 	RiskRebalanceInBand = "rebalance_in_band" // startup: IM within the band around the limit, the book is not resized (#123)
+	RiskRegimeSeeded    = "regime_seeded"     // brand-new start: no regime history, the live regime taken as confirmed (#147)
 	RiskRebalanceRetry  = "rebalance_retry"   // a complement fell short: the rebalance runs again after a cooldown
 	RiskRebalanceManual = "rebalance_manual"  // a person asked for a rebalance (POST /api/rebalance)
 	RiskMMBreach        = "mm_breach"         // maintenance margin above max_mm_pct: reducing now

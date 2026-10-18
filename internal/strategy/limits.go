@@ -43,11 +43,21 @@ func (m marginState) mmBreached() bool {
 // riskStatus evaluates the policy for now and journals what changed.
 func (s *Strategy) riskStatus(now time.Time, gammaDec GammaDecision) risk.Status {
 	regimeKnown := gammaDec.Regime != "" && gammaDec.Regime != "UNKNOWN"
+	seeded := false
 	if s.riskCfg.UseRegime && regimeKnown {
+		// A brand-new bot has no closes to confirm a regime against: it starts
+		// from the live one. The confirmation is for changes seen after a start
+		// and across restarts (#147: mvp sat frozen for a day on a fresh account).
+		seeded = s.regimes.Seed(now, gammaDec.Regime, s.riskCfg.ConfirmDays)
 		s.regimes.Record(now, gammaDec.Regime)
 	}
 	closes, live := s.policyDays(now, gammaDec.Regime, regimeKnown)
 	st := risk.Evaluate(s.riskCfg, closes, live)
+	if seeded {
+		detail := fmt.Sprintf("no regime history: brand-new start takes the live regime %s as its last %d daily closes", gammaDec.Regime, s.riskCfg.ConfirmDays)
+		slog.Warn("regime history seeded from the live regime", "regime", gammaDec.Regime, "days", s.riskCfg.ConfirmDays)
+		s.logRisk(orders.RiskRegimeSeeded, detail, st, risk.Usage{}, gammaDec.Regime)
+	}
 	s.noteRiskChange(st, gammaDec.Regime)
 	return st
 }

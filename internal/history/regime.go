@@ -16,6 +16,8 @@ import (
 type RegimeDay struct {
 	Day    time.Time `json:"day"` // UTC midnight
 	Regime string    `json:"regime"`
+	// Seeded marks a close written by Seed at a brand-new start, not observed.
+	Seeded bool `json:"seeded,omitempty"`
 }
 
 // RegimeStore keeps the gamma regime per UTC day on disk. Deribit has no
@@ -110,6 +112,31 @@ func (s *RegimeStore) Record(t time.Time, regime string) {
 	if _, err := s.file.Write(append(data, '\n')); err != nil {
 		slog.Error("regime history write failed", "err", err)
 	}
+}
+
+// Seed gives a brand-new history (no day stored) the regime seen at now as
+// the close of each of the days UTC days before today, marked Seeded, so a
+// first start takes the market as it is instead of waiting days for closes
+// to confirm it (#147). It reports whether it wrote anything; a history with
+// any day — every restart — is left alone.
+func (s *RegimeStore) Seed(now time.Time, regime string, days int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.days) > 0 || days < 1 {
+		return false
+	}
+	today := now.UTC().Truncate(24 * time.Hour)
+	for k := days; k >= 1; k-- {
+		d := RegimeDay{Day: today.AddDate(0, 0, -k), Regime: regime, Seeded: true}
+		s.put(d)
+		if s.file != nil {
+			data, _ := json.Marshal(d)
+			if _, err := s.file.Write(append(data, '\n')); err != nil {
+				slog.Error("regime history write failed", "err", err)
+			}
+		}
+	}
+	return true
 }
 
 // Daily returns the stored days, oldest first (the last may be today).
