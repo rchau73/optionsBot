@@ -35,6 +35,7 @@ Two local environments run side by side and **share nothing at runtime**. Your d
 | Monitor | <http://localhost:3000> | <http://localhost:3100> |
 | Data | its own `data/`: the track record, never reset | its own `data/` |
 | Market recorder | on | off (`BOT_RECORD_MARKET=0`): one dataset, no duplicate mainnet calls |
+| BTC direction source (`gex_direction`) | `bias` (`config_btc.yaml`) | `sma` (`config_btc.mvp.yaml`, `BOT_CONFIG_BTC` in `deploy.env`, #168): the two react to the same BTC moves with different shed rules |
 | Agents | the SME agent judges performance here | the agents run from this clone; the SME agent verifies fixes here |
 
 The environments folder is `optionsBot-env` beside your checkout (`~/dev/go/optionsBot` → `~/dev/go/optionsBot-env`), holding `stable/`, `mvp/`, `history/` (deploys and promotions) and `agent-worktrees/`; set `OPTIONSBOT_ENVS` to put it elsewhere.
@@ -53,7 +54,7 @@ scripts/envctl.sh stable stop bot-eth   # any scripts/envctl.sh stable command, 
 scripts/envctl.sh stable down
 ```
 
-Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`. `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**). A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
+Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml`. That file is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there. `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**). A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
 
 ### Releasing to stable
 

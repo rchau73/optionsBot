@@ -21,7 +21,9 @@ services:
     command: ["--config", "/app/config.yaml", "--env-file", "/app/.env"]
     volumes:
       - ./.env:/app/.env:ro
-      - ./config_btc.yaml:/app/config.yaml:ro
+      # BOT_CONFIG_BTC (an environment's deploy.env) picks another BTC config: mvp
+      # runs config_btc.mvp.yaml (#168: direction sma vs stable's bias).
+      - ${BOT_CONFIG_BTC:-./config_btc.yaml}:/app/config.yaml:ro
       - ./data/btc:/app/run
     environment:
       <<: *bot-env
