@@ -142,10 +142,12 @@ json.dump(out, sys.stdout)' "$num"
 
 # ready_next → "ITEM_ID ISSUE_NUMBER" of the Ready card to build next: highest
 # Priority first (P0…P3, the PM agent's order; none last), then the oldest
-# issue. Epic issues are never built.
+# issue. Epic issues and agent:pm tickets (PRD changes and decisions: the PM
+# agent's, pm_answer.sh) are never built.
 ready_next() {
   board_json | py 'import json,sys
-cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN" and "epic" not in c["labels"]]
+cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN"
+         and "epic" not in c["labels"] and "agent:pm" not in c["labels"]]
 rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"], 9), c["number"])
 for c in sorted(cards, key=rank)[:1]: print(c["item"], c["number"])'
 }

@@ -9,5 +9,6 @@ set -uo pipefail
 dir="$(dirname "${BASH_SOURCE[0]}")"
 "$dir/deploy.sh" || echo "deploy step failed (exit $?)"
 "$dir/review_agent.sh" || echo "review step failed (exit $?)"
+"$dir/pm_answer.sh" || echo "pm answer step failed (exit $?)"
 "$dir/pm_agent.sh" || echo "pm step failed (exit $?)"
 "$dir/dev_agent.sh" || echo "dev step failed (exit $?)"
