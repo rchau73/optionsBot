@@ -1,0 +1,56 @@
+# config_btc.mvp.yaml — the mvp environment's BTC config (#168): config_btc.yaml with ONE
+# difference, gex_direction: sma (stable keeps bias), so the two environments
+# can be compared on the same BTC moves. Selected by BOT_CONFIG_BTC in mvp's
+# deploy.env. tests/config_effective_test.go fails if anything else differs:
+# change config_btc.yaml, then copy it here and keep only that line different.
+
+underlying: BTC
+
+# Only the settings that are tuned live here. Everything else (order working,
+# GEX confirmation counts and timers, stop guard, churn breaker, expiry choice,
+# loop timing) is fixed in internal/config/fixed.go; setting one of those keys
+# here fails at startup.
+
+# ── Entry slots ───────────────────────────────────────────────────────────────
+# Each (dte, delta) pair is an independent strangle slot.
+# Each slot gets an equal share of the margin policy's IM limit (see below).
+dte_delta_matrix:
+  - dte: 25
+    deltas: [0.16]
+  - dte: 50
+    deltas: [0.16]
+
+# ── Rollout & risk rules ──────────────────────────────────────────────────────
+rollout_dte:            15      # roll entire strangle when DTE ≤ this
+delta_drift_threshold:  0.10    # roll a leg when |delta| falls below this (little premium left); at most 75% of every entry delta
+roi_take_profit:        0.50    # roll leg when ROI ≥ 50% of premium received
+stop_loss_multiplier:   2.0     # emergency close when loss ≥ 2× premium received
+delta_exit_threshold:   0.30    # close a short leg when |delta| reaches this (the move is real); re-sold only once calm, like a stop
+repair_cooldown_hours:  72      # a stopped-out leg is re-sold no sooner than this, and only when entries are not frozen and the confirmed gamma regime is not negative
+
+# ── Gamma monitor ─────────────────────────────────────────────────────────────
+gamma_flip_buffer_sd:      1.5  # shed a leg only when spot is this many daily std devs (DVOL/sqrt(365)) beyond the gamma flip — BTC ~3.0%, ETH ~4.0% today (1.0 until 2026-10-14)
+gex_direction:             sma  # MVP ONLY (#168): stable runs bias on BTC, mvp runs sma, to compare the two on the same market — side to avoid in a negative regime: sma (SMA trend) | bias (script's ACCELERATION BIAS: spot vs flip ± the buffer). Both are recorded (data/direction_history.jsonl); stress 2026-10-12: bias −16…−139 % vs sma
+
+# ── Margin policy (all figures are Deribit's: % of margin balance) ────────────
+# Initial-margin limit by DVOL IV-percentile band: rich premium allows more,
+# calm markets (a big move may be coming) allow less. A confirmed negative
+# gamma regime forces the lowest band. Band/regime changes must hold for
+# 2 daily closes; until then new entries are frozen.
+iv_margin_bands:
+  - { min_iv_pct: 70, max_im_pct: 50 }
+  - { min_iv_pct: 30, max_im_pct: 35 }
+  - { min_iv_pct: 0,  max_im_pct: 20 }
+max_mm_pct:             35      # maintenance-margin limit, enforced at once (Deribit liquidates at 100)
+max_leg_size_multiple:  2       # a new leg is at most 2x its slot's normal size (share / standalone margin per lot); stops book offsets from inflating sizes
+
+# ── Entry ─────────────────────────────────────────────────────────────────────
+min_premium:           0.001    # minimum premium per leg, in BTC; 0 = accept any premium
+
+# ── Backtest ──────────────────────────────────────────────────────────────────
+backtest:
+  fill_model:               mid       # mid | bid_ask | slippage
+  slippage_pct:             0.001
+  limit_fill_rule:          next_tick
+  commission_per_contract:  0.0003
+  margin_call_liquidation:  true

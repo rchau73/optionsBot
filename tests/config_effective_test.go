@@ -51,3 +51,27 @@ func TestConfig_EffectiveSettingsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// The mvp environment's BTC config (#168) is config_btc.yaml with one
+// difference — the direction source — so stable and mvp can be compared on the
+// same BTC moves. Any other difference would make that comparison meaningless.
+func TestConfig_MVPBTCDiffersOnlyInDirection(t *testing.T) {
+	t.Setenv("DERIBIT_ENV", "testnet")
+	base, err := loadWithDummyCreds(t, filepath.Join("..", "config_btc.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mvp, err := loadWithDummyCreds(t, filepath.Join("..", "config_btc.mvp.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.GEXDirection != "bias" || mvp.GEXDirection != "sma" {
+		t.Fatalf("gex_direction: config_btc.yaml %q (want bias, stable), config_btc.mvp.yaml %q (want sma)", base.GEXDirection, mvp.GEXDirection)
+	}
+	mvp.GEXDirection = base.GEXDirection
+	a, _ := json.Marshal(base)
+	b, _ := json.Marshal(mvp)
+	if string(a) != string(b) {
+		t.Errorf("config_btc.mvp.yaml must equal config_btc.yaml except gex_direction:\n base %s\n mvp  %s", a, b)
+	}
+}
