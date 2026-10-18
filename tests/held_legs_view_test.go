@@ -71,6 +71,7 @@ func TestHeldLegs_ShedAnchorAgainstLiveFlip(t *testing.T) {
 	f.cfg.GEXRepairReleaseHours = 24
 	f.withOpenStrangle(0.1, 0.02)
 	f.withPutSheddingRegime()
+	f.withConfirmedRegime("POSITIVE/PINNING") // the negative regime is unconfirmed: the shed anchor, not the regime-side rule, holds the put
 	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill { return orders.Fill{Qty: o.Qty, FillPrice: 0.02} }
 	at := time.Now()
 	g := &switchGEX{}

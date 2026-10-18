@@ -122,7 +122,8 @@ func TestMarginPolicy_DVOLDropFreezesEntriesAndRebalance(t *testing.T) {
 
 func TestMarginPolicy_UnconfirmedGammaRegimeFreezesEntries(t *testing.T) {
 	f := newStrategyFixture(t)
-	f.withPutSheddingRegime() // GEX wired, no regime history yet (first days after deploy)
+	f.withPutSheddingRegime()                 // live regime negative…
+	f.withConfirmedRegime("POSITIVE/PINNING") // …after confirmed positive closes: a change, not yet confirmed
 	f.startRun()
 
 	eventually(t, 2*time.Second, "skip journaled", func() bool { return f.skips("risk_frozen") > 0 })
