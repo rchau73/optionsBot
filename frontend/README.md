@@ -34,6 +34,11 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 - Each bot exposes a read-only JSON API when `BOT_API_ADDR` is set. It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
 - The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`). Bot URLs are configured with `BOT_APIS` and never reach the browser.
 - Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
+- `GET /api/summary` (#177, for the investor view of E3; not in the proxy allow-list yet) answers a holder's four questions in one call. Coin amounts are in `underlying` (BTC or ETH), USD at today's `spot` unless said otherwise:
+  - `holding` — `strangles`, `legs`, `calls`, `puts`, `notional_coin`, `notional_usd`, `nearest_expiry` and `nearest_dte` (null with no legs), `coin`.
+  - `income` — `months`: the last 6 UTC calendar months, oldest first, the current one last, each `{month: "YYYY-MM", realised_coin, realised_usd, closes}` (journal closes net of fees; USD at each close's spot; a month without closes is zeros); `this_month` (= the last of `months`); `unrealised_coin`, `unrealised_usd` (open book at its marks); `coin`; `basis`.
+  - `worst_case` — **a model, label it so**: `model` (the text to show), `available` (false with `reason` when spot or DVOL is missing — show "unknown", never 0), `sigmas` (3), `dvol`, `move_pct`, `coin`, and `down` / `up` each `{spot, loss_coin, loss_usd, pct_of_equity}` (positive = money lost; `pct_of_equity` null without the equity). Black–Scholes on each leg's current IV, one day passed, spot moved ±3 daily σ (σ = DVOL ÷ √365); `loss_coin` is the USD loss at the moved spot.
+  - `last_action` — null before the first trade, else the journal's latest open or close: `at`, `kind` (open | close), `instrument`, `option_type`, `qty`, `rule` (the journal's reason, e.g. `stop_loss`), `reason` in plain words (e.g. "Bought back the put: it lost twice its premium (stop-loss)"), `detail` (the rule's numbers), and for a close `pnl_coin`, `pnl_usd`.
 - **Every page and every `/api` route needs a signed-in session** (below). The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
 
 ## Sign-in

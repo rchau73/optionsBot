@@ -151,6 +151,7 @@ func newSimulation(underlying string) *simulation {
 		spot = 3500
 	}
 	s := &simulation{underlying: underlying, spot: spot, base: spot, dvol: 52, journal: orders.NewWriterLogger(io.Discard, 0.05), started: time.Now()}
+	s.journal.Restore(demoTrades(spot))
 	for i, slot := range []orders.SlotRef{{DTE: 25, Delta: 0.16}, {DTE: 45, Delta: 0.16}, {DTE: 60, Delta: 0.18}} {
 		exp := time.Now().AddDate(0, 0, slot.DTE).Truncate(24 * time.Hour).Add(8 * time.Hour)
 		id := fmt.Sprintf("st-%d", i+1)
@@ -161,6 +162,27 @@ func newSimulation(underlying string) *simulation {
 		)
 	}
 	return s
+}
+
+// demoTrades is six months of simulated closes (a few a week, mostly
+// take-profits, now and then a stop-loss), so /api/summary's monthly income
+// and /api/trades have history from the start.
+func demoTrades(spot float64) orders.Replay {
+	rp := orders.Replay{FirstAt: time.Now().AddDate(0, -6, 0)}
+	reasons := []string{"roi_target", "roi_target", "delta_drift", "roi_target", "stop_loss", "dte_rollout"}
+	for i, at := 0, rp.FirstAt; at.Before(time.Now().Add(-time.Hour)); i, at = i+1, at.Add(40*time.Hour) {
+		reason := reasons[i%len(reasons)]
+		pnl := 0.002 + rand.Float64()*0.002
+		detail := ""
+		if reason == "stop_loss" {
+			pnl, detail = -0.006-rand.Float64()*0.004, "stop-loss: loss 2.05× the premium ≥ 2.00× (demo)"
+		}
+		typ := []string{"call", "put"}[i%2]
+		rp.Events++
+		rp.Trades = append(rp.Trades, orders.Trade{Seq: rp.Events, At: at, Kind: "close", Instrument: "demo-" + typ,
+			OptionType: typ, Qty: 0.3, Reason: reason, Detail: detail, PnL: pnl, PnLUSD: pnl * spot, Spot: spot})
+	}
+	return rp
 }
 
 func roundStrike(k, spot float64) float64 {
