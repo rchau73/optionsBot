@@ -8,7 +8,7 @@
     pm_board.py deps    < issue body           (prints the issue numbers it depends on)
     pm_board.py wait    <today> <dep_states.json> < issue body   (why it must wait; empty = free)
     pm_board.py tags    <board.json> <epics.json> <out.json>     (epic labels and [E#] titles to fix)
-    pm_board.py order   <board.json> <state.json> <out.json>     (Ready and Triage in the PM's order)
+    pm_board.py order   <board.json> <state.json> <out.json>     (Ready, In review and Triage in the PM's order)
     pm_board.py plan    <board.json> <epics.json> <state.json> <now ISO> (epics due for new stories)
     pm_board.py stories <pm.json> <epics.json> <out.json>        (new stories → status, labels, title)
     pm_board.py policy  <main PRD.md> <PR PRD.md> <yes|no|"">
@@ -381,11 +381,17 @@ PRIO_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 def column_order(board, column):
     """Item ids of a column in the PM's order. Ready: Priority, then the oldest issue.
     Triage: cards free to go first (no agent:needs-human, prototype not awaited), then
-    the ones waiting for a person; each group by Priority, then age."""
+    the ones waiting for a person. In review: ready-to-merge first, so a person merges
+    top-down in priority order. Each group by Priority, then age."""
     cards = [c for c in board if c["status"] == column and c["state"] == "OPEN" and "epic" not in c["labels"]]
     def key(c):
-        person = "agent:needs-human" in c["labels"] or "agent:pm" in c["labels"]
-        return (person if column == "Triage" else False, PRIO_RANK.get(c.get("priority"), 9), c["number"])
+        if column == "Triage":
+            first = "agent:needs-human" in c["labels"] or "agent:pm" in c["labels"]
+        elif column == "In review":
+            first = "ready-to-merge" not in c["labels"]  # the person's queue on top
+        else:
+            first = False
+        return (first, PRIO_RANK.get(c.get("priority"), 9), c["number"])
     return [c["item"] for c in sorted(cards, key=key)]
 
 
@@ -394,7 +400,7 @@ def order_changes(board, state):
     applied it (state["order"]): positions are written only when the wanted order moves."""
     last = state.get("order", {})
     out = {}
-    for col in ("Ready", "Triage"):
+    for col in ("Ready", "In review", "Triage"):
         want = column_order(board, col)
         if want and want != last.get(col):
             out[col] = want
