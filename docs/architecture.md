@@ -19,6 +19,7 @@ Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshot
 12. [Observability](#12-observability)
 13. [Invariants (do not break)](#13-invariants-do-not-break)
 14. [Known limitations](#14-known-limitations)
+15. [Exchange adapters](#15-exchange-adapters)
 
 ## 1. Design goals
 
@@ -40,6 +41,7 @@ Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshot
 | `internal/risk` | Margin policy, pure: IM limit by DVOL IV-percentile band, negative-gamma override, changes confirmed on daily closes, fixed MM limit | — |
 | `internal/strategy` | Decision loop: entry, fill tracking, exits, margin policy, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex, risk (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
+| `internal/exchange` | Exchange boundary for E8: interfaces only (orders, account, portfolio simulation, option chain, vol index, open interest, transport, naming, rate-limit pools, fees) with compile-time checks that the Deribit types satisfy them; nothing depends on it yet ([§15](#15-exchange-adapters)) | gateway, marketdata, orders, gex (types) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
 | `internal/history` | P&L history (`data/pnl_history.jsonl`, bucketed range queries) and gamma regime per UTC daily close (`data/regime_history.jsonl`, which Deribit does not keep); append-only, reloaded on start, corrupt lines skipped | — |
 | `internal/account` | Polls `private/get_account_summaries` (fallback: per-currency `get_account_summary`) every `BOT_ACCOUNT_POLL_SEC` and caches collateral per asset, margin model and IM/MM — Deribit's figures, plus IM %/MM % of margin balance | gateway (interface) |
@@ -192,3 +194,33 @@ See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 - **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only; results on it validate mechanics, not profitability.
 - **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions. The only persisted state is the P&L history for the monitor chart (`data/pnl_history.jsonl`); trading never reads it.
 - **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating.
+
+## 15. Exchange adapters
+
+The bot trades on Deribit only. E8 (PRD "Multi-customer, multi-account, multi-exchange") adds exchanges behind one boundary, so that a new exchange does not change the strategy. `internal/exchange` (#181) names that boundary: **interfaces only**, no behaviour. Today's Deribit types satisfy them as they are (compile-time checks in `internal/exchange/deribit.go`), and nothing depends on the package yet. The strategy keeps its consumer-defined interfaces in `internal/strategy/deps.go`, and `tests/exchange_test.go` checks that they and the boundary have the same method sets (assignable both ways), so the two cannot drift. A second exchange is an adapter that satisfies these interfaces and converts to the bot's own types (`orders.Order`, `orders.AccountSummary`, `marketdata.Instrument`, …). Moving the Deribit code behind an adapter is a later step.
+
+What the strategy asks of an exchange, and the Deribit call behind each:
+
+| Interface · method | Deribit today | Deribit-specific? |
+|---|---|---|
+| `OrderPlacer.Submit` | `private/buy`, `private/sell` (limit, market, IOC; `label`; fees from the reply's trades) | no; the per-order `label` is a client order ID elsewhere |
+| `OrderPlacer.Cancel` | `private/cancel` | no |
+| `OrderPlacer.CancelAllOrders` | `private/cancel_all_by_currency` (startup, kill switch) | the per-currency scope is Deribit's; elsewhere per symbol or per account |
+| `OrderPlacer.CancelByLabel` | `private/cancel_by_label` (unknown order outcomes, `orders.MaybePlaced`) | **yes**: needs a cancel or lookup by client order ID |
+| `OrderTracker.GetOrderState` | `private/get_order_state` | no |
+| `OrderTracker.AmendOrder` | `private/edit` (re-pricing a resting entry) | amend in place is not universal; cancel-and-replace changes the fill risk |
+| `OrderTracker.OrderFee` | `private/get_user_trades_by_order` | no |
+| `AccountReader.GetAccountSummary` | `private/get_account_summary` (`extended`: IM, MM, margin balance, cross collateral) | the margin figures and models are each exchange's own |
+| `AccountReader.GetPositions` | `private/get_positions` (`kind=option`) | no |
+| `AccountReader.GetMargins` | `private/get_margins` | margin per order is not universal |
+| `AccountReader.GetDailyCloses` | `public/get_tradingview_chart_data` (daily candles for the SMA trend) | no |
+| `PortfolioSimulator.SimulatePortfolio`, `SimulateAlone` | `private/simulate_portfolio` (≤ 1 call/s, `add_positions`): entry and top-up sizing, the size cap | **yes**: without it, sizing needs a local margin model the bot does not have |
+| `OptionChain` (`UnderlyingPrice`, `GetInstrument`, `AllInstruments`, `Track`) | `public/get_instruments`; subscriptions `deribit_price_index.*`, `ticker.<name>.100ms` | channel names and ticker greeks are Deribit's |
+| `VolIndex` (`DVOL`, `IVPercentile`, `DVOLDaily`) | `public/get_volatility_index_data`; subscription `deribit_volatility_index.*` | **yes** (DVOL); elsewhere read it from Deribit over a public connection, or use a substitute |
+| `OpenInterest` | `public/get_book_summary_by_currency` on a **mainnet** public connection (`gex.Manager`, which also builds the GEX) | open interest is universal; the GEX method is ours |
+| `Transport` (`Call`, `Subscribe`, `Notifications`, `Fatal`, `ConnStats`) | `gateway.Gateway`: one WebSocket, JSON-RPC 2.0, `public/auth`, `public/set_heartbeat`, priority lanes, retries, circuit breaker, reconnect | the wire format is Deribit's; every adapter keeps invariant 1 (all I/O through its one transport) |
+| `RateLimitPool` | `gateway.IsMatchingEngine`: two credit pools, matching engine (buy/sell/edit/cancel) and everything else | pool layout and limits differ per exchange |
+| `OptionNameParser` | `marketdata.ParseOptionName` (`BTC-4OCT26-60000-P`) | **yes**: instrument naming |
+| `FeeModel` | `orders.OptionFee`: 0.03 % of the underlying, capped at 12.5 % of the price (backtest and stress; live books the fee Deribit reports) | **yes**: each exchange has its own schedule |
+
+Order handling, reconcile and the trading rules do not change with this boundary. A change that a new exchange needs (e.g. no portfolio simulation, no amend) is a person's decision. The capability gaps per exchange (Bybit, OKX, Binance, Hyperliquid) belong to the E8 feasibility briefs, in their own document, linked here when it exists.
