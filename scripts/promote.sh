@@ -54,9 +54,11 @@ if [[ $first -eq 1 ]]; then
 elif [[ -s "$promotions" ]] && cut -f2 "$promotions" | grep -qx "$tag"; then
   echo "$tag ran in stable before: rollback, no soak check"
 else
-  # Earliest mvp deploy of this commit or a later one.
+  # Earliest mvp deploy of this commit or a later one. A `rollback` line
+  # (deploy.sh, #204) names a commit that had already run, so it never moves
+  # the clock earlier.
   since=""
-  while IFS=$'\t' read -r at env c; do
+  while IFS=$'\t' read -r at env c _; do
     [[ "$env" == "mvp" ]] || continue
     if git -C "$stable" merge-base --is-ancestor "$commit" "$c" 2>/dev/null; then since="$at"; break; fi
   done < <(cat "$deploys" 2>/dev/null || true)
