@@ -34,8 +34,8 @@ log "SME review $DATE — repo $AGENT_REPO_DIR, monitor $MONITOR_URL"
 # ── 1. Collect ──────────────────────────────────────────────────────────────
 manifest="$OUT/MANIFEST.md"
 printf '# Collected %s from %s\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$MONITOR_URL" > "$manifest"
-fetch() { # url, file
-  if curl -fsS -m 20 "$1" -o "$OUT/$2"; then echo "- ok: \`$2\` ← $1" >> "$manifest"
+fetch() { # url, file [token: default MONITOR_TOKEN, stable's]
+  if monitor_curl "${3-$MONITOR_TOKEN}" -fsS -m 20 "$1" -o "$OUT/$2"; then echo "- ok: \`$2\` ← $1" >> "$manifest"
   else echo "- FAILED: \`$2\` ← $1" >> "$manifest"; rm -f "$OUT/$2"; fi
 }
 fetch "$MONITOR_URL/api/bots" bots.json
@@ -51,9 +51,9 @@ done
 # verified there. Same files under mvp/; absent when mvp is not running.
 mkdir -p "$OUT/mvp"
 echo "- stable (performance, the track record): $MONITOR_URL · mvp (main, where fixes land first): $MVP_MONITOR_URL → mvp/" >> "$manifest"
-if curl -fsS -m 10 "$MVP_MONITOR_URL/api/bots" -o "$OUT/mvp/bots.json" 2>/dev/null; then
+if monitor_curl "$MVP_MONITOR_TOKEN" -fsS -m 10 "$MVP_MONITOR_URL/api/bots" -o "$OUT/mvp/bots.json" 2>/dev/null; then
   for b in $(py 'import json,sys; print(" ".join(b["name"] for b in json.load(open(sys.argv[1])).get("bots", [])))' "$OUT/mvp/bots.json" || true); do
-    for ep in status positions events trades pnl; do fetch "$MVP_MONITOR_URL/api/bots/$b/$ep" "mvp/$b-$ep.json"; done
+    for ep in status positions events trades pnl; do fetch "$MVP_MONITOR_URL/api/bots/$b/$ep" "mvp/$b-$ep.json" "$MVP_MONITOR_TOKEN"; done
   done
 else
   echo "- mvp: not reachable (not running?)" >> "$manifest"

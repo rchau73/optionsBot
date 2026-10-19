@@ -52,5 +52,21 @@ services:
       - MONITOR_POLL_MS=1000   # page refresh; polling never touches Deribit rate limits
       # Manual close (testnet): the monitor's proxy adds it; the browser never sees it. From .env.
       - BOT_ADMIN_TOKEN=${BOT_ADMIN_TOKEN:-}
+      # Sign-in (frontend/README.md "Sign-in"), from .env. The monitor refuses to
+      # start without AUTH_SECRET (≥ 32 bytes); ADMIN_* create the first admin
+      # when there are no users; MONITOR_API_TOKEN lets the deploy health check
+      # and the agents read bot data (GET only) without a session.
+      - AUTH_SECRET=${AUTH_SECRET:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - MONITOR_API_TOKEN=${MONITOR_API_TOKEN:-}
+    volumes:
+      # Users and sessions (auth.db). A named volume: one per environment, as
+      # the compose project name includes OPTIONSBOT_ENV.
+      - monitor-auth:/app/data/monitor
     ports:
       - "127.0.0.1:${MONITOR_PORT:?set MONITOR_PORT in deploy.env}:3000"
+
+volumes:
+  monitor-auth:

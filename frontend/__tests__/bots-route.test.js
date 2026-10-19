@@ -4,6 +4,7 @@
 import { parseBots, pollIntervalMs } from "@/lib/bots";
 import { GET as listBots } from "@/app/api/bots/route";
 import { GET as proxy } from "@/app/api/bots/[bot]/[...path]/route";
+import { sessionCookie, useTestAuth } from "@/test/auth";
 
 const call = (bot, path, search = "") =>
   proxy(new Request(`http://monitor/api/bots/${bot}/${path.join("/")}${search}`), { params: Promise.resolve({ bot, path }) });
@@ -75,18 +76,29 @@ describe("read-only proxy", () => {
 describe("manual close proxy", () => {
   const { POST: close } = require("@/app/api/bots/[bot]/close/route");
   const realFetch = global.fetch;
+  let cookie;
   const post = (bot, body, headers = {}) =>
     close(
       new Request(`http://localhost:3000/api/bots/${bot}/close`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000", ...headers },
+        headers: { "content-type": "application/json", origin: "http://localhost:3000", host: "localhost:3000", cookie, ...headers },
         body: JSON.stringify(body),
       }),
       { params: Promise.resolve({ bot }) },
     );
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
     process.env.BOT_ADMIN_TOKEN = "s3cret";
+    useTestAuth();
+    cookie = await sessionCookie();
+  });
+
+  test("refuses without a signed-in session, before reaching the bot", async () => {
+    global.fetch = jest.fn();
+    const res = await post("btc", { position_ids: ["p-2"] }, { cookie: "" });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("x-monitor-session")).toBe("required");
+    expect(global.fetch).not.toHaveBeenCalled();
   });
   afterEach(() => {
     global.fetch = realFetch;

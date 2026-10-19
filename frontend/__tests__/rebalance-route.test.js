@@ -2,12 +2,14 @@
  * @jest-environment node
  */
 import { POST } from "@/app/api/bots/[bot]/rebalance/route";
+import { sessionCookie, useTestAuth } from "@/test/auth";
 
+let cookie;
 const post = (bot, body, headers = {}) =>
   POST(
     new Request(`http://monitor/api/bots/${bot}/rebalance`, {
       method: "POST",
-      headers: { origin: "http://monitor", host: "monitor", "content-type": "application/json", ...headers },
+      headers: { origin: "http://monitor", host: "monitor", "content-type": "application/json", cookie, ...headers },
       body: JSON.stringify(body),
     }),
     { params: Promise.resolve({ bot }) },
@@ -15,9 +17,18 @@ const post = (bot, body, headers = {}) =>
 
 describe("rebalance proxy", () => {
   const realFetch = global.fetch;
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.BOT_APIS = "eth=http://bot-eth:8082";
     process.env.BOT_ADMIN_TOKEN = "s3cret";
+    useTestAuth();
+    cookie = await sessionCookie();
+  });
+
+  test("refuses without a signed-in session, before reaching the bot", async () => {
+    global.fetch = jest.fn();
+    expect((await post("eth", { dry_run: true }, { cookie: "" })).status).toBe(401);
+    expect((await post("eth", { dry_run: true }, { cookie: "access_token=forged.token.here" })).status).toBe(401);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
   afterEach(() => {
     global.fetch = realFetch;

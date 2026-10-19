@@ -475,3 +475,9 @@ class TestAnsweredAll(unittest.TestCase):
             return {"number": n, "state": "OPEN", "status": "Triage", "labels": ["agent:pm"], "created": "2026-10-01T00:00:00Z",
                     "body": "", "messages": [{"at": at, "body": "my answer"}]}
         self.assertEqual(pm_board.answered_all([t(2, "2026-10-19T02:00:00Z"), t(1, "2026-10-19T03:00:00Z")], {}), [2, 1])
+
+
+class TestInReviewOrder(unittest.TestCase):
+    def test_ready_to_merge_first(self):
+        b = [card(1, "In review", priority="P0"), card(2, "In review", labels=["ready-to-merge"], priority="P2")]
+        self.assertEqual(pm_board.column_order(b, "In review"), ["I2", "I1"])
