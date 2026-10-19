@@ -78,6 +78,7 @@ type Result struct {
 	Sheds, Stops       int
 	DeltaExits, Rolls  int // rolls: DTE rolls, take-profits and delta drifts (legs)
 	MMCuts, Unfilled   int // Unfilled: orders that found an empty side of the book and waited
+	LiquidityCapped    int // entry legs cut (or blocked) by the liquidity cap
 	MaxDrawdown        float64
 	MaxIMPct, AvgIMPct float64
 	Days               []Day
@@ -629,6 +630,14 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			continue
 		}
 		lots := e.size(sides, spot, st, vacant, len(slots))
+		// The liquidity cap (strategy/liquidity.go): at most a share of each
+		// sold strike's recorded open interest.
+		for _, sd := range sides {
+			if most := strategy.LiquidityCapQty(sd.q.OpenInterest, c.LiquidityCapOIPct, e.lot) / e.lot; most < float64(lots) {
+				lots = int(math.Floor(most + 1e-9))
+				e.res.LiquidityCapped++
+			}
+		}
 		if lots < 1 {
 			continue
 		}

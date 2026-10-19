@@ -59,6 +59,20 @@ func CapLots(lots, normalLots int, multiple float64) (int, bool) {
 	return lots, false
 }
 
+// LiquidityCapQty is the largest order a strike's market can take: pct % of
+// its mainnet open interest, floored to whole lots (#103: ETH sent 1,454
+// contracts on a strike whose whole market was 164, and filled 152). A strike
+// with no open interest can take nothing (0). pct ≤ 0 means no cap (+Inf).
+func LiquidityCapQty(openInterest, pct, lot float64) float64 {
+	if pct <= 0 {
+		return math.Inf(1)
+	}
+	if openInterest <= 0 || lot <= 0 {
+		return 0
+	}
+	return orders.FloorToStep(openInterest*pct/100, lot)
+}
+
 // TargetLots is the size a held strangle should have so its initial margin
 // fits share, when each lot uses imPerLot. The IM limit never closes a
 // strangle completely (at least one lot stays); the MM limit can.

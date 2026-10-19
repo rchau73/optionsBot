@@ -28,6 +28,7 @@ const (
 	FixedRebalanceBackoffAfter    = 3        // …doubled from the 3rd unfilled rebalance pass in a row…
 	FixedRebalanceRetryMaxMinutes = 60       // …up to 60 minutes (2026-10-14 BTC: 12 unfilled top-up orders in 1.5 h)
 	FixedRebalanceStartupBandPct  = 1.5      // startup: no resize while IM is within ±1.5 pp of the limit (#123: deploys round-tripped BTC)
+	FixedLiquidityCapOIPct        = 10       // an entry/top-up order is at most 10 % of its strike's mainnet OI (#103: mvp's 2–12 % filled whole)
 	FixedOrderFillTimeoutSec      = 90       // a resting sell is cancelled after this
 	FixedOrderSlippagePct         = 0.05     // re-price up when the ask drifts this far above the limit
 	FixedOrderMaxAdjustments      = 3        // at most this many re-prices up
@@ -66,6 +67,7 @@ var fixedKeys = map[string]string{
 	"churn_max_round_trips":          "3",
 	"churn_window_minutes":           "60",
 	"rebalance_retry_minutes":        "15",
+	"liquidity_cap_oi_pct":           "10",
 	"order_fill_timeout_sec":         "90",
 	"order_slippage_pct":             "0.05",
 	"order_max_adjustments":          "3",
@@ -106,6 +108,7 @@ func (c *Config) ApplyFixed() {
 	c.RebalanceBackoffAfter = FixedRebalanceBackoffAfter
 	c.RebalanceRetryMaxMinutes = FixedRebalanceRetryMaxMinutes
 	c.RebalanceStartupBandPct = FixedRebalanceStartupBandPct
+	c.LiquidityCapOIPct = FixedLiquidityCapOIPct
 	c.OrderFillTimeoutSec = FixedOrderFillTimeoutSec
 	c.OrderSlippagePct = FixedOrderSlippagePct
 	c.OrderMaxAdjustments = FixedOrderMaxAdjustments

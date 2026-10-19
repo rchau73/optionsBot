@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -118,6 +119,9 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, m.status, false); err != nil {
+			if errors.Is(err, errLiquidityCap) {
+				continue // journaled as a liquidity_cap skip
+			}
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipEntryRejected, err.Error())
@@ -142,8 +146,7 @@ const (
 	SkipStopDeferred  = "stop_deferred"  // a stop-loss waits for the spread (stopguard.go): no new risk meanwhile
 	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
 	SkipGEXWait       = "gex_wait"       // no fresh GEX snapshot: regime and trend unknown, no new risk (gexready.go)
-	SkipBiasWarmup    = "bias_warmup"    // a bias shed held: the flip window does not cover its span yet (biaswarmup.go)
-	// One new-risk sizer at a time (#97): an entry waits for a working
+	SkipBiasWarmup    = "bias_warmup"    // a bias shed held: the flip window does not cover its span yet (biaswarmup.go)	// One new-risk sizer at a time (#97): an entry waits for a working
 	// rebalance top-up, and a due rebalance for a working entry.
 	SkipEntryWaitTopup     = "entry_wait_topup"
 	SkipRebalanceWaitEntry = "rebalance_wait_entry"
@@ -231,6 +234,16 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		slog.Info("single-leg entry: one side is blocked",
 			"regime", gammaDec.Regime, "action", actionLabel(gammaDec.Action), "trend", gammaDec.Trend,
 			"skipping", skipped, "reason", why, "target_dte", targetDTE)
+	}
+
+	// No order larger than the strike's market can take (liquidity.go).
+	lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+	if lot <= 0 {
+		lot = s.cfg.MinTradeAmount
+	}
+	qty, err := s.capToLiquidity(call, put, openCall, openPut, qty, lot, targetDTE, entryDelta, complement)
+	if err != nil {
+		return err
 	}
 
 	// Check the premium floor for every leg before submitting any order, so a

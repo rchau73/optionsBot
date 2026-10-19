@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -288,6 +289,12 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		"put_instrument", put.Name,
 	)
 	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, gammaDec, rs, true); err != nil {
+		if errors.Is(err, errLiquidityCap) {
+			// The strike's market cannot take a lot: the slot stays short (#103),
+			// no retry — the next limit change or restart re-measures it.
+			act.Action, act.Detail = ActionKept, "below the slot target, but the strike's open interest takes less than a lot"
+			return act
+		}
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
 		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err), false)

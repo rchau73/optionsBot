@@ -27,6 +27,7 @@
   "MarketRecordMinutes": 60,
   "ChurnWindowMinutes": 60,
   "MaxLegSizeMultiple": 2,
+  "LiquidityCapOIPct": 10,
   "DeltaDriftThreshold": 0.1,
   "ROITakeProfit": 0.5,
   "StopLossMultiplier": 2,
