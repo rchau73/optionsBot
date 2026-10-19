@@ -19,29 +19,29 @@ import (
 // leaves short of its share stays short (no re-send of the rest). Repairs are
 // exempt: they restore the size of a leg already held.
 
-// SkipLiquidityCap is journaled once when the cap cuts (or blocks) an order.
+// SkipLiquidityCap is journaled when the cap cuts (or blocks) an order.
 const SkipLiquidityCap = "liquidity_cap"
 
 // errLiquidityCap: the cap leaves less than one lot, so nothing is sent. The
 // skip is already journaled; callers must not journal it again.
 var errLiquidityCap = errors.New("liquidity cap below one lot")
 
-// capToLiquidity returns qty capped by the open interest of the legs that
-// will be sold. With no open-interest source wired (tests, tools) or the cap
-// off, qty is unchanged. With a source but no snapshot, nothing is sent: the
-// market's size is unknown (entries already wait for fresh GEX, gexready.go).
-func (s *Strategy) capToLiquidity(call, put *marketdata.Instrument, openCall, openPut bool, qty, lot float64, targetDTE int, entryDelta float64, complement bool) (float64, error) {
+// liquidityLimit returns qty capped by the open interest of the legs that
+// will be sold, with each leg's open interest for the journal. known is false
+// when a source is wired but has no snapshot yet: the market's size is
+// unknown (entries already wait for fresh GEX, gexready.go). With no source
+// wired (tests, tools) or the cap off, qty is unchanged. It journals nothing,
+// so a dry run can use it too.
+func (s *Strategy) liquidityLimit(call, put *marketdata.Instrument, openCall, openPut bool, qty, lot float64) (capped float64, legs []string, known bool) {
 	pct := s.cfg.LiquidityCapOIPct
 	if s.oi == nil || pct <= 0 {
-		return qty, nil
+		return qty, nil, true
 	}
 	snap := s.oi.OpenInterest()
 	if snap == nil {
-		s.noteSkip(targetDTE, entryDelta, SkipLiquidityCap, "no mainnet open interest yet: the market's size is unknown")
-		return 0, errLiquidityCap
+		return 0, nil, false
 	}
-	capped := qty
-	var legs []string
+	capped = qty
 	for _, l := range []struct {
 		inst *marketdata.Instrument
 		open bool
@@ -50,27 +50,49 @@ func (s *Strategy) capToLiquidity(call, put *marketdata.Instrument, openCall, op
 			continue
 		}
 		oi := snap.ByInstrument[l.inst.Name]
-		capped = math.Min(capped, LiquidityCapQty(oi, pct, lot))
-		legs = append(legs, fmt.Sprintf("%s OI %g → ≤ %g", l.inst.Name, oi, LiquidityCapQty(oi, pct, lot)))
+		legCap := LiquidityCapQty(oi, pct, lot)
+		capped = math.Min(capped, legCap)
+		legs = append(legs, fmt.Sprintf("%s OI %g → ≤ %g", l.inst.Name, oi, legCap))
 	}
-	if capped >= qty-qtyEpsilon {
-		return qty, nil
-	}
+	return capped, legs, true
+}
+
+// capToLiquidity applies liquidityLimit to an order about to be sent and
+// journals the cap when it binds. An order that goes out capped, and every
+// capped top-up, gets its own liquidity_cap line: noteSkip's per-slot dedup is
+// reset only by an entry into an empty slot, so a second cap on the same slot
+// (a re-armed top-up, a re-entry) would otherwise go unrecorded. Only an entry
+// the cap blocks — retried every cycle — is deduped per slot.
+func (s *Strategy) capToLiquidity(call, put *marketdata.Instrument, openCall, openPut bool, qty, lot float64, targetDTE int, entryDelta float64, complement bool) (float64, error) {
+	pct := s.cfg.LiquidityCapOIPct
 	kind := "entry"
 	if complement {
 		kind = "top-up"
 	}
-	detail := fmt.Sprintf("%s of %g capped to %g at %g%% of mainnet open interest (%s)",
-		kind, qty, capped, pct, strings.Join(legs, "; "))
-	if capped < lot {
+	capped, legs, known := s.liquidityLimit(call, put, openCall, openPut, qty, lot)
+	var detail string
+	switch {
+	case !known:
+		detail = kind + " not sent: no mainnet open interest yet, the market's size is unknown"
+	case capped >= qty-qtyEpsilon:
+		return qty, nil
+	case capped < lot:
 		detail = fmt.Sprintf("%s of %g not sent: %g%% of mainnet open interest is under one lot of %g (%s)",
 			kind, qty, pct, lot, strings.Join(legs, "; "))
+	default:
+		detail = fmt.Sprintf("%s of %g capped to %g at %g%% of mainnet open interest (%s)",
+			kind, qty, capped, pct, strings.Join(legs, "; "))
 	}
 	slog.Info("order size capped by the strike's open interest",
 		"kind", kind, "target_dte", targetDTE, "entry_delta", entryDelta, "call", call.Name, "put", put.Name,
 		"margin_qty", qty, "capped_qty", capped, "cap_oi_pct", pct, "legs", strings.Join(legs, "; "))
-	s.noteSkip(targetDTE, entryDelta, SkipLiquidityCap, detail)
-	if capped < lot {
+	sent := known && capped >= lot
+	if sent || complement {
+		s.journal.LogSkipped(SkipLiquidityCap+": "+detail, s.eventContext(nil, slotRef(targetDTE, entryDelta)))
+	} else {
+		s.noteSkip(targetDTE, entryDelta, SkipLiquidityCap, detail)
+	}
+	if !sent {
 		return 0, errLiquidityCap
 	}
 	return capped, nil

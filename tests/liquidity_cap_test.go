@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"math"
 	"strings"
 	"testing"
@@ -184,6 +185,60 @@ func TestLiquidityCap_TopUpUnderOneLotIsNotRetried(t *testing.T) {
 	}
 	if n := len(f.journal.riskChanges(orders.RiskRebalanceRetry)); n != 0 {
 		t.Errorf("the slot stays short (#103): no retry, got %d", n)
+	}
+}
+
+// Review of #211: every capped top-up is journaled, not only the first one on
+// its slot — the per-slot skip dedup is reset only by an entry into an empty
+// slot, so a re-armed top-up capped again went unrecorded.
+func TestLiquidityCap_RepeatTopUpCapIsJournaledEachTime(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.exch.imPerLot = 0.5         // a 0.3 top-up is due
+	f.cfg.OrderFillTimeoutSec = 0 // it times out unfilled on the next cycle
+	f.cfg.RebalanceRetryMinutes = 0
+	f.withLiquidityCap(map[string]float64{f.call: 2, f.put: 800}) // 10 % of 2 = 0.2
+	f.startRun()
+
+	eventually(t, 3*time.Second, "the capped top-up re-sent after a short fill",
+		func() bool { return len(f.exch.sells()) >= 4 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.2) > 1e-9 {
+			t.Errorf("every top-up is capped to 0.2, got %s %v", o.Instrument, o.Qty)
+		}
+	}
+	eventually(t, time.Second, "one liquidity_cap line per capped top-up",
+		func() bool { return f.skips(strategy.SkipLiquidityCap+": top-up") >= 2 })
+}
+
+// Review of #211: the rebalance report shows the size actually sent.
+func TestLiquidityCap_RebalanceReportShowsTheCappedSize(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.withOpenStrangle(0.1, 0.02)
+	f.withLiquidityCap(map[string]float64{f.call: 2, f.put: 800}) // 10 % of 2 = 0.2
+	f.startRun()
+	eventually(t, 3*time.Second, "startup rebalance ran",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalance)) > 0 })
+	f.exch.mu.Lock()
+	f.exch.summary.MarginBalance *= 4 // the slot target becomes 0.4: a 0.3 top-up
+	f.exch.summary.Equity *= 4
+	f.exch.mu.Unlock()
+
+	for _, dry := range []bool{true, false} {
+		rep, err := f.strat.RequestRebalance(context.Background(), dry, "test")
+		if err != nil {
+			t.Fatalf("rebalance (dry run %v): %v", dry, err)
+		}
+		ups := topUps(rep)
+		if len(ups) != 1 || math.Abs(ups[0].Qty-0.2) > 1e-9 || !strings.Contains(ups[0].Detail, "sell 0.2") {
+			t.Fatalf("dry run %v: want one top-up reported at the capped 0.2: %+v", dry, rep)
+		}
+	}
+	eventually(t, 2*time.Second, "capped top-up sold", func() bool { return len(f.exch.sells()) >= 2 })
+	for _, o := range f.exch.sells() {
+		if math.Abs(o.Qty-0.2) > 1e-9 {
+			t.Errorf("top-up sent %s %v, want 0.2", o.Instrument, o.Qty)
+		}
 	}
 }
 
