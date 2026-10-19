@@ -30,8 +30,8 @@ func openHistory(t *testing.T, path string, now time.Time) *history.Store {
 func TestHistory_SurvivesRestartWithoutDoubleCountingRealised(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data", "pnl_history.jsonl") // dir is created
 	h := openHistory(t, path, t0)
-	h.RecordPnL(t0, 0.001, 0.0005, 100000)
-	h.RecordPnL(t0.Add(time.Minute), 0.002, -0.001, 100000)
+	h.RecordPnL(t0, 0.001, 0.0005, 100000, nil)
+	h.RecordPnL(t0.Add(time.Minute), 0.002, -0.001, 100000, nil)
 	h.Close()
 
 	// After a restart the bot restores its realised P&L from the journal
@@ -39,7 +39,7 @@ func TestHistory_SurvivesRestartWithoutDoubleCountingRealised(t *testing.T) {
 	// The store must not add its own last point on top (it once did).
 	h = openHistory(t, path, t0.Add(time.Hour))
 	defer h.Close()
-	h.RecordPnL(t0.Add(2*time.Minute), 0.0025, 0, 100000)
+	h.RecordPnL(t0.Add(2*time.Minute), 0.0025, 0, 100000, nil)
 
 	pts := h.Range(t0.Add(-time.Hour), t0.Add(time.Hour), 1000)
 	if len(pts) != 3 {
@@ -85,8 +85,8 @@ func TestHistory_ArchiveMovesNeverDeletes(t *testing.T) {
 func TestHistory_SkipsCorruptLinesAndOldPoints(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pnl.jsonl")
 	h := openHistory(t, path, t0)
-	h.RecordPnL(t0.AddDate(0, 0, -60), 1, 0, 1) // older than maxAge (30 d) at the next load
-	h.RecordPnL(t0, 2, 0, 1)
+	h.RecordPnL(t0.AddDate(0, 0, -60), 1, 0, 1, nil) // older than maxAge (30 d) at the next load
+	h.RecordPnL(t0, 2, 0, 1, nil)
 	h.Close()
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 	f.WriteString("not json\n{\"t\":\"2026-10-01T12:0") // garbage + a torn last line
@@ -103,8 +103,8 @@ func TestHistory_SkipsCorruptLinesAndOldPoints(t *testing.T) {
 func TestHistory_TrimsMemoryByAge(t *testing.T) {
 	h := openHistory(t, filepath.Join(t.TempDir(), "pnl.jsonl"), t0)
 	defer h.Close()
-	h.RecordPnL(t0, 1, 0, 1)
-	h.RecordPnL(t0.AddDate(0, 0, 31), 1, 0, 1) // the first point is now older than 30 d
+	h.RecordPnL(t0, 1, 0, 1, nil)
+	h.RecordPnL(t0.AddDate(0, 0, 31), 1, 0, 1, nil) // the first point is now older than 30 d
 	if pts := h.Range(t0.AddDate(0, 0, -1), t0.AddDate(0, 0, 32), 1000); len(pts) != 1 {
 		t.Errorf("old point should be trimmed, got %d points", len(pts))
 	}
@@ -153,8 +153,9 @@ func TestBucketWidth(t *testing.T) {
 func TestAPI_PnLHistory(t *testing.T) {
 	h := openHistory(t, filepath.Join(t.TempDir(), "pnl.jsonl"), time.Now())
 	defer h.Close()
-	h.RecordPnL(time.Now().Add(-2*time.Hour), 0.001, 0, 100000)
-	h.RecordPnL(time.Now().Add(-time.Minute), 0.002, 0.001, 100000)
+	h.RecordPnL(time.Now().Add(-2*time.Hour), 0.001, 0, 100000, nil)
+	h.RecordPnL(time.Now().Add(-time.Minute), 0.002, 0.001, 100000,
+		&history.Margin{Known: true, IMPct: 10, IMLimitPct: 20, MMPct: 4, EntriesAllowed: true})
 	srv := api.New(staticView{sampleView()}, orders.NewWriterLogger(io.Discard, 0), api.WithPnLHistory(h)).Handler()
 
 	_, day := getJSON(t, srv, "/api/pnl/history?range=1d")
@@ -164,6 +165,14 @@ func TestAPI_PnLHistory(t *testing.T) {
 	_, hour := getJSON(t, srv, "/api/pnl/history?range=1h")
 	if n := len(hour["points"].([]any)); n != 1 {
 		t.Errorf("1h should only include the recent point, got %d", n)
+	}
+	// The margin fields reach the chart (#174); the older point has none.
+	pts := day["points"].([]any)
+	if p := pts[1].(map[string]any); p["im_pct"] != 10.0 || p["im_limit_pct"] != 20.0 || p["mm_pct"] != 4.0 || p["entries_allowed"] != true {
+		t.Errorf("point with margin = %v", p)
+	}
+	if _, has := pts[0].(map[string]any)["entries_allowed"]; has {
+		t.Errorf("point without margin should omit it: %v", pts[0])
 	}
 	if code, _ := getJSON(t, srv, "/api/pnl/history?range=2y"); code != http.StatusBadRequest {
 		t.Errorf("unknown range → %d, want 400", code)
@@ -180,10 +189,25 @@ type recordedPnL struct {
 	points []history.Point
 }
 
-func (r *recordedPnL) RecordPnL(t time.Time, realised, unrealised, spot float64) {
+func (r *recordedPnL) RecordPnL(t time.Time, realised, unrealised, spot float64, margin *history.Margin) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.points = append(r.points, history.Point{T: t, Realised: realised, Unrealised: unrealised, Spot: spot})
+	p := history.Point{T: t, Realised: realised, Unrealised: unrealised, Spot: spot}
+	if margin != nil {
+		m := *margin
+		p.IMPct, p.IMLimitPct, p.MMPct, p.EntriesAllowed = &m.IMPct, &m.IMLimitPct, &m.MMPct, &m.EntriesAllowed
+	}
+	r.points = append(r.points, p)
+}
+
+// last returns the newest recorded point (ok false when there is none).
+func (r *recordedPnL) last() (history.Point, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.points) == 0 {
+		return history.Point{}, false
+	}
+	return r.points[len(r.points)-1], true
 }
 
 func TestStrategy_RecordsPnLHistoryEachInterval(t *testing.T) {

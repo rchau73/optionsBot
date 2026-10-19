@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 )
 
@@ -169,6 +170,24 @@ func (s *Strategy) pnlWithMarks(marks map[string]float64) []PnLLine {
 	return ComputePnL(slots, positions, slotOfPos, realised, closed)
 }
 
+// historyMarginMaxAge is how old the decision loop's margin view may be and
+// still be recorded with a P&L point; an older one (a stalled loop) is none.
+const historyMarginMaxAge = 5 * time.Minute
+
+// HistoryMargin is the margin view recorded with a P&L history point (#174):
+// nil before the first margin read or when the view is older than
+// historyMarginMaxAge; IM and MM unknown (entries not allowed) when the
+// margin read failed that cycle.
+func HistoryMargin(rv RiskView, now time.Time) *history.Margin {
+	if rv.AsOf.IsZero() || now.Sub(rv.AsOf) > historyMarginMaxAge {
+		return nil
+	}
+	return &history.Margin{
+		Known: rv.Error == "", IMPct: rv.IMPct, MMPct: rv.MMPct,
+		IMLimitPct: rv.Status.LimitIMPct, EntriesAllowed: rv.EntriesAllowed,
+	}
+}
+
 // logPnL writes one P&L line per slot plus the strategy total to the journal.
 func (s *Strategy) logPnL() {
 	spot := s.md.UnderlyingPrice()
@@ -191,7 +210,7 @@ func (s *Strategy) logPnL() {
 			ClosedLegs:    l.ClosedLegs,
 		})
 		if l.Slot == nil && s.history != nil {
-			s.history.RecordPnL(now, l.Realised, l.Unrealised, spot)
+			s.history.RecordPnL(now, l.Realised, l.Unrealised, spot, HistoryMargin(s.riskView(), now))
 		}
 		if l.Slot == nil {
 			slog.Info("pnl", "strategy_id", s.strategyID(),
