@@ -110,8 +110,8 @@ type ManualCloseResult struct {
 
 type manualReq struct {
 	ids      []string
-	by       string
-	deadline time.Time // not started after this: the caller has given up
+	by       orders.Actor // who asked; journaled with each close
+	deadline time.Time    // not started after this: the caller has given up
 	reply    chan []ManualCloseResult
 }
 
@@ -124,8 +124,9 @@ const manualPickup = 25 * time.Second
 // ManualClose asks the decision loop to buy back the given positions at
 // market. Safe from any goroutine. The loop re-checks each position against
 // ManualCloseBlockReason; a request it has not taken within manualPickup is
-// dropped unexecuted, so a caller that gave up never closes later.
-func (s *Strategy) ManualClose(ctx context.Context, ids []string, by string) ([]ManualCloseResult, error) {
+// dropped unexecuted, so a caller that gave up never closes later. by is the
+// person who asked, journaled with each close and each refusal.
+func (s *Strategy) ManualClose(ctx context.Context, ids []string, by orders.Actor) ([]ManualCloseResult, error) {
 	s.pub.mu.RLock()
 	on, off, halted := s.pub.manualOn, s.pub.manualOff, s.pub.halted
 	s.pub.mu.RUnlock()
@@ -172,6 +173,7 @@ func (s *Strategy) runManualClose(ctx context.Context, req manualReq) {
 	defer s.publish()
 	rs := s.riskView().Status
 	trend := trendDirOf(s.gamma.Trend())
+	actor := req.by
 	out := make([]ManualCloseResult, 0, len(req.ids))
 	for _, id := range req.ids {
 		r := ManualCloseResult{PositionID: id}
@@ -184,7 +186,9 @@ func (s *Strategy) runManualClose(ctx context.Context, req manualReq) {
 		r.Instrument, r.Qty = pos.Instrument, pos.Qty
 		if why := ManualCloseBlockReason(pos.OptionType, trend, rs); why != "" {
 			r.Error = why
-			s.journal.LogSkipped("manual_close_refused "+pos.Instrument+": "+why, s.instrumentContext(pos.Instrument, s.slotOf(pos.ID)))
+			jctx := s.instrumentContext(pos.Instrument, s.slotOf(pos.ID))
+			jctx.Actor = &actor
+			s.journal.LogSkipped("manual_close_refused "+pos.Instrument+": "+why, jctx)
 			out = append(out, r)
 			continue
 		}
@@ -194,9 +198,9 @@ func (s *Strategy) runManualClose(ctx context.Context, req manualReq) {
 		if inStrangle {
 			s.stopped[key] = at // repair holds it like a stop-out (RepairBlockReason)
 		}
-		detail := fmt.Sprintf("manual close from the monitor (%s): %s; repair held as after a stop-out", req.by, block)
-		slog.Warn("manual close", "instrument", pos.Instrument, "qty", pos.Qty, "by", req.by, "block", block)
-		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerManualClose, 0, detail)
+		detail := fmt.Sprintf("manual close from the monitor by %s: %s; repair held as after a stop-out", actor, block)
+		slog.Warn("manual close", "instrument", pos.Instrument, "qty", pos.Qty, "by", actor, "block", block)
+		filled, err := s.buyToCloseBy(ctx, pos, pos.Qty, orders.TriggerManualClose, 0, detail, &actor)
 		r.Filled = filled
 		if err != nil {
 			r.Error = err.Error()

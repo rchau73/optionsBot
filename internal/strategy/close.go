@@ -22,6 +22,12 @@ import (
 //
 // detail is the why, with the numbers; it is journaled with the close.
 func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, detail string) (float64, error) {
+	return s.buyToCloseBy(ctx, pos, qty, reason, limitPrice, detail, nil)
+}
+
+// buyToCloseBy is buyToClose for a person's action: actor (non-nil) is
+// journaled with the close as "actor" (#171).
+func (s *Strategy) buyToCloseBy(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, detail string, actor *orders.Actor) (float64, error) {
 	qty = math.Min(qty, pos.Qty)
 	if s.instrumentUnconfirmed(pos.Instrument) {
 		// An earlier order may have closed it already: sending another could
@@ -73,6 +79,7 @@ func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty flo
 	closed.Fees = pos.Fees * filled / pos.Qty // its share of the opening fees
 	jctx := s.instrumentContext(pos.Instrument, slot)
 	jctx.Detail = detail
+	jctx.Actor = actor
 	s.journal.LogClose(&closed, fill, reason, order.OrderType, jctx)
 	s.pnl.record(slot, orders.ClosedNetPnL(&closed, fill))
 

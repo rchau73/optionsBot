@@ -2,10 +2,11 @@
 // UI. Every GET response is built from in-memory state the bot already holds,
 // so it adds no load to the trading path or to Deribit's rate limits.
 //
-// One route changes trading state: POST /api/positions/close (WithManualClose)
+// Two routes change trading state: POST /api/positions/close (WithManualClose)
 // — bearer token, testnet only, and the strategy re-checks every position
 // against its rule (strategy.ManualCloseBlockReason) on the decision loop; the
-// close is journaled like any other.
+// close is journaled like any other — and POST /api/rebalance. Both take the
+// person who asked as "actor" (ActorOf) and journal it.
 package api
 
 import (
@@ -14,9 +15,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -65,12 +68,12 @@ type UtilisationSource interface {
 
 // ManualCloser closes positions by hand on the decision loop (strategy.Strategy).
 type ManualCloser interface {
-	ManualClose(ctx context.Context, ids []string, by string) ([]strategy.ManualCloseResult, error)
+	ManualClose(ctx context.Context, ids []string, by orders.Actor) ([]strategy.ManualCloseResult, error)
 }
 
 // ManualRebalancer runs a rebalance pass, or a dry run of one, on request.
 type ManualRebalancer interface {
-	RequestRebalance(ctx context.Context, dryRun bool, by string) (strategy.RebalanceReport, error)
+	RequestRebalance(ctx context.Context, dryRun bool, by orders.Actor) (strategy.RebalanceReport, error)
 }
 
 // AccountSource provides the cached account/collateral summary.
@@ -174,8 +177,29 @@ func (s *Server) authorised(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
 }
 
-// manualClose: {"position_ids": [...]} → the strategy's results. Audited in the
-// bot log; each close is journaled by the strategy.
+// actorName is a monitor username: 3–64 of a-z 0-9 . _ - (frontend lib/auth/store.js).
+var actorName = regexp.MustCompile(`^[a-z0-9._-]{3,64}$`)
+
+// actorRoles are the monitor's roles (PRD §3).
+var actorRoles = map[string]bool{"admin": true, "manager": true, "user": true}
+
+// ActorOf checks the person a state-changing request names (#171): nil →
+// "monitor" (a request that names nobody, as before); otherwise a valid
+// username and role, else an error. The monitor enforces who may act; the
+// bot only records who did — its own check stays the bearer token.
+func ActorOf(a *orders.Actor) (orders.Actor, error) {
+	if a == nil {
+		return orders.Actor{User: "monitor"}, nil
+	}
+	if !actorName.MatchString(a.User) || !actorRoles[a.Role] {
+		return orders.Actor{}, errors.New(`actor must be {"user": 3–64 of a-z 0-9 . _ -, "role": admin|manager|user}`)
+	}
+	return *a, nil
+}
+
+// manualClose: {"position_ids": [...], "actor": {"user", "role"}} → the
+// strategy's results. Audited in the bot log with the actor; each close is
+// journaled by the strategy with it.
 func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
 	if !s.authorised(r) {
 		slog.Warn("manual close refused: bad token", "remote", r.RemoteAddr)
@@ -183,7 +207,8 @@ func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PositionIDs []string `json:"position_ids"`
+		PositionIDs []string      `json:"position_ids"`
+		Actor       *orders.Actor `json:"actor"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "body must be {\"position_ids\": [...]}")
@@ -193,10 +218,15 @@ func (s *Server) manualClose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("between 1 and %d position ids", maxCloseIDs))
 		return
 	}
-	slog.Warn("manual close requested", "positions", body.PositionIDs, "remote", r.RemoteAddr)
+	actor, err := ActorOf(body.Actor)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	slog.Warn("manual close requested", "positions", body.PositionIDs, "by", actor, "remote", r.RemoteAddr)
 	ctx, cancel := context.WithTimeout(r.Context(), manualCloseWait)
 	defer cancel()
-	res, err := s.closer.ManualClose(ctx, body.PositionIDs, "monitor")
+	res, err := s.closer.ManualClose(ctx, body.PositionIDs, actor)
 	if err != nil {
 		code := http.StatusConflict
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, strategy.ErrManualCloseBusy) {
@@ -228,10 +258,23 @@ func (s *Server) manualRebalance(w http.ResponseWriter, r *http.Request) {
 		}
 		dryRun = b
 	}
-	slog.Warn("manual rebalance requested via API", "dry_run", dryRun, "remote", r.RemoteAddr)
+	// The body is optional ({"actor": {...}}); without one the actor is "monitor".
+	var body struct {
+		Actor *orders.Actor `json:"actor"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "body must be empty or {\"actor\": {\"user\": …, \"role\": …}}")
+		return
+	}
+	actor, err := ActorOf(body.Actor)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	slog.Warn("manual rebalance requested via API", "dry_run", dryRun, "by", actor, "remote", r.RemoteAddr)
 	ctx, cancel := context.WithTimeout(r.Context(), manualRebalanceWait)
 	defer cancel()
-	rep, err := s.rebal.RequestRebalance(ctx, dryRun, "monitor")
+	rep, err := s.rebal.RequestRebalance(ctx, dryRun, actor)
 	var refused strategy.RebalanceRefused
 	var cooldown strategy.RebalanceCooldown
 	switch {
