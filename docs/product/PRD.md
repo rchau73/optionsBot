@@ -74,7 +74,7 @@ Proof points available today: the decision journal (every action with its reason
 |---|---|---|---|---|
 | **North star (engine phase):** coin-denominated net return per unit of margin used | realised + unrealised P&L in coin, net of fees, ÷ average IM used, per 30 days | journal, `pnl_history.jsonl` | to measure (E2) | set after 30 days of baseline |
 | Worst week | the worst 7-day P&L, in coin and % of equity | same | to measure | within the risk budget E2 defines |
-| Margin utilisation | IM used ÷ IM limit, time-weighted | monitor `/api/account` | ETH ~2 % of 20 % (#86) | ≥ 60 % of the limit when allowed |
+| Margin utilisation | IM used ÷ IM limit, time-weighted over the time entries are allowed | `pnl_history.jsonl` margin fields → `/api/status` `utilisation_7d`/`utilisation_30d` (#174) | ETH ~2 % of 20 % (#86) | ≥ 60 % of the limit when allowed |
 | Decisions explained | share of actions with a human-readable reason in the monitor | journal | ~100 % for closes | 100 % |
 | **North star (product phase):** monthly active customer accounts with a strategy running | accounts with ≥ 1 running strategy and ≥ 1 user visit in the month | product analytics (E13) | — | set at beta |
 | Retention | monthly cohort retention of customer accounts; logo and revenue churn with a coded reason for every cancellation | product analytics, exit survey (E13) | — | curve flattens by month 3 |

@@ -97,9 +97,10 @@ type OISource interface {
 }
 
 // PnLRecorder persists the strategy's total P&L over time (for charts).
-// realised is cumulative since the journal began (restored at startup).
+// realised is cumulative since the journal began (restored at startup);
+// margin is the policy's last margin view, nil when there is none.
 type PnLRecorder interface {
-	RecordPnL(t time.Time, realised, unrealised, spot float64)
+	RecordPnL(t time.Time, realised, unrealised, spot float64, margin *history.Margin)
 }
 
 // RegimeHistory keeps the gamma regime at each UTC daily close, so a regime
