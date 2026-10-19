@@ -1,4 +1,5 @@
 import Badge from "./Badge";
+import SignOut from "./SignOut";
 import { flipBand, loopStalled, smaLevels } from "@/lib/monitor";
 import { ageSeconds, formatAge, formatDateTime, formatPct, formatUSD } from "@/lib/format";
 
@@ -12,6 +13,7 @@ export default function Header({ bots, error }) {
       {bots.map((b) => (
         <BotChip key={b.name} bot={b} />
       ))}
+      <SignOut />
     </header>
   );
 }
