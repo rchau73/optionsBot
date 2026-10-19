@@ -19,7 +19,10 @@ mkdir -p "$logs"
 start() { # script, instances
   local i=0
   while [[ $i -lt $2 ]]; do
-    nohup "$dir/$1" >> "$logs/tick-${1%.sh}.log" 2>&1 < /dev/null &
+    # Own session (setsid via python3: macOS has no setsid(1)), so nothing that
+    # ends the tick's process group — launchd included — stops a running agent.
+    python3 -c 'import os, sys; os.setsid(); os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$dir/$1" \
+      >> "$logs/tick-${1%.sh}.log" 2>&1 < /dev/null &
     i=$((i + 1))
   done
 }
