@@ -147,7 +147,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 - **One GitHub identity.** The agents act with the human's `gh` login, so the separation of duties is enforced by tool permissions and the ruleset, not by GitHub identity. Next step: a GitHub App or a machine user for the agents, with "require one approval" on `main`, so GitHub itself enforces that someone other than the author approves.
 - **One machine.** The bots, the monitor and the agents run on one Mac (launchd catches up after sleep). Moving the bots to a server would move the agents with them; moving only the Dev agent to GitHub Actions is possible, but deploy and the SME agent need the bots' local API.
-- **Measure the agents.** Track issues opened → triaged → merged → verified fixed, review rounds per PR, findings the human overrules, and PRs reverted, to see whether the agents earn their keep.
+- **Measure the agents.** Weekly report: see [Agent metrics](#agent-metrics) below. Still not measured: findings the human overrules.
 
 ---
 
@@ -171,3 +171,16 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 | reviewed clean on its **current** commit, CI green, GitHub `CLEAN` | label **`ready-to-merge`** on the PR and its card, one notification |
 
 **Your queue is the `ready-to-merge` label** (In review shows those cards first, by priority). Merge them top-down: whatever then conflicts is rebased by the agents before it comes back to you.
+
+## Agent metrics
+
+E6's outcome is "no human toil except approvals", so the loop measures itself (#180). On the first tick of each Monday (UTC), [`metrics.sh`](scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic. It makes no Claude call. The numbers come from [`metrics.py`](scripts/agents/metrics.py), which is standard library only and tested offline on fixture JSON (`test_metrics.py`). Its inputs are the issues and agent PRs updated in the week, the repository's label events and `main`'s git log.
+
+| Section | What it counts |
+|---|---|
+| Stages | Events in the week: SME filed (an `agent:sme` issue created), PM triaged (an issue's first 🧭 PM comment), → Ready (a PM comment that moves a card to Ready), Dev picked up, PR opened, merged, deployed to mvp (🚀 comment), SME verified fixed or reopened (`not_fixed`). Only `agent/issue-N` PRs count. |
+| Cycle time | Median and p90 (nearest rank) of Ready → PR, PR → merge and merge → deploy, for spans that ended in the week. A card a person moved to Ready leaves no comment, so its Ready time is the first Dev pickup. |
+| Quality | Reviewer rounds per PR merged or closed in the week (each `agent-review` marker counts, blocking ones shown), PRs closed unmerged, `Revert …` commits on `main`, and Dev agent blocks with their first line. |
+| Waiting for a person | Hours in the week that issues carried `agent:needs-human` or `prototype:review`, the waits that ended in the week (median, p90) and the ones still open. |
+
+Each stage is read from what the agents leave on GitHub, because a move on the board leaves no trace on the issue. If an agent's comment wording changes, update the markers at the top of `metrics.py` to match.
