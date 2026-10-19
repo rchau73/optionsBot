@@ -61,6 +61,8 @@ type RiskView struct {
 	// #166), since IMOverLimitSince. Nothing is resized: a person decides.
 	IMOverLimit      bool       `json:"im_over_limit"`
 	IMOverLimitSince *time.Time `json:"im_over_limit_since,omitempty"`
+	// EntriesAllowed: nothing blocked entries this cycle (marginState.entriesAllowed).
+	EntriesAllowed bool `json:"entries_allowed"`
 }
 
 // setIMOverLimit sets the episode fields from its start (zero: none).
@@ -202,7 +204,7 @@ func (s *Strategy) recordAccount(equity, marginUsed float64) {
 
 // recordRisk publishes the cycle's margin policy decision for the view.
 func (s *Strategy) recordRisk(m marginState) {
-	rv := RiskView{Status: m.status, AsOf: time.Now()}
+	rv := RiskView{Status: m.status, AsOf: time.Now(), EntriesAllowed: m.entriesAllowed(s.stopsDeferred)}
 	rv.setIMOverLimit(s.imOverSince)
 	if m.err != nil {
 		rv.Error = m.err.Error()

@@ -85,6 +85,20 @@ data/btc/
 
 Each environment also starts its **monitor** (stable <http://localhost:3000>, mvp <http://localhost:3100>, this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. The P&L chart's longer ranges (1h to all) read each bot's P&L history (`data/<underlying>/data/pnl_history.jsonl`), which survives restarts and rebuilds; delete it to start the history over. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
 
+### Margin utilisation
+
+How much of the approved margin a bot actually uses (#174). Each P&L history line also carries the margin the policy saw that cycle: `im_pct` and `mm_pct` (Deribit's, % of margin balance), `im_limit_pct` (the policy's IM limit) and `entries_allowed` — false while new risk is frozen, MM is at its limit, GEX is not ready, a stop-loss waits for the spread, or the margin read failed. Lines written before this change have none of these fields; they still load and are left out of the measure.
+
+`/api/status` reports `utilisation_7d` and `utilisation_30d`:
+
+```bash
+curl -s localhost:8081/api/status | jq '.utilisation_7d, .utilisation_30d'
+```
+
+- `mean_pct` — the time-weighted mean of IM ÷ IM limit, in %, over the time entries were allowed (null if they never were). E1's target is ≥ 60 %; a bot at 10 % of a 20 % limit shows 50.
+- `allowed_share` — the share (0–1) of the measured time entries were allowed. A low `mean_pct` with a high `allowed_share` is idle capital; a low `allowed_share` means the policy kept the bot out.
+- `allowed_hours`, `measured_hours` — the time behind the two figures. Each line stands for the time until the next one, at most 15 minutes, so the hours a bot was down are not counted.
+
 ## Watch the logs
 
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.

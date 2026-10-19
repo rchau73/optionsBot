@@ -57,6 +57,12 @@ type PnLHistory interface {
 	Range(from, to time.Time, buckets int) []history.Point
 }
 
+// UtilisationSource reports margin utilisation over a window (history.Store);
+// a PnLHistory that implements it fills /api/status utilisation_7d/_30d.
+type UtilisationSource interface {
+	Utilisation(from, to time.Time) history.UtilisationStats
+}
+
 // ManualCloser closes positions by hand on the decision loop (strategy.Strategy).
 type ManualCloser interface {
 	ManualClose(ctx context.Context, ids []string, by string) ([]strategy.ManualCloseResult, error)
@@ -311,7 +317,21 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"history_since":    s.historySince(),
 		"pnl":              v.PnL,
 		"connections":      conns,
+		"utilisation_7d":   s.utilisation(7 * 24 * time.Hour),
+		"utilisation_30d":  s.utilisation(30 * 24 * time.Hour),
 	})
+}
+
+// utilisation is the margin utilisation over the last span (#174); null
+// without a P&L history that can report it.
+func (s *Server) utilisation(span time.Duration) *history.UtilisationStats {
+	u, ok := s.history.(UtilisationSource)
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	stats := u.Utilisation(now.Add(-span), now)
+	return &stats
 }
 
 // historySince is when the journal's history begins (null when unknown).
