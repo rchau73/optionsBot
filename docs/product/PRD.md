@@ -73,13 +73,13 @@ Proof points available today: the decision journal (every action with its reason
 | Metric | Definition | Source | Baseline | Target |
 |---|---|---|---|---|
 | **North star (engine phase):** coin-denominated net return per unit of margin used | realised + unrealised P&L in coin, net of fees, ÷ average IM used, per 30 days | journal, `pnl_history.jsonl` | to measure (E2) | set after 30 days of baseline |
-| Worst week | the worst 7-day P&L, in coin and % of equity | same | to measure | within the risk budget E2 defines |
+| Worst week | the worst 7-day P&L, in coin and % of equity | `pnl_history.jsonl` via `internal/perf` (`Summarize`: also net return in coin/USD, hold-the-coin return over the same window, max drawdown, missing days) | to measure | within the risk budget E2 defines |
 | Margin utilisation | IM used ÷ IM limit, time-weighted over the time entries are allowed | `pnl_history.jsonl` margin fields → `/api/status` `utilisation_7d`/`utilisation_30d` (#174) | ETH ~2 % of 20 % (#86) | ≥ 60 % of the limit when allowed |
 | Decisions explained | share of actions with a human-readable reason in the monitor | journal | ~100 % for closes | 100 % |
 | **North star (product phase):** monthly active customer accounts with a strategy running | accounts with ≥ 1 running strategy and ≥ 1 user visit in the month | product analytics (E13) | — | set at beta |
 | Retention | monthly cohort retention of customer accounts; logo and revenue churn with a coded reason for every cancellation | product analytics, exit survey (E13) | — | curve flattens by month 3 |
 | Self-service understanding | share of help questions answered by tips, videos or the assistant without a person | assistant and support logs (E10, E11) | — | set at beta |
-| Guardrails | max drawdown, stop-loss count per week, MM peak, kill-switch events; for the product: complaints, refunds, assistant answers flagged wrong | journal, monitor, support | — | none may get worse after a release |
+| Guardrails | max drawdown, stop-loss count per week, MM peak, kill-switch events; for the product: complaints, refunds, assistant answers flagged wrong | journal, monitor, support; max drawdown from `internal/perf` | — | none may get worse after a release |
 
 ## 8. Roadmap
 

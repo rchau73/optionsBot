@@ -277,6 +277,7 @@ cmd/stress/           stress test of the live book through scripted shocks, and 
 scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/recorder/    hourly mainnet book recording (data/market/) and its reader
 internal/replay/      the bot's rules over recorded books (cmd/stress -replay)
+internal/perf/        pure performance summary of the P&L history: net return (coin, USD), hold-the-coin benchmark, max drawdown, worst 7 days, missing days
 internal/config/      config.yaml + .env loading and validation
 internal/gateway/     Deribit WebSocket client (queue, limits, breaker, retry, reconnect)
 internal/marketdata/  option chain, subscriptions, DVOL / IV percentile, expiry window
