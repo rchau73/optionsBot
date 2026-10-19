@@ -1,0 +1,103 @@
+# Analytics event plan (E13)
+
+**Status:** plan, before any instrumentation (#192). Nothing in the monitor sends an event yet; the story that instruments it implements this file and nothing beyond it.
+
+**Rule in one line:** an event says *what a person looked at or did*, never *what the account holds*. No amount, size, price, P&L, margin figure, instrument name, secret or email can travel in an event — the allow-list below is the only set of properties the collector accepts, and `tests/event_plan_test.go` checks this file against that rule.
+
+## 1. Questions the data must answer
+
+Every event answers at least one of these. An event that answers none is not collected.
+
+| ID | Question | Feeds |
+|---|---|---|
+| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) |
+| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention |
+| Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement |
+| Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test |
+| Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11 |
+| Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails |
+| Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 |
+
+## 2. Events
+
+Every event carries the envelope (§3) plus its own properties. Property names are the allow-list's (§4); a property not listed there is dropped by the collector.
+
+| Event | Trigger | Properties | Answers |
+|---|---|---|---|
+| `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
+| `screen_viewed` | a route is shown (`/` monitor, `/login`) | `screen` | Q1, Q2, Q3 |
+| `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
+| `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
+| `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
+| `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
+| `tip_opened` | a contextual tip (E11) is shown for longer than 1 s | `tip_id`, `screen` | Q5 |
+| `video_played` | a how-to video starts | `video_id` | Q5 |
+| `video_completed` | a how-to video reaches 90 % | `video_id`, `watched_ms` | Q5 |
+| `help_resolved` | the person answers "did this help?" under a tip or video | `tip_id`, `video_id`, `helped` | Q5 |
+| `first_answers_seen` | in the first session, the KPI strip, the open positions, the worst-case figure and the last trade's reason have all been on screen | `elapsed_ms` | Q4 |
+| `manual_close_opened` | the manual-close dialog opens for a leg | `side`, `allowed` | Q6 |
+| `manual_close_cancelled` | the dialog is dismissed without sending | `side` | Q6 |
+| `manual_close_confirmed` | the person confirms the close | `side`, `last_leg` | Q6 |
+| `manual_close_result` | the close request returns | `side`, `outcome` | Q6, Q7 |
+| `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
+| `rebalance_confirmed` | the person confirms the real rebalance | `outcome` | Q6, Q7 |
+| `data_stale_shown` | the page shows a stale or failed-poll badge | `source` | Q7 |
+| `signed_out` | sign-out, or the session expired and the page went to `/login` | `reason` | Q2, Q7 |
+
+What is deliberately **not** an event: each poll of the bot API, mouse movement, scrolling, keystrokes, text typed anywhere (the sign-in form included), hovering over numbers, and anything the bot itself does (that is the journal's job, not analytics).
+
+## 3. Envelope (every event)
+
+| Field | What | Why it is safe |
+|---|---|---|
+| `event` | the event name from §2 | — |
+| `ts` | UTC time, rounded to the second | stored in UTC like every other file; shown in BRT only in reports |
+| `user_id` | pseudonymous id (§5) | not the username, not the email |
+| `session_id` | random id per browser session, new after 30 min idle | cannot be linked to a person without `user_id` |
+| `role` | `admin`, `manager` or `user` (E7) | coarse, needed to split usage by role |
+| `environment` | `stable` or `mvp` | the deployment, not the account |
+| `app_version` | the monitor's release tag or commit | ties a behaviour change to a release |
+
+Never in the envelope: IP address, full user agent, referrer URL, query strings (filters live in the URL), the Deribit account or client id.
+
+## 4. Property allow-list
+
+The only properties an event may carry. Every one is an enumeration, a flag, a count of milliseconds or an id from the product's own help catalogue — none can hold a free-text value or a number about money.
+
+| Property | Type | Allowed values |
+|---|---|---|
+| `entry_screen` | enum | `monitor`, `login` |
+| `screen` | enum | `monitor`, `login` |
+| `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
+| `panel` | enum | `account`, `held`, `others`, `trades` (the `monitor.panel.*` keys) |
+| `open_ms` | duration | milliseconds, capped at 1 h |
+| `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
+| `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
+| `tip_id` | catalogue id | a key of the E11 tip catalogue (e.g. `tip.gamma_flip`); never generated from data |
+| `video_id` | catalogue id | a key of the E11 video catalogue (e.g. `video.read_monitor`) |
+| `watched_ms` | duration | milliseconds, capped at 10 min |
+| `helped` | bool | `true`, `false` |
+| `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
+| `side` | enum | `call`, `put` |
+| `allowed` | bool | whether the rule allowed the close when the dialog opened |
+| `last_leg` | bool | whether the leg was its strangle's last (the slot is re-entered) |
+| `outcome` | enum | `ok`, `refused`, `error`, `timeout` |
+| `source` | enum | `bot_api`, `account`, `pnl_history` |
+| `reason` | enum | `user`, `expired`, `refresh_failed` |
+
+Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage).
+
+## 5. Identity, consent, retention
+
+- **Pseudonymous user id:** `user_id` = HMAC-SHA256 of the user's row id in `auth.db` (E7) with a per-environment `ANALYTICS_SALT`, first 16 hex characters. The salt lives in the environment's `.env` beside `AUTH_SECRET` and never in an event or a log. No email, username or IP in any event. Reports count ids; mapping an id back to a person needs the salt and the users table, which only an admin holds — used only to honour a deletion or access request.
+- **Consent:** analytics is off until the person says yes once, on a short notice after sign-in ("help us improve the monitor: we record which screens and help you use, never amounts or positions"), with *Yes* and *No* equally prominent. The answer is stored on the user (not a cookie) and can be changed at any time in the account menu. *No* means no event is sent at all — not a reduced set. *(needs legal review: whether LGPD art. 7 legitimate interest or GDPR art. 6(1)(f) would allow strictly first-party usage analytics without consent; until a lawyer says so, consent is required.)*
+- **Opt-out:** turning analytics off stops collection from the next event; already-collected events stay until retention ends unless the person asks for deletion.
+- **Retention:** raw events are kept 13 months (enough for a year-over-year cohort), then deleted by a daily job; aggregated reports (counts per week and cohort, no `user_id`) may be kept longer. *(needs legal review: the 13-month period and whether aggregates count as anonymous under LGPD art. 12.)*
+- **Deletion and access on request:** an admin removes every event of a `user_id` (and the user's consent record) within 15 days of the request, and can export them for an access request. Deleting a user in `auth.db` deletes their events in the same step. *(needs legal review: LGPD art. 18 / GDPR arts. 15 and 17 deadlines and the request channel.)*
+- **Storage:** append-only JSON lines in `data/monitor/events.jsonl` on the environment's own monitor volume (stable and mvp separate, like `auth.db`), written by the monitor's server — the browser posts events to a same-origin route that checks the session, the consent flag and the allow-list, and drops anything else. No third-party tracker, SDK, pixel or CDN script; nothing leaves the host. Not archived with the trading history and never read by the bot.
+- **Access:** only admins read raw events; managers and users see aggregates at most. *(needs legal review: whether a processing record or a DPIA is required before beta customers, and who is the controller once customers bring their own accounts — E8.)*
+
+## 6. How this file is kept true
+
+- `tests/event_plan_test.go` reads the tables above and fails when an event uses a property not in §4, when a property's name or type could carry an amount, a size, a price or a secret, or when an event answers no question of §1.
+- A new event or property is added here first, in the same PR that instruments it, and must pass that test.
