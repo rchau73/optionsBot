@@ -354,3 +354,124 @@ class TestDependsOn(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWaitReason(unittest.TestCase):
+    def test_open_dependency_waits(self):
+        self.assertEqual(pm_board.wait_reason("Depends on #12.", {"12": {"state": "OPEN"}}, "2026-10-19"), "waits for #12")
+
+    def test_unknown_dependency_waits(self):
+        self.assertEqual(pm_board.wait_reason("Depends on #12.", {}, "2026-10-19"), "waits for #12")
+
+    def test_closed_dependency_frees(self):
+        self.assertEqual(pm_board.wait_reason("Depends on #12.", {12: {"state": "CLOSED", "reason": "COMPLETED"}}, "2026-10-19"), "")
+
+    def test_not_planned_needs_a_person(self):
+        r = pm_board.wait_reason("Depends on #12.", {12: {"state": "CLOSED", "reason": "NOT_PLANNED"}}, "2026-10-19")
+        self.assertTrue(r.startswith("human:"), r)
+
+    def test_date(self):
+        body = "Waits until 2026-10-22 (more data)."
+        self.assertEqual(pm_board.wait_reason(body, {}, "2026-10-21"), "waits until 2026-10-22")
+        self.assertEqual(pm_board.wait_reason(body, {}, "2026-10-22"), "")
+
+    def test_no_condition(self):
+        self.assertEqual(pm_board.wait_reason("Plain story.", {}, "2026-10-19"), "")
+
+
+class TestEpicTags(unittest.TestCase):
+    def test_missing_label_and_prefix(self):
+        es = epics()
+        c = card(5, parent=es[0]["number"])
+        c["title"] = "E1: fix sizing"
+        a = pm_board.epic_tags([c], es)
+        self.assertEqual(a, [{"issue": 5, "add": ["E1"], "remove": [], "title": "[E1] fix sizing"}])
+
+    def test_moved_epic_swaps_label_and_prefix(self):
+        es = epics()
+        c = card(5, labels=["E1"], parent=es[1]["number"])
+        c["title"] = "[E1] chart"
+        a = pm_board.epic_tags([c], es)[0]
+        self.assertEqual((a["add"], a["remove"], a["title"]), (["E2"], ["E1"], "[E2] chart"))
+
+    def test_tagged_card_untouched(self):
+        es = epics()
+        c = card(5, labels=["E1"], parent=es[0]["number"])
+        c["title"] = "[E1] fix sizing"
+        self.assertEqual(pm_board.epic_tags([c], es), [])
+
+
+class TestOrder(unittest.TestCase):
+    def test_ready_by_priority_then_age(self):
+        b = [card(3, "Ready", priority="P2"), card(1, "Ready", priority="P2"), card(9, "Ready", priority="P0")]
+        self.assertEqual(pm_board.column_order(b, "Ready"), ["I9", "I1", "I3"])
+
+    def test_triage_people_last(self):
+        b = [card(1, priority="P0", labels=["agent:needs-human"]), card(2, priority="P3")]
+        self.assertEqual(pm_board.column_order(b, "Triage"), ["I2", "I1"])
+
+    def test_only_changed_columns(self):
+        b = [card(1, "Ready", priority="P1")]
+        self.assertEqual(pm_board.order_changes(b, {}), {"Ready": ["I1"]})
+        self.assertEqual(pm_board.order_changes(b, {"order": {"Ready": ["I1"]}}), {})
+
+
+class TestPlanDue(unittest.TestCase):
+    def test_epic_without_moving_stories_is_due(self):
+        es = epics()
+        b = [card(5, "Triage", labels=["agent:needs-human"], parent=es[0]["number"])]
+        self.assertIn("E1", pm_board.plan_due(b, es, {}, "2026-10-19T10:00:00Z"))
+
+    def test_enough_stories_not_due(self):
+        es = epics()
+        b = [card(5, "Ready", parent=es[0]["number"]), card(6, "Blocked", labels=["pm:waiting"], parent=es[0]["number"])]
+        self.assertNotIn("E1", pm_board.plan_due(b, es, {}, "2026-10-19T10:00:00Z"))
+
+    def test_recently_planned_not_due(self):
+        es = epics()
+        st = {"planned": {"E1": "2026-10-19T00:00:00Z"}}
+        self.assertNotIn("E1", pm_board.plan_due([], es, st, "2026-10-19T10:00:00Z"))
+        self.assertIn("E1", pm_board.plan_due([], es, st, "2026-10-19T13:00:00Z"))
+
+    def test_parked_never_due(self):
+        self.assertNotIn("E3", pm_board.plan_due([], epics(), {}, "2026-10-19T10:00:00Z"))
+
+
+class TestNewStories(unittest.TestCase):
+    def story(self, **kw):
+        d = {"epic": "E1", "title": "Do a thing", "body": "Story.", "priority": "P1", "rule_area": "none", "ui": False}
+        d.update(kw)
+        return d
+
+    def test_free_story_ready_and_tagged(self):
+        s = pm_board.new_stories({"stories": [self.story()]}, epics())[0]
+        self.assertEqual((s["status"], s["title"], s["labels"][0]), ("Ready", "[E1] Do a thing", "E1"))
+
+    def test_dependency_blocked(self):
+        s = pm_board.new_stories({"stories": [self.story(body="Depends on #170.")]}, epics())[0]
+        self.assertEqual(s["status"], "Blocked")
+        self.assertIn("pm:waiting", s["labels"])
+
+    def test_rule_area_outside_epic_to_triage(self):
+        s = pm_board.new_stories({"stories": [self.story(rule_area="entry")]}, epics())[0]
+        self.assertEqual(s["status"], "Triage")
+        self.assertIn("agent:needs-human", s["labels"])
+
+    def test_ui_without_prototype_to_triage(self):
+        s = pm_board.new_stories({"stories": [self.story(epic="E2", ui=True)]}, epics())[0]
+        self.assertEqual(s["status"], "Triage")
+        s = pm_board.new_stories({"stories": [self.story(epic="E2", ui=True)]}, epics(prototype_approved=True))[0]
+        self.assertEqual(s["status"], "Ready")
+
+    def test_parked_epic_dropped_and_cap(self):
+        self.assertEqual(pm_board.new_stories({"stories": [self.story(epic="E3")]}, epics()), [])
+        many = {"stories": [self.story(title=f"s{i}") for i in range(5)]}
+        self.assertEqual(len(pm_board.new_stories(many, epics())), pm_board.MAX_NEW_STORIES)
+
+
+class TestAnsweredAll(unittest.TestCase):
+    def test_oldest_message_first(self):
+        def t(n, at):
+            return {"number": n, "state": "OPEN", "status": "Triage", "labels": ["agent:pm"], "created": "2026-10-01T00:00:00Z",
+                    "body": "", "messages": [{"at": at, "body": "my answer"}]}
+        self.assertEqual(pm_board.answered_all([t(2, "2026-10-19T02:00:00Z"), t(1, "2026-10-19T03:00:00Z")], {}), [2, 1])

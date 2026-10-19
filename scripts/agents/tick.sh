@@ -1,14 +1,30 @@
 #!/usr/bin/env bash
-# tick.sh — run every 15 minutes by launchd: deploy what a person merged,
-# review at most one Dev agent PR (a blocking review moves its card back to
-# Ready), let the PM agent triage new Triage cards into the approved epics and
-# rank Ready, then let the Dev agent take the top Ready issue — so a review's
-# findings and the PM's order are picked up in the same tick. Each step has its own lock, so a
-# long implementation never blocks the next deploy check.
+# tick.sh — run every 6 minutes by launchd. Deploys what a person merged, then
+# starts the agents in the background and returns, so a long implementation
+# never delays the next tick:
+#   - REVIEW_PARALLEL (3) Reviewer agents, PM_ANSWER_PARALLEL (2) PM answers and
+#     DEV_PARALLEL (3) Dev agents, each claiming its own card (lib.sh claim), so
+#     independent cards are worked on at once; an instance that finds nothing
+#     free exits at once;
+#   - one PM agent (triage, planning, dependencies, board order; its own lock).
+# After a usage or rate limit no new Claude run starts for 30 min, then one at a
+# time for an hour (lib.sh parallel_max). install.sh sets AbandonProcessGroup so
+# launchd leaves the background agents running when this script exits.
 set -uo pipefail
 dir="$(dirname "${BASH_SOURCE[0]}")"
+logs="$dir/../../data/agents"
+mkdir -p "$logs"
 "$dir/deploy.sh" || echo "deploy step failed (exit $?)"
-"$dir/review_agent.sh" || echo "review step failed (exit $?)"
-"$dir/pm_answer.sh" || echo "pm answer step failed (exit $?)"
-"$dir/pm_agent.sh" || echo "pm step failed (exit $?)"
-"$dir/dev_agent.sh" || echo "dev step failed (exit $?)"
+
+start() { # script, instances
+  local i=0
+  while [[ $i -lt $2 ]]; do
+    nohup "$dir/$1" >> "$logs/tick-${1%.sh}.log" 2>&1 < /dev/null &
+    i=$((i + 1))
+  done
+}
+start review_agent.sh "${REVIEW_PARALLEL:-3}"
+start pm_answer.sh "${PM_ANSWER_PARALLEL:-2}"
+start pm_agent.sh 1
+start dev_agent.sh "${DEV_PARALLEL:-3}"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

@@ -4,12 +4,12 @@
 # scripts of the clone they were installed from, and deploy.sh keeps that clone
 # on main.
 #
-#   scripts/agents/install.sh              SME review daily at 09:00, tick every 15 min
+#   scripts/agents/install.sh              SME review daily at 09:00, tick every 6 min
 #   scripts/agents/install.sh 07:30        SME review at another time
 #   scripts/agents/install.sh --uninstall  remove both jobs
 #
 # Jobs: com.optionsbot.sme-review (sme_review.sh) and com.optionsbot.agents-tick
-# (tick.sh: deploy, the Reviewer agent, the PM agent, then the Dev agent). launchd runs a
+# (tick.sh: deploy, then the Reviewer, PM and Dev agents in parallel, in the background). launchd runs a
 # missed calendar job on wake. Logs: data/sme/, data/agents/ and data/agents/launchd-*.log.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -49,6 +49,7 @@ plist() { # label, script, schedule xml
   <key>WorkingDirectory</key><string>$REPO</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>$PATH_FOR_JOBS</string></dict>
   $3
+  <key>AbandonProcessGroup</key><true/>
   <key>StandardOutPath</key><string>$REPO/data/agents/launchd-$2.log</string>
   <key>StandardErrorPath</key><string>$REPO/data/agents/launchd-$2.log</string>
 </dict>
@@ -58,7 +59,7 @@ EOF
   launchctl bootstrap "gui/$uid" "$AGENTS/$1.plist"
 }
 plist "$SME" sme_review.sh "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>$HOUR</integer><key>Minute</key><integer>$MIN</integer></dict>"
-plist "$TICK" tick.sh "<key>StartInterval</key><integer>900</integer>"
+plist "$TICK" tick.sh "<key>StartInterval</key><integer>360</integer>"
 
-echo "installed $SME (daily at $AT) and $TICK (every 15 min) for $REPO"
+echo "installed $SME (daily at $AT) and $TICK (every 6 min) for $REPO"
 echo "run now:  launchctl kickstart gui/$uid/$SME   |   launchctl kickstart gui/$uid/$TICK"

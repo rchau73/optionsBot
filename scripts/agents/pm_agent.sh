@@ -15,9 +15,20 @@
 #      and comments why. Everything the PRD did not approve stays in Triage for
 #      a person (agent:needs-human).
 #
-# It never touches In progress / In review / Blocked / Done, and moves a card
-# out of Ready only if it put it there itself. The Dev agent builds Ready in
-# Priority order (lib.sh ready_next).
+#   4. keeps every approved epic moving (product owner, 2026-10-19: "touch all
+#      the epics … keep the thing moving forward 24h 7 days a week"):
+#      - a card that must wait ("Depends on #N", "Waits until <date>") goes to
+#        Blocked with pm:waiting instead of Ready; each run releases those
+#        whose issues closed and dates passed → Ready (a dependency closed as
+#        not planned → Triage for a person);
+#      - an epic with fewer than 2 moving stories gets its next stories from the
+#        agent ("Epic planning (agent mode)"), filed through the same gate;
+#      - every card under an epic carries its E# label and [E#] title prefix;
+#      - Ready is ordered by Priority, Triage puts cards waiting for a person last.
+#
+# Of In progress / In review / Blocked / Done it moves only Blocked cards with
+# pm:waiting (its own parking), and moves a card out of Ready only if it put it
+# there itself. The Dev agents build Ready in Priority order (lib.sh ready_next).
 # Env: PM_MODEL, AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -96,9 +107,26 @@ json.dump(es, open(sys.argv[1], "w"), indent=1)' "$run/epics.json" "$run/epic_is
 board_json > "$run/board.json"
 python3 "$BOARD_PY" pending "$run/board.json" "$STATE" "$run/epics.json" "$run/pending.json"
 todo="$(py 'import json,sys; p=json.load(open(sys.argv[1])); print(" ".join(str(n) for n in p["triage"] + p["unparented"]))' "$run/pending.json")"
-if [[ -z "$todo" ]]; then
-  log "pm: nothing new in Triage, every open card has an epic"; rm -rf "$run"; exit 0
-fi
+
+model_args=()
+[[ -n "${PM_MODEL:-}" ]] && model_args=(--model "$PM_MODEL")
+
+# state_set <python body using s> [args…] — update state.json under a mutex
+# (pm_answer.sh instances write it too).
+state_set() {
+  local code="$1"; shift
+  mutex pm-state || return 1
+  py 'import json,sys
+p = sys.argv[1]
+try: s = json.load(open(p))
+except FileNotFoundError: s = {}
+'"$code"'
+json.dump(s, open(p, "w"), indent=1)' "$STATE" "$@"
+  unmutex pm-state
+}
+
+triage() {
+[[ -n "$todo" ]] || { log "pm: nothing new in Triage, every open card has an epic"; return 0; }
 log "pm: deciding on #${todo// / #}"
 for num in $todo; do
   gh issue view "$num" -R "$slug" --json number,title,body,labels,comments \
@@ -111,15 +139,14 @@ rule areas and prototype approval), pending.json (the cards to decide: 'triage' 
 pending_issues.json (their bodies and last comments) and board.json (every card with its column and priority).
 You may also read CLAUDE.md, AGENTIC.md, OptionStrategy.md and docs/.
 Print only the report in the exact output shape the skill defines, ending with the PM-JSON block."
-model_args=()
-[[ -n "${PM_MODEL:-}" ]] && model_args=(--model "$PM_MODEL")
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
   --strict-mcp-config --no-session-persistence \
   --output-format text < /dev/null > "$run/report.md"; then
-  log "pm: claude failed"; notify "PM agent FAILED" "see $run/run.log"; exit 1
+  note_limit "$run/report.md" || true
+  log "pm: claude failed"; notify "PM agent FAILED" "see $run/run.log"; return 1
 fi
 py 'import json,re,sys
 t = open(sys.argv[1]).read()
@@ -128,7 +155,7 @@ json.dump(json.loads(m.group(1)) if m else {}, open(sys.argv[2], "w"), indent=1)
 print("PM-JSON block:", "found" if m else "MISSING")' "$run/report.md" "$run/pm.json"
 if [[ "$(cat "$run/pm.json")" == "{}" ]]; then
   # Nothing is marked decided, so the same cards are asked again next tick.
-  log "pm: no PM-JSON block in the report"; notify "PM agent: no decisions block" "see $run/report.md"; exit 1
+  log "pm: no PM-JSON block in the report"; notify "PM agent: no decisions block" "see $run/report.md"; return 1
 fi
 
 # ── 3. Gate and act (the script acts, never the agent) ──────────────────────
@@ -158,32 +185,136 @@ while read -r k num item node epic_node prio move refused; do
       -f p="$epic_node" -f c="$node" >/dev/null && log "pm: #$num → its epic" || log "pm: could not link #$num to its epic"
   fi
   if [[ "$prio" != "-" ]]; then set_priority "$item" "$prio" && log "pm: #$num priority $prio" || true; fi
+  if [[ "$move" == "Ready" ]]; then
+    why="$(waiting_reason "$num")"
+    if [[ "$why" == human:* ]]; then
+      move="-"; gh issue edit "$num" -R "$slug" --add-label agent:needs-human >/dev/null || true
+      printf '\n\nStays in **Triage**: %s.' "${why#human: }" >> "$run/comment-$k.md"
+    elif [[ -n "$why" ]]; then
+      move="Blocked"; gh issue edit "$num" -R "$slug" --add-label pm:waiting >/dev/null || true
+      printf '\n\nParked in **Blocked** (`pm:waiting`): it %s. The PM agent moves it to Ready when that clears.' "$why" >> "$run/comment-$k.md"
+    fi
+  fi
   if [[ "$move" != "-" ]]; then
     set_status "$item" "$move" || { log "pm: could not move #$num to $move"; continue; }
     log "pm: #$num → $move"
     moved=$((moved + 1))
-    py 'import json,sys
-p = sys.argv[1]
-try: s = json.load(open(p))
-except FileNotFoundError: s = {}
-r = set(s.get("pm_ready", [])); n = int(sys.argv[2])
+    state_set 'r = set(s.get("pm_ready", [])); n = int(sys.argv[2])
 (r.add if sys.argv[3] == "Ready" else r.discard)(n)
-s["pm_ready"] = sorted(r); json.dump(s, open(p, "w"), indent=1)' "$STATE" "$num" "$move"
+s["pm_ready"] = sorted(r)' "$num" "$move"
   fi
   if [[ "$refused" == "1" ]]; then gh issue edit "$num" -R "$slug" --add-label agent:needs-human >/dev/null || true; fi
   if [[ -s "$run/comment-$k.md" ]]; then gh issue comment "$num" -R "$slug" --body-file "$run/comment-$k.md" >/dev/null || log "pm: could not comment #$num"; fi
 done < "$run/actions.txt"
 
 # Decided: a Triage card is asked again only when someone changes it after now.
-py 'import json,sys,datetime
-p = sys.argv[1]
-try: s = json.load(open(p))
-except FileNotFoundError: s = {}
+state_set 'import datetime
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 seen = s.setdefault("seen", {})
-for n in json.load(open(sys.argv[2]))["triage"]: seen[str(n)] = now
-json.dump(s, open(p, "w"), indent=1)' "$STATE" "$run/pending.json"
+for n in json.load(open(sys.argv[2]))["triage"]: seen[str(n)] = now' "$run/pending.json"
 
 summary="$(grep -m1 '^SUMMARY:' "$run/report.md" | sed 's/^SUMMARY: *//' || true)"
 log "pm: ${summary:-done} ($moved moved) — report $run/report.md"
 notify "PM agent" "${summary:-triaged $todo}"
+}
+triage || log "pm: triage step failed, continuing with the board passes"
+
+# ── 4. Release cards parked on a dependency or a date ──────────────────────
+board_json > "$run/board.json"
+for num in $(py 'import json,sys
+for c in json.load(open(sys.argv[1])):
+    if c["status"] == "Blocked" and c["state"] == "OPEN" and "pm:waiting" in c["labels"]: print(c["number"])' "$run/board.json"); do
+  why="$(waiting_reason "$num")"
+  item="$(py 'import json,sys; print(next(c["item"] for c in json.load(open(sys.argv[1])) if c["number"] == int(sys.argv[2])))' "$run/board.json" "$num")"
+  if [[ -z "$why" ]]; then
+    set_status "$item" "Ready" && gh issue edit "$num" -R "$slug" --remove-label pm:waiting >/dev/null &&
+      gh issue comment "$num" -R "$slug" --body "🧭 **PM agent** — what this card waited for is done. → **Ready**. <!-- agent:pm -->" >/dev/null &&
+      log "pm: #$num released → Ready"
+    state_set 'r = set(s.get("pm_ready", [])); r.add(int(sys.argv[2])); s["pm_ready"] = sorted(r)' "$num"
+  elif [[ "$why" == human:* ]]; then
+    set_status "$item" "Triage" && gh issue edit "$num" -R "$slug" --remove-label pm:waiting --add-label agent:needs-human >/dev/null &&
+      gh issue comment "$num" -R "$slug" --body "🧭 **PM agent** — ${why#human: }, so this card may no longer make sense. → **Triage** for a person: keep it (remove the dependency line) or close it. <!-- agent:pm -->" >/dev/null &&
+      log "pm: #$num → Triage (${why#human: })"
+  fi
+done
+
+# ── 5. Epic labels and [E#] title prefixes ──────────────────────────────────
+board_json > "$run/board.json"
+python3 "$BOARD_PY" tags "$run/board.json" "$run/epics.json" "$run/tags.json"
+py 'import json,sys
+for a in json.load(open(sys.argv[1])):
+    print(a["issue"], ",".join(a["add"]) or "-", ",".join(a["remove"]) or "-", a.get("title", ""), sep="\t")' "$run/tags.json" |
+while IFS=$'\t' read -r num add remove title; do
+  args=()
+  [[ "$add" != "-" ]] && args+=(--add-label "$add")
+  [[ "$remove" != "-" ]] && args+=(--remove-label "$remove")
+  [[ -n "$title" ]] && args+=(--title "$title")
+  gh issue edit "$num" -R "$slug" "${args[@]}" >/dev/null && log "pm: #$num tagged with its epic" || log "pm: could not tag #$num"
+done
+
+# ── 6. Plan the next stories of epics running dry ───────────────────────────
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+due="$(python3 "$BOARD_PY" plan "$run/board.json" "$run/epics.json" "$STATE" "$now")"
+if [[ -n "$due" && "$(parallel_max 1)" -gt 0 ]]; then
+  log "pm: planning the next stories of $due"
+  echo "$due" > "$run/plan_epics.txt"
+  PROMPT="Use the product-manager skill and run its \"Epic planning (agent mode)\" procedure for the epics in $run/plan_epics.txt.
+Inputs are in $run/: PRD.md (the approved PRD), epics.json (epics with issue numbers, rule areas, prototype approval)
+and board.json (every card with its column, priority, labels and parent epic). You may read CLAUDE.md, AGENTIC.md,
+OptionStrategy.md, README.md, docs/, frontend/ and the code to write buildable stories.
+Print only the report in the exact output shape the skill defines, ending with the PM-STORIES block."
+  if claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
+      --allowedTools "Read" "Grep" "Glob" "Skill" \
+      --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
+      --strict-mcp-config --no-session-persistence --output-format text < /dev/null > "$run/plan.md"; then
+    py 'import json,re,sys
+t = open(sys.argv[1]).read()
+m = re.search(r"<!-- PM-STORIES\s*(\{.*?\})\s*-->", t, re.S)
+json.dump(json.loads(m.group(1)) if m else {}, open(sys.argv[2], "w"), indent=1)' "$run/plan.md" "$run/plan.json"
+    python3 "$BOARD_PY" stories "$run/plan.json" "$run/epics.json" "$run/stories.json"
+    n_new="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$run/stories.json")"
+    k=0
+    while [[ $k -lt $n_new ]]; do
+      py 'import json,sys
+s = json.load(open(sys.argv[1]))[int(sys.argv[2])]
+body = s["body"]
+if s.get("refused"): body += "\n\n**Waits for a person:** " + s["refused"] + "."
+body += "\n\n_Filed by the **PM agent** while planning epic " + s["epic"] + " (product-manager skill, \"Epic planning\")._\n<!-- agent:pm-filed -->"
+open(sys.argv[3], "w").write(body)
+print("\t".join([s["epic"], s["title"], s["priority"], s["status"], ",".join(s["labels"])]))' "$run/stories.json" "$k" "$run/story-$k.md" > "$run/story-$k.tsv"
+      IFS=$'\t' read -r eid title prio status labels < "$run/story-$k.tsv"
+      largs=(); IFS=',' read -r -a ls <<< "$labels"; for l in "${ls[@]}"; do largs+=(--label "$l"); done
+      if url="$(gh issue create -R "$slug" --title "$title" --body-file "$run/story-$k.md" "${largs[@]}")"; then
+        num="${url##*/}"
+        sitem="$(add_to_board "$url" "$status")" && set_priority "$sitem" "$prio" || true
+        enode="$(py 'import json,sys; print(next(e["node"] for e in json.load(open(sys.argv[1])) if e["id"] == sys.argv[2]))' "$run/epics.json" "$eid")"
+        gh api graphql -f query='mutation($p: ID!, $c: ID!) { addSubIssue(input: {issueId: $p, subIssueId: $c, replaceParent: true}) { issue { number } } }' \
+          -f p="$enode" -f c="$(gh issue view "$num" -R "$slug" --json id -q .id)" >/dev/null || log "pm: could not link #$num to $eid"
+        [[ "$status" == "Ready" ]] && state_set 'r = set(s.get("pm_ready", [])); r.add(int(sys.argv[2])); s["pm_ready"] = sorted(r)' "$num"
+        log "pm: filed #$num in $eid → $status ($prio)"
+      fi
+      k=$((k + 1))
+    done
+    state_set 'pl = s.setdefault("planned", {})
+for e in sys.argv[2].split(): pl[e] = sys.argv[3]' "$due" "$now"
+  else
+    note_limit "$run/plan.md" || true
+    log "pm: planning failed (see $run/plan.md)"
+  fi
+fi
+
+# ── 7. Board order: Ready by priority; Triage free cards first ─────────────
+board_json > "$run/board.json"
+python3 "$BOARD_PY" order "$run/board.json" "$STATE" "$run/order.json"
+for col in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))))' "$run/order.json"); do
+  prev=""
+  ok=1
+  for it in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))[sys.argv[2]]))' "$run/order.json" "$col"); do
+    set_position "$it" "$prev" || ok=0
+    prev="$it"
+  done
+  if [[ $ok -eq 1 ]]; then
+    state_set 's.setdefault("order", {})[sys.argv[2]] = json.load(open(sys.argv[3]))[sys.argv[2]]' "$col" "$run/order.json"
+    log "pm: ordered $col"
+  fi
+done

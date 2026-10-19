@@ -17,12 +17,12 @@
 # The review is a comment: the agents use the owner's GitHub login, and GitHub
 # refuses "request changes" or "approve" on one's own PR. The board column
 # carries the decision. A person still merges.
-# Env: REVIEW_MODEL, REVIEW_MAX_ROUNDS (2), AGENT_WORK_DIR, AGENT_NOTIFY.
+# Several instances run at once (tick.sh, REVIEW_PARALLEL), each claiming its PR.
+# Env: REVIEW_MODEL, REVIEW_MAX_ROUNDS (2), REVIEW_PARALLEL (3), AGENT_WORK_DIR, AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
-take_lock review || exit 0
 require_tools claude gh git go python3 || exit 1
 
 slug="$(repo_slug)"
@@ -35,7 +35,11 @@ agent_reviews() {
     grep -o "<!-- $marker sha=[0-9a-f]* verdict=[a-z]* -->" | sed "s/<!-- $marker //; s/ -->//" || true
 }
 
-# Pick the first In review card whose agent:dev PR head has not been reviewed.
+# Pick the first In review card whose agent:dev PR head has not been reviewed
+# and that no other instance is reviewing.
+mutex review-pick || exit 0
+max="$(parallel_max "${REVIEW_PARALLEL:-3}")"
+if [[ "$(claims_alive review)" -ge "$max" ]]; then unmutex review-pick; log "review: $max instance(s) already running"; exit 0; fi
 item="" issue="" pr="" head=""
 while read -r it num; do
   [[ -n "$it" ]] || continue
@@ -43,9 +47,12 @@ while read -r it num; do
   read -r p h labels < <(gh pr list -R "$slug" --head "agent/issue-$num" --state open \
     --json number,headRefOid,labels -q '.[0] // empty | "\(.number) \(.headRefOid) \([.labels[].name] | join(","))"' < /dev/null || true) || true
   [[ -n "${p:-}" && "${labels:-}" == *agent:dev* ]] || continue
+  claim_alive review "$p" && continue
   agent_reviews "$p" < /dev/null | grep -q "^sha=$h " && continue
+  claim review "$p" || continue
   item="$it"; issue="$num"; pr="$p"; head="$h"; break
 done < <(items_in_status "In review")
+unmutex review-pick
 [[ -n "$pr" ]] || { log "review: nothing to review"; exit 0; }
 
 blocking_before="$(agent_reviews "$pr" | grep -c 'verdict=blocking' || true)"
@@ -56,11 +63,11 @@ exec > >(tee -a "$run_dir/run.log") 2>&1
 log "review: PR #$pr (issue #$issue) at ${head:0:7}, round $round"
 
 # ── Worktree at the PR head ─────────────────────────────────────────────────
-git fetch -q origin main "agent/issue-$issue"
+git_locked fetch -q origin main "agent/issue-$issue"
 wt="$AGENT_WORK_DIR/review-pr-$pr"
-[[ -d "$wt" ]] && git worktree remove --force "$wt" 2>/dev/null || true
-git worktree add -q --detach "$wt" "$head"
-trap 'git worktree remove --force "$wt" 2>/dev/null || true; rmdir "$AGENT_STATE_DIR/review.lock" 2>/dev/null || true' EXIT
+[[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
+git_locked worktree add -q --detach "$wt" "$head"
+trap 'git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_exit' EXIT
 
 # ── Task for the agent: its instructions, the ticket, the PR, the diff ──────
 # The Review mode instructions come from this checkout (main), not from the PR
@@ -111,6 +118,9 @@ log "review: agent exit $rc"
 
 # ── Parse the REVIEW block → review.json (findings + verdict) ───────────────
 post="$AGENT_REPO_DIR/scripts/agents/review_post.py"
+if [[ $rc -ne 0 ]] && note_limit "$run_dir/agent.md"; then
+  log "review: usage/rate limit on PR #$pr — retried after the pause (commit not marked)"; exit 0
+fi
 if [[ $rc -ne 0 ]] || ! python3 "$post" parse "$run_dir/agent.md" "$run_dir/review.json" 2>"$run_dir/parse.err"; then
   # The reviewer failed: mark this commit as tried (no retry loop) and leave
   # the card in In review for a person.

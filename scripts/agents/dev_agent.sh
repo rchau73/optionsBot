@@ -2,7 +2,8 @@
 # dev_agent.sh — the Dev agent: implements one Ready issue as a pull request.
 #
 #   1. takes the Ready card the PM agent ranked first (Priority, then the
-#      oldest issue; never an epic) → In progress;
+#      oldest issue; never an epic, never a card another Dev agent instance
+#      holds — tick.sh starts up to DEV_PARALLEL of them) → In progress;
 #   2. creates an isolated worktree on branch agent/issue-<n> (reused when a
 #      PR is already open, so review comments are addressed on the same PR);
 #   3. runs Claude Code headless with the developer skill in agent mode. It
@@ -14,25 +15,30 @@
 #      issue, labels it agent:needs-human and moves it to Blocked.
 #
 # A person reviews and merges. The agent never merges or deploys.
-# Env: DEV_MODEL, AGENT_WORK_DIR (<envs>/agent-worktrees), AGENT_NOTIFY.
+# Env: DEV_MODEL, DEV_PARALLEL (3), AGENT_WORK_DIR (<envs>/agent-worktrees), AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
-take_lock dev || exit 0
 require_tools claude gh git go gofmt python3 || exit 1
 
 slug="$(repo_slug)"
-next="$(ready_next)"
-[[ -n "$next" ]] || { log "dev: nothing in Ready"; exit 0; }
+# One instance picks at a time, so two never take the same card.
+mutex dev-pick || exit 0
+max="$(parallel_max "${DEV_PARALLEL:-3}")"
+if [[ "$(claims_alive dev)" -ge "$max" ]]; then unmutex dev-pick; log "dev: $max instance(s) already running"; exit 0; fi
+next="$(ready_next dev)"
+[[ -n "$next" ]] || { unmutex dev-pick; log "dev: nothing in Ready"; exit 0; }
 item="${next%% *}"; issue="${next##* }"
+claim dev "$issue" || { unmutex dev-pick; exit 0; }
+set_status "$item" "In progress"
+unmutex dev-pick
 branch="agent/issue-$issue"
 run_dir="$AGENT_STATE_DIR/dev/issue-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
 log "dev: issue #$issue → $branch"
 
-set_status "$item" "In progress"
 # The pickup comment says which attempt this is and what came before, so the
 # issue alone tells the story even when a person moved the card back to Ready
 # on the board (a board move leaves no trace on the issue).
@@ -52,14 +58,14 @@ block() { # reason file
 }
 
 # ── Worktree ────────────────────────────────────────────────────────────────
-git fetch -q origin
+git_locked fetch -q origin
 wt="$AGENT_WORK_DIR/issue-$issue"
-[[ -d "$wt" ]] && git worktree remove --force "$wt" 2>/dev/null || true
+[[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-  git worktree add -q -B "$branch" "$wt" "origin/$branch"
+  git_locked worktree add -q -B "$branch" "$wt" "origin/$branch"
   existing_pr="$(gh pr list -R "$slug" --head "$branch" --state open --json number -q '.[0].number' || true)"
 else
-  git worktree add -q -B "$branch" "$wt" origin/main
+  git_locked worktree add -q -B "$branch" "$wt" origin/main
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
@@ -114,7 +120,11 @@ if [[ $rc -ne 0 || "$result" != "done" ]]; then
     cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
   else
     why="the agent did not finish (exit $rc, result '${result:-none}')"
-    grep -qiE "session limit|usage limit" "$run_dir/agent.md" && why="the Claude usage limit was reached (exit $rc): move the card back to Ready after it resets"
+    if note_limit "$run_dir/agent.md"; then
+      # Not the card's fault: back to Ready, retried once the limit resets.
+      gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
+      set_status "$item" "Ready"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
+    fi
     { echo "Stopped because $why."; echo; echo "Last lines:"; echo
       tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
   fi
@@ -146,7 +156,7 @@ if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; th
 fi
 
 # ── Pull request ────────────────────────────────────────────────────────────
-git -C "$wt" push -q -u origin "$branch"
+git_locked -C "$wt" push -q -u origin "$branch"
 {
   echo "Closes #$issue"; echo
   cat "$run_dir/pr-body.md"; echo
@@ -176,4 +186,4 @@ else
   { echo "The implementation is in $pr_url (draft), but the checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
   block "$run_dir/reason.md"
 fi
-git worktree remove --force "$wt" 2>/dev/null || true
+git_locked worktree remove --force "$wt" 2>/dev/null || true
