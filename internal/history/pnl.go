@@ -30,6 +30,21 @@ type Point struct {
 	Spot        float64   `json:"spot"`
 	RealisedUSD float64   `json:"realised_usd"`
 	TotalUSD    float64   `json:"total_usd"`
+	// The margin the policy saw that cycle (#174). Nil on lines written
+	// before it was recorded and on points taken before the first margin
+	// read: Utilisation skips them.
+	IMPct          *float64 `json:"im_pct,omitempty"`       // Deribit IM ÷ margin balance, %
+	IMLimitPct     *float64 `json:"im_limit_pct,omitempty"` // the policy's IM limit, %
+	MMPct          *float64 `json:"mm_pct,omitempty"`
+	EntriesAllowed *bool    `json:"entries_allowed,omitempty"` // false while frozen, MM-blocked, GEX-stale, stop-deferred or margin unknown
+}
+
+// Margin is the margin view recorded with a P&L point. Known is false when
+// the margin read failed that cycle: IM and MM are then left out.
+type Margin struct {
+	Known                    bool
+	IMPct, IMLimitPct, MMPct float64
+	EntriesAllowed           bool
 }
 
 // Store is the P&L history of one bot. Safe for concurrent use.
@@ -95,13 +110,21 @@ func (s *Store) load(path string, now time.Time) error {
 // RecordPnL appends a point. realised is cumulative: the bot restores it
 // from the journal at startup, so the store adds nothing of its own (it once
 // carried its last point forward — two sources that could disagree).
-func (s *Store) RecordPnL(t time.Time, realised, unrealised, spot float64) {
+// margin is the policy's view that cycle; nil before the first margin read.
+func (s *Store) RecordPnL(t time.Time, realised, unrealised, spot float64, margin *Margin) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r := realised
 	p := Point{
 		T: t, Realised: r, Unrealised: unrealised, Total: r + unrealised,
 		Spot: spot, RealisedUSD: r * spot, TotalUSD: (r + unrealised) * spot,
+	}
+	if margin != nil {
+		m := *margin
+		p.IMLimitPct, p.EntriesAllowed = &m.IMLimitPct, &m.EntriesAllowed
+		if m.Known {
+			p.IMPct, p.MMPct = &m.IMPct, &m.MMPct
+		}
 	}
 	if data, err := json.Marshal(p); err == nil && s.file != nil {
 		if _, err := s.file.Write(append(data, '\n')); err != nil {
@@ -127,6 +150,14 @@ func (s *Store) Range(from, to time.Time, buckets int) []Point {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return Bucket(s.points, from, to, buckets)
+}
+
+// Utilisation is the margin utilisation over [from, to] (the pure
+// Utilisation function on the points held in memory).
+func (s *Store) Utilisation(from, to time.Time) UtilisationStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return Utilisation(s.points, from, to)
 }
 
 // Bucket is the pure reduction used by Range.

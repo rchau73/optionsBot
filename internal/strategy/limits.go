@@ -42,6 +42,14 @@ func (m marginState) mmBreached() bool {
 	return m.err == nil && m.usage.MMPct() >= m.status.MaxMMPct
 }
 
+// entriesAllowed reports whether this cycle's margin view lets entries in:
+// the same blocks maybeOpenStrangles checks first (margin unknown, frozen,
+// GEX not ready, a stop waiting for the spread, MM breached). Recorded in
+// the P&L history so margin utilisation counts only that time (#174).
+func (m marginState) entriesAllowed(stopsDeferred bool) bool {
+	return m.err == nil && !m.status.Frozen && m.gexWait == "" && !stopsDeferred && !m.mmBreached()
+}
+
 // riskStatus evaluates the policy for now and journals what changed.
 func (s *Strategy) riskStatus(now time.Time, gammaDec GammaDecision) risk.Status {
 	regimeKnown := gammaDec.Regime != "" && gammaDec.Regime != "UNKNOWN"
