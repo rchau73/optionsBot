@@ -34,6 +34,25 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 - Each bot exposes a read-only JSON API when `BOT_API_ADDR` is set. It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
 - The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`). Bot URLs are configured with `BOT_APIS` and never reach the browser.
 - Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
+- **Every page and every `/api` route needs a signed-in session** (below). The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
+
+## Sign-in
+
+People sign in at `/login` with a username and password; `proxy.js` sends every page without a session to `/login?next=…` and answers 401 on every `/api` route except `/api/auth/login` and `/api/auth/refresh`. The close and rebalance routes check the session again themselves.
+
+| Part | How |
+|---|---|
+| Users | SQLite (`sql.js`, WebAssembly — no native build in the image) in `data/monitor/auth.db` (`AUTH_DB_PATH`), a `monitor-auth` Docker volume per environment: stable and mvp have separate users. Table `users`: username (3–64 of `a-z 0-9 . _ -`, case-insensitive), argon2id hash, role `admin`/`manager`/`user`, email. Roles are stored now and enforced in #171 |
+| Passwords | argon2id (`hash-wasm`; 19 MiB, 2 passes), at least 12 characters. An unknown user is checked against a dummy hash, so it takes as long as a wrong password and gets the same 401 `invalid username or password` |
+| Access token | JWT HS256 (`jose`), 15 min, cookie `access_token` (HttpOnly, SameSite=Lax, path `/`), signed with `AUTH_SECRET` |
+| Refresh token | 32 random bytes, only its SHA-256 stored, 14 days, cookie `refresh_token` on path `/api/auth`; reusable until logout (several tabs). A password change, a role change or a deletion ends every session of that user |
+| Silent refresh | `lib/api.js` `apiFetch`: the monitor's own 401 (header `x-monitor-session: required`) → one refresh shared by every waiting request → one retry; when that fails the page goes to `/login` and comes back afterwards. A bot's 401 passed through a proxy route is shown as an error, never a sign-out |
+| Lockout | 5 failed sign-ins for a username within 15 min lock it until 15 min after the last one (same 401); 20 sign-ins a minute per IP, then 429 with `Retry-After`. In memory: a restart of the monitor forgets it |
+| Secure cookies | `Secure` except on plain http to `localhost`/`127.0.0.1` (the compose port), where a browser would drop them. Opened from another machine over plain http, sign-in cannot work: put TLS in front first |
+| Service token | `MONITOR_API_TOKEN` (≥ 32 chars) as `Authorization: Bearer …` reads `GET /api/bots/*` without a session — the deploy health check, `promote.sh`, the SME agent and `stress_inputs.sh` use it (`env_monitor_token` in `scripts/env_lib.sh`). Never a page, a close or a rebalance |
+| Logs | one JSON line per sign-in, failure (reason, `locked`), lockout, rate limit, sign-out and first admin, with username and IP — never a password, hash, token or `AUTH_SECRET` |
+
+The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`; later starts never touch existing users. The server exits at start (`instrumentation-node.js`) when `AUTH_SECRET` is missing or shorter than 32 bytes, or the database cannot be opened.
 
 ## Run it
 
@@ -52,12 +71,18 @@ go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082  # ETH
 cd frontend && npm install && npm run dev                       # http://localhost:3000
 ```
 
+Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ignored): `AUTH_SECRET=$(openssl rand -base64 48)`, `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD=<12+ characters>`; the user database is then `frontend/data/monitor/auth.db` (git-ignored).
+
 **Against locally running bots:** start each bot with `BOT_API_ADDR=127.0.0.1:8081` (BTC) / `127.0.0.1:8082` (ETH), then `npm run dev`.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `BOT_APIS` | `btc=http://127.0.0.1:8081,eth=http://127.0.0.1:8082` | comma-separated `name=url` of each bot API (server side only) |
 | `MONITOR_POLL_MS` | `1000` | how often the page refreshes (500–60000 ms). Polling reads the bots' memory only — it never uses Deribit rate limits |
+| `AUTH_SECRET` | — (required) | signs the access tokens; ≥ 32 bytes, from the environment's `.env`, never in git |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` | — | the first admin, created only while there are no users |
+| `MONITOR_API_TOKEN` | — (off) | read-only service token for scripts (≥ 32 chars) |
+| `AUTH_DB_PATH` | `data/monitor/auth.db` | the user database |
 
 ## Develop
 
@@ -70,7 +95,9 @@ npm run build   # production build — catches Server/Client Component mistakes
 
 | Folder | Contents |
 |---|---|
-| `app/` | `layout.jsx`, `page.jsx` (composition only), `api/bots/…` read-only proxy routes |
+| `app/` | `layout.jsx`, `page.jsx` (composition only), `login/page.jsx`, `api/bots/…` read-only proxy routes, `api/auth/{login,refresh,logout}` |
+| `proxy.js`, `instrumentation*.js` | the session guard on every route; the start-up check (`AUTH_SECRET`, first admin) |
+| `lib/auth/` | server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `service.js` (login/refresh/logout), `server.js` (the shared instance) |
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`) |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
@@ -81,7 +108,7 @@ Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/global
 ## Rules of the road
 
 - **Read-only.** Anything that would change trading state (pause, kill switch, parameter edits) needs authentication, an explicit confirmation step and an audit entry, and must reuse the bot's existing code paths — it is a planned phase, not part of this page.
-- **Never expose it publicly.** It shows positions and P&L; Docker binds it to `127.0.0.1`.
+- **Never expose it publicly.** It shows positions and P&L; Docker binds it to `127.0.0.1`. Sign-in protects it from anyone who reaches the port, but it is no substitute for TLS and a closed port.
 - Every number carries its unit (BTC/ETH, USD, %); missing data shows "—", never 0; stale data is flagged.
-- No business logic in Next.js routes — the Go bot is the single backend.
+- No business logic in Next.js routes — the Go bot is the single backend. The one exception is the monitor's own users and sessions (`lib/auth/`).
 - **Times: stored in UTC, shown in BRT.** The bot, its journal, history files and API are UTC; the page converts only for display, in one place (`lib/time.js`, `America/Sao_Paulo`, UTC−3). Change the zone there, never in the data.

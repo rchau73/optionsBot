@@ -5,20 +5,25 @@
 #   market.json     DVOL daily closes, the perpetual's daily closes and spot
 #                   (Deribit MAINNET public market data — read only, no key)
 # Usage: scripts/stress_inputs.sh [btc|eth] [out_dir]
-# The monitor must be running (docker compose up), on MONITOR_URL.
+# The monitor must be running (docker compose up), on MONITOR_URL; it is read
+# with MONITOR_TOKEN, default stable's MONITOR_API_TOKEN (scripts/env_lib.sh).
 set -euo pipefail
+source "$(dirname "$0")/env_lib.sh"
 
 bot="${1:-btc}"
 out="${2:-data/stress/$bot}"
 monitor="${MONITOR_URL:-http://127.0.0.1:3000}"
+token="${MONITOR_TOKEN:-$(env_monitor_token stable)}"
+# The token goes to curl on stdin, never on the command line.
+monitor_get() { printf 'Authorization: Bearer %s\n' "$token" | curl -fsS -H @- "$@"; }
 cur="$(echo "$bot" | tr '[:lower:]' '[:upper:]')"
 api="https://www.deribit.com/api/v2/public"
 now_ms=$(( $(date +%s) * 1000 ))
 from_ms=$(( now_ms - 400 * 86400 * 1000 )) # ~13 months: a year of IV percentile + warm-up
 
 mkdir -p "$out"
-curl -fsS "$monitor/api/bots/$bot/positions" -o "$out/positions.json"
-curl -fsS "$monitor/api/bots/$bot/account" -o "$out/account.json"
+monitor_get "$monitor/api/bots/$bot/positions" -o "$out/positions.json"
+monitor_get "$monitor/api/bots/$bot/account" -o "$out/account.json"
 dvol=$(curl -fsS "$api/get_volatility_index_data?currency=$cur&start_timestamp=$from_ms&end_timestamp=$now_ms&resolution=1D")
 closes=$(curl -fsS "$api/get_tradingview_chart_data?instrument_name=$cur-PERPETUAL&start_timestamp=$from_ms&end_timestamp=$now_ms&resolution=1D")
 

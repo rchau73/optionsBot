@@ -39,6 +39,9 @@ env_file_var() {
 
 env_port() { env_file_var "$(env_dir "$1")/deploy.env" MONITOR_PORT; }
 env_monitor_url() { echo "http://127.0.0.1:$(env_port "$1")"; }
+# env_monitor_token <env> → MONITOR_API_TOKEN of that environment's .env: the
+# monitor's read-only service token (GET /api/bots/* without a session).
+env_monitor_token() { env_file_var "$(env_dir "$1")/.env" MONITOR_API_TOKEN; }
 
 # env_check <env> — the environment is set up and shares nothing with the
 # other one. Prints the reason and fails otherwise.
@@ -76,20 +79,23 @@ env_compose() {
   (cd "$dir" && BOT_VERSION="$(env_version "$name")" docker compose --env-file .env --env-file deploy.env "$@")
 }
 
-# wait_healthy <monitor url> <timeout sec> — every bot's decision loop reports
-# a fresh loop_at through that monitor (freshness, not uptime: an unchanged
-# image is not restarted).
+# wait_healthy <monitor url> <timeout sec> [token] — every bot's decision loop
+# reports a fresh loop_at through that monitor (freshness, not uptime: an
+# unchanged image is not restarted). token: the environment's MONITOR_API_TOKEN
+# (env_monitor_token), passed through the environment, never on the command line.
 wait_healthy() {
   local url="$1" timeout="${2:-300}" start
   start="$(date +%s)"
   while (( $(date +%s) - start < timeout )); do
     sleep 15
-    if python3 -c 'import json,re,sys,urllib.request,datetime as d
+    if MONITOR_TOKEN="${3:-}" python3 -c 'import json,os,re,sys,urllib.request,datetime as d
 base = sys.argv[1]
-bots = json.load(urllib.request.urlopen(base + "/api/bots", timeout=10))["bots"]
+auth = {"Authorization": "Bearer " + os.environ["MONITOR_TOKEN"]} if os.environ.get("MONITOR_TOKEN") else {}
+get = lambda p: json.load(urllib.request.urlopen(urllib.request.Request(base + p, headers=auth), timeout=10))
+bots = get("/api/bots")["bots"]
 assert bots
 for b in bots:
-    st = json.load(urllib.request.urlopen(base + "/api/bots/" + b["name"] + "/status", timeout=10))
+    st = get("/api/bots/" + b["name"] + "/status")
     at = d.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", st["loop_at"]))  # Go: nanoseconds
     assert (d.datetime.now(d.timezone.utc) - at).total_seconds() < 120, b["name"]' "$url" 2>/dev/null; then
       return 0

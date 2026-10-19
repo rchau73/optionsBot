@@ -92,7 +92,7 @@ fi
 
 # ── Promote, with rollback on a failed health check ─────────────────────────
 url="$(env_monitor_url stable)"
-run() { git -C "$stable" checkout -q --detach "$1" && env_compose stable up -d --build && wait_healthy "$url" "${PROMOTE_HEALTH_TIMEOUT_SEC:-300}"; }
+run() { git -C "$stable" checkout -q --detach "$1" && env_compose stable up -d --build && wait_healthy "$url" "${PROMOTE_HEALTH_TIMEOUT_SEC:-300}" "$(env_monitor_token stable)"; }
 if run "$tag"; then
   env_record promotions.tsv "$tag" "$commit"
   echo "stable is on $tag and healthy: $url"
