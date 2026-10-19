@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -117,7 +118,10 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipMarginLimit, err.Error())
 			continue
 		}
-		if err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, m.status, false); err != nil {
+		if _, err := s.openStrangle(ctx, call, put, slot.TargetDTE, slot.EntryDelta, qty, gammaDec, m.status, false); err != nil {
+			if errors.Is(err, errLiquidityCap) {
+				continue // journaled as a liquidity_cap skip
+			}
 			slog.Warn("open strangle failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "err", err)
 			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipEntryRejected, err.Error())
@@ -204,14 +208,15 @@ func (s *Strategy) heldExpiries() map[time.Time]bool {
 // openStrangle submits limit sells for both legs (or one leg when GEX is
 // shedding the other, or the confirmed regime and trend block it) and tracks
 // them as a pending strangle until they fill. complement marks a rebalance
-// upsize (see rebalance.go).
-func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, st risk.Status, complement bool) error {
+// upsize (see rebalance.go). It returns the size sent on each leg, which the
+// exchange minimum and the liquidity cap may have cut below qty.
+func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, st risk.Status, complement bool) (float64, error) {
 	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC); an amount off
 	// that grid is rejected, so snap qty down onto it.
 	if exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount); exchStep > 0 {
 		qty = orders.FloorToStep(qty, exchStep)
 		if qty < exchStep {
-			return fmt.Errorf("qty %.6f below exchange minimum %.6f (call=%s put=%s)",
+			return 0, fmt.Errorf("qty %.6f below exchange minimum %.6f (call=%s put=%s)",
 				qty, exchStep, call.Name, put.Name)
 		}
 	}
@@ -221,7 +226,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	callWhy, putWhy := gammaDec.avoidsSide("call", st), gammaDec.avoidsSide("put", st)
 	openCall, openPut := callWhy == "", putWhy == ""
 	if !openCall && !openPut {
-		return fmt.Errorf("both legs blocked: %s; %s", callWhy, putWhy)
+		return 0, fmt.Errorf("both legs blocked: %s; %s", callWhy, putWhy)
 	}
 	if !openCall || !openPut {
 		skipped, why := "put", putWhy
@@ -234,16 +239,27 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	}
 
 	// Check the premium floor for every leg before submitting any order, so a
-	// cheap put can never leave a lone call behind.
+	// cheap put can never leave a lone call behind — and before the liquidity
+	// cap, which journals a binding cap as an order about to be sent.
 	if openCall {
 		if err := s.checkPremiumFloor(call, s.cfg.EntryPriceFloor); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if openPut {
 		if err := s.checkPremiumFloor(put, s.cfg.EntryPriceFloor); err != nil {
-			return err
+			return 0, err
 		}
+	}
+
+	// No order larger than the strike's market can take (liquidity.go).
+	lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+	if lot <= 0 {
+		lot = s.cfg.MinTradeAmount
+	}
+	qty, err := s.capToLiquidity(call, put, openCall, openPut, qty, lot, targetDTE, entryDelta, complement)
+	if err != nil {
+		return 0, err
 	}
 
 	ps := &pendingStrangle{
@@ -259,7 +275,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	if openCall {
 		leg, err := s.submitEntryLeg(ctx, call, qty, slotRef(targetDTE, entryDelta), ps.trigger())
 		if err != nil {
-			return fmt.Errorf("sell call: %w", err)
+			return 0, fmt.Errorf("sell call: %w", err)
 		}
 		ps.call = leg
 	}
@@ -271,14 +287,14 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 			if ps.call != nil {
 				s.abandonPending(ctx, ps, "put leg failed")
 			}
-			return fmt.Errorf("sell put: %w", err)
+			return 0, fmt.Errorf("sell put: %w", err)
 		}
 		ps.put = leg
 	}
 
 	if ps.allLegsDone() {
 		s.finalizePending(ctx, ps)
-		return nil
+		return qty, nil
 	}
 	s.addPending(ps)
 
@@ -293,7 +309,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		"qty", fmt.Sprintf("%.6f", qty),
 		"fill_timeout_sec", s.cfg.OrderFillTimeoutSec,
 	)
-	return nil
+	return qty, nil
 }
 
 // entryLimitPrice is the price for a short entry: max(mid, ask). Using the ask

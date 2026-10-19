@@ -585,6 +585,7 @@ func main() {
 	quiet := flag.Bool("quiet", false, "summary only")
 	calm := flag.Int("calm", 0, "calm days before the shock")
 	capMult := flag.Float64("cap", 2, "max_leg_size_multiple (0 = no cap)")
+	flag.Float64("liqcap", 10, "with -replay: liquidity_cap_oi_pct — an entry leg is at most this % of its strike's recorded open interest (the bot: 10, #103; 0 = off). The modelled paths have no open interest and ignore it")
 	steps := flag.Int("steps", 6, "decisions per day (6 = every 4 hours)")
 	breach := flag.Float64("breach", 0.30, "delta exit: close a short leg when its |delta| reaches this, as the bot (delta_exit_threshold; 0 = off)")
 	vrpFlag := flag.Float64("vrp", 0.85, "normal scenarios: realised vol as a fraction of implied (DVOL)")

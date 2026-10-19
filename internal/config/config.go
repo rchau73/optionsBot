@@ -70,7 +70,11 @@ type Config struct {
 	ChurnWindowMinutes  int `yaml:"-"`
 	// MaxLegSizeMultiple caps a new leg at this × the slot's normal size (its
 	// share ÷ the strangle's standalone margin per lot).
-	MaxLegSizeMultiple  float64 `yaml:"max_leg_size_multiple"`
+	MaxLegSizeMultiple float64 `yaml:"max_leg_size_multiple"`
+	// LiquidityCapOIPct caps each new leg's order (entry or top-up) at this %
+	// of its strike's mainnet open interest (#103: ETH sent 9× a strike's OI
+	// and filled a tenth). Repairs are exempt. ≤ 0 turns it off.
+	LiquidityCapOIPct   float64 `yaml:"-"`
 	DeltaDriftThreshold float64 `yaml:"delta_drift_threshold"`
 	ROITakeProfit       float64 `yaml:"roi_take_profit"`
 	StopLossMultiplier  float64 `yaml:"stop_loss_multiplier"`

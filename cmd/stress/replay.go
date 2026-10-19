@@ -38,6 +38,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 	"drift":        floatField(func(c *config.Config) *float64 { return &c.DeltaDriftThreshold }),
 	"tp":           floatField(func(c *config.Config) *float64 { return &c.ROITakeProfit }),
 	"cap":          floatField(func(c *config.Config) *float64 { return &c.MaxLegSizeMultiple }),
+	"liqcap":       floatField(func(c *config.Config) *float64 { return &c.LiquidityCapOIPct }),
 	"shedpersist":  intField(func(c *config.Config) *int { return &c.GEXShedConfirmSnapshots }),
 	"shedcross":    intField(func(c *config.Config) *int { return &c.GEXRepairConfirmSnapshots }),
 	"shedrelease":  intField(func(c *config.Config) *int { return &c.GEXRepairReleaseHours }),
@@ -197,9 +198,9 @@ func runReplay(o replayOpts) error {
 		}
 		fmt.Println()
 	}
-	fmt.Printf("**Replay %s %s:** net %+.4f %s (%+.2f %%) · realised %+.4f · fees %.4f · trades %d (entries %d, repairs %d) · GEX sheds %d · stops %d · delta exits %d · rolls %d · MM cuts %d · unfilled %d · legs open at end %d · worst drawdown %.4f %s · IM max %.1f %% avg %.1f %%\n",
+	fmt.Printf("**Replay %s %s:** net %+.4f %s (%+.2f %%) · realised %+.4f · fees %.4f · trades %d (entries %d, repairs %d) · GEX sheds %d · stops %d · delta exits %d · rolls %d · MM cuts %d · unfilled %d · liquidity-capped legs %d · legs open at end %d · worst drawdown %.4f %s · IM max %.1f %% avg %.1f %%\n",
 		u, cfg.GEXDirection, res.Net, u, res.Net/res.Equity0*100, res.Realised, res.Fees, res.Trades, res.Entries, res.Repairs,
-		res.Sheds, res.Stops, res.DeltaExits, res.Rolls, res.MMCuts, res.Unfilled, res.OpenAtEnd, res.MaxDrawdown, u, res.MaxIMPct, res.AvgIMPct)
+		res.Sheds, res.Stops, res.DeltaExits, res.Rolls, res.MMCuts, res.Unfilled, res.LiquidityCapped, res.OpenAtEnd, res.MaxDrawdown, u, res.MaxIMPct, res.AvgIMPct)
 	fmt.Printf("REPLAY\t%s\t%s\t%.4f\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%.4f\t%.1f\n", u, cfg.GEXDirection, res.Net, res.Realised, res.Fees,
 		res.Trades, res.Entries, res.Repairs, res.Sheds, res.Stops, res.MaxDrawdown, res.AvgIMPct)
 	if trades != nil {

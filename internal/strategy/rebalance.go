@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -276,6 +277,18 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	act.Call, act.Put = call.Name, put.Name
 	act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g", addQty, targetQty)
 	if dryRun {
+		// Report the size the liquidity cap would let out (liquidity.go).
+		lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+		if lot <= 0 {
+			lot = s.cfg.MinTradeAmount
+		}
+		if capped, legs, known := s.liquidityLimit(call, put, true, true, addQty, lot); !known || capped < lot {
+			act.Action, act.Qty, act.Detail = ActionKept, 0, "below the slot target, but the strike's open interest takes less than a lot"
+		} else if capped < addQty-qtyEpsilon {
+			act.Qty = capped
+			act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g, capped from %g by open interest (%s)",
+				capped, targetQty, addQty, strings.Join(legs, "; "))
+		}
 		return act
 	}
 	slog.Info("rebalance: opening complement strangle for missing balance",
@@ -287,11 +300,24 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 		"call_instrument", call.Name,
 		"put_instrument", put.Name,
 	)
-	if err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, gammaDec, rs, true); err != nil {
+	sent, err := s.openStrangle(ctx, call, put, st.TargetDTE, st.EntryDelta, addQty, gammaDec, rs, true)
+	if err != nil {
+		if errors.Is(err, errLiquidityCap) {
+			// The strike's market cannot take a lot: the slot stays short (#103),
+			// no retry — the next limit change or restart re-measures it.
+			act.Action, act.Qty, act.Detail = ActionKept, 0, "below the slot target, but the strike's open interest takes less than a lot"
+			return act
+		}
 		slog.Warn("rebalance: complement strangle open failed",
 			"original_strangle_id", st.ID, "err", err)
 		s.rearmRebalance(fmt.Sprintf("complement for %s not opened: %v", st.ID, err), false)
 		act.Error = err.Error()
+		return act
+	}
+	if sent < addQty-qtyEpsilon {
+		// Report what went out: the exchange minimum or the liquidity cap cut it.
+		act.Qty = sent
+		act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g (cut from %g)", sent, targetQty, addQty)
 	}
 	return act
 }
