@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tick.sh — run every 6 minutes by launchd. Deploys what a person merged, then
+# tick.sh — run every 6 minutes by launchd. Deploys what a person merged, runs
+# the PR gate (only ready PRs reach a person: pr_gate.sh), then
 # starts the agents in the background and returns, so a long implementation
 # never delays the next tick:
 #   - REVIEW_PARALLEL (3) Reviewer agents, PM_ANSWER_PARALLEL (2) PM answers and
@@ -15,6 +16,7 @@ dir="$(dirname "${BASH_SOURCE[0]}")"
 logs="$dir/../../data/agents"
 mkdir -p "$logs"
 "$dir/deploy.sh" || echo "deploy step failed (exit $?)"
+"$dir/pr_gate.sh" || echo "pr gate step failed (exit $?)"
 
 start() { # script, instances
   local i=0

@@ -157,3 +157,16 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 `tick.sh` runs every 6 minutes (launchd, `AbandonProcessGroup`) and starts in the background up to `DEV_PARALLEL` (3) Dev agents, `REVIEW_PARALLEL` (3) Reviewers and `PM_ANSWER_PARALLEL` (2) PM answers, plus one PM agent. Each instance claims its card (`data/agents/claims/<kind>-<n>`, holding its pid — free the moment the process ends), picks under a short mutex so two never take the same card, and serialises git fetch/worktree/push in the shared clone (`git_locked`). Independent cards are built at once; dependent ones wait in Blocked (`pm:waiting`).
 
 **Limits adapt by themselves** (product owner, 2026-10-19: "find the optimum value"): when a run hits the Claude usage limit or GitHub's rate limit (`note_limit`), no new Claude run starts for 30 minutes, then one at a time for an hour, then the configured parallelism again (`parallel_max`). A Dev card that hit a limit goes back to Ready, not Blocked; a PM answer stays due. Set the `*_PARALLEL` variables in the launchd plist to change the ceilings.
+
+## Only ready PRs reach you
+
+Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in priorities and address the dependencies prior to hand it over to my approval. I'd rather pick only ready tickets for review." Every tick runs [`pr_gate.sh`](scripts/agents/pr_gate.sh) (no Claude; rules in `pr_gate.py`) over each open Dev agent PR:
+
+| PR state | What happens |
+|---|---|
+| behind `main`, no conflict | the script updates the branch (`gh pr update-branch`); the Reviewer checks the new commit |
+| conflicts with `main` | the card goes back to **Ready** with `needs-rebase`; the Dev agent merges `main` into the branch, resolves keeping both changes' intent, re-runs every check and pushes; the Reviewer checks it again |
+| its ticket waits for an open issue | not ready |
+| reviewed clean on its **current** commit, CI green, GitHub `CLEAN` | label **`ready-to-merge`** on the PR and its card, one notification |
+
+**Your queue is the `ready-to-merge` label** (In review shows those cards first, by priority). Merge them top-down: whatever then conflicts is rebased by the agents before it comes back to you.

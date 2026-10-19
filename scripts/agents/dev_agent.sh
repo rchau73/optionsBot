@@ -69,6 +69,13 @@ else
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
+# An open PR starts from today's main: merge it in first. A conflict (another PR
+# merged first, pr_gate.sh) is left in the files for the agent to resolve.
+conflicts=""
+if [[ -n "$existing_pr" ]]; then
+  git -C "$wt" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" merge --no-edit -q origin/main >/dev/null 2>&1 ||
+    conflicts="$(git -C "$wt" diff --name-only --diff-filter=U)"
+fi
 
 # ── Task for the agent ──────────────────────────────────────────────────────
 gh issue view "$issue" -R "$slug" --json number,title,body,labels,comments \
@@ -80,6 +87,11 @@ if [[ -n "$existing_pr" ]]; then
   # From main's skill: the branch may predate this instruction.
   { echo; echo "# How to answer the review (developer skill, from main)"; echo
     grep -m1 '^\*\*When `.agent-task.md` carries review feedback\*\*' "$AGENT_REPO_DIR/.claude/skills/developer/SKILL.md"; } >> "$run_dir/task.md"
+fi
+if [[ -n "$conflicts" ]]; then
+  { echo; echo "# FIRST: resolve the merge with main"; echo
+    echo "\`origin/main\` was merged into this branch and conflicts in:"; echo "$conflicts" | sed 's/^/- /'; echo
+    echo "Another PR merged first. Resolve each conflict keeping both changes' intent (main's behaviour stays; this issue's change applies on top), remove every conflict marker, run the checks, then \`git add\` the files and \`git commit --no-edit\`. Say in the PR body how each conflict was resolved."; } >> "$run_dir/task.md"
 fi
 cp "$run_dir/task.md" "$wt/.agent-task.md"
 echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"
@@ -179,7 +191,7 @@ log "dev: PR $pr_url"
 
 if [[ $ok -eq 1 ]]; then
   set_status "$item" "In review"
-  gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
+  gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human --remove-label needs-rebase >/dev/null 2>&1 || true
   gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — all checks passed. Ready for review." >/dev/null
   notify "Dev agent: PR ready for #$issue" "$title"
 else
