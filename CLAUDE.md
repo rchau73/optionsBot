@@ -24,6 +24,7 @@ DERIBIT_ENV=live ./bot --config config_btc.yaml    # live — real capital, expl
 go test ./tests/... -run TestStrategy_ -v          # one group
 scripts/stress_inputs.sh btc && go run ./cmd/stress -dir data/stress/btc -shock crash -calm 14   # stress test of the live book (README "Stress test")
 go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stress/btc -direction sma -journal data/btc/orders.log   # the bot's rules on recorded books (README "Replay of recorded books")
+go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -days 7   # why approved margin went unused: per slot (occupied, skip reason, frozen, not measured) and book state (README "Idle-margin attribution")
 ```
 
 All tests live in `tests/` (package `tests`), not next to the source. Notable files: `strategy_run_test.go` (end-to-end `Strategy.Run` against a fake exchange), `margin_policy_run_test.go` + `risk_test.go` (margin policy end to end and its pure rules), `gateway_test.go` (real `Gateway` against a mock Deribit WebSocket), `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.

@@ -24,6 +24,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Configuration](#configuration)
 - [Backtesting](#backtesting)
 - [Stress test](#stress-test)
+- [Idle-margin attribution](#idle-margin-attribution)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -251,6 +252,20 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 
 **Limits — read before trusting a number.** One decision per recorded hour (live: every 40 s): the confirmation counts that are "2 snapshots" live (≈2 minutes) take 2 hours here, a stop's 5-minute spread wait ends at the next hour, and the bias's 60-minute median-flip window is widened to two snapshot intervals (else it would never hold two flips). Spot is the nearest expiry's future (the index is not recorded). Margin is MODEL (worst loss over spot ±16 % × IV −20/+30 %, MM = 80 % of IM), not Deribit's simulator; fills are assumed at the floor whenever that side of the book is quoted — mainnet prices, while the bots fill on testnet. Not modelled: the rebalance top-ups, leg balancing, the churn breaker, stop/shed records restored from the journal, and the bias's restart warm-up. So the replay compares rule sets on the same real books; it does not reproduce the journal to the satoshi. The gap to the journal (`-journal`) is printed on every run and should be recorded with any verdict drawn from it.
 
+## Idle-margin attribution
+
+`cmd/idlemargin` (#218, epic E1) says **why** a bot used less than its approved margin. `utilisation_7d`/`utilisation_30d` (`history.Utilisation`, #174) give the number; this splits it into causes, from the bot's own files only (no Deribit call, nothing written):
+
+```bash
+go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -config config_btc.yaml -days 7
+go run ./cmd/idlemargin -journal data/eth/orders.log -history data/eth/pnl_history.jsonl -from 2026-10-12 -to 2026-10-19
+```
+
+- **Per slot** (`internal/idlemargin`, pure `Attribute`): hours and share of measured time `occupied` (an open strangle, even one-legged, or a working entry order), `occupied_liquidity_cap` (occupied after a `liquidity_cap` skip: its entry or a top-up was cut), `frozen` (vacant while `entries_allowed` was false, whatever the skip), vacant by the last skip reason journaled since the slot became vacant (`no_free_expiry`, `margin_limit`, `gex_wait`, … — an unknown reason is its own row), `no_skip_logged` (vacant, no skip yet), and `not_measured` (the bot down or no margin data: the time `history.Utilisation` does not count, a point standing for at most `MaxSampleGap` 15 min). The total column sums slot-hours. `-config` reports that config's slots only; without it, every slot the journal names.
+- **Per bot**: the utilisation `history.Utilisation` gives for the same window (the same number as `/api/status`), and the allowed time by book state — `slot_empty` (some slot vacant), `rebalance_waiting` (every slot occupied, a short top-up waiting for its `rebalance_retry`), `sized_small_liquidity_cap` (every slot occupied, one capped), `all_full` — each with its hours, mean IM ÷ limit and its share of the unused margin (Σ (1 − IM ÷ limit) × time). The states' means, weighted by hours, give back the utilisation.
+
+Output holds hours, shares and percentages of the IM limit only — no amounts. Approximations: occupation follows the journal (opens, closes, startup `reconciled` lines; a leg held to settlement ends at 08:00 UTC of its expiry; a working entry order the journal never settled counts for at most 15 min); `occupied_liquidity_cap` cannot tell an order sent at the cap from a later uncapped one after a blocking `liquidity_cap` skip.
+
 ## Testing and CI
 
 ```bash
@@ -274,6 +289,7 @@ Regression tests for critical fixes were mutation-checked: they fail when the fi
 cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
 cmd/stress/           stress test of the live book through scripted shocks, and -replay of recorded books (see Stress test)
+cmd/idlemargin/       why approved margin went unused, per slot and book state (see Idle-margin attribution)
 scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/recorder/    hourly mainnet book recording (data/market/) and its reader
 internal/replay/      the bot's rules over recorded books (cmd/stress -replay)
