@@ -85,6 +85,21 @@ data/btc/
 
 Each environment also starts its **monitor** (stable <http://localhost:3000>, mvp <http://localhost:3100>, this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. The P&L chart's longer ranges (1h to all) read each bot's P&L history (`data/<underlying>/data/pnl_history.jsonl`), which survives restarts and rebuilds; delete it to start the history over. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
 
+### Sign-in (each environment)
+
+The monitor requires a signed-in session for every page and API route (#170). Each environment has **its own users** (a `monitor-auth` Docker volume, `auth.db`) and its own secrets, in its clone's `.env` (names in `.env.example`; never in git — the pre-commit hook refuses any `*SECRET*`/`*TOKEN*`/`*PASSWORD*` value of `.env`):
+
+```bash
+# in ~/dev/go/optionsBot-env/<stable|mvp>/.env — different values per environment
+AUTH_SECRET=<openssl rand -base64 48>       # required: without it the monitor exits at start
+ADMIN_USERNAME=<you>                        # first admin, created only while there are no users
+ADMIN_PASSWORD=<12+ characters>
+ADMIN_EMAIL=<optional>
+MONITOR_API_TOKEN=<openssl rand -hex 32>    # read-only token for the deploy health check and the agents
+```
+
+Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it). **Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`). Five failed sign-ins lock a username for 15 minutes; restarting the monitor clears the lock. Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
+
 ## Watch the logs
 
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.

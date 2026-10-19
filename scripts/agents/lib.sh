@@ -16,6 +16,10 @@ MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:$(env_port stable || true)}"
 [[ "$MONITOR_URL" != "http://127.0.0.1:" ]] || MONITOR_URL="http://127.0.0.1:3000"
 MVP_MONITOR_URL="${MVP_MONITOR_URL:-http://127.0.0.1:$(env_port mvp || true)}"
 [[ "$MVP_MONITOR_URL" != "http://127.0.0.1:" ]] || MVP_MONITOR_URL="http://127.0.0.1:3100"
+# The monitors require a session; scripts read them with each environment's
+# read-only service token (MONITOR_API_TOKEN in its .env).
+MONITOR_TOKEN="${MONITOR_TOKEN:-$(env_monitor_token stable)}"
+MVP_MONITOR_TOKEN="${MVP_MONITOR_TOKEN:-$(env_monitor_token mvp)}"
 PROJECT_TITLE="${PROJECT_TITLE:-optionsBot · agentic workflow}"
 mkdir -p "$AGENT_STATE_DIR" "$AGENT_WORK_DIR"
 
@@ -201,15 +205,26 @@ add_to_board() {
   echo "$id"
 }
 
-# bots_environment [monitor url] → "testnet" | "live" | "unknown" (live if any
-# bot is live). Default: MONITOR_URL (stable).
+# monitor_curl <token> <curl args...> — curl with the monitor's service token,
+# sent as a header read from stdin so it never shows in the process list.
+monitor_curl() {
+  local tok="$1"; shift
+  if [[ -n "$tok" ]]; then
+    printf 'Authorization: Bearer %s\n' "$tok" | curl -H @- "$@"
+  else
+    curl "$@"
+  fi
+}
+
+# bots_environment [monitor url] [token] → "testnet" | "live" | "unknown" (live
+# if any bot is live). Default: MONITOR_URL (stable) with MONITOR_TOKEN.
 bots_environment() {
-  local MONITOR_URL="${1:-$MONITOR_URL}" bots env any=""
-  bots="$(curl -fsS -m 10 "$MONITOR_URL/api/bots" 2>/dev/null |
+  local MONITOR_URL="${1:-$MONITOR_URL}" tok="${2-$MONITOR_TOKEN}" bots env any=""
+  bots="$(monitor_curl "$tok" -fsS -m 10 "$MONITOR_URL/api/bots" 2>/dev/null |
     py 'import json,sys; print(" ".join(b["name"] for b in json.load(sys.stdin).get("bots", [])))' 2>/dev/null || true)"
   [[ -n "$bots" ]] || { echo unknown; return; }
   for b in $bots; do
-    env="$(curl -fsS -m 10 "$MONITOR_URL/api/bots/$b/status" 2>/dev/null |
+    env="$(monitor_curl "$tok" -fsS -m 10 "$MONITOR_URL/api/bots/$b/status" 2>/dev/null |
       py 'import json,sys; print(json.load(sys.stdin).get("environment",""))' 2>/dev/null || true)"
     [[ "$env" == "live" ]] && { echo live; return; }
     [[ "$env" == "testnet" ]] && any=testnet

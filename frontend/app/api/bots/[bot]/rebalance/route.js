@@ -1,4 +1,6 @@
 import { configuredBots } from "@/lib/bots";
+import { sessionUser } from "@/lib/auth/server";
+import { sessionRequired } from "@/lib/auth/tokens";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +13,11 @@ const TIMEOUT_MS = 125000;
  * <bot url>/api/rebalance?dry_run=… with BOT_ADMIN_TOKEN. The token stays on
  * the server; the bot runs its own rebalance with its own gates and journals
  * a real pass. Same-origin JSON requests only, so another site open in the
- * browser cannot trigger it.
+ * browser cannot trigger it, and only with a signed-in session (checked here
+ * as well as in proxy.js).
  */
 export async function POST(request, { params }) {
+  if (!(await sessionUser(request))) return sessionRequired();
   const { bot } = await params;
   const target = configuredBots().find((b) => b.name === bot);
   if (!target) return Response.json({ error: "unknown bot" }, { status: 404 });

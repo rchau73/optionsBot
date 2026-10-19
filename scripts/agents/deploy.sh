@@ -67,7 +67,8 @@ exec > >(tee -a "$AGENT_STATE_DIR/deploy/$(date +%Y%m%d-%H%M%S)-${target:0:7}.lo
 log "deploy: mvp ${deployed:0:7} → ${target:0:7}"
 
 url="$(env_monitor_url mvp)"
-env="$(bots_environment "$url")"
+token="$(env_monitor_token mvp)"
+env="$(bots_environment "$url" "$token")"
 if [[ "$env" == "live" ]]; then
   log "deploy: mvp bots are live — automatic deploy is testnet-only"
   notify "Deploy skipped" "mvp bots are live: deploy ${target:0:7} by hand"
@@ -87,7 +88,7 @@ if ! env_compose mvp up -d --build; then
   notify "Deploy FAILED" "mvp: docker compose up failed for ${target:0:7}"
   exit 1
 fi
-if ! wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"; then
+if ! wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}" "$token"; then
   echo "$target" > "$failed"
   log "deploy: mvp health check failed"
   notify "Deploy FAILED health check" "mvp ${target:0:7}: scripts/envctl.sh mvp logs"
