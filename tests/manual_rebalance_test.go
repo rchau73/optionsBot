@@ -100,7 +100,7 @@ func TestManualRebalance_DryRunReportsTheTopUpAndSendsNothing(t *testing.T) {
 	f.afterDeposit(t)
 	sells, rebalances := len(f.exch.sells()), len(f.journal.riskChanges(orders.RiskRebalance))
 
-	rep, err := f.strat.RequestRebalance(context.Background(), true, "test")
+	rep, err := f.strat.RequestRebalance(context.Background(), true, testActor)
 	if err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestManualRebalance_DryRunReportsTheTopUpAndSendsNothing(t *testing.T) {
 	if n := len(f.journal.riskChanges(orders.RiskRebalanceManual)); n != 0 {
 		t.Errorf("a dry run is not a manual rebalance: %d records", n)
 	}
-	if _, err := f.strat.RequestRebalance(context.Background(), true, "test"); !errors.As(err, new(strategy.RebalanceCooldown)) {
+	if _, err := f.strat.RequestRebalance(context.Background(), true, testActor); !errors.As(err, new(strategy.RebalanceCooldown)) {
 		t.Errorf("a second dry run within 30 s must hit the cooldown, got %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestManualRebalance_RealRunTopsUpJournalsAndCoolsDown(t *testing.T) {
 	f.afterDeposit(t)
 	sells := len(f.exch.sells())
 
-	rep, err := f.strat.RequestRebalance(context.Background(), false, "test")
+	rep, err := f.strat.RequestRebalance(context.Background(), false, testActor)
 	if err != nil {
 		t.Fatalf("manual rebalance: %v", err)
 	}
@@ -137,13 +137,15 @@ func TestManualRebalance_RealRunTopsUpJournalsAndCoolsDown(t *testing.T) {
 	}
 	eventually(t, 2*time.Second, "complement sold on both legs",
 		func() bool { return len(f.exch.sells()) >= sells+2 })
-	if n := len(f.journal.riskChanges(orders.RiskRebalanceManual)); n != 1 {
-		t.Errorf("the manual pass is journaled once, got %d", n)
+	if recs := f.journal.riskChanges(orders.RiskRebalanceManual); len(recs) != 1 {
+		t.Errorf("the manual pass is journaled once, got %d", len(recs))
+	} else if recs[0].Actor == nil || *recs[0].Actor != testActor || !strings.Contains(recs[0].Detail, "by bob (manager)") {
+		t.Errorf("rebalance_manual must name actor bob (manager): %+v %q", recs[0].Actor, recs[0].Detail)
 	}
 	if n := len(f.exch.buys()); n != 0 {
 		t.Errorf("a top-up never buys back, got %d buys", n)
 	}
-	_, err = f.strat.RequestRebalance(context.Background(), false, "test")
+	_, err = f.strat.RequestRebalance(context.Background(), false, testActor)
 	var cool strategy.RebalanceCooldown
 	if !errors.As(err, &cool) || cool.RetryAfter <= 0 {
 		t.Errorf("a second real pass within 5 min must hit the cooldown, got %v", err)
@@ -158,7 +160,7 @@ func TestManualRebalance_RefusedWithoutMarginData(t *testing.T) {
 	f.exch.summaryErr = errors.New("request timed out")
 	f.exch.mu.Unlock()
 
-	_, err := f.strat.RequestRebalance(context.Background(), false, "test")
+	_, err := f.strat.RequestRebalance(context.Background(), false, testActor)
 	var refused strategy.RebalanceRefused
 	if !errors.As(err, &refused) || !strings.Contains(refused.Reason, "margin data unavailable") {
 		t.Fatalf("must be refused with the gate's reason, got %v", err)
@@ -170,20 +172,21 @@ func TestManualRebalance_RefusedWithoutMarginData(t *testing.T) {
 	f.exch.mu.Lock()
 	f.exch.summaryErr = nil
 	f.exch.mu.Unlock()
-	if _, err := f.strat.RequestRebalance(context.Background(), false, "test"); err != nil {
+	if _, err := f.strat.RequestRebalance(context.Background(), false, testActor); err != nil {
 		t.Errorf("after a refusal the next request runs, got %v", err)
 	}
 }
 
 type fakeRebalancer struct {
 	dryRun bool
+	by     orders.Actor
 	calls  int
 	err    error
 }
 
-func (r *fakeRebalancer) RequestRebalance(_ context.Context, dryRun bool, _ string) (strategy.RebalanceReport, error) {
+func (r *fakeRebalancer) RequestRebalance(_ context.Context, dryRun bool, by orders.Actor) (strategy.RebalanceReport, error) {
 	r.calls++
-	r.dryRun = dryRun
+	r.dryRun, r.by = dryRun, by
 	if r.err != nil {
 		return strategy.RebalanceReport{}, r.err
 	}

@@ -46,8 +46,8 @@ func (e RebalanceCooldown) Error() string {
 
 type rebalanceReq struct {
 	dryRun   bool
-	by       string
-	deadline time.Time // not started after this: the caller has given up
+	by       orders.Actor // who asked; journaled with a real pass
+	deadline time.Time    // not started after this: the caller has given up
 	reply    chan rebalanceReply
 }
 
@@ -76,7 +76,7 @@ func ManualRebalanceWait(last, now time.Time, dryRun bool) time.Duration {
 // and waits for its report. Safe from any goroutine. A request the loop has
 // not taken within rebalancePickup is dropped unexecuted, so a caller that
 // gave up never rebalances later.
-func (s *Strategy) RequestRebalance(ctx context.Context, dryRun bool, by string) (RebalanceReport, error) {
+func (s *Strategy) RequestRebalance(ctx context.Context, dryRun bool, by orders.Actor) (RebalanceReport, error) {
 	s.pub.mu.RLock()
 	halted := s.pub.halted
 	s.pub.mu.RUnlock()
@@ -148,10 +148,12 @@ func (s *Strategy) runManualRebalance(ctx context.Context, req rebalanceReq) {
 	s.manualRebMu.Unlock()
 	slog.Warn("manual rebalance requested", "by", req.by,
 		"limit_im_pct", m.status.LimitIMPct, "im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()), "unit", m.usage.Unit)
-	s.logRisk(orders.RiskRebalanceManual,
-		fmt.Sprintf("manual rebalance from the monitor (%s): IM %.1f%% vs limit %.0f%%, margin balance %.6f %s",
+	rec := s.riskRecord(orders.RiskRebalanceManual,
+		fmt.Sprintf("manual rebalance from the monitor by %s: IM %.1f%% vs limit %.0f%%, margin balance %.6f %s",
 			req.by, m.usage.IMPct(), m.status.LimitIMPct, m.usage.MarginBalance, m.usage.Unit),
 		m.status, m.usage, "")
+	rec.Actor = &req.by
+	s.journal.LogRisk(rec)
 	rep := s.runRebalance(ctx, m)
 	slog.Warn("manual rebalance done", "by", req.by, "done", rep.Done, "actions", len(rep.Actions))
 	req.reply <- rebalanceReply{report: rep}

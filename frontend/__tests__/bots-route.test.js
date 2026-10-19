@@ -4,7 +4,7 @@
 import { parseBots, pollIntervalMs } from "@/lib/bots";
 import { GET as listBots } from "@/app/api/bots/route";
 import { GET as proxy } from "@/app/api/bots/[bot]/[...path]/route";
-import { sessionCookie, useTestAuth } from "@/test/auth";
+import { signedIn, useTestAuth } from "@/test/auth";
 
 const call = (bot, path, search = "") =>
   proxy(new Request(`http://monitor/api/bots/${bot}/${path.join("/")}${search}`), { params: Promise.resolve({ bot, path }) });
@@ -90,7 +90,7 @@ describe("manual close proxy", () => {
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
     process.env.BOT_ADMIN_TOKEN = "s3cret";
     useTestAuth();
-    cookie = await sessionCookie();
+    cookie = (await signedIn()).cookie;
   });
 
   test("refuses without a signed-in session, before reaching the bot", async () => {

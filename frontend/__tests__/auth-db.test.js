@@ -39,7 +39,7 @@ describe("Scenario: sign in", () => {
 
     const r = await auth.login({ username: "admin", password: ADMIN.ADMIN_PASSWORD, ip: "1.2.3.4" });
     expect(r.ok).toBe(true);
-    expect(await verifyAccess(r.access, authKey(TEST_SECRET), clock.t)).toEqual({ id: 1, username: "admin", role: "admin" });
+    expect(await verifyAccess(r.access, authKey(TEST_SECRET), clock.t)).toEqual({ id: 1, username: "admin", role: "admin", sid: hashToken(r.refresh) });
     expect(store.sessionUser(hashToken(r.refresh), clock.t)).toBe(1);
   });
 

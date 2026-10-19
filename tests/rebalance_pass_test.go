@@ -243,7 +243,7 @@ func TestRebalancePass_HeldTopUpWaitsTheBaseTime(t *testing.T) {
 		return false
 	})
 
-	rep, err := f.strat.RequestRebalance(context.Background(), false, "test")
+	rep, err := f.strat.RequestRebalance(context.Background(), false, testActor)
 	if err != nil {
 		t.Fatalf("manual rebalance: %v", err)
 	}

@@ -96,6 +96,10 @@ export class AuthStore {
     return this.one("SELECT COUNT(*) AS n FROM users").n;
   }
 
+  countAdmins() {
+    return this.one("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").n;
+  }
+
   /** Adds a user; passwordHash is already argon2id. Returns the user (no hash). */
   createUser({ username, passwordHash, role, email = null }, nowMs = Date.now()) {
     const name = normalizeUsername(username);

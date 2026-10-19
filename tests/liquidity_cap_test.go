@@ -245,7 +245,7 @@ func TestLiquidityCap_RebalanceReportShowsTheCappedSize(t *testing.T) {
 	f.exch.mu.Unlock()
 
 	for _, dry := range []bool{true, false} {
-		rep, err := f.strat.RequestRebalance(context.Background(), dry, "test")
+		rep, err := f.strat.RequestRebalance(context.Background(), dry, testActor)
 		if err != nil {
 			t.Fatalf("rebalance (dry run %v): %v", dry, err)
 		}

@@ -33,6 +33,7 @@ type Trade struct {
 	Price      float64   `json:"price"`
 	Reason     string    `json:"reason"`           // entry, or the close reason (stop_loss, roi_target, …)
 	Detail     string    `json:"detail,omitempty"` // why, with the numbers
+	Actor      *Actor    `json:"actor,omitempty"`  // manual closes: who asked (#171)
 	// Per-option greeks at that moment (long-holder view, as Deribit quotes).
 	Delta   float64 `json:"delta"`
 	Gamma   float64 `json:"gamma"`
@@ -64,7 +65,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
 		GammaFlip: rec.Market.GammaFlip, FlipBufferPct: rec.Market.FlipBufferPct,
-		Detail: rec.Detail, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
+		Detail: rec.Detail, Actor: rec.Actor, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
 	case EventFilled:
