@@ -7,7 +7,9 @@
 #     DEV_PARALLEL (3) Dev agents, each claiming its own card (lib.sh claim), so
 #     independent cards are worked on at once; an instance that finds nothing
 #     free exits at once;
-#   - one PM agent (triage, planning, dependencies, board order; its own lock).
+#   - one PM agent (triage, planning, dependencies, board order; its own lock);
+#   - metrics.sh, which writes last week's agent metrics on the first tick of a
+#     Monday (UTC) and posts them on the E6 epic (#180), else exits at once.
 # After a usage or rate limit no new Claude run starts for 30 min, then one at a
 # time for an hour (lib.sh parallel_max). install.sh sets AbandonProcessGroup so
 # launchd leaves the background agents running when this script exits.
@@ -32,4 +34,5 @@ start review_agent.sh "${REVIEW_PARALLEL:-3}"
 start pm_answer.sh "${PM_ANSWER_PARALLEL:-2}"
 start pm_agent.sh 1
 start dev_agent.sh "${DEV_PARALLEL:-3}"
+start metrics.sh 1 # weekly: exits at once unless last week's report is missing
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"
