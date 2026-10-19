@@ -140,13 +140,14 @@ for i in json.load(sys.stdin)["data"]["repository"]["issues"]["nodes"]:
 json.dump(out, sys.stdout)' "$num"
 }
 
-# ready_next → "ITEM_ID ISSUE_NUMBER" of the Ready card to build next: highest
-# Priority first (P0…P3, the PM agent's order; none last), then the oldest
-# issue. Epic issues and agent:pm tickets (PRD changes and decisions: the PM
-# agent's, pm_answer.sh) are never built, nor a card whose body says
-# "Depends on #N" while #N is open (it would be built without #N's code).
+# ready_next [claim kind] → "ITEM_ID ISSUE_NUMBER" of the Ready card to build
+# next: highest Priority first (P0…P3, the PM agent's order; none last), then
+# the oldest issue. Epic issues and agent:pm tickets (PRD changes and
+# decisions: the PM agent's, pm_answer.sh) are never built, nor a card that
+# must wait (pm_board.py wait: "Depends on #N" while #N is open, "Waits until
+# <date>"), nor one another instance of <claim kind> is already building.
 ready_next() {
-  local cands item num deps
+  local cands item num why
   cands="$(board_json | py 'import json,sys
 cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN"
          and "epic" not in c["labels"] and "agent:pm" not in c["labels"]]
@@ -154,12 +155,27 @@ rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"], 9), c[
 for c in sorted(cards, key=rank): print(c["item"], c["number"])')"
   while read -r item num; do
     [[ -n "$num" ]] || continue
-    deps="$(gh issue view "$num" -R "$(repo_slug)" --json body -q .body | python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" deps)"
-    if [[ -n "$deps" ]] && open_issues_among $deps; then
-      log "ready: #$num waits for #${deps// / #}" >&2; continue
-    fi
+    [[ -n "${1:-}" ]] && claim_alive "$1" "$num" && continue
+    why="$(waiting_reason "$num")"
+    if [[ -n "$why" ]]; then log "ready: #$num $why" >&2; continue; fi
     echo "$item $num"; return 0
   done <<< "$cands"
+}
+
+# waiting_reason <issue> → why the issue must wait (pm_board.py wait), empty
+# when it is free. "human: …" means a dependency was closed as not planned.
+waiting_reason() {
+  local body deps n states="{" sep=""
+  body="$(gh issue view "$1" -R "$(repo_slug)" --json body -q .body)"
+  deps="$(printf '%s' "$body" | python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" deps)"
+  for n in $deps; do
+    states="$states$sep\"$n\": $(gh issue view "$n" -R "$(repo_slug)" --json state,stateReason -q '{state, reason: .stateReason}' 2>/dev/null || echo '{"state": "OPEN"}')"
+    sep=", "
+  done
+  states="$states}"
+  local f; f="$(mktemp)"; printf '%s' "$states" > "$f"
+  printf '%s' "$body" | python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" wait "$(date -u +%Y-%m-%d)" "$f"
+  rm -f "$f"
 }
 
 # open_issues_among <n>... — true when any of these issues is still open.
@@ -229,6 +245,89 @@ require_tools() {
   return 1
 }
 
+# ── Parallel runs ───────────────────────────────────────────────────────────
+# Several Dev, Reviewer and PM-answer instances run at once (tick.sh), each on
+# its own card. A claim is a directory holding the owner's pid: alive while
+# that process runs, free as soon as it exits or dies (no age-based expiry, so
+# a long implementation keeps its card).
+CLAIMS_DIR="$AGENT_STATE_DIR/claims"
+_exit_paths=""
+_on_exit() { local p; for p in $_exit_paths; do rm -rf "$p" 2>/dev/null; done; }
+trap _on_exit EXIT
+on_exit_remove() { _exit_paths="$_exit_paths $1"; }
+
+# claim_alive <kind> <key> — true while a live process holds that claim.
+claim_alive() {
+  local dir="$CLAIMS_DIR/$1-$2" pid
+  [[ -d "$dir" ]] || return 1
+  pid="$(cat "$dir/pid" 2>/dev/null || true)"
+  if [[ -z "$pid" ]]; then # being created right now, or left half-made
+    [[ -n "$(find "$dir" -maxdepth 0 -mmin -1 2>/dev/null)" ]]; return
+  fi
+  kill -0 "$pid" 2>/dev/null
+}
+
+# claim <kind> <key> — take a card for this process; fails when it is taken.
+claim() {
+  local dir="$CLAIMS_DIR/$1-$2"
+  mkdir -p "$CLAIMS_DIR"
+  claim_alive "$1" "$2" && return 1
+  rm -rf "$dir"
+  mkdir "$dir" 2>/dev/null || return 1
+  echo $$ > "$dir/pid"
+  on_exit_remove "$dir"
+}
+
+# claims_alive <kind> → how many instances of <kind> are working now.
+claims_alive() {
+  local d k n=0
+  for d in "$CLAIMS_DIR/$1"-*; do
+    [[ -d "$d" ]] || continue
+    k="${d##*/}"; claim_alive "$1" "${k#"$1"-}" && n=$((n + 1))
+  done
+  echo "$n"
+}
+
+# mutex <name> — wait (up to 2 min) for a short critical section; unmutex <name>
+# ends it. A mutex older than 10 min is stale. Used to pick cards one instance
+# at a time and to serialise git fetch/worktree/push in the shared clone.
+mutex() {
+  local dir="$AGENT_STATE_DIR/$1.mutex" i=0
+  while ! mkdir "$dir" 2>/dev/null; do
+    if [[ -n "$(find "$dir" -maxdepth 0 -mmin +10 2>/dev/null)" ]]; then rm -rf "$dir"; continue; fi
+    i=$((i + 1)); [[ $i -gt 240 ]] && { log "mutex $1: gave up waiting"; return 1; }
+    perl -e 'select(undef,undef,undef,0.5)'
+  done
+  on_exit_remove "$dir"
+}
+unmutex() { rmdir "$AGENT_STATE_DIR/$1.mutex" 2>/dev/null || true; }
+
+# Usage and rate limits: a run that hits the Claude usage limit or GitHub's
+# rate limit records it; for 30 min no new Claude run starts, then one at a time
+# for an hour, then the configured parallelism again (tick.sh). The numbers
+# adapt instead of being tuned by hand (product owner, 2026-10-19: "find the
+# optimum value, like 3 parallel, 5 or 2").
+LIMIT_FILE="$AGENT_STATE_DIR/limit_hit"
+LIMIT_PATTERN="session limit|usage limit|rate limit|secondary rate|HTTP 429|overloaded"
+
+# note_limit <output file> — true (and recorded) when the output shows a limit.
+note_limit() {
+  grep -qiE "$LIMIT_PATTERN" "$1" 2>/dev/null || return 1
+  date -u +%s > "$LIMIT_FILE"
+  log "a usage/rate limit was hit: new agent runs pause 30 min, then run one at a time for an hour"
+}
+
+# parallel_max <configured> → how many instances may run now: 0 within 30 min
+# of a limit hit, 1 within 90 min, else <configured>.
+parallel_max() {
+  local t age
+  t="$(cat "$LIMIT_FILE" 2>/dev/null || echo 0)"; age=$(( $(date -u +%s) - t ))
+  if [[ $age -lt 1800 ]]; then echo 0; elif [[ $age -lt 5400 ]]; then echo 1; else echo "$1"; fi
+}
+
+# git_locked <git args…> — git in the shared clone, one instance at a time.
+git_locked() { mutex git || return 1; local rc=0; git "$@" || rc=$?; unmutex git; return $rc; }
+
 # take_lock <name> — one run at a time; a lock older than 3 h is stale.
 take_lock() {
   local dir="$AGENT_STATE_DIR/$1.lock"
@@ -236,6 +335,18 @@ take_lock() {
     log "removing stale lock $dir"; rmdir "$dir" 2>/dev/null || rm -rf "$dir"
   fi
   mkdir "$dir" 2>/dev/null || { log "$1 already running"; return 1; }
-  # shellcheck disable=SC2064
-  trap "rmdir '$dir' 2>/dev/null" EXIT
+  on_exit_remove "$dir"
+}
+
+# set_position <item id> [after item id] — place a card in its column (first
+# when no "after"). The board's manual order is what people see.
+set_position() {
+  local pid; pid="$(project_info | cut -d' ' -f2)" || return 1
+  if [[ -n "${2:-}" ]]; then
+    gh api graphql -f query='mutation($p: ID!, $i: ID!, $a: ID!) { updateProjectV2ItemPosition(input: {projectId: $p, itemId: $i, afterId: $a}) { clientMutationId } }' \
+      -f p="$pid" -f i="$1" -f a="$2" >/dev/null
+  else
+    gh api graphql -f query='mutation($p: ID!, $i: ID!) { updateProjectV2ItemPosition(input: {projectId: $p, itemId: $i}) { clientMutationId } }' \
+      -f p="$pid" -f i="$1" >/dev/null
+  fi
 }

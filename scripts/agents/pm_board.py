@@ -6,6 +6,11 @@
     pm_board.py gate    <pm.json> <board.json> <epics.json> <state.json> <out.json>
     pm_board.py answered <tickets.json> <state.json>
     pm_board.py deps    < issue body           (prints the issue numbers it depends on)
+    pm_board.py wait    <today> <dep_states.json> < issue body   (why it must wait; empty = free)
+    pm_board.py tags    <board.json> <epics.json> <out.json>     (epic labels and [E#] titles to fix)
+    pm_board.py order   <board.json> <state.json> <out.json>     (Ready and Triage in the PM's order)
+    pm_board.py plan    <board.json> <epics.json> <state.json> <now ISO> (epics due for new stories)
+    pm_board.py stories <pm.json> <epics.json> <out.json>        (new stories → status, labels, title)
     pm_board.py policy  <main PRD.md> <PR PRD.md> <yes|no|"">
     pm_board.py selfmerge <pr.json> <files.txt> <main PRD.md> <PR PRD.md> <tickets.json> <state.json> <issue>
 
@@ -188,7 +193,14 @@ def is_agent_comment(body):
 
 
 def answered(tickets, state):
-    """Number of the agent:pm ticket to act on next, or None. Each ticket:
+    """Number of the agent:pm ticket to act on next, or None (see answered_all)."""
+    due = answered_all(tickets, state)
+    return due[0] if due else None
+
+
+def answered_all(tickets, state):
+    """Numbers of the agent:pm tickets with a person's message to act on, oldest
+    message first (pm_answer.sh runs several in parallel, one per ticket). Each ticket:
     {number, state, status, labels, created, body, messages: [{at, body}]}, the
     messages being the ticket's comments plus its open PRD pull request's comments
     and reviews. The body counts as a person's message unless an agent wrote it."""
@@ -205,7 +217,7 @@ def answered(tickets, state):
         pm = max((m["at"] for m in msgs if PM_COMMENT.search(m["body"] or "")), default="")
         if person and person > pm and person > done.get(str(t["number"]), ""):
             due.append((person, t["number"]))
-    return min(due)[1] if due else None
+    return [n for _, n in sorted(due)]
 
 
 # The PM merges its own PRD pull request (product owner on #151) unless it changes
@@ -308,6 +320,156 @@ def depends_on(body):
     return out
 
 
+WAITS = re.compile(r"\bwaits?\s+until\s+(\d{4}-\d{2}-\d{2})", re.I)
+
+
+def waits_until(body):
+    """The latest date a ticket's body says it waits until ("Waits until 2026-10-22"), or None."""
+    dates = WAITS.findall(body or "")
+    return max(dates) if dates else None
+
+
+def wait_reason(body, states, today):
+    """Why a card may not be built yet, "" when it is free. states: {issue number (str or
+    int): {"state": OPEN|CLOSED, "reason": COMPLETED|NOT_PLANNED|…}} for its dependencies.
+    A reason starting "human:" means a person must look: a dependency was closed
+    without being done, so the card's premise may be gone."""
+    st = {int(k): v for k, v in (states or {}).items()}
+    for n in depends_on(body):
+        d = st.get(n)
+        if d is None or d.get("state") == "OPEN":
+            return f"waits for #{n}"
+        if (d.get("reason") or "").upper() == "NOT_PLANNED":
+            return f"human: #{n} was closed as not planned"
+    until = waits_until(body)
+    if until and today < until:
+        return f"waits until {until}"
+    return ""
+
+
+EPIC_PREFIX = re.compile(r"^\s*(?:\[E\d+\]\s*|E\d+\s*[:·\-]\s*)+")
+
+
+def tagged_title(title, eid):
+    return f"[{eid}] " + EPIC_PREFIX.sub("", title).strip()
+
+
+def epic_tags(board, epics):
+    """Cards under an epic whose E# label or [E#] title prefix is missing or stale:
+    [{issue, title?, add, remove}]."""
+    by_num = {e.get("number"): e["id"] for e in epics if e.get("number")}
+    out = []
+    for c in board:
+        eid = by_num.get(c.get("parent"))
+        if not eid or "epic" in c["labels"] or c["state"] != "OPEN":
+            continue
+        a = {"issue": c["number"], "add": [], "remove": []}
+        if eid not in c["labels"]:
+            a["add"].append(eid)
+        a["remove"] = [l for l in c["labels"] if re.fullmatch(r"E\d+", l) and l != eid]
+        want = tagged_title(c["title"], eid)
+        if want != c["title"]:
+            a["title"] = want
+        if a["add"] or a["remove"] or "title" in a:
+            out.append(a)
+    return out
+
+
+PRIO_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
+
+def column_order(board, column):
+    """Item ids of a column in the PM's order. Ready: Priority, then the oldest issue.
+    Triage: cards free to go first (no agent:needs-human, prototype not awaited), then
+    the ones waiting for a person; each group by Priority, then age."""
+    cards = [c for c in board if c["status"] == column and c["state"] == "OPEN" and "epic" not in c["labels"]]
+    def key(c):
+        person = "agent:needs-human" in c["labels"] or "agent:pm" in c["labels"]
+        return (person if column == "Triage" else False, PRIO_RANK.get(c.get("priority"), 9), c["number"])
+    return [c["item"] for c in sorted(cards, key=key)]
+
+
+def order_changes(board, state):
+    """{column: [item ids]} for the columns whose wanted order changed since the PM last
+    applied it (state["order"]): positions are written only when the wanted order moves."""
+    last = state.get("order", {})
+    out = {}
+    for col in ("Ready", "Triage"):
+        want = column_order(board, col)
+        if want and want != last.get(col):
+            out[col] = want
+    return out
+
+
+PLAN_EVERY_H = 12
+PLAN_MIN_OPEN = 2
+
+
+def plan_due(board, epics, state, now):
+    """Approved epics that need their next stories: fewer than PLAN_MIN_OPEN open stories
+    the squad can move (Ready, In progress, In review, Blocked on pm:waiting, or Triage not
+    waiting for a person) and not planned in the last PLAN_EVERY_H hours. now: ISO UTC."""
+    import datetime
+    t = datetime.datetime.fromisoformat(now.replace("Z", "+00:00"))
+    planned = state.get("planned", {})
+    due = []
+    for e in sorted(epics, key=lambda e: e.get("rank", 99)):
+        if e["status"] != "approved" or not e.get("number"):
+            continue
+        last = planned.get(e["id"])
+        if last and t - datetime.datetime.fromisoformat(last.replace("Z", "+00:00")) < datetime.timedelta(hours=PLAN_EVERY_H):
+            continue
+        moving = 0
+        for c in board:
+            if c.get("parent") != e["number"] or c["state"] != "OPEN":
+                continue
+            if c["status"] in ("Ready", "In progress", "In review"):
+                moving += 1
+            elif c["status"] == "Blocked" and "pm:waiting" in c["labels"]:
+                moving += 1
+            elif c["status"] == "Triage" and "agent:needs-human" not in c["labels"] and "agent:pm" not in c["labels"]:
+                moving += 1
+        if moving < PLAN_MIN_OPEN:
+            due.append(e["id"])
+    return due
+
+
+MAX_NEW_STORIES = 3
+
+
+def new_stories(pm, epics):
+    """The agent's proposed stories → what the script files. Each: {epic, title, body,
+    priority, status: Ready|Blocked|Triage, labels, refused?}. Same gate as triage:
+    unknown or unapproved epic → dropped; rule areas the epic doesn't delegate, or UI
+    without an approved prototype → Triage for a person; "Depends on"/"Waits until"
+    → Blocked (the script re-checks and releases it when free)."""
+    by_id = {e["id"]: e for e in epics}
+    out, per = [], {}
+    for d in pm.get("stories", []):
+        e = by_id.get(d.get("epic") or "")
+        title, body = (d.get("title") or "").strip(), (d.get("body") or "").strip()
+        if not e or e["status"] != "approved" or not e.get("number") or not title or not body:
+            continue
+        per[e["id"]] = per.get(e["id"], 0) + 1
+        if per[e["id"]] > MAX_NEW_STORIES:
+            continue
+        prio = d.get("priority") if d.get("priority") in PRIO_RANK else "P2"
+        s = {"epic": e["id"], "title": tagged_title(title, e["id"]), "body": body,
+             "priority": prio, "labels": [e["id"]] + [l for l in d.get("labels", []) if l in ("enhancement", "documentation", "bug")]}
+        why = ready_refusal({"priority": prio, "rule_area": d.get("rule_area") or "none", "ui": bool(d.get("ui"))},
+                            {"labels": []}, e)
+        if why:
+            s["status"], s["refused"] = "Triage", why
+            s["labels"].append("agent:needs-human")
+        elif depends_on(body) or waits_until(body):
+            s["status"] = "Blocked"
+            s["labels"].append("pm:waiting")
+        else:
+            s["status"] = "Ready"
+        out.append(s)
+    return out
+
+
 def _load(path, default):
     try:
         return json.load(open(path))
@@ -329,9 +491,18 @@ def main(argv):
     elif cmd == "deps":
         print(" ".join(str(n) for n in depends_on(sys.stdin.read())))
     elif cmd == "answered":
-        n = answered(json.load(open(argv[2])), _load(argv[3], {}))
-        if n is not None:
+        for n in answered_all(json.load(open(argv[2])), _load(argv[3], {})):
             print(n)
+    elif cmd == "wait":
+        print(wait_reason(sys.stdin.read(), _load(argv[3], {}), argv[2]))
+    elif cmd == "tags":
+        json.dump(epic_tags(json.load(open(argv[2])), json.load(open(argv[3]))), open(argv[4], "w"), indent=1)
+    elif cmd == "order":
+        json.dump(order_changes(json.load(open(argv[2])), _load(argv[3], {})), open(argv[4], "w"), indent=1)
+    elif cmd == "plan":
+        print(" ".join(plan_due(json.load(open(argv[2])), json.load(open(argv[3])), _load(argv[4], {}), argv[5])))
+    elif cmd == "stories":
+        json.dump(new_stories(json.load(open(argv[2])), json.load(open(argv[3]))), open(argv[4], "w"), indent=1)
     elif cmd == "policy":
         declared = argv[4].strip().lower() if len(argv) > 4 and argv[4].strip() else None
         for r in policy_reasons(parse_epics(open(argv[2]).read()), parse_epics(open(argv[3]).read()), declared):

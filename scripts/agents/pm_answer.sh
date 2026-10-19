@@ -25,13 +25,15 @@
 # revision or failure (hold_pr), never best effort. A person stops any self-merge
 # by removing the pm:self-merge label (or by commenting: a waiting answer is acted
 # on first). Never merges code.
-# Env: PM_MODEL, AGENT_WORK_DIR, AGENT_NOTIFY.
+# Several instances run at once (tick.sh, PM_ANSWER_PARALLEL), one ticket each.
+# Env: PM_MODEL, PM_ANSWER_PARALLEL (2), AGENT_WORK_DIR, AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
-take_lock pm-answer || exit 0
 require_tools claude gh git python3 || exit 1
+# Picking (and the self-merge pass) runs one instance at a time.
+mutex pm-answer-pick || exit 0
 
 BOARD_PY="$AGENT_REPO_DIR/scripts/agents/pm_board.py"
 PM_DIR="$AGENT_STATE_DIR/pm"
@@ -40,8 +42,8 @@ mkdir -p "$PM_DIR"
 slug="$(repo_slug)"
 
 # ── 1. Which ticket has a person's answer ──────────────────────────────────
-tmp="$PM_DIR/answer-scan"   # overwritten each run
-rm -rf "$tmp"; mkdir -p "$tmp"
+tmp="$PM_DIR/answer-scan-$$"   # one per instance (they run in parallel)
+rm -rf "$tmp"; mkdir -p "$tmp"; on_exit_remove "$tmp"
 board_json > "$tmp/board.json"
 : > "$tmp/tickets.jsonl"
 for num in $(py 'import json,sys
@@ -64,7 +66,7 @@ py 'import json,sys; json.dump([json.loads(l) for l in open(sys.argv[1]) if l.st
 # Re-checked at merge time on the exact head commit: label still on, only
 # docs/product/, no strategy policy against today's main, no person's message
 # waiting, CI green, GitHub "CLEAN". No --admin: the ruleset still applies.
-git fetch -q origin
+git_locked fetch -q origin
 gh pr list -R "$slug" --label agent:pm --label "pm:self-merge" --state open \
   --json number,headRefName,headRefOid,state,isDraft,labels,body,mergeStateStatus,statusCheckRollup > "$tmp/self-merge.json" ||
   { log "pm-answer: listing self-merge PRs failed"; echo '[]' > "$tmp/self-merge.json"; }
@@ -90,8 +92,15 @@ for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open
   fi
 done
 
-issue="$(python3 "$BOARD_PY" answered "$tmp/tickets.json" "$STATE")"
-[[ -n "$issue" ]] || { log "pm-answer: no new answer on an agent:pm ticket"; exit 0; }
+max="$(parallel_max "${PM_ANSWER_PARALLEL:-2}")"
+issue=""
+if [[ "$(claims_alive pm-answer)" -lt "$max" ]]; then
+  for n in $(python3 "$BOARD_PY" answered "$tmp/tickets.json" "$STATE"); do
+    claim pm-answer "$n" && { issue="$n"; break; }
+  done
+fi
+unmutex pm-answer-pick
+[[ -n "$issue" ]] || { log "pm-answer: no new answer on an agent:pm ticket (or $max instance(s) busy)"; exit 0; }
 answer_at="$(py 'import json,sys,re
 sys.path.insert(0, sys.argv[3]); import pm_board
 t = next(t for t in json.load(open(sys.argv[1])) if t["number"] == int(sys.argv[2]))
@@ -109,12 +118,14 @@ log "pm-answer: #$issue has a person's answer ($answer_at) → $branch"
 
 # Handled: the same answer is not acted on twice, whatever happens below.
 mark_done() {
+  mutex pm-state || return 1
   py 'import json,sys
 p = sys.argv[1]
 try: s = json.load(open(p))
 except FileNotFoundError: s = {}
 s.setdefault("answered", {})[sys.argv[2]] = sys.argv[3]
 json.dump(s, open(p, "w"), indent=1)' "$STATE" "$issue" "$answer_at"
+  unmutex pm-state
 }
 reply() { # file, extra label args...
   local f="$1"; shift
@@ -138,14 +149,14 @@ fail() { # message
 }
 
 # ── 2. Worktree and task ────────────────────────────────────────────────────
-git fetch -q origin
+git_locked fetch -q origin
 wt="$AGENT_WORK_DIR/pm-issue-$issue"
-[[ -d "$wt" ]] && git worktree remove --force "$wt" 2>/dev/null || true
+[[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-  git worktree add -q -B "$branch" "$wt" "origin/$branch"
+  git_locked worktree add -q -B "$branch" "$wt" "origin/$branch"
   existing_pr="$(gh pr list -R "$slug" --head "$branch" --state open --json number -q '.[0].number' || true)"
 else
-  git worktree add -q -B "$branch" "$wt" origin/main
+  git_locked worktree add -q -B "$branch" "$wt" origin/main
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
@@ -200,7 +211,10 @@ for tag, out in (("PM-REPLY", sys.argv[2]), ("PR-BODY", sys.argv[3])):
 
 if [[ $rc -ne 0 || -z "$result" ]]; then
   why="the agent did not finish (exit $rc, result '${result:-none}')"
-  grep -qiE "session limit|usage limit" "$run_dir/agent.md" && why="the Claude usage limit was reached: comment again on the ticket after it resets"
+  if note_limit "$run_dir/agent.md"; then
+    # Not marked done: the answer stays due and is retried after the pause.
+    log "pm-answer: #$issue hit a usage/rate limit — retried after the pause"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
+  fi
   fail "Stopped because $why. Run log: \`data/agents/pm/$(basename "$run_dir")\`."
 fi
 commits="$(git -C "$wt" rev-list --count "$base"..HEAD)"
@@ -217,7 +231,7 @@ case "$result" in
     [[ "$status" != "Ready" ]] || set_status "$item" "Triage" || true
     mark_done; log "pm-answer: replied on #$issue ($result)"
     notify "PM agent replied on #$issue" "$(head -c 120 "$run_dir/reply.md")"
-    git worktree remove --force "$wt" 2>/dev/null || true
+    git_locked worktree remove --force "$wt" 2>/dev/null || true
     exit 0 ;;
   pr) ;;
   *) fail "The agent ended with an unknown result '$result'." ;;
@@ -244,7 +258,7 @@ else
 fi
 # A revision that touches a policy holds the PR before its commit is pushed.
 [[ ! -s "$run_dir/policy.txt" ]] || hold_pr --add-label agent:needs-human
-git -C "$wt" push -q -u origin "$branch"
+git_locked -C "$wt" push -q -u origin "$branch"
 {
   echo "Closes #$issue"; echo
   if [[ -s "$run_dir/pr-body.md" ]]; then cat "$run_dir/pr-body.md"; else cat "$run_dir/reply.md"; fi; echo
@@ -287,4 +301,4 @@ fi
 set_status "$item" "In review" || true
 mark_done
 notify "PM agent: PRD PR for #$issue" "$title"
-git worktree remove --force "$wt" 2>/dev/null || true
+git_locked worktree remove --force "$wt" 2>/dev/null || true

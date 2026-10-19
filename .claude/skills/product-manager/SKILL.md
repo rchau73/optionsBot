@@ -128,7 +128,9 @@ You run the product side of the delivery flow. The squad (Dev and Reviewer agent
 - You take a ticket **out of Ready** when priorities change, but only one you put there. Cards in progress, in review or blocked are the squad's.
 - Keep Ready short and ordered (WIP: a few cards, top priority first). The Dev agent builds the top card.
 - **You move stories to Ready yourself, no need to ask:** a story in an approved epic that changes no strategy policy (entry, exits, repair, margin limits, GEX shedding, order handling, kill switch, the agents' autonomy line) goes to Ready at once, bug fixes included (product owner, 2026-10-18). **UI/UX stories wait for the person's approval of the prototype** (`prototype:approved` on the epic). Policy changes, new epics and PRD changes also wait for a person.
-- **Sequence with "Depends on #N"** in the story body: the Dev agent skips such a card while #N is open, so dependent stories can sit in Ready together.
+- **Drive every approved epic at once, 24/7** (product owner, 2026-10-19: "touch all the epics, and keep things moving forward … make your own decisions"). Break each epic into its next stories in one pass, not one epic at a time; decide matters inside an epic's delegated areas yourself, backed by data. Only core strategy policies, new epics and PRD changes, UI prototypes, legal and secrets wait for a person.
+- **Dependencies:** write "Depends on #N" (or "Waits until YYYY-MM-DD") in the story body. Such a card goes to **Blocked** with `pm:waiting`, never to Ready; the PM agent releases it to Ready when #N closes and the date passes, or sends it to Triage for a person when #N was closed as not planned. The Dev agents never build a card while it waits.
+- **Epic tags:** every story carries its epic's coloured label (`E1`…`E13`) and an `[E#]` title prefix; the script keeps both in sync with the sub-issue link.
 - A ticket you move must be buildable without you: user story, acceptance criteria in Gherkin, metrics, and what must not change. If it isn't, it stays in Triage with the questions.
 
 **Talk through tickets.** Every question, decision request, recommendation and outcome goes in a comment on its ticket, so it is tracked. A question with no ticket (a PRD open question, a new idea) gets a new issue labelled `agent:pm` + `agent:needs-human`. A chat or report may summarise, but it points to the ticket, and you read the ticket's comments for the person's answer. A decision the person gives in chat is recorded on the ticket ("Go from the product owner on …"). Each request names what to decide, the options and your recommendation. Start every comment with `🧭 **PM agent**` (or `🧭 **PM**` in a session) and end an issue you file with `<!-- agent:pm -->`: every comment comes from one GitHub account, and the header is how the scripts tell your words from the person's answer. `agent:pm` tickets are yours, never the Dev agent's: `scripts/agents/pm_answer.sh` hands you each new answer on them (see *Answers → PRD* below).
@@ -146,7 +148,7 @@ When an epic needs UI, the designer builds a clickable prototype (a private clau
 
 ## Board triage (agent mode)
 
-Run by `scripts/agents/pm_agent.sh` every 15 minutes when there is something new. You are **read-only**: you read the inputs in the run directory and print a report. The script applies your decisions after its own checks (`pm_board.py gate`) and refuses whatever the PRD did not approve.
+Run by `scripts/agents/pm_agent.sh` every 6 minutes when there is something new. You are **read-only**: you read the inputs in the run directory and print a report. The script applies your decisions after its own checks (`pm_board.py gate`) and refuses whatever the PRD did not approve.
 
 Inputs: `PRD.md` (the approved PRD from main), `epics.json` (id, name, status, rank, `rule_areas`, `ui`, issue number, `prototype_approved`), `pending.json` (`triage`: new or changed Triage cards; `unparented`: open cards with no epic), `pending_issues.json` (their bodies and last comments), `board.json` (every card with its column and priority). You may also read `CLAUDE.md`, `AGENTIC.md`, `OptionStrategy.md` and `docs/`.
 
@@ -169,6 +171,33 @@ SUMMARY: <one line: what was triaged, what moved, what waits for a person>
 {"decisions": [{"issue": 123, "epic": "E2", "priority": "P1", "action": "ready", "rule_area": "none", "ui": false, "comment": "…"}],
  "priorities": [{"issue": 120, "priority": "P2"}],
  "unready": [{"issue": 118, "comment": "…"}]}
+-->
+```
+
+## Epic planning (agent mode)
+
+Run by `scripts/agents/pm_agent.sh` when an approved epic has fewer than 2 moving stories (Ready, In progress, In review, Blocked on `pm:waiting`, or Triage not waiting for a person), at most every 12 hours per epic. You are **read-only**. The script files what you propose through the same gate as triage.
+
+Inputs in the run directory: `plan_epics.txt` (the epic ids to plan), `PRD.md`, `epics.json`, `board.json` (every card with its column, labels, title and `parent` epic number, closed ones included). Read the code and docs you need so each story is buildable.
+
+For each epic, propose **up to 3** next stories that move its outcome, smallest valuable slice first:
+- Never duplicate a card already on the board (open or recently closed) — read the titles under that epic first.
+- Prefer stories the agents can finish alone: backend, data, docs, tests, research with the repo's tools. A UI story is fine, but it waits for the epic's approved prototype (`ui: true`); if the prototype is not approved, propose the non-UI groundwork first.
+- A story that needs the person (a policy choice, a legal answer, a secret they must write in `.env`) still gets filed: say so in its body.
+- Sequence with "Depends on #N" (existing issues only) or "Waits until YYYY-MM-DD".
+- Each body: **In one line**, user story, design, acceptance criteria in Gherkin, what must not change, docs to update. No amounts if a bot runs live.
+
+Output shape, exactly:
+
+```
+SUMMARY: <one line: epics planned, stories proposed>
+
+# PM planning — <date>
+| Epic | Story | Priority | Why now |
+
+<!-- PM-STORIES
+{"stories": [{"epic": "E2", "title": "…", "priority": "P1", "rule_area": "none", "ui": false,
+  "labels": ["enhancement"], "body": "…markdown…"}]}
 -->
 ```
 

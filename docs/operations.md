@@ -139,7 +139,7 @@ The repo is developed with AI agents and a person approving: the **SME agent** r
 ```bash
 gh auth refresh -s project              # once
 scripts/agents/setup_github.sh          # once: labels, project board, ruleset on main
-scripts/agents/install.sh               # launchd: SME daily at 09:00; deploy + Dev every 15 min
+scripts/agents/install.sh               # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel)
 launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
