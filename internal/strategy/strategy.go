@@ -94,6 +94,8 @@ type Strategy struct {
 	unfilledPasses   int
 	pass             rebalancePass
 	waitEntryNoted   bool      // a due rebalance waiting for a working entry was journaled (#97)
+	imOverSince      time.Time // an im_over_limit episode is open since then (zero: none; imalert.go, #166)
+	refBalance       float64   // margin balance at the last rebalance or confirmed limit change (0: none yet)
 	flattening       bool      // the kill switch is flattening: nothing re-arms the rebalance
 	pub              published // loop-owned state copied for View()
 	// Safety guards (safety.go), decision loop only: this cycle's exchange

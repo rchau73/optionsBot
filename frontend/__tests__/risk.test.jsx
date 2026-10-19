@@ -63,6 +63,22 @@ describe("AccountPanel margin policy", () => {
     expect(markers.map((m) => m.getAttribute("title"))).toEqual(["BTC IM limit 35%", "ETH IM limit 20%", "MM limit 35%"]);
     expect(markers[0]).toHaveStyle({ left: "35%" });
   });
+
+  test("IM over the limit shows a warning beside the Rebalance button (#166)", () => {
+    const over = [
+      { name: "btc", status: { risk: { ...riskStatus({ frozen: false, freeze_reason: "", pending: [] }), im_over_limit: true, im_over_limit_since: "2026-10-18T19:30:00Z" } } },
+      { name: "eth", status: { risk: riskStatus({ frozen: false, freeze_reason: "", pending: [] }) } },
+    ];
+    const rows = riskRows(over);
+    expect(rows[0]).toMatchObject({ imOverLimit: true, imOverLimitSince: "2026-10-18T19:30:00Z" });
+    expect(rows[1]).toMatchObject({ imOverLimit: false, imOverLimitSince: null });
+    render(<AccountPanel account={null} risk={rows} />);
+    const btc = screen.getByText("BTC").closest("tr");
+    expect(within(btc).getByText(/IM over limit since .* — review with a dry run/)).toBeInTheDocument();
+    expect(within(btc).getByRole("button", { name: "Rebalance" })).toBeInTheDocument();
+    const eth = screen.getByText("ETH").closest("tr");
+    expect(within(eth).queryByText(/IM over limit/)).toBeNull();
+  });
 });
 
 describe("margin policy in the activity feed", () => {
@@ -77,6 +93,11 @@ describe("margin policy in the activity feed", () => {
   test("a confirmed limit change names the new limit; an MM breach is bad", () => {
     expect(describeEvent("btc", ev({ change: "limit_changed", limit_im_pct: 20, detail: "x" })).label).toBe("IM limit 20%");
     expect(describeEvent("btc", ev({ change: "mm_breach", detail: "x" })).tone).toBe("bad");
+  });
+
+  test("IM over the limit is a warning; its end is not", () => {
+    expect(describeEvent("btc", ev({ change: "im_over_limit", detail: "x" }))).toMatchObject({ label: "IM over limit", tone: "warn" });
+    expect(describeEvent("btc", ev({ change: "im_over_limit_cleared", detail: "x" })).tone).toBe("neutral");
   });
 
   test("MM-limit closes are labelled and shown in red", () => {
