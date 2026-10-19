@@ -238,18 +238,9 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 			"skipping", skipped, "reason", why, "target_dte", targetDTE)
 	}
 
-	// No order larger than the strike's market can take (liquidity.go).
-	lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
-	if lot <= 0 {
-		lot = s.cfg.MinTradeAmount
-	}
-	qty, err := s.capToLiquidity(call, put, openCall, openPut, qty, lot, targetDTE, entryDelta, complement)
-	if err != nil {
-		return 0, err
-	}
-
 	// Check the premium floor for every leg before submitting any order, so a
-	// cheap put can never leave a lone call behind.
+	// cheap put can never leave a lone call behind — and before the liquidity
+	// cap, which journals a binding cap as an order about to be sent.
 	if openCall {
 		if err := s.checkPremiumFloor(call, s.cfg.EntryPriceFloor); err != nil {
 			return 0, err
@@ -259,6 +250,16 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 		if err := s.checkPremiumFloor(put, s.cfg.EntryPriceFloor); err != nil {
 			return 0, err
 		}
+	}
+
+	// No order larger than the strike's market can take (liquidity.go).
+	lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+	if lot <= 0 {
+		lot = s.cfg.MinTradeAmount
+	}
+	qty, err := s.capToLiquidity(call, put, openCall, openPut, qty, lot, targetDTE, entryDelta, complement)
+	if err != nil {
+		return 0, err
 	}
 
 	ps := &pendingStrangle{

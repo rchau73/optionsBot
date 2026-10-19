@@ -188,6 +188,26 @@ func TestLiquidityCap_TopUpUnderOneLotIsNotRetried(t *testing.T) {
 	}
 }
 
+// Review of #211 (round 2): an entry the premium floor rejects is never sent,
+// so the cap that would have bound it is not journaled — before, a capped
+// entry under the floor wrote a false "capped" line every cycle.
+func TestLiquidityCap_EntryRejectedByPremiumFloorJournalsNoCap(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.exch.imPerLot = 0.001                                         // margin alone: 200 contracts
+	f.withLiquidityCap(map[string]float64{f.call: 164, f.put: 800}) // a cap of 16.4 would bind
+	f.cfg.MinPremiumBTC = 1                                         // every leg is below the floor
+	f.startRun()
+
+	eventually(t, 2*time.Second, "entry rejected", func() bool { return f.skips(strategy.SkipEntryRejected) > 0 })
+	time.Sleep(100 * time.Millisecond) // many cycles
+	if n := len(f.exch.sells()); n != 0 {
+		t.Errorf("an entry under the premium floor sends nothing, got %d sells", n)
+	}
+	if n := f.skips(strategy.SkipLiquidityCap); n != 0 {
+		t.Errorf("no liquidity_cap line for an order never sent, got %d", n)
+	}
+}
+
 // Review of #211: every capped top-up is journaled, not only the first one on
 // its slot — the per-slot skip dedup is reset only by an entry into an empty
 // slot, so a re-armed top-up capped again went unrecorded.
