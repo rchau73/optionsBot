@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -140,7 +139,7 @@ func runReplay(o replayOpts) error {
 	}
 	set.Closes, set.DVOL = readMarketJSON(filepath.Join(o.inputs, "market.json"))
 	if set.Equity <= 0 {
-		set.Equity = readEquity(filepath.Join(o.inputs, "account.json"), cfg.Underlying)
+		set.Equity = replay.ReadEquity(filepath.Join(o.inputs, "account.json"), cfg.Underlying)
 	}
 	if set.Equity <= 0 {
 		set.Equity = 1
@@ -217,53 +216,12 @@ func runReplay(o replayOpts) error {
 	return nil
 }
 
-// readMarketJSON reads the daily closes and DVOL of scripts/stress_inputs.sh
-// (both [[ms, value], …]); a missing file seeds nothing.
+// readMarketJSON reads market.json (replay.ReadMarketJSON); a missing file
+// seeds nothing.
 func readMarketJSON(path string) (closes, dvol []orders.DailyClose) {
-	data, err := os.ReadFile(path)
+	closes, dvol, err := replay.ReadMarketJSON(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "note: %s not read (%v): the SMA trend and IV percentile start from the recording alone\n", path, err)
-		return nil, nil
-	}
-	var mk struct {
-		Dvol   [][2]float64 `json:"dvol"`
-		Closes [][2]float64 `json:"closes"`
-	}
-	if err := json.Unmarshal(data, &mk); err != nil {
-		fmt.Fprintf(os.Stderr, "note: %s unreadable: %v\n", path, err)
-		return nil, nil
-	}
-	day := func(ms float64) time.Time { return time.UnixMilli(int64(ms)).UTC().Truncate(24 * time.Hour) }
-	for _, c := range mk.Closes {
-		closes = append(closes, orders.DailyClose{Date: day(c[0]), Close: c[1]})
-	}
-	for _, d := range mk.Dvol {
-		dvol = append(dvol, orders.DailyClose{Date: day(d[0]), Close: d[1]})
 	}
 	return closes, dvol
-}
-
-// readEquity is the coin's margin balance in account.json (0 if absent).
-func readEquity(path, coin string) float64 {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	var acct struct {
-		Snapshot struct {
-			Assets []struct {
-				Currency      string  `json:"currency"`
-				MarginBalance float64 `json:"margin_balance"`
-			} `json:"assets"`
-		} `json:"snapshot"`
-	}
-	if json.Unmarshal(data, &acct) != nil {
-		return 0
-	}
-	for _, a := range acct.Snapshot.Assets {
-		if strings.EqualFold(a.Currency, coin) {
-			return a.MarginBalance
-		}
-	}
-	return 0
 }

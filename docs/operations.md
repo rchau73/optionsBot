@@ -77,7 +77,19 @@ data/btc/
   data/pnl_history.jsonl     P&L history for the monitor chart
   data/regime_history.jsonl  gamma regime per daily close (margin policy)
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
+data/stress/btc/      stress inputs captured by scripts/stress_inputs.sh (positions, account, market.json)
+data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cmd/evidence, below)
 ```
+
+**Weekly evidence report** (#176, README "Evidence report"). After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
+
+```bash
+MONITOR_URL=http://127.0.0.1:3000 scripts/stress_inputs.sh btc ~/dev/go/optionsBot-env/stable/data/stress/btc   # and eth
+go run ./cmd/evidence -env stable                     # the last complete week, both bots
+go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mvp records no books: replay on stable's
+```
+
+It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Not scheduled yet (a follow-up adds it to `install.sh` once the report is reviewed).
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
