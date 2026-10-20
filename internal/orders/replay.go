@@ -42,6 +42,7 @@ type Trade struct {
 	Premium float64 `json:"premium"`
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
+	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
 	PnLUSD   float64 `json:"pnl_usd,omitempty"`
 	ROIPct   float64 `json:"roi_pct,omitempty"`
 	HoldDays int     `json:"hold_days,omitempty"`
@@ -75,7 +76,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		if t.Reason == "" {
 			t.Reason = rec.TriggerReason
 		}
-		t.PnL, t.PnLUSD, t.ROIPct, t.HoldDays = rec.PnL, rec.PnLUSD, rec.ROIPct, rec.HoldDays
+		t.PnL, t.Fees, t.PnLUSD, t.ROIPct, t.HoldDays = rec.PnL, rec.Fees, rec.PnLUSD, rec.ROIPct, rec.HoldDays
 	default:
 		return Trade{}, false
 	}

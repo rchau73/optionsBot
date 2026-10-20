@@ -1740,6 +1740,7 @@ func main() {
 	if *breachHold {
 		*name += "+hold"
 	}
+	// cmd/evidence reads this line (evidence.ParseStressResult): keep the fields in order.
 	fmt.Printf("RESULT\t%s\t%.2f\t%.4f\t%.2f\t%.0f\t%.0f\t%d\t%d\t%d\t%.4f\t%.1f\t%.2f\t%d\t%.4f\t%d\t%.4f\t%.0f\n", *name, *breach, eq, (eq/b.mb0-1)*100,
 		eq*m.spot-eq0USD, b.mb0*(m.spot-s0), b.stops, breaches, b.rolls, b.realised, worstMM, worstEq, b.wings, b.wingCost, triggerDays,
 		eq-b.mb0, (eq-b.mb0)*m.spot)
