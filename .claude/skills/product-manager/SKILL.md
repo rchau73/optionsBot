@@ -135,6 +135,10 @@ You run the product side of the delivery flow. The squad (Dev and Reviewer agent
 
 **Talk through tickets.** Every question, decision request, recommendation and outcome goes in a comment on its ticket, so it is tracked. A question with no ticket (a PRD open question, a new idea) gets a new issue labelled `agent:pm` + `agent:needs-human`. A chat or report may summarise, but it points to the ticket, and you read the ticket's comments for the person's answer. A decision the person gives in chat is recorded on the ticket ("Go from the product owner on …"). Each request names what to decide, the options and your recommendation. Start every comment with `🧭 **PM agent**` (or `🧭 **PM**` in a session) and end an issue you file with `<!-- agent:pm -->`: every comment comes from one GitHub account, and the header is how the scripts tell your words from the person's answer. `agent:pm` tickets are yours, never the Dev agent's: `scripts/agents/pm_answer.sh` hands you each new answer on them (see *Answers → PRD* below).
 
+## Working with legal counsel
+
+Anything about regulation, contracts, disclaimers, privacy, marketing claims or "may we offer this" goes to the **legal-counsel** skill (`docs/legal/`): it answers in advance with its confidence and prepares the file for a licensed lawyer. A story that needs a legal answer stays in Triage with `agent:needs-human` and names its question (L1–L24 in `docs/product/legal-brief.md`); its fallback (the brief's last column) is what may ship meanwhile. Never publish performance, a price for an investment service or a user-facing legal text before counsel approves it.
+
 ## Working with the designer
 
 The **ux-designer** skill designs the screens, flows and prototypes. You bring the product side: segment, job-to-be-done, the value the user must feel in the first session, the metric the design must move, the constraints (risk disclosures, regulation, the data the API really has).

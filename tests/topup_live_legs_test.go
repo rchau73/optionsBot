@@ -43,7 +43,7 @@ func (f *strategyFixture) closePutByHandThenNeutral(t *testing.T, instrument str
 		if !ok {
 			return false
 		}
-		res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, "test")
+		res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, testActor)
 		if err == nil && len(res) == 1 && strings.Contains(res[0].Error, "not in the book") {
 			return false
 		}

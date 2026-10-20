@@ -24,6 +24,8 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Configuration](#configuration)
 - [Backtesting](#backtesting)
 - [Stress test](#stress-test)
+- [Idle-margin attribution](#idle-margin-attribution)
+- [Evidence report](#evidence-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -251,6 +253,43 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 
 **Limits — read before trusting a number.** One decision per recorded hour (live: every 40 s): the confirmation counts that are "2 snapshots" live (≈2 minutes) take 2 hours here, a stop's 5-minute spread wait ends at the next hour, and the bias's 60-minute median-flip window is widened to two snapshot intervals (else it would never hold two flips). Spot is the nearest expiry's future (the index is not recorded). Margin is MODEL (worst loss over spot ±16 % × IV −20/+30 %, MM = 80 % of IM), not Deribit's simulator; fills are assumed at the floor whenever that side of the book is quoted — mainnet prices, while the bots fill on testnet. Not modelled: the rebalance top-ups, leg balancing, the churn breaker, stop/shed records restored from the journal, and the bias's restart warm-up. So the replay compares rule sets on the same real books; it does not reproduce the journal to the satoshi. The gap to the journal (`-journal`) is printed on every run and should be recorded with any verdict drawn from it.
 
+## Idle-margin attribution
+
+`cmd/idlemargin` (#218, epic E1) says **why** a bot used less than its approved margin. `utilisation_7d`/`utilisation_30d` (`history.Utilisation`, #174) give the number; this splits it into causes, from the bot's own files only (no Deribit call, nothing written):
+
+```bash
+go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -config config_btc.yaml -days 7
+go run ./cmd/idlemargin -journal data/eth/orders.log -history data/eth/pnl_history.jsonl -from 2026-10-12 -to 2026-10-19
+```
+
+- **Per slot** (`internal/idlemargin`, pure `Attribute`): hours and share of measured time `occupied` (an open strangle, even one-legged, or a working entry order), `occupied_liquidity_cap` (occupied after a `liquidity_cap` skip: its entry or a top-up was cut), `frozen` (vacant while `entries_allowed` was false, whatever the skip), vacant by the last skip reason journaled since the slot became vacant (`no_free_expiry`, `margin_limit`, `gex_wait`, … — an unknown reason is its own row), `no_skip_logged` (vacant, no skip yet), and `not_measured` (the bot down or no margin data: the time `history.Utilisation` does not count, a point standing for at most `MaxSampleGap` 15 min). The total column sums slot-hours. `-config` reports that config's slots only; without it, every slot the journal names.
+- **Per bot**: the utilisation `history.Utilisation` gives for the same window (the same number as `/api/status`), and the allowed time by book state — `slot_empty` (some slot vacant), `rebalance_waiting` (every slot occupied, a short top-up waiting for its `rebalance_retry`), `sized_small_liquidity_cap` (every slot occupied, one capped), `all_full` — each with its hours, mean IM ÷ limit and its share of the unused margin (Σ (1 − IM ÷ limit) × time). The states' means, weighted by hours, give back the utilisation.
+
+Output holds hours, shares and percentages of the IM limit only — no amounts. Approximations: occupation follows the journal (opens, closes, startup `reconciled` lines; a leg held to settlement ends at 08:00 UTC of its expiry; a working entry order the journal never settled counts for at most 15 min); `occupied_liquidity_cap` cannot tell an order sent at the cap from a later uncapped one after a blocking `liquidity_cap` skip.
+
+## Evidence report
+
+`cmd/evidence` (#176, epic E2) writes the weekly evidence a sceptical investor asks for — does the bot earn its risk? — per bot of an environment, to `data/evidence/<week>/<bot>.md` and `.json` in that environment's clone (amounts stay in `data/`, gitignored). It reads the environment's files only: no Deribit call, no order.
+
+```bash
+scripts/stress_inputs.sh btc data/stress/btc                    # the week-end book for the stress section (monitor up)
+go run ./cmd/evidence -env stable -week 2026-W42                # both bots of stable, ISO week (Monday–Sunday UTC)
+go run ./cmd/evidence -env mvp -from 2026-10-12 -to 2026-10-18 -books-root ~/dev/go/optionsBot-env/stable
+go run ./cmd/evidence -env stable -bot eth -stress-cmd none     # no week: the last complete one; no stress section
+```
+
+Sections, each naming its source:
+
+- **Missing inputs** — the UTC days of the week without a P&L history point, a recorded book or a minute GEX record. The figures use the other days; nothing is filled in.
+- **Live** — the journal's opens and closes in the week: realised P&L net of fees, the fees (opening share + closing fee, as `buyToClose` books them), closes by reason; the P&L history's `internal/perf` figures (net, % of equity, max drawdown, worst 7 days) and the unrealised P&L at the week's end.
+- **Replay** — the bot's rules (`internal/replay`, the environment's config: `BOT_CONFIG_<BOT>` of its `deploy.env`, else `config_<bot>.yaml`) on the recorded mainnet books of the week, starting from the journal's book at Monday 00:00, deciding on minute GEX records where they exist; 7 days of earlier recording warm it up. Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`. Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
+- **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
+- **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips). The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
+- **Benchmark** — holding the coin over the week (spot at the first and last history point), the strategy's USD return and its excess over holding.
+- **Margin utilisation** — `history.Utilisation` over the week (the figure of `/api/status`).
+
+A weekly schedule is not installed yet: `install.sh` will run it on Mondays once the report has been reviewed.
+
 ## Testing and CI
 
 ```bash
@@ -274,9 +313,13 @@ Regression tests for critical fixes were mutation-checked: they fail when the fi
 cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
 cmd/stress/           stress test of the live book through scripted shocks, and -replay of recorded books (see Stress test)
+cmd/idlemargin/       why approved margin went unused, per slot and book state (see Idle-margin attribution)
+cmd/evidence/         the weekly evidence report: live, replay, gap, stress, hold (see Evidence report)
+internal/evidence/    builds that report (pure Build) and reads its inputs
 scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/recorder/    hourly mainnet book recording (data/market/) and its reader
 internal/replay/      the bot's rules over recorded books (cmd/stress -replay)
+internal/perf/        pure performance summary of the P&L history: net return (coin, USD), hold-the-coin benchmark, max drawdown, worst 7 days, missing days
 internal/config/      config.yaml + .env loading and validation
 internal/gateway/     Deribit WebSocket client (queue, limits, breaker, retry, reconnect)
 internal/marketdata/  option chain, subscriptions, DVOL / IV percentile, expiry window

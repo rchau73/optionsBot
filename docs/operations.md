@@ -77,7 +77,19 @@ data/btc/
   data/pnl_history.jsonl     P&L history for the monitor chart
   data/regime_history.jsonl  gamma regime per daily close (margin policy)
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
+data/stress/btc/      stress inputs captured by scripts/stress_inputs.sh (positions, account, market.json)
+data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cmd/evidence, below)
 ```
+
+**Weekly evidence report** (#176, README "Evidence report"). After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
+
+```bash
+MONITOR_URL=http://127.0.0.1:3000 scripts/stress_inputs.sh btc ~/dev/go/optionsBot-env/stable/data/stress/btc   # and eth
+go run ./cmd/evidence -env stable                     # the last complete week, both bots
+go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mvp records no books: replay on stable's
+```
+
+It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Not scheduled yet (a follow-up adds it to `install.sh` once the report is reviewed).
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
@@ -113,6 +125,8 @@ MONITOR_API_TOKEN=<openssl rand -hex 32>    # read-only token for the deploy hea
 ```
 
 Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it). **Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`). Five failed sign-ins lock a username for 15 minutes; restarting the monitor clears the lock. Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
+
+**Roles and audit (#171).** Only a `manager` or an `admin` may close a leg or rebalance (dry run included); a `user` only watches — the monitor answers 403 and the bot receives nothing. The monitor re-reads the person from `auth.db` on each of those requests, so a role change, a deletion or a sign-out everywhere takes effect at once (each of them also ends every session of that user). Each close and rebalance reaches the bot with `"actor": {"user", "role"}` (with `BOT_ADMIN_TOKEN` only): the bot's `manual close` / `manual rebalance requested` log lines carry `by`, its journal's `closed` line (`manual_close`) and `risk_limit` `rebalance_manual` line carry `actor` and say "by bob (manager)" in `detail`. A request without an actor (e.g. the `curl` below) is recorded as `monitor`. Who did what on the monitor itself — sign-ins, failed sign-ins, lockouts, user changes, close and rebalance requests — is in the `monitor-auth` volume's `audit.jsonl` (`docker compose exec monitor tail data/monitor/audit.jsonl`), one JSON line each; never a password or token.
 
 ## Watch the logs
 

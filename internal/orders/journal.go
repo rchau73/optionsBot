@@ -61,6 +61,7 @@ type RiskRecord struct {
 	StrategyID   string    `json:"strategy_id"`
 	Change       string    `json:"change"`
 	Detail       string    `json:"detail"`
+	Actor        *Actor    `json:"actor,omitempty"` // rebalance_manual: who asked
 	LimitIMPct   float64   `json:"limit_im_pct"`
 	BandLimitPct float64   `json:"band_limit_pct"`
 	MaxMMPct     float64   `json:"max_mm_pct"`
@@ -151,9 +152,26 @@ type EventContext struct {
 	// Detail says why, with the numbers (e.g. "stop-loss: loss 2.3× the
 	// premium ≥ 2×"); journaled as "detail".
 	Detail    string
+	Actor     *Actor // the person behind a manual action; journaled as "actor"
 	Slot      *SlotRef
 	Market    MarketSnapshot
 	Portfolio MarketContext
+}
+
+// Actor is the person behind a manual action (close, rebalance), as the
+// monitor signed them in (#171). Role is the monitor's: admin, manager or
+// user; empty when the request named nobody (User is then "monitor").
+type Actor struct {
+	User string `json:"user"`
+	Role string `json:"role,omitempty"`
+}
+
+// String is "bob (manager)", or the user alone without a role.
+func (a Actor) String() string {
+	if a.Role == "" {
+		return a.User
+	}
+	return a.User + " (" + a.Role + ")"
 }
 
 // PendingOrderRecord describes an order at submission, amendment or cancel.
@@ -185,6 +203,7 @@ type OrderLog struct {
 	TriggerReason string    `json:"trigger_reason,omitempty"`
 	SkipReason    string    `json:"skip_reason,omitempty"`
 	Detail        string    `json:"detail,omitempty"` // why, with the numbers
+	Actor         *Actor    `json:"actor,omitempty"`  // the person behind a manual action
 	Qty           float64   `json:"qty,omitempty"`
 	// Fill realism of a limit sell (#86): an open records its fill (qty)
 	// against the order's target_qty, fill_pct = qty ÷ target_qty × 100; a

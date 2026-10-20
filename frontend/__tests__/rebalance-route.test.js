@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import { POST } from "@/app/api/bots/[bot]/rebalance/route";
-import { sessionCookie, useTestAuth } from "@/test/auth";
+import { signedIn, useTestAuth } from "@/test/auth";
 
 let cookie;
 const post = (bot, body, headers = {}) =>
@@ -21,7 +21,7 @@ describe("rebalance proxy", () => {
     process.env.BOT_APIS = "eth=http://bot-eth:8082";
     process.env.BOT_ADMIN_TOKEN = "s3cret";
     useTestAuth();
-    cookie = await sessionCookie();
+    cookie = (await signedIn()).cookie;
   });
 
   test("refuses without a signed-in session, before reaching the bot", async () => {
@@ -41,7 +41,11 @@ describe("rebalance proxy", () => {
     expect(res.status).toBe(200);
     expect(global.fetch).toHaveBeenCalledWith(
       "http://bot-eth:8082/api/rebalance?dry_run=true",
-      expect.objectContaining({ method: "POST", headers: { Authorization: "Bearer s3cret" } }),
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer s3cret" },
+        body: JSON.stringify({ actor: { user: "admin", role: "admin" } }),
+      }),
     );
   });
 
