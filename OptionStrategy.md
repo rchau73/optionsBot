@@ -90,7 +90,15 @@ The rules are checked in this order. The first one that applies wins.
 | — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one and a half normal days' move (1.5σ) below the gamma flip, on two snapshots in a row | closes the threatened side at market; it is sold again only once the price is back above the flip it was shed at (plus 1.5σ), or dealer gamma has been non-negative for a day |
 | — | **Kill switch** | operator signal | cancels everything, buys back everything at market, then stops trading |
 
-Rolls and take-profits buy back with a price cap: pay at most the current ask, and whatever doesn't fill immediately is cancelled and retried next cycle. Stop-losses do not wait for a good price.
+How each exit buys back (#239):
+
+| Exit | First | Then |
+|---|---|---|
+| Stop-loss, MM cut, kill switch | market | — |
+| Delta exit, GEX shed, leg balancing, rebalance downsize | as today: delta exit and balancing an immediate-or-cancel limit at the ask, the others at market | retried next cycle |
+| **Take-profit, delta drift, time roll** | a buy limit **resting at the mid** (rounded down a tick) for one fill window (90 s, the entries' window) | whatever is left: an immediate-or-cancel limit at the ask of that moment, retried next cycle |
+
+The three non-urgent exits are not a race, so they first try to save about half the spread. Without a two-sided quote (no bid) or with no tick of room under the ask, they cross at the ask at once. While the order rests, the leg keeps every other exit: a stop-loss, a delta exit, the MM cut, a GEX shed, a manual close or the kill switch cancels the resting order, books what it filled, and runs at once on what is left. If the rule no longer applies when the window ends (the price came back), nothing is bought at the ask. The journal marks the close's `exit_step` (`mid` or `ask`) and its detail gives the price and the bid / mid / ask at the trigger. Stop-losses do not wait for a good price.
 
 ## 5. Worked examples: wins
 
@@ -188,7 +196,7 @@ Every rule that opens, closes or holds a position, by market state. **This table
 | **IM over the limit with no limit change** (a transfer out, a price move: IM > limit + 1.5 pp) | 🔔 alert only, no trade: journaled once `im_over_limit` (IM, limit, margin balance now and at the last rebalance) and shown in the monitor beside the Rebalance button until IM is back at or under the limit (`im_over_limit_cleared`). A person decides with the Rebalance dry run; entries and top-ups have no headroom meanwhile | same alert | same alert | same alert | same alert; the MM cut acts at once as always |
 | **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |
 | **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Rolls** (take-profit, delta drift, DTE) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Rolls** (take-profit, delta drift, DTE) | ✅ · rest at the mid for 90 s, then the rest at the ask; any urgent exit cancels the resting order first | ✅ | ✅ | ✅ | ✅ |
 | **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |
 | **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`) | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
