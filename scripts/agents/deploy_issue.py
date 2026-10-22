@@ -11,7 +11,7 @@ first line, the rollback outcome on its second. tail: the log of the failed
 step (the last TAIL_LINES lines are kept). range: git log --oneline of the
 commits deployed. env: dotenv files whose secret values are redacted from the
 log (the variable names the pre-commit hook guards: *SECRET*, *TOKEN*,
-*CLIENT_ID*, *KEY*, *PASSWORD*); the values themselves never leave this
+*CLIENT_ID*, *KEY*, *PASSWORD*, *SALT*); the values themselves never leave this
 process.
 
 Standard library only.
@@ -22,7 +22,7 @@ import sys
 
 TAIL_LINES = 80
 MAX_LINE = 400  # characters kept per log line: a GitHub body holds 65,536
-SECRET_NAME = re.compile(r"^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD)[A-Z0-9_]*$")
+SECRET_NAME = re.compile(r"^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD|SALT)[A-Z0-9_]*$")
 MIN_SECRET_LEN = 6  # as the pre-commit hook: shorter values are not secrets (and would redact noise)
 BEARER = re.compile(r"(Bearer\s+)[A-Za-z0-9._~+/=-]+")
 
