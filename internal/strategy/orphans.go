@@ -183,6 +183,9 @@ func (s *Strategy) checkPositions(ctx context.Context) {
 			delete(s.drift, name)
 			continue
 		}
+		if have < want && s.restingOn(name) {
+			continue // a resting close is filling: booked at its next poll (restingclose.go)
+		}
 		s.drift[name]++
 		if s.drift[name] < driftConfirmations && !s.forceCheck[name] {
 			continue

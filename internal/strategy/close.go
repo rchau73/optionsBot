@@ -18,17 +18,47 @@ import (
 //
 // limitPrice 0 sends a market order. A positive limitPrice sends an
 // immediate-or-cancel limit, which caps the price paid but still gives a final
-// answer at once, so there is never a resting close order to track.
+// answer at once. The only resting close is a non-urgent exit's limit at the
+// mid (restingclose.go): any close sent here for the same leg cancels it first
+// and books what it filled, so the urgent exit runs at once on what is left.
 //
 // detail is the why, with the numbers; it is journaled with the close.
 func (s *Strategy) buyToClose(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, detail string) (float64, error) {
-	return s.buyToCloseBy(ctx, pos, qty, reason, limitPrice, detail, nil)
+	return s.buyToCloseNote(ctx, pos, qty, reason, limitPrice, closeNote{detail: detail})
 }
 
 // buyToCloseBy is buyToClose for a person's action: actor (non-nil) is
 // journaled with the close as "actor" (#171).
 func (s *Strategy) buyToCloseBy(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, detail string, actor *orders.Actor) (float64, error) {
+	return s.buyToCloseNote(ctx, pos, qty, reason, limitPrice, closeNote{detail: detail, actor: actor})
+}
+
+// closeNote is what the journal records with a close besides the fill: the
+// why (detail), the person behind it (actor) and a non-urgent exit's step.
+type closeNote struct {
+	detail string
+	actor  *orders.Actor
+	step   string // "mid" | "ask" for take-profit, delta drift and the DTE roll (#239)
+}
+
+func (s *Strategy) buyToCloseNote(ctx context.Context, pos *orders.Position, qty float64, reason string, limitPrice float64, note closeNote) (float64, error) {
+	if rc := s.restingCloses[pos.ID]; rc != nil {
+		// A non-urgent exit is resting at the mid: stop it and book its fill
+		// before this close, or both could fill and leave the account long.
+		booked, ok := s.endRestingClose(ctx, rc, true, "pre-empted by "+reason)
+		if !ok {
+			return 0, fmt.Errorf("buy to close %s: the resting close could not be stopped; resolved next cycle", pos.Instrument)
+		}
+		cur, still := s.state.GetPosition(pos.ID)
+		if !still {
+			return 0, nil // the resting close filled it all
+		}
+		pos, qty = cur, qty-booked
+	}
 	qty = math.Min(qty, pos.Qty)
+	if qty <= qtyEpsilon {
+		return 0, nil
+	}
 	if s.instrumentUnconfirmed(pos.Instrument) {
 		// An earlier order may have closed it already: sending another could
 		// leave the account long. Resolved next cycle (cancel by label, then
@@ -63,13 +93,24 @@ func (s *Strategy) buyToCloseBy(ctx context.Context, pos *orders.Position, qty f
 		}
 		return 0, fmt.Errorf("buy to close %s: %w", pos.Instrument, err)
 	}
+	return s.bookClose(pos, fill, reason, order.OrderType, note, slot, true), nil
+}
+
+// bookClose books a buy-back fill on pos: the journal's close line with the
+// part's share of the premium and fees, the slot's realised P&L, and the book
+// (the position removed, or its remainder kept tracked). churn false skips the
+// churn breaker's count (a later piece of a close already counted once).
+// It returns the quantity booked.
+func (s *Strategy) bookClose(pos *orders.Position, fill orders.Fill, reason, orderType string, note closeNote, slot *orders.SlotRef, churn bool) float64 {
 	filled := math.Min(fill.Qty, pos.Qty)
 	if filled <= qtyEpsilon {
-		return 0, nil
+		return 0
 	}
 	s.spendExchangeShort(pos.Instrument, filled)
 	s.boughtBack[pos.Instrument] = true
-	s.noteChurn(slot, true, time.Now())
+	if churn {
+		s.noteChurn(slot, true, time.Now())
+	}
 
 	// Journal the part that closed, with its share of the premium, so the
 	// logged P&L matches what was realised.
@@ -78,22 +119,23 @@ func (s *Strategy) buyToCloseBy(ctx context.Context, pos *orders.Position, qty f
 	closed.PremiumReceived = pos.PremiumReceived * filled / pos.Qty
 	closed.Fees = pos.Fees * filled / pos.Qty // its share of the opening fees
 	jctx := s.instrumentContext(pos.Instrument, slot)
-	jctx.Detail = detail
-	jctx.Actor = actor
-	s.journal.LogClose(&closed, fill, reason, order.OrderType, jctx)
+	jctx.Detail = note.detail
+	jctx.Actor = note.actor
+	jctx.ExitStep = note.step
+	s.journal.LogClose(&closed, fill, reason, orderType, jctx)
 	s.pnl.record(slot, orders.ClosedNetPnL(&closed, fill))
 
 	remaining := pos.Qty - filled
 	if remaining <= qtyEpsilon {
 		s.state.RemovePosition(pos.ID)
 		s.state.RemoveStrangleContaining(pos.ID)
-		return filled, nil
+		return filled
 	}
 	slog.Warn("partial close: remainder stays open and tracked",
 		"instrument", pos.Instrument, "reason", reason,
 		"filled_qty", filled, "remaining_qty", remaining)
 	s.state.UpdatePositionQty(pos.ID, remaining, pos.PremiumReceived*remaining/pos.Qty)
-	return filled, nil
+	return filled
 }
 
 // handleRollout executes one rollout decision. Rollouts only close: the
@@ -143,11 +185,19 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 				"instrument", pos.Instrument, "reason", d.Reason)
 			return
 		}
+		note := closeNote{detail: d.Detail}
 		if d.Action == ActionDeltaExit {
 			// Held like a stop-loss: repair re-sells it only once calm.
 			s.noteStopped(pos, time.Now())
+		} else {
+			// Not urgent (take-profit, drift, the DTE roll): rest at the mid
+			// for one fill window first, then cross at the ask (#239).
+			if s.restingCloses[pos.ID] != nil || s.startRestingClose(ctx, pos, d, inst) {
+				return
+			}
+			note = s.askStepNote(pos.ID, d.Detail, inst)
 		}
-		filled, err := s.buyToClose(ctx, pos, pos.Qty, d.Reason, inst.Ask, d.Detail)
+		filled, err := s.buyToCloseNote(ctx, pos, pos.Qty, d.Reason, inst.Ask, note)
 		if err != nil {
 			slog.Warn("rollout close failed", "err", err, "instrument", pos.Instrument)
 			return
