@@ -74,17 +74,25 @@ export async function fetchMonitorConfig(signal) {
   return { names: bots.map((b) => b.name), pollMs: pollMs ?? 1000 };
 }
 
-/** Status, positions, pending orders and account summary of one bot, fetched together. */
+/**
+ * Status, positions, pending orders, account and investor summary of one bot,
+ * fetched together. A failed summary is kept apart (summaryError) so the rest
+ * of the bot still shows; the investor view then says it is unavailable.
+ */
 export async function fetchBotState(name, signal) {
   const base = `/api/bots/${encodeURIComponent(name)}`;
-  const [status, positions, orders, account] = await Promise.all([
+  const [status, positions, orders, account, summary] = await Promise.all([
     getJSON(`${base}/status`, signal),
     getJSON(`${base}/positions`, signal),
     getJSON(`${base}/orders`, signal),
     // Older bots have no /account: treat as "no account data", not an outage.
     getJSON(`${base}/account`, signal).catch(() => null),
+    getJSON(`${base}/summary`, signal).then(
+      (data) => ({ data, error: null }),
+      (e) => ({ data: null, error: e.message }),
+    ),
   ]);
-  return { status, positions, orders, account };
+  return { status, positions, orders, account, summary: summary.data, summaryError: summary.error };
 }
 
 /** Journal events after `since` (sequence number), oldest first. */

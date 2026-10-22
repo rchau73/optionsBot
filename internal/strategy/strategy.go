@@ -82,6 +82,11 @@ type Strategy struct {
 	unconfirmed map[string]unconfirmedOrder
 	drift       map[string]int
 	forceCheck  map[string]bool
+	// Non-urgent exits resting at the mid, by position, and the positions
+	// whose mid rest ran out, so their exit crosses at the ask (restingclose.go;
+	// decision loop only).
+	restingCloses map[string]*restingClose
+	askStep       map[string]exitQuote
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes), the IM limit the book was last resized to (NaN: never) and,
 	// after a complement fell short, the earliest time to rebalance again,
@@ -160,6 +165,8 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		unconfirmed:      make(map[string]unconfirmedOrder),
 		drift:            make(map[string]int),
 		forceCheck:       make(map[string]bool),
+		restingCloses:    make(map[string]*restingClose),
+		askStep:          make(map[string]exitQuote),
 		boughtBack:       make(map[string]bool),
 		churn:            make(map[slotKey]*churnLog),
 		churnUntil:       make(map[slotKey]time.Time),
@@ -202,6 +209,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			s.settleRestingCloses(ctx)
 			return ctx.Err()
 		case <-s.killSwitchCh:
 			return s.killSwitch(ctx)
@@ -259,6 +267,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 
 	// Order lifecycle first: fills here change what the rules below see.
 	s.checkPendingOrders(ctx)
+	s.checkRestingCloses(ctx)
 	// Then make sure the book is the exchange's: cancel orders whose submit
 	// outcome is unknown, and adopt any position the book does not match.
 	s.resolveUnconfirmed(ctx)
@@ -273,6 +282,9 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	deferred := map[string]bool{}
 	for _, pos := range s.state.AllPositions() {
 		decision := s.evaluateLeg(pos)
+		if !RestsAtMid(decision.Action) {
+			delete(s.askStep, pos.ID) // the next non-urgent exit rests at the mid again
+		}
 		if decision.Action == ActionStopLoss && s.deferStop(pos, time.Now()) {
 			deferred[pos.ID] = true
 			continue

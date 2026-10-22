@@ -57,6 +57,13 @@ describe("read-only proxy", () => {
     expect(res.status).toBe(200);
   });
 
+  test("forwards the investor summary endpoint", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"holding":{}}', { status: 200 }));
+    const res = await call("btc", ["summary"]);
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/summary", expect.anything());
+    expect(res.status).toBe(200);
+  });
+
   test("refuses unknown bots and endpoints", async () => {
     global.fetch = jest.fn();
     expect((await call("eth", ["status"])).status).toBe(404);

@@ -36,11 +36,15 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 	kctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), killSwitchTimeout)
 	defer cancel()
 
-	if err := s.exch.CancelAllOrders(kctx, s.cfg.Underlying); err != nil {
-		slog.Error("kill switch: cancel all orders failed", "err", err)
+	cancelErr := s.exch.CancelAllOrders(kctx, s.cfg.Underlying)
+	if cancelErr != nil {
+		slog.Error("kill switch: cancel all orders failed", "err", cancelErr)
 	} else {
 		clear(s.unconfirmed) // every order is cancelled: nothing unknown can still fill
 	}
+	// A take-profit or roll resting at the mid: book what it filled (cancel
+	// it one by one if the cancel-all failed).
+	s.endAllRestingCloses(kctx, cancelErr != nil, "kill switch")
 	for _, ps := range s.pendingSnapshot() {
 		for _, leg := range ps.legs() {
 			s.settleLeg(kctx, ps, leg, orders.TriggerKillSwitch, "kill switch")

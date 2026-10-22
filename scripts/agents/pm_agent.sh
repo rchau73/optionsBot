@@ -139,13 +139,14 @@ rule areas and prototype approval), pending.json (the cards to decide: 'triage' 
 pending_issues.json (their bodies and last comments) and board.json (every card with its column and priority).
 You may also read CLAUDE.md, AGENTIC.md, OptionStrategy.md and docs/.
 Print only the report in the exact output shape the skill defines, ending with the PM-JSON block."
+started="$(date +%s)"
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
   --strict-mcp-config --no-session-persistence \
   --output-format text < /dev/null > "$run/report.md"; then
-  note_limit "$run/report.md" || true
+  note_stop 1 $(( $(date +%s) - started )) "$run/report.md" || true
   log "pm: claude failed"; notify "PM agent FAILED" "see $run/run.log"; return 1
 fi
 py 'import json,re,sys
@@ -263,6 +264,7 @@ Inputs are in $run/: PRD.md (the approved PRD), epics.json (epics with issue num
 and board.json (every card with its column, priority, labels and parent epic). You may read CLAUDE.md, AGENTIC.md,
 OptionStrategy.md, README.md, docs/, frontend/ and the code to write buildable stories.
 Print only the report in the exact output shape the skill defines, ending with the PM-STORIES block."
+  started="$(date +%s)"
   if claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
       --allowedTools "Read" "Grep" "Glob" "Skill" \
       --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
@@ -298,7 +300,7 @@ print("\t".join([s["epic"], s["title"], s["priority"], s["status"], ",".join(s["
     state_set 'pl = s.setdefault("planned", {})
 for e in sys.argv[2].split(): pl[e] = sys.argv[3]' "$due" "$now"
   else
-    note_limit "$run/plan.md" || true
+    note_stop 1 $(( $(date +%s) - started )) "$run/plan.md" || true
     log "pm: planning failed (see $run/plan.md)"
   fi
 fi

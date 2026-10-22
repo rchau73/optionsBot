@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tick.sh — run every 6 minutes by launchd. Deploys what a person merged, runs
-# the PR gate (only ready PRs reach a person: pr_gate.sh), then
-# starts the agents in the background and returns, so a long implementation
+# the PR gate (only ready PRs reach a person: pr_gate.sh), re-queues the cards
+# a usage limit blocked (requeue.sh), then starts the agents in the background and returns, so a long implementation
 # never delays the next tick:
 #   - REVIEW_PARALLEL (3) Reviewer agents, PM_ANSWER_PARALLEL (2) PM answers and
 #     DEV_PARALLEL (3) Dev agents, each claiming its own card (lib.sh claim), so
@@ -33,6 +33,9 @@ start() { # script, instances
     i=$((i + 1))
   done
 }
+# Cards a usage limit wrongly blocked go back to Ready before the Dev agents
+# pick (#237; nothing moves inside a limit pause).
+bash "$dir/requeue.sh" >> "$logs/tick-requeue.log" 2>&1 || echo "requeue step failed (exit $?)"
 start review_agent.sh "${REVIEW_PARALLEL:-3}"
 start pm_answer.sh "${PM_ANSWER_PARALLEL:-2}"
 start pm_agent.sh 1

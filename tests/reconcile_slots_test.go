@@ -56,7 +56,7 @@ func TestGroupPositions_SlotsFollowTheOpeningSlot(t *testing.T) {
 		openTrade("ETH-27NOV26-2950-C", s50, at), openTrade("ETH-27NOV26-2000-P", s50, at),
 	})
 	ps := ethBook()
-	got := strategy.GroupPositions(ps, ethNow, ethSlots, opened)
+	got := strategy.GroupPositions(ps, ethNow, ethSlots, maxDev, opened)
 	everyPositionOnce(t, ps, got)
 	if g := slotOfExpiry(t, got, nov6); g.Slot.TargetDTE != 30 || !g.SlotFromJournal {
 		t.Errorf("6NOV in slot %d (from journal %v), want 30 from the journal", g.Slot.TargetDTE, g.SlotFromJournal)
@@ -75,7 +75,7 @@ func TestGroupPositions_JournalSlotWinsOverDistance(t *testing.T) {
 		openTrade("ETH-6NOV26-2800-C", s50, at), openTrade("ETH-6NOV26-2100-P", s50, at),
 		openTrade("ETH-27NOV26-2950-C", s30, at), openTrade("ETH-27NOV26-2000-P", s30, at),
 	})
-	got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, opened)
+	got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, maxDev, opened)
 	if g := slotOfExpiry(t, got, nov6); g.Slot.TargetDTE != 50 {
 		t.Errorf("6NOV in slot %d, want 50 (journal)", g.Slot.TargetDTE)
 	}
@@ -89,7 +89,7 @@ func TestGroupPositions_JournalSlotWinsOverDistance(t *testing.T) {
 // away to slot 50 (total 41 instead of 21).
 func TestGroupPositions_NoJournalLowestTotalDistance(t *testing.T) {
 	for name, opened := range map[string]strategy.OpenSlots{"nil": nil, "empty": {}} {
-		got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, opened)
+		got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, maxDev, opened)
 		if g := slotOfExpiry(t, got, nov6); g.Slot.TargetDTE != 30 || g.SlotFromJournal {
 			t.Errorf("%s: 19-DTE strangle in slot %d (from journal %v), want 30 by distance", name, g.Slot.TargetDTE, g.SlotFromJournal)
 		}
@@ -104,7 +104,7 @@ func TestGroupPositions_JournalSlotNotConfiguredIgnored(t *testing.T) {
 	old := orders.SlotRef{DTE: 45, Delta: 0.16}
 	at := ethNow.Add(-24 * time.Hour)
 	opened := strategy.OpenSlotsFromTrades([]orders.Trade{openTrade("ETH-6NOV26-2800-C", old, at), openTrade("ETH-27NOV26-2950-C", old, at)})
-	got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, opened)
+	got := strategy.GroupPositions(ethBook(), ethNow, ethSlots, maxDev, opened)
 	if g := slotOfExpiry(t, got, nov6); g.Slot.TargetDTE != 30 || g.SlotFromJournal {
 		t.Errorf("6NOV in slot %d (from journal %v), want 30 by distance", g.Slot.TargetDTE, g.SlotFromJournal)
 	}
@@ -149,7 +149,7 @@ func TestGroupPositions_OffsettingUnevenPairsAreSplit(t *testing.T) {
 		pos("BTC-27NOV26-72000-P", "put", 72000, nov27, 1.8, -0.15),
 		pos("BTC-27NOV26-73000-P", "put", 73000, nov27, 0.5, -0.17),
 	}
-	got := strategy.GroupPositions(in, reconNow, liveSlots, nil)
+	got := strategy.GroupPositions(in, reconNow, liveSlots, maxDev, nil)
 
 	byInst := map[string]float64{}
 	var premium float64
@@ -184,7 +184,7 @@ func TestGroupPositions_RealExcessStaysUneven(t *testing.T) {
 		pos("BTC-27NOV26-95000-C", "call", 95000, nov27, 2.0, 0.16),
 		pos("BTC-27NOV26-72000-P", "put", 72000, nov27, 1.7, -0.15),
 	}
-	got := strategy.GroupPositions(in, reconNow, liveSlots, nil)
+	got := strategy.GroupPositions(in, reconNow, liveSlots, maxDev, nil)
 	if len(got) != 1 || got[0].Call.Qty != 2.0 || got[0].Put.Qty != 1.7 {
 		t.Errorf("want one 2.0/1.7 strangle, got %+v", got)
 	}

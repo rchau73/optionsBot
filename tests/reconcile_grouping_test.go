@@ -27,6 +27,7 @@ var (
 	oct23     = time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
 	nov27     = time.Date(2026, 11, 27, 8, 0, 0, 0, time.UTC)
 	liveSlots = []config.StrangleSlot{{TargetDTE: 25, EntryDelta: 0.16}, {TargetDTE: 45, EntryDelta: 0.16}, {TargetDTE: 60, EntryDelta: 0.18}}
+	maxDev    = config.FixedMaxDTEDeviation
 	legName   = func(p *orders.Position) string {
 		if p == nil {
 			return "-"
@@ -65,23 +66,25 @@ func TestGroupPositions_TodaysBTCBook(t *testing.T) {
 		pos("BTC-27NOV26-77000-P", "put", 77000, nov27, 0.8, -0.14),
 		pos("BTC-27NOV26-76000-P", "put", 76000, nov27, 0.8, -0.13),
 	}
-	got := strategy.GroupPositions(ps, reconNow, liveSlots, nil)
+	got := strategy.GroupPositions(ps, reconNow, liveSlots, maxDev, nil)
 	everyPositionOnce(t, ps, got)
 	if len(got) != 3 {
 		t.Fatalf("want 3 strangles (Oct 23 + two on Nov 27), got %d", len(got))
 	}
 	pairs := map[string]string{}
-	slots := map[int]bool{}
+	slotOf := map[string]int{}
 	for _, g := range got {
 		pairs[legName(g.Call)] = legName(g.Put)
-		slots[g.Slot.TargetDTE] = true
+		slotOf[legName(g.Call)] = g.Slot.TargetDTE
 	}
 	// Equal sizes: nearest-the-money call with nearest-the-money put.
 	if pairs["BTC-27NOV26-98000-C"] != "BTC-27NOV26-77000-P" || pairs["BTC-27NOV26-100000-C"] != "BTC-27NOV26-76000-P" {
 		t.Errorf("Nov 27 pairs: %v", pairs)
 	}
-	if len(slots) != 3 {
-		t.Errorf("each strangle gets its own slot: %v", slots)
+	// Without a journal record, one expiry per slot (#242): the two Nov 27
+	// strangles share a slot, Oct 23 has its own.
+	if slotOf["BTC-27NOV26-98000-C"] != slotOf["BTC-27NOV26-100000-C"] || slotOf["BTC-23OCT26-92000-C"] == slotOf["BTC-27NOV26-98000-C"] {
+		t.Errorf("one expiry per slot: %v", slotOf)
 	}
 }
 
@@ -92,7 +95,7 @@ func TestGroupPositions_TodaysETHBookPairsBySize(t *testing.T) {
 		pos("ETH-27NOV26-2250-P", "put", 2250, nov27, 444, -0.14),
 		pos("ETH-27NOV26-2300-P", "put", 2300, nov27, 200, -0.16),
 	}
-	got := strategy.GroupPositions(ps, reconNow, liveSlots, nil)
+	got := strategy.GroupPositions(ps, reconNow, liveSlots, maxDev, nil)
 	everyPositionOnce(t, ps, got)
 	if len(got) != 3 {
 		t.Fatalf("want 3 strangles, got %d", len(got))
@@ -121,7 +124,7 @@ func TestGroupPositions_MoreStranglesThanSlotsShare(t *testing.T) {
 		pos("B-C", "call", 2, nov27, 2, 0.1), pos("B-P", "put", 2, nov27, 2, -0.1),
 	}
 	ps = append(ps, pos("C-C", "call", 3, nov27, 5, 0.05)) // a leftover call
-	got := strategy.GroupPositions(ps, reconNow, liveSlots[:1], nil)
+	got := strategy.GroupPositions(ps, reconNow, liveSlots[:1], maxDev, nil)
 	everyPositionOnce(t, ps, got)
 	if len(got) != 3 {
 		t.Fatalf("two pairs and a one-legged call, got %d", len(got))
@@ -181,7 +184,7 @@ func TestGroupPositions_SplitsAStrikeSharedByTwoStrangles(t *testing.T) {
 		pos("ETH-27NOV26-3400-C", "call", 3400, nov27, 603, 0.14),
 		pos("ETH-27NOV26-2300-P", "put", 2300, nov27, 603, -0.17),
 	}
-	got := strategy.GroupPositions(in, reconNow, liveSlots, nil)
+	got := strategy.GroupPositions(in, reconNow, liveSlots, maxDev, nil)
 
 	pairs := map[string]float64{}
 	for _, g := range got {

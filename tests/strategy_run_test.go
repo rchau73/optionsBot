@@ -68,6 +68,18 @@ type fakeExchange struct {
 
 	// feePerContract charges every fill (coin per contract), like Deribit.
 	feePerContract float64
+
+	// onCancel, when set, runs inside Cancel with mu held (e.g. the order
+	// fills just before the cancel reaches it); an error fails the cancel.
+	onCancel func(id string) error
+}
+
+// fillLocked marks an order filled (positions follow). Caller holds mu.
+func (f *fakeExchange) fillLocked(id string, qty, price float64) {
+	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: qty, AvgPrice: price}
+	if o, ok := f.byID[id]; ok {
+		f.applyFillLocked(o, id, qty-f.applied[id], price)
+	}
 }
 
 // applyFillLocked moves positions by a fill of qty on o. Caller holds mu.
@@ -185,6 +197,11 @@ func (f *fakeExchange) Cancel(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cancelled = append(f.cancelled, id)
+	if f.onCancel != nil {
+		if err := f.onCancel(id); err != nil {
+			return err
+		}
+	}
 	st := f.orderStates[id]
 	if st.State == "open" {
 		st.State = "cancelled"
@@ -319,10 +336,7 @@ func (f *fakeExchange) partial(id string, qty, price float64) {
 func (f *fakeExchange) fill(id string, qty, price float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: qty, AvgPrice: price}
-	if o, ok := f.byID[id]; ok {
-		f.applyFillLocked(o, id, qty-f.applied[id], price)
-	}
+	f.fillLocked(id, qty, price)
 }
 
 // orders returns a copy of the submitted orders matching keep.
@@ -481,9 +495,10 @@ type journalEntry struct {
 	trigger    string
 	orderType  string
 	reason     string
-	qty        float64 // opens: the fill; cancels: the requested size
+	qty        float64 // opens and closes: the fill; cancels: the requested size
 	targetQty  float64 // opens: the order's requested size
 	filledQty  float64 // cancels: what filled before the cancel
+	fillPrice  float64 // closes: the fill price
 	ctx        orders.EventContext
 }
 
@@ -507,8 +522,9 @@ func (j *recordingJournal) LogOpen(pos *orders.Position, fill orders.Fill, trigg
 	j.add(journalEntry{event: orders.EventFilled, instrument: pos.Instrument, trigger: trigger,
 		qty: fill.Qty, targetQty: fill.TargetQty, ctx: ctx})
 }
-func (j *recordingJournal) LogClose(pos *orders.Position, _ orders.Fill, trigger, orderType string, ctx orders.EventContext) {
-	j.add(journalEntry{event: orders.EventClosed, instrument: pos.Instrument, trigger: trigger, orderType: orderType, ctx: ctx})
+func (j *recordingJournal) LogClose(pos *orders.Position, fill orders.Fill, trigger, orderType string, ctx orders.EventContext) {
+	j.add(journalEntry{event: orders.EventClosed, instrument: pos.Instrument, trigger: trigger, orderType: orderType,
+		qty: fill.Qty, fillPrice: fill.FillPrice, ctx: ctx})
 }
 func (j *recordingJournal) LogReconciled(pos *orders.Position, ctx orders.EventContext) {
 	j.add(journalEntry{event: orders.EventReconciled, instrument: pos.Instrument, ctx: ctx})
@@ -825,8 +841,9 @@ func TestStrategy_RolloutReopensLegExactlyOnce(t *testing.T) {
 
 	eventually(t, 2*time.Second, "call bought back", func() bool { return len(f.exch.buys()) == 1 })
 	buy := f.exch.buys()[0]
-	if buy.Instrument != f.call || buy.OrderType != orders.TypeLimit || buy.TimeInForce != orders.TimeInForceIOC || buy.LimitPrice != 0.006 {
-		t.Errorf("rollout close should be an IOC limit at the ask, got %+v", buy)
+	// Take-profit rests at the mid first (#239); the fake fills it at once.
+	if buy.Instrument != f.call || buy.OrderType != orders.TypeLimit || buy.TimeInForce != "" || buy.LimitPrice != 0.005 {
+		t.Errorf("take-profit close should be a resting limit at the mid, got %+v", buy)
 	}
 
 	eventually(t, 2*time.Second, "call reopened", func() bool { return len(f.exch.sells()) >= 1 })

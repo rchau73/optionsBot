@@ -25,6 +25,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Backtesting](#backtesting)
 - [Stress test](#stress-test)
 - [Idle-margin attribution](#idle-margin-attribution)
+- [Recorded-history coverage](#recorded-history-coverage)
 - [Evidence report](#evidence-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
@@ -170,7 +171,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | ±1.5 pp (`rebalance_startup_band_pct`) | the first rebalance after a startup does nothing while IM is within 1.5 percentage points of the limit (journaled `rebalance_in_band`); confirmed limit changes and the MM cut ignore it |
 | 10 % (`liquidity_cap_oi_pct`) | an entry or top-up order is at most 10 % of each sold strike's mainnet open interest, both legs at the smaller size; journaled once as `liquidity_cap`; under one lot nothing is sent (#103). Repairs, exits and the MM cut are not capped. `cmd/stress -replay … -liqcap N` |
 | 3, 60 min (`rebalance_backoff_after`, `rebalance_retry_max_minutes`) | from the 3rd rebalance pass in a row whose complements all timed out unfilled (the bot's own cancels don't count) the retry wait doubles (30, then 60 min at most); a fill or a limit change resets it |
-| 90 s, ask → mid → floor (`order_fill_timeout_sec`, `entry_price_floor` mid, `repair_price_floor` bid) | a resting sell offers at the ask for the first third of 90 s, then mid (rounded up to a tick), then the floor — mid for entries and top-ups, bid for repairs; the premium floor is checked at that price. Without a bid it stays at the ask |
+| 90 s, ask → mid → floor (`order_fill_timeout_sec`, `entry_price_floor` mid, `repair_price_floor` bid) | a resting sell offers at the ask for the first third of 90 s, then mid (rounded up to a tick), then the floor — mid for entries and top-ups, bid for repairs; the premium floor is checked at that price. Without a bid it stays at the ask. The same 90 s is the window of a take-profit, delta drift or DTE roll buy-back resting at the mid (rounded down a tick) before the rest crosses with an IOC at the ask (#239; journaled `exit_step` mid/ask); stop-loss, MM cut and delta exit never rest, and each cancels a resting close first |
 | 5 %, 3 times (`order_slippage_pct`, `order_max_adjustments`) | follow the ask up when it drifts more than 5 %, at most 3 times (moves down are not capped) |
 | ±10 days, × 1.5 (`max_dte_deviation`, `expiry_stretch`) | an expiry may differ from the slot DTE by 10 days; when another slot holds it, the nearest free one up to DTE × 1.5, otherwise wait |
 | 0.03 (`delta_slippage`) | max distance from the target delta. An entry picks its call and put **as a pair** within this band; a repair takes the strike nearest the target |
@@ -267,6 +268,18 @@ go run ./cmd/idlemargin -journal data/eth/orders.log -history data/eth/pnl_histo
 
 Output holds hours, shares and percentages of the IM limit only — no amounts. Approximations: occupation follows the journal (opens, closes, startup `reconciled` lines; a leg held to settlement ends at 08:00 UTC of its expiry; a working entry order the journal never settled counts for at most 15 min); `occupied_liquidity_cap` cannot tell an order sent at the cap from a later uncapped one after a blocking `liquidity_cap` skip.
 
+## Recorded-history coverage
+
+`cmd/datacoverage` (#233, epic E2) says how much recorded history stands behind a replay or a backtest, and where it has holes. It reads one bot's files only (no Deribit call, nothing written) and prints counts and dates, never an amount:
+
+```bash
+go run ./cmd/datacoverage -dir data/btc                                   # first → last recorded day
+go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a replay's window (-to day included)
+go run ./cmd/datacoverage -dir data/eth -json
+```
+
+`-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory. For each dataset — `market` (hourly books), `market_gex` (minute GEX), `market_usdc` (hourly USDC books), `pnl_history.jsonl` (a point a minute) — it reports the first and last record, the bins of the window (an hour or a minute, the dataset's recording period) covered and their share, the hours missing, the days with records, complete and without any, the hours missing per day and the gaps (the 10 longest in text, all in `-json`). An empty bin between two records at most 1.5 periods apart is a ticker's jitter, not a gap. Then the **days a replay decides hourly**: books but no minute GEX record (`cmd/stress -replay` falls back to the books there). Without `-from`/`-to` the window runs from the first to the end of the last recorded day, never past the current hour; days of a window outside the data are reported missing, never filled in. Pure core: `coverage.Coverage(times, from, to, step)` in `internal/coverage`.
+
 ## Evidence report
 
 `cmd/evidence` (#176, epic E2) writes the weekly evidence a sceptical investor asks for — does the bot earn its risk? — per bot of an environment, to `data/evidence/<week>/<bot>.md` and `.json` in that environment's clone (amounts stay in `data/`, gitignored). It reads the environment's files only: no Deribit call, no order.
@@ -314,6 +327,8 @@ cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
 cmd/stress/           stress test of the live book through scripted shocks, and -replay of recorded books (see Stress test)
 cmd/idlemargin/       why approved margin went unused, per slot and book state (see Idle-margin attribution)
+cmd/datacoverage/     days, gaps and spans of a bot's recorded history (see Recorded-history coverage)
+internal/coverage/    that report (pure Coverage) and its readers
 cmd/evidence/         the weekly evidence report: live, replay, gap, stress, hold (see Evidence report)
 internal/evidence/    builds that report (pure Build) and reads its inputs
 scripts/              stress_inputs.sh — captures the stress test's inputs

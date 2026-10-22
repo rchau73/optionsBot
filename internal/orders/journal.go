@@ -151,8 +151,12 @@ type EventContext struct {
 	StrategyID string
 	// Detail says why, with the numbers (e.g. "stop-loss: loss 2.3× the
 	// premium ≥ 2×"); journaled as "detail".
-	Detail    string
-	Actor     *Actor // the person behind a manual action; journaled as "actor"
+	Detail string
+	Actor  *Actor // the person behind a manual action; journaled as "actor"
+	// ExitStep is how a non-urgent exit bought back (#239): "mid" (its
+	// resting limit at the mid) or "ask" (IOC at the ask); journaled as
+	// "exit_step", empty for every other close.
+	ExitStep  string
 	Slot      *SlotRef
 	Market    MarketSnapshot
 	Portfolio MarketContext
@@ -202,8 +206,9 @@ type OrderLog struct {
 	OrderType     string    `json:"order_type,omitempty"`
 	TriggerReason string    `json:"trigger_reason,omitempty"`
 	SkipReason    string    `json:"skip_reason,omitempty"`
-	Detail        string    `json:"detail,omitempty"` // why, with the numbers
-	Actor         *Actor    `json:"actor,omitempty"`  // the person behind a manual action
+	Detail        string    `json:"detail,omitempty"`    // why, with the numbers
+	Actor         *Actor    `json:"actor,omitempty"`     // the person behind a manual action
+	ExitStep      string    `json:"exit_step,omitempty"` // a non-urgent exit's buy-back: mid | ask (#239)
 	Qty           float64   `json:"qty,omitempty"`
 	// Fill realism of a limit sell (#86): an open records its fill (qty)
 	// against the order's target_qty, fill_pct = qty ÷ target_qty × 100; a

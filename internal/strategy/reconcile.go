@@ -140,8 +140,9 @@ type ReconciledStrangle struct {
 // the money (nearest call with nearest put); any leg left over becomes a
 // one-legged strangle. Every position lands in
 // exactly one strangle. Slots are given by assignSlots: the slot the journal
-// says opened the legs (opened, may be nil) first, then the lowest total
-// distance; only when every slot is taken may two share one.
+// says opened the legs (opened, may be nil) first, then no slot beyond its
+// window (target + maxDeviation), one expiry per slot, and the lowest total
+// distance. A slot may be left vacant (VacantSlots says why).
 //
 // Deribit reports one position per instrument, so a strike that backed two
 // strangles (two slots on one expiry picking the same call, say) comes back
@@ -159,7 +160,7 @@ type ReconciledStrangle struct {
 // put of an expiry: the other legs were loaded but in no strangle, so the
 // startup rebalance undercounted the book and added top-ups at every restart,
 // and leg balancing bought back legs it saw as excess.
-func GroupPositions(positions []*orders.Position, now time.Time, slots []config.StrangleSlot, opened OpenSlots) []ReconciledStrangle {
+func GroupPositions(positions []*orders.Position, now time.Time, slots []config.StrangleSlot, maxDeviation int, opened OpenSlots) []ReconciledStrangle {
 	type side struct{ calls, puts []*orders.Position }
 	byExpiry := map[time.Time]*side{}
 	var expiries []time.Time
@@ -289,7 +290,7 @@ func GroupPositions(positions []*orders.Position, now time.Time, slots []config.
 		}
 	}
 
-	assignSlots(out, now, slots, opened)
+	assignSlots(out, now, slots, maxDeviation, opened)
 	return out
 }
 
@@ -352,7 +353,14 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	// Reconstruct strangles: every position in exactly one strangle, pairs
 	// matched by delta on each expiry (GroupPositions). Single legs are
 	// registered as partial strangles so repair can fill the missing leg.
-	for _, g := range GroupPositions(loaded, now, s.cfg.Slots(), s.journalSlots) {
+	slots := s.cfg.Slots()
+	groups := GroupPositions(loaded, now, slots, s.cfg.MaxDTEDeviation, s.journalSlots)
+	vacant := VacantSlots(groups, now, slots, s.cfg.MaxDTEDeviation)
+	for _, v := range vacant {
+		slog.Info("reconcile: slot left vacant",
+			"target_dte", v.Slot.TargetDTE, "entry_delta", v.Slot.EntryDelta, "reason", v.Reason)
+	}
+	for _, g := range groups {
 		call, put, expiry, bestSlot := g.Call, g.Put, g.Expiry, g.Slot
 		// Store split pieces and the reduced sizes of the legs they came from.
 		for _, leg := range []*orders.Position{call, put} {
@@ -372,7 +380,7 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 			ID: stID, TargetDTE: bestSlot.TargetDTE, EntryDelta: bestSlot.EntryDelta,
 			CallLeg: call, PutLeg: put, OpenedAt: now,
 		})
-		detail := reconciledDetail(stID, g)
+		detail := reconciledDetail(stID, g, vacant)
 		for _, leg := range []*orders.Position{call, put} {
 			if leg != nil {
 				ctx := s.instrumentContext(leg.Instrument, slotRef(bestSlot.TargetDTE, bestSlot.EntryDelta))
@@ -454,9 +462,10 @@ func (s *Strategy) reconcilePositions(ctx context.Context) {
 	)
 }
 
-// reconciledDetail says how a rebuilt strangle was paired and why it got
-// its slot, for the journal's reconciled lines.
-func reconciledDetail(stID string, g ReconciledStrangle) string {
+// reconciledDetail says how a rebuilt strangle was paired, why it got its
+// slot and which slots were left vacant and why, for the journal's
+// reconciled lines.
+func reconciledDetail(stID string, g ReconciledStrangle, vacant []VacantSlot) string {
 	leg := func(p *orders.Position) string {
 		if p == nil {
 			return "none"
@@ -467,8 +476,12 @@ func reconciledDetail(stID string, g ReconciledStrangle) string {
 	if g.SlotFromJournal {
 		why = "opened there (journal)"
 	}
-	return fmt.Sprintf("strangle %s: call %s / put %s; slot %dd/%.2f %s",
+	out := fmt.Sprintf("strangle %s: call %s / put %s; slot %dd/%.2f %s",
 		stID, leg(g.Call), leg(g.Put), g.Slot.TargetDTE, g.Slot.EntryDelta, why)
+	for _, v := range vacant {
+		out += fmt.Sprintf("; slot %dd/%.2f left vacant: %s", v.Slot.TargetDTE, v.Slot.EntryDelta, v.Reason)
+	}
+	return out
 }
 
 func absInt(x int) int {

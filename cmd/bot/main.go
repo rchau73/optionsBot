@@ -119,8 +119,13 @@ func runLive(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// The trading gateway outlives the signal: on SIGTERM Strategy.Run still
+	// cancels its resting closes and books their fills (#239) before it
+	// returns; the gateway closes after it.
+	gwCtx, gwStop := context.WithCancel(context.WithoutCancel(ctx))
+	defer gwStop()
 	gw := gateway.New(cfg, gateway.WithName("trading"))
-	if err := gw.Connect(ctx); err != nil {
+	if err := gw.Connect(gwCtx); err != nil {
 		return fmt.Errorf("gateway connect: %w", err)
 	}
 	defer gw.Close()

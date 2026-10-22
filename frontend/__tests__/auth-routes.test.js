@@ -71,6 +71,14 @@ describe("Scenario: no session, no data", () => {
     expect((await proxy(page("/login", cookie))).headers.get("location")).toBe(`${ORIGIN}/`);
   });
 
+  test("any signed-in role reads the investor summary", async () => {
+    for (const role of ["admin", "manager", "user"]) {
+      const cookie = await sessionCookie({ id: 2, username: "reader", role });
+      expect((await proxy(page("/api/bots/btc/summary", cookie))).headers.get("x-middleware-next")).toBe("1");
+    }
+    expect((await proxy(page("/api/bots/btc/summary"))).status).toBe(401);
+  });
+
   test("without AUTH_SECRET nothing is served", async () => {
     delete process.env.AUTH_SECRET;
     expect((await proxy(page("/"))).status).toBe(500);
