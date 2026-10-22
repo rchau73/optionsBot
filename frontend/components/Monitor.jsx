@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Header from "./Header";
+import InvestorSummary from "./InvestorSummary";
 import KpiStrip from "./KpiStrip";
 import Panel from "./Panel";
 import Filters from "./Filters";
@@ -22,7 +23,7 @@ import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
-/** The single monitor page: header, KPIs, positions, working orders, feed, P&L. */
+/** The single monitor page: header, the investor summary first, then KPIs, positions, working orders, feed, P&L. */
 export default function Monitor() {
   const { names, bots, feed, history, trades, error, pollMs, polledAt } = useMonitor();
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
@@ -50,6 +51,7 @@ export default function Monitor() {
             Kill switch fired — trading is halted on at least one bot.
           </div>
         ) : null}
+        <InvestorSummary bots={bots} />
         <KpiStrip kpi={kpi} />
         <Panel
           title="Account & collateral (shared by all bots)"
