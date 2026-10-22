@@ -303,6 +303,26 @@ Sections, each naming its source:
 
 A weekly schedule is not installed yet: `install.sh` will run it on Mondays once the report has been reviewed.
 
+## Settings comparison
+
+`cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
+    -replay data/btc/data/market -stress data/stress/btc            # backtest + replay + stress
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-01-01 -to 2026-06-30 \
+    -csv data/historical/options.csv                                  # backtest only
+```
+
+The report starts with the label **"Backtested/replayed, not a promise"**, then:
+
+- **Differences** — every YAML setting that differs, key by key (`gamma_flip_buffer_sd 1.5 → 1`, `dte_delta_matrix[1].deltas[0] 0.16 → 0.2`; `—` where one side has no such key). Empty for two identical configs, and then every figure below is the same.
+- **Backtest (USD)** — the daily engine (`internal/backtest`, `-csv`, default `data/historical/options.csv`, `none` skips) from $100,000: net and return, realised (net of fees), fees, worst week, max drawdown, trades, GEX sheds, stops, delta exits, rolls, Sharpe. Margin is the backtest's approximation.
+- **Replay** — the bot's rules on the recorded mainnet books (`internal/replay`, `-replay`; minute GEX from `-gex`, default `market_gex` beside it, `none` = hourly), each config from a flat book at `-from`, 7 days of earlier recording warming it up: net and return, realised, fees, worst week (on the daily equity), max drawdown, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, IM max/avg. Starting balance from `-equity` or `account.json` of `-stress`; daily closes and DVOL from its `market.json`.
+- **Stress** — `cmd/stress`'s standard shocks (as the evidence report: `crash`, `rally`, `crash40`, `rally40`, `chop`) on the book captured in `-stress` (`scripts/stress_inputs.sh`), once with each config's settings (`-stress-cmd`, `none` skips): return, vs hold, realised, stops, worst equity, worst MM.
+
+A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
+
 ## Testing and CI
 
 ```bash
