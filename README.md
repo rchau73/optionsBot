@@ -303,7 +303,7 @@ Sections, each naming its source:
 - **Benchmark** — holding the coin over the week (spot at the first and last history point), the strategy's USD return and its excess over holding.
 - **Margin utilisation** — `history.Utilisation` over the week (the figure of `/api/status`).
 
-A weekly schedule is not installed yet: `install.sh` will run it on Mondays once the report has been reviewed.
+**Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
 
 ## Testing and CI
 
