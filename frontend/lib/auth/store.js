@@ -54,13 +54,23 @@ export class AuthStore {
     const db = exists ? new SQL.Database(fs.readFileSync(file)) : new SQL.Database();
     const store = new AuthStore(db, file);
     db.exec(SCHEMA);
-    if (!exists) store.save();
+    const migrated = store.migrate();
+    if (!exists || migrated) store.save();
     return store;
   }
 
   constructor(db, file) {
     this.db = db;
     this.file = file;
+  }
+
+  /** Adds the columns a file older than this code lacks; true when one was added. */
+  migrate() {
+    const cols = this.all("PRAGMA table_info(users)").map((c) => c.name);
+    if (cols.includes("analytics_consent")) return false;
+    // NULL = not asked yet, 0 = no, 1 = yes (event plan §5: off until yes).
+    this.db.exec("ALTER TABLE users ADD COLUMN analytics_consent INTEGER");
+    return true;
   }
 
   save() {
@@ -143,6 +153,18 @@ export class AuthStore {
     if (!ROLES.includes(role)) throw new Error(`role: one of ${ROLES.join(", ")}`);
     this.db.run("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", [role, Math.floor(nowMs / 1000), id]);
     this.revokeSessions(id);
+  }
+
+  /** The user's analytics answer: true (yes), false (no) or null (not asked). */
+  analyticsConsent(id) {
+    const v = this.one("SELECT analytics_consent FROM users WHERE id = ?", [id])?.analytics_consent;
+    return v === 1 ? true : v === 0 ? false : null;
+  }
+
+  /** Records the user's analytics answer (true / false) or clears it (null). */
+  setAnalyticsConsent(id, consent, nowMs = Date.now()) {
+    const v = consent === true ? 1 : consent === false ? 0 : null;
+    this.write("UPDATE users SET analytics_consent = ?, updated_at = ? WHERE id = ?", [v, Math.floor(nowMs / 1000), id]);
   }
 
   /** Deletes a user and every session of theirs. */
