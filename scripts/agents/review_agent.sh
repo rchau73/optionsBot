@@ -108,17 +108,20 @@ model_args=()
 [[ -n "${REVIEW_MODEL:-}" ]] && model_args=(--model "$REVIEW_MODEL")
 
 log "review: running the agent in $wt"
+started="$(date +%s)"
 set +e
 (cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
   --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
 rc=$?
 set -e
-log "review: agent exit $rc"
+elapsed=$(( $(date +%s) - started ))
+log "review: agent exit $rc after ${elapsed}s"
 
 # ── Parse the REVIEW block → review.json (findings + verdict) ───────────────
 post="$AGENT_REPO_DIR/scripts/agents/review_post.py"
-if [[ $rc -ne 0 ]] && note_limit "$run_dir/agent.md"; then
+# A limit, or a run that failed at once with no answer, is not the PR's fault.
+if [[ $rc -ne 0 ]] && note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then
   log "review: usage/rate limit on PR #$pr — retried after the pause (commit not marked)"; exit 0
 fi
 if [[ $rc -ne 0 ]] || ! python3 "$post" parse "$run_dir/agent.md" "$run_dir/review.json" 2>"$run_dir/parse.err"; then

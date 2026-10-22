@@ -12,7 +12,9 @@
 #   4. the script re-runs every check itself (trust, but verify), pushes the
 #      branch and opens (or updates) the PR "Closes #n" → In review.
 #      A failure, or an agent that stops with questions, comments on the
-#      issue, labels it agent:needs-human and moves it to Blocked.
+#      issue, labels it agent:needs-human and moves it to Blocked — except a
+#      usage limit or a run that failed at once with no answer (limit_lib.sh
+#      note_stop): the card goes back to Ready after the pause.
 #
 # A person reviews and merges. The agent never merges or deploys.
 # Env: DEV_MODEL, DEV_PARALLEL (3), AGENT_WORK_DIR (<envs>/agent-worktrees), AGENT_NOTIFY.
@@ -112,14 +114,16 @@ model_args=()
 [[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
 
 log "dev: running the agent in $wt"
+started="$(date +%s)"
 set +e
 (cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
   --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
 rc=$?
 set -e
+elapsed=$(( $(date +%s) - started ))
 rm -f "$wt/.agent-task.md"
-log "dev: agent exit $rc"
+log "dev: agent exit $rc after ${elapsed}s"
 
 result="$(grep -m1 '^RESULT:' "$run_dir/agent.md" | sed 's/^RESULT: *//' || true)"
 py 'import re,sys
@@ -132,9 +136,14 @@ if [[ $rc -ne 0 || "$result" != "done" ]]; then
     cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
   else
     why="the agent did not finish (exit $rc, result '${result:-none}')"
-    if note_limit "$run_dir/agent.md"; then
-      # Not the card's fault: back to Ready, retried once the limit resets.
-      gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
+    if note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then
+      # Not the card's fault (a limit, or a run that failed at once with no
+      # answer): back to Ready, retried after the pause, never agent:needs-human.
+      # One comment per episode: none when the last one (pickups aside) says it.
+      if ! python3 "$AGENT_REPO_DIR/scripts/agents/requeue.py" limit-noted "$run_dir/history.json"; then
+        gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc after ${elapsed}s). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
+      fi
+      gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
       set_status "$item" "Ready"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
     fi
     { echo "Stopped because $why."; echo; echo "Last lines:"; echo

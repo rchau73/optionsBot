@@ -317,28 +317,11 @@ mutex() {
 }
 unmutex() { rmdir "$AGENT_STATE_DIR/$1.mutex" 2>/dev/null || true; }
 
-# Usage and rate limits: a run that hits the Claude usage limit or GitHub's
-# rate limit records it; for 30 min no new Claude run starts, then one at a time
-# for an hour, then the configured parallelism again (tick.sh). The numbers
-# adapt instead of being tuned by hand (product owner, 2026-10-19: "find the
-# optimum value, like 3 parallel, 5 or 2").
+# Usage and rate limits (LIMIT_PATTERN, note_limit, note_stop, parallel_max):
+# limit_lib.sh.
 LIMIT_FILE="$AGENT_STATE_DIR/limit_hit"
-LIMIT_PATTERN="session limit|usage limit|rate limit|secondary rate|HTTP 429|overloaded"
-
-# note_limit <output file> — true (and recorded) when the output shows a limit.
-note_limit() {
-  grep -qiE "$LIMIT_PATTERN" "$1" 2>/dev/null || return 1
-  date -u +%s > "$LIMIT_FILE"
-  log "a usage/rate limit was hit: new agent runs pause 30 min, then run one at a time for an hour"
-}
-
-# parallel_max <configured> → how many instances may run now: 0 within 30 min
-# of a limit hit, 1 within 90 min, else <configured>.
-parallel_max() {
-  local t age
-  t="$(cat "$LIMIT_FILE" 2>/dev/null || echo 0)"; age=$(( $(date -u +%s) - t ))
-  if [[ $age -lt 1800 ]]; then echo 0; elif [[ $age -lt 5400 ]]; then echo 1; else echo "$1"; fi
-}
+# shellcheck source=limit_lib.sh
+source "$AGENT_REPO_DIR/scripts/agents/limit_lib.sh"
 
 # git_locked <git args…> — git in the shared clone, one instance at a time.
 git_locked() { mutex git || return 1; local rc=0; git "$@" || rc=$?; unmutex git; return $rc; }
