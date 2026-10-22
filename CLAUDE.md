@@ -27,6 +27,7 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
 go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -days 7   # why approved margin went unused: per slot (occupied, skip reason, frozen, not measured) and book state (README "Idle-margin attribution")
 go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # recorded-history coverage per dataset (market, market_gex, market_usdc, pnl_history): days, missing hours, gaps, hourly-only replay days (README "Recorded-history coverage")
 go run ./cmd/evidence -env stable -week 2026-W42   # weekly evidence per bot → <clone>/data/evidence/<week>/<bot>.md|.json: live, replay, gap, stress, hold (README "Evidence report")
+go run ./cmd/evidence -compare-direction -week 2026-W43   # direction trial scorecard: stable BTC (bias) vs mvp BTC (sma), live and replayed both ways on the same books, % only → <stable>/data/evidence/direction/<week>.md|.json (README "Replay of recorded books")
 ```
 
 All tests live in `tests/` (package `tests`), not next to the source. Notable files: `strategy_run_test.go` (end-to-end `Strategy.Run` against a fake exchange), `margin_policy_run_test.go` + `risk_test.go` (margin policy end to end and its pure rules), `gateway_test.go` (real `Gateway` against a mock Deribit WebSocket), `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
