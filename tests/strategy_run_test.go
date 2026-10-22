@@ -68,6 +68,18 @@ type fakeExchange struct {
 
 	// feePerContract charges every fill (coin per contract), like Deribit.
 	feePerContract float64
+
+	// onCancel, when set, runs inside Cancel with mu held (e.g. the order
+	// fills just before the cancel reaches it); an error fails the cancel.
+	onCancel func(id string) error
+}
+
+// fillLocked marks an order filled (positions follow). Caller holds mu.
+func (f *fakeExchange) fillLocked(id string, qty, price float64) {
+	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: qty, AvgPrice: price}
+	if o, ok := f.byID[id]; ok {
+		f.applyFillLocked(o, id, qty-f.applied[id], price)
+	}
 }
 
 // applyFillLocked moves positions by a fill of qty on o. Caller holds mu.
@@ -185,6 +197,11 @@ func (f *fakeExchange) Cancel(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cancelled = append(f.cancelled, id)
+	if f.onCancel != nil {
+		if err := f.onCancel(id); err != nil {
+			return err
+		}
+	}
 	st := f.orderStates[id]
 	if st.State == "open" {
 		st.State = "cancelled"
@@ -319,10 +336,7 @@ func (f *fakeExchange) partial(id string, qty, price float64) {
 func (f *fakeExchange) fill(id string, qty, price float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "filled", FilledAmount: qty, AvgPrice: price}
-	if o, ok := f.byID[id]; ok {
-		f.applyFillLocked(o, id, qty-f.applied[id], price)
-	}
+	f.fillLocked(id, qty, price)
 }
 
 // orders returns a copy of the submitted orders matching keep.

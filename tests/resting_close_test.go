@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -211,7 +212,8 @@ func TestStrategy_UrgentExitPreemptsRestingClose(t *testing.T) {
 			}
 			c.urgent(f)
 
-			eventually(t, 2*time.Second, "urgent exit sent", func() bool { return len(f.callBuys()) >= 2 })
+			// 5 s: a loaded runner (parallel agents, -race) once missed 2 s.
+			eventually(t, 5*time.Second, "urgent exit sent", func() bool { return len(f.callBuys()) >= 2 })
 			f.exch.mu.Lock()
 			cancelled := strings.Contains(strings.Join(f.exch.cancelled, ","), restID)
 			f.exch.mu.Unlock()
@@ -306,6 +308,90 @@ func TestStrategy_KillSwitchBooksRestingClose(t *testing.T) {
 	if len(closes) != 2 || closes[0].ctx.ExitStep != strategy.ExitStepMid || closes[0].qty != 0.1 ||
 		closes[1].trigger != orders.TriggerKillSwitch || math.Abs(closes[1].qty-0.2) > 1e-9 {
 		t.Errorf("want the resting 0.1 booked, then 0.2 at market by the kill switch, got %+v", closes)
+	}
+}
+
+// stopRun cancels Run's context (SIGTERM, a deploy) and waits for it to
+// return; the error is put back for the fixture's cleanup.
+func (f *strategyFixture) stopRun(t *testing.T) {
+	t.Helper()
+	f.cancel()
+	select {
+	case err := <-f.runErr:
+		f.runErr <- err
+	case <-time.After(3 * time.Second):
+		t.Fatal("Strategy.Run did not stop after cancel")
+	}
+}
+
+// restingCancels is every cancel journaled for the call's take-profit order.
+func (f *strategyFixture) restingCancels() []journalEntry {
+	var out []journalEntry
+	for _, e := range f.journal.events(orders.EventCancelled) {
+		if e.instrument == f.call && e.trigger == orders.TriggerRolloutROI {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Scenario: nothing is lost on restart — a shutdown (SIGTERM, a deploy)
+// cancels the resting close and books the fill that came after the last poll,
+// so the journal (realised P&L's one source) has it.
+func TestStrategy_ShutdownBooksRestingCloseFill(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.OrderFillTimeoutSec = 60
+	f.takeProfitResting(t)
+	restID := f.exch.orderIDFor(f.call, 0)
+	f.exch.onCancel = func(id string) error {
+		if id == restID { // 0.1 filled between the last poll and the cancel
+			f.exch.orderStates[id] = orders.OrderStateInfo{OrderID: id, State: "open", FilledAmount: 0.1, AvgPrice: 0.0095}
+			f.exch.applyFillLocked(f.exch.byID[id], id, 0.1, 0.0095)
+		}
+		return nil
+	}
+	if n := len(f.callCloses()); n != 0 {
+		t.Fatalf("nothing filled before the shutdown, got %d closes", n)
+	}
+	f.stopRun(t)
+
+	closes := f.callCloses()
+	if len(closes) != 1 || closes[0].ctx.ExitStep != strategy.ExitStepMid || closes[0].qty != 0.1 || closes[0].fillPrice != 0.0095 {
+		t.Fatalf("the shutdown must book the resting fill (0.1 at 0.0095), got %+v", closes)
+	}
+	if len(f.restingCancels()) != 1 {
+		t.Error("the resting order's cancel must be journaled")
+	}
+	if p := f.position(f.call); p == nil || math.Abs(p.Qty-0.2) > 1e-9 {
+		t.Errorf("0.2 stays short in the book, got %+v", p)
+	}
+}
+
+// A resting close that filled whole just before its cancel reached it is a
+// fill, not a cancel: one close at the mid, no cancelled line.
+func TestStrategy_RestingCloseFilledDuringCancelNotJournaledCancelled(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.OrderFillTimeoutSec = 60
+	f.takeProfitResting(t)
+	restID := f.exch.orderIDFor(f.call, 0)
+	f.exch.onCancel = func(id string) error {
+		if id != restID {
+			return nil
+		}
+		f.exch.fillLocked(id, 0.3, 0.0095)
+		return errors.New("order already filled")
+	}
+	f.stopRun(t)
+
+	closes := f.callCloses()
+	if len(closes) != 1 || closes[0].ctx.ExitStep != strategy.ExitStepMid || closes[0].qty != 0.3 {
+		t.Fatalf("want one mid close of 0.3, got %+v", closes)
+	}
+	if c := f.restingCancels(); len(c) != 0 {
+		t.Errorf("a filled resting close must not be journaled as cancelled, got %+v", c)
+	}
+	if f.position(f.call) != nil {
+		t.Error("the call is closed")
 	}
 }
 

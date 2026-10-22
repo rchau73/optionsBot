@@ -234,17 +234,43 @@ func (s *Strategy) endRestingClose(ctx context.Context, rc *restingClose, cancel
 		s.noteUnconfirmed(rc.label, rc.instrument, rc.slot, cancelErr)
 		return booked, false
 	}
+	if st.State == "filled" { // it filled whole before the cancel reached it
+		slog.Info("resting close filled before its cancel", "instrument", rc.instrument, "order_id", rc.orderID,
+			"reason", why, "filled_qty", rc.filledQty, "price", fmt.Sprintf("%.6f", rc.limitPrice))
+		return booked, true
+	}
 	s.journal.LogCancelled(rc.record(), s.instrumentContext(rc.instrument, rc.slot))
 	slog.Info("resting close cancelled", "instrument", rc.instrument, "order_id", rc.orderID,
 		"reason", why, "filled_qty", rc.filledQty, "requested_qty", rc.qty)
 	return booked, true
 }
 
-// endAllRestingCloses stops every resting close (the kill switch).
+// endAllRestingCloses stops every resting close (the kill switch, shutdown).
 func (s *Strategy) endAllRestingCloses(ctx context.Context, cancel bool, why string) {
 	for _, rc := range s.restingCloses {
 		s.endRestingClose(ctx, rc, cancel, why)
 	}
+}
+
+// restingSettleTimeout bounds the shutdown settle: well inside Docker's 10 s
+// stop grace period.
+const restingSettleTimeout = 5 * time.Second
+
+// settleRestingCloses cancels every resting close when Run stops (a deploy,
+// SIGTERM) and books what it filled since the last poll: the journal's closes
+// are the one source of realised P&L, and the startup reconcile only cancels
+// orders — it cannot book a fill that came before. It runs on a detached,
+// short context, as the kill switch does; an order it cannot confirm is
+// cancelled by the next startup's cancel-all and its position adopted by the
+// reconcile.
+func (s *Strategy) settleRestingCloses(ctx context.Context) {
+	if len(s.restingCloses) == 0 {
+		return
+	}
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restingSettleTimeout)
+	defer cancel()
+	slog.Info("shutdown: settling resting closes", "count", len(s.restingCloses))
+	s.endAllRestingCloses(sctx, true, "shutdown")
 }
 
 // bookRestingFill books what the order filled since the last booking, at the

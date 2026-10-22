@@ -209,6 +209,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			s.settleRestingCloses(ctx)
 			return ctx.Err()
 		case <-s.killSwitchCh:
 			return s.killSwitch(ctx)
