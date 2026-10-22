@@ -192,14 +192,16 @@ model_args=()
 [[ -n "${PM_MODEL:-}" ]] && model_args=(--model "$PM_MODEL")
 
 log "pm-answer: running the agent in $wt"
+started="$(date +%s)"
 set +e
 (cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
   --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
 rc=$?
 set -e
+elapsed=$(( $(date +%s) - started ))
 rm -f "$wt/.agent-task.md"
-log "pm-answer: agent exit $rc"
+log "pm-answer: agent exit $rc after ${elapsed}s"
 
 result="$(grep -m1 '^RESULT:' "$run_dir/agent.md" | sed 's/^RESULT: *//' || true)"
 py 'import re,sys
@@ -211,7 +213,7 @@ for tag, out in (("PM-REPLY", sys.argv[2]), ("PR-BODY", sys.argv[3])):
 
 if [[ $rc -ne 0 || -z "$result" ]]; then
   why="the agent did not finish (exit $rc, result '${result:-none}')"
-  if note_limit "$run_dir/agent.md"; then
+  if note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then # a limit, or a run that failed at once
     # Not marked done: the answer stays due and is retried after the pause.
     log "pm-answer: #$issue hit a usage/rate limit — retried after the pause"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
   fi
