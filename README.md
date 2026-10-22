@@ -25,6 +25,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Backtesting](#backtesting)
 - [Stress test](#stress-test)
 - [Idle-margin attribution](#idle-margin-attribution)
+- [Recorded-history coverage](#recorded-history-coverage)
 - [Evidence report](#evidence-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
@@ -267,6 +268,18 @@ go run ./cmd/idlemargin -journal data/eth/orders.log -history data/eth/pnl_histo
 
 Output holds hours, shares and percentages of the IM limit only — no amounts. Approximations: occupation follows the journal (opens, closes, startup `reconciled` lines; a leg held to settlement ends at 08:00 UTC of its expiry; a working entry order the journal never settled counts for at most 15 min); `occupied_liquidity_cap` cannot tell an order sent at the cap from a later uncapped one after a blocking `liquidity_cap` skip.
 
+## Recorded-history coverage
+
+`cmd/datacoverage` (#233, epic E2) says how much recorded history stands behind a replay or a backtest, and where it has holes. It reads one bot's files only (no Deribit call, nothing written) and prints counts and dates, never an amount:
+
+```bash
+go run ./cmd/datacoverage -dir data/btc                                   # first → last recorded day
+go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a replay's window (-to day included)
+go run ./cmd/datacoverage -dir data/eth -json
+```
+
+`-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory. For each dataset — `market` (hourly books), `market_gex` (minute GEX), `market_usdc` (hourly USDC books), `pnl_history.jsonl` (a point a minute) — it reports the first and last record, the bins of the window (an hour or a minute, the dataset's recording period) covered and their share, the hours missing, the days with records, complete and without any, the hours missing per day and the gaps (the 10 longest in text, all in `-json`). An empty bin between two records at most 1.5 periods apart is a ticker's jitter, not a gap. Then the **days a replay decides hourly**: books but no minute GEX record (`cmd/stress -replay` falls back to the books there). Without `-from`/`-to` the window runs from the first to the end of the last recorded day, never past the current hour; days of a window outside the data are reported missing, never filled in. Pure core: `coverage.Coverage(times, from, to, step)` in `internal/coverage`.
+
 ## Evidence report
 
 `cmd/evidence` (#176, epic E2) writes the weekly evidence a sceptical investor asks for — does the bot earn its risk? — per bot of an environment, to `data/evidence/<week>/<bot>.md` and `.json` in that environment's clone (amounts stay in `data/`, gitignored). It reads the environment's files only: no Deribit call, no order.
@@ -314,6 +327,8 @@ cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
 cmd/stress/           stress test of the live book through scripted shocks, and -replay of recorded books (see Stress test)
 cmd/idlemargin/       why approved margin went unused, per slot and book state (see Idle-margin attribution)
+cmd/datacoverage/     days, gaps and spans of a bot's recorded history (see Recorded-history coverage)
+internal/coverage/    that report (pure Coverage) and its readers
 cmd/evidence/         the weekly evidence report: live, replay, gap, stress, hold (see Evidence report)
 internal/evidence/    builds that report (pure Build) and reads its inputs
 scripts/              stress_inputs.sh — captures the stress test's inputs

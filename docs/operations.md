@@ -77,9 +77,13 @@ data/btc/
   data/pnl_history.jsonl     P&L history for the monitor chart
   data/regime_history.jsonl  gamma regime per daily close (margin policy)
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
+  data/market_gex/    every GEX snapshot (one a minute), read by the replay
+  data/market_usdc/   recorded USDC-settled books, to compare liquidity
 data/stress/btc/      stress inputs captured by scripts/stress_inputs.sh (positions, account, market.json)
 data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cmd/evidence, below)
 ```
+
+How much of that recorded history exists, and where restarts left gaps: `go run ./cmd/datacoverage -dir data/btc` (days, missing hours and gaps per dataset, and the days a replay can only decide hourly; README "Recorded-history coverage").
 
 **Weekly evidence report** (#176, README "Evidence report"). After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
 

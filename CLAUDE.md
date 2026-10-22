@@ -25,6 +25,7 @@ go test ./tests/... -run TestStrategy_ -v          # one group
 scripts/stress_inputs.sh btc && go run ./cmd/stress -dir data/stress/btc -shock crash -calm 14   # stress test of the live book (README "Stress test")
 go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stress/btc -direction sma -journal data/btc/orders.log   # the bot's rules on recorded books (README "Replay of recorded books")
 go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -days 7   # why approved margin went unused: per slot (occupied, skip reason, frozen, not measured) and book state (README "Idle-margin attribution")
+go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # recorded-history coverage per dataset (market, market_gex, market_usdc, pnl_history): days, missing hours, gaps, hourly-only replay days (README "Recorded-history coverage")
 go run ./cmd/evidence -env stable -week 2026-W42   # weekly evidence per bot → <clone>/data/evidence/<week>/<bot>.md|.json: live, replay, gap, stress, hold (README "Evidence report")
 ```
 
