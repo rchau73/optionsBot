@@ -29,7 +29,7 @@ describe("Scenario: silent refresh and logout (browser)", () => {
       return ok(url.endsWith("/account") ? null : { url });
     });
 
-    const state = await fetchBotState("btc"); // four requests at once
+    const state = await fetchBotState("btc"); // five requests at once
     expect(state.status).toEqual({ url: "/api/bots/btc/status" });
     expect(global.fetch.mock.calls.filter(([u]) => u === "/api/auth/refresh")).toHaveLength(1);
     expect(navigation.assign).not.toHaveBeenCalled();
