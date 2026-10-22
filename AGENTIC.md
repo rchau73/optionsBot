@@ -136,7 +136,7 @@ On 2026-10-15 the ETH bot sat flat for days, frozen by a DVOL band change that c
 ```bash
 gh auth refresh -s project            # once: the board needs the project scope
 scripts/agents/setup_github.sh        # once: labels, project board, ruleset on main
-scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel)
+scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel; Mondays also metrics and evidence)
 launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
@@ -184,3 +184,13 @@ E6's outcome is "no human toil except approvals", so the loop measures itself (#
 | Waiting for a person | Hours in the week that issues carried `agent:needs-human` or `prototype:review`, the waits that ended in the week (median, p90) and the ones still open. |
 
 Each stage is read from what the agents leave on GitHub, because a move on the board leaves no trace on the issue. If an agent's comment wording changes, update the markers at the top of `metrics.py` to match.
+
+## Weekly evidence report
+
+The bots' track record builds itself too (#244, epic E2). On the first tick of each Monday (UTC), [`evidence.sh`](scripts/agents/evidence.sh) runs the [evidence report](README.md#evidence-report) for the last complete ISO week on **stable** and on **mvp**, for every bot (`EVIDENCE_BOTS`, default `btc eth`). It makes no Claude call and places no order.
+
+1. For each environment and bot, `scripts/stress_inputs.sh <bot>` captures the week-end book into that clone's `data/stress/<bot>/`, through that environment's monitor with its read-only `MONITOR_API_TOKEN`.
+2. `go run ./cmd/evidence -env <env> -root <clone> -bot <bot> -week <week>` writes `data/evidence/<week>/<bot>.md` and `.json` in the clone. mvp records no books, so it gets `-books-root` = stable's clone.
+3. [`evidence_week.py`](scripts/agents/evidence_week.py) builds one comment from the `.json` reports, posted on the E2 epic: a row per env × bot with net P&L (% of equity), excess return vs holding the coin, worst 7 days, replay gap, the worst stress shock and the missing days, then every failed step. **Live accounts:** an environment whose `.env` has `DERIBIT_ENV=live` gets percentages and the report's path only — no coin or USD amount, no failure detail (the rule of `sme_review.sh`).
+
+A failed step (stress inputs, a report) is listed in the comment and the rest goes on. `data/agents/evidence/<week>.done` marks the week done once the comment is posted; a week whose comment could not be posted is tried once more on a later tick and then marked done whatever happened. Logs of each step: `data/agents/evidence/<week>/`. Tests: `test_evidence.py` (the comment, and `evidence.sh` end to end on throwaway clones with stub `go`/`gh`/`curl`).
