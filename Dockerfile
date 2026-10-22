@@ -1,7 +1,8 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 # Keep the Go version on a supported, patched release: the TLS stack that talks
 # to Deribit comes from the standard library compiled into the binary.
-FROM golang:1.26-alpine AS builder
+# 1.26.10: GO-2026-6809 (crypto/x509) fixed (2026-10-22).
+FROM golang:1.26.10-alpine AS builder
 WORKDIR /build
 # Download deps first (cached layer when source changes but go.mod/go.sum don't)
 COPY go.mod go.sum ./
