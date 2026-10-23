@@ -137,8 +137,8 @@ func WriteMarkdown(w io.Writer, r Report) error {
 			p("- %s (%s): not known — %s\n", name, src, m.Reason)
 			return
 		}
-		p("- %s (%s): **%+.2f %%** of a mean IM used of %.4f (%.1f %% of equity) · %+.2f %% per 30 days · %.1f measured hours\n",
-			name, src, m.ReturnPct, m.MeanIM, m.MeanIMPct, m.Return30dPct, m.MeasuredHours)
+		p("- %s (%s): **%+.2f %%** of a mean IM used of %.4f (%.1f %% of equity) · %+.2f %% per 30 days (over the %.1f h the net covers) · %.1f measured hours\n",
+			name, src, m.ReturnPct, m.MeanIM, m.MeanIMPct, m.Return30dPct, m.SpanHours, m.MeasuredHours)
 	}
 	romLine("live", rom.LiveSource, rom.Live)
 	if rom.Replay != nil {

@@ -60,8 +60,34 @@ func TestPerf_ReturnOnMarginGapsNotFilled(t *testing.T) {
 	if !perfNear(m.MeanIMPct, 25) || !perfNear(m.MeasuredHours, 0.5) {
 		t.Errorf("mean IM %.4f %% over %.2f h; want 25 %% over 0.5 h", m.MeanIMPct, m.MeasuredHours)
 	}
-	if !perfNear(m.ReturnPct, 0.4) || !perfNear(m.Return30dPct, 0.4*30/(0.5/24)) {
-		t.Errorf("return %.4f %% (30 d %.4f); want 0.4 %%", m.ReturnPct, m.Return30dPct)
+	// The 30-day rate is scaled by the time the net covers (6 h + the last
+	// point's 15 min), not by the 0.5 measured hours.
+	if !perfNear(m.ReturnPct, 0.4) || !perfNear(m.SpanHours, 6.25) || !perfNear(m.Return30dPct, 0.4*30/(6.25/24)) {
+		t.Errorf("return %.4f %% (30 d %.4f over %.2f h); want 0.4 %% over 6.25 h", m.ReturnPct, m.Return30dPct, m.SpanHours)
+	}
+}
+
+// Review #282: a week with a 2-day outage — the net covers all 7 days, so the
+// 30-day rate is scaled by 7 days (as the replay's whole window), not by the
+// 5 days measured.
+func TestPerf_ReturnOnMarginOutageKeepsThirtyDayBase(t *testing.T) {
+	var pts []history.Point
+	for i := 0; i <= 7*24*4; i++ {
+		at := perfDay0.Add(time.Duration(i) * 15 * time.Minute)
+		if at.After(perfDay0.Add(48*time.Hour)) && at.Before(perfDay0.Add(96*time.Hour)) {
+			continue // down from day 2 to day 4
+		}
+		pts = append(pts, imPoint(at, 0.07*float64(i)/(7*24*4), f64(10)))
+	}
+	m := perf.ReturnOnMargin(pts, 1, perfDay0, perfDay0.Add(7*24*time.Hour))
+	if !m.Known || !perfNear(m.ReturnPct, 70) {
+		t.Fatalf("known %v return %.4f %% (%s); want 70 %%", m.Known, m.ReturnPct, m.Reason)
+	}
+	if !perfNear(m.SpanHours, 7*24) || !perfNear(m.Return30dPct, 70*30.0/7) {
+		t.Errorf("30 d %.4f %% over %.2f h; want %.4f %% over 168 h", m.Return30dPct, m.SpanHours, 70*30.0/7)
+	}
+	if m.MeasuredHours > 5*24+0.5 || m.MeasuredHours < 5*24-0.5 {
+		t.Errorf("measured %.2f h, want about 5 days", m.MeasuredHours)
 	}
 }
 
