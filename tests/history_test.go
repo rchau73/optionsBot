@@ -185,13 +185,15 @@ func TestAPI_PnLHistory(t *testing.T) {
 }
 
 type recordedPnL struct {
-	mu     sync.Mutex
-	points []history.Point
+	mu      sync.Mutex
+	points  []history.Point
+	margins []*history.Margin // as given, one per point
 }
 
 func (r *recordedPnL) RecordPnL(t time.Time, realised, unrealised, spot float64, margin *history.Margin) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.margins = append(r.margins, margin)
 	p := history.Point{T: t, Realised: realised, Unrealised: unrealised, Spot: spot}
 	if margin != nil {
 		m := *margin
@@ -208,6 +210,16 @@ func (r *recordedPnL) last() (history.Point, bool) {
 		return history.Point{}, false
 	}
 	return r.points[len(r.points)-1], true
+}
+
+// lastMargin returns the margin given with the newest point (nil when none).
+func (r *recordedPnL) lastMargin() *history.Margin {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.margins) == 0 {
+		return nil
+	}
+	return r.margins[len(r.margins)-1]
 }
 
 func TestStrategy_RecordsPnLHistoryEachInterval(t *testing.T) {

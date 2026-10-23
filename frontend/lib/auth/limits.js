@@ -1,13 +1,15 @@
-// Sign-in throttling, in memory (a restart forgets it): a username with 5
-// failures within 15 minutes is locked until 15 minutes after its last
-// failure, and an IP may try 20 sign-ins a minute. Every method takes `now`
-// (ms) so tests can move the clock.
+// Sign-in throttling: a username with 5 failures within 15 minutes is locked
+// until 15 minutes after its last failure, and an IP may try 20 sign-ins a
+// minute. Failures and locks live in the environment's auth.db (AuthStore), so
+// a restart or deploy of the monitor does not clear a lockout (#213); the
+// per-IP count is short-lived and stays in this process's memory (a restart
+// forgets it). Every method takes `now` (ms) so tests can move the clock.
 
 export const LOCK_FAILURES = 5;
 export const LOCK_WINDOW_MS = 15 * 60 * 1000;
 export const IP_ATTEMPTS = 20;
 export const IP_WINDOW_MS = 60 * 1000;
-// Past this many keys, stale ones are swept before adding another.
+// Past this many IPs, stale ones are swept before adding another.
 const SWEEP_AT = 10000;
 
 function recent(map, key, windowMs, now) {
@@ -23,9 +25,9 @@ function sweep(map, windowMs, now) {
 }
 
 export class LoginLimiter {
-  constructor() {
-    this.failures = new Map(); // username → failure times
-    this.locks = new Map(); // username → locked until (ms)
+  /** store: the AuthStore that keeps the username failures and locks. */
+  constructor(store) {
+    this.store = store;
     this.attempts = new Map(); // ip → attempt times
   }
 
@@ -40,32 +42,29 @@ export class LoginLimiter {
 
   /** The time (ms) the username stays locked until, or 0 when it is not locked. */
   lockedUntil(username, now) {
-    const until = this.locks.get(username) ?? 0;
-    if (until > now) return until;
-    this.locks.delete(username);
-    return 0;
+    const until = this.store.loginLockUntil(username);
+    return until > now ? until : 0;
   }
 
   /**
    * Records a failed sign-in; true when this failure locks the username (for
    * 15 minutes from now). Attempts during a lock are not failures: they
-   * neither extend it nor count afterwards.
+   * neither extend it nor count afterwards. Failures older than the window
+   * are deleted here, so the table stays small.
    */
   recordFailure(username, now) {
-    const times = recent(this.failures, username, LOCK_WINDOW_MS, now);
-    sweep(this.failures, LOCK_WINDOW_MS, now);
-    if (times.length + 1 < LOCK_FAILURES) {
-      this.failures.set(username, [...times, now]);
+    const expired = now - LOCK_WINDOW_MS;
+    const recentFailures = this.store.loginFailureTimes(username).filter((t) => t > expired);
+    if (recentFailures.length + 1 < LOCK_FAILURES) {
+      this.store.addLoginFailure(username, now, expired);
       return false;
     }
-    this.failures.delete(username);
-    for (const [name, until] of this.locks) if (until <= now) this.locks.delete(name);
-    this.locks.set(username, now + LOCK_WINDOW_MS);
+    this.store.lockLogin(username, now + LOCK_WINDOW_MS, now, expired);
     return true;
   }
 
   /** Forgets the failures of a username (after a successful sign-in). */
   clear(username) {
-    this.failures.delete(username);
+    this.store.clearLoginFailures(username);
   }
 }

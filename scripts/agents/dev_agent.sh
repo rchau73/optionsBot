@@ -27,7 +27,7 @@ require_tools claude gh git go gofmt python3 || exit 1
 slug="$(repo_slug)"
 # One instance picks at a time, so two never take the same card.
 mutex dev-pick || exit 0
-max="$(parallel_max "${DEV_PARALLEL:-3}")"
+max="$(parallel_max "${DEV_PARALLEL:-1}")"
 if [[ "$(claims_alive dev)" -ge "$max" ]]; then unmutex dev-pick; log "dev: $max instance(s) already running"; exit 0; fi
 next="$(ready_next dev)"
 [[ -n "$next" ]] || { unmutex dev-pick; log "dev: nothing in Ready"; exit 0; }
@@ -115,6 +115,7 @@ denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git c
   "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
 model_args=()
 [[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
+budget_take dev # the daily budget (limit_lib.sh)
 
 log "dev: running the agent in $wt"
 started="$(date +%s)"
@@ -199,7 +200,7 @@ if [[ -n "$existing_pr" ]]; then
   # A PR opened as a draft on failing checks becomes reviewable once they pass.
   [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
-  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
+  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
   pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
 fi

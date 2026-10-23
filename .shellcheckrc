@@ -1,0 +1,4 @@
+# shellcheck settings (scripts/check_shell.sh, #205). Sourced files — and the
+# `# shellcheck source=` directives — are resolved beside the script that
+# sources them (scripts/agents/lib.sh → ../env_lib.sh, limit_lib.sh).
+source-path=SCRIPTDIR

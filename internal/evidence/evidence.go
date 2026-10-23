@@ -72,11 +72,13 @@ type Report struct {
 	From      time.Time `json:"from"`
 	To        time.Time `json:"to"` // exclusive
 	Live      Live      `json:"live"`
+	Bridge    Bridge    `json:"bridge"`
 	Replay    Replay    `json:"replay"`
 	Gap       Gap       `json:"gap"`
 	Stress    Stress    `json:"stress"`
 	Hold      Hold      `json:"hold"`
 	Util      Util      `json:"utilisation"`
+	ROM       ROM       `json:"return_on_margin"`
 	Missing   Missing   `json:"missing"`
 	Equity    float64   `json:"equity"` // coin, at the start (0 = unknown)
 	EquitySrc string    `json:"equity_source"`
@@ -177,6 +179,16 @@ type Util struct {
 	Stats  history.UtilisationStats `json:"stats"`
 }
 
+// ROM is the north star (#278): net return per unit of initial margin
+// used, live (P&L history) and, when the replay ran, the replay's own.
+type ROM struct {
+	Label        string             `json:"label"` // perf.MarginApprox
+	LiveSource   string             `json:"live_source"`
+	Live         perf.MarginReturn  `json:"live"`
+	ReplaySource string             `json:"replay_source"`
+	Replay       *perf.MarginReturn `json:"replay"` // nil when the replay did not run
+}
+
 // Missing lists, per input, the UTC days of the window it has nothing for.
 type Missing struct {
 	HistoryDays []string `json:"history_days"` // no P&L history point
@@ -195,6 +207,7 @@ func Build(in Inputs) Report {
 		r.Equity = in.Equity
 	}
 	r.Live = buildLive(in)
+	r.Bridge = BuildBridge(in.Points, w.From, w.To, in.History)
 	r.Hold = buildHold(in, r.Live.Perf)
 	r.Util = Util{Source: in.History, Stats: history.Utilisation(in.Points, w.From, w.To)}
 	r.Missing = Missing{
@@ -204,6 +217,7 @@ func Build(in Inputs) Report {
 	}
 	r.Replay, r.Gap = buildReplay(in)
 	r.Stress = buildStress(in)
+	r.ROM = buildROM(in, r.Replay)
 	return r
 }
 
@@ -295,6 +309,20 @@ func buildReplay(in Inputs) (Replay, Gap) {
 	gap.Replay = res.Net
 	gap.Gap = res.Net - gap.Live.Net
 	return rp, gap
+}
+
+// buildROM is the return on margin, live and replayed (#278). The replay's
+// average IM is its MODEL margin, averaged per decision.
+func buildROM(in Inputs, rp Replay) ROM {
+	m := ROM{Label: perf.MarginApprox,
+		LiveSource:   in.History + " (net P&L ÷ time-weighted mean im_pct × equity)",
+		Live:         perf.ReturnOnMargin(in.Points, in.Equity, in.Window.From, in.Window.Last()),
+		ReplaySource: "the replay's net ÷ its average IM % (MODEL margin) × equity"}
+	if rp.Ran {
+		r := perf.ReturnOnMarginOf(rp.Net, rp.AvgIMPct, in.Equity, rp.End.Sub(rp.Start).Hours())
+		m.Replay = &r
+	}
+	return m
 }
 
 func buildStress(in Inputs) Stress {

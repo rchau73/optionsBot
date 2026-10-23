@@ -38,7 +38,7 @@ agent_reviews() {
 # Pick the first In review card whose agent:dev PR head has not been reviewed
 # and that no other instance is reviewing.
 mutex review-pick || exit 0
-max="$(parallel_max "${REVIEW_PARALLEL:-3}")"
+max="$(parallel_max "${REVIEW_PARALLEL:-1}")"
 if [[ "$(claims_alive review)" -ge "$max" ]]; then unmutex review-pick; log "review: $max instance(s) already running"; exit 0; fi
 item="" issue="" pr="" head=""
 while read -r it num; do
@@ -69,6 +69,7 @@ git_locked fetch -q origin main "agent/issue-$issue"
 wt="$AGENT_WORK_DIR/review-pr-$pr"
 [[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 git_locked worktree add -q --detach "$wt" "$head"
+# shellcheck disable=SC2154 # _rc is set by the trap itself, before it is read
 trap '_rc=$?; git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_exit "$_rc"' EXIT
 
 # ── Task for the agent: its instructions, the ticket, the PR, the diff ──────
@@ -108,6 +109,7 @@ denied=( "Edit" "Write" "NotebookEdit" "Bash(git commit:*)" "Bash(git push:*)" "
   "WebFetch" "WebSearch" "Agent" )
 model_args=()
 [[ -n "${REVIEW_MODEL:-}" ]] && model_args=(--model "$REVIEW_MODEL")
+budget_take review # the daily budget (limit_lib.sh)
 
 log "review: running the agent in $wt"
 started="$(date +%s)"

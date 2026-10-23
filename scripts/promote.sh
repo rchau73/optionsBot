@@ -23,7 +23,7 @@ for a in "$@"; do
 done
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: promote.sh vMAJOR.MINOR.PATCH [--first] [--yes]" >&2; exit 1; }
 SOAK_DAYS="${PROMOTE_SOAK_DAYS:-3}"
-stable="$(env_dir stable)"; mvp="$(env_dir mvp)"
+stable="$(env_dir stable)"
 promotions="$ENV_HISTORY/promotions.tsv"; deploys="$ENV_HISTORY/deploys.tsv"
 die() { echo "promote: $*" >&2; exit 1; }
 
