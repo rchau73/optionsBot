@@ -199,7 +199,7 @@ if [[ -n "$existing_pr" ]]; then
   # A PR opened as a draft on failing checks becomes reviewable once they pass.
   [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
-  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
+  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
   pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
 fi

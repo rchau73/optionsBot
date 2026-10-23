@@ -19,10 +19,12 @@ fmt:
 vet:
 	go vet ./...
 
-# check is what CI runs: formatting, vet and the race-enabled test suite.
+# check is what CI runs: formatting, vet, the shell scripts (bash -n, and
+# shellcheck when installed) and the race-enabled test suite.
 check:
 	@test -z "$$(gofmt -l cmd internal tests)" || (echo "gofmt needed:"; gofmt -l cmd internal tests; exit 1)
 	go vet ./...
+	bash scripts/check_shell.sh
 	go test ./tests/... -race -count=1
 
 # hooks enables .githooks/pre-commit (refuses .env files and any value from

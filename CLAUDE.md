@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 make build                     # go build -o bot ./cmd/bot
-make check                     # gofmt + go vet + race tests (what CI runs)
+make check                     # gofmt + go vet + shell scripts + race tests (what CI runs)
+bash scripts/check_shell.sh    # bash -n + shellcheck -x --severity=warning on scripts/**/*.sh and .githooks/* (shellcheck skipped if not installed; CI requires it); every disable needs "disable=SCxxxx # why"
 make test                      # go test ./tests/... -race -count=1
 make cover                     # coverage across ./internal/... (tests live in ./tests)
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
