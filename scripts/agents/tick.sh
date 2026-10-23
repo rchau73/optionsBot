@@ -12,7 +12,10 @@
 #     Monday (UTC) and posts them on the E6 epic (#180), else exits at once;
 #   - evidence.sh, which writes last week's evidence report of every env × bot
 #     on the first tick of a Monday (UTC) and posts its summary on the E2 epic
-#     (#244), else exits at once.
+#     (#244), else exits at once;
+#   - backup_data.sh, which copies every env × bot's journal and histories to
+#     <envs>/history/backups/<date>/ and checks the copy replays, on the first
+#     tick after 00:00 UTC (#328), else exits at once.
 # After a usage or rate limit no new Claude run starts for 30 min, then one at a
 # time for an hour (lib.sh parallel_max); the budget in <envs>/agents.env
 # (pause, agent hours, Claude runs per day, parallelism, models: limit_lib.sh)
@@ -56,4 +59,5 @@ fi
 start pm_agent.sh 1 # its board passes need no Claude; triage and planning check the budget
 start metrics.sh 1 # weekly: exits at once unless last week's report is missing
 start evidence.sh 1 # weekly: exits at once once last week's done-marker exists
+start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

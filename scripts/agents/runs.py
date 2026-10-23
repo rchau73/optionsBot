@@ -1,6 +1,6 @@
 """runs.py — the agent run ledger (#206): <envs>/history/agent_runs.jsonl.
 
-Every SME, PM, PM-answer, Dev, Reviewer, PR-gate and deploy run appends a
+Every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy and backup run appends a
 `start` and an `end` line (lib.sh run_begin / run_end), so "which agent did
 what, when, on which card, and how did it end?" is answered from one file:
 
@@ -25,7 +25,7 @@ import os
 import sys
 
 FIELDS = ("ts", "agent", "run_id", "issue", "pr", "event", "outcome", "detail", "log", "commit")
-AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy")
+AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "backup")
 EVENTS = ("start", "end")
 DETAIL_MAX = 200
 
