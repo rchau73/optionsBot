@@ -38,12 +38,19 @@ go run ./cmd/monitor-demo
 # Terminal 2 — the monitor, showing only the demo BTC bot
 cd frontend
 npm ci
-printf 'AUTH_SECRET=%s\nADMIN_USERNAME=moderator\nADMIN_PASSWORD=%s\n' "$(openssl rand -base64 48)" "$(openssl rand -base64 18)" > .env.local
-grep ADMIN_PASSWORD .env.local        # the password to sign in with
+# A fresh, throw-away user database for this round: the monitor creates the
+# first admin only when its user database is empty, so a reused one would
+# reject the new password. Nothing is written to .env.local (yours is kept;
+# these variables take precedence over it).
+export AUTH_DB_PATH="$(mktemp -d)/auth.db"
+export AUTH_SECRET="$(openssl rand -base64 48)"
+export ADMIN_USERNAME=moderator
+export ADMIN_PASSWORD="$(openssl rand -base64 18)"
+echo "$ADMIN_PASSWORD"                # the password to sign in with
 BOT_APIS=btc=http://127.0.0.1:8081 npm run dev
 ```
 
-1. Open <http://localhost:3000> and sign in as `moderator` with the password printed above. Sign in **before** the participant sits down: signing in is not part of the test.
+1. Open <http://localhost:3000> and sign in as `moderator` with the password printed above. Sign in **before** the participant sits down: signing in is not part of the test. Run terminal 2's commands again, in a new terminal, at the start of every round (and whenever terminal 2 was closed): each run gets its own empty user database, so the printed password always works.
 2. **Desktop run:** a browser window of **1440 × 900** (Chrome: DevTools → device toolbar → Responsive → 1440 × 900, then close DevTools). Zoom 100 %. Scroll to the top.
 3. **Phone run (E12):** one of the 5 sessions — P5 — uses a phone layout: Chrome DevTools device toolbar, **iPhone 12 Pro (390 × 844)**, or a real phone on the same network. Write "mobile" as its layout in the results table.
 4. Check the page shows the **BTC · investor summary** block with four parts: *What it holds*, *Income per month*, *Worst case now*, *Last action*. If it says "Summary unavailable", restart terminal 1.

@@ -58,6 +58,9 @@ func TestUsabilityKit_RunsWithoutTheAuthor(t *testing.T) {
 		"BOT_APIS=btc=http://127.0.0.1:8081 npm run dev",
 		"npm ci",
 		"AUTH_SECRET=",
+		// A fresh user database per run: the first admin is created only
+		// when the database is empty (frontend/lib/auth/service.js).
+		`export AUTH_DB_PATH="$(mktemp -d)/auth.db"`,
 		"1440 × 900",
 		"390 × 844",
 		"**The moderator must not:**",
@@ -69,6 +72,9 @@ func TestUsabilityKit_RunsWithoutTheAuthor(t *testing.T) {
 		if !strings.Contains(doc, want) {
 			t.Errorf("the kit does not contain %q", want)
 		}
+	}
+	if strings.Contains(doc, "> .env.local") {
+		t.Error("the kit overwrites the moderator's frontend/.env.local")
 	}
 	for _, h := range []string{"## 1. When to run it", "## 2. Screener", "## 3. Setup", "## 4. Moderator script",
 		"## 5. After the tasks", "## 6. Answer key", "## 7. Scoring", "## 8. Templates"} {
