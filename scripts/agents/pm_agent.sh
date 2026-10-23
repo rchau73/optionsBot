@@ -138,6 +138,8 @@ pm_note() { # outcome, detail — a failure or a limit outranks a success
 
 triage() {
 [[ -n "$todo" ]] || { log "pm: nothing new in Triage, every open card has an epic"; return 0; }
+# Triage asks Claude too: it waits out a limit pause and the budget like the others.
+[[ "$(parallel_max 1)" -gt 0 ]] || { log "pm: triage of #${todo// / #} waits (limit pause or budget)"; return 0; }
 run_begin pm "" "" "$run"
 log "pm: deciding on #${todo// / #}"
 for num in $todo; do
@@ -151,6 +153,7 @@ rule areas and prototype approval), pending.json (the cards to decide: 'triage' 
 pending_issues.json (their bodies and last comments) and board.json (every card with its column and priority).
 You may also read CLAUDE.md, AGENTIC.md, OptionStrategy.md and docs/.
 Print only the report in the exact output shape the skill defines, ending with the PM-JSON block."
+budget_take pm # the daily budget (limit_lib.sh)
 started="$(date +%s)"
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
@@ -280,6 +283,7 @@ Inputs are in $run/: PRD.md (the approved PRD), epics.json (epics with issue num
 and board.json (every card with its column, priority, labels and parent epic). You may read CLAUDE.md, AGENTIC.md,
 OptionStrategy.md, README.md, docs/, frontend/ and the code to write buildable stories.
 Print only the report in the exact output shape the skill defines, ending with the PM-STORIES block."
+  budget_take pm # the daily budget (limit_lib.sh)
   started="$(date +%s)"
   if claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
       --allowedTools "Read" "Grep" "Glob" "Skill" \
