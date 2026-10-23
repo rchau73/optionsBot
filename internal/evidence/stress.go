@@ -54,6 +54,36 @@ func StressArgs(cfg *config.Config, dir, shock string) []string {
 	return args
 }
 
+// stressKeys are the YAML settings StressArgs passes to cmd/stress (by
+// their top-level key); a change of StressArgs needs this list too.
+var stressKeys = []string{"underlying", "dte_delta_matrix", "roi_take_profit", "delta_drift_threshold",
+	"delta_exit_threshold", "max_leg_size_multiple", "gamma_flip_buffer_sd", "gex_direction", "iv_margin_bands"}
+
+// StressModels says whether cmd/stress, run with StressArgs, sees the YAML
+// setting key ("roi_take_profit", "iv_margin_bands[1].max_im_pct") of every
+// given config: the IM bands only when each config's are the three bands the
+// tool models.
+func StressModels(key string, cfgs ...*config.Config) bool {
+	top := key
+	if i := strings.IndexAny(key, ".["); i >= 0 {
+		top = key[:i]
+	}
+	for _, k := range stressKeys {
+		if k != top {
+			continue
+		}
+		if k == "iv_margin_bands" {
+			for _, c := range cfgs {
+				if bandsFlag(c) == "" {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // bandsFlag is "low,mid,high" when the config's bands start at IV
 // percentiles 0, 30 and 70 — the only bands cmd/stress models — else "".
 func bandsFlag(cfg *config.Config) string {
