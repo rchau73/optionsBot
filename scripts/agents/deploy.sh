@@ -81,26 +81,31 @@ file_issue() {
 # fail <step> <log of the step> — the target failed: keep it in mvp.failed,
 # roll mvp back to the last healthy commit, file the bug issue, stop.
 fail() {
-  local step="$1" f="$faildir/$target" rollback
+  local step="$1" f="$faildir/$target" rollback outcome
   echo "$target" > "$failed"
   tail -n 200 "$2" > "$f.tail" 2>/dev/null || true
   git -C "$dir" log --oneline "${deployed:+$deployed..}$target" 2>/dev/null | head -30 > "$f.range" || true
   log "deploy: mvp ${target:0:7} failed ($step)"
   if [[ -z "$deployed" ]]; then
     rollback="none: mvp has no earlier healthy deploy"
+    outcome=failed
     notify "Deploy FAILED" "mvp ${target:0:7}: $step; nothing to roll back to"
   elif log "deploy: rolling mvp back to ${deployed:0:7}" && git -C "$dir" reset -q --hard "$deployed" &&
     env_compose mvp up -d --build && wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}" "$token"; then
     rollback="mvp rolled back to \`${deployed:0:7}\`, healthy"
+    outcome=rolled_back
     env_record deploys.tsv mvp "$deployed" rollback
     log "deploy: mvp rolled back to ${deployed:0:7}, healthy"
     notify "Deploy FAILED, rolled back to ${deployed:0:7}" "mvp ${target:0:7}: $step"
   else
     rollback="**FAILED**: the rollback to \`${deployed:0:7}\` did not come back healthy, mvp is down (scripts/envctl.sh mvp logs)"
+    outcome=failed
     log "deploy: ROLLBACK to ${deployed:0:7} FAILED — mvp is down; scripts/envctl.sh mvp logs"
     notify "Deploy FAILED, ROLLBACK FAILED" "mvp is down: ${target:0:7} and ${deployed:0:7} both unhealthy"
   fi
   printf '%s\n%s\n' "$step" "$rollback" > "$f.meta"
+  if [[ "$outcome" == "rolled_back" ]]; then run_end rolled_back "$step failed: back to ${deployed:0:7}"
+  else run_end failed "$step failed; rollback: ${deployed:+failed}${deployed:-none}"; fi
   file_issue "$target"
   exit 1
 }
@@ -126,7 +131,11 @@ if [[ "$target" == "$(cat "$failed" 2>/dev/null || true)" ]]; then
 fi
 
 mkdir -p "$AGENT_STATE_DIR/deploy" "$faildir"
-exec > >(tee -a "$AGENT_STATE_DIR/deploy/$(date +%Y%m%d-%H%M%S)-${target:0:7}.log") 2>&1
+deploy_log="$AGENT_STATE_DIR/deploy/$(date +%Y%m%d-%H%M%S)-${target:0:7}.log"
+exec > >(tee -a "$deploy_log") 2>&1
+# The run ledger (lib.sh): only a tick that tries a new commit is a run.
+run_begin deploy "" "" "$deploy_log"
+RUN_COMMIT="${target:0:7}"
 log "deploy: mvp ${deployed:0:7} → ${target:0:7}"
 
 url="$(env_monitor_url mvp)"
@@ -135,12 +144,14 @@ env="$(bots_environment "$url" "$token")"
 if [[ "$env" == "live" ]]; then
   log "deploy: mvp bots are live — automatic deploy is testnet-only"
   notify "Deploy skipped" "mvp bots are live: deploy ${target:0:7} by hand"
+  run_end skipped "mvp bots are live: deploy by hand"
   exit 0
 fi
 branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
 if [[ "$branch" != "main" || -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]]; then
   log "deploy: $dir is on '$branch' or has local changes — not touching it"
   notify "Deploy waiting" "the mvp clone must be a clean main to deploy ${target:0:7}"
+  run_end skipped "mvp clone not a clean main"
   exit 0
 fi
 
@@ -158,6 +169,7 @@ rm -f "$step_log"
 echo "$target" > "$state"
 env_record deploys.tsv mvp "$target"
 log "deploy: mvp ${target:0:7} healthy"
+run_end deployed "healthy on mvp"
 
 close_out "$target"
 "$AGENT_REPO_DIR/scripts/prune_branches.sh" "$dir" | tail -1 || true # merged agent branches
