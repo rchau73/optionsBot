@@ -94,7 +94,7 @@ for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open
   fi
 done
 
-max="$(parallel_max "${PM_ANSWER_PARALLEL:-2}")"
+max="$(parallel_max "${PM_ANSWER_PARALLEL:-1}")"
 issue=""
 if [[ "$(claims_alive pm-answer)" -lt "$max" ]]; then
   for n in $(python3 "$BOARD_PY" answered "$tmp/tickets.json" "$STATE"); do
@@ -195,6 +195,7 @@ denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git c
   "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" "NotebookEdit" )
 model_args=()
 [[ -n "${PM_MODEL:-}" ]] && model_args=(--model "$PM_MODEL")
+budget_take pm_answer # the daily budget (limit_lib.sh)
 
 log "pm-answer: running the agent in $wt"
 started="$(date +%s)"
