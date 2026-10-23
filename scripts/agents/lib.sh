@@ -390,7 +390,7 @@ run_end() {
 # run_end_on_exit <exit code> — the EXIT trap's part: a run nobody ended.
 run_end_on_exit() {
   [[ -n "$RUN_ID" ]] || return 0
-  if [[ "$1" -eq 0 ]]; then run_end done "exit 0 with no outcome recorded"
+  if [[ "$1" -eq 0 ]]; then run_end "done" "exit 0 with no outcome recorded"
   else run_end failed "exit $1"; fi
 }
 
