@@ -102,6 +102,8 @@ cd frontend && npm install && npm run dev                       # http://localho
 
 Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ignored): `AUTH_SECRET=$(openssl rand -base64 48)`, `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD=<12+ characters>`; the user database is then `frontend/data/monitor/auth.db` (git-ignored).
 
+**Usability test (E3, #202):** [`docs/usability/e3-investor-monitor-test.md`](../docs/usability/e3-investor-monitor-test.md) — the 5-user, 4-question, 5-minute test of the investor view on this demo data (baseline, prototype, release), with its answer key, scoring and anonymised templates.
+
 **Against locally running bots:** start each bot with `BOT_API_ADDR=127.0.0.1:8081` (BTC) / `127.0.0.1:8082` (ETH), then `npm run dev`.
 
 | Variable | Default | Meaning |
