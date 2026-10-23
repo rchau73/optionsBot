@@ -105,8 +105,11 @@ var skipWords = map[string]string{
 		"so the bot adds no risk until they come back.",
 	strategy.SkipRiskFrozen: "No new strangle: new risk is paused while a change in volatility or in market makers' positioning " +
 		"waits to be confirmed on daily closes. Exits and repairs continue.",
-	strategy.SkipRepairHeld: "A missing leg is not sold again yet: that side was closed by a stop-loss, a quick exit or by hand, " +
-		"so the bot waits for its cooldown and a calmer market before selling it again.",
+	// The sentence of a known hold is picked from the detail (repairHeldWords);
+	// this one covers every hold, for a line whose detail names none.
+	strategy.SkipRepairHeld: "A missing leg is not sold again yet: a rule still holds that side back " +
+		"(a cooldown after a stop-loss or a close by hand, a GEX shed whose signal has not passed, " +
+		"or the trend under a negative gamma regime). It is sold again once that rule lets it go.",
 	strategy.SkipNoExpiry: "No new strangle in this slot: the exchange lists no expiry date in the slot's range. " +
 		"It waits for one.",
 	strategy.SkipNoFreeExpiry: "No new strangle in this slot: every expiry date in its range is already used by another slot, " +
@@ -244,6 +247,11 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 			"the bot manages it like a position it sold itself.", legName(l)), ""
 	case orders.EventSkipped:
 		word := skipWord(l.SkipReason)
+		if word == strategy.SkipRepairHeld {
+			if s := repairHeldWords(l.SkipReason); s != "" {
+				return s, ""
+			}
+		}
 		if s, ok := skipWords[word]; ok {
 			return s, ""
 		}
@@ -423,6 +431,32 @@ func skipWord(text string) string {
 		return text[:i]
 	}
 	return text
+}
+
+// repairHeldWords explains a repair_held skip by the hold its detail names
+// (the reasons of strategy's repairGate and complementHold): a stopped or
+// hand-closed side ("<side> stopped out, …"), a GEX shed ("shed by GEX …")
+// or the regime-side rule ("… no new puts"). "" when the detail names none.
+func repairHeldWords(text string) string {
+	topUp := strings.Contains(text, "top-up held")
+	switch {
+	case strings.Contains(text, "stopped out"):
+		if topUp {
+			return "The rebalance adds nothing to this slot yet: one of its sides was closed by a stop-loss, " +
+				"a quick exit, a margin cut or by hand, and that side waits for its cooldown and a calmer market. " +
+				"The rebalance tries again later."
+		}
+		return "A missing leg is not sold again yet: that side was closed by a stop-loss, a quick exit, a margin cut or by hand, " +
+			"so the bot waits for its cooldown and a calmer market before selling it again."
+	case strings.Contains(text, "shed by GEX"):
+		return "A missing leg is not sold again yet: it was bought back because market makers' positioning pointed to " +
+			"a strong move against it (GEX shed). It is sold again once that signal has passed for long enough, " +
+			"not on a single reading."
+	case strings.Contains(text, "no new puts"), strings.Contains(text, "no new calls"):
+		return "A missing leg is not sold again yet: market makers' positioning favours strong moves and the price trend " +
+			"runs toward that side, so the bot does not sell it until that changes."
+	}
+	return ""
 }
 
 // timesWord reads the stop-loss multiple from a stop's detail ("≥ 2.00×"):

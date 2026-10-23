@@ -18,6 +18,8 @@ import (
 
 	"optionsbot/internal/api"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/risk"
+	"optionsbot/internal/strategy"
 )
 
 // journalConsts reads the string constants of the Go files in dir whose name
@@ -300,6 +302,43 @@ func TestAPIExplain_SentencesCarryTheirNumbers(t *testing.T) {
 		plain, unknown := api.ExplainEvent(c.e)
 		if unknown != "" || !strings.Contains(plain, c.want) {
 			t.Errorf("%s: %q (unknown %q), want %q", c.e.Data, plain, unknown, c.want)
+		}
+	}
+}
+
+// A repair_held line is explained by the hold it names: the details are built
+// with the strategy's own reason functions, as repairGate and complementHold
+// journal them, so a reworded reason fails here.
+func TestAPIExplain_RepairHeldNamesItsHold(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	calm := risk.Status{}
+	negative := risk.Status{RegimeUsed: true, RegimeNegative: true}
+	anchor := &strategy.ShedAnchor{At: now.Add(-time.Hour), Flip: 70000, BufferPct: 2.5}
+	stopped := "put stopped out, " + strategy.RepairBlockReason(now.Add(-time.Hour), now, 72*time.Hour, calm)
+	stoppedNeg := "call stopped out, " + strategy.RepairBlockReason(now.Add(-100*time.Hour), now, 72*time.Hour, negative)
+	shed := "put " + strategy.ShedRepairBlockReason(anchor, now, time.Time{}, 2, 24*time.Hour)
+	biasShed := "call " + strategy.BiasRepairBlockReason(anchor, "call", now, 4*time.Hour, 2)
+	regimeSide := "put " + strategy.RegimeSideBlockReason("put", -1, negative)
+
+	cases := []struct {
+		name, detail, want, notWant string
+	}{
+		{"stopped", stopped, "closed by a stop-loss", "GEX"},
+		{"stopped under a negative regime", stoppedNeg, "closed by a stop-loss", "GEX"},
+		{"GEX shed", shed, "(GEX shed)", "stop-loss"},
+		{"GEX shed by bias", biasShed, "(GEX shed)", "stop-loss"},
+		{"regime side", regimeSide, "price trend runs toward that side", "stop-loss"},
+		{"top-up held", "top-up held: " + stopped, "The rebalance adds nothing to this slot yet", "GEX"},
+		{"no detail", "", "a rule still holds that side back", ""},
+	}
+	for _, c := range cases {
+		text := strategy.SkipRepairHeld
+		if c.detail != "" {
+			text += ": " + c.detail
+		}
+		plain, unknown := api.ExplainEvent(event(orders.EventSkipped, map[string]any{"skip_reason": text}))
+		if unknown != "" || !strings.Contains(plain, c.want) || (c.notWant != "" && strings.Contains(plain, c.notWant)) {
+			t.Errorf("%s (%q): %q (unknown %q), want %q without %q", c.name, text, plain, unknown, c.want, c.notWant)
 		}
 	}
 }
