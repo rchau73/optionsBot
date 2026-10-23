@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"optionsbot/internal/perf"
 )
 
 // WriteMarkdown writes the report as Markdown: one section per source,
@@ -125,6 +127,24 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		}
 		p("\n")
 	}
+
+	rom := r.ROM
+	p("## Return on margin (north star)\n\n%s.\n\n", rom.Label)
+	romLine := func(name, src string, m perf.MarginReturn) {
+		if !m.Known {
+			p("- %s (%s): not known — %s\n", name, src, m.Reason)
+			return
+		}
+		p("- %s (%s): **%+.2f %%** of a mean IM used of %.4f (%.1f %% of equity) · %+.2f %% per 30 days · %.1f measured hours\n",
+			name, src, m.ReturnPct, m.MeanIM, m.MeanIMPct, m.Return30dPct, m.MeasuredHours)
+	}
+	romLine("live", rom.LiveSource, rom.Live)
+	if rom.Replay != nil {
+		romLine("replay", rom.ReplaySource, *rom.Replay)
+	} else {
+		p("- replay: not run\n")
+	}
+	p("\n")
 
 	h := r.Hold
 	p("## Benchmark: holding the coin\n\nSource: %s.\n\n", h.Source)

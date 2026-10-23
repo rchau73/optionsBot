@@ -108,6 +108,21 @@ def gap_cell(r, live, cur):
     return coin(g["gap"], cur) + (f" ({share})" if share else "")
 
 
+def rom_cell(r):
+    """Return on margin (#278), live then replay: a %, shown for any env."""
+    rom = r.get("return_on_margin") or {}
+
+    def one(m):
+        m = m or {}
+        if not m.get("Known"):
+            return f"— ({m.get('Reason') or 'not computed'})"
+        return f"{pct(m['ReturnPct'])} ({pct(m['Return30dPct'])} / 30 d)"
+
+    live = one(rom.get("live"))
+    replay = one(rom.get("replay")) if rom.get("replay") else "— (replay did not run)"
+    return f"live {live} · replay {replay}"
+
+
 def stress_cell(r):
     s = r.get("stress") or {}
     if not s.get("ran"):
@@ -142,9 +157,10 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
     failures = load_failures(failures_path)
     out = [f"{HEADER} — week {week} (`scripts/agents/evidence.sh`, #244)", "",
            "One row per environment × bot, from `cmd/evidence` (README \"Evidence report\"). "
-           "Percentages are of the margin balance at the week's start; the replay gap is replay − live.", "",
-           "| env | bot | net P&L | excess vs holding the coin | worst 7 days | replay gap | stress | missing days | report |",
-           "|---|---|---|---|---|---|---|---|---|"]
+           "Percentages are of the margin balance at the week's start; the replay gap is replay − live. "
+           "Return on margin = net P&L ÷ mean IM used (IM % × the margin balance at the week's start, an approximation).", "",
+           "| env | bot | net P&L | return on margin | excess vs holding the coin | worst 7 days | replay gap | stress | missing days | report |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
     for env in envs:
         root = os.path.join(envs_dir, env)
@@ -159,11 +175,11 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
                 with open(path) as f:
                     r = json.load(f)
             except (OSError, ValueError):
-                out.append(f"| {label} | {bot} | no report | | | | | | — |")
+                out.append(f"| {label} | {bot} | no report | | | | | | | — |")
                 continue
             cur = bot.upper()
             out.append("| " + " | ".join([
-                label, bot, net_cell(r, live, cur), excess_cell(r), worst_week_cell(r, live, cur),
+                label, bot, net_cell(r, live, cur), rom_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
     if failures:
         out += ["", "**Failed steps** (the other reports were still written):", ""]

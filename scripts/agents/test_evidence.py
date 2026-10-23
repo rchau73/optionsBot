@@ -27,6 +27,8 @@ def report(**over):
         "stress": {"ran": True, "stale": False, "outcomes": [
             {"shock": "crash", "return_pct": -12.5}, {"shock": "rally", "return_pct": -3.1},
             {"shock": "chop", "return_pct": 1.0, "error": ""}, {"shock": "crash40", "return_pct": -99, "error": "boom"}]},
+        "return_on_margin": {"live": {"Known": True, "ReturnPct": 6.2, "Return30dPct": 26.57},
+                             "replay": {"Known": True, "ReturnPct": 7.15, "Return30dPct": 30.64}},
         "hold": {"known": True, "hold_return_usd_pct": 4.2, "strategy_known": True, "excess_return_pct": -1.3},
         "missing": {"history_days": ["2026-10-20"], "book_days": [], "gex_days": [
             "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"]},
@@ -77,6 +79,7 @@ class Comment(unittest.TestCase):
         self.assertTrue(text.startswith("🤖 **Evidence report** — week 2026-W43"))
         row = self.row(text, "stable", "btc")
         self.assertIn("+0.0123 BTC (+0.62 %)", row)           # net P&L
+        self.assertIn("live +6.20 % (+26.57 % / 30 d) · replay +7.15 % (+30.64 % / 30 d)", row)  # return on margin
         self.assertIn("-1.30 % (hold +4.20 %)", row)           # excess vs hold
         self.assertIn("-0.0040 BTC (-0.20 %)", row)            # worst 7 days
         self.assertIn("+0.0020 BTC (+0.10 %)", row)            # replay gap, % of equity
@@ -94,6 +97,7 @@ class Comment(unittest.TestCase):
         row = self.row(text, "stable", "btc")
         self.assertIn("stable (live)", row)
         self.assertIn("+0.62 %", row)
+        self.assertIn("live +6.20 %", row)                     # return on margin is a %: allowed live
         self.assertNotIn("BTC", row)
         self.assertNotIn("USD", text)
         self.assertNotIn("108123", text)                       # failure details hidden for a live env
@@ -108,9 +112,10 @@ class Comment(unittest.TestCase):
         r["stress"] = {"ran": False, "note": "no book in data/stress/btc"}
         r["hold"] = {"known": False}
         r["missing"] = {}
+        r["return_on_margin"] = {"live": {"Known": False, "Reason": "no point carries im_pct"}, "replay": None}
         self.put("stable", "btc", r)
         row = self.row(self.build(envs=("stable",)), "stable", "btc")
-        for want in ("— (no P&L history)", "— (no spot in the history)", "— (under 7 days of history)",
+        for want in ("live — (no point carries im_pct) · replay — (replay did not run)", "— (no P&L history)", "— (no spot in the history)", "— (under 7 days of history)",
                      "— (no recorded book)", "— (no book in data/stress/btc)", "history none"):
             self.assertIn(want, row)
 
