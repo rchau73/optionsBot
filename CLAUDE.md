@@ -30,6 +30,7 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
 go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # recorded-history coverage per dataset (market, market_gex, market_usdc, pnl_history): days, missing hours, gaps, hourly-only replay days (README "Recorded-history coverage")
 go run ./cmd/evidence -env stable -week 2026-W42   # weekly evidence per bot → <clone>/data/evidence/<week>/<bot>.md|.json: live, replay, gap, stress, hold (README "Evidence report")
 go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 -replay data/btc/data/market -stress data/stress/btc   # two configs side by side → data/compare/<time>/report.md|json: key-by-key diff, backtest, replay, stress (README "Settings comparison")
+go run ./cmd/usage -events data/monitor/events.jsonl -week 2026-W43   # monitor usage and cohort report from the analytics events (#295): active users, retention, panels, first answers, help, funnels, trust — counts only, no user/session id → data/monitor/reports/<week>.md|json (README "Usage report")
 go run ./cmd/evidence -compare-direction -week 2026-W43   # direction trial scorecard: stable BTC (bias) vs mvp BTC (sma), live and replayed both ways on the same books, % only → <stable>/data/evidence/direction/<week>.md|.json (README "Replay of recorded books")
 ```
 
