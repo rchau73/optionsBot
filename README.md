@@ -104,7 +104,7 @@ Shared state is guarded by mutexes held only for in-memory work, never across a 
 ```bash
 git clone https://github.com/rchau73/optionsBot && cd optionsBot
 cp .env.example .env              # add your testnet key; DERIBIT_ENV=testnet
-make check                        # gofmt + vet + race tests
+make check                        # gofmt + vet + shell scripts + race tests
 make hooks                        # once per clone: blocks committing .env files or any .env secret (the repo is public)
 make build                        # → ./bot
 ./bot --config config_btc.yaml    # trade on testnet
@@ -310,8 +310,10 @@ Sections, each naming its source:
 ```bash
 make test      # go test ./tests/... -race
 make cover     # coverage across ./internal/... (tests live in ./tests)
-make check     # what CI runs: gofmt, vet, race tests
+make check     # what CI runs: gofmt, vet, shell scripts, race tests
 ```
+
+Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_shell.sh`: `bash -n`, then `shellcheck -x --severity=warning` (sources resolved beside each script, `.shellcheckrc`), and every `disable` directive must give its reason on the same line. CI installs shellcheck and requires it; `make check` skips that step with a message when it is not installed.
 
 | Package | Coverage | Highlights |
 |---|---|---|

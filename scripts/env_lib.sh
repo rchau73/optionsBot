@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # env_lib.sh — the local environments (sourced, not run). Bash 3.2-safe.
 #
 #   <envs>/stable   a clone checked out at a release tag; changes only through

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # limit_lib.sh — usage and rate limits of the agents (sourced by lib.sh, and by
 # test_requeue.py on its own: no side effect when sourced). Bash 3.2-safe.
 #

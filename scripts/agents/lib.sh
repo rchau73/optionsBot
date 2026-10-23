@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # lib.sh — shared helpers for the agents (sourced, not run). Bash 3.2-safe:
 # launchd runs macOS /bin/bash.
 #
@@ -14,11 +15,14 @@ AGENT_WORK_DIR="${AGENT_WORK_DIR:-$ENVS_DIR/agent-worktrees}" # worktrees, outsi
 # merged work runs first (see scripts/env_lib.sh).
 MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:$(env_port stable || true)}"
 [[ "$MONITOR_URL" != "http://127.0.0.1:" ]] || MONITOR_URL="http://127.0.0.1:3000"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 MVP_MONITOR_URL="${MVP_MONITOR_URL:-http://127.0.0.1:$(env_port mvp || true)}"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 [[ "$MVP_MONITOR_URL" != "http://127.0.0.1:" ]] || MVP_MONITOR_URL="http://127.0.0.1:3100"
 # The monitors require a session; scripts read them with each environment's
 # read-only service token (MONITOR_API_TOKEN in its .env).
 MONITOR_TOKEN="${MONITOR_TOKEN:-$(env_monitor_token stable)}"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 MVP_MONITOR_TOKEN="${MVP_MONITOR_TOKEN:-$(env_monitor_token mvp)}"
 PROJECT_TITLE="${PROJECT_TITLE:-optionsBot · agentic workflow}"
 mkdir -p "$AGENT_STATE_DIR" "$AGENT_WORK_DIR"
