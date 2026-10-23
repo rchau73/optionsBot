@@ -14,6 +14,7 @@ DERIBIT_CLIENT_SECRET="secretsecret"   # comment
 MONITOR_API_TOKEN='tokentoken'
 export AUTH_SECRET=authauthauth
 ADMIN_PASSWORD=passpasspass
+ANALYTICS_SALT=saltsaltsalt
 API_KEY=short
 DERIBIT_ENV=testnet
 """
@@ -37,7 +38,7 @@ class Find(unittest.TestCase):
 class Redaction(unittest.TestCase):
     def test_secrets_by_name(self):
         names = {n for n, _ in deploy_issue.secrets(ENV)}
-        self.assertEqual(names, {"DERIBIT_CLIENT_ID", "DERIBIT_CLIENT_SECRET", "MONITOR_API_TOKEN", "AUTH_SECRET", "ADMIN_PASSWORD"})
+        self.assertEqual(names, {"DERIBIT_CLIENT_ID", "DERIBIT_CLIENT_SECRET", "MONITOR_API_TOKEN", "AUTH_SECRET", "ADMIN_PASSWORD", "ANALYTICS_SALT"})
 
     def test_quotes_and_comments_are_not_part_of_the_value(self):
         self.assertIn(("DERIBIT_CLIENT_SECRET", "secretsecret"), deploy_issue.secrets(ENV))

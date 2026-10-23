@@ -11,6 +11,7 @@ import (
 // "Inside an environment"): the bot runs in data/<bot>/.
 type Paths struct {
 	Journal, History, Market, GEX, Stress, Config string
+	Directions                                    string // data/direction_history.jsonl (#245)
 }
 
 // BotPaths lays out bot's files under root (an environment clone). Books
@@ -26,7 +27,16 @@ func BotPaths(root, booksRoot, bot string) Paths {
 		GEX:     filepath.Join(books, "market_gex"),
 		Stress:  filepath.Join(root, "data", "stress", bot),
 		Config:  ConfigPath(root, bot),
+
+		Directions: filepath.Join(dir, "data", "direction_history.jsonl"),
 	}
+}
+
+// DirectionOutPaths are the scorecard's two files:
+// <root>/data/evidence/direction/<week>.md and .json.
+func DirectionOutPaths(root, label string) (md, js string) {
+	dir := filepath.Join(root, "data", "evidence", "direction")
+	return filepath.Join(dir, label+".md"), filepath.Join(dir, label+".json")
 }
 
 // OutPaths are the report's two files: <root>/data/evidence/<week>/<bot>.md

@@ -74,6 +74,15 @@ The route sends the person to the bot with the request — `"actor": {"user": "b
 
 The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`; later starts never touch existing users. The server exits at start (`instrumentation-node.js`) when `AUTH_SECRET` is missing or shorter than 32 bytes, or the database cannot be opened.
 
+## Analytics (#193)
+
+Usage events from the event plan (`docs/product/analytics/event-plan.md`) — what a person looked at or did, **never an amount, size, price, instrument, secret or email**. Nothing leaves the machine: no third-party tracker, SDK or script.
+
+- **Sender:** `lib/track.js` `track(event, props)` posts to the monitor's own `POST /api/events`, without waiting and without ever throwing. It sends nothing until `setAnalyticsConsent(true)`; "no" or not asked yet (the default) means nothing at all is sent. Events outside the plan are dropped in the page too. The session id is random (32 hex), new after 30 min without an event. No component calls it yet, and nothing sets the consent: the consent notice waits for E13's prototype.
+- **Allow-list:** `lib/analytics/plan.js` — each event and the only properties it may carry (enums, flags, capped millisecond counts, help catalogue keys of letters and `_` only, so no number fits). `__tests__/events-plan.test.js` keeps it equal to the plan's tables: change the plan first.
+- **Collector:** `app/api/events/route.js` stores an event only for a signed-in person (re-read from the database), same-origin JSON ≤ 2 KB, whose `users.analytics_consent` is yes (403 otherwise) and when `ANALYTICS_SALT` (≥ 16 chars) is set (503 otherwise). An unknown event, a property not in the plan or a value outside its rule is refused whole: 400, nothing written, a WARN log naming the field, never its value. 204 when stored.
+- **Stored:** one JSON line per event in `data/monitor/events.jsonl` beside `auth.db` (`EVENTS_PATH`; off for an in-memory database), append-only, owner-only: `event`, `ts` (UTC, to the second), `user_id` (HMAC-SHA256 of the user's row id with `ANALYTICS_SALT`, 16 hex), `session_id`, `role`, `environment` (`stable`|`mvp`, from `MONITOR_DEPLOYMENT`), `app_version` (`MONITOR_VERSION`) and the event's properties. Never the username, email, IP, user agent or URL. Not read by the bot; retention (13 months) and deletion on request are follow-ups.
+
 ## Run it
 
 **With Docker (recommended)** — from the repository root:
@@ -104,6 +113,9 @@ Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ig
 | `MONITOR_API_TOKEN` | — (off) | read-only service token for scripts (≥ 32 chars) |
 | `AUTH_DB_PATH` | `data/monitor/auth.db` | the user database |
 | `AUDIT_PATH` | `audit.jsonl` beside `AUTH_DB_PATH` | the audit trail |
+| `ANALYTICS_SALT` | — (off) | salt of the analytics `user_id` (≥ 16 chars), from `.env`, never in git or an event |
+| `EVENTS_PATH` | `events.jsonl` beside `AUTH_DB_PATH` | the analytics events |
+| `MONITOR_DEPLOYMENT`, `MONITOR_VERSION` | — | the environment (`stable`/`mvp`) and release tagged on each event (compose sets them) |
 
 ## Develop
 
@@ -122,7 +134,14 @@ npm run build   # production build — catches Server/Client Component mistakes
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`) |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
+| `content/` | `glossary.json` — the plain-words tips (below) |
 | `__tests__/`, `test/` | tests and shared fixtures |
+
+### Glossary (#188)
+
+`content/glossary.json` holds one short tip for every term the monitor shows and every config setting: `{ "<term>": { "short" (≤ 140 chars), "long" (≤ 600), "risk_income" (how it moves risk and income), "source" ("OptionStrategy.md#<anchor>" or "frontend/README.md#<anchor>"), "labels" (optional: the exact monitor texts that mean this term) } }`. Config keys are entries under their YAML name, nested ones as `parent.child` (`backtest.fill_model`). `lib/glossary.js` `findTerm(label)` finds an entry by term, config key or label. It is content only: the tips UI (E11) and the assistant (E10) will read it.
+
+Tests keep it complete: `__tests__/glossary.test.js` fails when a literal column header (`<th>`), `<dt>`, `label="…"` prop, hold-rule, feed-event or exit-reason label in the monitor, or a key of `config_btc.yaml`/`config_eth.yaml`/`config_btc.mvp.yaml`, has no entry, when a source anchor does not exist, and on return promises; `tests/glossary_test.go` checks every key `config.Load` accepts. **A new column or setting needs its entry in the same PR.** Writing rules: short sentences (8th-grade reading), no jargon without its own entry, no return promises.
 
 Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/globals.css` (`profit`, `loss`, `call`, `put`, `live`, `testnet`…) · Recharts · clsx.
 

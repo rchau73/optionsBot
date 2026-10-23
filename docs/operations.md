@@ -93,7 +93,7 @@ go run ./cmd/evidence -env stable                     # the last complete week, 
 go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mvp records no books: replay on stable's
 ```
 
-It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Not scheduled yet (a follow-up adds it to `install.sh` once the report is reviewed).
+It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; AGENTIC.md "Weekly evidence report"). The commands above remain for a re-run by hand.
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
