@@ -104,7 +104,7 @@ Shared state is guarded by mutexes held only for in-memory work, never across a 
 ```bash
 git clone https://github.com/rchau73/optionsBot && cd optionsBot
 cp .env.example .env              # add your testnet key; DERIBIT_ENV=testnet
-make check                        # gofmt + vet + race tests
+make check                        # gofmt + vet + shell scripts + race tests
 make hooks                        # once per clone: blocks committing .env files or any .env secret (the repo is public)
 make build                        # → ./bot
 ./bot --config config_btc.yaml    # trade on testnet
@@ -297,6 +297,7 @@ Sections, each naming its source:
 
 - **Missing inputs** — the UTC days of the week without a P&L history point, a recorded book or a minute GEX record. The figures use the other days; nothing is filled in.
 - **Live** — the journal's opens and closes in the week: realised P&L net of fees, the fees (opening share + closing fee, as `buyToClose` books them), closes by reason; the P&L history's `internal/perf` figures (net, % of equity, max drawdown, worst 7 days) and the unrealised P&L at the week's end.
+- **Equity bridge** (#277) — the account's equity at the first and last P&L history point of the week that carries it (Deribit's figure, recorded on each line with the margin balance and its unit: USD under cross collateral, else the coin), its change, the bot's net P&L between those two points in the same unit (the change of the cumulative total; in USD each step valued at its own point's spot) and the residual, labelled "not explained by the bot: transfers, positions the bot does not manage, funding, rounding" (in USD also the collateral's value as prices move), with its % of the starting equity. Under two points with equity (history written before #277, or margin unknown), or a unit that changed in the week, it says why instead. The weekly summary on the epic shows the residual's % only.
 - **Replay** — the bot's rules (`internal/replay`, the environment's config: `BOT_CONFIG_<BOT>` of its `deploy.env`, else `config_<bot>.yaml`) on the recorded mainnet books of the week, starting from the journal's book at Monday 00:00, deciding on minute GEX records where they exist; 7 days of earlier recording warm it up. Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`. Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
 - **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
 - **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips). The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
@@ -331,8 +332,10 @@ A section without its input says "Not run" and why; each run's error is shown be
 ```bash
 make test      # go test ./tests/... -race
 make cover     # coverage across ./internal/... (tests live in ./tests)
-make check     # what CI runs: gofmt, vet, race tests
+make check     # what CI runs: gofmt, vet, shell scripts, race tests
 ```
+
+Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_shell.sh`: `bash -n`, then `shellcheck -x --severity=warning` (sources resolved beside each script, `.shellcheckrc`), and every `disable` directive must give its reason on the same line. CI installs shellcheck and requires it; `make check` skips that step with a message when it is not installed.
 
 | Package | Coverage | Highlights |
 |---|---|---|

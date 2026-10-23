@@ -69,6 +69,7 @@ git_locked fetch -q origin main "agent/issue-$issue"
 wt="$AGENT_WORK_DIR/review-pr-$pr"
 [[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 git_locked worktree add -q --detach "$wt" "$head"
+# shellcheck disable=SC2154 # _rc is set by the trap itself, before it is read
 trap '_rc=$?; git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_exit "$_rc"' EXIT
 
 # ── Task for the agent: its instructions, the ticket, the PR, the diff ──────

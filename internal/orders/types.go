@@ -164,17 +164,21 @@ type AccountSummary struct {
 	TotalMarginBalanceUSD     float64 `json:"total_margin_balance_usd"`
 	TotalInitialMarginUSD     float64 `json:"total_initial_margin_usd"`
 	TotalMaintenanceMarginUSD float64 `json:"total_maintenance_margin_usd"`
+	TotalEquityUSD            float64 `json:"total_equity_usd"`
 }
 
 // MarginUsage is the account's margin as the risk policy measures it: under
 // cross collateral, Deribit's account-wide USD totals (every asset backs every
 // position); otherwise this currency's own figures. Live summaries and
 // simulate_portfolio results go through the same rule, so they compare.
+// Equity follows the same rule (recorded only, never a policy input).
 func (a AccountSummary) MarginUsage() risk.Usage {
 	if a.CrossCollateralEnabled && a.TotalMarginBalanceUSD > 0 {
-		return risk.Usage{IM: a.TotalInitialMarginUSD, MM: a.TotalMaintenanceMarginUSD, MarginBalance: a.TotalMarginBalanceUSD, Unit: "USD"}
+		return risk.Usage{IM: a.TotalInitialMarginUSD, MM: a.TotalMaintenanceMarginUSD, MarginBalance: a.TotalMarginBalanceUSD,
+			Unit: "USD", Equity: a.TotalEquityUSD}
 	}
-	return risk.Usage{IM: a.InitialMargin, MM: a.MaintenanceMargin, MarginBalance: a.MarginBalance, Unit: a.Currency}
+	return risk.Usage{IM: a.InitialMargin, MM: a.MaintenanceMargin, MarginBalance: a.MarginBalance,
+		Unit: a.Currency, Equity: a.Equity}
 }
 
 // RawPosition is the per-position record returned by private/get_positions.

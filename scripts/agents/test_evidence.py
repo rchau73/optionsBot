@@ -22,6 +22,8 @@ def report(**over):
         "env": "stable", "bot": "btc", "week": "2026-W43", "equity": 2.0,
         "live": {"perf": {"Points": 600, "NetPnL": 0.0123, "EquityKnown": True, "ReturnPct": 0.62,
                           "WorstWeekKnown": True, "WorstWeek": -0.004, "WorstWeekPct": -0.2}},
+        "bridge": {"known": True, "unit": "BTC", "equity_start": 2.0, "equity_end": 1.5,
+                   "bot_net": 0.0123, "residual": -0.5123, "residual_pct": -25.6},
         "replay": {"ran": True},
         "gap": {"known": True, "gap": 0.002, "replay": 0.0143},
         "stress": {"ran": True, "stale": False, "outcomes": [
@@ -80,6 +82,8 @@ class Comment(unittest.TestCase):
         row = self.row(text, "stable", "btc")
         self.assertIn("+0.0123 BTC (+0.62 %)", row)           # net P&L
         self.assertIn("live +6.20 % (+26.57 % / 30 d) · replay +7.15 % (+30.64 % / 30 d)", row)  # return on margin
+        self.assertIn("| -25.60 % |", row)                     # equity not explained by the bot (#277)
+        self.assertNotIn("0.5123", row)                        # never the residual's amount
         self.assertIn("-1.30 % (hold +4.20 %)", row)           # excess vs hold
         self.assertIn("-0.0040 BTC (-0.20 %)", row)            # worst 7 days
         self.assertIn("+0.0020 BTC (+0.10 %)", row)            # replay gap, % of equity
@@ -113,9 +117,11 @@ class Comment(unittest.TestCase):
         r["hold"] = {"known": False}
         r["missing"] = {}
         r["return_on_margin"] = {"live": {"Known": False, "Reason": "no point carries im_pct"}, "replay": None}
+        r["bridge"] = {"known": False, "note": "no equity recorded on the P&L history in the week"}
         self.put("stable", "btc", r)
         row = self.row(self.build(envs=("stable",)), "stable", "btc")
-        for want in ("live — (no point carries im_pct) · replay — (replay did not run)", "— (no P&L history)", "— (no spot in the history)", "— (under 7 days of history)",
+        for want in ("live — (no point carries im_pct) · replay — (replay did not run)", "— (no P&L history)",
+                     "— (no equity recorded on the P&L history in the week)", "— (no spot in the history)", "— (under 7 days of history)",
                      "— (no recorded book)", "— (no book in data/stress/btc)", "history none"):
             self.assertIn(want, row)
 

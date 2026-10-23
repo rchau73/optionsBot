@@ -18,7 +18,7 @@ export function hashToken(token) {
 
 export class AuthService {
   /** store: AuthStore · key: authKey() · now: clock in ms · audit: sink of audit entries (lib/auth/audit.js). */
-  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(), audit = () => {} }) {
+  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(store), audit = () => {} }) {
     this.store = store;
     this.key = key;
     this.now = now;

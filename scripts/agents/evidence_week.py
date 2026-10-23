@@ -123,6 +123,15 @@ def rom_cell(r):
     return f"live {live} · replay {replay}"
 
 
+def bridge_cell(r):
+    """The equity change the bot does not explain (#277): % of the starting
+    equity only, never an amount."""
+    b = r.get("bridge") or {}
+    if not b.get("known"):
+        return f"— ({b.get('note') or 'no equity recorded'})"
+    return pct(b["residual_pct"])
+
+
 def stress_cell(r):
     s = r.get("stress") or {}
     if not s.get("ran"):
@@ -159,8 +168,8 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
            "One row per environment × bot, from `cmd/evidence` (README \"Evidence report\"). "
            "Percentages are of the margin balance at the week's start; the replay gap is replay − live. "
            "Return on margin = net P&L ÷ mean IM used (IM % × the margin balance at the week's start, an approximation).", "",
-           "| env | bot | net P&L | return on margin | excess vs holding the coin | worst 7 days | replay gap | stress | missing days | report |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+           "| env | bot | net P&L | return on margin | equity not explained by the bot | excess vs holding the coin | worst 7 days | replay gap | stress | missing days | report |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
     for env in envs:
         root = os.path.join(envs_dir, env)
@@ -175,11 +184,11 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
                 with open(path) as f:
                     r = json.load(f)
             except (OSError, ValueError):
-                out.append(f"| {label} | {bot} | no report | | | | | | | — |")
+                out.append(f"| {label} | {bot} | no report | | | | | | | | — |")
                 continue
             cur = bot.upper()
             out.append("| " + " | ".join([
-                label, bot, net_cell(r, live, cur), rom_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
+                label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
     if failures:
         out += ["", "**Failed steps** (the other reports were still written):", ""]
