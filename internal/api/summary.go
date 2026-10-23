@@ -1,11 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"math"
 	"net/http"
-	"regexp"
-	"strconv"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -268,72 +265,4 @@ func lastActionOf(t orders.Trade) LastAction {
 		la.PnLCoin, la.PnLUSD = &pnl, &usd
 	}
 	return la
-}
-
-var (
-	stopMultipleRe = regexp.MustCompile(`≥ ([0-9.]+)×`)
-	dteRe          = regexp.MustCompile(`(\d+) days to expiry`)
-)
-
-// PlainReason says why a trade happened in words a holder new to options
-// reads, from its journal reason (and the numbers in its detail).
-func PlainReason(t orders.Trade) string {
-	leg := t.OptionType
-	if leg == "" {
-		leg = "option"
-	}
-	if t.Kind == "open" {
-		switch t.Reason {
-		case orders.TriggerEntry:
-			return fmt.Sprintf("Sold the %s to open a new strangle and collect its premium (entry)", leg)
-		case orders.TriggerRepair:
-			return fmt.Sprintf("Sold the %s again to complete its strangle (repair)", leg)
-		case orders.TriggerRebalanceUpsize:
-			return fmt.Sprintf("Sold more of the %s to bring the slot up to its share of the margin limit (rebalance)", leg)
-		}
-		return fmt.Sprintf("Sold the %s (%s)", leg, t.Reason)
-	}
-	switch t.Reason {
-	case "stop_loss":
-		return fmt.Sprintf("Bought back the %s: it lost %s its premium (stop-loss)", leg, timesWord(t.Detail))
-	case "dte_rollout":
-		days := "few"
-		if m := dteRe.FindStringSubmatch(t.Detail); m != nil {
-			days = m[1]
-		}
-		return fmt.Sprintf("Bought back the %s: only %s days to expiry left, so the strangle closes before expiry (time roll)", leg, days)
-	case "delta_exit":
-		return fmt.Sprintf("Bought back the %s: the price moved close to its strike, so the risk grew too fast (delta exit)", leg)
-	case "delta_drift":
-		return fmt.Sprintf("Bought back the %s: little premium was left to earn; it is sold again nearer the price (delta drift)", leg)
-	case "roi_target":
-		return fmt.Sprintf("Bought back the %s: most of its premium was already earned (take-profit)", leg)
-	case "gamma_regime":
-		return fmt.Sprintf("Bought back the %s: market makers' positioning pointed to a strong move against it (GEX shed)", leg)
-	case "kill_switch":
-		return fmt.Sprintf("Bought back the %s: the kill switch closed every position", leg)
-	case orders.TriggerManualClose:
-		return fmt.Sprintf("Bought back the %s by hand from the monitor (manual close)", leg)
-	case orders.TriggerRebalanceDownsize:
-		return fmt.Sprintf("Bought back part of the %s: margin in use was above its limit (rebalance)", leg)
-	case orders.TriggerMarginMM:
-		return fmt.Sprintf("Bought back part of the %s: maintenance margin reached its safety limit (margin cut)", leg)
-	case orders.TriggerRebalanceLegs:
-		return fmt.Sprintf("Bought back the extra %s so the call and the put are the same size (leg balance)", leg)
-	}
-	return fmt.Sprintf("Bought back the %s (%s)", leg, t.Reason)
-}
-
-// timesWord reads the stop-loss multiple from a stop's detail ("≥ 2.00×"):
-// "twice" for 2, else "N times"; "twice" (the default rule) when absent.
-func timesWord(detail string) string {
-	m := stopMultipleRe.FindStringSubmatch(detail)
-	if m == nil {
-		return "twice"
-	}
-	x, err := strconv.ParseFloat(m[1], 64)
-	if err != nil || x == 2 {
-		return "twice"
-	}
-	return strconv.FormatFloat(x, 'f', -1, 64) + " times"
 }
