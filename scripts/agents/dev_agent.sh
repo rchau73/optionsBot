@@ -39,6 +39,7 @@ branch="agent/issue-$issue"
 run_dir="$AGENT_STATE_DIR/dev/issue-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
+run_begin dev "$issue" "" "$run_dir" # the run ledger (lib.sh): every exit below ends it
 log "dev: issue #$issue → $branch"
 
 # The pickup comment says which attempt this is and what came before, so the
@@ -49,7 +50,8 @@ python3 "$AGENT_REPO_DIR/scripts/agents/pickup_comment.py" "$run_dir/history.jso
   "data/agents/dev/$(basename "$run_dir")" > "$run_dir/pickup.md"
 gh issue comment "$issue" -R "$slug" --body-file "$run_dir/pickup.md" >/dev/null
 
-block() { # reason file
+block() { # reason file, ledger detail (a short fixed phrase)
+  run_end blocked "$2"
   { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"; } > "$run_dir/blocked.md"
   gh issue comment "$issue" -R "$slug" --body-file "$run_dir/blocked.md" >/dev/null
   gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null
@@ -71,6 +73,7 @@ else
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
+RUN_PR="$existing_pr"
 # An open PR starts from today's main: merge it in first. A conflict (another PR
 # merged first, pr_gate.sh) is left in the files for the agent to resolve.
 conflicts=""
@@ -134,6 +137,7 @@ open(sys.argv[2], "w").write(m.group(1) if m else t[-6000:])' "$run_dir/agent.md
 if [[ $rc -ne 0 || "$result" != "done" ]]; then
   if [[ "$result" == "needs_human" ]]; then
     cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
+    detail="the agent asked questions"
   else
     why="the agent did not finish (exit $rc, result '${result:-none}')"
     if note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then
@@ -144,17 +148,20 @@ if [[ $rc -ne 0 || "$result" != "done" ]]; then
         gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc after ${elapsed}s). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
       fi
       gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
+      run_end skipped_limit "exit $rc after ${elapsed}s: back to Ready"
       set_status "$item" "Ready"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
     fi
     { echo "Stopped because $why."; echo; echo "Last lines:"; echo
       tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
+    detail="the agent did not finish (exit $rc)"
   fi
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "$detail"
 fi
 if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
   echo "The agent reported done but made no commit." > "$run_dir/reason.md"
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "done without a commit"
 fi
+RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
 
 # ── Verify independently ────────────────────────────────────────────────────
 log "dev: verifying"
@@ -192,19 +199,21 @@ if [[ -n "$existing_pr" ]]; then
   # A PR opened as a draft on failing checks becomes reviewable once they pass.
   [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
-  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
+  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
   pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
 fi
 log "dev: PR $pr_url"
+RUN_PR="${pr_url##*/}"
 
 if [[ $ok -eq 1 ]]; then
+  if [[ -n "$existing_pr" ]]; then run_end pr_updated "checks passed"; else run_end pr_opened "checks passed"; fi
   set_status "$item" "In review"
   gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human --remove-label needs-rebase >/dev/null 2>&1 || true
   gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — all checks passed. Ready for review." >/dev/null
   notify "Dev agent: PR ready for #$issue" "$title"
 else
   { echo "The implementation is in $pr_url (draft), but the checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "checks failed: draft PR"
 fi
 git_locked worktree remove --force "$wt" 2>/dev/null || true

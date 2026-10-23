@@ -1,0 +1,51 @@
+# Example pricing scenario for scripts/product/unit_economics.py (#235).
+# Every number is a fake round placeholder, NOT a proposed price or a measured cost.
+# Real assumptions go in the gitignored data/product/ (e.g. data/product/pricing/).
+#
+#   python3 scripts/product/unit_economics.py scripts/product/example_scenario.yaml
+
+currency: USD
+gross_margin_target_pct: 80        # placeholder, not a price
+cohort_size: 100                   # customers acquired in one month
+cohort_months: 12                  # MRR of that cohort after this many months
+
+cac:                               # per channel, weighted by share_pct
+  content:
+    cac: 50                        # placeholder, not a price
+    share_pct: 60
+  paid:
+    cac: 150                       # placeholder, not a price
+    share_pct: 40
+
+pessimistic:
+  churn_factor: 1.5                # monthly churn × 1.5
+  conversion_factor: 0.7           # conversion × 0.7, so CAC ÷ 0.7
+
+tiers:
+  basic:
+    monthly_price: 20              # placeholder, not a price
+    annual_share_pct: 30           # share of customers on the annual plan
+    annual_discount_pct: 20        # annual plan discount on the monthly price
+    mix_pct: 70
+    monthly_churn_pct: 5
+    payment_fee_pct: 3             # card/processor fee, % of revenue
+    payment_fee_fixed: 0.3
+    cost_to_serve:
+      infrastructure: 2            # placeholder, not a price
+      exchange_api: 0
+      support: 1
+  pro:
+    monthly_price: 50              # placeholder, not a price
+    annual_share_pct: 40
+    annual_discount_pct: 20
+    mix_pct: 30
+    monthly_churn_pct: 3
+    payment_fee_pct: 3
+    payment_fee_fixed: 0.3
+    cost_to_serve:
+      infrastructure: 4            # placeholder, not a price
+      exchange_api: 0
+      support: 3
+  # A fee that scales with capital is reported as "needs legal review" (PRD §6):
+  # capital_fee_pct_per_year: 1     # placeholder, not a price
+  # avg_capital: 10000

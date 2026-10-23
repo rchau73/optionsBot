@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # lib.sh — shared helpers for the agents (sourced, not run). Bash 3.2-safe:
 # launchd runs macOS /bin/bash.
 #
@@ -6,7 +7,7 @@
 # board through `gh` (needs the `project` token scope).
 
 AGENT_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-AGENT_STATE_DIR="$AGENT_REPO_DIR/data/agents"          # gitignored
+AGENT_STATE_DIR="${AGENT_STATE_DIR:-$AGENT_REPO_DIR/data/agents}" # gitignored; tests point it elsewhere
 # shellcheck source=../env_lib.sh
 source "$AGENT_REPO_DIR/scripts/env_lib.sh"
 AGENT_WORK_DIR="${AGENT_WORK_DIR:-$ENVS_DIR/agent-worktrees}" # worktrees, outside the repo
@@ -14,11 +15,14 @@ AGENT_WORK_DIR="${AGENT_WORK_DIR:-$ENVS_DIR/agent-worktrees}" # worktrees, outsi
 # merged work runs first (see scripts/env_lib.sh).
 MONITOR_URL="${MONITOR_URL:-http://127.0.0.1:$(env_port stable || true)}"
 [[ "$MONITOR_URL" != "http://127.0.0.1:" ]] || MONITOR_URL="http://127.0.0.1:3000"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 MVP_MONITOR_URL="${MVP_MONITOR_URL:-http://127.0.0.1:$(env_port mvp || true)}"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 [[ "$MVP_MONITOR_URL" != "http://127.0.0.1:" ]] || MVP_MONITOR_URL="http://127.0.0.1:3100"
 # The monitors require a session; scripts read them with each environment's
 # read-only service token (MONITOR_API_TOKEN in its .env).
 MONITOR_TOKEN="${MONITOR_TOKEN:-$(env_monitor_token stable)}"
+# shellcheck disable=SC2034 # read by the scripts that source lib.sh (sme_review.sh)
 MVP_MONITOR_TOKEN="${MVP_MONITOR_TOKEN:-$(env_monitor_token mvp)}"
 PROJECT_TITLE="${PROJECT_TITLE:-optionsBot · agentic workflow}"
 mkdir -p "$AGENT_STATE_DIR" "$AGENT_WORK_DIR"
@@ -267,7 +271,14 @@ require_tools() {
 # a long implementation keeps its card).
 CLAIMS_DIR="$AGENT_STATE_DIR/claims"
 _exit_paths=""
-_on_exit() { local p; for p in $_exit_paths; do rm -rf "$p" 2>/dev/null; done; }
+# _on_exit [exit code] — the EXIT trap: ends an open ledger run (below), then
+# removes claims, mutexes and temp dirs. A script with its own EXIT trap passes
+# the exit code it saw first (review_agent.sh).
+_on_exit() {
+  local rc="${1:-$?}" p
+  run_end_on_exit "$rc"
+  for p in $_exit_paths; do rm -rf "$p" 2>/dev/null; done
+}
 trap _on_exit EXIT
 on_exit_remove() { _exit_paths="$_exit_paths $1"; }
 
@@ -315,13 +326,73 @@ mutex() {
   done
   on_exit_remove "$dir"
 }
-unmutex() { rmdir "$AGENT_STATE_DIR/$1.mutex" 2>/dev/null || true; }
+# unmutex also forgets the dir for the EXIT trap: by then another process may
+# hold that mutex, and removing it at our exit would let both in at once.
+unmutex() {
+  local d="$AGENT_STATE_DIR/$1.mutex"
+  rmdir "$d" 2>/dev/null || true
+  _exit_paths="${_exit_paths//" $d"/}"
+}
 
 # Usage and rate limits (LIMIT_PATTERN, note_limit, note_stop, parallel_max):
 # limit_lib.sh.
 LIMIT_FILE="$AGENT_STATE_DIR/limit_hit"
 # shellcheck source=limit_lib.sh
 source "$AGENT_REPO_DIR/scripts/agents/limit_lib.sh"
+
+# ── Run ledger (#206) ───────────────────────────────────────────────────────
+# One file indexes every agent run: <envs>/history/agent_runs.jsonl, a `start`
+# and an `end` JSON line per run (format and queries: runs.py). Usage:
+#   run_begin <agent> [issue] [pr] [log path]   agent: sme pm pm_answer dev review pr_gate deploy
+#   RUN_PR=… RUN_COMMIT=…                        what the run learnt on the way (optional)
+#   run_end <outcome> [detail]                   e.g. pr_opened, blocked, skipped_limit
+# Every exit after run_begin ends the run: the EXIT trap writes `failed` for a
+# non-zero exit (a crash under set -e) and `done` otherwise. The commit is the
+# agents' own code (this checkout's HEAD) unless the script names the commit it
+# worked on (the PR head, the deployed commit). Paths and ids only: the detail
+# is a short fixed phrase, never prompt text, a secret or an amount. The ledger
+# never stops an agent: a line it cannot write is logged and skipped.
+AGENT_RUNS_FILE="${AGENT_RUNS_FILE:-$ENV_HISTORY/agent_runs.jsonl}"
+RUN_ID="" RUN_AGENT="" RUN_ISSUE="" RUN_PR="" RUN_LOG="" RUN_COMMIT="" _RUN_SEQ=0
+
+# _run_write <event> [outcome] [detail] — one line, one printf, under a mutex,
+# so parallel runs never interleave.
+_run_write() {
+  local line locked=0
+  line="$(python3 "$AGENT_REPO_DIR/scripts/agents/runs.py" line --agent="$RUN_AGENT" --run-id="$RUN_ID" \
+    --event="$1" --issue="$RUN_ISSUE" --pr="$RUN_PR" --outcome="${2:-}" --detail="${3:-}" \
+    --log="${RUN_LOG#"$AGENT_REPO_DIR"/}" --commit="$RUN_COMMIT" < /dev/null 2>/dev/null)" ||
+    { log "run ledger: line refused ($RUN_AGENT $1, run $RUN_ID)"; return 0; }
+  mkdir -p "$(dirname "$AGENT_RUNS_FILE")" 2>/dev/null || true
+  mutex agent-runs && locked=1
+  printf '%s\n' "$line" >> "$AGENT_RUNS_FILE" || log "run ledger: could not write $AGENT_RUNS_FILE"
+  [[ $locked -eq 0 ]] || unmutex agent-runs
+  return 0
+}
+
+# run_begin <agent> [issue] [pr] [log path] — a no-op while a run is open.
+run_begin() {
+  [[ -z "$RUN_ID" ]] || return 0
+  _RUN_SEQ=$((_RUN_SEQ + 1))
+  RUN_AGENT="$1"; RUN_ISSUE="${2:-}"; RUN_PR="${3:-}"; RUN_LOG="${4:-}"
+  RUN_COMMIT="$(git -C "$AGENT_REPO_DIR" rev-parse --short HEAD 2>/dev/null < /dev/null || true)"
+  RUN_ID="$1-$(date -u +%Y%m%dT%H%M%SZ)-$$-$_RUN_SEQ"
+  _run_write start
+}
+
+# run_end <outcome> [detail] — a no-op when no run is open.
+run_end() {
+  [[ -n "$RUN_ID" ]] || return 0
+  _run_write end "$1" "${2:-}"
+  RUN_ID="" RUN_AGENT="" RUN_ISSUE="" RUN_PR="" RUN_LOG="" RUN_COMMIT=""
+}
+
+# run_end_on_exit <exit code> — the EXIT trap's part: a run nobody ended.
+run_end_on_exit() {
+  [[ -n "$RUN_ID" ]] || return 0
+  if [[ "$1" -eq 0 ]]; then run_end "done" "exit 0 with no outcome recorded"
+  else run_end failed "exit $1"; fi
+}
 
 # git_locked <git args…> — git in the shared clone, one instance at a time.
 git_locked() { mutex git || return 1; local rc=0; git "$@" || rc=$?; unmutex git; return $rc; }

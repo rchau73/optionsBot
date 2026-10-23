@@ -43,7 +43,7 @@ Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshot
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
 | `internal/history` | P&L history (`data/pnl_history.jsonl`, bucketed range queries) and gamma regime per UTC daily close (`data/regime_history.jsonl`, which Deribit does not keep); append-only, reloaded on start, corrupt lines skipped | — |
 | `internal/account` | Polls `private/get_account_summaries` (fallback: per-currency `get_account_summary`) every `BOT_ACCOUNT_POLL_SEC` and caches collateral per asset, margin model and IM/MM — Deribit's figures, plus IM %/MM % of margin balance | gateway (interface) |
-| `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls | strategy, orders (interfaces) |
+| `internal/api` | Read-only monitor API (`BOT_API_ADDR`) from `Strategy.View()` and the journal's recent events; no exchange calls. Each `/api/events` and `/api/trades` item carries `plain`, a sentence for a holder new to options from one catalogue (`explain.go`, #201: by event, trigger, close/skip reason, risk change; facts only, never advice; an unknown value → a generic sentence + one WARN per value) — `/api/summary`'s last action reads the same one | strategy, orders (interfaces) |
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
 | `internal/logger` | `slog` JSON to stdout + `bot.log` | — |
 

@@ -30,8 +30,17 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: Shell scripts (bash -n, shellcheck)
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck --version
+          REQUIRE_SHELLCHECK=1 bash scripts/check_shell.sh
+
       - name: Agent scripts (PM board rules)
         run: python3 -m unittest discover -s scripts/agents -p 'test_*.py'
+
+      - name: Product scripts (unit economics)
+        run: python3 -m unittest discover -s scripts/product -p 'test_*.py'
 
       - name: Tests (race detector, coverage)
         run: go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=coverage.out

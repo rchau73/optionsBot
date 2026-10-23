@@ -60,6 +60,8 @@ round=$((blocking_before + 1))
 run_dir="$AGENT_STATE_DIR/review/pr-$pr-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
+run_begin review "$issue" "$pr" "$run_dir" # the run ledger (lib.sh)
+RUN_COMMIT="${head:0:7}" # the end line names the commit reviewed
 log "review: PR #$pr (issue #$issue) at ${head:0:7}, round $round"
 
 # ── Worktree at the PR head ─────────────────────────────────────────────────
@@ -67,7 +69,8 @@ git_locked fetch -q origin main "agent/issue-$issue"
 wt="$AGENT_WORK_DIR/review-pr-$pr"
 [[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 git_locked worktree add -q --detach "$wt" "$head"
-trap 'git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_exit' EXIT
+# shellcheck disable=SC2154 # _rc is set by the trap itself, before it is read
+trap '_rc=$?; git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_exit "$_rc"' EXIT
 
 # ── Task for the agent: its instructions, the ticket, the PR, the diff ──────
 # The Review mode instructions come from this checkout (main), not from the PR
@@ -122,7 +125,8 @@ log "review: agent exit $rc after ${elapsed}s"
 post="$AGENT_REPO_DIR/scripts/agents/review_post.py"
 # A limit, or a run that failed at once with no answer, is not the PR's fault.
 if [[ $rc -ne 0 ]] && note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then
-  log "review: usage/rate limit on PR #$pr — retried after the pause (commit not marked)"; exit 0
+  log "review: usage/rate limit on PR #$pr — retried after the pause (commit not marked)"
+  run_end skipped_limit "exit $rc after ${elapsed}s"; exit 0
 fi
 if [[ $rc -ne 0 ]] || ! python3 "$post" parse "$run_dir/agent.md" "$run_dir/review.json" 2>"$run_dir/parse.err"; then
   # The reviewer failed: mark this commit as tried (no retry loop) and leave
@@ -132,6 +136,7 @@ if [[ $rc -ne 0 ]] || ! python3 "$post" parse "$run_dir/agent.md" "$run_dir/revi
   gh pr review "$pr" -R "$slug" --comment --body-file "$run_dir/failed.md" >/dev/null
   notify "Reviewer agent failed on PR #$pr" "a person should review it"
   log "review: failed on PR #$pr (see $run_dir/agent.md)"
+  run_end failed "no review (exit $rc): left for a person"
   exit 0
 fi
 verdict="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["verdict"])' "$run_dir/review.json")"
@@ -155,16 +160,19 @@ case "$next" in
   ready)
     gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent found $n_block blocking finding(s) on #$pr (round $round). Back to **Ready**: the Dev agent will address them on the same PR." >/dev/null
     set_status "$item" "Ready"
-    log "review: PR #$pr blocking ($n_block) → Ready" ;;
+    log "review: PR #$pr blocking ($n_block) → Ready"
+    run_end changes_requested "$n_block blocking, round $round: back to Ready" ;;
   human)
     gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null
     gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent still has $n_block blocking finding(s) on #$pr after $((round - 1)) fix round(s). A person decides: see the review on the PR." >/dev/null
     notify "Reviewer: PR #$pr needs a person" "$n_block blocking after $((round - 1)) rounds"
-    log "review: PR #$pr blocking after $((round - 1)) rounds → needs a person" ;;
+    log "review: PR #$pr blocking after $((round - 1)) rounds → needs a person"
+    run_end changes_requested "$n_block blocking after $((round - 1)) fix rounds: a person decides" ;;
   clean)
     gh pr edit "$pr" -R "$slug" --add-label agent:reviewed >/dev/null
     gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
     gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent: no blocking findings on #$pr. Ready for a person to merge." >/dev/null
     notify "PR #$pr reviewed: ready to merge" "issue #$issue"
-    log "review: PR #$pr clean" ;;
+    log "review: PR #$pr clean"
+    run_end reviewed_clean "no blocking finding" ;;
 esac

@@ -240,7 +240,8 @@ func TestAPISummary_LastActionIsTheLatestTrade(t *testing.T) {
 	)
 	_, body := getJSON(t, api.New(staticView{summaryView(now)}, journal).Handler(), "/api/summary")
 	la := body["last_action"].(map[string]any)
-	if la["reason"] != "Bought back the put: it lost twice its premium (stop-loss)" || la["pnl_usd"].(float64) != -2000 || la["rule"] != "stop_loss" {
+	reason, _ := la["reason"].(string)
+	if !strings.HasPrefix(reason, "Bought back the put: it lost twice its premium (stop-loss)") || la["pnl_usd"].(float64) != -2000 || la["rule"] != "stop_loss" {
 		t.Errorf("last action %v", la)
 	}
 }

@@ -55,7 +55,8 @@ type RiskView struct {
 	MMPct         float64     `json:"mm_pct"`
 	Unit          string      `json:"unit"`
 	MarginBalance float64     `json:"margin_balance"`
-	Error         string      `json:"error,omitempty"` // margin unknown this cycle
+	Equity        float64     `json:"equity,omitempty"` // Deribit's, in Unit; 0 = not reported (#277)
+	Error         string      `json:"error,omitempty"`  // margin unknown this cycle
 	AsOf          time.Time   `json:"as_of"`
 	// IMOverLimit: IM is over the limit with no rebalance due (imalert.go,
 	// #166), since IMOverLimitSince. Nothing is resized: a person decides.
@@ -210,6 +211,7 @@ func (s *Strategy) recordRisk(m marginState) {
 		rv.Error = m.err.Error()
 	} else {
 		rv.IMPct, rv.MMPct, rv.Unit, rv.MarginBalance = m.usage.IMPct(), m.usage.MMPct(), m.usage.Unit, m.usage.MarginBalance
+		rv.Equity = m.usage.Equity
 	}
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()

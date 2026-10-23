@@ -74,6 +74,8 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	}
 	p("\n")
 
+	writeBridge(p, r.Bridge)
+
 	rp := r.Replay
 	p("## Replay\n\nSource: the bot's rules (`internal/replay`, %s, direction %s) on %s, starting from the journal's book at the week's start.\n\n", rp.ConfigPath, rp.Direction, rp.Source)
 	if !rp.Ran {

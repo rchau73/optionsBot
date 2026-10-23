@@ -85,6 +85,8 @@ for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open
   if [[ -n "$why" ]]; then log "pm-answer: PRD PR #$pr_num waits: $why"; continue; fi
   if gh pr merge "$pr_num" -R "$slug" --merge --match-head-commit "$head_oid" >/dev/null; then
     log "pm-answer: merged PRD PR #$pr_num (#$pr_issue)"
+    run_begin pm_answer "$pr_issue" "$pr_num"; RUN_COMMIT="${head_oid:0:7}" # the run ledger (lib.sh)
+    run_end prd_merged "CI green, no strategy policy change"
     gh issue comment "$pr_issue" -R "$slug" --body "🧭 **PM agent** merged the PRD pull request #$pr_num: CI green, only \`docs/product/\`, no strategy policy change (product owner on #151). The epics follow from \`main\` in the next triage run. To change it, file an issue labelled \`agent:pm\`, or revert #$pr_num. <!-- agent:pm -->" >/dev/null || true
     notify "PM agent merged PRD PR #$pr_num" "#$pr_issue"
   else
@@ -114,6 +116,7 @@ existing_pr=""
 run_dir="$PM_DIR/answer-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
+run_begin pm_answer "$issue" "" "$run_dir" # the run ledger (lib.sh): every exit below ends it
 log "pm-answer: #$issue has a person's answer ($answer_at) → $branch"
 
 # Handled: the same answer is not acted on twice, whatever happens below.
@@ -141,9 +144,10 @@ hold_pr() { # extra gh pr edit args...
   gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" "$@" >/dev/null ||
     { log "pm-answer: could not take pm:self-merge off PR #$existing_pr: stopped, the answer stays due"; exit 1; }
 }
-fail() { # message
+fail() { # message, ledger detail (a short fixed phrase)
   echo "$1" > "$run_dir/fail.md"
-  hold_pr
+  hold_pr # exits 1 (ledger: failed) when GitHub refuses
+  run_end blocked "$2"
   reply "$run_dir/fail.md" --add-label agent:needs-human
   mark_done; notify "PM agent: #$issue needs a person" "$1"; log "pm-answer: #$issue — $1"; exit 0
 }
@@ -160,6 +164,7 @@ else
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
+RUN_PR="$existing_pr"
 
 gh issue view "$issue" -R "$slug" --json number,title,body,labels,comments \
   -q '"# Ticket #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(.body)\n\n## Comments (oldest first)\n\(.comments | map("### \(.createdAt)\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
@@ -215,15 +220,17 @@ if [[ $rc -ne 0 || -z "$result" ]]; then
   why="the agent did not finish (exit $rc, result '${result:-none}')"
   if note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then # a limit, or a run that failed at once
     # Not marked done: the answer stays due and is retried after the pause.
-    log "pm-answer: #$issue hit a usage/rate limit — retried after the pause"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
+    log "pm-answer: #$issue hit a usage/rate limit — retried after the pause"
+    run_end skipped_limit "exit $rc after ${elapsed}s"
+    git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
   fi
-  fail "Stopped because $why. Run log: \`data/agents/pm/$(basename "$run_dir")\`."
+  fail "Stopped because $why. Run log: \`data/agents/pm/$(basename "$run_dir")\`." "the agent did not finish (exit $rc)"
 fi
 commits="$(git -C "$wt" rev-list --count "$base"..HEAD)"
 
 case "$result" in
   reply|needs_human)
-    [[ -s "$run_dir/reply.md" ]] || fail "The agent answered '$result' with no comment for the ticket."
+    [[ -s "$run_dir/reply.md" ]] || fail "The agent answered '$result' with no comment for the ticket." "answered with no comment"
     # A person spoke and the PR did not change for it ("wait", a question): the
     # PR is theirs to merge now, or the PM's reply would release the self-merge.
     hold_pr
@@ -232,19 +239,21 @@ case "$result" in
     # Ready is the Dev agent's queue: a decision ticket waits in Triage.
     [[ "$status" != "Ready" ]] || set_status "$item" "Triage" || true
     mark_done; log "pm-answer: replied on #$issue ($result)"
+    if [[ "$result" == "needs_human" ]]; then run_end blocked "replied with questions for a person"
+    else run_end replied "no PRD change needed"; fi
     notify "PM agent replied on #$issue" "$(head -c 120 "$run_dir/reply.md")"
     git_locked worktree remove --force "$wt" 2>/dev/null || true
     exit 0 ;;
   pr) ;;
-  *) fail "The agent ended with an unknown result '$result'." ;;
+  *) fail "The agent ended with an unknown result '$result'." "unknown result" ;;
 esac
-[[ "$commits" != "0" ]] || fail "The agent reported a PRD change but made no commit."
+[[ "$commits" != "0" ]] || fail "The agent reported a PRD change but made no commit." "PRD change without a commit"
 
 # ── 3. Verify, then the pull request ────────────────────────────────────────
 outside="$(git -C "$wt" diff --name-only origin/main...HEAD | grep -v '^docs/product/' || true)"
-[[ -z "$outside" ]] || fail "The PRD change touched files outside docs/product/ ($(echo $outside)): not pushed."
+[[ -z "$outside" ]] || fail "The PRD change touched files outside docs/product/ ($(echo $outside)): not pushed." "files outside docs/product/: not pushed"
 if ! python3 "$BOARD_PY" epics "$wt/docs/product/PRD.md" "$run_dir/epics.json" 2> "$run_dir/epics.err"; then
-  fail "The edited PRD has a malformed epic marker ($(tail -1 "$run_dir/epics.err")): not pushed."
+  fail "The edited PRD has a malformed epic marker ($(tail -1 "$run_dir/epics.err")): not pushed." "malformed epic marker: not pushed"
 fi
 # Who merges: the PM, unless the change touches a strategy policy (see the header).
 policy="$(grep -m1 '^POLICY:' "$run_dir/agent.md" | sed 's/^POLICY: *//' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]' || true)"
@@ -289,6 +298,8 @@ else
   pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "PRD: ${title#PRD*: } (#$issue)" "${labels[@]}" --body-file "$run_dir/pr.md")"
 fi
 log "pm-answer: PR $pr_url (self-merge: $self_merge)"
+RUN_PR="${pr_url##*/}"; RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
+if [[ -n "$existing_pr" ]]; then pr_outcome=prd_pr_updated; else pr_outcome=prd_pr_opened; fi
 if [[ $self_merge -eq 1 ]]; then
   { echo "PRD pull request: $pr_url — no strategy policy change, so **the PM agent merges it once CI is green**. To review it first, remove its \`pm:self-merge\` label or comment."; echo
     [[ -s "$run_dir/reply.md" ]] && cat "$run_dir/reply.md"; } > "$run_dir/opened.md"
@@ -302,5 +313,7 @@ else
 fi
 set_status "$item" "In review" || true
 mark_done
+if [[ $self_merge -eq 1 ]]; then run_end "$pr_outcome" "the PM merges it once CI is green"
+else run_end "$pr_outcome" "a person merges it"; fi
 notify "PM agent: PRD PR for #$issue" "$title"
 git_locked worktree remove --force "$wt" 2>/dev/null || true

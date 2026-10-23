@@ -104,7 +104,7 @@ Shared state is guarded by mutexes held only for in-memory work, never across a 
 ```bash
 git clone https://github.com/rchau73/optionsBot && cd optionsBot
 cp .env.example .env              # add your testnet key; DERIBIT_ENV=testnet
-make check                        # gofmt + vet + race tests
+make check                        # gofmt + vet + shell scripts + race tests
 make hooks                        # once per clone: blocks committing .env files or any .env secret (the repo is public)
 make build                        # → ./bot
 ./bot --config config_btc.yaml    # trade on testnet
@@ -297,6 +297,7 @@ Sections, each naming its source:
 
 - **Missing inputs** — the UTC days of the week without a P&L history point, a recorded book or a minute GEX record. The figures use the other days; nothing is filled in.
 - **Live** — the journal's opens and closes in the week: realised P&L net of fees, the fees (opening share + closing fee, as `buyToClose` books them), closes by reason; the P&L history's `internal/perf` figures (net, % of equity, max drawdown, worst 7 days) and the unrealised P&L at the week's end.
+- **Equity bridge** (#277) — the account's equity at the first and last P&L history point of the week that carries it (Deribit's figure, recorded on each line with the margin balance and its unit: USD under cross collateral, else the coin), its change, the bot's net P&L between those two points in the same unit (the change of the cumulative total; in USD each step valued at its own point's spot) and the residual, labelled "not explained by the bot: transfers, positions the bot does not manage, funding, rounding" (in USD also the collateral's value as prices move), with its % of the starting equity. Under two points with equity (history written before #277, or margin unknown), or a unit that changed in the week, it says why instead. The weekly summary on the epic shows the residual's % only.
 - **Replay** — the bot's rules (`internal/replay`, the environment's config: `BOT_CONFIG_<BOT>` of its `deploy.env`, else `config_<bot>.yaml`) on the recorded mainnet books of the week, starting from the journal's book at Monday 00:00, deciding on minute GEX records where they exist; 7 days of earlier recording warm it up. Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`. Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
 - **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
 - **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips). The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
@@ -305,13 +306,35 @@ Sections, each naming its source:
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
 
+## Settings comparison
+
+`cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
+    -replay data/btc/data/market -stress data/stress/btc            # backtest + replay + stress
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-01-01 -to 2026-06-30 \
+    -csv data/historical/options.csv                                  # backtest only
+```
+
+The report starts with the label **"Backtested/replayed, not a promise"**, then:
+
+- **Differences** — every YAML setting that differs, key by key (`gamma_flip_buffer_sd 1.5 → 1`, `dte_delta_matrix[1].deltas[0] 0.16 → 0.2`; `—` where one side has no such key). Empty for two identical configs, and then every figure below is the same.
+- **Backtest (USD)** — the daily engine (`internal/backtest`, `-csv`, default `data/historical/options.csv`, `none` skips) from $100,000: net and return, realised (net of fees), fees, worst week, max drawdown, trades, GEX sheds, stops, delta exits, rolls, Sharpe. Margin is the backtest's approximation.
+- **Replay** — the bot's rules on the recorded mainnet books (`internal/replay`, `-replay`; minute GEX from `-gex`, default `market_gex` beside it, `none` = hourly), each config from a flat book at `-from`, 7 days of earlier recording warming it up: net and return, realised, fees, worst week (on the daily equity), max drawdown, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, IM max/avg. Starting balance from `-equity` or `account.json` of `-stress`; daily closes and DVOL from its `market.json`.
+- **Stress** — `cmd/stress`'s standard shocks (as the evidence report: `crash`, `rally`, `crash40`, `rally40`, `chop`) on the book captured in `-stress` (`scripts/stress_inputs.sh`), once with each config's settings (`-stress-cmd`, `none` skips): return, vs hold, realised, stops, worst equity, worst MM. `cmd/stress` takes only the slots, exit thresholds, size cap, flip buffer, direction source and the IM bands (when they start at IV percentiles 0, 30 and 70) — `evidence.StressModels`; a differing setting it does not take (`repair_cooldown_hours`, `min_premium`, `max_mm_pct`, …) is listed under the table as "Not modelled by the stress" (`not_modelled` in the JSON), so identical stress rows are not read as "no effect".
+
+A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
+
 ## Testing and CI
 
 ```bash
 make test      # go test ./tests/... -race
 make cover     # coverage across ./internal/... (tests live in ./tests)
-make check     # what CI runs: gofmt, vet, race tests
+make check     # what CI runs: gofmt, vet, shell scripts, race tests
 ```
+
+Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_shell.sh`: `bash -n`, then `shellcheck -x --severity=warning` (sources resolved beside each script, `.shellcheckrc`), and every `disable` directive must give its reason on the same line. CI installs shellcheck and requires it; `make check` skips that step with a message when it is not installed.
 
 | Package | Coverage | Highlights |
 |---|---|---|
