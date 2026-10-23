@@ -70,8 +70,9 @@ func TestShellScripts_BrokenScriptFailsWithFileAndLine(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected a failure:\n%s", out)
 	}
-	if !strings.Contains(out, p+":2:") || !strings.Contains(out, "SC2046") {
-		t.Errorf("want %s:2: and SC2046 in the output:\n%s", p, out)
+	// Line 3: writeScript puts the shebang on line 1.
+	if !strings.Contains(out, p+":3:") || !strings.Contains(out, "SC2046") {
+		t.Errorf("want %s:3: and SC2046 in the output:\n%s", p, out)
 	}
 }
 
