@@ -37,14 +37,23 @@ type Point struct {
 	IMLimitPct     *float64 `json:"im_limit_pct,omitempty"` // the policy's IM limit, %
 	MMPct          *float64 `json:"mm_pct,omitempty"`
 	EntriesAllowed *bool    `json:"entries_allowed,omitempty"` // false while frozen, MM-blocked, GEX-stale, stop-deferred or margin unknown
+	// The account's balance that cycle (#277), Deribit's figures in Unit
+	// (USD under cross collateral, else the coin): absent when margin was
+	// unknown, and on lines written before they were recorded.
+	MarginBalance *float64 `json:"margin_balance,omitempty"`
+	Equity        *float64 `json:"equity,omitempty"`
+	Unit          string   `json:"unit,omitempty"`
 }
 
 // Margin is the margin view recorded with a P&L point. Known is false when
-// the margin read failed that cycle: IM and MM are then left out.
+// the margin read failed that cycle: IM, MM, the balance and the equity are
+// then left out. Equity ≤ 0 (not reported) is left out too.
 type Margin struct {
 	Known                    bool
 	IMPct, IMLimitPct, MMPct float64
 	EntriesAllowed           bool
+	MarginBalance, Equity    float64
+	Unit                     string
 }
 
 // Store is the P&L history of one bot. Safe for concurrent use.
@@ -124,6 +133,12 @@ func (s *Store) RecordPnL(t time.Time, realised, unrealised, spot float64, margi
 		p.IMLimitPct, p.EntriesAllowed = &m.IMLimitPct, &m.EntriesAllowed
 		if m.Known {
 			p.IMPct, p.MMPct = &m.IMPct, &m.MMPct
+			if m.Unit != "" {
+				p.MarginBalance, p.Unit = &m.MarginBalance, m.Unit
+				if m.Equity > 0 {
+					p.Equity = &m.Equity
+				}
+			}
 		}
 	}
 	if data, err := json.Marshal(p); err == nil && s.file != nil {
@@ -158,6 +173,20 @@ func (s *Store) Utilisation(from, to time.Time) UtilisationStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return Utilisation(s.points, from, to)
+}
+
+// Points returns a copy of the raw points in [from, to], oldest first: the
+// performance summary needs every point, not one per bucket.
+func (s *Store) Points(from, to time.Time) []Point {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []Point{}
+	for _, p := range s.points {
+		if !p.T.Before(from) && !p.T.After(to) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Bucket is the pure reduction used by Range.

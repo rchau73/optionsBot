@@ -64,6 +64,15 @@ describe("read-only proxy", () => {
     expect(res.status).toBe(200);
   });
 
+  test("forwards the performance endpoint with its range, and the bot's 400", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"label":"testnet"}', { status: 200 }));
+    const res = await call("btc", ["performance"], "?range=30d");
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/performance?range=30d", expect.anything());
+    expect(res.status).toBe(200);
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"error":"range must be one of 7d, 30d, all"}', { status: 400 }));
+    expect((await call("btc", ["performance"], "?range=1y")).status).toBe(400);
+  });
+
   test("refuses unknown bots and endpoints", async () => {
     global.fetch = jest.fn();
     expect((await call("eth", ["status"])).status).toBe(404);

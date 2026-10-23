@@ -194,7 +194,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | `DERIBIT_HEARTBEAT_INTERVAL_SEC` | 15 | server heartbeat interval |
 | `DERIBIT_RECONNECT_MAX_ATTEMPTS` / `_BACKOFF_BASE_MS` | 10 / 1000 | reconnect policy before giving up |
 | `BOT_ACCOUNT_POLL_SEC` | 10 | how often the account/collateral summary is polled for the monitor (one read-only call; minimum 2) |
-| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service |
+| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service. Its read-only routes (`/api/status`, `/positions`, `/orders`, `/pnl`, `/pnl/history`, `/events`, `/account`, `/trades`, `/summary`, `/performance?range=7d\|30d\|all` — net return vs holding the coin, max drawdown, worst week, missing days, labelled live/testnet, #232) are described in [`frontend/README.md`](frontend/README.md) |
 | `BOT_ADMIN_TOKEN` | empty (off) | secret for the monitor's state-changing actions, bearer token; Docker Compose passes it to the monitor. **Manual close** (`POST /api/positions/close`): testnet only, and only for a leg under the regime-side block. **Manual rebalance** (`POST /api/rebalance[?dry_run=true]`): live and testnet, same gates as the automatic rebalance |
 
 ## Backtesting
