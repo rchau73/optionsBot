@@ -70,6 +70,16 @@ export class AuthStore {
     return store;
   }
 
+  /**
+   * Reads an existing file into a copy that is never written back (no schema
+   * change, no save): the admin CLI reads users while the monitor, which holds
+   * its own copy and writes it after every change, keeps running.
+   */
+  static async openReadOnly(file) {
+    const SQL = await loadSql();
+    return new AuthStore(new SQL.Database(fs.readFileSync(file)), ":memory:");
+  }
+
   constructor(db, file) {
     this.db = db;
     this.file = file;

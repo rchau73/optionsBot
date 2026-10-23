@@ -4,7 +4,7 @@
 // token or AUTH_SECRET.
 import fs from "node:fs";
 import path from "node:path";
-import { authLog } from "./log";
+import { authLog } from "./log.js"; // explicit extension: scripts/analytics-user.mjs loads this with plain node
 
 /** An audit sink appending one JSON line per entry to `file`; null file = off (tests in memory). */
 export function fileAudit(file) {
