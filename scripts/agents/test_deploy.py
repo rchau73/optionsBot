@@ -223,6 +223,37 @@ class Deploy(unittest.TestCase):
         lines = self.read("envs", "history", "deploys.tsv").splitlines()
         self.assertEqual([l.split("\t")[1:] for l in lines], [["mvp", self.b]])
         self.assertEqual(self.creates(), [])
+        self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
+
+    # The run ledger (#206): one start and one end line per deploy attempt.
+    def ledger_ends(self):
+        lines = [json.loads(l) for l in self.read("envs", "history", "agent_runs.jsonl").splitlines()]
+        self.assertTrue(all(l["agent"] == "deploy" for l in lines))
+        starts = [l["run_id"] for l in lines if l["event"] == "start"]
+        self.assertEqual(starts, [l["run_id"] for l in lines if l["event"] == "end"])  # every run ended
+        for l in lines:
+            self.assertTrue(l["log"].startswith("data/agents/deploy/"), l)
+        return [(l["outcome"], l["commit"]) for l in lines if l["event"] == "end"]
+
+    def test_ledger_records_the_rollback(self):
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertEqual(self.ledger_ends(), [("rolled_back", self.b[:7])])
+
+    def test_ledger_records_a_failed_rollback(self):
+        Monitor.healthy = set()
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertEqual(self.ledger_ends(), [("failed", self.b[:7])])
+
+    def test_ledger_records_a_live_skip(self):
+        Monitor.environment = "live"
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.ledger_ends(), [("skipped", self.b[:7])])
+
+    def test_ledger_has_no_line_when_up_to_date(self):
+        Monitor.healthy = {"A", "B"}
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.run_deploy(), 0, self.output)  # nothing new: not a run
+        self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
 
 
 if __name__ == "__main__":

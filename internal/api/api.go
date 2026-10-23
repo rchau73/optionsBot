@@ -401,7 +401,7 @@ func (s *Server) trades(w http.ResponseWriter, r *http.Request) {
 		limit = defaultTradeLimit
 	}
 	limit = min(limit, maxTradeLimit)
-	writeJSON(w, map[string]any{"trades": ts.Trades(after, limit), "history_since": s.historySince()})
+	writeJSON(w, map[string]any{"trades": plainTrades(ts.Trades(after, limit)), "history_since": s.historySince()})
 }
 
 func (s *Server) positions(w http.ResponseWriter, _ *http.Request) {
@@ -490,11 +490,7 @@ func (s *Server) recentEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = min(n, maxEventLimit)
 	}
-	events := s.events.Recent(since, limit)
-	if events == nil {
-		events = []orders.RecentEvent{}
-	}
-	writeJSON(w, map[string]any{"as_of": time.Now(), "events": events})
+	writeJSON(w, map[string]any{"as_of": time.Now(), "events": plainEvents(s.events.Recent(since, limit))})
 }
 
 func parseUint(q string) (uint64, error) {

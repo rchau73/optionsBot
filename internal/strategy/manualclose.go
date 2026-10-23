@@ -188,7 +188,7 @@ func (s *Strategy) runManualClose(ctx context.Context, req manualReq) {
 			r.Error = why
 			jctx := s.instrumentContext(pos.Instrument, s.slotOf(pos.ID))
 			jctx.Actor = &actor
-			s.journal.LogSkipped("manual_close_refused "+pos.Instrument+": "+why, jctx)
+			s.journal.LogSkipped(SkipManualCloseRefused+" "+pos.Instrument+": "+why, jctx)
 			out = append(out, r)
 			continue
 		}

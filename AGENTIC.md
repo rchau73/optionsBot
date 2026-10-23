@@ -120,6 +120,7 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 - **Stop instead of guessing:** the Dev agent stops when an issue is ambiguous, needs a product decision, or would change live order behaviour beyond what the issue says. It posts its questions and moves the card to **Blocked**.
 - **Idempotent and bounded:** one Dev task at a time, with locks and stale-lock recovery. **No duplicate tickets:** the SME agent reads every open issue (any label, with its body and last comments) and those closed in the last 14 days, and reports a problem already tracked as an update to that ticket, posted only when the data says something new. Tickets parked in Triage for a week or two to collect data are not re-filed or re-posted daily. The script adds two checks of its own, on the fingerprint and on near-identical titles. A failed deploy commit is not retried in a loop.
 - **Audit trail:** every agent action is an issue, a comment, a commit or a PR, labelled `agent:*`, with its run log in `data/agents/`. Each pickup comment numbers the attempt and says what came before (blocked, sent back by the Reviewer, or a human's comment), so an issue tells its whole story even when a card was moved back on the board.
+- **Run ledger** (#206): one file answers "which agent did what, when, on which card, and how did it end?" — see [Run ledger](#run-ledger) below.
 
 ## How AI is used in this repo beyond the loop
 
@@ -160,6 +161,29 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 **Limits adapt by themselves** (product owner, 2026-10-19: "find the optimum value"): when a run hits the Claude usage limit or GitHub's rate limit (`note_limit`), no new Claude run starts for 30 minutes, then one at a time for an hour, then the configured parallelism again (`parallel_max`). A Dev card that hit a limit goes back to Ready, not Blocked; a PM answer stays due. Set the `*_PARALLEL` variables in the launchd plist to change the ceilings.
 
 **A limit never looks like a question** (#237: Claude's "You've hit your weekly limit · resets …" was not in the pattern, and 28 approved cards were labelled `agent:needs-human` and moved to Blocked in 2–5 s each). The wordings live in one place, `LIMIT_PATTERN` in [`limit_lib.sh`](scripts/agents/limit_lib.sh) (weekly, session and usage limits, the generic `hit your … limit` and `limit · resets` forms, GitHub's rate limits). As a second guard, `note_stop` treats any run that exits non-zero in under 60 s with no answer block (`RESULT:`, `REVIEW-JSON`, `PM-…`) like a limit: the pause starts, the Dev card goes back to Ready without `agent:needs-human`, a review or PM answer is retried. The Dev agent posts one limit comment per episode: none when the card's last comment (its own pickups aside) already is one. Each tick, before the Dev agents start and never inside a pause, [`requeue.sh`](scripts/agents/requeue.sh) re-queues the cards such a limit blocked before this guard existed (rules in `requeue.py`, tested in `test_requeue.py`): an open Blocked card with `agent:needs-human`, without `pm:waiting`, whose newest Dev stop says "the agent did not finish", with no person's comment after it, and whose newest run log (`data/agents/dev/issue-<n>-*/agent.md`) matches `LIMIT_PATTERN`, loses the label, moves to Ready and gets one comment ("🤖 Re-queued: the earlier stop was a usage limit, not a question."). A stop that carries the agent's questions, or that a person answered, stays with the person.
+
+## Run ledger
+
+With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<agent>/<run>/` have no single index. Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate and deploy run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl` (beside `deploys.tsv`, outside both clones):
+
+```json
+{"ts":"2026-10-22T23:10:04Z","agent":"dev","run_id":"dev-20261022T225348Z-4242-1","issue":206,"pr":271,"event":"end","outcome":"pr_opened","detail":"checks passed","log":"data/agents/dev/issue-206-20261022-225348","commit":"1a2b3c4"}
+```
+
+- **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code). Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave. The ledger never stops an agent: a line it cannot write is logged and skipped.
+- **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going).
+- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`.
+- **Only work is a run:** a tick where an agent finds nothing to do writes nothing. The PM agent is a run when it asks Claude (triage or planning), the PR gate once per PR it changed, the deploy once per new commit it tries.
+- **Paths and ids only:** no secrets, no amounts, no prompt text; the detail is a short fixed phrase (≤ 200 characters).
+
+```bash
+python3 scripts/agents/runs.py --issue 206          # every run that touched #206, oldest first
+python3 scripts/agents/runs.py --agent dev --date 2026-10-22
+python3 scripts/agents/runs.py --open               # crashed (killed) or still running
+python3 scripts/agents/runs.py --pr 271 --json
+```
+
+Tests: `test_runs.py` (line format, queries, the helpers sourced for real — a crash, six parallel runs) and the ledger cases in `test_deploy.py`.
 
 ## Only ready PRs reach you
 

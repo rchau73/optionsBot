@@ -32,6 +32,14 @@ try: s = json.load(open(sys.argv[1]))
 except FileNotFoundError: s = {}
 s[sys.argv[2]] = sys.argv[3]; json.dump(s, open(sys.argv[1], "w"), indent=1)' "$STATE" "$1" "$2"; }
 
+# gate_run <outcome> <detail> — one run in the ledger (lib.sh) for each PR the
+# gate changed this tick; a tick that changes nothing records nothing.
+gate_run() {
+  run_begin pr_gate "$issue" "$pr"
+  RUN_COMMIT="${head:0:7}"
+  run_end "$1" "$2"
+}
+
 gh pr list -R "$slug" --label agent:dev --state open --json number,headRefName -q '.[] | "\(.number) \(.headRefName)"' > "$tmp/prs.txt"
 while read -r pr ref; do
   [[ -n "$pr" && "$ref" == agent/issue-* ]] || continue
@@ -61,10 +69,12 @@ while read -r pr ref; do
       gh issue edit "$issue" -R "$slug" --add-label needs-rebase >/dev/null < /dev/null || true
       [[ -n "$item" ]] && set_status "$item" "Ready"
       gh issue comment "$issue" -R "$slug" --body "🤖 **PR gate** — #$pr conflicts with \`main\` (another PR merged first). Back to **Ready** with \`needs-rebase\`: the Dev agent merges \`main\` into the branch, resolves the conflict keeping both changes' intent, re-runs every check, and the Reviewer checks the result before it comes back to you." >/dev/null < /dev/null
-      remember "$pr" "conflict:$head"; log "pr-gate: #$pr conflicts → #$issue Ready (needs-rebase)" ;;
+      remember "$pr" "conflict:$head"; log "pr-gate: #$pr conflicts → #$issue Ready (needs-rebase)"
+      gate_run sent_back "conflicts with main: Ready with needs-rebase" ;;
     update)
-      if gh pr update-branch "$pr" -R "$slug" >/dev/null 2>&1 < /dev/null; then log "pr-gate: #$pr updated with main"
-      else log "pr-gate: #$pr could not be updated with main"; fi ;;
+      if gh pr update-branch "$pr" -R "$slug" >/dev/null 2>&1 < /dev/null; then
+        log "pr-gate: #$pr updated with main"; gate_run branch_updated "behind main: updated"
+      else log "pr-gate: #$pr could not be updated with main"; gate_run failed "could not update with main"; fi ;;
     ready)
       if [[ "$has_ready" != "True" ]]; then
         gh pr edit "$pr" -R "$slug" --add-label ready-to-merge >/dev/null < /dev/null
@@ -74,7 +84,9 @@ while read -r pr ref; do
           remember "$pr" "ready:$head"
         fi
         log "pr-gate: #$pr ready-to-merge"
+        gate_run ready_to_merge "reviewed clean, CI green, no conflict"
       fi ;;
-    *) log "pr-gate: #$pr waits — $why" ;;
+    *) log "pr-gate: #$pr waits — $why"
+      [[ "$has_ready" != "True" ]] || gate_run ready_removed "waits: $why" ;;
   esac
 done < "$tmp/prs.txt"

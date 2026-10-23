@@ -147,6 +147,8 @@ const (
 	SkipRegimeSide    = "regime_side"    // confirmed negative regime: the side the trend runs toward is not sold (regimeside.go)
 	SkipGEXWait       = "gex_wait"       // no fresh GEX snapshot: regime and trend unknown, no new risk (gexready.go)
 	SkipBiasWarmup    = "bias_warmup"    // a bias shed held: the flip window does not cover its span yet (biaswarmup.go)
+	// SkipManualCloseRefused: a manual close its rule does not allow (manualclose.go).
+	SkipManualCloseRefused = "manual_close_refused"
 	// One new-risk sizer at a time (#97): an entry waits for a working
 	// rebalance top-up, and a due rebalance for a working entry.
 	SkipEntryWaitTopup     = "entry_wait_topup"
