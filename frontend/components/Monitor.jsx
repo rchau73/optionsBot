@@ -20,12 +20,17 @@ import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
 import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
+import { roleAtLeast } from "@/lib/auth/roles";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
-/** The single monitor page: header, the investor summary first, then KPIs, positions, working orders, feed, P&L. */
-export default function Monitor() {
+/**
+ * The single monitor page: header, the investor summary first, then KPIs, positions, working orders, feed, P&L.
+ * role (the signed-in person's) only picks a display default: technical details open for managers and admins.
+ */
+export default function Monitor({ role = null }) {
   const { names, bots, feed, history, trades, error, pollMs, polledAt } = useMonitor();
+  const detailsOpen = roleAtLeast(role, "manager");
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
   const [filters, setFilters] = useState(NO_FILTERS);
 
@@ -81,11 +86,11 @@ export default function Monitor() {
           <OtherPositions data={others} />
         </Panel>
         <Panel title="Trade history & profitability" collapsible storageKey="monitor.panel.trades" summary={tradeHistorySummary(allTrades)}>
-          <TradeHistory trades={allTrades} />
+          <TradeHistory trades={allTrades} detailsOpen={detailsOpen} />
         </Panel>
         <div className="grid gap-3 lg:grid-cols-3">
           <Panel title="Activity" className="lg:col-span-2" fill>
-            <ActivityFeed feed={feed} />
+            <ActivityFeed feed={feed} detailsOpen={detailsOpen} />
           </Panel>
           <div className="space-y-3">
             <Panel title="P&L (USD, all bots)">

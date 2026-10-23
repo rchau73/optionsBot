@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Badge from "./Badge";
+import Details from "./Details";
 import StatTile from "./StatTile";
 import { formatCoin, formatDateTime, formatNumber, formatPct, formatPrice, formatUSD } from "@/lib/format";
 import { closeLabel, filterTrades, positionDelta, summarizeTrades } from "@/lib/trades";
@@ -22,8 +23,11 @@ export function tradeHistorySummary(trades) {
  * How the strategy is doing since its history began: realized P&L, win
  * rate, average win vs loss, P&L by exit reason and by slot, and every open
  * and close (newest first). Restored from the bots' journals on restart.
+ * The reason cell leads with the bot's plain-words sentence (#287); the rule
+ * and its numbers fold under "details", open at first when detailsOpen. The
+ * filters read the underlying fields, never the sentence.
  */
-export default function TradeHistory({ trades }) {
+export default function TradeHistory({ trades, detailsOpen = false }) {
   const [filters, setFilters] = useState({ bot: "", kind: "", reason: "" });
   const [shown, setShown] = useState(PAGE);
   const s = useMemo(() => summarizeTrades(trades), [trades]);
@@ -146,8 +150,20 @@ export default function TradeHistory({ trades }) {
                 <td className="px-2 py-1 text-right tabular-nums">{formatNumber(t.qty, 1)}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{formatPrice(t.price)}</td>
                 <td className="max-w-[28rem] px-2 py-1 text-xs">
-                  {t.kind === "open" ? t.reason : closeLabel(t.reason)}
-                  {t.detail ? <div className="text-[11px] leading-snug text-muted">{t.detail}</div> : null}
+                  {t.plain ? (
+                    <>
+                      {t.plain}
+                      <Details defaultOpen={detailsOpen}>
+                        <div>{t.kind === "open" ? t.reason : closeLabel(t.reason)}</div>
+                        {t.detail ? <div className="text-[11px] leading-snug">{t.detail}</div> : null}
+                      </Details>
+                    </>
+                  ) : (
+                    <>
+                      {t.kind === "open" ? t.reason : closeLabel(t.reason)}
+                      {t.detail ? <div className="text-[11px] leading-snug text-muted">{t.detail}</div> : null}
+                    </>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-2 py-1 text-right text-xs tabular-nums">
                   {formatNumber(t.delta, 3)} ({formatNumber(positionDelta(t), 2)})
