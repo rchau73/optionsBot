@@ -104,6 +104,12 @@ You may also read CLAUDE.md, OptionStrategy.md and docs/ for how the bot works.
 Print only the report in the exact output shape the skill defines, ending with the FINDINGS-JSON block."
 model_args=()
 [[ -n "${SME_MODEL:-}" ]] && model_args=(--model "$SME_MODEL")
+# Daily and scheduled: it honours the pause and the daily runs, not the hours.
+if [[ "${AGENTS_PAUSED:-0}" == "1" ]] || [[ "$(runs_today)" -ge "${AGENT_MAX_RUNS_PER_DAY:-30}" ]]; then
+  log "sme: skipped — agents paused or the daily budget is used (agents.env)"
+  run_end skipped_budget "agents.env budget"; exit 0
+fi
+budget_take sme # the daily budget (limit_lib.sh)
 # ${arr[@]+...}: macOS /bin/bash 3.2 treats an empty array as unset under set -u.
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
