@@ -254,6 +254,8 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 
 **Limits — read before trusting a number.** One decision per recorded hour (live: every 40 s): the confirmation counts that are "2 snapshots" live (≈2 minutes) take 2 hours here, a stop's 5-minute spread wait ends at the next hour, and the bias's 60-minute median-flip window is widened to two snapshot intervals (else it would never hold two flips). Spot is the nearest expiry's future (the index is not recorded). Margin is MODEL (worst loss over spot ±16 % × IV −20/+30 %, MM = 80 % of IM), not Deribit's simulator; fills are assumed at the floor whenever that side of the book is quoted — mainnet prices, while the bots fill on testnet. Not modelled: the rebalance top-ups, leg balancing, the churn breaker, stop/shed records restored from the journal, and the bias's restart warm-up. So the replay compares rule sets on the same real books; it does not reproduce the journal to the satoshi. The gap to the journal (`-journal`) is printed on every run and should be recorded with any verdict drawn from it.
 
+**Direction trial scorecard** (#245): `go run ./cmd/evidence -compare-direction -week 2026-W43` puts the two GEX direction sources side by side for one week — live (stable's BTC on `bias`, mvp's on `sma`: GEX sheds, repairs of shed sides, stop-losses, hours each source spent shedding calls and puts from `data/direction_history.jsonl`, with the unused source's shadow, realised net P&L in total and per slot, and the book marked at the recorded mids) and replayed twice on stable's recorded books from stable's journal book at the week start, once per source (only `gex_direction` differs, so the market path is identical), with the live − replay gap of each source. Live rows are labelled "different accounts and books: not a controlled test", replay rows "model"; every row names its files, days without recorded books are listed (never filled in), and every figure is a count, hours or a percentage of each environment's equity (`data/stress/btc/account.json`) — no amounts. No recommendation: it lists facts. Output: `<stable>/data/evidence/direction/<week>.md|.json` (`-stable-root`, `-mvp-root` override the clones).
+
 ## Idle-margin attribution
 
 `cmd/idlemargin` (#218, epic E1) says **why** a bot used less than its approved margin. `utilisation_7d`/`utilisation_30d` (`history.Utilisation`, #174) give the number; this splits it into causes, from the bot's own files only (no Deribit call, nothing written):
@@ -301,7 +303,7 @@ Sections, each naming its source:
 - **Benchmark** — holding the coin over the week (spot at the first and last history point), the strategy's USD return and its excess over holding.
 - **Margin utilisation** — `history.Utilisation` over the week (the figure of `/api/status`).
 
-A weekly schedule is not installed yet: `install.sh` will run it on Mondays once the report has been reviewed.
+**Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
 
 ## Settings comparison
 

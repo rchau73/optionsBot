@@ -61,9 +61,14 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - MONITOR_API_TOKEN=${MONITOR_API_TOKEN:-}
+      # Analytics (#193): events.jsonl beside auth.db, only with consent and a
+      # salt; the deployment and version tag each event (no account, no amount).
+      - ANALYTICS_SALT=${ANALYTICS_SALT:-}
+      - MONITOR_DEPLOYMENT=${OPTIONSBOT_ENV}
+      - MONITOR_VERSION=${BOT_VERSION:-}
     volumes:
-      # Users and sessions (auth.db). A named volume: one per environment, as
-      # the compose project name includes OPTIONSBOT_ENV.
+      # Users and sessions (auth.db), analytics events (events.jsonl). A named
+      # volume: one per environment, as the compose project name includes OPTIONSBOT_ENV.
       - monitor-auth:/app/data/monitor
     ports:
       - "127.0.0.1:${MONITOR_PORT:?set MONITOR_PORT in deploy.env}:3000"

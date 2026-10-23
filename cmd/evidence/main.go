@@ -9,6 +9,12 @@
 //
 //	go run ./cmd/evidence -env stable -week 2026-W42
 //	go run ./cmd/evidence -env mvp -from 2026-10-12 -to 2026-10-18 -books-root ~/dev/go/optionsBot-env/stable
+//
+// -compare-direction writes the direction trial scorecard instead (#245):
+// stable's BTC (bias) and mvp's (sma) live, and stable's books replayed with
+// each source, as percentages only → <stable>/data/evidence/direction/.
+//
+//	go run ./cmd/evidence -compare-direction -week 2026-W43
 package main
 
 import (
@@ -34,8 +40,18 @@ func main() {
 	to := flag.String("to", "", "last day, YYYY-MM-DD (included)")
 	equity := flag.Float64("equity", 0, "starting margin balance in the coin (one -bot only; default account.json of data/stress/<bot>)")
 	stressCmd := flag.String("stress-cmd", "go run ./cmd/stress", "command that runs cmd/stress, from the repository (none = skip the stress section)")
+	compare := flag.Bool("compare-direction", false, "the direction trial scorecard (#245): stable's bot (bias) vs mvp's (sma), live and replayed both ways on stable's books → <stable>/data/evidence/direction/<week>.md|.json")
+	stableRoot := flag.String("stable-root", "", "with -compare-direction: the stable clone (default ~/dev/go/optionsBot-env/stable)")
+	mvpRoot := flag.String("mvp-root", "", "with -compare-direction: the mvp clone (default ~/dev/go/optionsBot-env/mvp)")
 	flag.Parse()
 
+	if *compare {
+		if err := runCompare(*stableRoot, *mvpRoot, *bots, *week, *from, *to); err != nil {
+			fmt.Fprintln(os.Stderr, "evidence:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(*env, *root, *booksRoot, *bots, *week, *from, *to, *equity, *stressCmd); err != nil {
 		fmt.Fprintln(os.Stderr, "evidence:", err)
 		os.Exit(1)
@@ -76,6 +92,49 @@ func run(env, root, booksRoot, bots, week, from, to string, equity float64, stre
 		fmt.Printf("%s %s %s: %s, %s\n", env, bot, w.Label, md, js)
 	}
 	return nil
+}
+
+// runCompare writes the direction trial scorecard of one bot (BTC unless
+// -bot names another single bot).
+func runCompare(stableRoot, mvpRoot, bots, week, from, to string) error {
+	bot := strings.ToLower(strings.TrimSpace(bots))
+	if bot == "btc,eth" {
+		bot = "btc" // the trial's bot (#168)
+	}
+	if strings.Contains(bot, ",") {
+		return fmt.Errorf("-compare-direction: give a single -bot")
+	}
+	var err error
+	if stableRoot, err = envRoot(stableRoot, "stable"); err != nil {
+		return err
+	}
+	if mvpRoot, err = envRoot(mvpRoot, "mvp"); err != nil {
+		return err
+	}
+	w, err := window(week, from, to)
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	envs := []evidence.DirectionEnvRoot{{Env: "stable", Root: stableRoot}, {Env: "mvp", Root: mvpRoot}}
+	in := evidence.LoadDirection(bot, envs, "stable", stableRoot, w, os.Stderr)
+	md, js := evidence.DirectionOutPaths(stableRoot, w.Label)
+	if err := evidence.WriteDirection(evidence.BuildDirection(in), md, js); err != nil {
+		return err
+	}
+	fmt.Printf("direction %s %s: %s, %s\n", bot, w.Label, md, js)
+	return nil
+}
+
+func envRoot(root, env string) (string, error) {
+	if root != "" {
+		return root, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "dev", "go", "optionsBot-env", env), nil
 }
 
 func window(week, from, to string) (evidence.Window, error) {

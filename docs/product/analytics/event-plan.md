@@ -1,6 +1,6 @@
 # Analytics event plan (E13)
 
-**Status:** plan, before any instrumentation (#192). Nothing in the monitor sends an event yet; the story that instruments it implements this file and nothing beyond it.
+**Status:** plan (#192); the collector exists (#193: `POST /api/events`, `frontend/lib/track.js`, `frontend/README.md` "Analytics") and accepts exactly this file's events and properties — anything else is refused whole (400). No screen sends an event yet and nobody can consent yet: the consent notice waits for E13's prototype.
 
 **Rule in one line:** an event says *what a person looked at or did*, never *what the account holds*. No amount, size, price, P&L, margin figure, instrument name, secret or email can travel in an event — the allow-list below is the only set of properties the collector accepts, and `tests/event_plan_test.go` checks this file against that rule.
 
@@ -20,7 +20,7 @@ Every event answers at least one of these. An event that answers none is not col
 
 ## 2. Events
 
-Every event carries the envelope (§3) plus its own properties. Property names are the allow-list's (§4); a property not listed there is dropped by the collector.
+Every event carries the envelope (§3) plus its own properties. Property names are the allow-list's (§4); an event with a property not listed there, or with a value outside its rule, is refused whole by the collector (400, nothing stored).
 
 | Event | Trigger | Properties | Answers |
 |---|---|---|---|
