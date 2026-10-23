@@ -26,6 +26,17 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS refresh_tokens_user ON refresh_tokens(user_id);
+-- Sign-in lockout (lib/auth/limits.js), kept here so a restart does not clear
+-- it. Times are in ms.
+CREATE TABLE IF NOT EXISTS login_failures (
+  username TEXT NOT NULL,
+  at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_failures_username ON login_failures(username);
+CREATE TABLE IF NOT EXISTS login_locks (
+  username TEXT PRIMARY KEY,
+  until    INTEGER NOT NULL
+);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -202,5 +213,37 @@ export class AuthStore {
 
   sessionCount(userId) {
     return this.one("SELECT COUNT(*) AS n FROM refresh_tokens WHERE user_id = ?", [userId]).n;
+  }
+
+  /** The recorded sign-in failure times (ms) of a username, oldest first. */
+  loginFailureTimes(username) {
+    return this.all("SELECT at FROM login_failures WHERE username = ? ORDER BY at", [username]).map((r) => r.at);
+  }
+
+  /** Records a failure at atMs, first deleting every failure (any username) at or before expiredMs. */
+  addLoginFailure(username, atMs, expiredMs) {
+    this.db.run("DELETE FROM login_failures WHERE at <= ?", [expiredMs]);
+    this.write("INSERT INTO login_failures (username, at) VALUES (?, ?)", [username, atMs]);
+  }
+
+  /**
+   * Locks a username until untilMs and forgets its failures; also deletes
+   * locks ended by nowMs and failures (any username) at or before expiredMs.
+   */
+  lockLogin(username, untilMs, nowMs, expiredMs) {
+    this.db.run("DELETE FROM login_failures WHERE username = ? OR at <= ?", [username, expiredMs]);
+    this.db.run("DELETE FROM login_locks WHERE until <= ?", [nowMs]);
+    this.write("INSERT OR REPLACE INTO login_locks (username, until) VALUES (?, ?)", [username, untilMs]);
+  }
+
+  /** The time (ms) a username's lock ends, or 0 when it has none (an ended lock still answers its time). */
+  loginLockUntil(username) {
+    return this.one("SELECT until FROM login_locks WHERE username = ?", [username])?.until ?? 0;
+  }
+
+  /** Forgets the failures of a username; writes the file only when it had some. */
+  clearLoginFailures(username) {
+    if (!this.one("SELECT 1 AS found FROM login_failures WHERE username = ? LIMIT 1", [username])) return;
+    this.write("DELETE FROM login_failures WHERE username = ?", [username]);
   }
 }
