@@ -125,8 +125,15 @@ func TestDeployEffect_EntryVacantSlotNeutral(t *testing.T) {
 
 // Scenario: a restart that rebalances.
 func TestDeployEffect_RebalanceIsRestartMade(t *testing.T) {
-	recs := append(deStartupLines(0.008),
-		orders.RiskRecord{Timestamp: deAt(1), Event: orders.EventRisk, Change: orders.RiskRebalance},
+	recs := []any{deRisk(deAt(-60), orders.RiskLimitChanged, "iv band 2", 20)}
+	recs = append(recs, deStartupLines(0.008)...)
+	recs = append(recs,
+		// Every startup journals its limit as limit_changed (limits.go
+		// noteRiskChange); the limit did not move, so it causes nothing.
+		deRisk(deAt(0), orders.RiskLimitChanged, "startup: iv band 2", 20),
+		// A change of the policy's reason alone journals limit_changed too.
+		deRisk(deAt(1), orders.RiskLimitChanged, "iv band 2 · regime pending", 20),
+		orders.RiskRecord{Timestamp: deAt(1), Event: orders.EventRisk, Change: orders.RiskRebalance, LimitIMPct: 20},
 		deSubmit(deAt(2), "o-1", orders.TriggerRebalanceUpsize, deCall, deSlot, 0.3),
 		deSubmit(deAt(2), "o-2", orders.TriggerRebalanceUpsize, dePut, deSlot, 0.3),
 		orders.OrderLog{Timestamp: deAt(3), Event: orders.EventAmended, OrderID: "o-1", TriggerReason: orders.TriggerRebalanceUpsize},
@@ -146,17 +153,34 @@ func TestDeployEffect_RebalanceIsRestartMade(t *testing.T) {
 }
 
 // A rebalance after a confirmed limit change (or a person's request) in the
-// window would have been sent anyway: expected.
+// window would have been sent anyway: expected. So would one after a
+// startup whose limit moved while the bot was down.
 func TestDeployEffect_RebalanceAfterLimitChangeExpected(t *testing.T) {
-	for _, change := range []string{orders.RiskLimitChanged, orders.RiskRebalanceManual} {
-		recs := append(deStartupLines(0.008),
-			orders.RiskRecord{Timestamp: deAt(1), Event: orders.EventRisk, Change: change},
-			deSubmit(deAt(2), "o-1", orders.TriggerRebalanceUpsize, deCall, deSlot, 0.3),
-		)
+	for name, cause := range map[string][]any{
+		"limit 20 → 30": {
+			deRisk(deAt(0), orders.RiskLimitChanged, "startup: iv band 2", 20),
+			deRisk(deAt(1), orders.RiskLimitChanged, "iv band 3", 30),
+		},
+		"rebalance_manual": {
+			deRisk(deAt(0), orders.RiskLimitChanged, "startup: iv band 2", 20),
+			deRisk(deAt(1), orders.RiskRebalanceManual, "by monitor", 20),
+		},
+		"limit moved while down": {
+			deRisk(deAt(0), orders.RiskLimitChanged, "startup: iv band 3", 30),
+		},
+	} {
+		recs := []any{deRisk(deAt(-60), orders.RiskLimitChanged, "iv band 2", 20)}
+		recs = append(recs, deStartupLines(0.008)...)
+		recs = append(recs, cause...)
+		recs = append(recs, deSubmit(deAt(2), "o-1", orders.TriggerRebalanceUpsize, deCall, deSlot, 0.3))
 		if st := deOne(t, deJournal(t, recs...), nil); st.Class != deployeffect.Expected {
-			t.Errorf("%s: class %s, want expected", change, st.Class)
+			t.Errorf("%s: class %s, want expected: %+v", name, st.Class, st.Orders)
 		}
 	}
+}
+
+func deRisk(at time.Time, change, detail string, limit float64) orders.RiskRecord {
+	return orders.RiskRecord{Timestamp: at, Event: orders.EventRisk, Change: change, Detail: detail, LimitIMPct: limit}
 }
 
 // Scenario: a stop that was due anyway.
@@ -270,6 +294,18 @@ func TestDeployEffect_OrdersCountedOnce(t *testing.T) {
 	c := st.Triggers[orders.TriggerRebalanceLegs]
 	if c == nil || c.Orders != 2 || c.Lots < 0.7-1e-9 || c.Lots > 0.7+1e-9 {
 		t.Errorf("rebalance_legs = %+v, want 2 orders 0.7 lots", c)
+	}
+
+	// A resting take-profit (GTC at the mid) fills 0.4 of 1, then its rest
+	// goes out as an IOC at the ask under a new id (closes only): one order.
+	recs = append(deStartupLines(0.004),
+		deSubmit(deAt(1), "o-gtc", orders.TriggerRolloutROI, deCall, deSlot, 1),
+		deClose(deAt(2), "o-gtc", orders.TriggerRolloutROI, deCall, 0.4),
+		deClose(deAt(3), "o-ask", orders.TriggerRolloutROI, deCall, 0.6),
+	)
+	st = deOne(t, deJournal(t, recs...), nil)
+	if c := st.Triggers[orders.TriggerRolloutROI]; c == nil || c.Orders != 1 || c.Lots != 1 {
+		t.Errorf("resting close then ask step = %+v, want 1 order 1 lot", c)
 	}
 }
 

@@ -24,8 +24,10 @@
 //     journaled mark before it); an exit of a position opened after the
 //     restart; a repair whose leg was not held at the restart (its last
 //     close was a roll, or a held close older than the repair cooldown); a
-//     rebalance after a confirmed limit change or a person's rebalance in
-//     the same window; the MM cut (Deribit's account figure), a manual close
+//     rebalance after a confirmed limit change (a limit_changed line whose
+//     limit differs from the risk line before it: the startup's own
+//     "startup: …" line moves nothing) or a person's rebalance in the same
+//     window; the MM cut (Deribit's account figure), a manual close
 //     or the kill switch (a person).
 //   - restart-made: everything else — a rebalance with no confirmed limit
 //     change, leg balancing (rebalance_legs), close_long, an entry into a
@@ -42,6 +44,7 @@ package deployeffect
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -86,7 +89,8 @@ type Line struct {
 	OrderID         string
 	Trigger         string
 	Detail          string
-	Change          string // risk_limit lines
+	Change          string  // risk_limit lines
+	LimitIMPct      float64 // risk_limit lines: the IM limit the policy held
 	Qty             float64
 	Delta           float64 // the option's delta at the event
 	Mid             float64 // the instrument's mid in the market snapshot (0 = no quote)
@@ -289,7 +293,12 @@ func classifyWindow(st *startup, lines []Line, rules Rules) {
 			submittedIDs[l.OrderID] = true
 		}
 	}
-	closedAt := map[string]int{} // order id → index in st.Orders, closes without a submit
+	// A resting close whose window ends goes out again as an IOC at the ask
+	// under a new order id (restingclose.go askStep), journaling closes only:
+	// it finishes the order already counted by the submit of the same
+	// trigger and instrument, whose quantity covers it.
+	submittedLegs := map[string]bool{} // trigger|instrument of submits seen so far
+	closedAt := map[string]int{}       // order id → index in st.Orders, closes without a submit
 	for _, l := range lines {
 		if !inWindow(l) {
 			continue
@@ -300,8 +309,12 @@ func classifyWindow(st *startup, lines []Line, rules Rules) {
 		case orders.EventCancelled:
 			count(st.Triggers, l.Trigger).Cancels++
 		case orders.EventSubmitted, orders.EventClosed:
+			legKey := l.Trigger + "|" + l.Instrument
+			if l.Event == orders.EventSubmitted {
+				submittedLegs[legKey] = true
+			}
 			if l.Event == orders.EventClosed && l.OrderID != "" {
-				if submittedIDs[l.OrderID] {
+				if submittedIDs[l.OrderID] || submittedLegs[legKey] {
 					continue
 				}
 				if i, ok := closedAt[l.OrderID]; ok {
@@ -338,11 +351,8 @@ func classify(o Line, st *startup, lines []Line, rules Rules) (class, why string
 	case orders.TriggerRepair:
 		return classifyRepair(o, st, lines, rules)
 	case orders.TriggerRebalanceUpsize, orders.TriggerRebalanceDownsize:
-		for _, l := range lines {
-			if l.Event == orders.EventRisk && !l.At.Before(st.At) && !l.At.After(o.At) &&
-				(l.Change == orders.RiskLimitChanged || l.Change == orders.RiskRebalanceManual) {
-				return Expected, "rebalance after " + l.Change + " at " + l.At.UTC().Format("15:04:05")
-			}
+		if at, change, ok := rebalanceCause(lines, st.At, o.At); ok {
+			return Expected, "rebalance after " + change + " at " + at.UTC().Format("15:04:05")
 		}
 		return RestartMade, "rebalance after the startup with no confirmed limit change"
 	case orders.TriggerRebalanceLegs:
@@ -363,6 +373,38 @@ func classify(o Line, st *startup, lines []Line, rules Rules) (class, why string
 		return Expected, o.Trigger + ": a person's action"
 	}
 	return RestartMade, fmt.Sprintf("trigger %q not known to the report", o.Trigger)
+}
+
+// rebalanceCause finds, in [from, to], what would have rebalanced the book
+// without the restart: a person's rebalance, or a limit_changed line whose
+// limit differs from the previous risk line's. Every startup journals a
+// limit_changed line ("startup: …", limits.go noteRiskChange), and a change
+// of the policy's reason alone journals one too; neither moves the limit,
+// so neither counts. A startup whose limit moved while the bot was down
+// differs from the last line before it, so it counts.
+func rebalanceCause(lines []Line, from, to time.Time) (at time.Time, change string, ok bool) {
+	prevLimit := 0.0
+	for _, l := range lines {
+		if l.At.After(to) {
+			break
+		}
+		if l.Event != orders.EventRisk {
+			continue
+		}
+		if !l.At.Before(from) {
+			switch {
+			case l.Change == orders.RiskRebalanceManual:
+				return l.At, l.Change, true
+			case l.Change == orders.RiskLimitChanged && prevLimit > 0 && l.LimitIMPct > 0 &&
+				math.Abs(l.LimitIMPct-prevLimit) > 1e-9:
+				return l.At, l.Change, true
+			}
+		}
+		if l.LimitIMPct > 0 {
+			prevLimit = l.LimitIMPct
+		}
+	}
+	return time.Time{}, "", false
 }
 
 // classifyExit checks whether the exit rule applied to the leg on its mark

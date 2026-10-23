@@ -26,6 +26,7 @@ type rawLine struct {
 	TriggerReason   string          `json:"trigger_reason"`
 	Detail          string          `json:"detail"`
 	Change          string          `json:"change"`
+	LimitIMPct      float64         `json:"limit_im_pct"`
 	Qty             float64         `json:"qty"`
 	Delta           float64         `json:"delta"`
 	FillPrice       float64         `json:"fill_price"`
@@ -87,7 +88,7 @@ func decode(raw []byte) (l Line, ok, bad bool) {
 	}
 	return Line{
 		At: r.Timestamp, Event: r.Event, Instrument: r.Instrument, Slot: r.Slot, OrderID: r.OrderID,
-		Trigger: r.TriggerReason, Detail: r.Detail, Change: r.Change, Qty: r.Qty, Delta: r.Delta,
+		Trigger: r.TriggerReason, Detail: r.Detail, Change: r.Change, LimitIMPct: r.LimitIMPct, Qty: r.Qty, Delta: r.Delta,
 		Mid: r.Market.Mid, FillPrice: r.FillPrice, PremiumReceived: r.PremiumReceived,
 	}, true, false
 }
