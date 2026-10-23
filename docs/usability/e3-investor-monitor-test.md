@@ -149,10 +149,10 @@ The *Last action* block shows a plain sentence, a time, "sold" or "bought back",
 | Action | Plain sentence on screen (call or put) |
 |---|---|
 | Sold (most of the time) | "Sold the call to open a new strangle and collect its premium (entry)" |
-| Bought back | "Bought back the put: most of its premium was already earned (take-profit)" |
+| Bought back | "Bought back the put: most of its premium was already earned (take-profit). The put is sold again to complete the strangle" |
 | Bought back | "Bought back the call: little premium was left to earn; it is sold again nearer the price (delta drift)" |
-| Bought back | "Bought back the put: it lost twice its premium (stop-loss)" |
-| Bought back | "Bought back the call: only few days to expiry left, so the strangle closes before expiry (time roll)" |
+| Bought back | "Bought back the put: it lost twice its premium (stop-loss). It was bought back to limit the loss; the put will not be sold again on that side until its cooldown ends" |
+| Bought back | "Bought back the call: only few days to expiry left, so the strangle closes before expiry (time roll). The slot then opens a new strangle on a later expiry" |
 
 | Score | The answer… |
 |---|---|
