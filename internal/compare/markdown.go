@@ -114,6 +114,10 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		}
 		p("\n")
 	}
+	if len(st.NotModelled) > 0 {
+		p("Not modelled by the stress (cmd/stress does not take them, so they cannot change a row above): `%s`.\n\n",
+			strings.Join(st.NotModelled, "`, `"))
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }

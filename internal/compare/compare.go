@@ -137,6 +137,9 @@ type Stress struct {
 	BookAt   *time.Time               `json:"book_at,omitempty"`
 	Base     []evidence.StressOutcome `json:"base"`
 	Proposed []evidence.StressOutcome `json:"proposed"`
+	// NotModelled are the differing settings cmd/stress does not see
+	// (evidence.StressModels): they cannot change a stress figure.
+	NotModelled []string `json:"not_modelled,omitempty"`
 }
 
 // Run builds the report: the diff, then both backtests and both replays (the
@@ -153,6 +156,7 @@ func Run(in Inputs) Report {
 	r.Backtest = runBacktests(in)
 	r.Replay = runReplays(in)
 	r.Stress = buildStress(in)
+	r.Stress.NotModelled = notModelledByStress(r.Diffs, in.Base, in.Proposed)
 	return r
 }
 
@@ -250,6 +254,18 @@ func buildStress(in Inputs) Stress {
 		}
 	}
 	return s
+}
+
+// notModelledByStress are the keys of diffs that cmd/stress does not see for
+// both configs.
+func notModelledByStress(diffs []Diff, base, proposed *config.Config) []string {
+	var out []string
+	for _, d := range diffs {
+		if !evidence.StressModels(d.Key, base, proposed) {
+			out = append(out, d.Key)
+		}
+	}
+	return out
 }
 
 func hasBook(snaps []recorder.Snapshot, from, to time.Time) bool {

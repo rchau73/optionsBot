@@ -14,6 +14,7 @@ import (
 
 	"optionsbot/internal/compare"
 	"optionsbot/internal/config"
+	"optionsbot/internal/evidence"
 	"optionsbot/internal/risk"
 )
 
@@ -205,6 +206,9 @@ func TestCompare_OneChangedKey(t *testing.T) {
 			t.Errorf("markdown lacks %q:\n%s", w, s)
 		}
 	}
+	if len(r.Stress.NotModelled) != 0 || strings.Contains(s, "Not modelled by the stress") {
+		t.Errorf("cmd/stress takes roi_take_profit: not modelled %v", r.Stress.NotModelled)
+	}
 	if strings.Index(s, "## Differences") > strings.Index(s, "## Backtest") {
 		t.Errorf("the differences come first")
 	}
@@ -248,6 +252,77 @@ func TestCompare_DiffConfigs(t *testing.T) {
 	}
 	if got[3].String() != "gamma_flip_buffer_sd 1.5 → 1" {
 		t.Errorf("String() %q", got[3].String())
+	}
+}
+
+// A differing setting cmd/stress does not take is named under the stress
+// table, so identical stress rows don't read as "no effect"; one it takes
+// is not, and every one it takes really changes StressArgs.
+func TestCompare_StressNotModelled(t *testing.T) {
+	t.Setenv("DERIBIT_ENV", "testnet")
+	a, err := config.Load("../config_btc.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := config.Load("../config_btc.yaml")
+	b.RepairCooldownHours = 24 // not a cmd/stress flag
+	b.GammaFlipBufferSD = 1.0  // -flipbufsd
+	b.IVMarginBands = append([]risk.Band(nil), b.IVMarginBands...)
+	b.IVMarginBands[2].MaxIMPct = 25 // -bands: the three bands cmd/stress models
+	r := compare.Run(compare.Inputs{BasePath: "a.yaml", ProposedPath: "b.yaml", Base: a, Proposed: b, StressNote: "no -stress"})
+	if want := []string{"repair_cooldown_hours"}; !reflect.DeepEqual(r.Stress.NotModelled, want) {
+		t.Errorf("not modelled %v, want %v (diffs %v)", r.Stress.NotModelled, want, r.Diffs)
+	}
+	var md bytes.Buffer
+	if err := compare.WriteMarkdown(&md, r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md.String(), "Not modelled by the stress (cmd/stress does not take them, so they cannot change a row above): `repair_cooldown_hours`.") {
+		t.Errorf("markdown:\n%s", md.String())
+	}
+
+	// Bands cmd/stress cannot express (not at percentiles 0/30/70) are not seen.
+	odd := append([]risk.Band(nil), b.IVMarginBands...)
+	odd[1].MinIVPct = 40
+	b.IVMarginBands = odd
+	if evidence.StressModels("iv_margin_bands[1].min_iv_pct", a, b) {
+		t.Error("bands off 0/30/70 are dropped by StressArgs: not modelled")
+	}
+
+	// Every key StressModels claims changes the flags cmd/stress gets.
+	changes := map[string]func(c *config.Config){
+		"roi_take_profit":       func(c *config.Config) { c.ROITakeProfit = 0.3 },
+		"delta_drift_threshold": func(c *config.Config) { c.DeltaDriftThreshold = 0.05 },
+		"delta_exit_threshold":  func(c *config.Config) { c.DeltaExitThreshold = 0.4 },
+		"max_leg_size_multiple": func(c *config.Config) { c.MaxLegSizeMultiple = 3 },
+		"gamma_flip_buffer_sd":  func(c *config.Config) { c.GammaFlipBufferSD = 1 },
+		"gex_direction": func(c *config.Config) {
+			if c.GEXDirection = "bias"; a.GEXDirection == "bias" {
+				c.GEXDirection = "sma"
+			}
+		},
+		"dte_delta_matrix[0].dte": func(c *config.Config) {
+			c.DTEDeltaMatrix = append([]config.DTEDeltaEntry(nil), c.DTEDeltaMatrix...)
+			c.DTEDeltaMatrix[0].DTE = 9
+		},
+		"iv_margin_bands[0].max_im_pct": func(c *config.Config) {
+			c.IVMarginBands = append([]risk.Band(nil), c.IVMarginBands...)
+			c.IVMarginBands[0].MaxIMPct = 1
+		},
+	}
+	want := strings.Join(evidence.StressArgs(a, "d", "crash"), " ")
+	for key, change := range changes {
+		c, _ := config.Load("../config_btc.yaml")
+		change(c)
+		if !evidence.StressModels(key, a, c) {
+			t.Errorf("%s: StressModels false", key)
+		}
+		if strings.Join(evidence.StressArgs(c, "d", "crash"), " ") == want {
+			t.Errorf("%s: StressModels says cmd/stress sees it, but StressArgs did not change", key)
+		}
+	}
+	if evidence.StressModels("min_premium", a, b) || evidence.StressModels("max_mm_pct", a, b) {
+		t.Error("min_premium and max_mm_pct are not cmd/stress flags")
 	}
 }
 
