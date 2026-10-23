@@ -1,5 +1,7 @@
 import Monitor from "@/components/Monitor";
+import { viewerRole } from "@/lib/auth/viewer";
 
-export default function Page() {
-  return <Monitor />;
+export default async function Page() {
+  const role = await viewerRole();
+  return <Monitor role={role} />;
 }

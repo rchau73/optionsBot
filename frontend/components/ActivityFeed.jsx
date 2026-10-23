@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
+import Details from "./Details";
 import { formatTime } from "@/lib/format";
 
 const KINDS = [
@@ -25,8 +26,13 @@ const MATCH = {
  * whole grid row (never less than 20rem or 70 % of the window), scrolling
  * inside it — absolute, so its events never make the row taller. Below lg the
  * panels stack and the list is bounded by the window height instead.
+ *
+ * Each item leads with the bot's plain-words sentence (#287); the technical
+ * line (event, rule detail, market context) folds under "details", open at
+ * first when detailsOpen (managers and admins). An older bot without `plain`
+ * shows the technical line as before.
  */
-export default function ActivityFeed({ feed }) {
+export default function ActivityFeed({ feed, detailsOpen = false }) {
   const [kind, setKind] = useState("all");
   const lines = feed.filter(MATCH[kind]);
   return (
@@ -61,9 +67,16 @@ export default function ActivityFeed({ feed }) {
                   <span className="tabular-nums text-xs text-muted">{formatTime(e.at)}</span>
                   <span className="text-xs font-semibold uppercase">{e.bot}</span>
                   <Badge tone={e.tone}>{e.label}</Badge>
-                  <span>{e.text}</span>
+                  <span>{e.plain ?? e.text}</span>
                 </div>
-                {e.context.length ? <div className="mt-0.5 text-xs text-muted">{e.context.join(" · ")}</div> : null}
+                {e.plain ? (
+                  <Details defaultOpen={detailsOpen}>
+                    <div>{e.text}</div>
+                    {e.context.length ? <div>{e.context.join(" · ")}</div> : null}
+                  </Details>
+                ) : e.context.length ? (
+                  <div className="mt-0.5 text-xs text-muted">{e.context.join(" · ")}</div>
+                ) : null}
               </li>
             ))}
           </ol>
