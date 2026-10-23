@@ -205,6 +205,10 @@ func TestReconcile_VacantSlotWaitsAfterARestart(t *testing.T) {
 		if !strings.Contains(r.ctx.Detail, "opened there (journal)") || !strings.Contains(r.ctx.Detail, "slot 25d/0.16 left vacant: no strangle within its window") {
 			t.Errorf("reconciled %s detail %q must give the journal slot and why slot 25 is vacant", r.instrument, r.ctx.Detail)
 		}
+		// cmd/deployeffect finds startups by this prefix (#219).
+		if !strings.HasPrefix(r.ctx.Detail, "strangle ") {
+			t.Errorf("reconciled %s detail %q must start with \"strangle \"", r.instrument, r.ctx.Detail)
+		}
 	}
 	if n := len(f.exch.sells()); n != 0 {
 		t.Errorf("restart sold %d orders: slot 25 must wait for an expiry in its own window", n)
