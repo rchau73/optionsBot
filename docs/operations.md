@@ -65,6 +65,16 @@ scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the
 
 A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable). Promotion is testnet-only: a live stable is promoted by hand.
 
+**Soak check: deploy effect** (#219, E1's "no restart changes the book"). Before promoting, run the report over the soak window for each mvp bot (from the dev checkout, on the mvp clone's files):
+
+```bash
+M=~/dev/go/optionsBot-env/mvp
+go run ./cmd/deployeffect -journal $M/data/btc/orders.log -config $M/config_btc.mvp.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
+go run ./cmd/deployeffect -journal $M/data/eth/orders.log -config $M/config_eth.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
+```
+
+It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger). The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting. The full rules are in `internal/deployeffect` (package comment).
+
 ### Inside an environment
 
 `docker-compose.yml` defines one service per underlying (`bot-btc`, `bot-eth`) plus the monitor. Each bot mounts its own config as `/app/config.yaml` and **runs inside its own host folder** of the clone (`data/btc/`, `data/eth/`, mounted at `/app/run`), so everything it keeps persists across rebuilds and the two never share a file:
