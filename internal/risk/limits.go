@@ -291,6 +291,9 @@ func joinReasons(r []string) string {
 type Usage struct {
 	IM, MM, MarginBalance float64
 	Unit                  string
+	// Equity is Deribit's equity in Unit (0 = not reported). Recorded with
+	// the P&L history (#277); the policy never reads it.
+	Equity float64
 }
 
 // Pct returns part as % of the margin balance; margin required with no

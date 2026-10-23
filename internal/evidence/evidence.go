@@ -72,6 +72,7 @@ type Report struct {
 	From      time.Time `json:"from"`
 	To        time.Time `json:"to"` // exclusive
 	Live      Live      `json:"live"`
+	Bridge    Bridge    `json:"bridge"`
 	Replay    Replay    `json:"replay"`
 	Gap       Gap       `json:"gap"`
 	Stress    Stress    `json:"stress"`
@@ -195,6 +196,7 @@ func Build(in Inputs) Report {
 		r.Equity = in.Equity
 	}
 	r.Live = buildLive(in)
+	r.Bridge = BuildBridge(in.Points, w.From, w.To, in.History)
 	r.Hold = buildHold(in, r.Live.Perf)
 	r.Util = Util{Source: in.History, Stats: history.Utilisation(in.Points, w.From, w.To)}
 	r.Missing = Missing{
