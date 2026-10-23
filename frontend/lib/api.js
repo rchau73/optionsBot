@@ -1,6 +1,7 @@
 // The only module that talks to the backend. Everything goes through the
 // Next.js proxy at /api/bots/... (read-only, except closePositions and
-// rebalanceBot), behind the signed-in session's cookies.
+// rebalanceBot) or /api/auth/... (signOut, changePassword), behind the
+// signed-in session's cookies.
 
 let refreshing = null;
 
@@ -52,6 +53,26 @@ export async function signOut() {
   } finally {
     navigation.assign("/login");
   }
+}
+
+/**
+ * Changes the signed-in person's password; every other session of theirs ends,
+ * this browser stays signed in. Throws with the server's reason.
+ */
+export async function changePassword(current, next) {
+  const res = await apiFetch("/api/auth/password", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current, next }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
 }
 
 async function getJSON(url, signal) {

@@ -1,7 +1,7 @@
 // Server-side only: sign-in, refresh, logout and the first admin — the logic
 // behind the /api/auth routes, kept free of Next.js so tests call it directly.
 import crypto from "node:crypto";
-import { hashPassword, MAX_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
+import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
 import { LOCK_FAILURES, LoginLimiter } from "./limits";
 import { normalizeUsername, ROLES } from "./store";
 import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
@@ -14,6 +14,14 @@ export const INVALID_LOGIN = "invalid username or password";
 /** SHA-256 (hex) of a refresh token: the only form stored. */
 export function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** Why `next` may not replace `current`, in plain words, or null. */
+export function newPasswordProblem(current, next) {
+  if (typeof next !== "string" || next.length < MIN_PASSWORD_LENGTH) return `Too short: at least ${MIN_PASSWORD_LENGTH} characters`;
+  if (next.length > MAX_PASSWORD_LENGTH) return `Too long: at most ${MAX_PASSWORD_LENGTH} characters`;
+  if (next === current) return "The new password must differ from the current one";
+  return null;
 }
 
 export class AuthService {
@@ -76,6 +84,53 @@ export class AuthService {
     this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now);
     authLog("INFO", "signed in", { username: user.username, role: user.role, ip });
     this.audit("signed_in", { username: user.username, role: user.role, ip });
+    return { ok: true, user, access: await signAccess(user, this.key, now, sid), refresh };
+  }
+
+  /**
+   * A signed-in person changes their own password (#212). The session must be
+   * live (re-read like a state-changing route). `next` follows the sign-in
+   * rule (≥ 12 characters) and must differ from `current`; a wrong `current`
+   * counts as a failed sign-in of that username, so 5 lock it exactly like
+   * the sign-in form. Success ends every session of the user and opens a new
+   * one for this browser only.
+   * → { ok: true, user, access, refresh } | { ok: false, status, error, retryAfter? }
+   */
+  async changePassword({ accessToken, current, next, ip = "unknown" }) {
+    const acting = await this.actingUser(accessToken, "user");
+    if (!acting.ok) return { ok: false, status: 401, session: true, error: "sign in required" };
+    const user = acting.user;
+    if (typeof current !== "string" || typeof next !== "string" || !current || current.length > MAX_PASSWORD_LENGTH) {
+      return { ok: false, status: 400, error: "current and new password required" };
+    }
+    const weak = newPasswordProblem(current, next);
+    if (weak) return { ok: false, status: 400, error: weak };
+
+    const locked = this.limiter.lockedUntil(user.username, this.now());
+    if (locked > 0) {
+      await verifyDummy(current);
+      const retryAfter = Math.max(1, Math.ceil((locked - this.now()) / 1000));
+      authLog("WARN", "password change refused: username locked", { username: user.username, ip, locked_until: new Date(locked).toISOString() });
+      this.audit("password_change_failed", { username: user.username, role: user.role, ip, reason: "locked" });
+      return { ok: false, status: 429, error: "too many wrong passwords: try again later", retryAfter };
+    }
+    if (!(await verifyPassword(current, this.store.passwordHash(user.id)))) {
+      const nowLocked = this.limiter.recordFailure(user.username, this.now());
+      authLog("WARN", "password change failed", { username: user.username, ip, reason: "password", locked: nowLocked });
+      this.audit("password_change_failed", { username: user.username, role: user.role, ip, reason: "password" });
+      if (nowLocked) this.audit("locked", { username: user.username, ip, failures: LOCK_FAILURES });
+      return { ok: false, status: 401, error: "Current password is wrong" };
+    }
+
+    this.limiter.clear(user.username);
+    const now = this.now();
+    // setPassword ends every session (this browser's too), then this browser gets a new one.
+    this.store.setPassword(user.id, await hashPassword(next), now);
+    const refresh = crypto.randomBytes(32).toString("base64url");
+    const sid = hashToken(refresh);
+    this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now);
+    authLog("INFO", "password changed", { event: "password_changed", username: user.username, ip });
+    this.audit("password_changed", { username: user.username, role: user.role, ip });
     return { ok: true, user, access: await signAccess(user, this.key, now, sid), refresh };
   }
 
