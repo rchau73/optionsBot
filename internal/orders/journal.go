@@ -14,6 +14,7 @@ const (
 	EventPnL        = "pnl"
 	EventRisk       = "risk_limit"
 	EventTrend      = "trend_changed"
+	EventConfig     = "config_loaded" // startup: the effective settings and what changed since the last start (#256)
 )
 
 // TrendRecord is one change of the SMA trend with the levels behind it. It
