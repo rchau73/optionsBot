@@ -1,10 +1,10 @@
 import Badge from "./Badge";
-import SignOut from "./SignOut";
+import UserMenu from "./UserMenu";
 import { flipBand, loopStalled, smaLevels } from "@/lib/monitor";
 import { ageSeconds, formatAge, formatDateTime, formatPct, formatUSD } from "@/lib/format";
 
 /** One chip per bot: environment, market context and data freshness. */
-export default function Header({ bots, error }) {
+export default function Header({ bots, error, role = null }) {
   return (
     <header className="flex flex-wrap items-center gap-3 border-b border-line bg-panel px-4 py-3">
       <h1 className="mr-2 text-lg font-bold">optionsBot · Live monitor</h1>
@@ -13,7 +13,7 @@ export default function Header({ bots, error }) {
       {bots.map((b) => (
         <BotChip key={b.name} bot={b} />
       ))}
-      <SignOut />
+      <UserMenu role={role} />
     </header>
   );
 }

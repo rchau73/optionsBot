@@ -27,6 +27,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Idle-margin attribution](#idle-margin-attribution)
 - [Recorded-history coverage](#recorded-history-coverage)
 - [Evidence report](#evidence-report)
+- [Usage report](#usage-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -136,6 +137,10 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 
 Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys became 14). Everything else is fixed in code (`internal/config/fixed.go`, table below); a file that still sets a fixed key fails at startup and names it, so nobody believes a changed value is in force. To make one tunable again, give its field back its `yaml` tag and drop it from `ApplyFixed`. `tests/config_effective_test.go` pins every setting both shipped configs produce, so moving a key between the file and the code cannot change a value unnoticed.
 
+**Parameter catalogue** ([docs/parameters.md](docs/parameters.md), #255): every key below in plain words, with its unit, the range `Validate` accepts, the rules that tie it to other keys, its core-policy area (a change to the default of a core-policy setting needs the product owner) and the tools that can test a change. It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go run ./cmd/paramdocs`; `tests/config_catalogue_test.go` fails when a shipped key has no entry, a range disagrees with `Validate` or the page is stale.
+
+**Setting changes are journaled** (#256): at every start the bot writes one `config_loaded` line to `orders.log` — the `fingerprint` (12 hex characters of the SHA-256 of the effective strategy settings, `config.Effective`: every YAML key and fixed value, nothing from `.env`), `version`, `deployment`, `config_file`, the full `settings` and the `changes` (key, from, to) since the previous `config_loaded` line; `first: true` on a journal without one, `unchanged: true` on a restart with the same settings. `/api/status` reports `config: {fingerprint, since}` (since = the start that last changed them). `actor` stays empty until settings are changed through an apply flow (files are edited by hand today).
+
 | Key | Default | Meaning |
 |---|---|---|
 | `underlying` | — | `BTC` or `ETH` |
@@ -194,7 +199,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | `DERIBIT_HEARTBEAT_INTERVAL_SEC` | 15 | server heartbeat interval |
 | `DERIBIT_RECONNECT_MAX_ATTEMPTS` / `_BACKOFF_BASE_MS` | 10 / 1000 | reconnect policy before giving up |
 | `BOT_ACCOUNT_POLL_SEC` | 10 | how often the account/collateral summary is polled for the monitor (one read-only call; minimum 2) |
-| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service |
+| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service. Its read-only routes (`/api/status`, `/positions`, `/orders`, `/pnl`, `/pnl/history`, `/events`, `/account`, `/trades`, `/summary`, `/performance?range=7d\|30d\|all` — net return vs holding the coin, max drawdown, worst week, missing days, labelled live/testnet, #232) are described in [`frontend/README.md`](frontend/README.md) |
 | `BOT_ADMIN_TOKEN` | empty (off) | secret for the monitor's state-changing actions, bearer token; Docker Compose passes it to the monitor. **Manual close** (`POST /api/positions/close`): testnet only, and only for a leg under the regime-side block. **Manual rebalance** (`POST /api/rebalance[?dry_run=true]`): live and testnet, same gates as the automatic rebalance |
 
 ## Backtesting
@@ -307,6 +312,27 @@ Sections, each naming its source:
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
 
+## Usage report
+
+`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q7 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+
+```bash
+go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
+go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl   # no week: the last complete one
+```
+
+Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Monday 00:00 UTC to the next Monday, as `cmd/evidence`). Sections, each naming the source file and the span of its accepted events:
+
+- **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
+- **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 4 before it, and how many had any event in each later week (+1 … +4; a week not yet ended is `—`).
+- **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen.
+- **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
+- **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
+- **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.
+- **Trust** (Q7) — `data_stale_shown` per source, `signed_out` per reason.
+
+**No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
+
 ## Settings comparison
 
 `cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.
@@ -326,6 +352,13 @@ The report starts with the label **"Backtested/replayed, not a promise"**, then:
 - **Stress** — `cmd/stress`'s standard shocks (as the evidence report: `crash`, `rally`, `crash40`, `rally40`, `chop`) on the book captured in `-stress` (`scripts/stress_inputs.sh`), once with each config's settings (`-stress-cmd`, `none` skips): return, vs hold, realised, stops, worst equity, worst MM. `cmd/stress` takes only the slots, exit thresholds, size cap, flip buffer, direction source and the IM bands (when they start at IV percentiles 0, 30 and 70) — `evidence.StressModels`; a differing setting it does not take (`repair_cooldown_hours`, `min_premium`, `max_mm_pct`, …) is listed under the table as "Not modelled by the stress" (`not_modelled` in the JSON), so identical stress rows are not read as "no effect".
 
 A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
+
+**Week by week** (#301): `-windows week` (ISO weeks, Monday–Sunday UTC, the first and last clipped to the span) or `-windows day` also runs the backtest and the replay once per window — each replay from a flat book at the window's first day, on the same data read once — so a proposal that wins only in one lucky week shows as fragile. The report gains a **By week** section (`windows` in the JSON: `unit`, `rows`, `summary`): per source (replay, backtest) one row per window with net, return %, worst week % and max drawdown for base, proposed and the change; then how many windows the proposal's net is higher (and the base's, and equal), the median change (net and percentage points of return), the spread of the change (worst to best window), each config's worst window, and the windows where replay and backtest disagree on which config is ahead (`order_flips`). A window a source could not run in (no recorded book, an error) shows the reason in its `Note`, is listed under "Not run" and counts in no summary figure — never filled. The stress stays one run on the captured book, not windowed, and the section says so. Without `-windows` the report is unchanged.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-25 \
+    -replay data/btc/data/market -stress data/stress/btc -windows week
+```
 
 ## Testing and CI
 
@@ -403,6 +436,7 @@ cmd/monitor-demo/     monitor API with simulated data, for UI development
 | [OptionStrategy.md](OptionStrategy.md) | the strategy in plain language: rules, worked examples, risks |
 | [docs/architecture.md](docs/architecture.md) | detailed design, invariants, limitations |
 | [docs/operations.md](docs/operations.md) | running, monitoring, kill switch, troubleshooting |
+| [docs/parameters.md](docs/parameters.md) | every tunable setting in plain words: unit, valid range, core policy, tools that test it (generated) |
 | [docs/README.md](docs/README.md) | diagram index (Mermaid sources + 4× PNGs) |
 | [CLAUDE.md](CLAUDE.md) | guidance for AI-assisted development in this repo |
 

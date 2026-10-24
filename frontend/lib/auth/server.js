@@ -4,6 +4,8 @@ import path from "node:path";
 import { AuthService } from "./service";
 import { AuthStore } from "./store";
 import { auditPath, fileAudit } from "./audit";
+import { analyticsSalt, eventsPath } from "../analytics/config.js";
+import { userEventsEraser } from "../analytics/retention.js";
 import { ACCESS_COOKIE, authKey, readCookie, roleRequired, sessionRequired } from "./tokens";
 
 /** AUTH_DB_PATH, default data/monitor/auth.db (a volume of its own in compose). */
@@ -18,7 +20,12 @@ const KEY = Symbol.for("optionsbot.monitor.auth");
 export function getAuth() {
   globalThis[KEY] ??= (async () => {
     const db = authDbPath();
-    const service = new AuthService({ store: await AuthStore.open(db), key: authKey(), audit: fileAudit(auditPath(db)) });
+    const service = new AuthService({
+      store: await AuthStore.open(db),
+      key: authKey(),
+      audit: fileAudit(auditPath(db)),
+      deleteEvents: userEventsEraser(eventsPath(db), analyticsSalt()),
+    });
     await service.bootstrapAdmin();
     return service;
   })().catch((err) => {

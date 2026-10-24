@@ -97,15 +97,17 @@ type Server struct {
 	connections map[string]ConnectionSource // by gateway name; empty → {}
 	token       string
 	started     time.Time
-	deployment  string // local environment: stable | mvp | "" (run by hand)
-	version     string // release tag or commit
+	deployment  string        // local environment: stable | mvp | "" (run by hand)
+	version     string        // release tag or commit
+	config      *ConfigStatus // nil → "config": null
 	mux         *http.ServeMux
 }
 
 // Option configures a Server.
 type Option func(*Server)
 
-// WithPnLHistory serves /api/pnl/history from h.
+// WithPnLHistory serves /api/pnl/history from h (and /api/performance when h
+// is a PointSource).
 func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = h } }
 
 // WithManualClose serves POST /api/positions/close, authorised by token
@@ -128,6 +130,19 @@ func WithAccount(a AccountSource) Option { return func(s *Server) { s.account = 
 // the bot runs, reported in /api/status as "deployment" and "version".
 func WithDeployment(name, version string) Option {
 	return func(s *Server) { s.deployment, s.version = name, version }
+}
+
+// ConfigStatus is /api/status "config": the fingerprint of the effective
+// settings and when they last changed (#256, the journal's config_loaded).
+type ConfigStatus struct {
+	Fingerprint string    `json:"fingerprint"`
+	Since       time.Time `json:"since"`
+}
+
+// WithConfig reports the settings fingerprint and the time of their last
+// change in /api/status as "config".
+func WithConfig(fingerprint string, since time.Time) Option {
+	return func(s *Server) { s.config = &ConfigStatus{Fingerprint: fingerprint, Since: since} }
 }
 
 // WithConnection adds a gateway's drops, reconnects and timeouts to
@@ -154,6 +169,8 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/account", s.accountSummary)
 	s.mux.HandleFunc("GET /api/trades", s.trades)
 	s.mux.HandleFunc("GET /api/summary", s.summary)
+	s.mux.HandleFunc("GET /api/performance", s.performance)
+	s.mux.HandleFunc("GET /api/income", s.income)
 	if s.closer != nil && s.token != "" {
 		s.mux.HandleFunc("POST /api/positions/close", s.manualClose)
 	}
@@ -339,6 +356,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"environment":      v.Environment,
 		"deployment":       s.deployment,
 		"version":          s.version,
+		"config":           s.config,
 		"halted":           v.Halted,
 		"loop_at":          v.LoopAt,
 		"eval_interval_ms": v.EvalEveryMS,

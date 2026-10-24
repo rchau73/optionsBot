@@ -4,6 +4,9 @@
 // (cmd/stress) — and puts the figures side by side (#186), after the
 // settings that differ, key by key. It adds no rule: both runs read the same
 // data with the same fixed values (config.Load applies config.ApplyFixed).
+// RunWindows (#301) repeats the backtest and the replay once per UTC week or
+// day of the span and summarises how often the proposal wins and where it
+// loses; the stress stays one run.
 //
 // The figures are modelled, not a forecast: every report carries Disclaimer.
 package compare
@@ -62,6 +65,8 @@ type Report struct {
 	Backtest   Backtest  `json:"backtest"`
 	Replay     Replay    `json:"replay"`
 	Stress     Stress    `json:"stress"`
+	// Windows is the comparison per week or day (-windows); nil without it.
+	Windows *WindowReport `json:"windows,omitempty"`
 }
 
 // Backtest is both configs through the daily backtest.

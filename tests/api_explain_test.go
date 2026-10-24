@@ -90,6 +90,7 @@ var eventSamples = map[string]map[string]any{
 	orders.EventPnL:        {"realised": 0.01},
 	orders.EventRisk:       {"change": orders.RiskFrozen},
 	orders.EventTrend:      {"from": "bull", "to": "bear", "reason": "price < swing low"},
+	orders.EventConfig:     {"fingerprint": "0123456789ab", "changes": []map[string]any{{"key": "repair_cooldown_hours", "from": 72, "to": 48}}},
 }
 
 // openTriggers and nonCloseTriggers sort the trigger constants: every other

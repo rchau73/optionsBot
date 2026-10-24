@@ -70,6 +70,16 @@ export class AuthStore {
     return store;
   }
 
+  /**
+   * Reads an existing file into a copy that is never written back (no schema
+   * change, no save): the admin CLI reads users while the monitor, which holds
+   * its own copy and writes it after every change, keeps running.
+   */
+  static async openReadOnly(file) {
+    const SQL = await loadSql();
+    return new AuthStore(new SQL.Database(fs.readFileSync(file)), ":memory:");
+  }
+
   constructor(db, file) {
     this.db = db;
     this.file = file;
@@ -78,10 +88,14 @@ export class AuthStore {
   /** Adds the columns a file older than this code lacks; true when one was added. */
   migrate() {
     const cols = this.all("PRAGMA table_info(users)").map((c) => c.name);
-    if (cols.includes("analytics_consent")) return false;
-    // NULL = not asked yet, 0 = no, 1 = yes (event plan §5: off until yes).
-    this.db.exec("ALTER TABLE users ADD COLUMN analytics_consent INTEGER");
-    return true;
+    const added = [
+      // NULL = not asked yet, 0 = no, 1 = yes (event plan §5: off until yes).
+      ["analytics_consent", "INTEGER"],
+      // Unix seconds of the last successful sign-in, NULL = never (#306, the Users page).
+      ["last_sign_in_at", "INTEGER"],
+    ].filter(([name]) => !cols.includes(name));
+    for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
+    return added.length > 0;
   }
 
   save() {
@@ -146,6 +160,16 @@ export class AuthStore {
 
   userById(id) {
     return this.one("SELECT id, username, role, email FROM users WHERE id = ?", [id]);
+  }
+
+  /** Every user for the Users page, oldest first: no hash, times in Unix seconds (last sign-in null = never). */
+  listUsers() {
+    return this.all("SELECT id, username, role, email, created_at, last_sign_in_at FROM users ORDER BY id");
+  }
+
+  /** Records a successful sign-in. */
+  recordSignIn(id, nowMs = Date.now()) {
+    this.write("UPDATE users SET last_sign_in_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
   }
 
   /** The stored hash of a user, for the sign-in check only. */
