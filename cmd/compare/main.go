@@ -3,7 +3,8 @@
 // of the captured book — and writes a side-by-side report (#186), the
 // settings that differ listed key by key first. It reads files only (no
 // Deribit call, no order) and writes <out>/<UTC time>/report.md and .json.
-// See README "Settings comparison".
+// -windows week|day also compares the backtest and the replay window by
+// window (#301). See README "Settings comparison".
 //
 //	go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
 //	    -replay data/btc/data/market -stress data/stress/btc
@@ -32,18 +33,23 @@ func main() {
 	equity := flag.Float64("equity", 0, "replay's starting margin balance in the coin (default account.json of -stress)")
 	stressCmd := flag.String("stress-cmd", "go run ./cmd/stress", "command that runs cmd/stress, from the repository (none = skip the stress)")
 	out := flag.String("out", "data/compare", "reports folder: <out>/<UTC time>/report.md|json")
+	windows := flag.String("windows", "", "also compare per window: week (ISO weeks, UTC) or day (empty = the whole span only)")
 	flag.Parse()
 
 	paths := compare.Paths{Base: *base, Proposed: *proposed, CSV: *csv, Market: *market, GEX: *gexDir, Stress: *stress}
-	if err := run(paths, *from, *to, *equity, *stressCmd, *out); err != nil {
+	if err := run(paths, *from, *to, *equity, *stressCmd, *out, *windows); err != nil {
 		fmt.Fprintln(os.Stderr, "compare:", err)
 		os.Exit(1)
 	}
 }
 
-func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out string) error {
+func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out, windows string) error {
 	if p.Base == "" || p.Proposed == "" {
 		return fmt.Errorf("-base and -proposed are both needed")
+	}
+	unit, err := compare.ParseUnit(windows)
+	if err != nil {
+		return fmt.Errorf("-%w", err)
 	}
 	from, err := time.Parse(time.DateOnly, fromStr)
 	if err != nil {
@@ -65,7 +71,12 @@ func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out 
 		return err
 	}
 	compare.RunStress(&in, stressCmd)
-	md, js, err := compare.Write(compare.Run(in), compare.OutDir(out, time.Now()))
+	r := compare.Run(in)
+	if unit != "" {
+		wr := compare.RunWindows(in, unit)
+		r.Windows = &wr
+	}
+	md, js, err := compare.Write(r, compare.OutDir(out, time.Now()))
 	if err != nil {
 		return err
 	}

@@ -431,7 +431,8 @@ class TestPlanDue(unittest.TestCase):
         es = epics()
         st = {"planned": {"E1": "2026-10-19T00:00:00Z"}}
         self.assertNotIn("E1", pm_board.plan_due([], es, st, "2026-10-19T10:00:00Z"))
-        self.assertIn("E1", pm_board.plan_due([], es, st, "2026-10-19T13:00:00Z"))
+        self.assertNotIn("E1", pm_board.plan_due([], es, st, "2026-10-19T13:00:00Z"))
+        self.assertIn("E1", pm_board.plan_due([], es, st, "2026-10-20T01:00:00Z"))
 
     def test_parked_never_due(self):
         self.assertNotIn("E3", pm_board.plan_due([], epics(), {}, "2026-10-19T10:00:00Z"))
@@ -467,6 +468,23 @@ class TestNewStories(unittest.TestCase):
         self.assertEqual(pm_board.new_stories({"stories": [self.story(epic="E3")]}, epics()), [])
         many = {"stories": [self.story(title=f"s{i}") for i in range(5)]}
         self.assertEqual(len(pm_board.new_stories(many, epics())), pm_board.MAX_NEW_STORIES)
+
+
+class TestPlanOneStory(unittest.TestCase):
+    def test_one_moving_story_is_enough(self):
+        """Scenario: an epic with one moving story is not planned (one PR-sized story at a time)."""
+        es = epics()
+        b = [card(5, "Ready", parent=es[0]["number"])]
+        self.assertNotIn("E1", pm_board.plan_due(b, es, {}, "2026-10-19T10:00:00Z"))
+
+    def test_near_duplicate_title_not_filed(self):
+        """Scenario: a proposed story whose title matches a card of the epic (closed too) is dropped."""
+        es = epics()
+        closed = dict(card(7, "Done", parent=es[0]["number"]), title="[E1] Admin issues a one-time password-reset link", state="CLOSED")
+        pm = {"stories": [{"epic": "E1", "title": "Admin-issued one-time password reset link", "body": "Story.", "priority": "P2"},
+                          {"epic": "E1", "title": "Something else entirely", "body": "Story.", "priority": "P2"}]}
+        got = pm_board.new_stories(pm, es, [closed])
+        self.assertEqual([s["title"] for s in got], ["[E1] Something else entirely"])
 
 
 class TestAnsweredAll(unittest.TestCase):

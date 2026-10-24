@@ -1,5 +1,6 @@
-// Server-side only: sign-in, refresh, logout and the first admin — the logic
-// behind the /api/auth routes, kept free of Next.js so tests call it directly.
+// Server-side only: sign-in, refresh, logout, the first admin and user
+// administration — the logic behind the /api/auth and /api/admin/users routes,
+// kept free of Next.js so tests call it directly.
 import crypto from "node:crypto";
 import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
 import { LOCK_FAILURES, LoginLimiter } from "./limits";
@@ -25,13 +26,18 @@ export function newPasswordProblem(current, next) {
 }
 
 export class AuthService {
-  /** store: AuthStore · key: authKey() · now: clock in ms · audit: sink of audit entries (lib/auth/audit.js). */
-  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(store), audit = () => {} }) {
+  /**
+   * store: AuthStore · key: authKey() · now: clock in ms · audit: sink of audit entries (lib/auth/audit.js) ·
+   * deleteEvents: removes a user row id's analytics events → { removed }, throws when it cannot
+   * (lib/analytics/retention.js userEventsEraser; none by default).
+   */
+  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(store), audit = () => {}, deleteEvents = () => ({ removed: 0 }) }) {
     this.store = store;
     this.key = key;
     this.now = now;
     this.limiter = limiter;
     this.auditSink = audit;
+    this.deleteEvents = deleteEvents;
   }
 
   /** One audit entry: what happened, by whom (username, role), when; never a secret. */
@@ -82,6 +88,7 @@ export class AuthService {
     const refresh = crypto.randomBytes(32).toString("base64url");
     const sid = hashToken(refresh);
     this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now);
+    this.store.recordSignIn(user.id, now);
     authLog("INFO", "signed in", { username: user.username, role: user.role, ip });
     this.audit("signed_in", { username: user.username, role: user.role, ip });
     return { ok: true, user, access: await signAccess(user, this.key, now, sid), refresh };
@@ -192,7 +199,13 @@ export class AuthService {
     return { ok: true, user: this.store.userById(target.id) };
   }
 
-  /** An admin deletes a user (and every session of theirs). */
+  /**
+   * An admin deletes a user: every session of theirs, their consent (a column
+   * of the row) and their analytics events (event plan §5, #296). Access goes
+   * first; events that cannot be deleted are an ERROR log, an audit line and
+   * `events_error` in the answer, with the row id the admin CLI needs to retry.
+   * → { ok: true, events_removed } | { ok: true, events_error } | { ok: false, status, error }
+   */
   deleteUser(by, targetId) {
     const target = this.store.userById(targetId);
     const problem = this.userChangeProblem(by, target, null);
@@ -200,6 +213,88 @@ export class AuthService {
     this.store.deleteUser(target.id);
     authLog("INFO", "user deleted", { by: by.username, username: target.username });
     this.audit("user_deleted", { username: by.username, role: by.role, target: target.username });
+
+    const who = { username: by.username, role: by.role, target: target.username, target_row_id: target.id, reason: "user_deleted" };
+    try {
+      const { removed } = this.deleteEvents(target.id);
+      authLog("INFO", "analytics events of a deleted user deleted", { component: "analytics", by: by.username, username: target.username, removed });
+      this.audit("events_deleted", { ...who, removed });
+      return { ok: true, events_removed: removed };
+    } catch (err) {
+      authLog("ERROR", "analytics events of a deleted user NOT deleted", {
+        component: "analytics",
+        by: by.username,
+        username: target.username,
+        user_row_id: target.id,
+        error: err.message,
+      });
+      this.audit("events_delete_failed", { ...who, error: err.message });
+      return {
+        ok: true,
+        events_error: `the user is deleted but their analytics events are not (${err.message}): run scripts/analytics-user.mjs delete --row-id ${target.id}`,
+      };
+    }
+  }
+
+  /** Every user for the Users page: id, username, role, email, created and last sign-in (ISO, null = never); never a hash. */
+  listUsers() {
+    const iso = (sec) => (sec ? new Date(sec * 1000).toISOString() : null);
+    return this.store.listUsers().map((u) => ({
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      email: u.email ?? null,
+      created_at: iso(u.created_at),
+      last_sign_in_at: iso(u.last_sign_in_at),
+    }));
+  }
+
+  /**
+   * An admin adds a person (#306): the sign-in username rule, one of the three
+   * roles, the ≥ 12-character password rule, an optional email.
+   * → { ok: true, user } | { ok: false, status (400 rule, 409 username taken), error }
+   */
+  async createUser(by, { username, password, role, email } = {}) {
+    const name = normalizeUsername(username);
+    if (!name) return { ok: false, status: 400, error: "username: 3 to 64 of a-z 0-9 . _ -" };
+    if (!ROLES.includes(role)) return { ok: false, status: 400, error: `role: one of ${ROLES.join(", ")}` };
+    const weak = passwordProblem(password);
+    if (weak) return { ok: false, status: 400, error: weak };
+    if (email != null && typeof email !== "string") return { ok: false, status: 400, error: "email: name@domain" };
+    const mail = (email ?? "").trim();
+    if (mail && (mail.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(mail))) return { ok: false, status: 400, error: "email: name@domain" };
+    const taken = { ok: false, status: 409, error: `username ${name} is taken` };
+    if (this.store.userByName(name)) return taken;
+
+    const hash = await hashPassword(password);
+    let user;
+    try {
+      user = this.store.createUser({ username: name, passwordHash: hash, role, email: mail || null }, this.now());
+    } catch (err) {
+      // Created by another request while the password was hashed (UNIQUE username); anything else is a real failure.
+      if (/UNIQUE/.test(err?.message ?? "")) return taken;
+      throw err;
+    }
+    authLog("INFO", "user created", { by: by.username, username: user.username, role });
+    this.audit("user_created", { username: by.username, role: by.role, target: user.username, to: role });
+    return { ok: true, user };
+  }
+
+  /**
+   * An admin sets another person's password (#306) and ends every session of
+   * theirs, so each of their browsers must sign in again. Your own password
+   * goes through changePassword, which asks for the current one.
+   * → { ok: true } | { ok: false, status (400 rule, 404 no user, 409 yourself), error }
+   */
+  async resetPassword(by, targetId, password) {
+    const target = this.store.userById(targetId);
+    if (!target) return { ok: false, status: 404, error: "no such user" };
+    if (target.id === by.id) return { ok: false, status: 409, error: "reset your own password with Account ▾ → Change password" };
+    const weak = passwordProblem(password);
+    if (weak) return { ok: false, status: 400, error: weak };
+    this.store.setPassword(target.id, await hashPassword(password), this.now());
+    authLog("INFO", "password reset", { event: "password_reset", by: by.username, username: target.username });
+    this.audit("password_reset", { username: by.username, role: by.role, target: target.username });
     return { ok: true };
   }
 

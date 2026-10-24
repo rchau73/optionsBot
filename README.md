@@ -137,6 +137,10 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 
 Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys became 14). Everything else is fixed in code (`internal/config/fixed.go`, table below); a file that still sets a fixed key fails at startup and names it, so nobody believes a changed value is in force. To make one tunable again, give its field back its `yaml` tag and drop it from `ApplyFixed`. `tests/config_effective_test.go` pins every setting both shipped configs produce, so moving a key between the file and the code cannot change a value unnoticed.
 
+**Parameter catalogue** ([docs/parameters.md](docs/parameters.md), #255): every key below in plain words, with its unit, the range `Validate` accepts, the rules that tie it to other keys, its core-policy area (a change to the default of a core-policy setting needs the product owner) and the tools that can test a change. It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go run ./cmd/paramdocs`; `tests/config_catalogue_test.go` fails when a shipped key has no entry, a range disagrees with `Validate` or the page is stale.
+
+**Setting changes are journaled** (#256): at every start the bot writes one `config_loaded` line to `orders.log` — the `fingerprint` (12 hex characters of the SHA-256 of the effective strategy settings, `config.Effective`: every YAML key and fixed value, nothing from `.env`), `version`, `deployment`, `config_file`, the full `settings` and the `changes` (key, from, to) since the previous `config_loaded` line; `first: true` on a journal without one, `unchanged: true` on a restart with the same settings. `/api/status` reports `config: {fingerprint, since}` (since = the start that last changed them). `actor` stays empty until settings are changed through an apply flow (files are edited by hand today).
+
 | Key | Default | Meaning |
 |---|---|---|
 | `underlying` | — | `BTC` or `ETH` |
@@ -349,6 +353,13 @@ The report starts with the label **"Backtested/replayed, not a promise"**, then:
 
 A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
 
+**Week by week** (#301): `-windows week` (ISO weeks, Monday–Sunday UTC, the first and last clipped to the span) or `-windows day` also runs the backtest and the replay once per window — each replay from a flat book at the window's first day, on the same data read once — so a proposal that wins only in one lucky week shows as fragile. The report gains a **By week** section (`windows` in the JSON: `unit`, `rows`, `summary`): per source (replay, backtest) one row per window with net, return %, worst week % and max drawdown for base, proposed and the change; then how many windows the proposal's net is higher (and the base's, and equal), the median change (net and percentage points of return), the spread of the change (worst to best window), each config's worst window, and the windows where replay and backtest disagree on which config is ahead (`order_flips`). A window a source could not run in (no recorded book, an error) shows the reason in its `Note`, is listed under "Not run" and counts in no summary figure — never filled. The stress stays one run on the captured book, not windowed, and the section says so. Without `-windows` the report is unchanged.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-25 \
+    -replay data/btc/data/market -stress data/stress/btc -windows week
+```
+
 ## Testing and CI
 
 ```bash
@@ -425,6 +436,7 @@ cmd/monitor-demo/     monitor API with simulated data, for UI development
 | [OptionStrategy.md](OptionStrategy.md) | the strategy in plain language: rules, worked examples, risks |
 | [docs/architecture.md](docs/architecture.md) | detailed design, invariants, limitations |
 | [docs/operations.md](docs/operations.md) | running, monitoring, kill switch, troubleshooting |
+| [docs/parameters.md](docs/parameters.md) | every tunable setting in plain words: unit, valid range, core policy, tools that test it (generated) |
 | [docs/README.md](docs/README.md) | diagram index (Mermaid sources + 4× PNGs) |
 | [CLAUDE.md](CLAUDE.md) | guidance for AI-assisted development in this repo |
 

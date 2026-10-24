@@ -219,6 +219,26 @@ type journalLine struct {
 	From          string        `json:"from"` // trend_changed
 	To            string        `json:"to"`
 	Reason        string        `json:"reason"`
+	First         bool          `json:"first"` // config_loaded
+	Unchanged     bool          `json:"unchanged"`
+	Changes       []struct {
+		Key string `json:"key"`
+	} `json:"changes"`
+}
+
+// explainConfig says what a config_loaded line (#256) recorded.
+func explainConfig(l journalLine) string {
+	switch {
+	case l.First:
+		return "The bot recorded the settings it trades with; later starts will say what changed."
+	case l.Unchanged || len(l.Changes) == 0:
+		return "The bot restarted with the same settings as before."
+	}
+	keys := make([]string, len(l.Changes))
+	for i, c := range l.Changes {
+		keys[i] = c.Key
+	}
+	return fmt.Sprintf("The bot started with changed settings (%s); results from here on come from these settings.", strings.Join(keys, ", "))
 }
 
 // ExplainEvent says in plain words what a journal event means. unknown names
@@ -265,6 +285,8 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 		return explainTrend(l), ""
 	case orders.EventPnL:
 		return "A periodic profit-and-loss snapshot; nothing was traded.", ""
+	case orders.EventConfig:
+		return explainConfig(l), ""
 	}
 	return generic("event=" + e.Event)
 }

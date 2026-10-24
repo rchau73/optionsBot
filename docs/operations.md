@@ -189,6 +189,17 @@ scripts/envctl.sh stable logs -f bot-btc | grep '"msg":"rate_limit_metrics"' # g
 
 Useful events to know: `strangle filled and active`, `rollout triggered`, `stop loss triggered`, `partial close: remainder stays open and tracked`, `gex_regime_trigger`, `reconnecting` / `reconnected successfully`, `gateway giving up`, `hedge_report`.
 
+### Setting changes
+
+Every start journals one `config_loaded` line (#256) with the fingerprint of the effective strategy settings and what changed since the previous start, so results can be read per settings version. `first: true` marks the first such line of a journal, `unchanged: true` a restart with the same settings; `/api/status` shows `config.fingerprint` and `config.since` (when they last changed). The meaning, range and policy of each setting are in [parameters.md](parameters.md).
+
+```bash
+# Every settings change, with its date, release and keys (from → to)
+grep '"event":"config_loaded"' orders.log | jq -c 'select(.unchanged != true) | {timestamp, version, deployment, fingerprint, first, changes}'
+# The settings in force now
+grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
+```
+
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
 The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`). How it works, permissions and guardrails: [AGENTIC.md](../AGENTIC.md).

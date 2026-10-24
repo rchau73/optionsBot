@@ -93,6 +93,9 @@ type Replay struct {
 	Closed   map[SlotRef]int     // closes per slot
 	FirstAt  time.Time           // time of the first event (zero for an empty journal)
 	Skipped  int                 // unreadable lines (e.g. a torn write), ignored
+	// LastConfig is the last config_loaded line, undecoded (nil when the
+	// journal has none): the next start compares its settings with it.
+	LastConfig []byte
 }
 
 // SlotKey normalises a slot for map lookups (delta compared in hundredths),
@@ -171,6 +174,9 @@ func (rp *Replay) add(ring *recentRing, line []byte) {
 		rp.FirstAt = at
 	}
 	ring.addAt(event, line, rp.Events, at)
+	if event == EventConfig {
+		rp.LastConfig = append(rp.LastConfig[:0], line...)
+	}
 	if !trade {
 		return
 	}

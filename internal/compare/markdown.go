@@ -118,8 +118,64 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		p("Not modelled by the stress (cmd/stress does not take them, so they cannot change a row above): `%s`.\n\n",
 			strings.Join(st.NotModelled, "`, `"))
 	}
+	if r.Windows != nil {
+		writeWindows(b, *r.Windows, u)
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeWindows writes the "By week" (or "By day") section: one table per
+// source, then its summary. A window a source did not run in shows its note
+// and is listed as missing, never filled.
+func writeWindows(b *strings.Builder, wr WindowReport, u string) {
+	p := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
+	p("## By %s\n\n", wr.Unit)
+	p("Each window runs the backtest and the replay on its own (the replay from a flat book at the window's first day); %s.\n\n", wr.StressNote)
+	sources := []struct {
+		name, unit, format string
+		side               func(WindowRow) WindowSide
+		sum                SourceSummary
+	}{
+		{"Replay", u, "%+.4f", func(r WindowRow) WindowSide { return r.Replay }, wr.Summary.Replay},
+		{"Backtest", "USD", "%+.2f", func(r WindowRow) WindowSide { return r.Backtest }, wr.Summary.Backtest},
+	}
+	for _, s := range sources {
+		p("### %s (%s)\n\n", s.name, s.unit)
+		p("| Window | Days | Net base | proposed | Change | Return %% base | proposed | Change | Worst week %% base | proposed | Max drawdown base | proposed | Note |\n")
+		p("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+		for _, r := range wr.Rows {
+			days := r.From.Format("01-02") + " → " + r.To.Format("01-02")
+			sd := s.side(r)
+			if !sd.Ran {
+				p("| %s | %s | | | | | | | | | | | %s |\n", r.Label, days, sd.Note)
+				continue
+			}
+			p("| %s | %s | %s | %s | %s | %+.2f | %+.2f | %+.2f | %+.2f | %+.2f | %s | %s | |\n", r.Label, days,
+				fmt.Sprintf(s.format, sd.Base.Net), fmt.Sprintf(s.format, sd.Proposed.Net), fmt.Sprintf(s.format, sd.Diff.Net),
+				sd.Base.ReturnPct, sd.Proposed.ReturnPct, sd.Diff.ReturnPct, sd.Base.WorstWeekPct, sd.Proposed.WorstWeekPct,
+				strings.TrimPrefix(fmt.Sprintf(s.format, sd.Base.MaxDrawdown), "+"), strings.TrimPrefix(fmt.Sprintf(s.format, sd.Proposed.MaxDrawdown), "+"))
+		}
+		p("\n")
+		sum := s.sum
+		if sum.Run == 0 {
+			p("Summary: no window ran.\n\n")
+		} else {
+			p("Summary: the proposal's net is higher in **%d of %d** windows (base higher in %d, equal in %d) · median change %s (%+.2f pp of return) · spread of the change %s to %s",
+				sum.ProposedWins, sum.Run, sum.BaseWins, sum.Run-sum.ProposedWins-sum.BaseWins,
+				fmt.Sprintf(s.format, sum.MedianDiff), sum.MedianDiffPP, fmt.Sprintf(s.format, sum.WorstDiff), fmt.Sprintf(s.format, sum.BestDiff))
+			p(" · worst window base %s (%s), proposed %s (%s).\n\n", sum.WorstBase.Label, fmt.Sprintf(s.format, sum.WorstBase.Net),
+				sum.WorstProp.Label, fmt.Sprintf(s.format, sum.WorstProp.Net))
+		}
+		if len(sum.Missing) > 0 {
+			p("Not run (left out of the summary): %s.\n\n", strings.Join(sum.Missing, ", "))
+		}
+	}
+	if len(wr.Summary.OrderFlips) > 0 {
+		p("Order flips between replay and backtest (one has the proposal ahead, the other behind): %s.\n\n", strings.Join(wr.Summary.OrderFlips, ", "))
+	} else {
+		p("Order flips between replay and backtest: none.\n\n")
+	}
 }
 
 // table writes "| Figure | Base | Proposed | Change |" rows; the header is
