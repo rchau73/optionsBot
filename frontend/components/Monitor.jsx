@@ -49,7 +49,7 @@ export default function Monitor({ role = null }) {
 
   return (
     <div className="min-h-screen">
-      <Header bots={bots} error={error} />
+      <Header bots={bots} error={error} role={role} />
       <main className="space-y-3 p-3">
         {kpi.halted ? (
           <div role="alert" className="rounded border border-loss bg-loss/10 px-3 py-2 text-loss">

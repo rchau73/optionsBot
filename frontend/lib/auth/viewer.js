@@ -9,9 +9,17 @@ import { ACCESS_COOKIE, authKey, verifyAccess } from "./tokens";
  * state-changing routes re-read the role from the database (requireRole).
  */
 export async function viewerRole() {
+  return (await viewer())?.role ?? null;
+}
+
+/**
+ * The signed-in person ({ id, username, role }) from the access token, or
+ * null. Display only, like viewerRole: the Users page shows its admin view to
+ * admins, but its routes decide (requireRole).
+ */
+export async function viewer() {
   try {
-    const user = await verifyAccess((await cookies()).get(ACCESS_COOKIE)?.value, authKey());
-    return user?.role ?? null;
+    return await verifyAccess((await cookies()).get(ACCESS_COOKIE)?.value, authKey());
   } catch {
     return null;
   }
