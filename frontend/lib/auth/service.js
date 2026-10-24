@@ -25,13 +25,18 @@ export function newPasswordProblem(current, next) {
 }
 
 export class AuthService {
-  /** store: AuthStore · key: authKey() · now: clock in ms · audit: sink of audit entries (lib/auth/audit.js). */
-  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(store), audit = () => {} }) {
+  /**
+   * store: AuthStore · key: authKey() · now: clock in ms · audit: sink of audit entries (lib/auth/audit.js) ·
+   * deleteEvents: removes a user row id's analytics events → { removed }, throws when it cannot
+   * (lib/analytics/retention.js userEventsEraser; none by default).
+   */
+  constructor({ store, key, now = () => Date.now(), limiter = new LoginLimiter(store), audit = () => {}, deleteEvents = () => ({ removed: 0 }) }) {
     this.store = store;
     this.key = key;
     this.now = now;
     this.limiter = limiter;
     this.auditSink = audit;
+    this.deleteEvents = deleteEvents;
   }
 
   /** One audit entry: what happened, by whom (username, role), when; never a secret. */
@@ -192,7 +197,13 @@ export class AuthService {
     return { ok: true, user: this.store.userById(target.id) };
   }
 
-  /** An admin deletes a user (and every session of theirs). */
+  /**
+   * An admin deletes a user: every session of theirs, their consent (a column
+   * of the row) and their analytics events (event plan §5, #296). Access goes
+   * first; events that cannot be deleted are an ERROR log, an audit line and
+   * `events_error` in the answer, with the row id the admin CLI needs to retry.
+   * → { ok: true, events_removed } | { ok: true, events_error } | { ok: false, status, error }
+   */
   deleteUser(by, targetId) {
     const target = this.store.userById(targetId);
     const problem = this.userChangeProblem(by, target, null);
@@ -200,7 +211,27 @@ export class AuthService {
     this.store.deleteUser(target.id);
     authLog("INFO", "user deleted", { by: by.username, username: target.username });
     this.audit("user_deleted", { username: by.username, role: by.role, target: target.username });
-    return { ok: true };
+
+    const who = { username: by.username, role: by.role, target: target.username, target_row_id: target.id, reason: "user_deleted" };
+    try {
+      const { removed } = this.deleteEvents(target.id);
+      authLog("INFO", "analytics events of a deleted user deleted", { component: "analytics", by: by.username, username: target.username, removed });
+      this.audit("events_deleted", { ...who, removed });
+      return { ok: true, events_removed: removed };
+    } catch (err) {
+      authLog("ERROR", "analytics events of a deleted user NOT deleted", {
+        component: "analytics",
+        by: by.username,
+        username: target.username,
+        user_row_id: target.id,
+        error: err.message,
+      });
+      this.audit("events_delete_failed", { ...who, error: err.message });
+      return {
+        ok: true,
+        events_error: `the user is deleted but their analytics events are not (${err.message}): run scripts/analytics-user.mjs delete --row-id ${target.id}`,
+      };
+    }
   }
 
   /** "Sign out everywhere": ends every session of a user; their next state-changing request is refused. */
