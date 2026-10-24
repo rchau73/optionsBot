@@ -5,3 +5,5 @@ __tests__
 .env*
 data
 test
+e2e
+test-results

@@ -1,0 +1,80 @@
+# Example competitor entry for scripts/product/competitors.py (#304).
+# FICTIONAL: the company, prices, URLs and dates are invented for the tests.
+# Real entries go in the gitignored data/product/competitors/, one file per competitor.
+# Fields and method: docs/product/competitors/README.md.
+#
+#   python3 scripts/product/competitors.py scripts/product/example_competitor.yaml
+
+name: Example Yield Co
+category: exchange_yield            # exchange_yield | defi_vault | copy_trading | api_automation | option_analytics
+segment: retail holders of BTC and ETH on the exchange
+
+pricing:
+  value_metric: share of the premium kept by the platform
+  source_url: https://example.invalid/pricing
+  seen_on: 2026-10-20
+  tiers:
+    standard:
+      price: 123.45                 # placeholder, not a price
+      currency: USD
+      period: month
+      source_url: https://example.invalid/pricing
+      seen_on: 2026-10-20
+
+positioning:
+  text: "earn up to a fixed APY on idle coins, one click"
+  source_url: https://example.invalid/
+  seen_on: 2026-10-20
+
+strengths:
+  onboarding:
+    text: no separate account, already inside the exchange
+    source_url: https://example.invalid/
+    seen_on: 2026-10-20
+
+weaknesses:
+  opaque_strike:
+    text: the strike and the conversion risk are in the small print
+    source_url: https://example.invalid/terms
+    seen_on: 2026-10-20
+
+recent_moves:
+  new_product:
+    text: launched a weekly product
+    source_url: https://example.invalid/blog
+    seen_on: 2026-06-01             # older than 90 days on 2026-10-23: listed as stale
+
+praise:
+  simple:
+    text: users say it is simple
+    source_url: https://example.invalid/reviews
+    seen_on: 2026-10-20
+
+complaints:
+  converted:
+    text: users complain their coins were converted at the strike
+    source_url: https://example.invalid/forum
+    seen_on: 2026-10-20
+
+risk_shown:                         # is the risk shown next to the yield?
+  value: partly                     # yes | partly | no
+  source_url: https://example.invalid/
+  seen_on: 2026-10-20
+
+against_positioning:                # PRD §5's claims: does this competitor make them too?
+  explains_trades:
+    value: "no"
+    source_url: https://example.invalid/
+    seen_on: 2026-10-20
+  worst_case_before_risk:
+    value: partly
+    source_url: https://example.invalid/
+    seen_on: 2026-10-20
+  non_custodial:
+    value: "no"
+    source_url: https://example.invalid/terms
+    seen_on: 2026-10-20
+  public_track_record:
+    value: "no"
+    source_url: https://example.invalid/
+    seen_on: 2026-10-20

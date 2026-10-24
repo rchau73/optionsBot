@@ -27,7 +27,7 @@ require_tools claude gh git go gofmt python3 || exit 1
 slug="$(repo_slug)"
 # One instance picks at a time, so two never take the same card.
 mutex dev-pick || exit 0
-max="$(parallel_max "${DEV_PARALLEL:-3}")"
+max="$(parallel_max "${DEV_PARALLEL:-1}")"
 if [[ "$(claims_alive dev)" -ge "$max" ]]; then unmutex dev-pick; log "dev: $max instance(s) already running"; exit 0; fi
 next="$(ready_next dev)"
 [[ -n "$next" ]] || { unmutex dev-pick; log "dev: nothing in Ready"; exit 0; }
@@ -115,6 +115,7 @@ denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git c
   "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
 model_args=()
 [[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
+budget_take dev # the daily budget (limit_lib.sh)
 
 log "dev: running the agent in $wt"
 started="$(date +%s)"

@@ -111,6 +111,37 @@ describe("Scenario: allow-list", () => {
   });
 });
 
+// The in-product surveys (docs/product/analytics/surveys.md, #297): codes only.
+describe("Scenario: survey answers", () => {
+  test("Allowed survey answer: nps, score 9, value_unclear is stored (204)", async () => {
+    const res = await post({ event: "survey_answered", session_id: SESSION, props: { survey_id: "nps", score: "9", reason_code: "value_unclear" } });
+    expect(res.status).toBe(204);
+    const [line] = stored();
+    expect(line).toMatchObject({ event: "survey_answered", survey_id: "nps", score: "9", reason_code: "value_unclear" });
+  });
+
+  test("shown, dismissed and an exit reason are stored", async () => {
+    await post({ event: "survey_shown", session_id: SESSION, props: { survey_id: "exit" } });
+    await post({ event: "survey_answered", session_id: SESSION, props: { survey_id: "exit", reason_code: "switched" } });
+    await post({ event: "survey_dismissed", session_id: SESSION, props: { survey_id: "answers" } });
+    await post({ event: "survey_answered", session_id: SESSION, props: { survey_id: "answers", came_for: "income", hardest_to_find: "worst_case" } });
+    expect(stored().map((l) => l.event)).toEqual(["survey_shown", "survey_answered", "survey_dismissed", "survey_answered"]);
+  });
+
+  test.each([
+    ["a reason_code outside the enum", { survey_id: "exit", reason_code: "too expensive for 0.5 BTC" }],
+    ["a free-text property", { survey_id: "exit", reason_code: "other", text: "I lost money" }],
+    ["an extra property", { survey_id: "nps", score: "9", comment: "great" }],
+    ["a numeric score", { survey_id: "nps", score: 9 }],
+    ["a score outside 0–10", { survey_id: "nps", score: "11" }],
+    ["a survey not in the plan", { survey_id: "pricing" }],
+  ])("Free text refused: %s is refused whole (400) and not stored", async (_name, props) => {
+    const res = await post({ event: "survey_answered", session_id: SESSION, props });
+    expect(res.status).toBe(400);
+    expect(stored()).toEqual([]);
+  });
+});
+
 describe("consent, session and configuration", () => {
   test.each([
     ["said no", false],
