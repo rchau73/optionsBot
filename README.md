@@ -329,6 +329,14 @@ Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Mon
 
 **No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
 
+**Engagement drops** (#341, #252: "are users stopping?"): `-alert` also builds the 3 weeks before from the same file and prints the drop check (pure `usage.Drops(current, previous, rules)`, `internal/usage/drops.go`) as one `DROPS {json}` line; it never fails the report. A drop is weekly active users or help used (tips opened + videos played) at least 30 % under the mean of those weeks, or the first-answers, manual-close (confirmed ÷ opened) or rebalance (confirmed ÷ previewed) completion share at least 20 points under theirs. A rule judges only a base of at least 10 users or 10 funnel starts (in the base and in the week) — below that it says `too few to judge`; a week with no events is listed under `missing` and left out of the base, never counted as zero. The thresholds are fixed in code; `-alert-count-pct`, `-alert-funnel-pts`, `-alert-min-base` and `-alert-base-weeks` study them.
+
+```bash
+go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, mean of the base weeks 40.0 (-50 %)" and DROPS {…}
+```
+
+**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
+
 ## Settings comparison
 
 `cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.

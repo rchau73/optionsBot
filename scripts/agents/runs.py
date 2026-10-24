@@ -25,7 +25,7 @@ import os
 import sys
 
 FIELDS = ("ts", "agent", "run_id", "issue", "pr", "event", "outcome", "detail", "log", "commit")
-AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky")
+AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky", "usage")
 EVENTS = ("start", "end")
 DETAIL_MAX = 200
 

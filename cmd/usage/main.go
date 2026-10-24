@@ -7,9 +7,11 @@
 //
 //	go run ./cmd/usage -week 2026-W43
 //	go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl
+//	go run ./cmd/usage -week 2026-W43 -alert   # + the engagement-drop check (#341): DROPS {json}
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -23,21 +25,65 @@ func main() {
 	events := flag.String("events", "data/monitor/events.jsonl", "the monitor's analytics events file")
 	week := flag.String("week", "", "ISO week, e.g. 2026-W43 (default: the last complete week)")
 	out := flag.String("out", "data/monitor/reports", "folder for <week>.md and <week>.json")
+	alert := flag.Bool("alert", false, "also compare the week with the weeks before it and print the drops as JSON on a DROPS line (#341)")
+	rules := usage.DefaultRules()
+	flag.Float64Var(&rules.CountPct, "alert-count-pct", rules.CountPct, "study: a count (active users, help used) drops when this % under the base weeks' mean")
+	flag.Float64Var(&rules.FunnelPts, "alert-funnel-pts", rules.FunnelPts, "study: a funnel drops when its completion share is this many points under the base weeks'")
+	flag.IntVar(&rules.MinBase, "alert-min-base", rules.MinBase, "study: the fewest users or funnel starts a rule judges")
+	baseWeeks := flag.Int("alert-base-weeks", usage.DropBaseWeeks, "study: how many weeks before the report's are its base")
 	flag.Parse()
 
 	if err := run(*events, *week, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "usage:", err)
 		os.Exit(1)
 	}
+	if *alert {
+		// The drop check never fails the report: an error is printed, exit 0.
+		if err := printDrops(*events, *week, rules, *baseWeeks); err != nil {
+			fmt.Fprintln(os.Stderr, "usage: drop check:", err)
+		}
+	}
+}
+
+// printDrops prints the week's drop check as one `DROPS {json}` line, after
+// a line per drop for a person. Counts and shares only.
+func printDrops(events, week string, rules usage.Rules, baseWeeks int) error {
+	w, err := window(week)
+	if err != nil {
+		return err
+	}
+	lg, err := usage.Load(events)
+	if err != nil {
+		return err
+	}
+	cur := usage.Build(lg.Events, w.From, w.To)
+	cur.Week = w.Label
+	a := usage.Drops(cur, usage.BuildWeeks(lg.Events, w.From, baseWeeks), rules)
+	for _, d := range a.Drops {
+		fmt.Println("drop:", d)
+	}
+	for _, m := range a.Missing {
+		fmt.Println("no events in", m)
+	}
+	js, err := json.Marshal(a)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("DROPS %s\n", js)
+	return nil
+}
+
+func window(week string) (evidence.Window, error) {
+	if week == "" {
+		return evidence.LastWeek(time.Now()), nil
+	}
+	return evidence.ParseWeek(week)
 }
 
 func run(events, week, out string) error {
-	w := evidence.LastWeek(time.Now())
-	if week != "" {
-		var err error
-		if w, err = evidence.ParseWeek(week); err != nil {
-			return err
-		}
+	w, err := window(week)
+	if err != nil {
+		return err
 	}
 	r, paths, err := usage.Run(events, w.From, w.To, w.Label, out)
 	if err != nil {

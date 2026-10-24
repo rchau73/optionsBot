@@ -306,3 +306,254 @@ func TestUsage_AllowListMatchesThePlan(t *testing.T) {
 		}
 	}
 }
+
+// ── Engagement drops (#194, #341, #252) ────────────────────────────────────
+
+// sixWeekFixture is a log over 2026-W38 … W43, hand-computed:
+//
+//	W38  users 101–105 start (an older cohort)
+//	W39  users 1–40 start (cohort W39 = 40); 101–102 come back
+//	W40  users 1–30 active                      → W39 +1: 30/40 = 75 %
+//	W41  users 1–40 active; 10 manual closes opened, 8 confirmed
+//	W42  users 1–40 active + 41–50 start (cohort W42 = 10); 10 opened, 8 confirmed
+//	W43  users 1–20 active; 10 opened, 5 confirmed
+//
+// Base of W43 = W40–W42: active mean (30 + 40 + 50) / 3 = 40, W43 has 20 →
+// −50 %; manual close 16/20 = 80 % before, 5/10 = 50 % now → −30 pts.
+func sixWeekFixture(t *testing.T) []string {
+	wk := func(label string) time.Time { return usageWeek(t, label).From }
+	var lines []string
+	active := func(at time.Time, from, to int) {
+		for n := from; n <= to; n++ {
+			lines = append(lines, usageLine(t, "session_started", at.Add(time.Duration(n)*time.Minute), n, nil))
+		}
+	}
+	closes := func(at time.Time, opened, confirmed int) {
+		for i := 0; i < opened; i++ {
+			lines = append(lines, usageLine(t, "manual_close_opened", at.Add(time.Duration(i)*time.Minute), 1, map[string]any{"side": "put", "allowed": true}))
+			if i < confirmed {
+				lines = append(lines, usageLine(t, "manual_close_confirmed", at.Add(time.Duration(i)*time.Minute+time.Second), 1, map[string]any{"side": "put", "last_leg": false}))
+			}
+		}
+	}
+	active(wk("2026-W38").Add(2*time.Hour), 101, 105)
+	active(wk("2026-W39").Add(2*time.Hour), 1, 40)
+	active(wk("2026-W39").Add(26*time.Hour), 101, 102)
+	active(wk("2026-W40").Add(50*time.Hour), 1, 30)
+	active(wk("2026-W41").Add(50*time.Hour), 1, 40)
+	closes(wk("2026-W41").Add(60*time.Hour), 10, 8)
+	active(wk("2026-W42").Add(50*time.Hour), 1, 50)
+	closes(wk("2026-W42").Add(60*time.Hour), 10, 8)
+	active(wk("2026-W43").Add(50*time.Hour), 1, 20)
+	closes(wk("2026-W43").Add(60*time.Hour), 10, 5)
+	return lines
+}
+
+// Scenario (#194): fixtures — weekly actives, cohort retention and the drop
+// alert match hand-computed values.
+func TestUsage_SixWeekFixtureMatchesHandComputedValues(t *testing.T) {
+	path := writeUsageEvents(t, sixWeekFixture(t))
+	lg, err := usage.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := usageWeek(t, "2026-W43")
+	cur := usage.Build(lg.Events, w.From, w.To)
+	cur.Week = w.Label
+	prev := usage.BuildWeeks(lg.Events, w.From, usage.DropBaseWeeks)
+
+	// Weekly actives.
+	wantActive := map[string]int{"2026-W40": 30, "2026-W41": 40, "2026-W42": 50}
+	for _, r := range prev {
+		if r.Active.Week.Users != wantActive[r.Week] {
+			t.Errorf("%s active = %d, want %d", r.Week, r.Active.Week.Users, wantActive[r.Week])
+		}
+	}
+	if len(prev) != 3 || prev[0].Week != "2026-W40" || prev[2].Week != "2026-W42" {
+		t.Fatalf("base weeks = %v", []string{prev[0].Week, prev[len(prev)-1].Week})
+	}
+	if cur.Active.Week.Users != 20 || cur.Active.Month.Users != 50 {
+		t.Fatalf("W43 active week %d (want 20), 30 days %d (want 50)", cur.Active.Week.Users, cur.Active.Month.Users)
+	}
+
+	// Cohort retention.
+	cohort := func(week string) usage.Cohort {
+		for _, c := range cur.Cohorts {
+			if c.Week == week {
+				return c
+			}
+		}
+		t.Fatalf("no cohort %s", week)
+		return usage.Cohort{}
+	}
+	c39 := cohort("2026-W39")
+	wantRet := []struct {
+		users int
+		pct   float64
+	}{{30, 75}, {40, 100}, {40, 100}, {20, 50}}
+	if c39.Users != 40 || len(c39.Retained) != 4 {
+		t.Fatalf("W39 cohort = %+v", c39)
+	}
+	for i, want := range wantRet {
+		got := c39.Retained[i]
+		if got.Offset != i+1 || got.Users != want.users || got.Pct == nil || *got.Pct != want.pct {
+			t.Errorf("W39 +%d = %d (%v), want %d (%.0f %%)", i+1, got.Users, got.Pct, want.users, want.pct)
+		}
+	}
+	c42 := cohort("2026-W42")
+	if c42.Users != 10 || len(c42.Retained) != 1 || c42.Retained[0].Users != 0 || *c42.Retained[0].Pct != 0 {
+		t.Fatalf("W42 cohort = %+v", c42)
+	}
+
+	// The drop alert.
+	a := usage.Drops(cur, prev, usage.DefaultRules())
+	if len(a.Drops) != 2 {
+		t.Fatalf("drops = %+v", a.Drops)
+	}
+	act, mc := a.Drops[0], a.Drops[1]
+	if act.Metric != usage.MetricActive || act.Current != 20 || act.Base != 40 || act.ChangePct != -50 {
+		t.Errorf("active drop = %+v", act)
+	}
+	if mc.Metric != usage.MetricManualClose || mc.Current != 50 || mc.Base != 80 || mc.ChangePts != -30 || mc.Starts != 10 || mc.BaseStart != 20 {
+		t.Errorf("manual close drop = %+v", mc)
+	}
+	skipped := map[string]string{}
+	for _, s := range a.Skipped {
+		skipped[s.Metric] = s.Reason
+	}
+	for _, m := range []string{usage.MetricHelp, usage.MetricFirstAnswers, usage.MetricRebalance} {
+		if skipped[m] != usage.TooFew {
+			t.Errorf("%s skipped %q, want %q", m, skipped[m], usage.TooFew)
+		}
+	}
+	if len(a.Missing) != 0 || len(a.Weeks) != 4 || a.Weeks[3].Week != "2026-W43" || a.Weeks[3].ActiveUsers != 20 {
+		t.Errorf("weeks = %+v, missing %v", a.Weeks, a.Missing)
+	}
+}
+
+// usageReport is a report with only the figures the drop check reads.
+func usageReport(week string, active int, opened, confirmed int) usage.Report {
+	from, _ := evidence.ParseWeek(week)
+	return usage.Report{
+		Week: week, From: from.From, To: from.To, EventsInWeek: active + opened + confirmed + 1,
+		Active:       &usage.Active{Week: usage.Count{Users: active}},
+		Help:         &usage.Help{},
+		FirstAnswers: &usage.FirstAnswers{},
+		ManualClose:  &usage.ManualClose{Opened: opened, Confirmed: confirmed},
+		Rebalance:    &usage.Rebalance{},
+	}
+}
+
+func skipReason(a usage.Alert, metric string) string {
+	for _, s := range a.Skipped {
+		if s.Metric == metric {
+			return s.Reason
+		}
+	}
+	return ""
+}
+
+// Scenario (#341): the last 3 weeks averaged 40 active users and this week
+// has 20 → one drop for active users with both figures and the change in %.
+func TestUsage_DropActiveUsersAgainstTheMeanOfThreeWeeks(t *testing.T) {
+	prev := []usage.Report{usageReport("2026-W42", 45, 0, 0), usageReport("2026-W40", 35, 0, 0), usageReport("2026-W41", 40, 0, 0)}
+	a := usage.Drops(usageReport("2026-W43", 20, 0, 0), prev, usage.DefaultRules())
+	if len(a.Drops) != 1 {
+		t.Fatalf("drops = %+v", a.Drops)
+	}
+	d := a.Drops[0]
+	if d.Metric != usage.MetricActive || d.Current != 20 || d.Base != 40 || d.ChangePct != -50 {
+		t.Fatalf("drop = %+v", d)
+	}
+	if a.Weeks[0].Week != "2026-W40" { // sorted oldest first whatever the order given
+		t.Fatalf("weeks = %+v", a.Weeks)
+	}
+	// 29 % down is under the rule; 30 % is on it.
+	if a := usage.Drops(usageReport("2026-W43", 29, 0, 0), prev, usage.DefaultRules()); len(a.Drops) != 0 {
+		t.Fatalf("−27.5 %% raised %+v", a.Drops)
+	}
+	if a := usage.Drops(usageReport("2026-W43", 28, 0, 0), prev, usage.DefaultRules()); len(a.Drops) != 1 {
+		t.Fatalf("−30 %% raised nothing")
+	}
+}
+
+// Scenarios (#341, #252): earlier weeks with fewer than 10 users (a base of
+// 3 or 8 people) → no drop, "too few to judge".
+func TestUsage_DropTooFewToJudge(t *testing.T) {
+	for _, base := range []int{3, 8} {
+		prev := []usage.Report{usageReport("2026-W40", base, 0, 0), usageReport("2026-W41", base, 0, 0), usageReport("2026-W42", base, 0, 0)}
+		a := usage.Drops(usageReport("2026-W43", 0, 0, 0), prev, usage.DefaultRules())
+		if len(a.Drops) != 0 {
+			t.Fatalf("base %d: drops = %+v", base, a.Drops)
+		}
+		if got := skipReason(a, usage.MetricActive); got != usage.TooFew {
+			t.Fatalf("base %d: active skipped %q", base, got)
+		}
+	}
+}
+
+// Scenario (#341): the manual-close funnel completed 80 % before and 50 %
+// now, with at least 10 starts in each → a drop for that funnel.
+func TestUsage_DropManualCloseFunnel(t *testing.T) {
+	prev := []usage.Report{usageReport("2026-W40", 40, 10, 8), usageReport("2026-W41", 40, 10, 8), usageReport("2026-W42", 40, 10, 8)}
+	a := usage.Drops(usageReport("2026-W43", 40, 10, 5), prev, usage.DefaultRules())
+	if len(a.Drops) != 1 || a.Drops[0].Metric != usage.MetricManualClose || a.Drops[0].Current != 50 || a.Drops[0].Base != 80 {
+		t.Fatalf("drops = %+v", a.Drops)
+	}
+	// 9 starts this week: too few.
+	a = usage.Drops(usageReport("2026-W43", 40, 9, 1), prev, usage.DefaultRules())
+	if len(a.Drops) != 0 || skipReason(a, usage.MetricManualClose) != usage.TooFew {
+		t.Fatalf("9 starts: drops %+v, skipped %+v", a.Drops, a.Skipped)
+	}
+	// A flat week raises nothing.
+	if a := usage.Drops(usageReport("2026-W43", 40, 10, 8), prev, usage.DefaultRules()); len(a.Drops) != 0 {
+		t.Fatalf("flat week: %+v", a.Drops)
+	}
+}
+
+// Scenario (#252): a week with no event data → no alert, the week is noted.
+func TestUsage_DropMissingWeekIsNotedNeverCounted(t *testing.T) {
+	empty := func(week string) usage.Report {
+		w, _ := evidence.ParseWeek(week)
+		return usage.Report{Week: week, From: w.From, To: w.To, NoEvents: usage.NoEventsWhy}
+	}
+	// A base week without events is left out of the mean (not a zero).
+	prev := []usage.Report{usageReport("2026-W40", 40, 0, 0), empty("2026-W41"), usageReport("2026-W42", 40, 0, 0)}
+	a := usage.Drops(usageReport("2026-W43", 35, 0, 0), prev, usage.DefaultRules())
+	if len(a.Drops) != 0 || !slices.Equal(a.Missing, []string{"2026-W41"}) {
+		t.Fatalf("drops %+v, missing %v", a.Drops, a.Missing)
+	}
+	// The week itself without events: nothing judged, the week noted.
+	a = usage.Drops(empty("2026-W43"), prev, usage.DefaultRules())
+	if len(a.Drops) != 0 || !slices.Contains(a.Missing, "2026-W43") || skipReason(a, usage.MetricActive) != "no events in the week" {
+		t.Fatalf("alert = %+v", a)
+	}
+	// From a real log: no event at all in the four weeks.
+	lg, _ := usage.Read(strings.NewReader(""))
+	w := usageWeek(t, "2026-W43")
+	a = usage.Drops(usage.Build(lg.Events, w.From, w.To), usage.BuildWeeks(lg.Events, w.From, 3), usage.DefaultRules())
+	if len(a.Drops) != 0 || len(a.Missing) != 4 {
+		t.Fatalf("empty log: %+v", a)
+	}
+}
+
+// The drop check carries counts and shares only.
+func TestUsage_DropsCarryNoPerson(t *testing.T) {
+	path := writeUsageEvents(t, sixWeekFixture(t))
+	lg, err := usage.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := usageWeek(t, "2026-W43")
+	a := usage.Drops(usage.Build(lg.Events, w.From, w.To), usage.BuildWeeks(lg.Events, w.From, 3), usage.DefaultRules())
+	js, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n <= 105; n++ {
+		uid, sid := usageUser(n)
+		if strings.Contains(string(js), uid) || strings.Contains(string(js), sid) {
+			t.Fatalf("user %d's id in the drop check", n)
+		}
+	}
+}
