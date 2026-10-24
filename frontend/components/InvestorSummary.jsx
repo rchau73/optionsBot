@@ -40,7 +40,7 @@ export function BotSummary({ bot }) {
         <div className="grid gap-4 p-4 md:grid-cols-2">
           <Holding holding={s.holding} />
           <Income income={s.income} bot={bot.name} />
-          <WorstCase wc={s.worst_case} />
+          <WorstCase wc={s.worst_case} bot={bot.name} />
           <LastAction action={s.last_action} coin={s.underlying} />
         </div>
       )}
@@ -149,7 +149,7 @@ function Income({ income, bot }) {
   );
 }
 
-function WorstCase({ wc }) {
+function WorstCase({ wc, bot }) {
   const rows = worstCaseRows(wc);
   return (
     <Answer question="Worst case now (one day)">
@@ -171,6 +171,12 @@ function WorstCase({ wc }) {
         {wc?.model ? ` — ${wc.model}` : ""}
         {isNumber(wc?.dvol) && wc.dvol > 0 ? ` (DVOL ${formatNumber(wc.dvol, 1)}, ${wc.sigmas ?? 3}σ).` : "."}
       </p>
+      <Link
+        href={`/worst-case?bot=${encodeURIComponent(bot)}`}
+        className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-testnet"
+      >
+        Five days in money: worst case right now →
+      </Link>
     </Answer>
   );
 }
