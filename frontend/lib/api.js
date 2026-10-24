@@ -1,7 +1,7 @@
 // The only module that talks to the backend. Everything goes through the
 // Next.js proxy at /api/bots/... (read-only, except closePositions and
-// rebalanceBot) or /api/auth/... (signOut, changePassword), behind the
-// signed-in session's cookies.
+// rebalanceBot), /api/auth/... (signOut, changePassword) or /api/admin/users
+// (the Users page, admins only), behind the signed-in session's cookies.
 
 let refreshing = null;
 
@@ -73,6 +73,56 @@ export async function changePassword(current, next) {
     /* body was not JSON */
   }
   if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+}
+
+/** A same-origin JSON request to the monitor's admin routes; throws with the server's reason. */
+async function adminSend(url, method, body = {}) {
+  const res = await apiFetch(url, {
+    method,
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let answer = null;
+  try {
+    answer = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(answer?.error ?? `${res.status}`);
+  return answer ?? {};
+}
+
+const userUrl = (id, action = "") => `/api/admin/users/${encodeURIComponent(id)}${action}`;
+
+/** Every monitor user (admins only): [{ id, username, role, email, created_at, last_sign_in_at }]. */
+export async function fetchUsers(signal) {
+  return (await getJSON("/api/admin/users", signal)).users;
+}
+
+/** Adds a person ({ username, password, role, email? }) → the new user. */
+export async function createUser(fields) {
+  return (await adminSend("/api/admin/users", "POST", fields)).user;
+}
+
+/** Changes a user's role; every session of theirs ends. */
+export async function changeUserRole(id, role) {
+  return (await adminSend(userUrl(id), "PATCH", { role })).user;
+}
+
+/** Sets a user's password; every session of theirs ends. */
+export async function resetUserPassword(id, password) {
+  await adminSend(userUrl(id, "/password"), "POST", { password });
+}
+
+/** Ends every session of a user. */
+export async function signOutUser(id) {
+  await adminSend(userUrl(id, "/signout"), "POST");
+}
+
+/** Deletes a user → { events_removed } or { events_error }. */
+export async function deleteUser(id) {
+  return adminSend(userUrl(id), "DELETE");
 }
 
 async function getJSON(url, signal) {

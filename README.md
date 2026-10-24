@@ -349,6 +349,13 @@ The report starts with the label **"Backtested/replayed, not a promise"**, then:
 
 A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
 
+**Week by week** (#301): `-windows week` (ISO weeks, Monday–Sunday UTC, the first and last clipped to the span) or `-windows day` also runs the backtest and the replay once per window — each replay from a flat book at the window's first day, on the same data read once — so a proposal that wins only in one lucky week shows as fragile. The report gains a **By week** section (`windows` in the JSON: `unit`, `rows`, `summary`): per source (replay, backtest) one row per window with net, return %, worst week % and max drawdown for base, proposed and the change; then how many windows the proposal's net is higher (and the base's, and equal), the median change (net and percentage points of return), the spread of the change (worst to best window), each config's worst window, and the windows where replay and backtest disagree on which config is ahead (`order_flips`). A window a source could not run in (no recorded book, an error) shows the reason in its `Note`, is listed under "Not run" and counts in no summary figure — never filled. The stress stays one run on the captured book, not windowed, and the section says so. Without `-windows` the report is unchanged.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-25 \
+    -replay data/btc/data/market -stress data/stress/btc -windows week
+```
+
 ## Testing and CI
 
 ```bash

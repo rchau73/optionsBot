@@ -62,15 +62,15 @@ People sign in at `/login` with a username and password; `proxy.js` sends every 
 |---|---|---|---|
 | See the monitor | ✓ | ✓ | ✓ |
 | Manual close, manual rebalance (and its dry run) | ✓ | ✓ | — (403) |
-| Create, edit and delete users; reset a password | ✓ | — | — |
+| Create, edit and delete users; reset a password (Users page, `/api/admin/users`) | ✓ | — (403) | — (403) |
 
 `admin` satisfies `manager` satisfies `user` (`lib/auth/roles.js`). Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing). **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401). So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later. Read routes trust the token. An access token from before #171 has no `sid`: its first close answers 401, the page refreshes into a new token and retries.
 
-The route sends the person to the bot with the request — `"actor": {"user": "bob", "role": "manager"}` beside `BOT_ADMIN_TOKEN` — and the bot logs and journals it (the close's `actor` and `detail` "manual close from the monitor by bob (manager)", `rebalance_manual`'s `actor`). User management is in `AuthService` (`changeRole`, `deleteUser`, `signOutEverywhere`: never zero admins, never delete yourself, every change ends that user's sessions); its Users page and `/api/admin/users` routes come with the page's own story.
+The route sends the person to the bot with the request — `"actor": {"user": "bob", "role": "manager"}` beside `BOT_ADMIN_TOKEN` — and the bot logs and journals it (the close's `actor` and `detail` "manual close from the monitor by bob (manager)", `rebalance_manual`'s `actor`). User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`, `deleteUser`, `signOutEverywhere`: never zero admins, never delete yourself, every change ends that user's sessions), behind the Users page below.
 
 | Part | How |
 |---|---|
-| Users | SQLite (`sql.js`, WebAssembly — no native build in the image) in `data/monitor/auth.db` (`AUTH_DB_PATH`), a `monitor-auth` Docker volume per environment: stable and mvp have separate users. Table `users`: username (3–64 of `a-z 0-9 . _ -`, case-insensitive), argon2id hash, role `admin`/`manager`/`user` (enforced: Roles, above), email |
+| Users | SQLite (`sql.js`, WebAssembly — no native build in the image) in `data/monitor/auth.db` (`AUTH_DB_PATH`), a `monitor-auth` Docker volume per environment: stable and mvp have separate users. Table `users`: username (3–64 of `a-z 0-9 . _ -`, case-insensitive), argon2id hash, role `admin`/`manager`/`user` (enforced: Roles, above), email, created, last sign-in |
 | Passwords | argon2id (`hash-wasm`; 19 MiB, 2 passes), at least 12 characters. An unknown user is checked against a dummy hash, so it takes as long as a wrong password and gets the same 401 `invalid username or password` |
 | Access token | JWT HS256 (`jose`), 15 min, cookie `access_token` (HttpOnly, SameSite=Lax, path `/`), signed with `AUTH_SECRET`; carries the user id, name, role and `sid` (its session) |
 | Refresh token | 32 random bytes, only its SHA-256 stored, 14 days, cookie `refresh_token` on path `/api/auth`; reusable until logout (several tabs). A password change, a role change or a deletion ends every session of that user |
@@ -79,10 +79,25 @@ The route sends the person to the bot with the request — `"actor": {"user": "b
 | Lockout | 5 failed sign-ins for a username within 15 min lock it until 15 min after the last one (same 401); 20 sign-ins a minute per IP, then 429 with `Retry-After`. The username failures and locks are kept per environment in `auth.db` (`login_failures`, `login_locks`; failures older than 15 min are deleted at the next failure), so a restart or deploy of the monitor does not clear a lockout; the per-IP limit is short-lived and stays in memory (a restart forgets it) |
 | Secure cookies | `Secure` except on plain http to `localhost`/`127.0.0.1` (the compose port), where a browser would drop them. Opened from another machine over plain http, sign-in cannot work: put TLS in front first |
 | Service token | `MONITOR_API_TOKEN` (≥ 32 chars) as `Authorization: Bearer …` reads `GET /api/bots/*` without a session — the deploy health check, `promote.sh`, the SME agent and `stress_inputs.sh` use it (`env_monitor_token` in `scripts/env_lib.sh`). Never a page, a close or a rebalance |
-| Logs | one JSON line per sign-in, failure (reason, `locked`), lockout, rate limit, sign-out, first admin, user change, password change (`password changed`, `event: password_changed`, or `password change failed`) and refused action, with username and IP — never a password, hash, token or `AUTH_SECRET` |
-| Audit | `data/monitor/audit.jsonl` beside the user database (`AUDIT_PATH`; off for an in-memory database), append-only, owner-only: one JSON line `{time, action, username, role, …}` per `signed_in`, `sign_in_failed` (reason), `locked`, `signed_out`, `password_changed`, `password_change_failed` (reason `password` or `locked`), `user_created`, `role_changed`, `user_deleted`, `signed_out_everywhere` (with `target`), the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics") and `manual_close` / `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled). Never a password, hash or token |
+| Logs | one JSON line per sign-in, failure (reason, `locked`), lockout, rate limit, sign-out, first admin, user change (`user created`, `role changed`, `password reset` with `event: password_reset`, `signed out everywhere`, `user deleted`, each with `by`), password change (`password changed`, `event: password_changed`, or `password change failed`) and refused action, with username and IP — never a password, hash, token or `AUTH_SECRET` |
+| Audit | `data/monitor/audit.jsonl` beside the user database (`AUDIT_PATH`; off for an in-memory database), append-only, owner-only: one JSON line `{time, action, username, role, …}` per `signed_in`, `sign_in_failed` (reason), `locked`, `signed_out`, `password_changed`, `password_change_failed` (reason `password` or `locked`), `user_created` (`to` = the role), `role_changed`, `password_reset` (an admin set another person's password, #306), `user_deleted`, `signed_out_everywhere` (each with `target`; `username` and `role` are the admin's), the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics") and `manual_close` / `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled). Never a password, hash or token |
 
 The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`; later starts never touch existing users. The server exits at start (`instrumentation-node.js`) when `AUTH_SECRET` is missing or shorter than 32 bytes, or the database cannot be opened.
+
+### Users page (#306)
+
+`/admin/users`, linked as **Account ▾ → Users** for admins only — the link is a convenience, the routes decide: a manager or a user gets 403 from every one of them (`requireRole(admin)`, the person re-read from the database like close and rebalance). The page lists every person (username, role, email, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows. Your own row cannot be deleted or reset (use **Change password**).
+
+| Route | Does | Refusals |
+|---|---|---|
+| `GET /api/admin/users` | `{"users": [{id, username, role, email, created_at, last_sign_in_at}]}` (ISO times, `null` = never); never a hash | 403 not admin |
+| `POST /api/admin/users` `{"username", "password", "role", "email"?}` | `AuthService.createUser` → 201 `{"user"}`; audited `user_created` | 400 username rule (3–64 of `a-z 0-9 . _ -`), password under 12 characters, unknown role, malformed email · 409 username taken |
+| `PATCH /api/admin/users/<id>` `{"role"}` | `changeRole`; the user's sessions end; audited `role_changed` | 400 unknown role · 404 · 409 the last admin |
+| `POST /api/admin/users/<id>/password` `{"password"}` | `resetPassword`: sets it and ends every session of that user (each browser's next request that re-reads the session, and its refresh, answer 401); audited `password_reset` | 400 under 12 characters · 404 · 409 yourself |
+| `POST /api/admin/users/<id>/signout` `{}` | `signOutEverywhere`; audited `signed_out_everywhere` | 404 |
+| `DELETE /api/admin/users/<id>` `{}` | `deleteUser` (and the person's analytics events, "Analytics" below) → `{"events_removed"}` or `{"events_error"}` | 404 · 409 yourself or the last admin |
+
+All state-changing ones are same-origin JSON only (403 cross-origin, 415 without `application/json`); an ended session is 401. Every change is one audit line and one JSON log line naming the admin and the person — never a password. `last_sign_in_at` is a column of `users`, added to an older `auth.db` at start and set by each successful sign-in.
 
 ## Analytics (#193)
 
@@ -147,18 +162,23 @@ npm run dev     # dev server with hot reload
 npm test        # Jest + Testing Library
 npm run lint    # ESLint (next/core-web-vitals)
 npm run build   # production build — catches Server/Client Component mistakes
+npx playwright install chromium   # once: the browser the phone check uses
+npm run test:phone                # phone-width check (#309): Playwright at 360, 390 and 768 px on demo data
 ```
+
+**Phone-width check (#309).** `npm run test:phone` (config and tests in `e2e/`, Chromium only, needs Go for `cmd/monitor-demo`) starts two demo bots (BTC on 127.0.0.1:18191, ETH on :18192), builds and starts the monitor on 127.0.0.1:3290 wired to them only, with a throwaway admin and a random `AUTH_SECRET` on an in-memory user database (no audit, analytics or service token; a `.env.local` cannot redirect it), and measures page overflow and its cause, every control's box (counts under 44 and 24 px), hover-only `title`s, the header's height and whether each dialog fits 360 × 640 and 640 × 360. Results: `docs/responsive-measured.json` and screenshots in `test-results/phone/`, both git-ignored. It fails only when a measurement is worse than `e2e/phone-baseline.json` and names what got worse; `UPDATE_PHONE_BASELINE=1 npm run test:phone` records a new baseline (commit it with the fix). What it measures and why: [`docs/responsive-audit.md`](docs/responsive-audit.md) "Measured in a browser". Not part of `npm test` (Jest only) nor of CI yet (the browser download). `__tests__/phone-check.test.jsx` covers its measuring and comparing code in Jest.
 
 | Folder | Contents |
 |---|---|
-| `app/` | `layout.jsx`, `page.jsx` (composition only), `login/page.jsx`, `api/bots/…` read-only proxy routes, `api/auth/{login,refresh,logout}` |
+| `app/` | `layout.jsx`, `page.jsx` (composition only), `login/page.jsx`, `admin/users/page.jsx` (Users page), `api/bots/…` read-only proxy routes, `api/auth/{login,refresh,logout,password}`, `api/admin/users/…` (admins only) |
 | `proxy.js`, `instrumentation*.js` | the session guard on every route; the start-up check (`AUTH_SECRET`, first admin) |
-| `lib/auth/` | server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `roles.js` (role order), `audit.js` (audit.jsonl), `service.js` (login/refresh/logout, password change, the acting user, user changes), `server.js` (the shared instance, `requireRole`) |
-| `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`) |
+| `lib/auth/` | server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `roles.js` (role order), `audit.js` (audit.jsonl), `service.js` (login/refresh/logout, password change, the acting user, user administration), `server.js` (the shared instance, `requireRole`), `admin.js` (what every admin route checks first), `viewer.js` (who is looking, for display only) |
+| `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`); the Users page: `UsersAdmin`, `AddUserForm`, `UserActionDialog` |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
-| `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
+| `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `users.js` (Users page form checks and confirmation words), `format.js` (units), `bots.js` (server config) |
 | `content/` | `glossary.json` — the plain-words tips (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
 | `__tests__/`, `test/` | tests and shared fixtures |
+| `e2e/` | the phone-width check (Playwright, `npm run test:phone`): config, sign-in fixture, in-page measuring, baseline comparison |
 
 ### Glossary (#188)
 

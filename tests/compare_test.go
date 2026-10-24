@@ -43,8 +43,9 @@ func cmpCSV(t *testing.T, days int) string {
 			exp := cmpStart.AddDate(0, 0, out)
 			// Flat to day 3 (the comparison's first day), then 20 % cheaper
 			// a day: 40 % below the entry price on day 5, between the two
-			// take-profits TestCompare_OneChangedKey compares.
-			mid := 2000 * (1 - 0.2*math.Max(0, float64(d-3)))
+			// take-profits TestCompare_OneChangedKey compares; from day 8 it
+			// stays at 200 (the windowed tests read later days).
+			mid := math.Max(200, 2000*(1-0.2*math.Max(0, float64(d-3))))
 			for _, typ := range []string{"call", "put"} {
 				strike, delta := 115000.0, 0.16
 				if typ == "put" {

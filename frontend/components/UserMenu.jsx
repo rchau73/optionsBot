@@ -1,13 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePassword";
 import SignOut from "./SignOut";
 
 const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
 
-/** The header's user menu: change your password, sign out of this browser. */
-export default function UserMenu() {
+/**
+ * The header's user menu: Users (admins only, #306 — a link only, the routes
+ * enforce the role), change your password, sign out of this browser.
+ */
+export default function UserMenu({ role = null }) {
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const ref = useRef(null);
@@ -38,6 +42,11 @@ export default function UserMenu() {
       </button>
       {open ? (
         <div role="menu" className="absolute right-0 z-40 mt-1 w-44 rounded border border-line bg-panel py-1 shadow-xl">
+          {role === "admin" ? (
+            <Link role="menuitem" href="/admin/users" className={ITEM}>
+              Users
+            </Link>
+          ) : null}
           <button
             type="button"
             role="menuitem"
