@@ -27,6 +27,7 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Idle-margin attribution](#idle-margin-attribution)
 - [Recorded-history coverage](#recorded-history-coverage)
 - [Evidence report](#evidence-report)
+- [Usage report](#usage-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -306,6 +307,27 @@ Sections, each naming its source:
 - **Margin utilisation** — `history.Utilisation` over the week (the figure of `/api/status`).
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
+
+## Usage report
+
+`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q7 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+
+```bash
+go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
+go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl   # no week: the last complete one
+```
+
+Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Monday 00:00 UTC to the next Monday, as `cmd/evidence`). Sections, each naming the source file and the span of its accepted events:
+
+- **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
+- **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 4 before it, and how many had any event in each later week (+1 … +4; a week not yet ended is `—`).
+- **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen.
+- **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
+- **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
+- **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.
+- **Trust** (Q7) — `data_stale_shown` per source, `signed_out` per reason.
+
+**No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
 
 ## Settings comparison
 
