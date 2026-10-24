@@ -810,5 +810,46 @@
     "long": "Backtest setting kept in the files. It is meant to make the simulation close all positions when the account would be liquidated. The current backtest does not use it.",
     "risk_income": "None on the live account.",
     "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "username": {
+    "short": "The name a person signs in to the monitor with: 3 to 64 of a-z, 0-9, dot, underscore or hyphen.",
+    "long": "Users page (admins only). The name a person types to sign in. It is not case-sensitive and two people cannot share one. An admin chooses it when adding the person.",
+    "risk_income": "None: it only identifies who signed in and who acted, in the audit trail.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Username"]
+  },
+  "role": {
+    "short": "What a person may do on the monitor: user sees it, manager also closes and rebalances, admin also manages people.",
+    "long": "Users page (admins only). Every person has one of three roles. A user sees the monitor. A manager may also close a leg by hand and rebalance. An admin may also add people, change roles, reset passwords and delete people. The server checks the role on every action. Changing it signs the person out everywhere.",
+    "risk_income": "A manager can send orders to the bots: give that role only to people who should.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Role"]
+  },
+  "email": {
+    "short": "A person's email address, optional, for the admin's records; the monitor sends no email.",
+    "long": "Users page (admins only). An optional contact address an admin may record when adding a person. The monitor never sends email and never puts it in an analytics event.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Email"]
+  },
+  "created": {
+    "short": "When the person was added to the monitor.",
+    "long": "Users page (admins only). The date and time the person's account was created, by an admin or, for the first admin, at the monitor's first start.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Created"]
+  },
+  "last sign-in": {
+    "short": "When the person last signed in with their password; never if they have not yet.",
+    "long": "Users page (admins only). The time of the person's last successful sign-in. A browser that stays signed in refreshes its session without a new sign-in, so this can be older than their last visit.",
+    "risk_income": "None: an old or missing sign-in helps spot accounts nobody uses, which an admin may delete.",
+    "source": "frontend/README.md#users-page-306"
+  },
+  "actions": {
+    "short": "What an admin can do to a person: reset the password, sign them out everywhere, or delete them.",
+    "long": "Users page (admins only). Reset password sets a new one and signs the person out on every browser. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.",
+    "risk_income": "None on trading: none of these changes a position or an order.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Actions"]
   }
 }
