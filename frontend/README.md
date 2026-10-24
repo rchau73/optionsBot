@@ -136,7 +136,7 @@ npm run build   # production build — catches Server/Client Component mistakes
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`) |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
-| `content/` | `glossary.json` — the plain-words tips (below) |
+| `content/` | `glossary.json` — the plain-words tips (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
 | `__tests__/`, `test/` | tests and shared fixtures |
 
 ### Glossary (#188)
@@ -144,6 +144,12 @@ npm run build   # production build — catches Server/Client Component mistakes
 `content/glossary.json` holds one short tip for every term the monitor shows and every config setting: `{ "<term>": { "short" (≤ 140 chars), "long" (≤ 600), "risk_income" (how it moves risk and income), "source" ("OptionStrategy.md#<anchor>" or "frontend/README.md#<anchor>"), "labels" (optional: the exact monitor texts that mean this term) } }`. Config keys are entries under their YAML name, nested ones as `parent.child` (`backtest.fill_model`). `lib/glossary.js` `findTerm(label)` finds an entry by term, config key or label. It is content only: the tips UI (E11) and the assistant (E10) will read it.
 
 Tests keep it complete: `__tests__/glossary.test.js` fails when a literal column header (`<th>`), `<dt>`, `label="…"` prop, hold-rule, feed-event or exit-reason label in the monitor, or a key of `config_btc.yaml`/`config_eth.yaml`/`config_btc.mvp.yaml`, has no entry, when a source anchor does not exist, and on return promises; `tests/glossary_test.go` checks every key `config.Load` accepts. **A new column or setting needs its entry in the same PR.** Writing rules: short sentences (8th-grade reading), no jargon without its own entry, no return promises.
+
+### Empty states (#298)
+
+`content/empty-states.json` holds, for every panel, chart and list the monitor renders, one sentence per state: `{ "<panel>": { "empty", "loading", "stale", "error" (each ≤ 140 chars), "source" ("OptionStrategy.md#<anchor>" or "frontend/README.md#<anchor>") } }` — what will appear there, when, and why it is not there now. Facts only, in the bot's plain-words style (`internal/api/explain.go`): never a forecast or advice. The keys are the collapsible panels' `monitor.panel.*` storage keys plus `monitor.header`, `monitor.gex`, `monitor.summary`, `monitor.kpi`, `monitor.positions`, `monitor.activity`, `monitor.pnl`, `monitor.pnl_coin` and `monitor.orders` (`PANELS` in `lib/emptyStates.js`); `emptyStateFor(panel, state)` returns the sentence or null. Content only: the screens do not read it yet (E11's prototype first).
+
+`__tests__/empty-states.test.js` (checks in `test/emptyStateChecks.js`) fails, naming the panel, when a `storageKey` or `<Panel title>` in `components/Monitor.jsx` has no key, when a key lacks a state, when a text is over 140 characters, on a forecast or advice word (deny-list: *will earn*, *guaranteed*, *should buy*, …) and when a source anchor does not exist. **A new panel needs its entry in the same PR.**
 
 Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/globals.css` (`profit`, `loss`, `call`, `put`, `live`, `testnet`…) · Recharts · clsx.
 
