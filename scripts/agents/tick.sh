@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # tick.sh — run every 6 minutes by launchd. Deploys what a person merged, runs
 # the PR gate (only ready PRs reach a person: pr_gate.sh), re-queues the cards
-# a usage limit blocked (requeue.sh), then starts the agents in the background and returns, so a long implementation
+# a usage limit blocked (requeue.sh), closes the ledger's dead runs and flags
+# long ones (sweep_runs.sh), reports stalled cards (stuck.sh, every 6 h),
+# then starts the agents in the background and returns, so a long implementation
 # never delays the next tick:
 #   - REVIEW_PARALLEL (1) Reviewer agents, PM_ANSWER_PARALLEL (1) PM answers and
 #     DEV_PARALLEL (1) Dev agents, each claiming its own card (lib.sh claim), so
@@ -50,6 +52,12 @@ start() { # script, instances
 # Cards a usage limit wrongly blocked go back to Ready before the Dev agents
 # pick (#237; nothing moves inside a limit pause).
 bash "$dir/requeue.sh" >> "$logs/tick-requeue.log" 2>&1 || echo "requeue step failed (exit $?)"
+# Runs whose process is gone are closed as abandoned; runs past their time
+# limit are notified once, never killed (#291).
+bash "$dir/sweep_runs.sh" >> "$logs/tick-sweep.log" 2>&1 || echo "run sweep step failed (exit $?)"
+# Cards In progress / In review with no run behind them get one comment; at
+# most once every 6 h (#329).
+bash "$dir/stuck.sh" >> "$logs/tick-stuck.log" 2>&1 || echo "stuck-card step failed (exit $?)"
 why="$(budget_reason)"
 if [[ -n "$why" ]]; then
   log "tick: no Claude agent started — $why"

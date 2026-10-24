@@ -1,5 +1,6 @@
 """Tests of the agent run ledger (#206): runs.py and lib.sh run_begin/run_end.
 python3 -m unittest discover -s scripts/agents -p 'test_*.py'"""
+import datetime
 import io
 import json
 import os
@@ -251,6 +252,171 @@ class LibShTest(unittest.TestCase):
         self.assertEqual(len(by_run), 18)
         self.assertTrue(all(sorted(ev) == ["end", "start"] for ev in by_run.values()))
         self.assertEqual({r["agent"] for r in recs}, {"dev", "review"})
+
+
+def dead_pid():
+    """The pid of a process that has exited (reaped, so nothing holds it)."""
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait()
+    return p.pid
+
+
+def ago(minutes):
+    t = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def rid(agent, pid, n=1):
+    return f"{agent}-20261024T100000Z-{pid}-{n}"
+
+
+class SweepTest(unittest.TestCase):
+    """#291: runs.py --sweep closes dead runs and flags long ones, never kills."""
+
+    NOW = datetime.datetime(2026, 10, 24, 13, 0, 0, tzinfo=datetime.timezone.utc)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "agent_runs.jsonl")
+        self.flagged = os.path.join(self.tmp.name, "flagged")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, *lines):
+        with open(self.path, "w") as f:
+            f.write("\n".join(lines) + "\n")
+
+    def lines(self):
+        with open(self.path) as f:
+            return [json.loads(l) for l in f if l.strip()]
+
+    # Scenario: killed run — one abandoned end line, and a second sweep appends nothing
+    def test_killed_run(self):
+        self.write(rec("2026-10-24T12:00:00Z", "dev", rid("dev", 111), "start", issue=123, log="data/agents/dev/x"))
+        alive = lambda pid: False  # noqa: E731
+        self.assertEqual(runs.sweep(self.path, self.flagged, self.NOW, alive), [f"abandoned {rid('dev', 111)}"])
+        end = self.lines()[-1]
+        self.assertEqual(tuple(end), runs.FIELDS)  # the ledger line format is unchanged
+        self.assertEqual((end["event"], end["outcome"], end["detail"], end["issue"], end["log"], end["ts"]),
+                         ("end", "abandoned", "process gone", 123, "data/agents/dev/x", "2026-10-24T13:00:00Z"))
+        self.assertEqual(runs.sweep(self.path, self.flagged, self.NOW, alive), [])
+        self.assertEqual(len(self.lines()), 2)
+        self.assertEqual(runs.select(runs.runs(runs.read(self.path)[0]), open_only=True), [])
+
+    # Scenario: live run under its limit — nothing written, nothing notified
+    def test_live_run_under_its_limit(self):
+        self.write(rec("2026-10-24T12:50:00Z", "review", rid("review", 222), "start", issue=5, pr=6))
+        self.assertEqual(runs.sweep(self.path, self.flagged, self.NOW, lambda pid: True), [])
+        self.assertEqual(len(self.lines()), 1)
+        self.assertFalse(os.path.exists(self.flagged) and os.listdir(self.flagged))
+
+    # Scenario: live run over its limit — flagged once, never ended
+    def test_live_run_over_its_limit(self):
+        self.write(rec("2026-10-24T10:00:00Z", "dev", rid("dev", 333), "start", issue=123, log="data/agents/dev/y"))
+        out = runs.sweep(self.path, self.flagged, self.NOW, lambda pid: True)
+        self.assertEqual(out, ["over_limit\tdev\t#123\t180\tdata/agents/dev/y\t" + rid("dev", 333)])
+        self.assertTrue(os.path.isfile(os.path.join(self.flagged, rid("dev", 333))))
+        self.assertEqual(len(self.lines()), 1)  # no end line
+        self.assertEqual(runs.sweep(self.path, self.flagged, self.NOW, lambda pid: True), [])  # not again
+
+    def test_ended_runs_and_foreign_ids_are_left_alone(self):
+        self.write(rec("2026-10-24T08:00:00Z", "dev", rid("dev", 444), "start"),
+                   rec("2026-10-24T08:30:00Z", "dev", rid("dev", 444), "end", outcome="pr_opened"),
+                   rec("2026-10-24T08:00:00Z", "dev", "dev-a", "start"))  # no pid in the id
+        self.assertEqual(runs.sweep(self.path, self.flagged, self.NOW, lambda pid: False), [])
+
+    def test_pid_alive(self):
+        self.assertTrue(runs.pid_alive(os.getpid()))
+        self.assertFalse(runs.pid_alive(dead_pid()))
+
+    def test_every_agent_has_a_time_limit(self):
+        self.assertEqual(set(runs.TIME_LIMIT_MIN), set(runs.AGENTS))
+
+    def test_cli_sweep(self):
+        self.write(rec("2026-10-24T12:00:00Z", "pm", rid("pm", dead_pid()), "start"))
+        p = subprocess.run([sys.executable, RUNS_PY, "--sweep", "--file", self.path, "--flagged", self.flagged,
+                            "--now", "2026-10-24T13:00:00Z"], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(p.stdout.startswith("abandoned pm-"))
+        self.assertEqual(self.lines()[-1]["outcome"], "abandoned")
+
+
+class SweepScriptTest(unittest.TestCase):
+    """sweep_runs.sh for real: the mutex, the claim, the notification."""
+
+    # LibShTest's throwaway state dir and helpers, without re-running its tests
+    tearDown, bash, lines = LibShTest.tearDown, LibShTest.bash, LibShTest.lines
+
+    def setUp(self):
+        LibShTest.setUp(self)
+        t = self.tmp.name
+        bin_dir = os.path.join(t, "bin")
+        os.makedirs(bin_dir)
+        self.notes = os.path.join(t, "notes.txt")
+        stub = os.path.join(bin_dir, "osascript")
+        with open(stub, "w") as f:
+            f.write(f'#!/bin/sh\necho "$@" >> "{self.notes}"\n')
+        os.chmod(stub, 0o755)
+        self.env.update(AGENT_NOTIFY="1", PATH=bin_dir + os.pathsep + os.environ.get("PATH", ""))
+        os.makedirs(os.path.dirname(self.ledger))
+
+    def sweep(self):
+        p = subprocess.run(["bash", os.path.join(HERE, "sweep_runs.sh")], env=self.env, capture_output=True, text=True,
+                           timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return p.stdout
+
+    def notes_lines(self):
+        if not os.path.exists(self.notes):
+            return []
+        with open(self.notes) as f:
+            return f.read().splitlines()
+
+    def test_killed_live_and_claimed_runs(self):
+        me = os.getpid()
+        gone = rid("dev", dead_pid())
+        long_run = rid("dev", me, 1)
+        claimed = rid("review", me, 2)
+        claim = os.path.join(self.tmp.name, "state", "claims", "review-9")
+        os.makedirs(claim)
+        with open(os.path.join(claim, "pid"), "w") as f:
+            f.write(f"{me}\n")
+        with open(self.ledger, "w") as f:
+            f.write("\n".join([rec(ago(30), "dev", gone, "start", issue=1),
+                               rec(ago(180), "dev", long_run, "start", issue=123, log="data/agents/dev/issue-123-x"),
+                               # Scenario: pid reused by a claim — alive and held by a claim: live
+                               rec(ago(10), "review", claimed, "start", issue=9, pr=10)]) + "\n")
+        out = self.sweep()
+        ends = [l for l in self.lines() if l["event"] == "end"]
+        self.assertEqual([(e["run_id"], e["outcome"]) for e in ends], [(gone, "abandoned")], out)
+        notes = self.notes_lines()
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("dev on #123", notes[0])
+        self.assertIn("data/agents/dev/issue-123-x", notes[0])
+        # a later sweep writes and notifies nothing
+        self.sweep()
+        self.assertEqual(len([l for l in self.lines() if l["event"] == "end"]), 1)
+        self.assertEqual(len(self.notes_lines()), 1)
+
+    def test_no_ledger_is_a_no_op(self):
+        self.sweep()
+        self.assertFalse(os.path.exists(self.ledger))
+
+    def test_sweep_under_the_mutex_with_parallel_writers(self):
+        gone = rid("dev", dead_pid())
+        with open(self.ledger, "w") as f:
+            f.write(rec(ago(30), "dev", gone, "start", issue=1) + "\n")
+        writers = [self.bash('set -euo pipefail\nfor k in 1 2 3 4; do run_begin pr_gate 7 8; run_end ready_to_merge; done')
+                   for _ in range(3)]
+        sweepers = [subprocess.Popen(["bash", os.path.join(HERE, "sweep_runs.sh")], env=self.env,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for _ in range(3)]
+        for p in writers + sweepers:
+            out, _ = p.communicate(timeout=120)
+            self.assertEqual(p.returncode, 0, out)
+        recs = self.lines()  # every line is valid JSON
+        self.assertEqual(len(recs), 1 + 3 * 4 * 2 + 1)
+        self.assertEqual([r["run_id"] for r in recs if r["outcome"] == "abandoned"], [gone])
 
 
 class ScriptsTest(unittest.TestCase):
