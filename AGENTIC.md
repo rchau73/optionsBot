@@ -137,7 +137,7 @@ On 2026-10-15 the ETH bot sat flat for days, frozen by a DVOL band change that c
 ```bash
 gh auth refresh -s project            # once: the board needs the project scope
 scripts/agents/setup_github.sh        # once: labels, project board, ruleset on main
-scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel; Mondays also metrics and evidence; nightly the flaky-test hunt)
+scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel; Mondays also metrics and evidence; nightly the flaky-test hunt and the backup)
 launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
@@ -176,7 +176,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 ## Run ledger
 
-With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<agent>/<run>/` have no single index. Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-hunt and usage-report run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl` (beside `deploys.tsv`, outside both clones):
+With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<agent>/<run>/` have no single index. Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-hunt, backup and usage-report run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl` (beside `deploys.tsv`, outside both clones):
 
 ```json
 {"ts":"2026-10-22T23:10:04Z","agent":"dev","run_id":"dev-20261022T225348Z-4242-1","issue":206,"pr":271,"event":"end","outcome":"pr_opened","detail":"checks passed","log":"data/agents/dev/issue-206-20261022-225348","commit":"1a2b3c4"}
@@ -184,7 +184,7 @@ With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<a
 
 - **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code). Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave. The ledger never stops an agent: a line it cannot write is logged and skipped.
 - **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going).
-- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`, `failed`.
+- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`, backup `backed_up`, `failed`.
 - **Only work is a run:** a tick where an agent finds nothing to do writes nothing. The PM agent is a run when it asks Claude (triage or planning), the PR gate once per PR it changed, the deploy once per new commit it tries.
 - **Paths and ids only:** no secrets, no amounts, no prompt text; the detail is a short fixed phrase (≤ 200 characters).
 
@@ -244,6 +244,12 @@ Engagement is measured by itself too (#340, #341, #252, epic E13). On the first 
 **Drop rules** (`internal/usage/drops.go`, fixed; `cmd/usage -alert-*` flags study them): weekly active users or help used (tips opened + videos played) at least 30 % under the mean of the 3 weeks before; the first-answers, manual-close or rebalance funnel's completion share at least 20 points under those weeks'. A base under 10 users (or 10 funnel starts, in the base and in the week) is `too few to judge`. A week with no events is noted and left out of the base, never counted as zero.
 
 A missing or empty events file, or one with no event in the week, is logged and skipped. When no environment has events in the week nothing is posted and no marker is written; the week is looked at again at most hourly. `data/agents/usage/<week>.done` marks the week done once the comment is posted; a comment that could not be posted is tried once more and then the week is done whatever happened. Logs: `data/agents/usage/<week>/`. Run ledger agent `usage`, outcomes `posted`, `skipped` or `failed`. Tests: `test_usage.py` (the comment, the privacy rule, the dedup, and `usage.sh` end to end on throwaway clones with stub `go`/`gh`) and `tests/usage_test.go` (the drop rules on a six-week fixture).
+
+## Nightly backup
+
+The journal is the bots' only history, so the tick copies it every night (#328, epic E6). On the first tick after 00:00 UTC, [`backup_data.sh`](scripts/agents/backup_data.sh) copies, for each environment (stable, mvp) and bot (`BACKUP_BOTS`, default `btc eth`) whose folder exists, `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` to `<envs>/history/backups/<date>/<env>/<bot>/`. Named files only: no `.env`, no secret (an `.env*` found in the archive is dropped). It reads the live files and never writes to them. No Claude call, no git, no order.
+
+**Restore check:** `go run ./cmd/backupcheck` (`internal/backup.Check`) replays each copied journal, archived ones included, with `orders.ReplayFile`. It fails on an unreadable line (a torn last line, a copy racing an append, is allowed) or when the copy holds fewer events than the previous good backup (its `check.json`; an archived journal counts, so `--reset-history` is not a loss). A bot folder the previous backup had and that is now gone fails too. The copy is built in `.<date>.partial` and becomes `<date>` only when every check passes; then the newest `BACKUP_KEEP_DAYS` (14) are kept. A failure keeps the copy as `<date>.failed`, notifies, ends the run `failed`, prunes nothing, and is retried once on a later tick; `data/agents/backup/<date>.done` marks the day done after a success or the second attempt. Run ledger: agent `backup`, outcome `backed_up` or `failed`, only when there was something to copy. Log: `data/agents/backup/<date>.log`. Tests: `test_backup.py` (end to end on throwaway environments) and `tests/backup_check_test.go`. Restore steps: [operations](docs/operations.md#nightly-backup-and-restore).
 
 ## Nightly flaky-test hunt
 
