@@ -17,7 +17,9 @@ Every event answers at least one of these. An event that answers none is not col
 | Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11 | "Help" (tips, videos played/completed, share helped) |
 | Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
-| Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | not yet (a follow-up of #297) |
+| Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | "Why they stay or leave" (#342: each survey's shown/answered/dismissed and response rate, NPS bands and the score from 10 answers, coded why, came for / hardest to find, exit reasons with the top 3) |
+
+**Are users stopping?** The engagement-drop alert (§7) answers it every week from Q1, Q4, Q5 and Q6.
 
 ## 2. Events
 
@@ -116,3 +118,17 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 
 - `tests/event_plan_test.go` reads the tables above and fails when an event uses a property not in §4, when a property's name or type could carry an amount, a size, a price or a secret, or when an event answers no question of §1.
 - A new event or property is added here first, in the same PR that instruments it, and must pass that test.
+
+## 7. Engagement-drop alert ("are users stopping?")
+
+`cmd/usage -alert` (#341, #252) compares each week with the 3 weeks before it. `scripts/agents/usage.sh` runs it every Monday and files one `[E13] Engagement drop: <metrics> <week>` issue in Triage when a key number falls (AGENTIC.md "Weekly usage report"). The alert rules are fixed in `internal/usage/drops.go`:
+
+| Metric | From | Drop when |
+|---|---|---|
+| weekly active users | Q1 "Active users" | ≥ 30 % under the mean of the 3 weeks before |
+| help used (tips opened + videos played) | Q5 "Help" | ≥ 30 % under that mean |
+| first answers found (with ÷ first sessions) | Q4 | completion share ≥ 20 points under the 3 weeks' pooled share |
+| manual close (confirmed ÷ opened) | Q6 | ≥ 20 points under |
+| rebalance (confirmed ÷ previewed) | Q6 | ≥ 20 points under |
+
+A base under 10 users (or 10 funnel starts, in the base weeks and in the week) is "too few to judge" and raises nothing. A week with no events is noted and left out of the base, never counted as zero; a week with no events itself raises nothing. The issue and the epic comment carry counts and percentages only (percentages only for a live account).

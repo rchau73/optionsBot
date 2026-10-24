@@ -13,6 +13,9 @@
 #   - evidence.sh, which writes last week's evidence report of every env × bot
 #     on the first tick of a Monday (UTC) and posts its summary on the E2 epic
 #     (#244), else exits at once;
+#   - usage.sh, which writes last week's monitor usage report of every env
+#     with analytics events, files one issue on an engagement drop and posts
+#     its summary on the E13 epic (#340), else exits at once;
 #   - flaky.sh, which repeats the Go and frontend suites on origin/main once a
 #     UTC night and files one bug per new flaky test (#248), else exits at once;
 #   - backup_data.sh, which copies every env × bot's journal and histories to
@@ -61,6 +64,7 @@ fi
 start pm_agent.sh 1 # its board passes need no Claude; triage and planning check the budget
 start metrics.sh 1 # weekly: exits at once unless last week's report is missing
 start evidence.sh 1 # weekly: exits at once once last week's done-marker exists
+start usage.sh 1 # weekly: exits at once once last week's done-marker exists (or no events file)
 start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-marker exists
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"
