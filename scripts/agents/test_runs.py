@@ -259,7 +259,7 @@ class ScriptsTest(unittest.TestCase):
     def test_each_agent_script_begins_a_run(self):
         for script, agent in (("sme_review.sh", "sme"), ("pm_agent.sh", "pm"), ("pm_answer.sh", "pm_answer"),
                               ("dev_agent.sh", "dev"), ("review_agent.sh", "review"), ("pr_gate.sh", "pr_gate"),
-                              ("deploy.sh", "deploy")):
+                              ("deploy.sh", "deploy"), ("backup_data.sh", "backup")):
             with open(os.path.join(HERE, script)) as f:
                 text = f.read()
             self.assertRegex(text, r"run_begin " + agent + r"\b", script)
