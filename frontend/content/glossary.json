@@ -443,7 +443,7 @@
     "long": "P&L is the profit or loss of positions, net of the exchange's fees. Realized P&L comes from closed legs; unrealized P&L is the open legs valued at the current mark. Total P&L adds both. Dollar figures use the coin's price at that moment.",
     "risk_income": "It is the result of the income earned and the losses paid so far.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["P&L", "Total P&L", "P&L (USD)", "Result"]
+    "labels": ["P&L", "Total P&L", "P&L (USD)"]
   },
   "realized p&l": {
     "short": "Profit or loss already locked in by closed legs, after fees.",
