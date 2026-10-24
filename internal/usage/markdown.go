@@ -139,8 +139,47 @@ func Markdown(w io.Writer, r Report) error {
 		countTable(&b, "Signed out (reason)", t.SignedOut)
 	}
 
+	section("Why they stay or leave", "Q8")
+	surveyMarkdown(&b, r.Survey)
+
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// surveyMarkdown is the survey tally (#342): coded answers only.
+func surveyMarkdown(b *strings.Builder, s *Survey) {
+	if s == nil {
+		fmt.Fprintf(b, "Survey: %s.\n\n", NoSurveyAnswers)
+		return
+	}
+	b.WriteString("| Survey | Shown | Answered | Dismissed | Response rate |\n|---|---:|---:|---:|---:|\n")
+	for _, f := range s.Surveys {
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %s |\n", f.ID, f.Shown, f.Answered, f.Dismissed, fmtPct(f.ResponsePct))
+	}
+	b.WriteString("\n")
+	n := s.NPS
+	score := "too few answers"
+	if n.Score != nil {
+		score = fmt.Sprintf("%.0f", *n.Score)
+	}
+	fmt.Fprintf(b, "NPS answers: %d · promoters (9–10): %d · passives (7–8): %d · detractors (0–6): %d · NPS: %s (given from %d answers)\n\n",
+		n.Answers, n.Promoters, n.Passives, n.Detractors, score, NPSMinAnswers)
+	countTable(b, "NPS why (reason_code)", s.Why)
+	countTable(b, "Came for", s.CameFor)
+	countTable(b, "Hardest to find", s.HardestToFind)
+	if len(s.TopExit) == 0 {
+		b.WriteString("Exit reasons: none\n\n")
+	} else {
+		b.WriteString("Top exit reasons:\n\n")
+		for i, c := range s.TopExit {
+			fmt.Fprintf(b, "%d. %s — %d\n", i+1, c.Code, c.Count)
+		}
+		fmt.Fprintf(b, "\n%s\n\n", OwnerLine)
+		countTable(b, "Exit reason (reason_code)", s.ExitReasons)
+	}
+	if s.Miscoded > 0 {
+		fmt.Fprintf(b, "Answers with a code their survey does not ask, counted under other: %d\n\n", s.Miscoded)
+	}
 }
 
 func sourceLine(s Source) string {

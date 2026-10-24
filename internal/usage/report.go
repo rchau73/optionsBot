@@ -37,6 +37,7 @@ type Report struct {
 	ManualClose  *ManualClose  `json:"manual_close,omitempty"`  // Q6
 	Rebalance    *Rebalance    `json:"rebalance,omitempty"`     // Q6
 	Trust        *Trust        `json:"trust,omitempty"`         // Q7
+	Survey       *Survey       `json:"survey,omitempty"`        // Q8; absent when the window has no survey event
 }
 
 // Source is the events file and the span its accepted lines cover.
@@ -198,6 +199,7 @@ func Build(events []Event, from, to time.Time) Report {
 	r.Help = buildHelp(week)
 	r.ManualClose, r.Rebalance = buildFunnels(week)
 	r.Trust = buildTrust(week)
+	r.Survey = buildSurvey(week)
 	return r
 }
 

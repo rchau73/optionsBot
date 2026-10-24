@@ -314,7 +314,7 @@ Sections, each naming its source:
 
 ## Usage report
 
-`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q7 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q8 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
 
 ```bash
 go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
@@ -330,6 +330,7 @@ Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Mon
 - **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
 - **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.
 - **Trust** (Q7) — `data_stale_shown` per source, `signed_out` per reason.
+- **Why they stay or leave** (Q8, #342; JSON `survey`, absent without survey events) — per survey (`nps`, `answers`, `exit`) shown, answered, dismissed and the response rate (answered ÷ shown); NPS answers by band (promoters 9–10, passives 7–8, detractors 0–6) and the score (% promoters − % detractors) only from 10 answers, else "too few answers"; the NPS `reason_code` counts, `came_for` and `hardest_to_find`; exit `reason_code` counts with the top 3 first and "Each top reason needs an owner: file it as an E13 story". A code the survey does not ask (a promoter code on an exit answer) counts under `other` and in `miscoded`. Coded values only — free text is never an event. With no survey event the section says "no survey answers yet" and every other section is unchanged.
 
 **No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
 
