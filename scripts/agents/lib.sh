@@ -343,7 +343,7 @@ source "$AGENT_REPO_DIR/scripts/agents/limit_lib.sh"
 # ── Run ledger (#206) ───────────────────────────────────────────────────────
 # One file indexes every agent run: <envs>/history/agent_runs.jsonl, a `start`
 # and an `end` JSON line per run (format and queries: runs.py). Usage:
-#   run_begin <agent> [issue] [pr] [log path]   agent: sme pm pm_answer dev review pr_gate deploy
+#   run_begin <agent> [issue] [pr] [log path]   agent: sme pm pm_answer dev review pr_gate deploy flaky
 #   RUN_PR=… RUN_COMMIT=…                        what the run learnt on the way (optional)
 #   run_end <outcome> [detail]                   e.g. pr_opened, blocked, skipped_limit
 # Every exit after run_begin ends the run: the EXIT trap writes `failed` for a

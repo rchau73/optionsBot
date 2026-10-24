@@ -6,17 +6,17 @@
 
 ## 1. Questions the data must answer
 
-Every event answers at least one of these. An event that answers none is not collected.
+Every event answers at least one of these. An event that answers none is not collected. The weekly usage report (`cmd/usage`, #295, README "Usage report": `data/monitor/reports/<week>.md|json`, counts and shares only) answers each question in the section named in the last column.
 
-| ID | Question | Feeds |
-|---|---|---|
-| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) |
-| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention |
-| Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement |
-| Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test |
-| Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11 |
-| Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails |
-| Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 |
+| ID | Question | Feeds | Answered in (`cmd/usage`) |
+|---|---|---|---|
+| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
+| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +4 weeks), "Active users" |
+| Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, screens) |
+| Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`) |
+| Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11 | "Help" (tips, videos played/completed, share helped) |
+| Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
+| Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
 
 ## 2. Events
 

@@ -105,7 +105,8 @@ type Server struct {
 // Option configures a Server.
 type Option func(*Server)
 
-// WithPnLHistory serves /api/pnl/history from h.
+// WithPnLHistory serves /api/pnl/history from h (and /api/performance when h
+// is a PointSource).
 func WithPnLHistory(h PnLHistory) Option { return func(s *Server) { s.history = h } }
 
 // WithManualClose serves POST /api/positions/close, authorised by token
@@ -154,6 +155,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/account", s.accountSummary)
 	s.mux.HandleFunc("GET /api/trades", s.trades)
 	s.mux.HandleFunc("GET /api/summary", s.summary)
+	s.mux.HandleFunc("GET /api/performance", s.performance)
 	if s.closer != nil && s.token != "" {
 		s.mux.HandleFunc("POST /api/positions/close", s.manualClose)
 	}
