@@ -307,7 +307,7 @@ func (s *simulation) View() strategy.View {
 		FlipBufferPct: strategy.FlipBufferPct(1, s.dvol),
 		Account:       strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},
 		Risk:          rv,
-		Pending:       []strategy.PendingView{},
+		Pending:       s.pending(now),
 	}
 	bySlot := map[string]*strategy.StrangleView{}
 	var unrealised, delta float64
@@ -336,6 +336,18 @@ func (s *simulation) View() strategy.View {
 	v.Greeks = orders.MarketContext{NetDelta: delta, NetGamma: -0.00012, NetVega: -72, NetTheta: 27}
 	v.PnL = []strategy.PnLView{{Realised: s.realised, Unrealised: unrealised, Total: s.realised + unrealised, OpenLegs: len(s.legs), ClosedLegs: s.closed}}
 	return v
+}
+
+// pending simulates one working repair order on the 45-day put, re-sent
+// every five minutes, so the Working orders panel always has a row (the
+// phone-width check, #309, measures that table). Call with s.mu held.
+func (s *simulation) pending(now time.Time) []strategy.PendingView {
+	l := s.legs[3] // st-2's put
+	sent := now.Truncate(5 * time.Minute)
+	return []strategy.PendingView{{
+		ID: "demo-repair", Slot: l.slot, Repair: true, SubmittedAt: sent, TimeoutAt: sent.Add(5 * time.Minute),
+		Legs: []strategy.PendingLegView{{OrderID: "o-demo-repair", Instrument: s.name(l), OptionType: l.typ, Qty: l.qty, LimitPrice: l.mark}},
+	}}
 }
 
 // riskView simulates the margin policy mid-change: DVOL confirmed in the

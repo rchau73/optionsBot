@@ -145,7 +145,11 @@ npm run dev     # dev server with hot reload
 npm test        # Jest + Testing Library
 npm run lint    # ESLint (next/core-web-vitals)
 npm run build   # production build — catches Server/Client Component mistakes
+npx playwright install chromium   # once: the browser the phone check uses
+npm run test:phone                # phone-width check (#309): Playwright at 360, 390 and 768 px on demo data
 ```
+
+**Phone-width check (#309).** `npm run test:phone` (config and tests in `e2e/`, Chromium only, needs Go for `cmd/monitor-demo`) starts two demo bots (BTC on 127.0.0.1:18191, ETH on :18192), builds and starts the monitor on 127.0.0.1:3290 wired to them only, with a throwaway admin and a random `AUTH_SECRET` on an in-memory user database (no audit, analytics or service token; a `.env.local` cannot redirect it), and measures page overflow and its cause, every control's box (counts under 44 and 24 px), hover-only `title`s, the header's height and whether each dialog fits 360 × 640 and 640 × 360. Results: `docs/responsive-measured.json` and screenshots in `test-results/phone/`, both git-ignored. It fails only when a measurement is worse than `e2e/phone-baseline.json` and names what got worse; `UPDATE_PHONE_BASELINE=1 npm run test:phone` records a new baseline (commit it with the fix). What it measures and why: [`docs/responsive-audit.md`](docs/responsive-audit.md) "Measured in a browser". Not part of `npm test` (Jest only) nor of CI yet (the browser download). `__tests__/phone-check.test.jsx` covers its measuring and comparing code in Jest.
 
 | Folder | Contents |
 |---|---|
@@ -157,6 +161,7 @@ npm run build   # production build — catches Server/Client Component mistakes
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `format.js` (units), `bots.js` (server config) |
 | `content/` | `glossary.json` — the plain-words tips (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
 | `__tests__/`, `test/` | tests and shared fixtures |
+| `e2e/` | the phone-width check (Playwright, `npm run test:phone`): config, sign-in fixture, in-page measuring, baseline comparison |
 
 ### Glossary (#188)
 
