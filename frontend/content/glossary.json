@@ -23,7 +23,8 @@
     "short": "The price of an option. The seller receives it up front.",
     "long": "The premium is what the buyer pays for an option and what the seller receives. The bot is a seller, so the premium is its income. It keeps all of it if the option ends worthless, and part of it if it buys the option back for less.",
     "risk_income": "A higher premium means more income per trade, but it is usually paid for more risk.",
-    "source": "OptionStrategy.md#1-the-idea-in-one-paragraph"
+    "source": "OptionStrategy.md#1-the-idea-in-one-paragraph",
+    "labels": ["Paid to you"]
   },
   "strike": {
     "short": "The fixed price written in an option contract.",
@@ -414,7 +415,7 @@
     "long": "To end a sold option before expiry, the bot buys the same option back. The difference between the premium received and the buy-back price, after fees, is the result.",
     "risk_income": "The cheaper the buy-back, the more of the premium is kept.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
-    "labels": ["Buy back"]
+    "labels": ["Buy back", "Paid to buy back"]
   },
   "reconcile": {
     "short": "Loading the exchange's real positions into the bot's book, at startup or when they differ.",
@@ -449,7 +450,7 @@
     "long": "Realized P&L is booked when a leg is bought back: the premium received minus the buy-back price, its share of the opening fees and the closing fee. It does not change after the close.",
     "risk_income": "It is income (or loss) already earned; no more risk is attached to it.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["Realized P&L"]
+    "labels": ["Realized P&L", "Result"]
   },
   "unrealized p&l": {
     "short": "Profit or loss of open legs if they were bought back now at the mark, after opening fees.",
@@ -639,6 +640,41 @@
     "risk_income": "None.",
     "source": "frontend/README.md#what-you-see",
     "labels": ["Month"]
+  },
+  "exchange fees": {
+    "short": "What Deribit charged to open and to buy back the options closed that month.",
+    "long": "Each close carries its share of the fee paid to open the option and the fee paid to buy it back. The income page shows them as a cost; the result is already net of them.",
+    "risk_income": "Fees lower the income of every trade, winning or losing.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Exchange fees"]
+  },
+  "holding alone": {
+    "short": "What the same account would have done by just holding the coin that month.",
+    "long": "Counted in the coin, holding neither gains nor loses, so every coin the bot earns is extra. In dollars it is the coin's price change over the month times the account's balance at the month's start, from the bot's recorded history.",
+    "risk_income": "It shows how much of a dollar result is the coin's own move, not the strategy.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Holding alone"]
+  },
+  "income over months": {
+    "short": "The realised result of the months shown, after fees, and the average of the months with a close.",
+    "long": "The total adds every month's result in the table. The average divides it by the months that had at least one close, and the line under it counts the months up and down. The % compares the total with the account's balance at the start.",
+    "risk_income": "One good average can hide a bad month: read it with the worst month and worst week.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Last 6 months, after fees", "Average month"]
+  },
+  "worst month": {
+    "short": "The month with the lowest realised result, after fees.",
+    "long": "Among the months with at least one close, the one that earned least or lost most. Under it, the coin's recorded price move that month, when the bot's history has it.",
+    "risk_income": "It shows the size of a bad month, which an average hides.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Worst month"]
+  },
+  "worst week": {
+    "short": "The lowest change of the bot's total P&L over any 7 days, with its dates.",
+    "long": "Taken from the bot's P&L history, open positions included, in the coin and as a % of the account's balance at the start. Days without history are listed, never filled in.",
+    "risk_income": "It is the drop an investor would have lived through in one week.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Worst week"]
   },
   "win rate": {
     "short": "The share of closes that made money.",
