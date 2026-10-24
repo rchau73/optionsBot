@@ -166,6 +166,11 @@ export async function fetchBotState(name, signal) {
   return { status, positions, orders, account, summary: summary.data, summaryError: summary.error };
 }
 
+/** The investor summary of one bot (/api/summary): holding, income, worst case, last action. */
+export async function fetchBotSummary(name, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/summary`, signal);
+}
+
 /** Journal events after `since` (sequence number), oldest first. */
 export async function fetchBotEvents(name, since, signal) {
   const { events } = await getJSON(`/api/bots/${encodeURIComponent(name)}/events?since=${since}&limit=200`, signal);

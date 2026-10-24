@@ -28,14 +28,18 @@ const (
 
 // Summary is the /api/summary payload.
 type Summary struct {
-	AsOf       time.Time      `json:"as_of"`
-	StrategyID string         `json:"strategy_id"`
-	Underlying string         `json:"underlying"`
-	Spot       float64        `json:"spot"` // USD
-	Holding    HoldingSummary `json:"holding"`
-	Income     IncomeSummary  `json:"income"`
-	WorstCase  WorstCase      `json:"worst_case"`
-	LastAction *LastAction    `json:"last_action"` // null before the first trade
+	AsOf        time.Time `json:"as_of"`
+	StrategyID  string    `json:"strategy_id"`
+	Underlying  string    `json:"underlying"`
+	Environment string    `json:"environment"` // live | testnet
+	Spot        float64   `json:"spot"`        // USD
+	// StopLossMultiple: a leg is bought back once it has lost this multiple
+	// of its premium (stop_loss_multiplier) — the worst-case page's words.
+	StopLossMultiple float64        `json:"stop_loss_multiple"`
+	Holding          HoldingSummary `json:"holding"`
+	Income           IncomeSummary  `json:"income"`
+	WorstCase        WorstCase      `json:"worst_case"`
+	LastAction       *LastAction    `json:"last_action"` // null before the first trade
 }
 
 // HoldingSummary is what the bot holds now.
@@ -102,6 +106,24 @@ type WorstCase struct {
 	Coin      string    `json:"coin"`
 	Down      MoveShock `json:"down"`
 	Up        MoveShock `json:"up"`
+	// Scenarios: the book after each of ScenarioSigmas' one-day moves, worst
+	// fall first (#318); empty when not available.
+	Scenarios []Scenario `json:"scenarios"`
+}
+
+// ScenarioSigmas are the one-day moves of the worst-case page, in daily σ.
+var ScenarioSigmas = []float64{-3, -2, 0, 2, 3}
+
+// Scenario is the book repriced after a one-day move of Sigmas daily σ.
+// Results are signed: + is a gain, − a loss. The 0σ row is one day of time
+// decay (theta), a gain for a short book.
+type Scenario struct {
+	Sigmas      float64  `json:"sigmas"`
+	MovePct     float64  `json:"move_pct"` // signed, % of spot
+	Spot        float64  `json:"spot"`     // USD after the move
+	ResultCoin  float64  `json:"result_coin"`
+	ResultUSD   float64  `json:"result_usd"`
+	PctOfEquity *float64 `json:"pct_of_equity"` // signed; null without the equity
 }
 
 // MoveShock is the book repriced after one move. A positive loss is money lost.
@@ -139,10 +161,11 @@ func (s *Server) summary(w http.ResponseWriter, _ *http.Request) {
 func BuildSummary(v strategy.View, trades []orders.Trade, now time.Time) Summary {
 	coin, spot := v.Underlying, v.Market.Spot
 	sum := Summary{
-		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Spot: spot,
-		Holding:   holdingOf(v.Strangles, spot, coin, now),
-		Income:    incomeOfView(v, trades, now),
-		WorstCase: WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
+		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Environment: v.Environment, Spot: spot,
+		StopLossMultiple: v.StopLossMultiple,
+		Holding:          holdingOf(v.Strangles, spot, coin, now),
+		Income:           incomeOfView(v, trades, now),
+		WorstCase:        WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
 	}
 	sum.WorstCase.Coin = coin
 	if n := len(trades); n > 0 {
@@ -235,7 +258,7 @@ func IncomeOf(trades []orders.Trade, now time.Time, months int) IncomeSummary {
 // the spread between mark and model does not count as a loss. loss_coin is
 // the USD loss in coin at the moved spot; equity is in coin.
 func WorstCaseOf(strangles []strategy.StrangleView, spot, dvol, equity float64, now time.Time) WorstCase {
-	wc := WorstCase{Model: WorstCaseModel, Sigmas: WorstCaseSigmas, DVOL: dvol}
+	wc := WorstCase{Model: WorstCaseModel, Sigmas: WorstCaseSigmas, DVOL: dvol, Scenarios: []Scenario{}}
 	switch {
 	case spot <= 0:
 		wc.Reason = "no spot price"
@@ -244,10 +267,20 @@ func WorstCaseOf(strangles []strategy.StrangleView, spot, dvol, equity float64, 
 		wc.Reason = "no DVOL reading"
 		return wc
 	}
-	move := WorstCaseSigmas * dvol / 100 / math.Sqrt(365)
+	sigma := dvol / 100 / math.Sqrt(365) // one daily σ, as a fraction of spot
+	move := WorstCaseSigmas * sigma
 	wc.Available, wc.MovePct = true, move*100
 	wc.Down = shock(strangles, spot, spot*(1-move), dvol, equity, now)
 	wc.Up = shock(strangles, spot, spot*(1+move), dvol, equity, now)
+	for _, n := range ScenarioSigmas {
+		ms := shock(strangles, spot, spot*(1+n*sigma), dvol, equity, now)
+		sc := Scenario{Sigmas: n, MovePct: n * sigma * 100, Spot: ms.Spot, ResultCoin: -ms.LossCoin, ResultUSD: -ms.LossUSD}
+		if ms.PctOfEquity != nil {
+			pct := -*ms.PctOfEquity
+			sc.PctOfEquity = &pct
+		}
+		wc.Scenarios = append(wc.Scenarios, sc)
+	}
 	return wc
 }
 
