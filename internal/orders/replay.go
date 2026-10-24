@@ -33,6 +33,7 @@ type Trade struct {
 	Price      float64   `json:"price"`
 	Reason     string    `json:"reason"`           // entry, or the close reason (stop_loss, roi_target, …)
 	Detail     string    `json:"detail,omitempty"` // why, with the numbers
+	Actor      *Actor    `json:"actor,omitempty"`  // manual closes: who asked (#171)
 	// Per-option greeks at that moment (long-holder view, as Deribit quotes).
 	Delta   float64 `json:"delta"`
 	Gamma   float64 `json:"gamma"`
@@ -41,6 +42,7 @@ type Trade struct {
 	Premium float64 `json:"premium"`
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
+	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
 	PnLUSD   float64 `json:"pnl_usd,omitempty"`
 	ROIPct   float64 `json:"roi_pct,omitempty"`
 	HoldDays int     `json:"hold_days,omitempty"`
@@ -64,7 +66,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
 		GammaFlip: rec.Market.GammaFlip, FlipBufferPct: rec.Market.FlipBufferPct,
-		Detail: rec.Detail, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
+		Detail: rec.Detail, Actor: rec.Actor, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
 	case EventFilled:
@@ -74,7 +76,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		if t.Reason == "" {
 			t.Reason = rec.TriggerReason
 		}
-		t.PnL, t.PnLUSD, t.ROIPct, t.HoldDays = rec.PnL, rec.PnLUSD, rec.ROIPct, rec.HoldDays
+		t.PnL, t.Fees, t.PnLUSD, t.ROIPct, t.HoldDays = rec.PnL, rec.Fees, rec.PnLUSD, rec.ROIPct, rec.HoldDays
 	default:
 		return Trade{}, false
 	}
@@ -91,6 +93,9 @@ type Replay struct {
 	Closed   map[SlotRef]int     // closes per slot
 	FirstAt  time.Time           // time of the first event (zero for an empty journal)
 	Skipped  int                 // unreadable lines (e.g. a torn write), ignored
+	// LastConfig is the last config_loaded line, undecoded (nil when the
+	// journal has none): the next start compares its settings with it.
+	LastConfig []byte
 }
 
 // SlotKey normalises a slot for map lookups (delta compared in hundredths),
@@ -169,6 +174,9 @@ func (rp *Replay) add(ring *recentRing, line []byte) {
 		rp.FirstAt = at
 	}
 	ring.addAt(event, line, rp.Events, at)
+	if event == EventConfig {
+		rp.LastConfig = append(rp.LastConfig[:0], line...)
+	}
 	if !trade {
 		return
 	}

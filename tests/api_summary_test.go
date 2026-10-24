@@ -108,6 +108,68 @@ func TestAPISummary_WorstCaseIsAModelInMoney(t *testing.T) {
 	}
 }
 
+// #318: five one-day moves, signed results; ±3σ are the down/up pair, 0σ is
+// one day of theta (a gain for a short book).
+func TestAPISummary_WorstCaseScenarios(t *testing.T) {
+	now := time.Now().UTC()
+	v := summaryView(now)
+	wc := api.WorstCaseOf(v.Strangles, 100000, 50, 2, now)
+	if len(wc.Scenarios) != 5 {
+		t.Fatalf("scenarios %+v", wc.Scenarios)
+	}
+	sigma := 0.50 / math.Sqrt(365)
+	for i, want := range []float64{-3, -2, 0, 2, 3} {
+		sc := wc.Scenarios[i]
+		if sc.Sigmas != want || math.Abs(sc.MovePct-want*sigma*100) > 1e-9 || math.Abs(sc.Spot-100000*(1+want*sigma)) > 1e-6 {
+			t.Errorf("row %d: %+v", i, sc)
+		}
+		if sc.PctOfEquity == nil || math.Abs(*sc.PctOfEquity-sc.ResultCoin/2*100) > 1e-9 {
+			t.Errorf("row %d pct %v", i, sc.PctOfEquity)
+		}
+	}
+	first, last := wc.Scenarios[0], wc.Scenarios[4]
+	if first.ResultUSD != -wc.Down.LossUSD || first.ResultCoin != -wc.Down.LossCoin || *first.PctOfEquity != -*wc.Down.PctOfEquity {
+		t.Errorf("−3σ %+v vs down %+v", first, wc.Down)
+	}
+	if last.ResultUSD != -wc.Up.LossUSD || last.ResultCoin != -wc.Up.LossCoin {
+		t.Errorf("+3σ %+v vs up %+v", last, wc.Up)
+	}
+	// Quiet day: one day of time decay on 2 short options, 30 days out.
+	quiet := wc.Scenarios[2]
+	t0, t1 := 30.0/365, 29.0/365
+	theta := api.BlackScholesUSD("call", 100000, 105000, t0, 0.5) - api.BlackScholesUSD("call", 100000, 105000, t1, 0.5) +
+		api.BlackScholesUSD("put", 100000, 95000, t0, 0.5) - api.BlackScholesUSD("put", 100000, 95000, t1, 0.5)
+	if quiet.ResultUSD <= 0 || math.Abs(quiet.ResultUSD-theta) > 1e-6 || quiet.Spot != 100000 {
+		t.Errorf("quiet day %+v, want theta %.2f USD", quiet, theta)
+	}
+	// Big days cost more than the quiet day pays.
+	if first.ResultUSD >= 0 || last.ResultUSD >= 0 || wc.Scenarios[1].ResultUSD >= quiet.ResultUSD {
+		t.Errorf("scenarios %+v", wc.Scenarios)
+	}
+	// Without equity the % is null, never 0.
+	for _, sc := range api.WorstCaseOf(v.Strangles, 100000, 50, 0, now).Scenarios {
+		if sc.PctOfEquity != nil {
+			t.Errorf("pct without equity: %v", *sc.PctOfEquity)
+		}
+	}
+	// Unknown DVOL: no rows (the page shows no zero results).
+	if sc := api.WorstCaseOf(v.Strangles, 100000, 0, 2, now).Scenarios; sc == nil || len(sc) != 0 {
+		t.Errorf("no DVOL: %v", sc)
+	}
+}
+
+func TestAPISummary_EnvironmentAndStopMultiple(t *testing.T) {
+	v := summaryView(time.Now().UTC())
+	v.Environment, v.StopLossMultiple = "testnet", 2
+	_, body := getJSON(t, api.New(staticView{v}, summaryLogger()).Handler(), "/api/summary")
+	if body["environment"] != "testnet" || body["stop_loss_multiple"].(float64) != 2 {
+		t.Errorf("summary %v %v", body["environment"], body["stop_loss_multiple"])
+	}
+	if n := len(body["worst_case"].(map[string]any)["scenarios"].([]any)); n != 5 {
+		t.Errorf("scenarios %d", n)
+	}
+}
+
 func TestAPISummary_WorstCaseLongLegGainsWhatAShortLoses(t *testing.T) {
 	now := time.Now().UTC()
 	v := summaryView(now)
@@ -240,7 +302,8 @@ func TestAPISummary_LastActionIsTheLatestTrade(t *testing.T) {
 	)
 	_, body := getJSON(t, api.New(staticView{summaryView(now)}, journal).Handler(), "/api/summary")
 	la := body["last_action"].(map[string]any)
-	if la["reason"] != "Bought back the put: it lost twice its premium (stop-loss)" || la["pnl_usd"].(float64) != -2000 || la["rule"] != "stop_loss" {
+	reason, _ := la["reason"].(string)
+	if !strings.HasPrefix(reason, "Bought back the put: it lost twice its premium (stop-loss)") || la["pnl_usd"].(float64) != -2000 || la["rule"] != "stop_loss" {
 		t.Errorf("last action %v", la)
 	}
 }

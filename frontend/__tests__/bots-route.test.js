@@ -4,7 +4,7 @@
 import { parseBots, pollIntervalMs } from "@/lib/bots";
 import { GET as listBots } from "@/app/api/bots/route";
 import { GET as proxy } from "@/app/api/bots/[bot]/[...path]/route";
-import { sessionCookie, useTestAuth } from "@/test/auth";
+import { signedIn, useTestAuth } from "@/test/auth";
 
 const call = (bot, path, search = "") =>
   proxy(new Request(`http://monitor/api/bots/${bot}/${path.join("/")}${search}`), { params: Promise.resolve({ bot, path }) });
@@ -57,6 +57,22 @@ describe("read-only proxy", () => {
     expect(res.status).toBe(200);
   });
 
+  test("forwards the investor summary endpoint", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"holding":{}}', { status: 200 }));
+    const res = await call("btc", ["summary"]);
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/summary", expect.anything());
+    expect(res.status).toBe(200);
+  });
+
+  test("forwards the performance endpoint with its range, and the bot's 400", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"label":"testnet"}', { status: 200 }));
+    const res = await call("btc", ["performance"], "?range=30d");
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/performance?range=30d", expect.anything());
+    expect(res.status).toBe(200);
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"error":"range must be one of 7d, 30d, all"}', { status: 400 }));
+    expect((await call("btc", ["performance"], "?range=1y")).status).toBe(400);
+  });
+
   test("refuses unknown bots and endpoints", async () => {
     global.fetch = jest.fn();
     expect((await call("eth", ["status"])).status).toBe(404);
@@ -90,7 +106,7 @@ describe("manual close proxy", () => {
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
     process.env.BOT_ADMIN_TOKEN = "s3cret";
     useTestAuth();
-    cookie = await sessionCookie();
+    cookie = (await signedIn()).cookie;
   });
 
   test("refuses without a signed-in session, before reaching the bot", async () => {

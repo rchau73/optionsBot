@@ -177,7 +177,8 @@ const historyMarginMaxAge = 5 * time.Minute
 // HistoryMargin is the margin view recorded with a P&L history point (#174):
 // nil before the first margin read or when the view is older than
 // historyMarginMaxAge; IM and MM unknown (entries not allowed) when the
-// margin read failed that cycle.
+// margin read failed that cycle. The margin balance and equity (#277) are
+// Deribit's, in the unit the policy reads (AccountSummary.MarginUsage).
 func HistoryMargin(rv RiskView, now time.Time) *history.Margin {
 	if rv.AsOf.IsZero() || now.Sub(rv.AsOf) > historyMarginMaxAge {
 		return nil
@@ -185,6 +186,7 @@ func HistoryMargin(rv RiskView, now time.Time) *history.Margin {
 	return &history.Margin{
 		Known: rv.Error == "", IMPct: rv.IMPct, MMPct: rv.MMPct,
 		IMLimitPct: rv.Status.LimitIMPct, EntriesAllowed: rv.EntriesAllowed,
+		MarginBalance: rv.MarginBalance, Equity: rv.Equity, Unit: rv.Unit,
 	}
 }
 

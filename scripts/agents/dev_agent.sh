@@ -12,7 +12,9 @@
 #   4. the script re-runs every check itself (trust, but verify), pushes the
 #      branch and opens (or updates) the PR "Closes #n" → In review.
 #      A failure, or an agent that stops with questions, comments on the
-#      issue, labels it agent:needs-human and moves it to Blocked.
+#      issue, labels it agent:needs-human and moves it to Blocked — except a
+#      usage limit or a run that failed at once with no answer (limit_lib.sh
+#      note_stop): the card goes back to Ready after the pause.
 #
 # A person reviews and merges. The agent never merges or deploys.
 # Env: DEV_MODEL, DEV_PARALLEL (3), AGENT_WORK_DIR (<envs>/agent-worktrees), AGENT_NOTIFY.
@@ -25,7 +27,7 @@ require_tools claude gh git go gofmt python3 || exit 1
 slug="$(repo_slug)"
 # One instance picks at a time, so two never take the same card.
 mutex dev-pick || exit 0
-max="$(parallel_max "${DEV_PARALLEL:-3}")"
+max="$(parallel_max "${DEV_PARALLEL:-1}")"
 if [[ "$(claims_alive dev)" -ge "$max" ]]; then unmutex dev-pick; log "dev: $max instance(s) already running"; exit 0; fi
 next="$(ready_next dev)"
 [[ -n "$next" ]] || { unmutex dev-pick; log "dev: nothing in Ready"; exit 0; }
@@ -37,6 +39,7 @@ branch="agent/issue-$issue"
 run_dir="$AGENT_STATE_DIR/dev/issue-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
+run_begin dev "$issue" "" "$run_dir" # the run ledger (lib.sh): every exit below ends it
 log "dev: issue #$issue → $branch"
 
 # The pickup comment says which attempt this is and what came before, so the
@@ -47,7 +50,8 @@ python3 "$AGENT_REPO_DIR/scripts/agents/pickup_comment.py" "$run_dir/history.jso
   "data/agents/dev/$(basename "$run_dir")" > "$run_dir/pickup.md"
 gh issue comment "$issue" -R "$slug" --body-file "$run_dir/pickup.md" >/dev/null
 
-block() { # reason file
+block() { # reason file, ledger detail (a short fixed phrase)
+  run_end blocked "$2"
   { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"; } > "$run_dir/blocked.md"
   gh issue comment "$issue" -R "$slug" --body-file "$run_dir/blocked.md" >/dev/null
   gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null
@@ -69,6 +73,7 @@ else
   existing_pr=""
 fi
 base="$(git -C "$wt" rev-parse HEAD)"
+RUN_PR="$existing_pr"
 # An open PR starts from today's main: merge it in first. A conflict (another PR
 # merged first, pr_gate.sh) is left in the files for the agent to resolve.
 conflicts=""
@@ -110,16 +115,19 @@ denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git c
   "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
 model_args=()
 [[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
+budget_take dev # the daily budget (limit_lib.sh)
 
 log "dev: running the agent in $wt"
+started="$(date +%s)"
 set +e
 (cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
   --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
 rc=$?
 set -e
+elapsed=$(( $(date +%s) - started ))
 rm -f "$wt/.agent-task.md"
-log "dev: agent exit $rc"
+log "dev: agent exit $rc after ${elapsed}s"
 
 result="$(grep -m1 '^RESULT:' "$run_dir/agent.md" | sed 's/^RESULT: *//' || true)"
 py 'import re,sys
@@ -130,22 +138,31 @@ open(sys.argv[2], "w").write(m.group(1) if m else t[-6000:])' "$run_dir/agent.md
 if [[ $rc -ne 0 || "$result" != "done" ]]; then
   if [[ "$result" == "needs_human" ]]; then
     cp "$run_dir/pr-body.md" "$run_dir/reason.md" # the agent's questions
+    detail="the agent asked questions"
   else
     why="the agent did not finish (exit $rc, result '${result:-none}')"
-    if note_limit "$run_dir/agent.md"; then
-      # Not the card's fault: back to Ready, retried once the limit resets.
-      gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
+    if note_stop "$rc" "$elapsed" "$run_dir/agent.md"; then
+      # Not the card's fault (a limit, or a run that failed at once with no
+      # answer): back to Ready, retried after the pause, never agent:needs-human.
+      # One comment per episode: none when the last one (pickups aside) says it.
+      if ! python3 "$AGENT_REPO_DIR/scripts/agents/requeue.py" limit-noted "$run_dir/history.json"; then
+        gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent hit a usage/rate limit (exit $rc after ${elapsed}s). The card goes back to **Ready**; the agents pause 30 min and retry." >/dev/null
+      fi
+      gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
+      run_end skipped_limit "exit $rc after ${elapsed}s: back to Ready"
       set_status "$item" "Ready"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
     fi
     { echo "Stopped because $why."; echo; echo "Last lines:"; echo
       tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
+    detail="the agent did not finish (exit $rc)"
   fi
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "$detail"
 fi
 if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
   echo "The agent reported done but made no commit." > "$run_dir/reason.md"
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "done without a commit"
 fi
+RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
 
 # ── Verify independently ────────────────────────────────────────────────────
 log "dev: verifying"
@@ -183,19 +200,21 @@ if [[ -n "$existing_pr" ]]; then
   # A PR opened as a draft on failing checks becomes reviewable once they pass.
   [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
-  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo **failing**)." >/dev/null
+  gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
   pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
 fi
 log "dev: PR $pr_url"
+RUN_PR="${pr_url##*/}"
 
 if [[ $ok -eq 1 ]]; then
+  if [[ -n "$existing_pr" ]]; then run_end pr_updated "checks passed"; else run_end pr_opened "checks passed"; fi
   set_status "$item" "In review"
   gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human --remove-label needs-rebase >/dev/null 2>&1 || true
   gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — all checks passed. Ready for review." >/dev/null
   notify "Dev agent: PR ready for #$issue" "$title"
 else
   { echo "The implementation is in $pr_url (draft), but the checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
-  block "$run_dir/reason.md"
+  block "$run_dir/reason.md" "checks failed: draft PR"
 fi
 git_locked worktree remove --force "$wt" 2>/dev/null || true

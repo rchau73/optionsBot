@@ -20,9 +20,9 @@ Everything happens in the open on GitHub, so each step can be audited: the [proj
 | ① | **Find the business problem** | **SME agent, daily** | Reads the testnet bots' state, events, trades, P&L and margin, plus its own previous reports. Finds what costs money or adds unintended risk (freezes, idle margin, one-sided books, bad fills, stops) and tuning opportunities, and traces each one to the trading rule behind it. See [below](#the-sme-agent-where-business-meets-engineering). |
 | ② | **Report** | script | Opens one GitHub issue per finding on the **Triage** column, as a business case: cost, evidence, options and acceptance criteria. A finding seen again becomes a comment, not a duplicate. |
 | ③ | **Triage** | **PM agent**, every 6 min · **human — gate 1** for the rest | The PM agent reads every new Triage card first: puts it in exactly one epic (a sub-issue), sets its **Priority** (P0–P3) and moves it to **Ready** only when the approved PRD covers it (see [below](#the-pm-agent-the-product-order)). Everything else stays in Triage with its recommendation, and the human refines it, moves it, or extends the PRD. It also **drives every approved epic**: an epic running dry gets its next stories, a card that depends on another ("Depends on #N", "Waits until <date>") waits in **Blocked** with `pm:waiting` and is released to Ready when that clears, every card carries its epic's coloured label (`E1`…`E13`) and `[E#]` title prefix, and Ready is ordered by priority (Triage: cards waiting for you last). |
-| ④⑤ | **Build** | Dev agents, every 6 min, up to 3 in parallel | Each takes the top free Ready issue (Priority, then oldest; one instance per card) and implements it on its own branch, in an isolated worktree, with tests and docs. Then it commits. |
+| ④⑤ | **Build** | Dev agents, every 6 min, one at a time by default (`agents.env`) | Each takes the top free Ready issue (Priority, then oldest; one instance per card) and implements it on its own branch, in an isolated worktree, with tests and docs. Then it commits. |
 | ⑥ | **Verify & propose** | script | Re-runs every check itself (gofmt, vet, race tests, frontend lint/test/build), pushes, and opens a PR that closes the issue → **In review**. If checks fail, or the agent stops with questions → **Blocked**, with the questions on the issue. |
-| ⑦ | **Review** | Reviewer agents, every 6 min, up to 3 in parallel | Reviews each new commit of a Dev agent PR as a second engineer: correctness, the trading rules, whether every acceptance scenario has a real test. It checks each finding against the code before reporting it, then posts one review with inline comments. A **blocking** finding moves the card back to **Ready**, and the Dev agent fixes it on the same PR and answers each finding in the PR body. After 2 fix rounds the human decides. No blocking finding → the PR is labelled `agent:reviewed`. So when the human opens a PR, the review loop has already run. |
+| ⑦ | **Review** | Reviewer agents, every 6 min, one at a time by default | Reviews each new commit of a Dev agent PR as a second engineer: correctness, the trading rules, whether every acceptance scenario has a real test. It checks each finding against the code before reporting it, then posts one review with inline comments. A **blocking** finding moves the card back to **Ready**, and the Dev agent fixes it on the same PR and answers each finding in the PR body. After 2 fix rounds the human decides. No blocking finding → the PR is labelled `agent:reviewed`. So when the human opens a PR, the review loop has already run. |
 | ⑧ | **Review & merge** | **human — gate 2** | GitHub requires a PR with green CI for `main`. The human reads the agent's review and the code, and merges, or requests changes: moving the card back to Ready makes the Dev agent address that review on the same PR. |
 | ⑨⑩ | **Deploy** | script, every 6 min | When `main` moves, it rebuilds and restarts the **mvp** environment (its own clone and Deribit testnet subaccount) and checks that every bot's decision loop reports again. Then it moves every closed issue's card to **Done**. Every tick also does that for issues closed by hand, since the board's own "Item closed" automation is off. **Stable** (the track record) changes only when the human runs `scripts/promote.sh <tag>`: after 3 days in mvp, with no `sme:not-fixed` issue open, and with an automatic rollback if the health check fails. |
 | ⑪ | **Verify the outcome** | **SME agent, next day** | Checks the closed issue's acceptance criteria against fresh data: did the business problem go away, not just did the code merge. It comments "fixed", or reopens the issue to Triage. |
@@ -100,7 +100,7 @@ Every SME issue follows one template, written so someone with little context on 
 | | **SME agent** (business) | **PM agent** (product) | Dev agent | Reviewer agent | Deploy |
 |---|---|---|---|---|---|
 | Brain | Claude Code with the [option-bot-specialist](.claude/skills/option-bot-specialist/SKILL.md) skill: a senior options PM | Claude Code with the [product-manager](.claude/skills/product-manager/SKILL.md) skill: a senior fintech SaaS PM | Claude Code with the [developer](.claude/skills/developer/SKILL.md) skill: a senior Go + React engineer | the same developer skill in its *Review mode*, in a separate run that did not write the code | none (a script) |
-| Trigger | daily, launchd | every 6 min, a new or changed **Triage** card, a card with no epic, an epic with fewer than 2 moving stories, a `pm:waiting` card to release, or a person's answer on an `agent:pm` ticket (up to 2 answers in parallel) | every 6 min, a card in **Ready** (skipping one that waits: "Depends on #N" while #N is open, "Waits until <date>"), up to 3 in parallel | every 6 min, an `agent:dev` PR in **In review** with an unreviewed commit, up to 3 in parallel | every 6 min, `main` moved |
+| Trigger | daily, launchd | every 6 min, a new or changed **Triage** card, a card with no epic, an epic with no moving story (once a day, one PR-sized story), a `pm:waiting` card to release, or a person's answer on an `agent:pm` ticket (up to 2 answers in parallel) | every 6 min, a card in **Ready** (skipping one that waits: "Depends on #N" while #N is open, "Waits until <date>"), up to 3 in parallel | every 6 min, an `agent:dev` PR in **In review** with an unreviewed commit, up to 3 in parallel | every 6 min, `main` moved |
 | Can | **read** the collected data and the docs | **read** the PRD, the board and the docs; edit and commit `docs/product/` only (answers) | read/edit files, run build/test/lint, `git add`/`commit` | **read** the code at the PR head, run build/vet/test | `git pull --ff-only`, `docker compose up`, move cards |
 | Cannot | run commands, edit anything, use the network or MCP tools | edit outside `docs/product/`, push, call GitHub; approve a prototype or a strategy-policy change (its script merges only PRD pull requests with no policy change) | push, call GitHub, use the network, docker, `rm`, `git reset`/`checkout`; merge or deploy | edit, commit, push, call GitHub, use the network; approve or merge | deploy live or to stable; touch a clone that isn't a clean `main` |
 | Output | a report + a findings block → issues | a report + a decisions block → epic links, Priority, Ready (gated); a PRD pull request or a ticket reply | commits + a PR body → a PR | a findings block → one PR review; card → Ready or stays for the human | containers restarted, cards → Done |
@@ -120,6 +120,7 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 - **Stop instead of guessing:** the Dev agent stops when an issue is ambiguous, needs a product decision, or would change live order behaviour beyond what the issue says. It posts its questions and moves the card to **Blocked**.
 - **Idempotent and bounded:** one Dev task at a time, with locks and stale-lock recovery. **No duplicate tickets:** the SME agent reads every open issue (any label, with its body and last comments) and those closed in the last 14 days, and reports a problem already tracked as an update to that ticket, posted only when the data says something new. Tickets parked in Triage for a week or two to collect data are not re-filed or re-posted daily. The script adds two checks of its own, on the fingerprint and on near-identical titles. A failed deploy commit is not retried in a loop.
 - **Audit trail:** every agent action is an issue, a comment, a commit or a PR, labelled `agent:*`, with its run log in `data/agents/`. Each pickup comment numbers the attempt and says what came before (blocked, sent back by the Reviewer, or a human's comment), so an issue tells its whole story even when a card was moved back on the board.
+- **Run ledger** (#206): one file answers "which agent did what, when, on which card, and how did it end?" — see [Run ledger](#run-ledger) below.
 
 ## How AI is used in this repo beyond the loop
 
@@ -136,7 +137,7 @@ On 2026-10-15 the ETH bot sat flat for days, frozen by a DVOL band change that c
 ```bash
 gh auth refresh -s project            # once: the board needs the project scope
 scripts/agents/setup_github.sh        # once: labels, project board, ruleset on main
-scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel)
+scripts/agents/install.sh             # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel; Mondays also metrics and evidence; nightly the flaky-test hunt)
 launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
@@ -147,7 +148,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 - **One GitHub identity.** The agents act with the human's `gh` login, so the separation of duties is enforced by tool permissions and the ruleset, not by GitHub identity. Next step: a GitHub App or a machine user for the agents, with "require one approval" on `main`, so GitHub itself enforces that someone other than the author approves.
 - **One machine.** The bots, the monitor and the agents run on one Mac (launchd catches up after sleep). Moving the bots to a server would move the agents with them; moving only the Dev agent to GitHub Actions is possible, but deploy and the SME agent need the bots' local API.
-- **Measure the agents.** Track issues opened → triaged → merged → verified fixed, review rounds per PR, findings the human overrules, and PRs reverted, to see whether the agents earn their keep.
+- **Measure the agents.** Weekly report: see [Agent metrics](#agent-metrics) below. Still not measured: findings the human overrules.
 
 ---
 
@@ -155,9 +156,46 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 ## Parallel runs and limits
 
-`tick.sh` runs every 6 minutes (launchd, `AbandonProcessGroup`) and starts in the background up to `DEV_PARALLEL` (3) Dev agents, `REVIEW_PARALLEL` (3) Reviewers and `PM_ANSWER_PARALLEL` (2) PM answers, plus one PM agent. Each instance claims its card (`data/agents/claims/<kind>-<n>`, holding its pid — free the moment the process ends), picks under a short mutex so two never take the same card, and serialises git fetch/worktree/push in the shared clone (`git_locked`). Independent cards are built at once; dependent ones wait in Blocked (`pm:waiting`).
+`tick.sh` runs every 6 minutes (launchd, `AbandonProcessGroup`) and starts in the background up to `DEV_PARALLEL` (1) Dev agents, `REVIEW_PARALLEL` (1) Reviewers and `PM_ANSWER_PARALLEL` (1) PM answers, plus one PM agent (defaults 1 each since 2026-10-23; raise them in `agents.env`, below). Each instance claims its card (`data/agents/claims/<kind>-<n>`, holding its pid — free the moment the process ends), picks under a short mutex so two never take the same card, and serialises git fetch/worktree/push in the shared clone (`git_locked`). Independent cards are built at once; dependent ones wait in Blocked (`pm:waiting`).
 
 **Limits adapt by themselves** (product owner, 2026-10-19: "find the optimum value"): when a run hits the Claude usage limit or GitHub's rate limit (`note_limit`), no new Claude run starts for 30 minutes, then one at a time for an hour, then the configured parallelism again (`parallel_max`). A Dev card that hit a limit goes back to Ready, not Blocked; a PM answer stays due. Set the `*_PARALLEL` variables in the launchd plist to change the ceilings.
+
+**The budget: the agents' share of your Claude plan** (product owner, 2026-10-23: the agents used the plan so fast that Claude Desktop was unusable). The agents share the person's Claude plan, so a file the person edits bounds them: `<envs>/agents.env` (`~/dev/go/optionsBot-env/agents.env`, outside both clones so a deploy never resets it; template [`agents.env.example`](scripts/agents/agents.env.example)), read at every tick — an edit applies within 6 minutes, no reinstall:
+
+| Setting | Effect |
+|---|---|
+| `AGENTS_PAUSED=1` | no new Claude run; deploys, the PR gate and runs already going continue |
+| `AGENT_HOURS=20-8` | local hours a run may start in (wraps midnight; empty or `0-24` = any) |
+| `AGENT_MAX_RUNS_PER_DAY=20` | Claude runs started per local day, every agent together (default 30) |
+| `DEV_PARALLEL`, `REVIEW_PARALLEL`, `PM_ANSWER_PARALLEL` | instances at once (default 1 each) |
+| `DEV_MODEL`, `REVIEW_MODEL`, `PM_MODEL`, `SME_MODEL` | e.g. `sonnet`: far less of the plan per run |
+
+`budget_reason` (`limit_lib.sh`, tested in `test_budget.py`) is checked by `parallel_max`, so every Claude run waits on it like on a limit pause — the PM's triage included (until 2026-10-23 it asked Claude inside a pause, 22 failed runs that day); `budget_take` records each run in `data/agents/claude_runs` just before `claude -p`. The daily SME review honours the pause and the daily count, not the hours. A variable set in the environment wins over the file.
+
+**A limit never looks like a question** (#237: Claude's "You've hit your weekly limit · resets …" was not in the pattern, and 28 approved cards were labelled `agent:needs-human` and moved to Blocked in 2–5 s each). The wordings live in one place, `LIMIT_PATTERN` in [`limit_lib.sh`](scripts/agents/limit_lib.sh) (weekly, session and usage limits, the generic `hit your … limit` and `limit · resets` forms, GitHub's rate limits). As a second guard, `note_stop` treats any run that exits non-zero in under 60 s with no answer block (`RESULT:`, `REVIEW-JSON`, `PM-…`) like a limit: the pause starts, the Dev card goes back to Ready without `agent:needs-human`, a review or PM answer is retried. The Dev agent posts one limit comment per episode: none when the card's last comment (its own pickups aside) already is one. Each tick, before the Dev agents start and never inside a pause, [`requeue.sh`](scripts/agents/requeue.sh) re-queues the cards such a limit blocked before this guard existed (rules in `requeue.py`, tested in `test_requeue.py`): an open Blocked card with `agent:needs-human`, without `pm:waiting`, whose newest Dev stop says "the agent did not finish", with no person's comment after it, and whose newest run log (`data/agents/dev/issue-<n>-*/agent.md`) matches `LIMIT_PATTERN`, loses the label, moves to Ready and gets one comment ("🤖 Re-queued: the earlier stop was a usage limit, not a question."). A stop that carries the agent's questions, or that a person answered, stays with the person.
+
+## Run ledger
+
+With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<agent>/<run>/` have no single index. Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy and flaky-test-hunt run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl` (beside `deploys.tsv`, outside both clones):
+
+```json
+{"ts":"2026-10-22T23:10:04Z","agent":"dev","run_id":"dev-20261022T225348Z-4242-1","issue":206,"pr":271,"event":"end","outcome":"pr_opened","detail":"checks passed","log":"data/agents/dev/issue-206-20261022-225348","commit":"1a2b3c4"}
+```
+
+- **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code). Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave. The ledger never stops an agent: a line it cannot write is logged and skipped.
+- **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going).
+- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`.
+- **Only work is a run:** a tick where an agent finds nothing to do writes nothing. The PM agent is a run when it asks Claude (triage or planning), the PR gate once per PR it changed, the deploy once per new commit it tries.
+- **Paths and ids only:** no secrets, no amounts, no prompt text; the detail is a short fixed phrase (≤ 200 characters).
+
+```bash
+python3 scripts/agents/runs.py --issue 206          # every run that touched #206, oldest first
+python3 scripts/agents/runs.py --agent dev --date 2026-10-22
+python3 scripts/agents/runs.py --open               # crashed (killed) or still running
+python3 scripts/agents/runs.py --pr 271 --json
+```
+
+Tests: `test_runs.py` (line format, queries, the helpers sourced for real — a crash, six parallel runs) and the ledger cases in `test_deploy.py`.
 
 ## Only ready PRs reach you
 
@@ -171,3 +209,36 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 | reviewed clean on its **current** commit, CI green, GitHub `CLEAN` | label **`ready-to-merge`** on the PR and its card, one notification |
 
 **Your queue is the `ready-to-merge` label** (In review shows those cards first, by priority). Merge them top-down: whatever then conflicts is rebased by the agents before it comes back to you.
+
+## Agent metrics
+
+E6's outcome is "no human toil except approvals", so the loop measures itself (#180). On the first tick of each Monday (UTC), [`metrics.sh`](scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic. It makes no Claude call. The numbers come from [`metrics.py`](scripts/agents/metrics.py), which is standard library only and tested offline on fixture JSON (`test_metrics.py`). Its inputs are the issues and agent PRs updated in the week, the repository's label events and `main`'s git log.
+
+| Section | What it counts |
+|---|---|
+| Stages | Events in the week: SME filed (an `agent:sme` issue created), PM triaged (an issue's first 🧭 PM comment), → Ready (a PM comment that moves a card to Ready), Dev picked up, PR opened, merged, deployed to mvp (🚀 comment), SME verified fixed or reopened (`not_fixed`). Only `agent/issue-N` PRs count. |
+| Cycle time | Median and p90 (nearest rank) of Ready → PR, PR → merge and merge → deploy, for spans that ended in the week. A card a person moved to Ready leaves no comment, so its Ready time is the first Dev pickup. |
+| Quality | Reviewer rounds per PR merged or closed in the week (each `agent-review` marker counts, blocking ones shown), PRs closed unmerged, `Revert …` commits on `main`, and Dev agent blocks with their first line. |
+| Waiting for a person | Hours in the week that issues carried `agent:needs-human` or `prototype:review`, the waits that ended in the week (median, p90) and the ones still open. |
+
+Each stage is read from what the agents leave on GitHub, because a move on the board leaves no trace on the issue. If an agent's comment wording changes, update the markers at the top of `metrics.py` to match.
+
+## Weekly evidence report
+
+The bots' track record builds itself too (#244, epic E2). On the first tick of each Monday (UTC), [`evidence.sh`](scripts/agents/evidence.sh) runs the [evidence report](README.md#evidence-report) for the last complete ISO week on **stable** and on **mvp**, for every bot (`EVIDENCE_BOTS`, default `btc eth`). It makes no Claude call and places no order.
+
+1. For each environment and bot, `scripts/stress_inputs.sh <bot>` captures the week-end book into that clone's `data/stress/<bot>/`, through that environment's monitor with its read-only `MONITOR_API_TOKEN`.
+2. `go run ./cmd/evidence -env <env> -root <clone> -bot <bot> -week <week>` writes `data/evidence/<week>/<bot>.md` and `.json` in the clone. mvp records no books, so it gets `-books-root` = stable's clone.
+3. [`evidence_week.py`](scripts/agents/evidence_week.py) builds one comment from the `.json` reports, posted on the E2 epic: a row per env × bot with net P&L (% of equity), excess return vs holding the coin, worst 7 days, replay gap, the worst stress shock and the missing days, then every failed step. **Live accounts:** an environment whose `.env` has `DERIBIT_ENV=live` gets percentages and the report's path only — no coin or USD amount, no failure detail (the rule of `sme_review.sh`).
+
+A failed step (stress inputs, a report) is listed in the comment and the rest goes on. `data/agents/evidence/<week>.done` marks the week done once the comment is posted; a week whose comment could not be posted is tried once more on a later tick and then marked done whatever happened. Logs of each step: `data/agents/evidence/<week>/`. Tests: `test_evidence.py` (the comment, and `evidence.sh` end to end on throwaway clones with stub `go`/`gh`/`curl`).
+
+## Nightly flaky-test hunt
+
+A flaky test turns a PR's CI red by chance and costs a review round (#113 and #165 were found that way, under load). Since #248, the first tick of each UTC night at or after `FLAKY_HOUR_UTC` (03:00) runs [`flaky.sh`](scripts/agents/flaky.sh). It makes no Claude call, so the budget does not hold it, and it runs beside the other agents, whose schedule and parallel limits are unchanged.
+
+1. A clean detached worktree of `origin/main` (`<work dir>/flaky-<date>`, removed at the end).
+2. In parallel, under one hard time limit (`FLAKY_LIMIT_MIN`, 30): `go test ./tests/... -race -count=5 -json`, and `npm ci` followed by `npm test -- --ci --json` run `FLAKY_JEST_RUNS` (3) times.
+3. [`flaky.py`](scripts/agents/flaky.py) reads the results. A test is **flaky** when it both passed and failed that night (a flaky Go subtest is reported, not its parent). For each flaky test it files one `bug` issue in **Triage**, titled `[E6] Flaky test: <name>`, with the commit, the pass and fail counts and the first failure's output (last 80 lines, `.env` secrets redacted the way `deploy_issue.py` does). Nothing is filed when an open issue, or one closed in the last 14 days, has a title ending in `Flaky test: <name>`.
+
+A test that failed every run is not flaky: it is logged and nothing is filed, because CI catches it. Past the time limit everything is stopped, nothing is filed and the log says it timed out. `data/agents/flaky/<date>.done` is written when the hunt starts, so a crash is not retried every tick. Results and logs: `data/agents/flaky/<date>/`. Run ledger agent `flaky`, outcomes `filed`, `none` or `timed_out`. Tests: `test_flaky.py` (the parsing, dedup and issue body, and `flaky.sh` end to end on a throwaway origin with stub `go`/`npm`/`gh`).

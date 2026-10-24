@@ -20,6 +20,9 @@ type View struct {
 	Halted      bool      `json:"halted"`  // kill switch has fired
 	LoopAt      time.Time `json:"loop_at"` // last completed decision cycle
 	EvalEveryMS int       `json:"eval_interval_ms"`
+	// StopLossMultiple: a leg is bought back once its loss reaches this
+	// multiple of its premium (stop_loss_multiplier), for the plain words.
+	StopLossMultiple float64 `json:"stop_loss_multiple"`
 
 	Market        orders.MarketSnapshot `json:"market"`
 	FlipBufferPct float64               `json:"flip_buffer_pct"` // the flip's ±1σ shed band, % of spot (0 = no DVOL / no buffer)
@@ -55,7 +58,8 @@ type RiskView struct {
 	MMPct         float64     `json:"mm_pct"`
 	Unit          string      `json:"unit"`
 	MarginBalance float64     `json:"margin_balance"`
-	Error         string      `json:"error,omitempty"` // margin unknown this cycle
+	Equity        float64     `json:"equity,omitempty"` // Deribit's, in Unit; 0 = not reported (#277)
+	Error         string      `json:"error,omitempty"`  // margin unknown this cycle
 	AsOf          time.Time   `json:"as_of"`
 	// IMOverLimit: IM is over the limit with no rebalance due (imalert.go,
 	// #166), since IMOverLimitSince. Nothing is resized: a person decides.
@@ -210,6 +214,7 @@ func (s *Strategy) recordRisk(m marginState) {
 		rv.Error = m.err.Error()
 	} else {
 		rv.IMPct, rv.MMPct, rv.Unit, rv.MarginBalance = m.usage.IMPct(), m.usage.MMPct(), m.usage.Unit, m.usage.MarginBalance
+		rv.Equity = m.usage.Equity
 	}
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
@@ -248,13 +253,14 @@ func (s *Strategy) View() View {
 
 	now := time.Now()
 	v := View{
-		AsOf:        now,
-		StrategyID:  s.strategyID(),
-		Underlying:  s.cfg.Underlying,
-		Environment: s.cfg.Environment,
-		Halted:      pub.halted,
-		LoopAt:      pub.at,
-		EvalEveryMS: s.cfg.EvalIntervalMS,
+		AsOf:             now,
+		StrategyID:       s.strategyID(),
+		Underlying:       s.cfg.Underlying,
+		Environment:      s.cfg.Environment,
+		Halted:           pub.halted,
+		LoopAt:           pub.at,
+		EvalEveryMS:      s.cfg.EvalIntervalMS,
+		StopLossMultiple: s.cfg.StopLossMultiplier,
 		Market: BuildMarketSnapshot(SnapshotInput{
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
 			GEX: s.gamma.CurrentGEXSnapshot(),

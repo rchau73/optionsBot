@@ -39,7 +39,7 @@ describe("Scenario: sign in", () => {
 
     const r = await auth.login({ username: "admin", password: ADMIN.ADMIN_PASSWORD, ip: "1.2.3.4" });
     expect(r.ok).toBe(true);
-    expect(await verifyAccess(r.access, authKey(TEST_SECRET), clock.t)).toEqual({ id: 1, username: "admin", role: "admin" });
+    expect(await verifyAccess(r.access, authKey(TEST_SECRET), clock.t)).toEqual({ id: 1, username: "admin", role: "admin", sid: hashToken(r.refresh) });
     expect(store.sessionUser(hashToken(r.refresh), clock.t)).toBe(1);
   });
 
@@ -143,6 +143,116 @@ describe("Scenario: lockout", () => {
     expect((await auth.login({ username: "admin", password: ADMIN.ADMIN_PASSWORD, ip: "7.7.7.7" })).ok).toBe(true);
     clock.t += 61 * 1000;
     expect((await auth.login({ username: "admin", password: ADMIN.ADMIN_PASSWORD, ip: "6.6.6.6" })).ok).toBe(true);
+  });
+});
+
+describe("lockout kept in auth.db (#213)", () => {
+  const ANA_PASSWORD = "ana right password";
+
+  /** A service on a database file with "ana" in it; `restart()` opens a new store and service on the same file. */
+  async function fileSetup() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monitor-lock-"));
+    const file = path.join(dir, "auth.db");
+    const clock = { t: Date.UTC(2026, 9, 19, 12) };
+    const open = async () => {
+      const store = await AuthStore.open(file);
+      return { store, auth: new AuthService({ store, key: authKey(TEST_SECRET), now: () => clock.t }) };
+    };
+    const first = await open();
+    first.store.createUser({ username: "ana", passwordHash: await hashPassword(ANA_PASSWORD), role: "user" });
+    return { ...first, clock, restart: open };
+  }
+
+  const fail = (auth) => auth.login({ username: "ana", password: "wrong password", ip: "10.0.0.1" });
+  const right = (auth) => auth.login({ username: "ana", password: ANA_PASSWORD, ip: "10.0.0.2" });
+
+  async function lockAna(auth, clock) {
+    for (let i = 0; i < 5; i++) {
+      clock.t += 60 * 1000;
+      await fail(auth);
+    }
+    return clock.t;
+  }
+
+  test("Scenario: lock survives a restart", async () => {
+    const { auth, clock, restart } = await fileSetup();
+    const lockedAt = await lockAna(auth, clock);
+
+    const { auth: restarted, store } = await restart();
+    expect(store.loginLockUntil("ana")).toBe(lockedAt + LOCK_WINDOW_MS);
+    clock.t = lockedAt + 60 * 1000;
+    logs.length = 0;
+    expect(await right(restarted)).toEqual({ ok: false, status: 401, error: INVALID_LOGIN });
+    expect(await fail(restarted)).toEqual({ ok: false, status: 401, error: INVALID_LOGIN });
+    expect(logs.some((l) => l.includes("username locked"))).toBe(true);
+  });
+
+  test("Scenario: lock ends on time", async () => {
+    const { auth, store, clock } = await fileSetup();
+    const lockedAt = await lockAna(auth, clock);
+    clock.t = lockedAt + LOCK_WINDOW_MS - 1000;
+    expect((await right(auth)).ok).toBe(false);
+    // An attempt during the lock is not a failure.
+    expect(store.loginFailureTimes("ana")).toEqual([]);
+
+    clock.t = lockedAt + LOCK_WINDOW_MS + 1000;
+    expect((await right(auth)).ok).toBe(true);
+    expect(store.loginFailureTimes("ana")).toEqual([]);
+  });
+
+  test("a success clears failures in the file, so a restart does not bring them back", async () => {
+    const { auth, store, clock, restart } = await fileSetup();
+    for (let i = 0; i < 4; i++) await fail(auth);
+    expect(store.loginFailureTimes("ana")).toHaveLength(4);
+    expect((await right(auth)).ok).toBe(true);
+    const { auth: restarted, store: again } = await restart();
+    expect(again.loginFailureTimes("ana")).toEqual([]);
+    clock.t += 1000;
+    await fail(restarted);
+    expect((await right(restarted)).ok).toBe(true);
+  });
+
+  test("Scenario: old failures expire", async () => {
+    const { auth, store, clock } = await fileSetup();
+    const start = clock.t;
+    for (let i = 0; i < 4; i++) await fail(auth);
+    await auth.login({ username: "ghost", password: "wrong password" }); // an unknown name is counted too
+    expect(store.loginFailureTimes("ghost")).toEqual([start]);
+
+    clock.t = start + 16 * 60 * 1000;
+    await fail(auth);
+    expect(store.loginLockUntil("ana")).toBe(0);
+    expect(store.loginFailureTimes("ana")).toEqual([clock.t]);
+    expect(store.loginFailureTimes("ghost")).toEqual([]);
+    expect((await right(auth)).ok).toBe(true);
+  });
+
+  test("ended locks are deleted when the next lock is set", async () => {
+    const { auth, store, clock } = await fileSetup();
+    const lockedAt = await lockAna(auth, clock);
+    clock.t = lockedAt + LOCK_WINDOW_MS;
+    for (let i = 0; i < 5; i++) await auth.login({ username: "bob", password: "wrong password" });
+    expect(store.loginLockUntil("ana")).toBe(0);
+    expect(store.loginLockUntil("bob")).toBe(clock.t + LOCK_WINDOW_MS);
+  });
+
+  test("Scenario: existing database", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monitor-old-"));
+    const file = path.join(dir, "auth.db");
+    const old = await AuthStore.open(file);
+    old.createUser({ username: "ana", passwordHash: await hashPassword(ANA_PASSWORD), role: "user" });
+    old.addSession("h1", 1, Date.now() + 60000);
+    // A file written before this change has neither lockout table.
+    old.db.exec("DROP TABLE login_failures; DROP TABLE login_locks;");
+    old.save();
+
+    const store = await AuthStore.open(file);
+    const tables = store.all("SELECT name FROM sqlite_master WHERE type = 'table'").map((t) => t.name);
+    expect(tables).toEqual(expect.arrayContaining(["users", "refresh_tokens", "login_failures", "login_locks"]));
+    expect(store.userByName("ana")).toMatchObject({ username: "ana", role: "user" });
+    expect(store.sessionUser("h1")).toBe(1);
+    const auth = new AuthService({ store, key: authKey(TEST_SECRET) });
+    expect((await right(auth)).ok).toBe(true);
   });
 });
 

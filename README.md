@@ -24,6 +24,10 @@ A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https:/
 - [Configuration](#configuration)
 - [Backtesting](#backtesting)
 - [Stress test](#stress-test)
+- [Idle-margin attribution](#idle-margin-attribution)
+- [Recorded-history coverage](#recorded-history-coverage)
+- [Evidence report](#evidence-report)
+- [Usage report](#usage-report)
 - [Testing and CI](#testing-and-ci)
 - [Project layout](#project-layout)
 - [Design decisions](#design-decisions)
@@ -101,7 +105,7 @@ Shared state is guarded by mutexes held only for in-memory work, never across a 
 ```bash
 git clone https://github.com/rchau73/optionsBot && cd optionsBot
 cp .env.example .env              # add your testnet key; DERIBIT_ENV=testnet
-make check                        # gofmt + vet + race tests
+make check                        # gofmt + vet + shell scripts + race tests
 make hooks                        # once per clone: blocks committing .env files or any .env secret (the repo is public)
 make build                        # → ./bot
 ./bot --config config_btc.yaml    # trade on testnet
@@ -132,6 +136,10 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 ### Strategy — `config_*.yaml`
 
 Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys became 14). Everything else is fixed in code (`internal/config/fixed.go`, table below); a file that still sets a fixed key fails at startup and names it, so nobody believes a changed value is in force. To make one tunable again, give its field back its `yaml` tag and drop it from `ApplyFixed`. `tests/config_effective_test.go` pins every setting both shipped configs produce, so moving a key between the file and the code cannot change a value unnoticed.
+
+**Parameter catalogue** ([docs/parameters.md](docs/parameters.md), #255): every key below in plain words, with its unit, the range `Validate` accepts, the rules that tie it to other keys, its core-policy area (a change to the default of a core-policy setting needs the product owner) and the tools that can test a change. It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go run ./cmd/paramdocs`; `tests/config_catalogue_test.go` fails when a shipped key has no entry, a range disagrees with `Validate` or the page is stale.
+
+**Setting changes are journaled** (#256): at every start the bot writes one `config_loaded` line to `orders.log` — the `fingerprint` (12 hex characters of the SHA-256 of the effective strategy settings, `config.Effective`: every YAML key and fixed value, nothing from `.env`), `version`, `deployment`, `config_file`, the full `settings` and the `changes` (key, from, to) since the previous `config_loaded` line; `first: true` on a journal without one, `unchanged: true` on a restart with the same settings. `/api/status` reports `config: {fingerprint, since}` (since = the start that last changed them). `actor` stays empty until settings are changed through an apply flow (files are edited by hand today).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -168,7 +176,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | ±1.5 pp (`rebalance_startup_band_pct`) | the first rebalance after a startup does nothing while IM is within 1.5 percentage points of the limit (journaled `rebalance_in_band`); confirmed limit changes and the MM cut ignore it |
 | 10 % (`liquidity_cap_oi_pct`) | an entry or top-up order is at most 10 % of each sold strike's mainnet open interest, both legs at the smaller size; journaled once as `liquidity_cap`; under one lot nothing is sent (#103). Repairs, exits and the MM cut are not capped. `cmd/stress -replay … -liqcap N` |
 | 3, 60 min (`rebalance_backoff_after`, `rebalance_retry_max_minutes`) | from the 3rd rebalance pass in a row whose complements all timed out unfilled (the bot's own cancels don't count) the retry wait doubles (30, then 60 min at most); a fill or a limit change resets it |
-| 90 s, ask → mid → floor (`order_fill_timeout_sec`, `entry_price_floor` mid, `repair_price_floor` bid) | a resting sell offers at the ask for the first third of 90 s, then mid (rounded up to a tick), then the floor — mid for entries and top-ups, bid for repairs; the premium floor is checked at that price. Without a bid it stays at the ask |
+| 90 s, ask → mid → floor (`order_fill_timeout_sec`, `entry_price_floor` mid, `repair_price_floor` bid) | a resting sell offers at the ask for the first third of 90 s, then mid (rounded up to a tick), then the floor — mid for entries and top-ups, bid for repairs; the premium floor is checked at that price. Without a bid it stays at the ask. The same 90 s is the window of a take-profit, delta drift or DTE roll buy-back resting at the mid (rounded down a tick) before the rest crosses with an IOC at the ask (#239; journaled `exit_step` mid/ask); stop-loss, MM cut and delta exit never rest, and each cancels a resting close first |
 | 5 %, 3 times (`order_slippage_pct`, `order_max_adjustments`) | follow the ask up when it drifts more than 5 %, at most 3 times (moves down are not capped) |
 | ±10 days, × 1.5 (`max_dte_deviation`, `expiry_stretch`) | an expiry may differ from the slot DTE by 10 days; when another slot holds it, the nearest free one up to DTE × 1.5, otherwise wait |
 | 0.03 (`delta_slippage`) | max distance from the target delta. An entry picks its call and put **as a pair** within this band; a repair takes the strike nearest the target |
@@ -191,7 +199,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | `DERIBIT_HEARTBEAT_INTERVAL_SEC` | 15 | server heartbeat interval |
 | `DERIBIT_RECONNECT_MAX_ATTEMPTS` / `_BACKOFF_BASE_MS` | 10 / 1000 | reconnect policy before giving up |
 | `BOT_ACCOUNT_POLL_SEC` | 10 | how often the account/collateral summary is polled for the monitor (one read-only call; minimum 2) |
-| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service |
+| `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service. Its read-only routes (`/api/status`, `/positions`, `/orders`, `/pnl`, `/pnl/history`, `/events`, `/account`, `/trades`, `/summary`, `/performance?range=7d\|30d\|all` — net return vs holding the coin, max drawdown, worst week, missing days, labelled live/testnet, #232) are described in [`frontend/README.md`](frontend/README.md) |
 | `BOT_ADMIN_TOKEN` | empty (off) | secret for the monitor's state-changing actions, bearer token; Docker Compose passes it to the monitor. **Manual close** (`POST /api/positions/close`): testnet only, and only for a leg under the regime-side block. **Manual rebalance** (`POST /api/rebalance[?dry_run=true]`): live and testnet, same gates as the automatic rebalance |
 
 ## Backtesting
@@ -251,13 +259,116 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 
 **Limits — read before trusting a number.** One decision per recorded hour (live: every 40 s): the confirmation counts that are "2 snapshots" live (≈2 minutes) take 2 hours here, a stop's 5-minute spread wait ends at the next hour, and the bias's 60-minute median-flip window is widened to two snapshot intervals (else it would never hold two flips). Spot is the nearest expiry's future (the index is not recorded). Margin is MODEL (worst loss over spot ±16 % × IV −20/+30 %, MM = 80 % of IM), not Deribit's simulator; fills are assumed at the floor whenever that side of the book is quoted — mainnet prices, while the bots fill on testnet. Not modelled: the rebalance top-ups, leg balancing, the churn breaker, stop/shed records restored from the journal, and the bias's restart warm-up. So the replay compares rule sets on the same real books; it does not reproduce the journal to the satoshi. The gap to the journal (`-journal`) is printed on every run and should be recorded with any verdict drawn from it.
 
+**Direction trial scorecard** (#245): `go run ./cmd/evidence -compare-direction -week 2026-W43` puts the two GEX direction sources side by side for one week — live (stable's BTC on `bias`, mvp's on `sma`: GEX sheds, repairs of shed sides, stop-losses, hours each source spent shedding calls and puts from `data/direction_history.jsonl`, with the unused source's shadow, realised net P&L in total and per slot, and the book marked at the recorded mids) and replayed twice on stable's recorded books from stable's journal book at the week start, once per source (only `gex_direction` differs, so the market path is identical), with the live − replay gap of each source. Live rows are labelled "different accounts and books: not a controlled test", replay rows "model"; every row names its files, days without recorded books are listed (never filled in), and every figure is a count, hours or a percentage of each environment's equity (`data/stress/btc/account.json`) — no amounts. No recommendation: it lists facts. Output: `<stable>/data/evidence/direction/<week>.md|.json` (`-stable-root`, `-mvp-root` override the clones).
+
+## Idle-margin attribution
+
+`cmd/idlemargin` (#218, epic E1) says **why** a bot used less than its approved margin. `utilisation_7d`/`utilisation_30d` (`history.Utilisation`, #174) give the number; this splits it into causes, from the bot's own files only (no Deribit call, nothing written):
+
+```bash
+go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -config config_btc.yaml -days 7
+go run ./cmd/idlemargin -journal data/eth/orders.log -history data/eth/pnl_history.jsonl -from 2026-10-12 -to 2026-10-19
+```
+
+- **Per slot** (`internal/idlemargin`, pure `Attribute`): hours and share of measured time `occupied` (an open strangle, even one-legged, or a working entry order), `occupied_liquidity_cap` (occupied after a `liquidity_cap` skip: its entry or a top-up was cut), `frozen` (vacant while `entries_allowed` was false, whatever the skip), vacant by the last skip reason journaled since the slot became vacant (`no_free_expiry`, `margin_limit`, `gex_wait`, … — an unknown reason is its own row), `no_skip_logged` (vacant, no skip yet), and `not_measured` (the bot down or no margin data: the time `history.Utilisation` does not count, a point standing for at most `MaxSampleGap` 15 min). The total column sums slot-hours. `-config` reports that config's slots only; without it, every slot the journal names.
+- **Per bot**: the utilisation `history.Utilisation` gives for the same window (the same number as `/api/status`), and the allowed time by book state — `slot_empty` (some slot vacant), `rebalance_waiting` (every slot occupied, a short top-up waiting for its `rebalance_retry`), `sized_small_liquidity_cap` (every slot occupied, one capped), `all_full` — each with its hours, mean IM ÷ limit and its share of the unused margin (Σ (1 − IM ÷ limit) × time). The states' means, weighted by hours, give back the utilisation.
+
+Output holds hours, shares and percentages of the IM limit only — no amounts. Approximations: occupation follows the journal (opens, closes, startup `reconciled` lines; a leg held to settlement ends at 08:00 UTC of its expiry; a working entry order the journal never settled counts for at most 15 min); `occupied_liquidity_cap` cannot tell an order sent at the cap from a later uncapped one after a blocking `liquidity_cap` skip.
+
+## Recorded-history coverage
+
+`cmd/datacoverage` (#233, epic E2) says how much recorded history stands behind a replay or a backtest, and where it has holes. It reads one bot's files only (no Deribit call, nothing written) and prints counts and dates, never an amount:
+
+```bash
+go run ./cmd/datacoverage -dir data/btc                                   # first → last recorded day
+go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a replay's window (-to day included)
+go run ./cmd/datacoverage -dir data/eth -json
+```
+
+`-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory. For each dataset — `market` (hourly books), `market_gex` (minute GEX), `market_usdc` (hourly USDC books), `pnl_history.jsonl` (a point a minute) — it reports the first and last record, the bins of the window (an hour or a minute, the dataset's recording period) covered and their share, the hours missing, the days with records, complete and without any, the hours missing per day and the gaps (the 10 longest in text, all in `-json`). An empty bin between two records at most 1.5 periods apart is a ticker's jitter, not a gap. Then the **days a replay decides hourly**: books but no minute GEX record (`cmd/stress -replay` falls back to the books there). Without `-from`/`-to` the window runs from the first to the end of the last recorded day, never past the current hour; days of a window outside the data are reported missing, never filled in. Pure core: `coverage.Coverage(times, from, to, step)` in `internal/coverage`.
+
+## Evidence report
+
+`cmd/evidence` (#176, epic E2) writes the weekly evidence a sceptical investor asks for — does the bot earn its risk? — per bot of an environment, to `data/evidence/<week>/<bot>.md` and `.json` in that environment's clone (amounts stay in `data/`, gitignored). It reads the environment's files only: no Deribit call, no order.
+
+```bash
+scripts/stress_inputs.sh btc data/stress/btc                    # the week-end book for the stress section (monitor up)
+go run ./cmd/evidence -env stable -week 2026-W42                # both bots of stable, ISO week (Monday–Sunday UTC)
+go run ./cmd/evidence -env mvp -from 2026-10-12 -to 2026-10-18 -books-root ~/dev/go/optionsBot-env/stable
+go run ./cmd/evidence -env stable -bot eth -stress-cmd none     # no week: the last complete one; no stress section
+```
+
+Sections, each naming its source:
+
+- **Missing inputs** — the UTC days of the week without a P&L history point, a recorded book or a minute GEX record. The figures use the other days; nothing is filled in.
+- **Live** — the journal's opens and closes in the week: realised P&L net of fees, the fees (opening share + closing fee, as `buyToClose` books them), closes by reason; the P&L history's `internal/perf` figures (net, % of equity, max drawdown, worst 7 days) and the unrealised P&L at the week's end.
+- **Equity bridge** (#277) — the account's equity at the first and last P&L history point of the week that carries it (Deribit's figure, recorded on each line with the margin balance and its unit: USD under cross collateral, else the coin), its change, the bot's net P&L between those two points in the same unit (the change of the cumulative total; in USD each step valued at its own point's spot) and the residual, labelled "not explained by the bot: transfers, positions the bot does not manage, funding, rounding" (in USD also the collateral's value as prices move), with its % of the starting equity. Under two points with equity (history written before #277, or margin unknown), or a unit that changed in the week, it says why instead. The weekly summary on the epic shows the residual's % only.
+- **Replay** — the bot's rules (`internal/replay`, the environment's config: `BOT_CONFIG_<BOT>` of its `deploy.env`, else `config_<bot>.yaml`) on the recorded mainnet books of the week, starting from the journal's book at Monday 00:00, deciding on minute GEX records where they exist; 7 days of earlier recording warm it up. Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`. Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
+- **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
+- **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips). The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
+- **Return on margin (north star)** (#278, the PRD's engine-phase north star) — net P&L in coin, net of fees, ÷ the mean initial margin used, in %, with its 30-day rate (× 30 ÷ the days the net covers — first line to last, downtime included, like the replay's whole window; not a forecast) and the measured hours. Live: `perf.ReturnOnMargin` on the P&L history — the time-weighted mean of `im_pct` (each line stands for at most `history.MaxSampleGap`, as in `history.Utilisation`, so a gap is not filled in) × the margin balance at the week's start. Replay, when it ran: its net ÷ (its average MODEL IM % × the same balance). **Approximation:** IM used ≈ IM % × the margin balance at the window start, until the history records the balance on every line. Not known (and the reason given) when no line carries `im_pct`, the balance is unknown or the mean IM is zero. The weekly E2 comment shows both figures (a %, so for live accounts too).
+- **Benchmark** — holding the coin over the week (spot at the first and last history point), the strategy's USD return and its excess over holding.
+- **Margin utilisation** — `history.Utilisation` over the week (the figure of `/api/status`).
+
+**Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account. Details: AGENTIC.md "Weekly evidence report".
+
+## Usage report
+
+`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q7 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+
+```bash
+go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
+go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl   # no week: the last complete one
+```
+
+Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Monday 00:00 UTC to the next Monday, as `cmd/evidence`). Sections, each naming the source file and the span of its accepted events:
+
+- **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
+- **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 4 before it, and how many had any event in each later week (+1 … +4; a week not yet ended is `—`).
+- **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen.
+- **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
+- **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
+- **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.
+- **Trust** (Q7) — `data_stale_shown` per source, `signed_out` per reason.
+
+**No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
+
+## Settings comparison
+
+`cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
+    -replay data/btc/data/market -stress data/stress/btc            # backtest + replay + stress
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-01-01 -to 2026-06-30 \
+    -csv data/historical/options.csv                                  # backtest only
+```
+
+The report starts with the label **"Backtested/replayed, not a promise"**, then:
+
+- **Differences** — every YAML setting that differs, key by key (`gamma_flip_buffer_sd 1.5 → 1`, `dte_delta_matrix[1].deltas[0] 0.16 → 0.2`; `—` where one side has no such key). Empty for two identical configs, and then every figure below is the same.
+- **Backtest (USD)** — the daily engine (`internal/backtest`, `-csv`, default `data/historical/options.csv`, `none` skips) from $100,000: net and return, realised (net of fees), fees, worst week, max drawdown, trades, GEX sheds, stops, delta exits, rolls, Sharpe. Margin is the backtest's approximation.
+- **Replay** — the bot's rules on the recorded mainnet books (`internal/replay`, `-replay`; minute GEX from `-gex`, default `market_gex` beside it, `none` = hourly), each config from a flat book at `-from`, 7 days of earlier recording warming it up: net and return, realised, fees, worst week (on the daily equity), max drawdown, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, IM max/avg. Starting balance from `-equity` or `account.json` of `-stress`; daily closes and DVOL from its `market.json`.
+- **Stress** — `cmd/stress`'s standard shocks (as the evidence report: `crash`, `rally`, `crash40`, `rally40`, `chop`) on the book captured in `-stress` (`scripts/stress_inputs.sh`), once with each config's settings (`-stress-cmd`, `none` skips): return, vs hold, realised, stops, worst equity, worst MM. `cmd/stress` takes only the slots, exit thresholds, size cap, flip buffer, direction source and the IM bands (when they start at IV percentiles 0, 30 and 70) — `evidence.StressModels`; a differing setting it does not take (`repair_cooldown_hours`, `min_premium`, `max_mm_pct`, …) is listed under the table as "Not modelled by the stress" (`not_modelled` in the JSON), so identical stress rows are not read as "no effect".
+
+A section without its input says "Not run" and why; each run's error is shown beside the other's figures. The tables give a `Change` column (proposed − base, `=` when equal).
+
+**Week by week** (#301): `-windows week` (ISO weeks, Monday–Sunday UTC, the first and last clipped to the span) or `-windows day` also runs the backtest and the replay once per window — each replay from a flat book at the window's first day, on the same data read once — so a proposal that wins only in one lucky week shows as fragile. The report gains a **By week** section (`windows` in the JSON: `unit`, `rows`, `summary`): per source (replay, backtest) one row per window with net, return %, worst week % and max drawdown for base, proposed and the change; then how many windows the proposal's net is higher (and the base's, and equal), the median change (net and percentage points of return), the spread of the change (worst to best window), each config's worst window, and the windows where replay and backtest disagree on which config is ahead (`order_flips`). A window a source could not run in (no recorded book, an error) shows the reason in its `Note`, is listed under "Not run" and counts in no summary figure — never filled. The stress stays one run on the captured book, not windowed, and the section says so. Without `-windows` the report is unchanged.
+
+```bash
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-25 \
+    -replay data/btc/data/market -stress data/stress/btc -windows week
+```
+
 ## Testing and CI
 
 ```bash
 make test      # go test ./tests/... -race
 make cover     # coverage across ./internal/... (tests live in ./tests)
-make check     # what CI runs: gofmt, vet, race tests
+make check     # what CI runs: gofmt, vet, shell scripts, race tests
 ```
+
+Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_shell.sh`: `bash -n`, then `shellcheck -x --severity=warning` (sources resolved beside each script, `.shellcheckrc`), and every `disable` directive must give its reason on the same line. CI installs shellcheck and requires it; `make check` skips that step with a message when it is not installed.
 
 | Package | Coverage | Highlights |
 |---|---|---|
@@ -274,9 +385,15 @@ Regression tests for critical fixes were mutation-checked: they fail when the fi
 cmd/bot/              main: wiring, flags, signals
 cmd/gendata/          synthetic historical data generator
 cmd/stress/           stress test of the live book through scripted shocks, and -replay of recorded books (see Stress test)
+cmd/idlemargin/       why approved margin went unused, per slot and book state (see Idle-margin attribution)
+cmd/datacoverage/     days, gaps and spans of a bot's recorded history (see Recorded-history coverage)
+internal/coverage/    that report (pure Coverage) and its readers
+cmd/evidence/         the weekly evidence report: live, replay, gap, stress, hold (see Evidence report)
+internal/evidence/    builds that report (pure Build) and reads its inputs
 scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/recorder/    hourly mainnet book recording (data/market/) and its reader
 internal/replay/      the bot's rules over recorded books (cmd/stress -replay)
+internal/perf/        pure performance summary of the P&L history: net return (coin, USD), hold-the-coin benchmark, max drawdown, worst 7 days, missing days
 internal/config/      config.yaml + .env loading and validation
 internal/gateway/     Deribit WebSocket client (queue, limits, breaker, retry, reconnect)
 internal/marketdata/  option chain, subscriptions, DVOL / IV percentile, expiry window
@@ -319,6 +436,7 @@ cmd/monitor-demo/     monitor API with simulated data, for UI development
 | [OptionStrategy.md](OptionStrategy.md) | the strategy in plain language: rules, worked examples, risks |
 | [docs/architecture.md](docs/architecture.md) | detailed design, invariants, limitations |
 | [docs/operations.md](docs/operations.md) | running, monitoring, kill switch, troubleshooting |
+| [docs/parameters.md](docs/parameters.md) | every tunable setting in plain words: unit, valid range, core policy, tools that test it (generated) |
 | [docs/README.md](docs/README.md) | diagram index (Mermaid sources + 4× PNGs) |
 | [CLAUDE.md](CLAUDE.md) | guidance for AI-assisted development in this repo |
 

@@ -3,7 +3,10 @@
 import path from "node:path";
 import { AuthService } from "./service";
 import { AuthStore } from "./store";
-import { ACCESS_COOKIE, authKey, readCookie } from "./tokens";
+import { auditPath, fileAudit } from "./audit";
+import { analyticsSalt, eventsPath } from "../analytics/config.js";
+import { userEventsEraser } from "../analytics/retention.js";
+import { ACCESS_COOKIE, authKey, readCookie, roleRequired, sessionRequired } from "./tokens";
 
 /** AUTH_DB_PATH, default data/monitor/auth.db (a volume of its own in compose). */
 export function authDbPath(raw = process.env.AUTH_DB_PATH) {
@@ -16,7 +19,13 @@ const KEY = Symbol.for("optionsbot.monitor.auth");
 /** The shared AuthService; rejects when AUTH_SECRET is missing or short. */
 export function getAuth() {
   globalThis[KEY] ??= (async () => {
-    const service = new AuthService({ store: await AuthStore.open(authDbPath()), key: authKey() });
+    const db = authDbPath();
+    const service = new AuthService({
+      store: await AuthStore.open(db),
+      key: authKey(),
+      audit: fileAudit(auditPath(db)),
+      deleteEvents: userEventsEraser(eventsPath(db), analyticsSalt()),
+    });
     await service.bootstrapAdmin();
     return service;
   })().catch((err) => {
@@ -47,6 +56,24 @@ export function sameOrigin(request) {
   } catch {
     return false;
   }
+}
+
+/**
+ * For a state-changing route: the person behind the request, re-read from the
+ * database (live session, existing user, current role ≥ need — never the
+ * token's word alone, #171). → { auth, user } or { response } (401 / 403 / 503)
+ * to return as is.
+ */
+export async function requireRole(request, need) {
+  let auth;
+  try {
+    auth = await getAuth();
+  } catch {
+    return { response: Response.json({ error: "sign-in is unavailable: see the monitor's logs" }, { status: 503 }) };
+  }
+  const r = await auth.actingUser(readCookie(request, ACCESS_COOKIE), need);
+  if (r.ok) return { auth, user: r.user };
+  return { response: r.status === 403 ? roleRequired(need) : sessionRequired() };
 }
 
 /** The signed-in user of a request, or null (state-changing routes check it again behind proxy.js). */

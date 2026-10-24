@@ -65,6 +65,16 @@ scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the
 
 A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable). Promotion is testnet-only: a live stable is promoted by hand.
 
+**Soak check: deploy effect** (#219, E1's "no restart changes the book"). Before promoting, run the report over the soak window for each mvp bot (from the dev checkout, on the mvp clone's files):
+
+```bash
+M=~/dev/go/optionsBot-env/mvp
+go run ./cmd/deployeffect -journal $M/data/btc/orders.log -config $M/config_btc.mvp.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
+go run ./cmd/deployeffect -journal $M/data/eth/orders.log -config $M/config_eth.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
+```
+
+It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger). The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting. The full rules are in `internal/deployeffect` (package comment).
+
 ### Inside an environment
 
 `docker-compose.yml` defines one service per underlying (`bot-btc`, `bot-eth`) plus the monitor. Each bot mounts its own config as `/app/config.yaml` and **runs inside its own host folder** of the clone (`data/btc/`, `data/eth/`, mounted at `/app/run`), so everything it keeps persists across rebuilds and the two never share a file:
@@ -77,7 +87,23 @@ data/btc/
   data/pnl_history.jsonl     P&L history for the monitor chart
   data/regime_history.jsonl  gamma regime per daily close (margin policy)
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
+  data/market_gex/    every GEX snapshot (one a minute), read by the replay
+  data/market_usdc/   recorded USDC-settled books, to compare liquidity
+data/stress/btc/      stress inputs captured by scripts/stress_inputs.sh (positions, account, market.json)
+data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cmd/evidence, below)
 ```
+
+How much of that recorded history exists, and where restarts left gaps: `go run ./cmd/datacoverage -dir data/btc` (days, missing hours and gaps per dataset, and the days a replay can only decide hourly; README "Recorded-history coverage").
+
+**Weekly evidence report** (#176, README "Evidence report"). After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
+
+```bash
+MONITOR_URL=http://127.0.0.1:3000 scripts/stress_inputs.sh btc ~/dev/go/optionsBot-env/stable/data/stress/btc   # and eth
+go run ./cmd/evidence -env stable                     # the last complete week, both bots
+go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mvp records no books: replay on stable's
+```
+
+It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; AGENTIC.md "Weekly evidence report"). The commands above remain for a re-run by hand.
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
@@ -112,7 +138,9 @@ ADMIN_EMAIL=<optional>
 MONITOR_API_TOKEN=<openssl rand -hex 32>    # read-only token for the deploy health check and the agents
 ```
 
-Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it). **Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`). Five failed sign-ins lock a username for 15 minutes; restarting the monitor clears the lock. Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
+Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it). **Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`). Five failed sign-ins lock a username for 15 minutes; the lock is kept in the environment's `auth.db`, so restarting the monitor does not clear it (#213). Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
+
+**Roles and audit (#171).** Only a `manager` or an `admin` may close a leg or rebalance (dry run included); a `user` only watches — the monitor answers 403 and the bot receives nothing. The monitor re-reads the person from `auth.db` on each of those requests, so a role change, a deletion or a sign-out everywhere takes effect at once (each of them also ends every session of that user). Each close and rebalance reaches the bot with `"actor": {"user", "role"}` (with `BOT_ADMIN_TOKEN` only): the bot's `manual close` / `manual rebalance requested` log lines carry `by`, its journal's `closed` line (`manual_close`) and `risk_limit` `rebalance_manual` line carry `actor` and say "by bob (manager)" in `detail`. A request without an actor (e.g. the `curl` below) is recorded as `monitor`. Who did what on the monitor itself — sign-ins, failed sign-ins, lockouts, user changes, close and rebalance requests — is in the `monitor-auth` volume's `audit.jsonl` (`docker compose exec monitor tail data/monitor/audit.jsonl`), one JSON line each; never a password or token.
 
 ## Watch the logs
 
@@ -160,6 +188,17 @@ scripts/envctl.sh stable logs -f bot-btc | grep '"msg":"rate_limit_metrics"' # g
 ```
 
 Useful events to know: `strangle filled and active`, `rollout triggered`, `stop loss triggered`, `partial close: remainder stays open and tracked`, `gex_regime_trigger`, `reconnecting` / `reconnected successfully`, `gateway giving up`, `hedge_report`.
+
+### Setting changes
+
+Every start journals one `config_loaded` line (#256) with the fingerprint of the effective strategy settings and what changed since the previous start, so results can be read per settings version. `first: true` marks the first such line of a journal, `unchanged: true` a restart with the same settings; `/api/status` shows `config.fingerprint` and `config.since` (when they last changed). The meaning, range and policy of each setting are in [parameters.md](parameters.md).
+
+```bash
+# Every settings change, with its date, release and keys (from → to)
+grep '"event":"config_loaded"' orders.log | jq -c 'select(.unchanged != true) | {timestamp, version, deployment, fingerprint, first, changes}'
+# The settings in force now
+grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
+```
 
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
@@ -233,7 +272,7 @@ The bot sizes and limits itself on Deribit's own margin figures (see *Margin pol
 
 ### Manual rebalance (after a deposit or withdrawal)
 
-The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then; new entries size on the new balance at once (it is read from Deribit every cycle), and the MM limit still cuts at any time. The bot never moves funds and journals no transfer: the change shows only in `/api/account`, so note a hand transfer where the P&L is reviewed (2026-10-17 ETH: −127 ETH moved by hand, #124). To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
+The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then; new entries size on the new balance at once (it is read from Deribit every cycle), and the MM limit still cuts at any time. The bot never moves funds and journals no transfer: the change shows in `/api/account` and, since #277, in the weekly evidence report's equity bridge (each P&L history line records the margin balance and equity; the residual the bot's P&L does not explain is listed as transfers, unmanaged positions, funding, rounding) — still note a hand transfer where the P&L is reviewed, so the residual has a name (2026-10-17 ETH: −127 ETH moved by hand, #124). To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
 
 ```bash
 # preview: same margin simulations, no orders, nothing journaled

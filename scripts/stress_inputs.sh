@@ -8,6 +8,7 @@
 # The monitor must be running (docker compose up), on MONITOR_URL; it is read
 # with MONITOR_TOKEN, default stable's MONITOR_API_TOKEN (scripts/env_lib.sh).
 set -euo pipefail
+# shellcheck source=env_lib.sh
 source "$(dirname "$0")/env_lib.sh"
 
 bot="${1:-btc}"

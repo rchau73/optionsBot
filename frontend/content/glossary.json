@@ -1,0 +1,898 @@
+{
+  "option": {
+    "short": "A contract that gives its buyer the right to buy or sell a coin at a set price until a set date.",
+    "long": "An option is a contract. The buyer pays a price, the premium, up front. In return the buyer may buy (a call) or sell (a put) the coin at the strike price until the expiry date. The seller keeps the premium and must pay out if the price moves past the strike.",
+    "risk_income": "Selling options brings income now (the premium) in exchange for a possible payout later that can be much larger.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Kind"]
+  },
+  "call": {
+    "short": "An option that pays its buyer when the coin rises above the strike price.",
+    "long": "A call option gives its buyer the right to buy the coin at the strike price. It gains value when the coin rises above the strike. The bot sells calls: it keeps the premium if the coin stays below the strike, and loses when the coin rises far above it.",
+    "risk_income": "A sold call earns its premium in a flat or falling market and loses money in a strong rise.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Type"]
+  },
+  "put": {
+    "short": "An option that pays its buyer when the coin falls below the strike price.",
+    "long": "A put option gives its buyer the right to sell the coin at the strike price. It gains value when the coin falls below the strike. The bot sells puts: it keeps the premium if the coin stays above the strike, and loses when the coin falls far below it.",
+    "risk_income": "A sold put earns its premium in a flat or rising market and loses money in a sharp fall.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes"
+  },
+  "premium": {
+    "short": "The price of an option. The seller receives it up front.",
+    "long": "The premium is what the buyer pays for an option and what the seller receives. The bot is a seller, so the premium is its income. It keeps all of it if the option ends worthless, and part of it if it buys the option back for less.",
+    "risk_income": "A higher premium means more income per trade, but it is usually paid for more risk.",
+    "source": "OptionStrategy.md#1-the-idea-in-one-paragraph",
+    "labels": ["Paid to you"]
+  },
+  "strike": {
+    "short": "The fixed price written in an option contract.",
+    "long": "The strike is the price at which the option's buyer may buy (call) or sell (put) the coin. For the bot, a strike far from today's price is safer but pays a smaller premium. A strike close to today's price pays more and is more likely to be reached.",
+    "risk_income": "Strikes closer to the price bring more income and more risk; strikes further away bring less of both.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Strike"]
+  },
+  "expiry": {
+    "short": "The date an option ends.",
+    "long": "Every option has an expiry date. After it, the option is either worth nothing or settled for its value. The bot does not hold options until expiry: it buys them back when 15 days or fewer are left, because the risk of sudden losses grows near the end.",
+    "risk_income": "Options with more time left pay more premium but stay exposed to price moves for longer.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes"
+  },
+  "dte": {
+    "short": "Days to expiry: how many whole days an option has left.",
+    "long": "DTE counts the full days until the option's expiry date, rounded down. The bot opens positions about 25 to 50 days out and closes them when 15 days or fewer are left. The same count is used for opening and for closing.",
+    "risk_income": "More days left means more premium and more time for a big move; fewer days left means faster decay and sharper swings.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["DTE"]
+  },
+  "strangle": {
+    "short": "One call sold above today's price and one put sold below it, with the same expiry.",
+    "long": "A short strangle sells a call above the current price and a put below it, both ending on the same date. The seller keeps the premium if the coin stays between the two strikes. A big move either way causes a loss, and that loss has no cap.",
+    "risk_income": "It earns the premium of both options in a calm market and loses in a big move in either direction.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes"
+  },
+  "leg": {
+    "short": "One option inside a strangle: its call or its put.",
+    "long": "A strangle has two legs, a call and a put. Each leg is managed on its own: it can be bought back, stopped out or re-sold without touching the other. A strangle with only one leg is one-sided, and the bot tries to sell the missing leg again later.",
+    "risk_income": "Two legs of the same size balance each other; a single leg leaves the position exposed to one direction.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Open legs"]
+  },
+  "missing leg": {
+    "short": "The leg a one-sided strangle lacks, and the rule keeping the bot from selling it again.",
+    "long": "When a leg is closed, its strangle keeps only the other leg. The bot sells the missing leg again (a repair) when it is safe. The monitor shows each missing leg and the rule that holds it now, such as a cooldown after a stop-loss.",
+    "risk_income": "While a leg is missing the position earns less and leans to one side.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Missing"]
+  },
+  "slot": {
+    "short": "A place the bot keeps for one strangle, set by a number of days and a delta.",
+    "long": "The settings list slots such as 'a strangle about 25 days out at 0.16 delta'. Each slot holds one strangle at a time and gets an equal share of the margin limit. When a slot is empty, the bot opens a new strangle in it.",
+    "risk_income": "More slots spread the money over more positions; fewer slots put more in each one.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Slot"]
+  },
+  "delta": {
+    "short": "Roughly the chance an option ends up paying out, from 0 to 1.",
+    "long": "Delta shows how much an option's price moves when the coin moves by 1. It is also a rough guess of the chance the option pays out at expiry. A 0.16-delta option pays out about 16 times in 100. When the price moves toward a strike, that leg's delta grows.",
+    "risk_income": "Selling at a higher delta brings more premium and a higher chance of a loss.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Δ"]
+  },
+  "gamma": {
+    "short": "How fast delta changes when the price moves.",
+    "long": "Gamma measures how quickly an option's delta changes when the coin moves. Sellers of options are 'short gamma': their losses speed up in big moves, more so close to expiry. That is one reason the bot closes positions with 15 days or fewer left.",
+    "risk_income": "High gamma means a loss can grow fast; it is highest near expiry.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Γ"]
+  },
+  "theta": {
+    "short": "Time decay: how much value an option loses each day.",
+    "long": "Theta is the amount an option's price drops each day if nothing else changes. An option seller earns this decay. It speeds up in the last weeks before expiry.",
+    "risk_income": "Theta is the seller's daily income from time passing; it does not protect against a big price move.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Θ"]
+  },
+  "vega": {
+    "short": "How much an option's price changes when implied volatility changes by 1 point.",
+    "long": "Vega measures how sensitive an option's price is to implied volatility, the size of move the market expects. When fear rises, implied volatility rises and sold options cost more to buy back, even if the price has not moved.",
+    "risk_income": "A seller loses on paper when implied volatility rises and gains when it falls.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Vega"]
+  },
+  "greeks": {
+    "short": "Delta, gamma, theta and vega: four numbers that describe how an option's price reacts.",
+    "long": "The greeks describe an option's sensitivity: delta to the coin's price, gamma to changes in delta, theta to time, vega to implied volatility. The trade history shows them at the moment of each trade. A position's delta is the option's delta times the size, negative for a sold option.",
+    "risk_income": "They show where a position can lose: price (delta, gamma), time (theta) and fear (vega).",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Δ (position) · Θ · Vega"]
+  },
+  "implied volatility": {
+    "short": "How big a move the market expects, read from option prices.",
+    "long": "Implied volatility (IV) is the size of the price move that option prices suggest the market expects. When IV is high, options cost more, so a seller receives more premium. High IV usually comes with fear and larger moves.",
+    "risk_income": "Higher implied volatility means richer premiums and, usually, more risk.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes"
+  },
+  "dvol": {
+    "short": "Deribit's index of the 30-day move the market expects for BTC or ETH.",
+    "long": "DVOL is a volatility index published by Deribit, the exchange. It shows how big a move option prices expect over the next 30 days, as a yearly percentage. The bot uses it to set its margin limit and to size the buffer around the gamma flip.",
+    "risk_income": "A high DVOL means rich premiums and a market that expects large moves.",
+    "source": "OptionStrategy.md#12-glossary",
+    "labels": ["Spot · DVOL"]
+  },
+  "iv percentile": {
+    "short": "Where today's DVOL sits compared with the past year, from 0 (lowest) to 100 (highest).",
+    "long": "The IV percentile ranks today's DVOL against the past year. 0 means it is the lowest of the year, 100 the highest. The bot uses this rank to choose how much of the account may be used as margin.",
+    "risk_income": "A high percentile allows a higher margin limit (more positions); a low one keeps positions small.",
+    "source": "OptionStrategy.md#12-glossary"
+  },
+  "spot": {
+    "short": "Today's price of the coin.",
+    "long": "Spot is the current market price of BTC or ETH. Every other number on the monitor is measured against it: how far a strike is, how far the gamma flip is, and the value of positions in US dollars.",
+    "risk_income": "Spot moving toward a strike raises the risk of that leg.",
+    "source": "OptionStrategy.md#1-the-idea-in-one-paragraph"
+  },
+  "moneyness": {
+    "short": "Whether a strike is at, away from, or past today's price (ATM, OTM, ITM).",
+    "long": "Moneyness compares a strike with the current price. OTM (out of the money) means the option would pay nothing today. ATM (at the money) means the strike is about at the price. ITM (in the money) means the option would pay something today. The bot sells OTM options.",
+    "risk_income": "A sold option moving from OTM toward ITM is losing money.",
+    "source": "OptionStrategy.md#12-glossary",
+    "labels": ["Moneyness"]
+  },
+  "gex": {
+    "short": "Gamma exposure: an estimate of how option dealers' hedging pushes the price.",
+    "long": "GEX estimates the gamma held by option dealers, the firms on the other side of most trades. To stay neutral they buy and sell the coin as the price moves. When their gamma is negative they buy into rises and sell into falls, which makes moves bigger. The bot reads GEX every minute from Deribit's main market.",
+    "risk_income": "Negative GEX warns that moves may grow larger; the bot sells less and sheds the threatened side.",
+    "source": "OptionStrategy.md#12-glossary"
+  },
+  "gamma regime": {
+    "short": "Whether dealer hedging is calming the market (positive) or making moves bigger (negative).",
+    "long": "The regime is the sign of the dealers' gamma exposure (GEX). Positive: dealer hedging tends to slow the price down. Negative: it tends to push the price further the way it is going. A change must hold for 2 daily closes before the bot treats it as confirmed.",
+    "risk_income": "A confirmed negative regime lowers the margin limit and stops sales on the side the price runs toward.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Gamma regime", "Regime · bias · SMA"]
+  },
+  "gamma flip": {
+    "short": "The price where dealer gamma changes from positive to negative.",
+    "long": "The gamma flip is the coin price at which the dealers' gamma exposure (GEX) changes sign. Below the flip, dealer hedging tends to make moves bigger. The bot compares spot with the flip, plus a buffer, to decide whether to shed a leg and when to sell it again.",
+    "risk_income": "Spot well below the flip in a negative regime is the warning that sheds a side.",
+    "source": "OptionStrategy.md#12-glossary",
+    "labels": ["Gamma flip", "Live flip + buffer"]
+  },
+  "flip buffer": {
+    "short": "The distance from the gamma flip that counts as a real move: 1.5 normal days of price change.",
+    "long": "The buffer is a margin around the gamma flip so that small moves do not trigger a shed. It is 1.5 times a normal day's move, taken from DVOL. A side is shed only when spot is more than this buffer beyond the flip, and sold again only when spot is back past the flip plus the buffer.",
+    "risk_income": "A wider buffer means fewer sheds and more exposure in a real move; a narrower one sheds more often.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "sma trend": {
+    "short": "The price trend (bull, bear or neutral) read from the 9-day and 21-day moving averages.",
+    "long": "A moving average (SMA) is the average closing price of the last days. The bot compares the 9-day and 21-day averages and recent highs and lows to call the trend bull, bear or neutral. In a negative regime, the trend says which side is threatened.",
+    "risk_income": "The trend decides which side the bot stops selling in a negative regime: puts in a bear trend, calls in a bull trend.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Trend", "SMA trend"]
+  },
+  "bias": {
+    "short": "The direction read from spot against the gamma flip: up, down or neutral.",
+    "long": "The bias is another way to read direction. In a negative regime, spot more than the buffer above the gamma flip is 'bias up', more than the buffer below is 'bias down', otherwise neutral. The bot records both bias and trend and uses the one its settings name (gex_direction).",
+    "risk_income": "Under the bias, a rally through the flip sheds calls; it has shed more often than the trend in tests.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "shed": {
+    "short": "Closing the threatened side of every strangle when the market may move hard that way.",
+    "long": "A shed buys back the side under threat: in a negative regime, with spot more than the buffer below the gamma flip and a trend, puts in a bear trend and calls in a bull trend. The signal must hold on 2 snapshots in a row. The side is sold again only once the price recovers.",
+    "risk_income": "A shed limits losses in a strong move but gives up that side's income until the price recovers.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["GEX shed", "GEX shedding"]
+  },
+  "gex anchor": {
+    "short": "The gamma flip and buffer saved at a shed; the shed side waits until spot is back above them.",
+    "long": "When a side is shed, the bot saves the gamma flip and buffer of that moment. The side is sold again only when spot is above that saved flip plus its buffer on 2 snapshots, or after the regime has been non-negative for 24 hours. A later jump of the live flip does not count.",
+    "risk_income": "It keeps the bot from selling the same side back into a move that is still going.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["GEX anchor", "Shed release"]
+  },
+  "regime side": {
+    "short": "The side the bot does not sell in a confirmed negative regime: puts in a bear trend, calls in a bull trend.",
+    "long": "When the negative regime is confirmed, the side the price is running toward is not sold. New strangles open only the other leg, and repairs or top-ups of that side wait. With no trend, both sides are sold.",
+    "risk_income": "It keeps the bot out of the side most at risk, and keeps the income of the other side.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["regime side"]
+  },
+  "margin": {
+    "short": "Money the exchange sets aside from the account to cover the risk of open positions.",
+    "long": "Sold options can lose more than the premium, so the exchange holds part of the account as margin. Initial margin (IM) is what is needed to open positions. Maintenance margin (MM) is the floor: if it reaches 100 % of the margin balance, the exchange closes positions by force.",
+    "risk_income": "More margin in use means more positions, more income and more risk.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["Margin policy"]
+  },
+  "margin balance": {
+    "short": "The money in the account that counts toward margin.",
+    "long": "The margin balance is the account's value that the exchange counts against margin needs. The bot's limits are percentages of it: the IM limit and the MM limit. A deposit raises it and a withdrawal lowers it.",
+    "risk_income": "A larger margin balance lets the bot hold larger positions within the same percentage limits.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["Margin balance"]
+  },
+  "im": {
+    "short": "Initial margin: what the exchange holds to cover open positions, as an amount or a % of the margin balance.",
+    "long": "Initial margin (IM) is the amount the exchange sets aside for open positions and orders. The monitor shows it in dollars and as a percentage of the margin balance. 'Proj.' is the figure without the nearest expiry. The bot sizes new positions so IM stays under its limit.",
+    "risk_income": "More IM in use means bigger positions: more income and more risk.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["Initial margin", "IM (proj.)", "IM %", "IM used", "IM used / limit", "IM / MM"]
+  },
+  "mm": {
+    "short": "Maintenance margin: the floor. At 100 % of the margin balance the exchange closes positions by force.",
+    "long": "Maintenance margin (MM) is the least the account must keep to hold its positions. If MM reaches 100 % of the margin balance, the exchange liquidates, meaning it closes positions at market. The bot cuts positions itself long before that, at 35 %.",
+    "risk_income": "MM is the distance to liquidation: the higher it is, the closer a forced close.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["Maintenance margin", "MM (proj.)", "MM %", "MM used / limit", "MM used (liquidation at 100 %)"]
+  },
+  "im limit": {
+    "short": "The most initial margin the bot may use, as a % of the margin balance: 20, 35 or 50 %.",
+    "long": "The bot picks its IM limit from the volatility band: 50 % when DVOL is high against the past year, 35 % in the middle, 20 % when it is low. In a confirmed negative regime the limit is 20 %. The monitor says which reason sets the limit now.",
+    "risk_income": "A higher limit allows bigger positions, so more income and bigger possible losses.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["IM limit", "Why this limit"]
+  },
+  "mm limit": {
+    "short": "If maintenance margin reaches 35 % of the margin balance, the bot buys positions back at once.",
+    "long": "The MM limit is the bot's own safety line, far from the exchange's 100 %. When maintenance margin reaches it, the bot buys back positions at market right away and blocks new sales and repairs until margin is back under it.",
+    "risk_income": "It trades some income and fees for a wide distance from a forced liquidation.",
+    "source": "OptionStrategy.md#8-risk-controls",
+    "labels": ["MM limit", "MM breach"]
+  },
+  "im over limit": {
+    "short": "IM is above the limit without a limit change, for example after a withdrawal. Alert only.",
+    "long": "When initial margin rises above the limit by more than 1.5 points and no rebalance is due, for example after a withdrawal or a price move, the bot raises an alert. It does not trade. A person decides, with a rebalance preview, whether to resize. The alert clears when IM is back under the limit.",
+    "risk_income": "While it lasts, the book carries more risk than the limit allows and no new positions are opened.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["IM over limit", "IM back under limit"]
+  },
+  "freeze": {
+    "short": "A pause on new positions while a change of volatility band or regime waits for confirmation.",
+    "long": "When the volatility band or the gamma regime changes in a way that could lower the margin limit, the bot stops opening new positions until the change has held for 2 daily closes. Exits, rolls and repairs of rolled legs go on. If the change goes away, the freeze ends.",
+    "risk_income": "During a freeze no new income is added, and no new risk is taken.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Entries frozen", "Unfrozen", "New entries"]
+  },
+  "rebalance": {
+    "short": "Resizing the positions toward the current margin limit: selling more (top-up) or buying back (downsize).",
+    "long": "When the confirmed margin limit changes, at startup, or on a person's request, the bot resizes each slot toward its share of the limit. It sells more when there is room and buys back when the book is too large. A person can preview a rebalance before running it.",
+    "risk_income": "A top-up adds income and risk; a downsize removes both and pays fees and the spread.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Rebalance"]
+  },
+  "entry": {
+    "short": "Selling a new strangle into an empty slot; also the price it was sold at.",
+    "long": "An entry opens a strangle in an empty slot. The bot picks the expiry and strikes, checks each leg is worth at least the minimum premium, sizes it within the margin limit and places limit sell orders. In the positions table, 'Entry' is the price each leg was sold at.",
+    "risk_income": "Each entry adds premium income and the risk of a big move.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Entry"]
+  },
+  "repair": {
+    "short": "Selling a strangle's missing leg again, at the same expiry and size.",
+    "long": "When a strangle has lost one leg, the bot sells that leg again on the same expiry, near the original delta, with the same size. After a take-profit or a drift roll it repairs at once. After a stop-loss or a delta exit it waits 72 hours and for a calm market.",
+    "risk_income": "A repair restores the premium income and the balance of the strangle.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["repairing"]
+  },
+  "stop-loss": {
+    "short": "Buying a leg back at market when its loss reaches 2 times the premium received.",
+    "long": "The stop-loss is the first exit rule. When a leg's loss reaches the set multiple of its premium (2 times), the bot buys it back at market, ahead of everything else. 'Stop @' is the option price at which that happens. If the order book is empty it waits up to 5 minutes.",
+    "risk_income": "It caps the loss on most moves; a sudden gap can still go past it.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Stop-loss", "Stop @"]
+  },
+  "stop hold": {
+    "short": "After a stop-loss, delta exit or manual close, that side is not sold again for 72 hours.",
+    "long": "A leg closed by a stop-loss, a delta exit, a manual close or the MM limit is held. It is sold again only after 72 hours, with no freeze and no confirmed negative regime. The hold survives restarts. 'Cooldown until' shows when the 72 hours end.",
+    "risk_income": "It avoids selling into the same move that caused the loss, at the cost of income while the side is empty.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["stop hold", "Cooldown until"]
+  },
+  "stop waiting": {
+    "short": "A stop-loss waiting up to 5 minutes because the order book is nearly empty.",
+    "long": "When a stop-loss triggers but the asking price is more than 20 % above the middle price, sellers have left the order book, as in a flash crash. The bot waits and checks each cycle. It buys back once prices are normal, or at market after 5 minutes. Meanwhile no new positions are opened.",
+    "risk_income": "It avoids paying a panic price for a buy-back, and adds up to 5 minutes of exposure.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["stop waiting"]
+  },
+  "delta exit": {
+    "short": "Closing a leg early when its delta reaches 0.30: the move against it is real.",
+    "long": "When the price moves toward a sold strike, that leg's delta grows. At 0.30 the bot buys the leg back before it reaches the 2 times stop-loss. Afterwards the side is held like after a stop-loss.",
+    "risk_income": "It takes smaller losses earlier, and more of them, instead of fewer larger stop-losses.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Delta exit"]
+  },
+  "delta drift": {
+    "short": "Buying back a leg whose delta fell below 0.10: far from the price, little premium left.",
+    "long": "When the price moves away from a leg, its delta falls and little premium is left to earn. Below 0.10 the bot buys it back and repairs it at once with a fresh leg near the target delta, on the same expiry.",
+    "risk_income": "It replaces a leg that earns almost nothing with one that earns more, and adds that new leg's risk.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Roll (delta drift)"]
+  },
+  "take-profit": {
+    "short": "Buying a leg back once 50 % of its premium has been earned.",
+    "long": "When a leg's buy-back price has fallen to half of what it was sold for, the bot buys it back and keeps the gain. It first rests an order at the middle price, then crosses to the asking price. The missing leg is then sold again at once.",
+    "risk_income": "It banks part of the premium early instead of holding for all of it.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Take-profit"]
+  },
+  "time roll": {
+    "short": "Buying a strangle back when 15 days or fewer are left before expiry.",
+    "long": "Losses can grow fastest in the last weeks before expiry. When 15 days or fewer are left, the bot buys the strangle's legs back. Once both are gone, the slot opens a new strangle further out.",
+    "risk_income": "It gives up the last weeks of decay to avoid the sharpest swings.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Roll (time)", "rollout window"]
+  },
+  "manual close": {
+    "short": "A person buys a leg back at market from the monitor, allowed only on the side the bot no longer sells.",
+    "long": "The Close button buys a leg back at market. It works only while a confirmed negative regime blocks that leg's side. A confirmation window shows the cost and what follows. Afterwards the side is held like after a stop-loss.",
+    "risk_income": "It removes that leg's risk and income, and pays the asking price and a fee.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Manual close", "Action"]
+  },
+  "kill switch": {
+    "short": "The emergency stop: cancel every order, buy back every position at market, stop trading.",
+    "long": "The kill switch is an operator signal. The bot cancels all orders, books what had filled, buys back every position the exchange reports at market and checks the account is flat. Then it stays idle until a person restarts it.",
+    "risk_income": "It ends all risk and all income at once, at market prices.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Kill switch"]
+  },
+  "balance legs": {
+    "short": "Buying back the extra size of the larger leg so the call and put match.",
+    "long": "A strangle is balanced only when its call and put are the same size. If one leg is larger, for example after a partial fill, the bot buys back the difference on the larger side. It does this even during a freeze, because it lowers risk.",
+    "risk_income": "It removes one-sided risk and the income of the extra size.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Balance legs"]
+  },
+  "churn pause": {
+    "short": "A slot that buys back and re-sells 3 times within 60 minutes is paused for an hour.",
+    "long": "If a slot keeps buying back and selling again, something is wrong and every round trip pays fees and the spread. After 3 round trips in 60 minutes, the slot stops opening, repairing and resizing for an hour. Exits still run.",
+    "risk_income": "It stops fees and spread from eating the income in a loop.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["churn pause"]
+  },
+  "gex wait": {
+    "short": "No new positions until a fresh GEX reading arrives (after a start, or when it is over 5 minutes old).",
+    "long": "Without a fresh GEX reading, the bot cannot tell the regime or which side is safe to sell. So it opens nothing, tops up nothing and repairs nothing until one arrives. Exits, leg balancing and the MM limit still run.",
+    "risk_income": "It delays income briefly to avoid selling the wrong side.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["waiting GEX"]
+  },
+  "unknown order": {
+    "short": "An order that may or may not have reached the exchange; the bot cancels it before acting again.",
+    "long": "If the connection drops while an order is sent, the bot cannot know whether the exchange took it. It cancels the order by its label every cycle until that succeeds, and blocks that slot meanwhile. Any position that turns up is then taken into the book.",
+    "risk_income": "It prevents a double position; the slot earns nothing new while it waits.",
+    "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
+    "labels": ["unknown order"]
+  },
+  "working order": {
+    "short": "An order on the exchange that has not filled yet.",
+    "long": "The bot sells with limit orders, which wait on the exchange until a buyer accepts the price. While an order works, the bot lowers its price a few times. After the fill timeout it cancels the rest and keeps whatever filled.",
+    "risk_income": "A working order adds risk only as it fills.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Pending orders", "order working"]
+  },
+  "order sent": {
+    "short": "An order the bot placed on the exchange.",
+    "long": "Each order the bot places is counted and written to its journal with the market at that moment. One entry can need several orders, because unfilled orders are cancelled and tried again.",
+    "risk_income": "None by itself: only the filled part becomes a position.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Orders sent", "Order sent"]
+  },
+  "re-priced": {
+    "short": "A working order whose price the bot changed so it fills.",
+    "long": "When a sell order does not fill, the bot lowers its price in steps: first the asking price, then the middle price, then a floor. Each change is journaled.",
+    "risk_income": "A lower price fills sooner and brings a little less premium.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Re-priced"]
+  },
+  "cancelled": {
+    "short": "An order taken off the exchange before it filled, in whole or in part.",
+    "long": "The bot cancels orders that did not fill in time, and orders a freeze or a shed makes unwanted. Whatever filled before the cancel is kept and tracked.",
+    "risk_income": "None for the unfilled part.",
+    "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
+    "labels": ["Cancelled"]
+  },
+  "filled": {
+    "short": "The part of an order that traded; for a sale, the part that opened a position.",
+    "long": "An order can fill in full, in part, or not at all. The bot always records exactly what filled, never the amount it asked for. 'Opened' in the feed is a sale that filled.",
+    "risk_income": "Each filled sale adds premium income and risk.",
+    "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
+    "labels": ["Filled", "Opened"]
+  },
+  "close": {
+    "short": "Buying back a sold option, which ends that leg's position.",
+    "long": "The bot closes a leg by buying it back. The reason is shown with the numbers that fired it: take-profit, roll, stop-loss, delta exit, shed, manual close and others. Realized P&L is booked at each close, after fees.",
+    "risk_income": "A close turns open P&L into realized P&L and ends that leg's risk.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Closes", "Closed"]
+  },
+  "buy back": {
+    "short": "Buying an option the bot sold, to close it.",
+    "long": "To end a sold option before expiry, the bot buys the same option back. The difference between the premium received and the buy-back price, after fees, is the result.",
+    "risk_income": "The cheaper the buy-back, the more of the premium is kept.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Buy back", "Paid to buy back"]
+  },
+  "reconcile": {
+    "short": "Loading the exchange's real positions into the bot's book, at startup or when they differ.",
+    "long": "The exchange is the source of truth. At each start the bot reads every position the exchange holds and rebuilds its book from it. During trading, a difference that lasts 2 checks is taken into the book. 'Loaded' in the feed is such a step.",
+    "risk_income": "None by itself: it makes sure every real position is managed.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Loaded"]
+  },
+  "skipped": {
+    "short": "A chance to open or resize that the bot let pass, with its reason.",
+    "long": "When a rule says no, the bot writes down what it did not do and why, for example a premium too small, a freeze, or no fresh GEX reading. These lines show why a slot stayed empty.",
+    "risk_income": "A skip adds neither risk nor income.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Skipped"]
+  },
+  "hold rule": {
+    "short": "The rule that keeps the bot from selling a missing leg again right now.",
+    "long": "For every one-sided strangle the monitor names the rule holding its repair: a stop hold, the regime side, a GEX anchor or shed, the MM limit, a waiting stop, no fresh GEX, a working order, an unknown order, a churn pause or the roll window.",
+    "risk_income": "While a rule holds, the strangle earns from one leg only.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Held by"]
+  },
+  "p&l": {
+    "short": "Profit and loss, after Deribit's fees, in US dollars or in the coin.",
+    "long": "P&L is the profit or loss of positions, net of the exchange's fees. Realized P&L comes from closed legs; unrealized P&L is the open legs valued at the current mark. Total P&L adds both. Dollar figures use the coin's price at that moment.",
+    "risk_income": "It is the result of the income earned and the losses paid so far.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["P&L", "Total P&L", "P&L (USD)"]
+  },
+  "realized p&l": {
+    "short": "Profit or loss already locked in by closed legs, after fees.",
+    "long": "Realized P&L is booked when a leg is bought back: the premium received minus the buy-back price, its share of the opening fees and the closing fee. It does not change after the close.",
+    "risk_income": "It is income (or loss) already earned; no more risk is attached to it.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Realized P&L", "Result"]
+  },
+  "unrealized p&l": {
+    "short": "Profit or loss of open legs if they were bought back now at the mark, after opening fees.",
+    "long": "Unrealized P&L is the premium received minus what it would cost to buy the open legs back at the current mark, minus the fees paid to open. It changes with every price move until the leg is closed.",
+    "risk_income": "It can still change a lot: a profit on paper is not yet income.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Unrealized P&L"]
+  },
+  "p&l %": {
+    "short": "Unrealized P&L as a % of the premium received: +50 % is half the premium earned.",
+    "long": "P&L % compares a leg's open result with its premium. +50 % means half the premium is profit, 0 % is break-even, −100 % means the loss equals the premium. The stop-loss fires near −200 % with the 2 times setting.",
+    "risk_income": "It shows how close a leg is to its take-profit (+50 %) or its stop-loss (about −200 %).",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["P&L %"]
+  },
+  "mark": {
+    "short": "The price used to value an open leg: the middle of the live bid and ask.",
+    "long": "The mark is the price at which the bot values a leg, from the exchange's live quote. Without a live quote it keeps the last known mark and says so. Unrealized P&L and the stop-loss use the mark.",
+    "risk_income": "A rising mark on a sold option is a growing loss.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Mark"]
+  },
+  "bid / ask": {
+    "short": "The best price a buyer offers (bid) and the best price a seller asks (ask).",
+    "long": "The bid is the highest price someone will pay now; the ask is the lowest price someone will sell for. The gap between them is the spread. The bot sells near the ask and, for most exits, buys back between the two or at the ask.",
+    "risk_income": "A wide spread costs more on every trade, which lowers net income.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Bid / Ask"]
+  },
+  "limit price": {
+    "short": "The price set on an order: it fills at that price or better, or not at all.",
+    "long": "A limit order names its price. A sell limit fills only at that price or higher. The bot uses limit orders for entries and repairs so it never sells for less than it chose.",
+    "risk_income": "A higher limit means more premium if it fills, and a smaller chance it fills.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Limit"]
+  },
+  "fill timeout": {
+    "short": "When an unfilled order is cancelled; the filled part is kept.",
+    "long": "Each sell order has a time limit. When it ends, the bot cancels the rest, reads back what filled and keeps it. A strangle with only one leg filled is completed later by a repair.",
+    "risk_income": "None by itself: it ends the wait for a fill.",
+    "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
+    "labels": ["Timeout"]
+  },
+  "age": {
+    "short": "How long an order has been working.",
+    "long": "The time since the order was placed. The bot re-prices it as it ages and cancels it at the fill timeout.",
+    "risk_income": "None by itself.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Age"]
+  },
+  "instrument": {
+    "short": "The exact option traded, named by coin, expiry, strike and type, e.g. BTC-27NOV26-90000-P.",
+    "long": "The instrument name reads: coin, expiry date, strike price, then C for a call or P for a put. Each row of the monitor is one instrument.",
+    "risk_income": "None by itself.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Instrument"]
+  },
+  "side": {
+    "short": "SELL means a sold option (premium received); BUY means a bought one (premium paid).",
+    "long": "The bot's strangles are sold: SELL. A bought option, BUY, pays a premium, for example as insurance on a sold one. Positions the bot does not manage can be either side.",
+    "risk_income": "A sold option earns premium with open-ended risk; a bought one costs premium with a capped loss.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Side"]
+  },
+  "quantity": {
+    "short": "The size of a position or order, in coins of the underlying (e.g. 0.1 BTC).",
+    "long": "Option sizes on Deribit are counted in coins of the underlying asset. A 0.1 BTC option covers a move of 0.1 BTC. The bot sizes each slot from the margin limit.",
+    "risk_income": "Bigger size means more premium and a bigger loss in a bad move.",
+    "source": "OptionStrategy.md#2-options-in-five-minutes",
+    "labels": ["Qty", "Size"]
+  },
+  "price": {
+    "short": "The price an option traded at, in the coin (e.g. 0.0125 BTC).",
+    "long": "Deribit prices these options in the coin itself, not in dollars. The monitor converts to dollars at the coin's price where it says USD.",
+    "risk_income": "None by itself.",
+    "source": "OptionStrategy.md#12-glossary",
+    "labels": ["Price", "Avg price"]
+  },
+  "reason": {
+    "short": "Why the bot opened or closed a position, with the rule's numbers.",
+    "long": "Every trade carries its reason, for example 'take-profit' or 'stop-loss', and the numbers that fired the rule. The same reasons group results in the history.",
+    "risk_income": "None by itself: it explains the trade.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Reason"]
+  },
+  "time": {
+    "short": "When something happened, in São Paulo time (BRT).",
+    "long": "The time of a trade or event. The bot records times in UTC; the monitor shows them in São Paulo time, marked BRT.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Time"]
+  },
+  "held": {
+    "short": "How many days a position was open before it closed.",
+    "long": "The time from the sale of a leg to its buy-back, in days.",
+    "risk_income": "None by itself.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Held"]
+  },
+  "position": {
+    "short": "An option the account holds now, sold or bought.",
+    "long": "A position is an open option on the account. The bot's positions are the legs of its strangles. The account can also hold positions the bot does not manage; they still use margin.",
+    "risk_income": "Every open position carries its own risk and income.",
+    "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
+    "labels": ["Position"]
+  },
+  "bot": {
+    "short": "One running copy of the strategy, trading one coin (BTC or ETH).",
+    "long": "Each bot trades one coin on its own Deribit account and reports to the monitor. 'Bots online' counts the bots that answered recently.",
+    "risk_income": "None by itself.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Bot", "Bots online"]
+  },
+  "strategy": {
+    "short": "The set of rules a bot trades by; here, short strangles.",
+    "long": "The strategy names the trading plan, for example short strangles. The monitor can filter and group by it.",
+    "risk_income": "None by itself.",
+    "source": "OptionStrategy.md#1-the-idea-in-one-paragraph",
+    "labels": ["Strategy"]
+  },
+  "group by": {
+    "short": "Shows open positions grouped by strategy, slot, expiry or type, with totals.",
+    "long": "Grouping puts related legs together and adds up their P&L and greeks in the group header.",
+    "risk_income": "None by itself.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Group by"]
+  },
+  "asset": {
+    "short": "A coin held in the account (e.g. BTC, ETH, USDC).",
+    "long": "The account can hold several coins. Each one counts toward the margin balance at its value.",
+    "risk_income": "None by itself.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Asset"]
+  },
+  "balance": {
+    "short": "How much of a coin the account holds, before open positions are valued.",
+    "long": "The balance is the coin held in the account. Equity adds the value of open positions to it.",
+    "risk_income": "None by itself.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Balance"]
+  },
+  "equity": {
+    "short": "What the account is worth now: balance plus the value of open positions.",
+    "long": "Equity is the account's value if everything were closed at current prices. 'All collateral' adds every coin, in dollars.",
+    "risk_income": "It rises with income and falls with losses.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Equity", "Equity (all collateral)", "Of the account"]
+  },
+  "daily swing": {
+    "short": "How far the coin typically moves in one day, from DVOL: DVOL ÷ √365.",
+    "long": "DVOL is the market's expected yearly swing of the coin. Divided by √365 it gives a typical day's swing, one daily standard deviation. With DVOL 50 that is about 2.6 %. The worst-case page shows days of 2 and 3 typical swings each way.",
+    "risk_income": "Bigger swings cost a short-option book money in either direction; quiet days pay it a little.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["How big"]
+  },
+  "available": {
+    "short": "Money free to back new positions or orders.",
+    "long": "Available is the margin balance minus the initial margin already in use.",
+    "risk_income": "Less available means less room for new positions.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Available"]
+  },
+  "withdrawable": {
+    "short": "How much can be taken out of the account now.",
+    "long": "The amount the exchange would let you withdraw without breaking margin needs.",
+    "risk_income": "Withdrawing lowers the margin balance, which can push IM over the limit.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Withdrawable"]
+  },
+  "reserved": {
+    "short": "Coin set aside for open spot orders.",
+    "long": "Money held back by orders to buy or sell the coin itself, not options.",
+    "risk_income": "None for the bot.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Reserved"]
+  },
+  "usd": {
+    "short": "US dollars, at the coin's price at that moment.",
+    "long": "The bot earns in the coin. Dollar figures convert at the coin's price at each close, or today's price for open positions.",
+    "risk_income": "None by itself; the coin's own price changes dollar figures.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["USD"]
+  },
+  "month": {
+    "short": "A calendar month in UTC.",
+    "long": "Income is summed per month in UTC; a month without closes says so.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Month"]
+  },
+  "exchange fees": {
+    "short": "What Deribit charged to open and to buy back the options closed that month.",
+    "long": "Each close carries its share of the fee paid to open the option and the fee paid to buy it back. The income page shows them as a cost; the result is already net of them.",
+    "risk_income": "Fees lower the income of every trade, winning or losing.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Exchange fees"]
+  },
+  "holding alone": {
+    "short": "What the same account would have done by just holding the coin that month.",
+    "long": "Counted in the coin, holding neither gains nor loses, so every coin the bot earns is extra. In dollars it is the coin's price change over the month times the account's balance at the month's start, from the bot's recorded history.",
+    "risk_income": "It shows how much of a dollar result is the coin's own move, not the strategy.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Holding alone"]
+  },
+  "income over months": {
+    "short": "The realised result of the months shown, after fees, and the average of the months with a close.",
+    "long": "The total adds every month's result in the table. The average divides it by the months that had at least one close, and the line under it counts the months up and down. The % compares the total with the account's balance at the start.",
+    "risk_income": "One good average can hide a bad month: read it with the worst month and worst week.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Last 6 months, after fees", "Average month"]
+  },
+  "worst month": {
+    "short": "The month with the lowest realised result, after fees.",
+    "long": "Among the months with at least one close, the one that earned least or lost most. Under it, the coin's recorded price move that month, when the bot's history has it.",
+    "risk_income": "It shows the size of a bad month, which an average hides.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Worst month"]
+  },
+  "worst week": {
+    "short": "The lowest change of the bot's total P&L over any 7 days, with its dates.",
+    "long": "Taken from the bot's P&L history, open positions included, in the coin and as a % of the account's balance at the start. Days without history are listed, never filled in.",
+    "risk_income": "It is the drop an investor would have lived through in one week.",
+    "source": "frontend/README.md#income-page",
+    "labels": ["Worst week"]
+  },
+  "win rate": {
+    "short": "The share of closes that made money.",
+    "long": "Win rate counts closes with a positive result after fees. A high win rate is normal for option selling and does not tell you the size of the losses: compare it with the average win and loss.",
+    "risk_income": "A high win rate can sit beside rare large losses.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
+    "labels": ["Win rate", "Wins"]
+  },
+  "avg win": {
+    "short": "The average profit of the closes that made money.",
+    "long": "The mean result, after fees, of winning closes, in dollars.",
+    "risk_income": "Compare it with the average loss.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
+    "labels": ["Avg win"]
+  },
+  "avg loss": {
+    "short": "The average loss of the closes that lost money.",
+    "long": "The mean result, after fees, of losing closes, in dollars. For option sellers it is often several times the average win.",
+    "risk_income": "A large average loss can erase many small wins.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
+    "labels": ["Avg loss"]
+  },
+  "win / loss size": {
+    "short": "Average win divided by average loss.",
+    "long": "Below 1 means a typical loss is bigger than a typical win, which is normal for option selling. Read it together with the win rate.",
+    "risk_income": "A lower ratio needs a higher win rate to break even.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
+    "labels": ["Win / loss size"]
+  },
+  "underlying": {
+    "short": "The coin this bot trades options on: BTC or ETH.",
+    "long": "Setting: the coin whose options the bot sells. Each bot trades one coin, on its own account. Prices, premiums and the minimum premium are in this coin.",
+    "risk_income": "Each coin has its own volatility: ETH usually moves more than BTC.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "strategy_id": {
+    "short": "Setting: the strategy's name in the bot's journal and order labels.",
+    "long": "A name for the strategy, written on every journal line and order label so trades can be traced. It does not change how the bot trades.",
+    "risk_income": "None.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "dte_delta_matrix": {
+    "short": "Setting: the slots, each a target number of days and a target delta.",
+    "long": "Setting: the list of slots. Each line names a target number of days to expiry and one or more deltas; each pair is one strangle slot. BTC ships with 25 and 50 days, ETH with 30 and 50, all at 0.16 delta.",
+    "risk_income": "More slots mean more positions (more income and more risk); the margin limit is split between them.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "dte_delta_matrix.dte": {
+    "short": "Setting: how many days to expiry a slot aims for.",
+    "long": "Setting: the slot's target days to expiry. The bot picks the listed expiry nearest to it that no other slot holds.",
+    "risk_income": "Longer: more premium per trade and longer exposure. Shorter: faster decay and sharper swings.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "dte_delta_matrix.deltas": {
+    "short": "Setting: the delta at which a slot sells its call and put (0.16 shipped).",
+    "long": "Setting: the target delta for the slot's strikes. 0.16 means each leg has roughly a 16 % chance of paying out at expiry. Each delta listed is its own slot.",
+    "risk_income": "Higher: strikes closer to the price, more premium, more risk. Lower: further away, less premium, safer.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "rollout_dte": {
+    "short": "Setting: buy a strangle back when this many days or fewer are left (15 shipped).",
+    "long": "Setting: the time roll. When an expiry has this many days or fewer left, its legs are bought back and the slot reopens further out. Every slot's target must be above it.",
+    "risk_income": "Up: exits earlier, less late-expiry risk, less decay earned. Down: holds longer, more decay and more risk.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "delta_drift_threshold": {
+    "short": "Setting: buy back a leg whose delta falls below this (0.10 shipped) and sell a fresh one.",
+    "long": "Setting: when a leg's delta falls below this, it is far from the price with little premium left. The bot buys it back and sells a new leg at the target delta. It must be at most 75 % of every entry delta.",
+    "risk_income": "Up: refreshes legs sooner, more trades and fees. Down: lets legs drift further and earn less.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "roi_take_profit": {
+    "short": "Setting: buy a leg back once this share of its premium is earned (0.50 = 50 % shipped).",
+    "long": "Setting: the take-profit. When a leg has earned this share of its premium, the bot buys it back and sells a fresh one.",
+    "risk_income": "Up: holds longer for more, stays exposed longer. Down: banks sooner and trades more often.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "stop_loss_multiplier": {
+    "short": "Setting: buy a leg back at market when its loss reaches this many times its premium (2 shipped).",
+    "long": "Setting: the stop-loss. A leg is bought back at market when its loss reaches this multiple of the premium received for it.",
+    "risk_income": "Up: fewer stop-outs, bigger losses each. Down: more stop-outs, smaller losses each.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "delta_exit_threshold": {
+    "short": "Setting: close a leg early when its delta reaches this (0.30 shipped).",
+    "long": "Setting: the delta exit. A leg whose delta reaches this is bought back before the stop-loss, then held like a stop. It must be above every entry delta.",
+    "risk_income": "Up: fewer early exits, more full stop-losses. Down: more early exits, smaller losses each.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "repair_cooldown_hours": {
+    "short": "Setting: hours a stopped-out side stays empty before it may be sold again (72 shipped).",
+    "long": "Setting: after a stop-loss, delta exit, manual close or MM cut, that side waits this many hours, and a calm market, before a repair.",
+    "risk_income": "Up: longer pause after a loss, less income meanwhile. Down: re-enters sooner, possibly into the same move.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "gamma_flip_buffer_sd": {
+    "short": "Setting: how many normal days' moves beyond the gamma flip trigger a shed (1.5 shipped).",
+    "long": "Setting: the flip buffer, in normal daily moves taken from DVOL. A side is shed only when spot is this far beyond the gamma flip in a negative regime, and sold again once it is back past the flip plus this buffer.",
+    "risk_income": "Up: fewer sheds, more exposure in a real move. Down: sheds more often, gives up more income.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "gex_direction": {
+    "short": "Setting: what decides the threatened side in a negative regime: sma (the trend) or bias (spot vs flip).",
+    "long": "Setting: sma uses the SMA trend; bias uses spot against the gamma flip plus the buffer. Both are recorded so they can be compared. In tests the bias shed more often and returned less than the trend.",
+    "risk_income": "It changes which side is shed and how often, so it changes both losses avoided and income given up.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "iv_margin_bands": {
+    "short": "Setting: the IM limit for each volatility band: 50 %, 35 % or 20 % of the margin balance.",
+    "long": "Setting: a list of bands. Each says: when the IV percentile is at least this, initial margin may reach this % of the margin balance. A confirmed negative regime uses the lowest band.",
+    "risk_income": "Higher limits mean bigger positions: more income and bigger losses in a bad move.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "iv_margin_bands.min_iv_pct": {
+    "short": "Setting: the lowest IV percentile at which a band applies.",
+    "long": "Setting: a band applies when the IV percentile is at or above this number (and below the next band's).",
+    "risk_income": "Lower thresholds reach the higher limits more often.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "iv_margin_bands.max_im_pct": {
+    "short": "Setting: the IM limit of a band, in % of the margin balance.",
+    "long": "Setting: the most initial margin the bot may use while this band applies.",
+    "risk_income": "Up: larger positions. Down: smaller positions.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "max_mm_pct": {
+    "short": "Setting: the MM limit. At this % of the margin balance the bot buys positions back (35 shipped).",
+    "long": "Setting: when maintenance margin reaches this % of the margin balance, the bot buys back positions at market and opens nothing until it is back under. Deribit liquidates at 100 %.",
+    "risk_income": "Up: closer to liquidation before acting. Down: earlier forced reductions.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "max_leg_size_multiple": {
+    "short": "Setting: a new leg is at most this many times its slot's normal size (2 shipped).",
+    "long": "Setting: the normal size is the slot's margin share divided by one strangle's own margin. Margin that nets positions can make a leg look almost free; this cap stops that from inflating sizes.",
+    "risk_income": "Up: bigger positions when margin allows. Down: smaller, steadier positions.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "min_premium": {
+    "short": "Setting: the smallest premium per leg worth selling, in the coin (0.001 shipped).",
+    "long": "Setting: a leg is sold only if its premium, at the lowest price the bot may lower to, is at least this. 0 accepts any premium.",
+    "risk_income": "Up: fewer, richer trades. Down: more trades for smaller premiums, with the same tail risk.",
+    "source": "OptionStrategy.md#10-the-parameters-in-plain-words"
+  },
+  "backtest": {
+    "short": "Settings for the backtest, which replays past prices; they do not affect live trading.",
+    "long": "The backtest runs the bot's rules on past data to study them. These settings only say how its simulated fills and costs work. Past results do not predict future ones.",
+    "risk_income": "None on the live account.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "backtest.fill_model": {
+    "short": "Backtest setting: the fill model to simulate (mid, bid_ask or slippage); the backtest does not read it today.",
+    "long": "Backtest setting kept in the files for a choice of fill model. Today the backtest fills market orders at the middle price moved by slippage_pct, and limit orders at their limit price, whatever this says.",
+    "risk_income": "None on the live account.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "backtest.slippage_pct": {
+    "short": "Backtest setting: how much worse than the middle price a simulated market order fills, as a fraction.",
+    "long": "Backtest setting: a simulated market buy fills this fraction above the middle price, a sale this fraction below it. 0.001 is 0.1 %.",
+    "risk_income": "None on the live account; more slippage gives more cautious backtest results.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "backtest.limit_fill_rule": {
+    "short": "Backtest setting: when a simulated limit order fills (next_tick).",
+    "long": "Backtest setting: next_tick fills a limit order on the next price record that reaches its price.",
+    "risk_income": "None on the live account.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "backtest.commission_per_contract": {
+    "short": "Backtest setting: the exchange fee rate per contract, as a fraction of the coin price (0.0003 = 0.03 %).",
+    "long": "Backtest setting: each simulated fill pays this fraction of the coin price per contract, capped at 12.5 % of the option price, like Deribit's fee.",
+    "risk_income": "None on the live account; higher fees lower backtest results.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "backtest.margin_call_liquidation": {
+    "short": "Backtest setting: meant to close every simulated position when margin runs out; the backtest does not read it today.",
+    "long": "Backtest setting kept in the files. It is meant to make the simulation close all positions when the account would be liquidated. The current backtest does not use it.",
+    "risk_income": "None on the live account.",
+    "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study"
+  },
+  "username": {
+    "short": "The name a person signs in to the monitor with: 3 to 64 of a-z, 0-9, dot, underscore or hyphen.",
+    "long": "Users page (admins only). The name a person types to sign in. It is not case-sensitive and two people cannot share one. An admin chooses it when adding the person.",
+    "risk_income": "None: it only identifies who signed in and who acted, in the audit trail.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Username"]
+  },
+  "role": {
+    "short": "What a person may do on the monitor: user sees it, manager also closes and rebalances, admin also manages people.",
+    "long": "Users page (admins only). Every person has one of three roles. A user sees the monitor. A manager may also close a leg by hand and rebalance. An admin may also add people, change roles, reset passwords and delete people. The server checks the role on every action. Changing it signs the person out everywhere.",
+    "risk_income": "A manager can send orders to the bots: give that role only to people who should.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Role"]
+  },
+  "email": {
+    "short": "A person's email address, optional, for the admin's records; the monitor sends no email.",
+    "long": "Users page (admins only). An optional contact address an admin may record when adding a person. The monitor never sends email and never puts it in an analytics event.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Email"]
+  },
+  "created": {
+    "short": "When the person was added to the monitor.",
+    "long": "Users page (admins only). The date and time the person's account was created, by an admin or, for the first admin, at the monitor's first start.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Created"]
+  },
+  "last sign-in": {
+    "short": "When the person last signed in with their password; never if they have not yet.",
+    "long": "Users page (admins only). The time of the person's last successful sign-in. A browser that stays signed in refreshes its session without a new sign-in, so this can be older than their last visit.",
+    "risk_income": "None: an old or missing sign-in helps spot accounts nobody uses, which an admin may delete.",
+    "source": "frontend/README.md#users-page-306"
+  },
+  "actions": {
+    "short": "What an admin can do to a person: reset the password, sign them out everywhere, or delete them.",
+    "long": "Users page (admins only). Reset password sets a new one and signs the person out on every browser. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.",
+    "risk_income": "None on trading: none of these changes a position or an order.",
+    "source": "frontend/README.md#users-page-306",
+    "labels": ["Actions"]
+  }
+}

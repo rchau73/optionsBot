@@ -18,7 +18,8 @@ PICKUP = "**Dev agent** picked this up"
 BLOCKED = "Dev agent stopped"
 SENT_BACK = "Reviewer agent found"
 # Agent lines that are not a reason for a new attempt.
-OTHER_AGENT = ("Reviewer agent", "Dev agent opened", "Dev agent pushed", "Deployed to")
+OTHER_AGENT = ("Reviewer agent", "Dev agent opened", "Dev agent pushed", "Deployed to",
+               "Dev agent hit a usage/rate limit", "Re-queued:")
 
 
 def first_line(body, skip=""):

@@ -71,6 +71,24 @@ describe("Scenario: no session, no data", () => {
     expect((await proxy(page("/login", cookie))).headers.get("location")).toBe(`${ORIGIN}/`);
   });
 
+  test("any signed-in role reads the investor summary", async () => {
+    for (const role of ["admin", "manager", "user"]) {
+      const cookie = await sessionCookie({ id: 2, username: "reader", role });
+      expect((await proxy(page("/api/bots/btc/summary", cookie))).headers.get("x-middleware-next")).toBe("1");
+    }
+    expect((await proxy(page("/api/bots/btc/summary"))).status).toBe(401);
+  });
+
+  test("performance is refused without a session or token, like every /api route", async () => {
+    expect((await proxy(page("/api/bots/btc/performance?range=30d"))).status).toBe(401);
+    expect((await proxy(page("/api/bots/btc/performance?range=30d", "access_token=garbage"))).status).toBe(401);
+    const cookie = await sessionCookie({ id: 2, username: "reader", role: "user" });
+    expect((await proxy(page("/api/bots/btc/performance?range=30d", cookie))).headers.get("x-middleware-next")).toBe("1");
+    process.env.MONITOR_API_TOKEN = "s".repeat(40);
+    const auth = { authorization: `Bearer ${"s".repeat(40)}` };
+    expect((await proxy(page("/api/bots/btc/performance?range=7d", "", auth))).headers.get("x-middleware-next")).toBe("1");
+  });
+
   test("without AUTH_SECRET nothing is served", async () => {
     delete process.env.AUTH_SECRET;
     expect((await proxy(page("/"))).status).toBe(500);

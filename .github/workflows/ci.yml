@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2" # pinned: setup-go's stable still served 1.27.1 (govulncheck: 7 stdlib advisories, 2026-10-09); back to stable once it catches up
+          go-version: "1.27.3" # pinned: govulncheck GO-2026-6809 (crypto/x509, fixed in 1.27.3, 2026-10-22); bump on each stdlib advisory
           cache: true
 
       - name: gofmt
@@ -30,8 +30,17 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: Shell scripts (bash -n, shellcheck)
+        run: |
+          command -v shellcheck >/dev/null || { sudo apt-get update -q && sudo apt-get install -y -q shellcheck; }
+          shellcheck --version
+          REQUIRE_SHELLCHECK=1 bash scripts/check_shell.sh
+
       - name: Agent scripts (PM board rules)
         run: python3 -m unittest discover -s scripts/agents -p 'test_*.py'
+
+      - name: Product scripts (unit economics)
+        run: python3 -m unittest discover -s scripts/product -p 'test_*.py'
 
       - name: Tests (race detector, coverage)
         run: go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=coverage.out
@@ -83,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.27.2"
+          go-version: "1.27.3"
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   docker:

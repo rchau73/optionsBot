@@ -25,6 +25,7 @@ func (s *Strategy) balanceStrangles(ctx context.Context) {
 	for _, st := range s.state.AllStrangles() {
 		call, put := s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
 		if call == nil || put == nil || s.repairPending(st.ID) ||
+			s.restingCloses[call.ID] != nil || s.restingCloses[put.ID] != nil || // an exit is working
 			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
 			continue
 		}

@@ -125,8 +125,22 @@ json.dump(s, open(p, "w"), indent=1)' "$STATE" "$@"
   unmutex pm-state
 }
 
+# The run ledger (lib.sh) records a PM run only when it asks Claude (triage or
+# planning): the board passes alone run every tick and decide nothing new.
+pm_outcome="" pm_detail=""
+pm_note() { # outcome, detail — a failure or a limit outranks a success
+  case "$pm_outcome:$1" in
+    failed:*|skipped_limit:stories_filed|skipped_limit:triaged) ;;
+    *) pm_outcome="$1" ;;
+  esac
+  pm_detail="${pm_detail:+$pm_detail; }$2"
+}
+
 triage() {
 [[ -n "$todo" ]] || { log "pm: nothing new in Triage, every open card has an epic"; return 0; }
+# Triage asks Claude too: it waits out a limit pause and the budget like the others.
+[[ "$(parallel_max 1)" -gt 0 ]] || { log "pm: triage of #${todo// / #} waits (limit pause or budget)"; return 0; }
+run_begin pm "" "" "$run"
 log "pm: deciding on #${todo// / #}"
 for num in $todo; do
   gh issue view "$num" -R "$slug" --json number,title,body,labels,comments \
@@ -139,13 +153,16 @@ rule areas and prototype approval), pending.json (the cards to decide: 'triage' 
 pending_issues.json (their bodies and last comments) and board.json (every card with its column and priority).
 You may also read CLAUDE.md, AGENTIC.md, OptionStrategy.md and docs/.
 Print only the report in the exact output shape the skill defines, ending with the PM-JSON block."
+budget_take pm # the daily budget (limit_lib.sh)
+started="$(date +%s)"
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
   --strict-mcp-config --no-session-persistence \
   --output-format text < /dev/null > "$run/report.md"; then
-  note_limit "$run/report.md" || true
+  if note_stop 1 $(( $(date +%s) - started )) "$run/report.md"; then pm_note skipped_limit "triage: limit"
+  else pm_note failed "triage: claude failed"; fi
   log "pm: claude failed"; notify "PM agent FAILED" "see $run/run.log"; return 1
 fi
 py 'import json,re,sys
@@ -155,6 +172,7 @@ json.dump(json.loads(m.group(1)) if m else {}, open(sys.argv[2], "w"), indent=1)
 print("PM-JSON block:", "found" if m else "MISSING")' "$run/report.md" "$run/pm.json"
 if [[ "$(cat "$run/pm.json")" == "{}" ]]; then
   # Nothing is marked decided, so the same cards are asked again next tick.
+  pm_note failed "triage: no PM-JSON block"
   log "pm: no PM-JSON block in the report"; notify "PM agent: no decisions block" "see $run/report.md"; return 1
 fi
 
@@ -215,6 +233,7 @@ for n in json.load(open(sys.argv[2]))["triage"]: seen[str(n)] = now' "$run/pendi
 
 summary="$(grep -m1 '^SUMMARY:' "$run/report.md" | sed 's/^SUMMARY: *//' || true)"
 log "pm: ${summary:-done} ($moved moved) — report $run/report.md"
+pm_note triaged "triaged #${todo// / #}, $moved moved"
 notify "PM agent" "${summary:-triaged $todo}"
 }
 triage || log "pm: triage step failed, continuing with the board passes"
@@ -257,12 +276,15 @@ now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 due="$(python3 "$BOARD_PY" plan "$run/board.json" "$run/epics.json" "$STATE" "$now")"
 if [[ -n "$due" && "$(parallel_max 1)" -gt 0 ]]; then
   log "pm: planning the next stories of $due"
+  run_begin pm "" "" "$run" # a no-op when triage already opened the run
   echo "$due" > "$run/plan_epics.txt"
   PROMPT="Use the product-manager skill and run its \"Epic planning (agent mode)\" procedure for the epics in $run/plan_epics.txt.
 Inputs are in $run/: PRD.md (the approved PRD), epics.json (epics with issue numbers, rule areas, prototype approval)
 and board.json (every card with its column, priority, labels and parent epic). You may read CLAUDE.md, AGENTIC.md,
 OptionStrategy.md, README.md, docs/, frontend/ and the code to write buildable stories.
 Print only the report in the exact output shape the skill defines, ending with the PM-STORIES block."
+  budget_take pm # the daily budget (limit_lib.sh)
+  started="$(date +%s)"
   if claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
       --allowedTools "Read" "Grep" "Glob" "Skill" \
       --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
@@ -271,9 +293,9 @@ Print only the report in the exact output shape the skill defines, ending with t
 t = open(sys.argv[1]).read()
 m = re.search(r"<!-- PM-STORIES\s*(\{.*?\})\s*-->", t, re.S)
 json.dump(json.loads(m.group(1)) if m else {}, open(sys.argv[2], "w"), indent=1)' "$run/plan.md" "$run/plan.json"
-    python3 "$BOARD_PY" stories "$run/plan.json" "$run/epics.json" "$run/stories.json"
+    python3 "$BOARD_PY" stories "$run/plan.json" "$run/epics.json" "$run/stories.json" "$run/board.json"
     n_new="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$run/stories.json")"
-    k=0
+    k=0 filed=""
     while [[ $k -lt $n_new ]]; do
       py 'import json,sys
 s = json.load(open(sys.argv[1]))[int(sys.argv[2])]
@@ -292,13 +314,16 @@ print("\t".join([s["epic"], s["title"], s["priority"], s["status"], ",".join(s["
           -f p="$enode" -f c="$(gh issue view "$num" -R "$slug" --json id -q .id)" >/dev/null || log "pm: could not link #$num to $eid"
         [[ "$status" == "Ready" ]] && state_set 'r = set(s.get("pm_ready", [])); r.add(int(sys.argv[2])); s["pm_ready"] = sorted(r)' "$num"
         log "pm: filed #$num in $eid → $status ($prio)"
+        filed="$filed #$num"
       fi
       k=$((k + 1))
     done
+    pm_note stories_filed "planned $due, filed${filed:- none}"
     state_set 'pl = s.setdefault("planned", {})
 for e in sys.argv[2].split(): pl[e] = sys.argv[3]' "$due" "$now"
   else
-    note_limit "$run/plan.md" || true
+    if note_stop 1 $(( $(date +%s) - started )) "$run/plan.md"; then pm_note skipped_limit "planning: limit"
+    else pm_note failed "planning: claude failed"; fi
     log "pm: planning failed (see $run/plan.md)"
   fi
 fi
@@ -318,3 +343,4 @@ for col in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))))'
     log "pm: ordered $col"
   fi
 done
+run_end "${pm_outcome:-done}" "$pm_detail" # a no-op when Claude was not asked

@@ -1,6 +1,7 @@
 // The only module that talks to the backend. Everything goes through the
 // Next.js proxy at /api/bots/... (read-only, except closePositions and
-// rebalanceBot), behind the signed-in session's cookies.
+// rebalanceBot), /api/auth/... (signOut, changePassword) or /api/admin/users
+// (the Users page, admins only), behind the signed-in session's cookies.
 
 let refreshing = null;
 
@@ -54,6 +55,76 @@ export async function signOut() {
   }
 }
 
+/**
+ * Changes the signed-in person's password; every other session of theirs ends,
+ * this browser stays signed in. Throws with the server's reason.
+ */
+export async function changePassword(current, next) {
+  const res = await apiFetch("/api/auth/password", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current, next }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+}
+
+/** A same-origin JSON request to the monitor's admin routes; throws with the server's reason. */
+async function adminSend(url, method, body = {}) {
+  const res = await apiFetch(url, {
+    method,
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let answer = null;
+  try {
+    answer = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(answer?.error ?? `${res.status}`);
+  return answer ?? {};
+}
+
+const userUrl = (id, action = "") => `/api/admin/users/${encodeURIComponent(id)}${action}`;
+
+/** Every monitor user (admins only): [{ id, username, role, email, created_at, last_sign_in_at }]. */
+export async function fetchUsers(signal) {
+  return (await getJSON("/api/admin/users", signal)).users;
+}
+
+/** Adds a person ({ username, password, role, email? }) → the new user. */
+export async function createUser(fields) {
+  return (await adminSend("/api/admin/users", "POST", fields)).user;
+}
+
+/** Changes a user's role; every session of theirs ends. */
+export async function changeUserRole(id, role) {
+  return (await adminSend(userUrl(id), "PATCH", { role })).user;
+}
+
+/** Sets a user's password; every session of theirs ends. */
+export async function resetUserPassword(id, password) {
+  await adminSend(userUrl(id, "/password"), "POST", { password });
+}
+
+/** Ends every session of a user. */
+export async function signOutUser(id) {
+  await adminSend(userUrl(id, "/signout"), "POST");
+}
+
+/** Deletes a user → { events_removed } or { events_error }. */
+export async function deleteUser(id) {
+  return adminSend(userUrl(id), "DELETE");
+}
+
 async function getJSON(url, signal) {
   const res = await apiFetch(url, { cache: "no-store", signal });
   if (!res.ok) {
@@ -74,17 +145,30 @@ export async function fetchMonitorConfig(signal) {
   return { names: bots.map((b) => b.name), pollMs: pollMs ?? 1000 };
 }
 
-/** Status, positions, pending orders and account summary of one bot, fetched together. */
+/**
+ * Status, positions, pending orders, account and investor summary of one bot,
+ * fetched together. A failed summary is kept apart (summaryError) so the rest
+ * of the bot still shows; the investor view then says it is unavailable.
+ */
 export async function fetchBotState(name, signal) {
   const base = `/api/bots/${encodeURIComponent(name)}`;
-  const [status, positions, orders, account] = await Promise.all([
+  const [status, positions, orders, account, summary] = await Promise.all([
     getJSON(`${base}/status`, signal),
     getJSON(`${base}/positions`, signal),
     getJSON(`${base}/orders`, signal),
     // Older bots have no /account: treat as "no account data", not an outage.
     getJSON(`${base}/account`, signal).catch(() => null),
+    getJSON(`${base}/summary`, signal).then(
+      (data) => ({ data, error: null }),
+      (e) => ({ data: null, error: e.message }),
+    ),
   ]);
-  return { status, positions, orders, account };
+  return { status, positions, orders, account, summary: summary.data, summaryError: summary.error };
+}
+
+/** The investor summary of one bot (/api/summary): holding, income, worst case, last action. */
+export async function fetchBotSummary(name, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/summary`, signal);
 }
 
 /** Journal events after `since` (sequence number), oldest first. */
@@ -96,6 +180,11 @@ export async function fetchBotEvents(name, since, signal) {
 /** Opens and closes after journal sequence `after`, oldest first: { trades, history_since }. */
 export async function fetchBotTrades(name, after, signal) {
   return getJSON(`/api/bots/${encodeURIComponent(name)}/trades?after=${after}&limit=1000`, signal);
+}
+
+/** One bot's income month by month with its summary (/api/income, #319). */
+export async function fetchBotIncome(name, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/income`, signal);
 }
 
 /** Bucketed P&L history of one bot for a range (15m, 1h, 6h, 1d, 1w, 1m, all). */

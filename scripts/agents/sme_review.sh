@@ -29,6 +29,7 @@ DATE="$(date +%Y-%m-%d)"
 OUT="data/sme/$DATE"
 mkdir -p "$OUT/previous"
 exec > >(tee -a "$OUT/run.log") 2>&1
+run_begin sme "" "" "$OUT" # the run ledger (lib.sh): every exit below ends it
 log "SME review $DATE — repo $AGENT_REPO_DIR, monitor $MONITOR_URL"
 
 # ── 1. Collect ──────────────────────────────────────────────────────────────
@@ -103,6 +104,12 @@ You may also read CLAUDE.md, OptionStrategy.md and docs/ for how the bot works.
 Print only the report in the exact output shape the skill defines, ending with the FINDINGS-JSON block."
 model_args=()
 [[ -n "${SME_MODEL:-}" ]] && model_args=(--model "$SME_MODEL")
+# Daily and scheduled: it honours the pause and the daily runs, not the hours.
+if [[ "${AGENTS_PAUSED:-0}" == "1" ]] || [[ "$(runs_today)" -ge "${AGENT_MAX_RUNS_PER_DAY:-30}" ]]; then
+  log "sme: skipped — agents paused or the daily budget is used (agents.env)"
+  run_end skipped_budget "agents.env budget"; exit 0
+fi
+budget_take sme # the daily budget (limit_lib.sh)
 # ${arr[@]+...}: macOS /bin/bash 3.2 treats an empty array as unset under set -u.
 if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
@@ -112,6 +119,8 @@ if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --output-format text < /dev/null > "$OUT/report.md.tmp"; then
   log "claude failed"
   notify "Options bot SME review FAILED" "Claude Code did not finish: see $OUT/run.log"
+  if grep -qiE "$LIMIT_PATTERN" "$OUT/report.md.tmp" 2>/dev/null; then run_end skipped_limit "claude hit a usage limit"
+  else run_end failed "claude did not finish"; fi
   exit 1
 fi
 mv "$OUT/report.md.tmp" "$OUT/report.md"
@@ -130,6 +139,7 @@ log "$severity — $summary"
 
 # ── 3. Publish (the script acts, never the agent) ───────────────────────────
 footer="_Opened by the **SME agent** (option-bot-specialist skill, read-only) from the $DATE daily review. The **PM agent** reads it first: it places it in an epic of the approved PRD and moves it to **Ready** (the Dev agent builds it) only when that epic covers it; otherwise a person decides. See [AGENTIC.md](../blob/main/AGENTIC.md)._"
+opened="" commented=""
 if [[ "$PUBLISH" == "1" ]]; then
   n="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))["issues"]))' "$OUT/findings.json")"
   i=0
@@ -144,18 +154,21 @@ print(f["fingerprint"]); print(f["severity"]); print(f["title"])' "$OUT/findings
       comment\ *)
         py 'import json,sys; open(sys.argv[3],"w").write(json.load(open(sys.argv[1]))["issues"][int(sys.argv[2])]["update"])' "$OUT/findings.json" "$i" "$OUT/issue-update.md"
         { echo "**Seen again in the $DATE review — what is new:**"; echo; cat "$OUT/issue-update.md"; } > "$OUT/issue-comment.md"
-        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "commented #$num ($fp)" ;;
+        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "commented #$num ($fp)" &&
+          commented="$commented #$num" ;;
       quiet\ *)
         log "seen again, nothing new: #$num ($fp), no comment" ;;
       guard\ *)
         # The agent called it new, but an issue with a near-identical title exists.
         { echo "**Seen again in the $DATE review** (filed as new by the SME agent; matched to this issue by title, so no duplicate was opened)."
           echo; echo "<details><summary>The finding as written</summary>"; echo; cat "$OUT/issue-body.md"; echo; echo "</details>"; } > "$OUT/issue-comment.md"
-        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "duplicate guard: commented #$num instead of opening \"$title\"" ;;
+        gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "duplicate guard: commented #$num instead of opening \"$title\"" &&
+          commented="$commented #$num" ;;
       *)
         { cat "$OUT/issue-body.md"; echo; echo "<!-- sme-fingerprint: $fp -->"; echo; echo "$footer"; } > "$OUT/issue-full.md"
         url="$(gh issue create -R "$slug" --title "$title" --label agent:sme --label "severity:$sev" --body-file "$OUT/issue-full.md")"
         log "opened $url ($fp)"
+        opened="$opened #${url##*/}"
         add_to_board "$url" "Triage" >/dev/null || log "could not add $url to the board" ;;
     esac
     i=$((i + 1))
@@ -183,3 +196,4 @@ fi
 
 notify "Options bot SME review: ${severity:-?}" "$summary"
 log "report: $AGENT_REPO_DIR/$OUT/report.md"
+run_end reported "severity ${severity:-?}; opened${opened:- none}; commented${commented:- none}"

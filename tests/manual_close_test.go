@@ -76,7 +76,7 @@ func TestStrategy_ManualCloseBuysBackABlockedPutAndHoldsItsRepair(t *testing.T) 
 		t.Errorf("the call is not blocked: no manual close, got %+v", call.ManualClose)
 	}
 
-	res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, "test")
+	res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, testActor)
 	if err != nil || len(res) != 1 || res[0].Error != "" || res[0].Filled < 0.1-1e-9 {
 		t.Fatalf("ManualClose = %+v, %v", res, err)
 	}
@@ -90,8 +90,12 @@ func TestStrategy_ManualCloseBuysBackABlockedPutAndHoldsItsRepair(t *testing.T) 
 		t.Errorf("one market buy-back of the put, got %d", market)
 	}
 	closes := f.journal.events(orders.EventClosed)
-	if len(closes) != 1 || closes[0].trigger != orders.TriggerManualClose || !strings.Contains(closes[0].ctx.Detail, "manual close from the monitor") {
+	if len(closes) != 1 || closes[0].trigger != orders.TriggerManualClose || !strings.Contains(closes[0].ctx.Detail, "manual close from the monitor by bob (manager)") {
 		t.Errorf("journal closes = %+v", closes)
+	}
+	// Scenario: a manager closes a leg and is named (#171).
+	if len(closes) == 1 && (closes[0].ctx.Actor == nil || *closes[0].ctx.Actor != testActor) {
+		t.Errorf("the close must name actor bob (manager), got %+v", closes[0].ctx.Actor)
 	}
 	// Held like a stop-out: once the trend leaves bear the regime-side block
 	// lifts (as at 08:39), but the confirmed negative regime still holds it.
@@ -118,7 +122,7 @@ func TestStrategy_ManualCloseRefusedWithoutTheBlock(t *testing.T) {
 	if put.ManualClose.Allowed || !strings.Contains(put.ManualClose.Reason, "only while the regime-side block is on") {
 		t.Errorf("put view = %+v", put.ManualClose)
 	}
-	res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, "test")
+	res, err := f.strat.ManualClose(context.Background(), []string{put.PositionID}, testActor)
 	if err != nil || len(res) != 1 || res[0].Error == "" || res[0].Filled != 0 {
 		t.Fatalf("ManualClose = %+v, %v: must be refused on the loop too", res, err)
 	}
@@ -138,18 +142,19 @@ func TestStrategy_ManualCloseOff(t *testing.T) {
 	if put, _ := legView(t, f.strat, f.put); put.ManualClose.Allowed || put.ManualClose.Reason != "manual close is testnet-only" {
 		t.Errorf("put view = %+v", put.ManualClose)
 	}
-	if _, err := f.strat.ManualClose(context.Background(), []string{"x"}, "test"); err == nil {
+	if _, err := f.strat.ManualClose(context.Background(), []string{"x"}, testActor); err == nil {
 		t.Error("ManualClose must fail while off")
 	}
 }
 
 type fakeCloser struct {
 	ids []string
+	by  orders.Actor
 	err error
 }
 
-func (c *fakeCloser) ManualClose(_ context.Context, ids []string, _ string) ([]strategy.ManualCloseResult, error) {
-	c.ids = ids
+func (c *fakeCloser) ManualClose(_ context.Context, ids []string, by orders.Actor) ([]strategy.ManualCloseResult, error) {
+	c.ids, c.by = ids, by
 	if c.err != nil {
 		return nil, c.err
 	}

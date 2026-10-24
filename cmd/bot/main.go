@@ -100,7 +100,7 @@ func main() {
 		return
 	}
 
-	if err := runLive(cfg); err != nil {
+	if err := runLive(cfg, *cfgPath); err != nil {
 		slog.Error("bot exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -108,7 +108,7 @@ func main() {
 
 // runLive wires the live components and runs the strategy until shutdown.
 // It returns instead of calling os.Exit so deferred cleanup always runs.
-func runLive(cfg *config.Config) error {
+func runLive(cfg *config.Config, cfgFile string) error {
 	if err := cfg.RequireCredentials(); err != nil {
 		return err
 	}
@@ -119,8 +119,13 @@ func runLive(cfg *config.Config) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// The trading gateway outlives the signal: on SIGTERM Strategy.Run still
+	// cancels its resting closes and books their fills (#239) before it
+	// returns; the gateway closes after it.
+	gwCtx, gwStop := context.WithCancel(context.WithoutCancel(ctx))
+	defer gwStop()
 	gw := gateway.New(cfg, gateway.WithName("trading"))
-	if err := gw.Connect(ctx); err != nil {
+	if err := gw.Connect(gwCtx); err != nil {
 		return fmt.Errorf("gateway connect: %w", err)
 	}
 	defer gw.Close()
@@ -179,6 +184,9 @@ func runLive(cfg *config.Config) error {
 	}
 	defer orderLog.Close()
 	orderLog.Restore(replay)
+	// Date every settings change in the journal (#256): the effective
+	// settings' fingerprint and what changed since the previous start.
+	settings := orderLog.LogStartConfig(replay.LastConfig, cfg, cfgFile, cfg.Deployment, cfg.Version, time.Now())
 
 	// The GEX manager polls public/get_book_summary_by_currency (mainnet) every
 	// 60 s and classifies the gamma regime the strategy uses to shed legs and
@@ -262,7 +270,7 @@ func runLive(cfg *config.Config) error {
 		acct := account.NewPoller(gw)
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
 		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw),
-			api.WithDeployment(cfg.Deployment, cfg.Version)}
+			api.WithDeployment(cfg.Deployment, cfg.Version), api.WithConfig(settings.Fingerprint, settings.Since)}
 		if marketGW != gw {
 			opts = append(opts, api.WithConnection("mainnet-public", marketGW))
 		}

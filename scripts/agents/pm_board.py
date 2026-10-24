@@ -407,8 +407,12 @@ def order_changes(board, state):
     return out
 
 
-PLAN_EVERY_H = 12
-PLAN_MIN_OPEN = 2
+# One PR-sized story per epic at a time (product owner 2026-10-24: the agents
+# used the whole Claude plan, and planning up to 3 stories whenever fewer than
+# 2 moved filed near-duplicates — 35 of 51 cards were consolidated): an epic is
+# planned only when nothing of it moves, at most once a day, one story.
+PLAN_EVERY_H = 24
+PLAN_MIN_OPEN = 1
 
 
 def plan_due(board, epics, state, now):
@@ -440,10 +444,27 @@ def plan_due(board, epics, state, now):
     return due
 
 
-MAX_NEW_STORIES = 3
+MAX_NEW_STORIES = 1
+# A proposed title this close to a card of the same epic (open or closed) is a
+# duplicate and is not filed (difflib ratio of the titles without "[E#] ").
+DUPLICATE_TITLE_RATIO = 0.6
 
 
-def new_stories(pm, epics):
+def _bare_title(t):
+    return re.sub(r"^\[E\d+\]\s*", "", t or "").strip().lower()
+
+
+def duplicate_of(title, epic_number, board):
+    """The board card (same epic, any state) whose title is a near-duplicate of title, or None."""
+    import difflib
+    want = _bare_title(title)
+    for c in board or []:
+        if c.get("parent") == epic_number and difflib.SequenceMatcher(None, want, _bare_title(c.get("title"))).ratio() >= DUPLICATE_TITLE_RATIO:
+            return c
+    return None
+
+
+def new_stories(pm, epics, board=None):
     """The agent's proposed stories → what the script files. Each: {epic, title, body,
     priority, status: Ready|Blocked|Triage, labels, refused?}. Same gate as triage:
     unknown or unapproved epic → dropped; rule areas the epic doesn't delegate, or UI
@@ -455,6 +476,8 @@ def new_stories(pm, epics):
         e = by_id.get(d.get("epic") or "")
         title, body = (d.get("title") or "").strip(), (d.get("body") or "").strip()
         if not e or e["status"] != "approved" or not e.get("number") or not title or not body:
+            continue
+        if duplicate_of(title, e["number"], board):
             continue
         per[e["id"]] = per.get(e["id"], 0) + 1
         if per[e["id"]] > MAX_NEW_STORIES:
@@ -508,7 +531,8 @@ def main(argv):
     elif cmd == "plan":
         print(" ".join(plan_due(json.load(open(argv[2])), json.load(open(argv[3])), _load(argv[4], {}), argv[5])))
     elif cmd == "stories":
-        json.dump(new_stories(json.load(open(argv[2])), json.load(open(argv[3]))), open(argv[4], "w"), indent=1)
+        board = _load(argv[5], []) if len(argv) > 5 else []
+        json.dump(new_stories(json.load(open(argv[2])), json.load(open(argv[3])), board), open(argv[4], "w"), indent=1)
     elif cmd == "policy":
         declared = argv[4].strip().lower() if len(argv) > 4 and argv[4].strip() else None
         for r in policy_reasons(parse_epics(open(argv[2]).read()), parse_epics(open(argv[3]).read()), declared):

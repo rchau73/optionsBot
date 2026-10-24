@@ -26,6 +26,17 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS refresh_tokens_user ON refresh_tokens(user_id);
+-- Sign-in lockout (lib/auth/limits.js), kept here so a restart does not clear
+-- it. Times are in ms.
+CREATE TABLE IF NOT EXISTS login_failures (
+  username TEXT NOT NULL,
+  at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_failures_username ON login_failures(username);
+CREATE TABLE IF NOT EXISTS login_locks (
+  username TEXT PRIMARY KEY,
+  until    INTEGER NOT NULL
+);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -54,13 +65,37 @@ export class AuthStore {
     const db = exists ? new SQL.Database(fs.readFileSync(file)) : new SQL.Database();
     const store = new AuthStore(db, file);
     db.exec(SCHEMA);
-    if (!exists) store.save();
+    const migrated = store.migrate();
+    if (!exists || migrated) store.save();
     return store;
+  }
+
+  /**
+   * Reads an existing file into a copy that is never written back (no schema
+   * change, no save): the admin CLI reads users while the monitor, which holds
+   * its own copy and writes it after every change, keeps running.
+   */
+  static async openReadOnly(file) {
+    const SQL = await loadSql();
+    return new AuthStore(new SQL.Database(fs.readFileSync(file)), ":memory:");
   }
 
   constructor(db, file) {
     this.db = db;
     this.file = file;
+  }
+
+  /** Adds the columns a file older than this code lacks; true when one was added. */
+  migrate() {
+    const cols = this.all("PRAGMA table_info(users)").map((c) => c.name);
+    const added = [
+      // NULL = not asked yet, 0 = no, 1 = yes (event plan §5: off until yes).
+      ["analytics_consent", "INTEGER"],
+      // Unix seconds of the last successful sign-in, NULL = never (#306, the Users page).
+      ["last_sign_in_at", "INTEGER"],
+    ].filter(([name]) => !cols.includes(name));
+    for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
+    return added.length > 0;
   }
 
   save() {
@@ -96,6 +131,10 @@ export class AuthStore {
     return this.one("SELECT COUNT(*) AS n FROM users").n;
   }
 
+  countAdmins() {
+    return this.one("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").n;
+  }
+
   /** Adds a user; passwordHash is already argon2id. Returns the user (no hash). */
   createUser({ username, passwordHash, role, email = null }, nowMs = Date.now()) {
     const name = normalizeUsername(username);
@@ -123,6 +162,16 @@ export class AuthStore {
     return this.one("SELECT id, username, role, email FROM users WHERE id = ?", [id]);
   }
 
+  /** Every user for the Users page, oldest first: no hash, times in Unix seconds (last sign-in null = never). */
+  listUsers() {
+    return this.all("SELECT id, username, role, email, created_at, last_sign_in_at FROM users ORDER BY id");
+  }
+
+  /** Records a successful sign-in. */
+  recordSignIn(id, nowMs = Date.now()) {
+    this.write("UPDATE users SET last_sign_in_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+  }
+
   /** The stored hash of a user, for the sign-in check only. */
   passwordHash(id) {
     return this.one("SELECT password_hash FROM users WHERE id = ?", [id])?.password_hash ?? null;
@@ -139,6 +188,18 @@ export class AuthStore {
     if (!ROLES.includes(role)) throw new Error(`role: one of ${ROLES.join(", ")}`);
     this.db.run("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", [role, Math.floor(nowMs / 1000), id]);
     this.revokeSessions(id);
+  }
+
+  /** The user's analytics answer: true (yes), false (no) or null (not asked). */
+  analyticsConsent(id) {
+    const v = this.one("SELECT analytics_consent FROM users WHERE id = ?", [id])?.analytics_consent;
+    return v === 1 ? true : v === 0 ? false : null;
+  }
+
+  /** Records the user's analytics answer (true / false) or clears it (null). */
+  setAnalyticsConsent(id, consent, nowMs = Date.now()) {
+    const v = consent === true ? 1 : consent === false ? 0 : null;
+    this.write("UPDATE users SET analytics_consent = ?, updated_at = ? WHERE id = ?", [v, Math.floor(nowMs / 1000), id]);
   }
 
   /** Deletes a user and every session of theirs. */
@@ -176,5 +237,37 @@ export class AuthStore {
 
   sessionCount(userId) {
     return this.one("SELECT COUNT(*) AS n FROM refresh_tokens WHERE user_id = ?", [userId]).n;
+  }
+
+  /** The recorded sign-in failure times (ms) of a username, oldest first. */
+  loginFailureTimes(username) {
+    return this.all("SELECT at FROM login_failures WHERE username = ? ORDER BY at", [username]).map((r) => r.at);
+  }
+
+  /** Records a failure at atMs, first deleting every failure (any username) at or before expiredMs. */
+  addLoginFailure(username, atMs, expiredMs) {
+    this.db.run("DELETE FROM login_failures WHERE at <= ?", [expiredMs]);
+    this.write("INSERT INTO login_failures (username, at) VALUES (?, ?)", [username, atMs]);
+  }
+
+  /**
+   * Locks a username until untilMs and forgets its failures; also deletes
+   * locks ended by nowMs and failures (any username) at or before expiredMs.
+   */
+  lockLogin(username, untilMs, nowMs, expiredMs) {
+    this.db.run("DELETE FROM login_failures WHERE username = ? OR at <= ?", [username, expiredMs]);
+    this.db.run("DELETE FROM login_locks WHERE until <= ?", [nowMs]);
+    this.write("INSERT OR REPLACE INTO login_locks (username, until) VALUES (?, ?)", [username, untilMs]);
+  }
+
+  /** The time (ms) a username's lock ends, or 0 when it has none (an ended lock still answers its time). */
+  loginLockUntil(username) {
+    return this.one("SELECT until FROM login_locks WHERE username = ?", [username])?.until ?? 0;
+  }
+
+  /** Forgets the failures of a username; writes the file only when it had some. */
+  clearLoginFailures(username) {
+    if (!this.one("SELECT 1 AS found FROM login_failures WHERE username = ? LIMIT 1", [username])) return;
+    this.write("DELETE FROM login_failures WHERE username = ?", [username]);
   }
 }

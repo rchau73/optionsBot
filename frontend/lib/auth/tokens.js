@@ -19,10 +19,15 @@ export function authKey(secret = process.env.AUTH_SECRET) {
   return new TextEncoder().encode(secret);
 }
 
-/** Signs a 15-minute access token for a user ({ id, username, role }). */
-export function signAccess(user, key, nowMs = Date.now()) {
+/**
+ * Signs a 15-minute access token for a user ({ id, username, role }). sid is
+ * the session it belongs to (its refresh token's SHA-256): state-changing
+ * routes check that session is still live, so a sign-out everywhere, a role
+ * change or a deletion stops them at once (#171).
+ */
+export function signAccess(user, key, nowMs = Date.now(), sid = null) {
   const iat = Math.floor(nowMs / 1000);
-  return new SignJWT({ name: user.username, role: user.role })
+  return new SignJWT({ name: user.username, role: user.role, ...(sid ? { sid } : {}) })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(String(user.id))
     .setIssuedAt(iat)
@@ -30,12 +35,15 @@ export function signAccess(user, key, nowMs = Date.now()) {
     .sign(key);
 }
 
-/** The session's user ({ id, username, role }) or null for a missing, expired or forged token. */
+/**
+ * The session's user ({ id, username, role, sid }) or null for a missing,
+ * expired or forged token. sid is null in tokens signed before #171.
+ */
 export async function verifyAccess(token, key, nowMs = Date.now()) {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"], currentDate: new Date(nowMs) });
-    return { id: Number(payload.sub), username: payload.name, role: payload.role };
+    return { id: Number(payload.sub), username: payload.name, role: payload.role, sid: typeof payload.sid === "string" ? payload.sid : null };
   } catch {
     return null;
   }
@@ -94,6 +102,11 @@ export function readCookie(request, name) {
  * those only — never on a bot's 401 passed through a proxy route.
  */
 export const SESSION_HEADER = "x-monitor-session";
+
+/** 403 for a signed-in person whose role does not allow the action. */
+export function roleRequired(need) {
+  return Response.json({ error: `${need} role required` }, { status: 403 });
+}
 
 /** 401 for a request without a valid session. */
 export function sessionRequired() {

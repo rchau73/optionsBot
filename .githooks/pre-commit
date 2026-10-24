@@ -15,7 +15,7 @@ done
 # 2. No real secret value from the local .env in any added line.
 if [ -f .env ]; then
   added=$(git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++')
-  grep -E '^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD)[A-Z0-9_]*=' .env | while IFS='=' read -r name value; do
+  grep -E '^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD|SALT)[A-Z0-9_]*=' .env | while IFS='=' read -r name value; do
     value=$(printf '%s' "$value" | sed 's/[[:space:]]#.*//; s/^["'\'']//; s/["'\'']$//' | tr -d '[:space:]')
     [ ${#value} -ge 6 ] || continue
     if printf '%s' "$added" | grep -qF -- "$value"; then

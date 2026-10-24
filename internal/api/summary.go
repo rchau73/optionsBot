@@ -1,11 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"math"
 	"net/http"
-	"regexp"
-	"strconv"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -31,14 +28,18 @@ const (
 
 // Summary is the /api/summary payload.
 type Summary struct {
-	AsOf       time.Time      `json:"as_of"`
-	StrategyID string         `json:"strategy_id"`
-	Underlying string         `json:"underlying"`
-	Spot       float64        `json:"spot"` // USD
-	Holding    HoldingSummary `json:"holding"`
-	Income     IncomeSummary  `json:"income"`
-	WorstCase  WorstCase      `json:"worst_case"`
-	LastAction *LastAction    `json:"last_action"` // null before the first trade
+	AsOf        time.Time `json:"as_of"`
+	StrategyID  string    `json:"strategy_id"`
+	Underlying  string    `json:"underlying"`
+	Environment string    `json:"environment"` // live | testnet
+	Spot        float64   `json:"spot"`        // USD
+	// StopLossMultiple: a leg is bought back once it has lost this multiple
+	// of its premium (stop_loss_multiplier) — the worst-case page's words.
+	StopLossMultiple float64        `json:"stop_loss_multiple"`
+	Holding          HoldingSummary `json:"holding"`
+	Income           IncomeSummary  `json:"income"`
+	WorstCase        WorstCase      `json:"worst_case"`
+	LastAction       *LastAction    `json:"last_action"` // null before the first trade
 }
 
 // HoldingSummary is what the bot holds now.
@@ -63,6 +64,9 @@ type IncomeSummary struct {
 	UnrealisedCoin float64       `json:"unrealised_coin"`
 	UnrealisedUSD  float64       `json:"unrealised_usd"` // at today's spot
 	Basis          string        `json:"basis"`
+	// Summary is the months in a few figures, with the P&L history's worst
+	// week (/api/income only, #319; null in /api/summary).
+	Summary *IncomeStats `json:"summary"`
 }
 
 // MonthIncome is one calendar month (UTC) of realised P&L.
@@ -71,6 +75,24 @@ type MonthIncome struct {
 	RealisedCoin float64 `json:"realised_coin"`
 	RealisedUSD  float64 `json:"realised_usd"` // each close at its own spot
 	Closes       int     `json:"closes"`
+	// Where the result came from (#319), from the same closes:
+	// premium − buyback − fees = realised, in coin and in USD (each close
+	// at the spot the journal valued its P&L at).
+	PremiumCoin float64 `json:"premium_coin"` // paid to you
+	BuybackCoin float64 `json:"buyback_coin"` // paid to buy back (a cost)
+	FeesCoin    float64 `json:"fees_coin"`    // exchange fees (a cost)
+	PremiumUSD  float64 `json:"premium_usd"`
+	BuybackUSD  float64 `json:"buyback_usd"`
+	FeesUSD     float64 `json:"fees_usd"`
+	// From the P&L history (/api/income only; null when not recorded): the
+	// coin's recorded spot first → last in the month, and what the account's
+	// equity (coin, at the month's start) gained or lost in USD by just
+	// holding the coin. Held in coin it neither gains nor loses.
+	SpotStart  *float64 `json:"spot_start"`
+	SpotEnd    *float64 `json:"spot_end"`
+	SpotDays   *float64 `json:"spot_days"` // days between the two spots
+	HoldUSD    *float64 `json:"hold_usd"`
+	HoldReason string   `json:"hold_reason,omitempty"` // why hold_usd is null
 }
 
 // WorstCase is the modelled loss of the book for a one-day move each way.
@@ -84,6 +106,24 @@ type WorstCase struct {
 	Coin      string    `json:"coin"`
 	Down      MoveShock `json:"down"`
 	Up        MoveShock `json:"up"`
+	// Scenarios: the book after each of ScenarioSigmas' one-day moves, worst
+	// fall first (#318); empty when not available.
+	Scenarios []Scenario `json:"scenarios"`
+}
+
+// ScenarioSigmas are the one-day moves of the worst-case page, in daily σ.
+var ScenarioSigmas = []float64{-3, -2, 0, 2, 3}
+
+// Scenario is the book repriced after a one-day move of Sigmas daily σ.
+// Results are signed: + is a gain, − a loss. The 0σ row is one day of time
+// decay (theta), a gain for a short book.
+type Scenario struct {
+	Sigmas      float64  `json:"sigmas"`
+	MovePct     float64  `json:"move_pct"` // signed, % of spot
+	Spot        float64  `json:"spot"`     // USD after the move
+	ResultCoin  float64  `json:"result_coin"`
+	ResultUSD   float64  `json:"result_usd"`
+	PctOfEquity *float64 `json:"pct_of_equity"` // signed; null without the equity
 }
 
 // MoveShock is the book repriced after one move. A positive loss is money lost.
@@ -121,21 +161,30 @@ func (s *Server) summary(w http.ResponseWriter, _ *http.Request) {
 func BuildSummary(v strategy.View, trades []orders.Trade, now time.Time) Summary {
 	coin, spot := v.Underlying, v.Market.Spot
 	sum := Summary{
-		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Spot: spot,
-		Holding:   holdingOf(v.Strangles, spot, coin, now),
-		Income:    IncomeOf(trades, now, SummaryMonths),
-		WorstCase: WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
+		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Environment: v.Environment, Spot: spot,
+		StopLossMultiple: v.StopLossMultiple,
+		Holding:          holdingOf(v.Strangles, spot, coin, now),
+		Income:           incomeOfView(v, trades, now),
+		WorstCase:        WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
 	}
-	sum.Income.Coin, sum.WorstCase.Coin = coin, coin
-	if n := len(v.PnL); n > 0 {
-		sum.Income.UnrealisedCoin = v.PnL[n-1].Unrealised // last row = strategy total
-		sum.Income.UnrealisedUSD = sum.Income.UnrealisedCoin * spot
-	}
+	sum.WorstCase.Coin = coin
 	if n := len(trades); n > 0 {
 		la := lastActionOf(trades[n-1])
 		sum.LastAction = &la
 	}
 	return sum
+}
+
+// incomeOfView is the income table of the journal's closes plus the open
+// book's unrealised P&L from the view.
+func incomeOfView(v strategy.View, trades []orders.Trade, now time.Time) IncomeSummary {
+	inc := IncomeOf(trades, now, SummaryMonths)
+	inc.Coin = v.Underlying
+	if n := len(v.PnL); n > 0 {
+		inc.UnrealisedCoin = v.PnL[n-1].Unrealised // last row = strategy total
+		inc.UnrealisedUSD = inc.UnrealisedCoin * v.Market.Spot
+	}
+	return inc
 }
 
 func holdingOf(strangles []strategy.StrangleView, spot float64, coin string, now time.Time) HoldingSummary {
@@ -184,9 +233,18 @@ func IncomeOf(trades []orders.Trade, now time.Time, months int) IncomeSummary {
 		if !ok {
 			continue
 		}
-		inc.Months[i].RealisedCoin += t.PnL
-		inc.Months[i].RealisedUSD += t.PnLUSD
-		inc.Months[i].Closes++
+		m := &inc.Months[i]
+		m.RealisedCoin += t.PnL
+		m.RealisedUSD += t.PnLUSD
+		m.Closes++
+		premium, buyback, fees := CloseParts(t)
+		spot := CloseSpot(t)
+		m.PremiumCoin += premium
+		m.BuybackCoin += buyback
+		m.FeesCoin += fees
+		m.PremiumUSD += premium * spot
+		m.BuybackUSD += buyback * spot
+		m.FeesUSD += fees * spot
 	}
 	if months > 0 {
 		inc.ThisMonth = inc.Months[months-1]
@@ -200,7 +258,7 @@ func IncomeOf(trades []orders.Trade, now time.Time, months int) IncomeSummary {
 // the spread between mark and model does not count as a loss. loss_coin is
 // the USD loss in coin at the moved spot; equity is in coin.
 func WorstCaseOf(strangles []strategy.StrangleView, spot, dvol, equity float64, now time.Time) WorstCase {
-	wc := WorstCase{Model: WorstCaseModel, Sigmas: WorstCaseSigmas, DVOL: dvol}
+	wc := WorstCase{Model: WorstCaseModel, Sigmas: WorstCaseSigmas, DVOL: dvol, Scenarios: []Scenario{}}
 	switch {
 	case spot <= 0:
 		wc.Reason = "no spot price"
@@ -209,10 +267,20 @@ func WorstCaseOf(strangles []strategy.StrangleView, spot, dvol, equity float64, 
 		wc.Reason = "no DVOL reading"
 		return wc
 	}
-	move := WorstCaseSigmas * dvol / 100 / math.Sqrt(365)
+	sigma := dvol / 100 / math.Sqrt(365) // one daily σ, as a fraction of spot
+	move := WorstCaseSigmas * sigma
 	wc.Available, wc.MovePct = true, move*100
 	wc.Down = shock(strangles, spot, spot*(1-move), dvol, equity, now)
 	wc.Up = shock(strangles, spot, spot*(1+move), dvol, equity, now)
+	for _, n := range ScenarioSigmas {
+		ms := shock(strangles, spot, spot*(1+n*sigma), dvol, equity, now)
+		sc := Scenario{Sigmas: n, MovePct: n * sigma * 100, Spot: ms.Spot, ResultCoin: -ms.LossCoin, ResultUSD: -ms.LossUSD}
+		if ms.PctOfEquity != nil {
+			pct := -*ms.PctOfEquity
+			sc.PctOfEquity = &pct
+		}
+		wc.Scenarios = append(wc.Scenarios, sc)
+	}
 	return wc
 }
 
@@ -268,72 +336,4 @@ func lastActionOf(t orders.Trade) LastAction {
 		la.PnLCoin, la.PnLUSD = &pnl, &usd
 	}
 	return la
-}
-
-var (
-	stopMultipleRe = regexp.MustCompile(`≥ ([0-9.]+)×`)
-	dteRe          = regexp.MustCompile(`(\d+) days to expiry`)
-)
-
-// PlainReason says why a trade happened in words a holder new to options
-// reads, from its journal reason (and the numbers in its detail).
-func PlainReason(t orders.Trade) string {
-	leg := t.OptionType
-	if leg == "" {
-		leg = "option"
-	}
-	if t.Kind == "open" {
-		switch t.Reason {
-		case orders.TriggerEntry:
-			return fmt.Sprintf("Sold the %s to open a new strangle and collect its premium (entry)", leg)
-		case orders.TriggerRepair:
-			return fmt.Sprintf("Sold the %s again to complete its strangle (repair)", leg)
-		case orders.TriggerRebalanceUpsize:
-			return fmt.Sprintf("Sold more of the %s to bring the slot up to its share of the margin limit (rebalance)", leg)
-		}
-		return fmt.Sprintf("Sold the %s (%s)", leg, t.Reason)
-	}
-	switch t.Reason {
-	case "stop_loss":
-		return fmt.Sprintf("Bought back the %s: it lost %s its premium (stop-loss)", leg, timesWord(t.Detail))
-	case "dte_rollout":
-		days := "few"
-		if m := dteRe.FindStringSubmatch(t.Detail); m != nil {
-			days = m[1]
-		}
-		return fmt.Sprintf("Bought back the %s: only %s days to expiry left, so the strangle closes before expiry (time roll)", leg, days)
-	case "delta_exit":
-		return fmt.Sprintf("Bought back the %s: the price moved close to its strike, so the risk grew too fast (delta exit)", leg)
-	case "delta_drift":
-		return fmt.Sprintf("Bought back the %s: little premium was left to earn; it is sold again nearer the price (delta drift)", leg)
-	case "roi_target":
-		return fmt.Sprintf("Bought back the %s: most of its premium was already earned (take-profit)", leg)
-	case "gamma_regime":
-		return fmt.Sprintf("Bought back the %s: market makers' positioning pointed to a strong move against it (GEX shed)", leg)
-	case "kill_switch":
-		return fmt.Sprintf("Bought back the %s: the kill switch closed every position", leg)
-	case orders.TriggerManualClose:
-		return fmt.Sprintf("Bought back the %s by hand from the monitor (manual close)", leg)
-	case orders.TriggerRebalanceDownsize:
-		return fmt.Sprintf("Bought back part of the %s: margin in use was above its limit (rebalance)", leg)
-	case orders.TriggerMarginMM:
-		return fmt.Sprintf("Bought back part of the %s: maintenance margin reached its safety limit (margin cut)", leg)
-	case orders.TriggerRebalanceLegs:
-		return fmt.Sprintf("Bought back the extra %s so the call and the put are the same size (leg balance)", leg)
-	}
-	return fmt.Sprintf("Bought back the %s (%s)", leg, t.Reason)
-}
-
-// timesWord reads the stop-loss multiple from a stop's detail ("≥ 2.00×"):
-// "twice" for 2, else "N times"; "twice" (the default rule) when absent.
-func timesWord(detail string) string {
-	m := stopMultipleRe.FindStringSubmatch(detail)
-	if m == nil {
-		return "twice"
-	}
-	x, err := strconv.ParseFloat(m[1], 64)
-	if err != nil || x == 2 {
-		return "twice"
-	}
-	return strconv.FormatFloat(x, 'f', -1, 64) + " times"
 }

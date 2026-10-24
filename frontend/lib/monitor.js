@@ -296,7 +296,9 @@ const CLOSE_LABELS = {
 };
 
 /**
- * Turns a journal event into a feed line: { id, at, bot, label, tone, text, context }.
+ * Turns a journal event into a feed line: { id, at, bot, label, tone, text,
+ * context, plain } — plain is the bot's plain-words sentence (#201), null
+ * from an older bot that does not serve it.
  * Returns null for events the feed does not show (periodic P&L lines).
  */
 export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
@@ -362,7 +364,8 @@ export function describeEvent(bot, ev, unit = bot.toUpperCase()) {
     ...(ev.event === "trend_changed" ? trendContext(d) : []),
   ].filter(Boolean);
 
-  return { id: `${bot}:${ev.seq}`, seq: ev.seq, at: ev.at, bot, event: ev.event, label, tone, text, context };
+  const plain = typeof ev.plain === "string" && ev.plain.trim() ? ev.plain : null;
+  return { id: `${bot}:${ev.seq}`, seq: ev.seq, at: ev.at, bot, event: ev.event, label, tone, text, context, plain };
 }
 
 /** The levels a trend_changed event carries, as feed context items. */
