@@ -60,6 +60,9 @@ type IncomeSummary struct {
 	UnrealisedCoin float64       `json:"unrealised_coin"`
 	UnrealisedUSD  float64       `json:"unrealised_usd"` // at today's spot
 	Basis          string        `json:"basis"`
+	// Summary is the months in a few figures, with the P&L history's worst
+	// week (/api/income only, #319; null in /api/summary).
+	Summary *IncomeStats `json:"summary"`
 }
 
 // MonthIncome is one calendar month (UTC) of realised P&L.
@@ -68,6 +71,24 @@ type MonthIncome struct {
 	RealisedCoin float64 `json:"realised_coin"`
 	RealisedUSD  float64 `json:"realised_usd"` // each close at its own spot
 	Closes       int     `json:"closes"`
+	// Where the result came from (#319), from the same closes:
+	// premium − buyback − fees = realised, in coin and in USD (each close
+	// at the spot the journal valued its P&L at).
+	PremiumCoin float64 `json:"premium_coin"` // paid to you
+	BuybackCoin float64 `json:"buyback_coin"` // paid to buy back (a cost)
+	FeesCoin    float64 `json:"fees_coin"`    // exchange fees (a cost)
+	PremiumUSD  float64 `json:"premium_usd"`
+	BuybackUSD  float64 `json:"buyback_usd"`
+	FeesUSD     float64 `json:"fees_usd"`
+	// From the P&L history (/api/income only; null when not recorded): the
+	// coin's recorded spot first → last in the month, and what the account's
+	// equity (coin, at the month's start) gained or lost in USD by just
+	// holding the coin. Held in coin it neither gains nor loses.
+	SpotStart  *float64 `json:"spot_start"`
+	SpotEnd    *float64 `json:"spot_end"`
+	SpotDays   *float64 `json:"spot_days"` // days between the two spots
+	HoldUSD    *float64 `json:"hold_usd"`
+	HoldReason string   `json:"hold_reason,omitempty"` // why hold_usd is null
 }
 
 // WorstCase is the modelled loss of the book for a one-day move each way.
@@ -120,19 +141,27 @@ func BuildSummary(v strategy.View, trades []orders.Trade, now time.Time) Summary
 	sum := Summary{
 		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Spot: spot,
 		Holding:   holdingOf(v.Strangles, spot, coin, now),
-		Income:    IncomeOf(trades, now, SummaryMonths),
+		Income:    incomeOfView(v, trades, now),
 		WorstCase: WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
 	}
-	sum.Income.Coin, sum.WorstCase.Coin = coin, coin
-	if n := len(v.PnL); n > 0 {
-		sum.Income.UnrealisedCoin = v.PnL[n-1].Unrealised // last row = strategy total
-		sum.Income.UnrealisedUSD = sum.Income.UnrealisedCoin * spot
-	}
+	sum.WorstCase.Coin = coin
 	if n := len(trades); n > 0 {
 		la := lastActionOf(trades[n-1])
 		sum.LastAction = &la
 	}
 	return sum
+}
+
+// incomeOfView is the income table of the journal's closes plus the open
+// book's unrealised P&L from the view.
+func incomeOfView(v strategy.View, trades []orders.Trade, now time.Time) IncomeSummary {
+	inc := IncomeOf(trades, now, SummaryMonths)
+	inc.Coin = v.Underlying
+	if n := len(v.PnL); n > 0 {
+		inc.UnrealisedCoin = v.PnL[n-1].Unrealised // last row = strategy total
+		inc.UnrealisedUSD = inc.UnrealisedCoin * v.Market.Spot
+	}
+	return inc
 }
 
 func holdingOf(strangles []strategy.StrangleView, spot float64, coin string, now time.Time) HoldingSummary {
@@ -181,9 +210,18 @@ func IncomeOf(trades []orders.Trade, now time.Time, months int) IncomeSummary {
 		if !ok {
 			continue
 		}
-		inc.Months[i].RealisedCoin += t.PnL
-		inc.Months[i].RealisedUSD += t.PnLUSD
-		inc.Months[i].Closes++
+		m := &inc.Months[i]
+		m.RealisedCoin += t.PnL
+		m.RealisedUSD += t.PnLUSD
+		m.Closes++
+		premium, buyback, fees := CloseParts(t)
+		spot := CloseSpot(t)
+		m.PremiumCoin += premium
+		m.BuybackCoin += buyback
+		m.FeesCoin += fees
+		m.PremiumUSD += premium * spot
+		m.BuybackUSD += buyback * spot
+		m.FeesUSD += fees * spot
 	}
 	if months > 0 {
 		inc.ThisMonth = inc.Months[months-1]

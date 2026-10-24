@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import Link from "next/link";
 import { formatCoin, formatDate, formatDateTime, formatNumber, formatPct, formatUSD, isNumber } from "@/lib/format";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, toneOf, worstCaseRows } from "@/lib/summary";
 
@@ -38,7 +39,7 @@ export function BotSummary({ bot }) {
       ) : (
         <div className="grid gap-4 p-4 md:grid-cols-2">
           <Holding holding={s.holding} />
-          <Income income={s.income} />
+          <Income income={s.income} bot={bot.name} />
           <WorstCase wc={s.worst_case} />
           <LastAction action={s.last_action} coin={s.underlying} />
         </div>
@@ -84,7 +85,7 @@ function Holding({ holding: h }) {
   );
 }
 
-function Income({ income }) {
+function Income({ income, bot }) {
   const coin = income?.coin ?? "";
   return (
     <Answer question="Income per month (realised, net of fees)">
@@ -138,6 +139,12 @@ function Income({ income }) {
         <Signed value={income?.unrealised_usd}>{formatSignedUSD(income?.unrealised_usd)}</Signed>
       </p>
       {income?.basis ? <p className="text-xs text-muted">{income.basis}</p> : null}
+      <Link
+        href={`/income?bot=${encodeURIComponent(bot)}`}
+        className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+      >
+        Income, month by month →
+      </Link>
     </Answer>
   );
 }
