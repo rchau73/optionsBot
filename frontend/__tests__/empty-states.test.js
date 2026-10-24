@@ -1,0 +1,98 @@
+import emptyStates, { MAX_TEXT, PANELS, STATES, emptyStateFor } from "@/lib/emptyStates";
+import { brokenSources, missingStates, monitorPanels, promiseWords, tooLong } from "@/test/emptyStateChecks";
+
+const fullEntry = {
+  empty: "Nothing yet.",
+  loading: "Loading.",
+  stale: "Old data.",
+  error: "Could not read.",
+  source: "frontend/README.md#what-you-see",
+};
+
+describe("empty states (#298)", () => {
+  // Scenario: Every panel is covered
+  test("every panel is covered: each panel key the monitor renders has empty, loading, stale and error", () => {
+    const rendered = monitorPanels();
+    expect(rendered.storageKeys).toEqual(["monitor.panel.account", "monitor.panel.held", "monitor.panel.others", "monitor.panel.trades"]);
+    expect(rendered.titles).toEqual(expect.arrayContaining(["Open positions", "Activity", "P&L (USD, all bots)"]));
+    expect(rendered.blocks).toEqual(["<Header", "<InvestorSummary", "<KpiStrip"]);
+    expect(missingStates(emptyStates, PANELS, rendered)).toEqual([]);
+  });
+
+  test("every panel is covered: a missing state, entry or panel key is named", () => {
+    const { stale: _stale, ...noStale } = fullEntry;
+    const panels = { "monitor.panel.a": "A", "monitor.b": "B" };
+    const rendered = { storageKeys: ["monitor.panel.a", "monitor.panel.new"], titles: ["A", "New panel"], blocks: [] };
+    expect(missingStates({ "monitor.panel.a": noStale }, panels, rendered)).toEqual([
+      "monitor.panel.new: not in PANELS",
+      "New panel: no panel key in PANELS",
+      "monitor.panel.a: missing stale",
+      "monitor.b: no entry",
+    ]);
+  });
+
+  test("the examples the story names are covered", () => {
+    expect(emptyStateFor("monitor.positions", "empty")).toMatch(/no open strangle/i);
+    expect(emptyStateFor("monitor.panel.trades", "empty")).toMatch(/first close/i);
+    expect(emptyStateFor("monitor.pnl", "empty")).toMatch(/report interval/i);
+    expect(emptyStateFor("monitor.panel.account", "error")).toMatch(/account not loaded/i);
+    expect(emptyStateFor("monitor.header", "error")).toMatch(/not answering/i);
+    expect(emptyStateFor("monitor.gex", "empty")).toMatch(/GEX not computed/i);
+  });
+
+  test(`each text is at most ${MAX_TEXT} characters and entries have no unknown fields`, () => {
+    expect(tooLong(emptyStates)).toEqual([]);
+    expect(tooLong({ "monitor.x": { ...fullEntry, error: "x".repeat(MAX_TEXT + 1), note: "" } })).toEqual([
+      `monitor.x.error: ${MAX_TEXT + 1} chars`,
+      "monitor.x: unknown fields note",
+    ]);
+  });
+
+  // Scenario: No promise in an empty state
+  test("no promise in an empty state: the catalogue has no forecast or advice word", () => {
+    expect(promiseWords(emptyStates)).toEqual([]);
+  });
+
+  test("no promise in an empty state: a forecast or advice word fails naming the panel and the word", () => {
+    const bad = { "monitor.pnl": { ...fullEntry, empty: "The bot will earn premium here.", stale: "You should buy back now." } };
+    expect(promiseWords(bad)).toEqual(["monitor.pnl.empty: will earn", "monitor.pnl.stale: should buy", "monitor.pnl.stale: you should"]);
+  });
+
+  // Scenario: Broken source
+  test("broken source: every source anchor exists", () => {
+    expect(brokenSources(emptyStates)).toEqual([]);
+  });
+
+  test("broken source: an anchor not in the document, or another document, fails naming the entry", () => {
+    const bad = {
+      "monitor.ok": fullEntry,
+      "monitor.gone": { ...fullEntry, source: "frontend/README.md#no-such-heading" },
+      "monitor.elsewhere": { ...fullEntry, source: "README.md#what-you-see" },
+      "monitor.none": { ...fullEntry, source: undefined },
+    };
+    expect(brokenSources(bad)).toEqual([
+      "monitor.gone: frontend/README.md#no-such-heading",
+      "monitor.elsewhere: README.md#what-you-see",
+      "monitor.none: undefined",
+    ]);
+  });
+});
+
+describe("emptyStateFor", () => {
+  test("returns the sentence for a known panel and state", () => {
+    for (const key of Object.keys(PANELS)) {
+      for (const state of STATES) expect(emptyStateFor(key, state)).toBe(emptyStates[key][state]);
+    }
+  });
+
+  test("unknown panel or state → null, never a guess", () => {
+    expect(emptyStateFor("monitor.nope", "empty")).toBeNull();
+    expect(emptyStateFor("monitor.positions", "source")).toBeNull();
+    expect(emptyStateFor("monitor.positions", "broken")).toBeNull();
+    expect(emptyStateFor(undefined, undefined)).toBeNull();
+  });
+
+  test("reads a catalogue passed in", () => {
+    expect(emptyStateFor("x", "empty", { x: fullEntry })).toBe("Nothing yet.");
+  });
+});
