@@ -72,7 +72,11 @@ def wilson(successes, n, z=Z95):
     denom = 1 + z * z / n
     centre = (p + z * z / (2 * n)) / denom
     half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return max(0.0, centre - half), min(1.0, centre + half)
+    # At 0 or n successes the bound is exactly 0 or 1; the formula leaves a
+    # rounding residue (about 1e-19 on some platforms).
+    low = 0.0 if successes == 0 else max(0.0, centre - half)
+    high = 1.0 if successes == n else min(1.0, centre + half)
+    return low, high
 
 
 def outcome(visits, confirmed, cycle_holders, answered_both):
