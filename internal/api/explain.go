@@ -86,6 +86,7 @@ var orderPurpose = map[string]string{
 	orders.TriggerMarginMM:          "because maintenance margin reached its safety limit",
 	orders.TriggerRebalanceLegs:     "so the call and the put are the same size",
 	orders.TriggerRiskFrozen:        "while new risk is paused",
+	orders.TriggerRegimeSide:        "while that side is not sold: market makers amplify moves and the trend runs toward it",
 }
 
 // cancelWhy says why the bot cancelled a working sell order, by the trigger
@@ -95,6 +96,7 @@ var cancelWhy = map[string]string{
 	orders.TriggerRiskFrozen: "new risk was paused (a margin-limit change waits for confirmation, or maintenance margin is too high)",
 	orders.TriggerGammaClose: "market makers' positioning turned against that side",
 	orders.TriggerKillSwitch: "the kill switch stopped all trading",
+	orders.TriggerRegimeSide: "market makers amplify moves now and the trend turned toward that side, so it is not sold",
 }
 
 // skipWords explains a journaled skip, by its reason word.

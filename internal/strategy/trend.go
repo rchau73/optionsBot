@@ -20,8 +20,8 @@ func (s *Strategy) noteTrendChange(l SMALevels) {
 	if prev == "" || prev == l.Trend {
 		return
 	}
-	detail := fmt.Sprintf("SMA trend %s → %s: %s (spot %.2f, SMA9 %.2f, SMA21 %.2f, swing high %s, swing low %s)",
-		prev, l.Trend, l.Reason, l.Price, l.SMA9, l.SMA21,
+	detail := fmt.Sprintf("SMA trend %s → %s: %s (spot %.2f, SMA9 %.2f ± %.2f%%, SMA21 %.2f, swing high %s, swing low %s)",
+		prev, l.Trend, l.Reason, l.Price, l.SMA9, l.SMA9BandPct, l.SMA21,
 		swingText(l.SwingHigh, l.SwingHighDate), swingText(l.SwingLow, l.SwingLowDate))
 	slog.Info("sma trend changed", "event", orders.EventTrend, "from", prev, "to", l.Trend, "reason", l.Reason,
 		"direction", s.cfg.GEXDirection, "spot", l.Price, "sma9", l.SMA9, "sma21", l.SMA21,

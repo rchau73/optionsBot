@@ -425,6 +425,14 @@ func (s *Strategy) settleLeg(ctx context.Context, ps *pendingStrangle, leg *pend
 // side is re-entered on its own by the next entry or repair, which the shed
 // does not block.
 func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
+	s.cancelSide(ctx, optType, orders.TriggerGammaClose, "GEX shed of "+optType+"s")
+}
+
+// cancelSide cancels every pending entry, repair or top-up with a working
+// sell of optType, whole, and finalizes it at once (cancelShedSide), so what
+// filled before the cancel is booked now. It returns how many it cancelled.
+func (s *Strategy) cancelSide(ctx context.Context, optType, trigger, reason string) int {
+	n := 0
 	for _, ps := range s.pendingSnapshot() {
 		hit := false
 		for _, leg := range ps.legs() {
@@ -434,10 +442,12 @@ func (s *Strategy) cancelShedSide(ctx context.Context, optType string) {
 			continue
 		}
 		for _, leg := range ps.legs() {
-			s.cancelLeg(ctx, ps, leg, orders.TriggerGammaClose, "GEX shed of "+optType+"s")
+			s.cancelLeg(ctx, ps, leg, trigger, reason)
 		}
 		s.finalizePending(ctx, ps)
+		n++
 	}
+	return n
 }
 
 // cancelNewRisk cancels every working entry and top-up (not repairs: they

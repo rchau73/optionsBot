@@ -134,6 +134,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	}
 	gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, d.Market.DVOL)
 	gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
+	gamma.SetSMA9Band(cfg.SMA9BandSD)
 	gamma.SetDirection(cfg.GEXDirection)
 	gamma.SetBiasFlipWindow(time.Duration(max(cfg.GEXBiasFlipWindowMinutes, 0)) * time.Minute)
 	regimes := d.Regimes
@@ -304,6 +305,9 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// adds risk: MM breach reduces at once, a confirmed limit change resizes.
 	m := s.marginNow(ctx, gammaDec)
 	s.applyMarginPolicy(ctx, m)
+	// A side the confirmed regime and the trend block now: withdraw the
+	// sells of that side still working from before the block (#243).
+	s.cancelRegimeBlockedSides(ctx, gammaDec, m.status)
 
 	// Uneven strangles (partial fills, a double fill) carry an unintended
 	// directional bet: trim the larger leg. Risk-reducing, so not frozen.

@@ -169,6 +169,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | 24 h (`gex_repair_release_hours`) | …or once the live regime has been non-negative this long |
 | 24 h (`gex_bias_repair_cooldown_hours`), 60 min (`gex_bias_flip_window_minutes`) | under `bias`: a shed leg waits 24 h; the bias must agree against the live flip and the last hour's median flip, and sheds nothing until that hour of flips is recorded (after a restart: `bias_warmup`) |
 | 120 days, 5 bars (`gamma_trend_lookback_days`, `swing_pivot_n`) | SMA trend from daily closes |
+| 0.10 daily σ (`sma9_band_sd`) | SMA trend: the price changes side of SMA9 only past this band around it (#243; `cmd/stress -sma9band`) |
 | 252 days (`iv_percentile_window`), 2 closes (`iv_band_confirm_days`) | DVOL IV percentile; a band or regime change must hold on 2 UTC daily closes (until then new risk is frozen when the change would lower the limit) |
 | 20 %, 5 min (`stop_spread_guard_pct`, `stop_spread_max_wait_minutes`) | a triggered stop waits while the ask is more than 20 % above the mid (an emptied book), at most 5 minutes, then at market |
 | 3 in 60 min (`churn_max_round_trips`, `churn_window_minutes`) | churn breaker: a slot that buys back and re-sells 3 times within an hour is paused for the hour (exits still run) |

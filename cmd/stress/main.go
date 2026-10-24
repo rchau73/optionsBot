@@ -169,9 +169,12 @@ func markShed(s *strangle, typ string, at time.Time) {
 // botTrend is the bot's own SMA trend (strategy.SMALevelsOf, what
 // detectTrend runs): swing breakouts first, then SMA9 vs SMA21 with the price
 // beyond SMA9, over the daily closes the bot keeps, read at price (the live
-// spot, or the last close).
-func botTrend(closes []orders.DailyClose, price float64) int {
-	return strategy.SMALevelsOf(botCloses(closes), price, config.FixedSwingPivotN).TrendDir
+// spot, or the last close), with the band of bandPct % around SMA9 and the
+// side of SMA9 the previous decision left (strategy.SMALevelsBand); it
+// returns the trend and the side for the next decision.
+func botTrend(closes []orders.DailyClose, price, bandPct float64, prevSide int) (int, int) {
+	l := strategy.SMALevelsBand(botCloses(closes), price, config.FixedSwingPivotN, bandPct, prevSide)
+	return l.TrendDir, l.SMA9Side
 }
 
 // botCloses is the tail of closes the bot's gamma monitor keeps (lookback +
@@ -640,6 +643,7 @@ func main() {
 	regimeShare := flag.Float64("regimeshare", 0.3, "with -regimerun: share of days in a negative regime, before selloffs add more")
 	shedPersist := flag.Int("shedpersist", 2, "decisions in a row the shed signal must hold before shedding (today's bot: 2 snapshots; 1 = shed at once)")
 	botTrendFlag := flag.Bool("bottrend", true, "trend as the bot (strategy.SMALevelsOf, detectTrend's own rule): bull on a break above the last swing high or SMA9 > SMA21 with price > SMA9, bear on the mirror; false = the old model (SMA9 vs SMA21 with the close beyond SMA21, no swings)")
+	sma9Band := flag.Float64("sma9band", config.FixedSMA9BandSD, "with -bottrend (and -replay): the price changes side of SMA9 only once it is past a band of this many daily σ (DVOL ÷ √365) around it (sma9_band_sd, the bot: 0.10 since #243; 0 = none, before)")
 	liveTrend := flag.Bool("livetrend", true, "with -bottrend: the live spot against the daily SMAs, as the bot (detectTrend's lastTickPrice); false = the last daily close (before 2026-10-09)")
 	intraNoise := flag.Float64("intranoise", 0, "MODEL: intraday wiggle around the path, in daily σ (DVOL ÷ √365) — a Brownian bridge that still closes each day on the path (0 = smooth)")
 	sideHold := flag.Float64("sidehold", 0, "REJECTED (2026-10-09: within ±2.5 % at 4–8 h, 12–24 h cost BTC up to 16 %), -negentry trend: a side blocked by the trend stays blocked until the trend has not pointed that way for this many hours (0 = today's bot: released on the first non-bear/non-bull reading)")
@@ -928,6 +932,7 @@ func main() {
 	clearRun := map[string]int{}  // -biasrepair clear: decisions in a row the bias has not pointed at each side
 	biasState := 0                // -biasenter/-biasexit: the bias on the last decision
 	var biasFlips []flipAt        // -biasflipwindow: decisions' flips within the window
+	sma9Side := 0                 // -sma9band: the side of SMA9 the last decision read the price on
 	aboveRun, negReleases := 0, 0 // -negrelease: decisions in a row spot is above flip + buffer; decisions released
 	for i := 0; i <= len(path)**steps; i++ {
 		d := (i + *steps - 1) / *steps
@@ -1141,7 +1146,7 @@ func main() {
 			if *liveTrend {
 				price = m.spot
 			}
-			tr = botTrend(dated, price)
+			tr, sma9Side = botTrend(dated, price, strategy.FlipBufferPct(*sma9Band, m.dvol), sma9Side)
 		}
 		// The buffer: the rule sees a flip lowered by flipbuf %, so a leg is
 		// shed only when spot is that far below the real flip.
