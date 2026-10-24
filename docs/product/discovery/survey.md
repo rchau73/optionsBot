@@ -66,5 +66,5 @@ F2 is the strongest quote of the response, whichever way it went.
 ## 6. After the survey closes
 
 1. Export the answers to `data/product/interviews/`, give each response an anonymous ID (`P01`, `P02`…) and delete the answers from the form tool (`consent.md` §2).
-2. Fill `synthesis.md` (a copy in `data/product/interviews/`).
+2. Tally the export with `python3 scripts/product/survey_tally.py data/product/interviews/<export>.csv` (counts, NPS, fake door, delegation share; `scripts/product/README.md`), then fill `synthesis.md` (a copy in `data/product/interviews/`).
 3. Copy the F1 e-mails to the waiting list and delete them from the export.

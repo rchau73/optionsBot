@@ -4,6 +4,17 @@
 
 **Where data goes:** the exported answers, per-response notes and the waiting-list e-mails stay only in `data/product/interviews/` (gitignored, never committed, never in an issue or a pull request). Only the summary tables of §2–§5, with anonymous IDs (`P01`, `P02`…), no names, no amounts and no identifying detail, may go into a pull request that updates the PRD.
 
+## 0. Run the tally
+
+Count with the script, not by hand, so the numbers can be repeated:
+
+```bash
+python3 scripts/product/survey_tally.py data/product/interviews/<export>.csv \
+  -out data/product/interviews/tally.md          # -json for JSON; -map map.json if the form names columns differently
+```
+
+It prints qualified vs screened out (by segment), every Q1–Q8 option's count and share, the NPS on N1 (Q1 = never tried skipped), the fake-door outcomes (`survey.md` §5), by segment, and the Q6 delegation share next to the 30 % threshold, with n and a small-sample note under 15. Free text (Q4, F2) and the F1 e-mails are never printed, only how many answered. Use its figures in §3 and §4.
+
 ## 1. Per-response line
 
 The export has one row per response. Add these columns to it in `data/product/interviews/`:
