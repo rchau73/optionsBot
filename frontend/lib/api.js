@@ -177,6 +177,11 @@ export async function fetchBotTrades(name, after, signal) {
   return getJSON(`/api/bots/${encodeURIComponent(name)}/trades?after=${after}&limit=1000`, signal);
 }
 
+/** One bot's income month by month with its summary (/api/income, #319). */
+export async function fetchBotIncome(name, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/income`, signal);
+}
+
 /** Bucketed P&L history of one bot for a range (15m, 1h, 6h, 1d, 1w, 1m, all). */
 export async function fetchPnlHistory(name, range, signal) {
   return getJSON(`/api/bots/${encodeURIComponent(name)}/pnl/history?range=${encodeURIComponent(range)}`, signal);
