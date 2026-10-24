@@ -442,7 +442,7 @@
     "long": "P&L is the profit or loss of positions, net of the exchange's fees. Realized P&L comes from closed legs; unrealized P&L is the open legs valued at the current mark. Total P&L adds both. Dollar figures use the coin's price at that moment.",
     "risk_income": "It is the result of the income earned and the losses paid so far.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["P&L", "Total P&L", "P&L (USD)"]
+    "labels": ["P&L", "Total P&L", "P&L (USD)", "Result"]
   },
   "realized p&l": {
     "short": "Profit or loss already locked in by closed legs, after fees.",
@@ -596,7 +596,14 @@
     "long": "Equity is the account's value if everything were closed at current prices. 'All collateral' adds every coin, in dollars.",
     "risk_income": "It rises with income and falls with losses.",
     "source": "frontend/README.md#what-you-see",
-    "labels": ["Equity", "Equity (all collateral)"]
+    "labels": ["Equity", "Equity (all collateral)", "Of the account"]
+  },
+  "daily swing": {
+    "short": "How far the coin typically moves in one day, from DVOL: DVOL ÷ √365.",
+    "long": "DVOL is the market's expected yearly swing of the coin. Divided by √365 it gives a typical day's swing, one daily standard deviation. With DVOL 50 that is about 2.6 %. The worst-case page shows days of 2 and 3 typical swings each way.",
+    "risk_income": "Bigger swings cost a short-option book money in either direction; quiet days pay it a little.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["How big"]
   },
   "available": {
     "short": "Money free to back new positions or orders.",
