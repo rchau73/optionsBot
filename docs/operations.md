@@ -196,7 +196,7 @@ The repo is developed with AI agents and a person approving: the **SME agent** r
 ```bash
 gh auth refresh -s project              # once
 scripts/agents/setup_github.sh          # once: labels, project board, ruleset on main
-scripts/agents/install.sh               # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel)
+scripts/agents/install.sh               # launchd: SME daily at 09:00; tick every 6 min (deploy, then review/PM/Dev in parallel; nightly backup)
 launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
@@ -204,6 +204,26 @@ scripts/agents/install.sh --uninstall
 Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. The agents run from the **mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
 
 **A failed mvp deploy rolls back** (#204). When `docker compose up --build` or the health check fails for a new commit, `deploy.sh` resets the mvp clone (still on `main`) to the last commit that passed (`history/mvp.deployed`), rebuilds it and health-checks it again. A healthy rollback is recorded in `deploys.tsv` as `<time> mvp <commit> rollback` (a commit that had already run, so the soak clock `promote.sh` reads does not move) and notified as "Deploy FAILED, rolled back to …". If the rollback is unhealthy too, the script notifies "ROLLBACK FAILED" and stops; nothing retries it, so look at `scripts/envctl.sh mvp logs`. Either way the bad commit stays in `history/mvp.failed` and is not retried until main moves. The script also files one `bug` issue in Triage, titled `[E6] mvp deploy failed: <sha> (<subject>)`, with the failed step, the rollback outcome, the commit range and the last 80 log lines. Secret values from mvp's `.env` (the `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*`/`*PASSWORD*` variables the pre-commit hook guards) and bearer tokens are redacted (`scripts/agents/deploy_issue.py`). The issue is deduplicated by the sha in its title. If GitHub is unreachable, filing is retried on the next tick. The PM triages it like any bug, and the next merge redeploys.
+
+### Nightly backup and restore
+
+**Backup** (#328). The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them). No `.env` or secret is copied. Each copy passes a restore check, `go run ./cmd/backupcheck`: the journal must replay with `orders.ReplayFile` and hold no fewer events than the night before (each copy keeps its result in `check.json`). The newest 14 days are kept. A failed check notifies on the Mac, keeps the copy as `<date>.failed`, leaves every earlier backup in place, and is retried once on a later tick; why it failed is in `data/agents/backup/<date>.log` and the run ledger (`python3 scripts/agents/runs.py --agent backup`). To run it again today, remove `data/agents/backup/<date>.done` and `<date>.attempts` and wait for the next tick, or run the script by hand.
+
+**Restore** a bot from a backup (the bot must be stopped: it appends to its journal and rewrites nothing else):
+
+```bash
+b=~/dev/go/optionsBot-env/history/backups/2026-10-24/stable/btc   # the newest good one
+go run ./cmd/backupcheck -dir "$b"                                  # the copy still replays
+scripts/envctl.sh stable stop bot-btc
+cd ~/dev/go/optionsBot-env/stable
+mkdir -p data/btc/data/archive/before-restore && mv data/btc/orders.log data/btc/data/pnl_history.jsonl data/btc/data/archive/before-restore/ 2>/dev/null || true   # never delete what is there
+cp "$b/orders.log" data/btc/
+cp "$b/pnl_history.jsonl" "$b/regime_history.jsonl" "$b/direction_history.jsonl" data/btc/data/
+cp -Rn "$b/archive/." data/btc/data/archive/
+scripts/envctl.sh stable start bot-btc
+```
+
+At startup the bot replays the restored journal (realised P&L, trades, stop and shed holds) and reconciles positions with the exchange as always; what happened between the backup and the loss is not in the journal, so check the monitor's positions against Deribit.
 
 ## Kill switch
 
