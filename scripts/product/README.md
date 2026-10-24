@@ -2,6 +2,22 @@
 
 Tools for the product work of epic E5 (`docs/product/PRD.md` §6). Standard library only; no Go code, nothing that trades.
 
+## Competitor map (`competitors.py`, #304)
+
+Checks the private competitor entries — one YAML per competitor in the gitignored `data/product/competitors/` — and prints the positioning gaps. Method, categories and fields: `docs/product/competitors/README.md`.
+
+```bash
+python3 scripts/product/competitors.py                     # check data/product/competitors/*.yaml
+python3 scripts/product/competitors.py scripts/product/example_competitor.yaml --today 2026-10-23
+python3 scripts/product/competitors.py --summary           # per category, safe to paste into PRD §4
+```
+
+- **Refused (exit 1):** a fact without `source_url` or `seen_on`, a date that is not `YYYY-MM-DD` or is after today, an unknown or missing field, a category outside PRD §4's five, a yes/partly/no field with another value. Each error names the file and the field; nothing is summarised.
+- **Stale (warning, exit 0):** a fact seen more than 90 days before today (`--today` sets it; default today UTC), listed as `STALE: <file>: <field>: …`.
+- **`--summary`:** per category, the number of competitors, how many show the risk beside the yield, and each PRD §5 claim as open or contested, plus the stale-fact count. Counts only — no name, price, URL or path.
+
+`example_competitor.yaml` is fictional and lives here, outside `data/`, for the tests.
+
 ## Unit economics (`unit_economics.py`, #235)
 
 Turns a pricing scenario — tiers, prices, expected mix, churn, CAC, cost to serve — into the numbers a pricing proposal needs, per tier and blended by the mix, each with a **pessimistic** row:

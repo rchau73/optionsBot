@@ -5,3 +5,6 @@ coverage/
 .env*.local
 # Users and sessions of a local run (data/monitor/auth.db)
 data/
+# The phone-width check's screenshots and report (npm run test:phone, #309)
+test-results/
+docs/responsive-measured.json
