@@ -184,7 +184,7 @@ npm run test:phone                # phone-width check (#309): Playwright at 360,
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`); the Users page: `UsersAdmin`, `AddUserForm`, `UserActionDialog` |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `users.js` (Users page form checks and confirmation words), `format.js` (units), `bots.js` (server config) |
-| `content/` | `glossary.json` — the plain-words tips (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
+| `content/` | `glossary.json` — the plain-words tips (below); `confirm-notes.json` — the risk notes before a confirmation (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
 | `__tests__/`, `test/` | tests and shared fixtures |
 | `e2e/` | the phone-width check (Playwright, `npm run test:phone`): config, sign-in fixture, in-page measuring, baseline comparison |
 
@@ -193,6 +193,10 @@ npm run test:phone                # phone-width check (#309): Playwright at 360,
 `content/glossary.json` holds one short tip for every term the monitor shows and every config setting: `{ "<term>": { "short" (≤ 140 chars), "long" (≤ 600), "risk_income" (how it moves risk and income), "source" ("OptionStrategy.md#<anchor>" or "frontend/README.md#<anchor>"), "labels" (optional: the exact monitor texts that mean this term) } }`. Config keys are entries under their YAML name, nested ones as `parent.child` (`backtest.fill_model`). `lib/glossary.js` `findTerm(label)` finds an entry by term, config key or label. It is content only: the tips UI (E11) and the assistant (E10) will read it.
 
 Tests keep it complete: `__tests__/glossary.test.js` fails when a literal column header (`<th>`), `<dt>`, `label="…"` prop, hold-rule, feed-event or exit-reason label in the monitor, or a key of `config_btc.yaml`/`config_eth.yaml`/`config_btc.mvp.yaml`, has no entry, when a source anchor does not exist, and on return promises; `tests/glossary_test.go` checks every key `config.Load` accepts. **A new column or setting needs its entry in the same PR.** Writing rules: short sentences (8th-grade reading), no jargon without its own entry, no return promises.
+
+### Risk notes before confirming (#299)
+
+`content/confirm-notes.json` says in plain words, before a person confirms, what a manual close or a rebalance does, what can go wrong and what the bot does next: `{ "manual_close": { "does", "risks", "follows", "follows_last_leg", "terms", "source" }, "rebalance": { "does", "risks", "follows", "dry_run", "terms", "source" } }`. `terms` lists the glossary keys the texts name (settings by their YAML key, e.g. `repair_cooldown_hours`), so each can link to its tip; `source` is an `OptionStrategy.md#…` or `CLAUDE.md#…` anchor. `lib/confirmNotes.js` `noteFor(action, { lastLeg, dryRun })` picks the texts: `lastLeg` (manual close of a strangle's last leg) gives `follows_last_leg`; `dryRun` (rebalance preview) gives `dry_run` as `does` and no risks or follows, since nothing is sent. Content only: the confirmation dialogs read it once their prototype is approved (E11). `__tests__/confirm-notes.test.js` keeps every text ≤ 280 characters, free of figures (no digit at all) and of forecast, advice and promise words, every named term a glossary key and every source anchor real. The facts follow `internal/strategy/manualclose.go` and `manualrebalance.go`: **a rule change there needs its note changed in the same PR.** This is risk-disclosure wording drafted against `docs/legal/`: it may be shown to the team's own users, never to an external user before counsel approves it.
 
 ### Empty states (#298)
 

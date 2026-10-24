@@ -249,6 +249,12 @@
     "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
     "labels": ["IM over limit", "IM back under limit"]
   },
+  "liquidity cap": {
+    "short": "The most a new sell order may be: a small share of each strike's open interest on Deribit's main exchange.",
+    "long": "Each entry or top-up order is capped at 10 % of each sold strike's open interest on Deribit's main exchange, and both legs get the smaller size. A strike too thin for one lot gets no order, and the slot stays short. Repairs, exits and stops are not capped.",
+    "risk_income": "It keeps orders to a size the market can take, at the cost of income when a slot stays short of its share.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
   "freeze": {
     "short": "A pause on new positions while a change of volatility band or regime waits for confirmation.",
     "long": "When the volatility band or the gamma regime changes in a way that could lower the margin limit, the bot stops opening new positions until the change has held for 2 daily closes. Exits, rolls and repairs of rolled legs go on. If the change goes away, the freeze ends.",

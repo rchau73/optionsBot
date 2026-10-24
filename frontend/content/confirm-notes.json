@@ -1,0 +1,18 @@
+{
+  "manual_close": {
+    "does": "A manual close buys this leg back at market now. It is allowed only while the regime side rule blocks new sales of this side: a confirmed negative gamma regime, with puts blocked in a bear trend and calls in a bull trend.",
+    "risks": "A market buy pays the ask, the spread and a fee, and the result so far becomes realized P&L. In a thin book the ask can sit far above the mid. If the price turns back, the premium this leg could still have kept is given up.",
+    "follows": "The side is then under a stop hold: repair does not sell it again during a freeze or while the confirmed regime is negative, and not before repair_cooldown_hours have passed. The strangle's other leg stays open.",
+    "follows_last_leg": "This is the strangle's last leg, so its slot becomes empty and the next cycle opens a fresh entry there; while the regime side block lasts, only the other side is sold. The closed side is held from repair by a stop hold, as after a stop-loss.",
+    "terms": ["manual close", "regime side", "gamma regime", "realized p&l", "stop hold", "repair", "freeze", "repair_cooldown_hours", "slot", "entry", "stop-loss"],
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "rebalance": {
+    "does": "Sizes each slot toward its share of the current IM limit: it sells more (a top-up) where there is room and buys back (a downsize) where the book is too large. The same gates as the bot's own rebalance apply; when they refuse, nothing is sent.",
+    "risks": "A top-up adds premium and the risk of a big move; a downsize pays the ask, the spread and fees. The liquidity cap and max_leg_size_multiple still apply and can leave a slot short of its share. Prices can move between the preview and the orders.",
+    "follows": "A top-up that does not fill before its fill timeout is cancelled, the filled part kept and the rest retried later, with longer waits after unfilled passes in a row. A slot under a stop hold or the regime side block is not topped up; a strangle missing a leg is left to repair.",
+    "dry_run": "A dry run reports what the pass would do, slot by slot, and sends nothing, journals nothing and changes no hold or retry. The real pass reads fresh margin again, so its orders can differ from the preview.",
+    "terms": ["rebalance", "slot", "im limit", "liquidity cap", "max_leg_size_multiple", "fill timeout", "stop hold", "regime side", "repair", "margin"],
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  }
+}
