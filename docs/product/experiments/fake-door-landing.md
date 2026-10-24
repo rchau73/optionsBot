@@ -114,4 +114,6 @@ The waiting list collects personal data, so it follows `docs/legal/data-protecti
 
 ## 10. Result (filled after the run)
 
+Computed by [`scripts/product/fakedoor.py`](../../../scripts/product/README.md#fake-door-result-fakedoorpy-303) from the run's private export in `data/product/fakedoor/<run>/`, with the §5–§6 thresholds as fixed constants: paste its `result.md` here (counts and shares only).
+
 Visits · sign-ups · rate with its Wilson 95 % interval · per-channel rates · cycle-holder share · secondary shares · confirmation rate · guardrail events · the survey's kill-criterion share beside it · outcome (§6) · decision taken by the product owner · what we learned.

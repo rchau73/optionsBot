@@ -46,3 +46,23 @@ python3 -m unittest discover -s scripts/product -p 'test_*.py'
 **Private data stays private.** `example_scenario.yaml` holds fake round numbers marked `# placeholder, not a price`. Real assumptions and results go in the gitignored `data/product/`; `-out` refuses any path outside it.
 
 **A subscription, not a share of profits** (PRD §6): performance or return inputs (`performance…`, `profit…`, `return…`, `yield…`, `pnl…`) are refused. A tier priced as a percentage of capital (`capital_fee_pct_per_year` with `avg_capital`) is computed but printed with the warning **needs legal review** — it can read as a management fee.
+
+## Fake-door result (`fakedoor.py`, #303)
+
+Turns a run of the landing-page fake door (`docs/product/experiments/fake-door-landing.md`) into its §10 result, applying the §6 decision rule as written. The thresholds are constants copied from the brief (400 visits, 4 weeks, Success ≥ 10 % with lower bound ≥ 6 % and cycle holders ≥ half, Kill < 3 % with upper bound < 6 %, survey 30 %); `test_fakedoor.py` pins them — moving one is a new brief, not a code change.
+
+```bash
+python3 scripts/product/fakedoor.py data/product/fakedoor/run1
+python3 scripts/product/fakedoor.py data/product/fakedoor/run1 --survey-share 0.34   # the survey's share (#247), a fraction
+```
+
+**Input** (in the run directory, which must be inside the gitignored `data/product/`; other names with `--signups`/`--visits`):
+
+| File | Columns |
+|---|---|
+| `signups.csv` | `submitted_at`, `confirmed` (yes/no), `channel`, `country`, `first_bought` (a year, `before 2022` or `2022 or later`), `kept_most` (yes/no), `first_wanted`, `fair_pay` — one row per submission; blank segment/choice answers are "not answered" |
+| `visits.csv` | `date` (YYYY-MM-DD), `channel`, `visits` |
+
+Only these columns are read; any other — an `email` column — is ignored and never written. An unknown value in a yes/no or year column is refused with its line number.
+
+**Output:** `result.md` and `result.json` beside the input — US sign-ups that got through first (a guardrail line telling the product owner to stop the run), then visits, confirmed sign-ups, the rate with its Wilson 95 % interval, per-channel rates with intervals, the cycle-holder share (confirmed sign-ups that bought before 2022 and kept most ÷ confirmed sign-ups that answered both), the secondary shares, the confirmation rate (confirmed ÷ submitted) and the outcome: **Not enough traffic** (< 400 visits, whatever the rate) · **Success** · **Kill** (with `--survey-share`: whether PRD §6's kill criterion is met) · **Iterate** (everything between, or a Success rate with cycle holders under half or none answering).
