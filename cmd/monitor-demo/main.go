@@ -115,10 +115,17 @@ func demoHistory(underlying string, spot float64) (*history.Store, error) {
 		return nil, err
 	}
 	realised, unrealised := 0.0, 0.0
-	for t := time.Now().AddDate(0, 0, -30); t.Before(time.Now()); t = t.Add(10 * time.Minute) {
-		realised += 0.00004 + rand.NormFloat64()*0.0002
+	start := time.Now().AddDate(0, 0, -30)
+	for t := start; t.Before(time.Now()); t = t.Add(10 * time.Minute) {
+		day := t.Sub(start).Hours() / 24
+		drift := 0.00004
+		if day >= 12 && day < 19 { // a losing week, so /api/performance shows a drawdown
+			drift = -0.0001
+		}
+		realised += drift + rand.NormFloat64()*0.0002
 		unrealised = 0.6*unrealised + rand.NormFloat64()*0.002
-		h.RecordPnL(t, realised, unrealised, spot, demoMargin())
+		pointSpot := spot * (0.94 + 0.06*day/30) // the coin rose ~6 % over the month
+		h.RecordPnL(t, realised, unrealised, pointSpot, demoMargin(underlying))
 	}
 	// Reopen so later points continue from this level (it becomes the base).
 	if err := h.Close(); err != nil {
@@ -128,10 +135,10 @@ func demoHistory(underlying string, spot float64) (*history.Store, error) {
 }
 
 // demoMargin is a synthetic margin view: IM around half of a 20 % limit,
-// entries blocked one point in ten.
-func demoMargin() *history.Margin {
+// entries blocked one point in ten, a margin balance of 2 coins.
+func demoMargin(underlying string) *history.Margin {
 	return &history.Margin{Known: true, IMPct: 8 + rand.Float64()*6, IMLimitPct: 20, MMPct: 3,
-		EntriesAllowed: rand.Float64() > 0.1}
+		EntriesAllowed: rand.Float64() > 0.1, MarginBalance: 2, Equity: 2, Unit: underlying}
 }
 
 type simLeg struct {
@@ -224,7 +231,7 @@ func (s *simulation) step() {
 		for _, l := range s.legs {
 			unrealised += l.entry*l.qty - l.mark*l.qty
 		}
-		s.history.RecordPnL(time.Now(), s.realised, unrealised, s.spot, demoMargin())
+		s.history.RecordPnL(time.Now(), s.realised, unrealised, s.spot, demoMargin(s.underlying))
 	}
 	switch r := rand.Float64(); {
 	case r < 0.04:
