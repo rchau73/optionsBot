@@ -4,10 +4,24 @@ The input for E12's prototype ("every monitor and settings screen works on a pho
 
 ## How it was measured
 
-- **By reading the layout code** (`app/`, `components/`, `app/globals.css`) against Tailwind v4's breakpoints: `sm` 640 px, `md` 768 px, `lg` 1024 px, `xl` 1280 px. At 360 and 390 px no breakpoint applies; at 768 px `sm` and `md` apply, `lg` does not. No headless browser was run (the agent that wrote this has no browser), so there are no screenshots; widths of text are estimates from the font sizes (`text-xs` 12 px, `text-sm` 14 px, `text-base` 16 px) and are marked "about". A Playwright pass on `cmd/monitor-demo` data is a cheap follow-up to confirm the numbers.
+- **By reading the layout code** (`app/`, `components/`, `app/globals.css`) against Tailwind v4's breakpoints: `sm` 640 px, `md` 768 px, `lg` 1024 px, `xl` 1280 px. At 360 and 390 px no breakpoint applies; at 768 px `sm` and `md` apply, `lg` does not. No headless browser was run (the agent that wrote this has no browser), so there are no screenshots; widths of text are estimates from the font sizes (`text-xs` 12 px, `text-sm` 14 px, `text-base` 16 px) and are marked "about". The Playwright check `npm run test:phone` (#309, below) now measures them on `cmd/monitor-demo` data.
 - **Space a panel's content gets** (the page has `p-3`, a panel a 1 px border and a `p-3` body): 360 − 24 − 2 − 24 = **310 px** at 360, **340 px** at 390, **718 px** at 768. The investor summary cards have `p-4` inside: 302 / 332 / 710 px. Panel headers have `px-4`: 302 / 332 / 710 px.
 - **Touch targets** against 44 × 44 px (WCAG 2.5.5, AAA; WCAG 2.2's AA minimum, 2.5.8, is 24 × 24 px). Heights come from Tailwind v4's line heights: `text-xs` 16 px, `text-sm` 20 px, `text-base` 24 px, plus padding and border. So `px-2 py-0.5 text-xs` = **20 px**, `px-3 py-1 text-sm` = **28 px**, a `select` with `py-1 text-sm` and a border = **30 px**.
 - **Contrast** with the WCAG 2.1 formula, computed by `__tests__/responsive-audit.test.js` from the tokens in `app/globals.css` and Tailwind's own slate scale (`node_modules/tailwindcss/theme.css`, converted from oklch to sRGB). A colour with an opacity modifier (`bg-profit/15`) is painted over what is behind it (`panel` inside a card, `surface` on the page). The test fails if a ratio here stops matching the tokens.
+
+## Measured in a browser (#309)
+
+`npm run test:phone` (`e2e/`, frontend/README.md "Develop") starts two `cmd/monitor-demo` bots, a production build of the monitor and headless Chromium, signs in as a throwaway admin, and measures the page at 360 × 800, 390 × 844 and 768 × 1024 and each dialog at 360 × 640 and 640 × 360. It writes `docs/responsive-measured.json` and screenshots under `test-results/phone/` (both git-ignored: demo data only, regenerated on every run), and fails only when something is worse than `e2e/phone-baseline.json`, which records today's state.
+
+| Estimate above | Where the measurement is (`responsive-measured.json`) | How it is measured |
+|---|---|---|
+| Working orders pushes the whole page sideways at 360 and 390 px, fits at 768 | `widths.<w>.overflow`: `overflow_px` and `causes` (panel and element) | `scrollWidth − clientWidth` of the page; each panel (and each table in it) hidden in turn — a cause is one whose absence lowers the overflow |
+| Almost every control is 20–30 px tall (pattern 4) | `widths.<w>.controls`: `total`, `under_44`, `under_24`, and the kinds of control under each with their smallest box | the box of every visible button, link, field, tab and menu item |
+| Hover-only explanations (pattern 1) | `widths.<w>.title_only` | elements with a `title` whose words are not on screen |
+| Header about 400–500 px tall at 360 px (pattern 7) | `widths.<w>.header_height_px` | the top header's box |
+| Dialogs fit portrait, not landscape (pattern 8) | `dialogs.<close\|rebalance\|change_password>.<portrait\|landscape>`: box size, `fits` | the dialog's card inside the viewport. Close and Rebalance are enabled for the browser only (the demo has neither) and their POSTs answered by the test: nothing reaches a bot |
+
+What counts as worse: a new cause of page overflow or 16 px more of it, a new kind of control under 24 or 44 px (named in the failure), a new hover-only explanation, a header 24 px taller, a dialog that stopped fitting. Counts are reported but not compared: the demo's feed and trades grow at random, so the number of rows (and of their buttons) differs between runs. A fix that makes a number better passes; record it with `UPDATE_PHONE_BASELINE=1 npm run test:phone` and commit the new baseline.
 
 ## What holds across the page
 
