@@ -126,9 +126,10 @@ class Pure(unittest.TestCase):
         line, filing = usage_week.issue(WEEK, self.envs, self.state, [], NOW)
         title, body = filing
         self.assertEqual(title, "[E13] Engagement drop: active_users, manual_close 2026-W43")
-        self.assertIn("- mvp: weekly active users: 20, mean of the base weeks 40.0 (-50 %)", body)
-        self.assertIn("- mvp: manual-close dialogs confirmed: 50 % of starts, was 80 % (-30 pts) — 10 starts this week, 30 in the base weeks", body)
-        self.assertIn("**stable**", body)
+        # One heading per environment, its falling metrics listed under it.
+        self.assertIn("**mvp**\n- weekly active users: 20, mean of the base weeks 40.0 (-50 %)\n"
+                      "- manual-close dialogs confirmed: 50 % of starts, was 80 % (-30 pts) — 10 starts this week, 30 in the base weeks", body)
+        self.assertIn("**stable**\n- weekly active users: 20, mean of the base weeks 40.0 (-50 %)", body)
         self.assertIn("filing", line)
 
     def test_scenario_the_same_drop_already_filed_this_week_files_nothing(self):
