@@ -54,7 +54,16 @@ var Properties = map[string]Rule{
 	"outcome":      enumOf("ok", "refused", "error", "timeout"),
 	"source":       enumOf("bot_api", "account", "pnl_history"),
 	"reason":       enumOf("user", "expired", "refresh_failed"),
+	// The in-product surveys (docs/product/analytics/surveys.md, #297).
+	"survey_id":       enumOf("nps", "answers", "exit"),
+	"score":           enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
+	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
+	"came_for":        enumOf(fourAnswers...),
+	"hardest_to_find": enumOf(fourAnswers...),
 }
+
+// E3's four investor answers, plus "none of these" (surveys.md §2).
+var fourAnswers = []string{"holding", "income", "worst_case", "last_action", "none"}
 
 // Events is the plan's §2: event → the properties it may carry.
 var Events = map[string][]string{
@@ -77,6 +86,9 @@ var Events = map[string][]string{
 	"rebalance_confirmed":    {"outcome"},
 	"data_stale_shown":       {"source"},
 	"signed_out":             {"reason"},
+	"survey_shown":           {"survey_id"},
+	"survey_answered":        {"survey_id", "score", "reason_code", "came_for", "hardest_to_find"},
+	"survey_dismissed":       {"survey_id"},
 }
 
 // The envelope's own rules (§3 and collector.js).
