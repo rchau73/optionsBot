@@ -293,7 +293,7 @@ Print only the report in the exact output shape the skill defines, ending with t
 t = open(sys.argv[1]).read()
 m = re.search(r"<!-- PM-STORIES\s*(\{.*?\})\s*-->", t, re.S)
 json.dump(json.loads(m.group(1)) if m else {}, open(sys.argv[2], "w"), indent=1)' "$run/plan.md" "$run/plan.json"
-    python3 "$BOARD_PY" stories "$run/plan.json" "$run/epics.json" "$run/stories.json"
+    python3 "$BOARD_PY" stories "$run/plan.json" "$run/epics.json" "$run/stories.json" "$run/board.json"
     n_new="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$run/stories.json")"
     k=0 filed=""
     while [[ $k -lt $n_new ]]; do

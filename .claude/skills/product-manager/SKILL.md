@@ -180,12 +180,13 @@ SUMMARY: <one line: what was triaged, what moved, what waits for a person>
 
 ## Epic planning (agent mode)
 
-Run by `scripts/agents/pm_agent.sh` when an approved epic has fewer than 2 moving stories (Ready, In progress, In review, Blocked on `pm:waiting`, or Triage not waiting for a person), at most every 12 hours per epic. You are **read-only**. The script files what you propose through the same gate as triage.
+Run by `scripts/agents/pm_agent.sh` when an approved epic has **no** moving story (Ready, In progress, In review, Blocked on `pm:waiting`, or Triage not waiting for a person), at most once a day per epic. The agents share the product owner's Claude plan (2026-10-24: it ran out, and planning had filed near-duplicates — 35 of 51 cards were consolidated), so every story costs a Dev run and a review: fewer, larger, non-overlapping stories. You are **read-only**. The script files what you propose through the same gate as triage.
 
 Inputs in the run directory: `plan_epics.txt` (the epic ids to plan), `PRD.md`, `epics.json`, `board.json` (every card with its column, labels, title and `parent` epic number, closed ones included). Read the code and docs you need so each story is buildable.
 
-For each epic, propose **up to 3** next stories that move its outcome, smallest valuable slice first:
-- Never duplicate a card already on the board (open or recently closed) — read the titles under that epic first.
+For each epic, propose **one** next story that moves its outcome: **one PR's worth** of coherent work.
+- **Bundle, don't split:** pieces that touch the same files or the same screen (a page and its API field, a report and its schedule and alert, a design doc and its inventory) go in one story with one acceptance list. Split only when the parts are independent and each alone is large. The script files at most one story per epic and drops a title close to any card of the epic, open or closed.
+- Never duplicate a card already on the board, open or closed — read every title and the "consolidated into #N" comments under that epic first. If the work is already covered by an open card, propose nothing for that epic.
 - Prefer stories the agents can finish alone: backend, data, docs, tests, research with the repo's tools. A UI story is fine, but it waits for the epic's approved prototype (`ui: true`); if the prototype is not approved, propose the non-UI groundwork first.
 - A story that needs the person (a policy choice, a legal answer, a secret they must write in `.env`) still gets filed: say so in its body.
 - Sequence with "Depends on #N" (existing issues only) or "Waits until YYYY-MM-DD".
