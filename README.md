@@ -137,6 +137,10 @@ Two files with a strict split: **`config.yaml`** (or `config_btc.yaml` / `config
 
 Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys became 14). Everything else is fixed in code (`internal/config/fixed.go`, table below); a file that still sets a fixed key fails at startup and names it, so nobody believes a changed value is in force. To make one tunable again, give its field back its `yaml` tag and drop it from `ApplyFixed`. `tests/config_effective_test.go` pins every setting both shipped configs produce, so moving a key between the file and the code cannot change a value unnoticed.
 
+**Parameter catalogue** ([docs/parameters.md](docs/parameters.md), #255): every key below in plain words, with its unit, the range `Validate` accepts, the rules that tie it to other keys, its core-policy area (a change to the default of a core-policy setting needs the product owner) and the tools that can test a change. It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go run ./cmd/paramdocs`; `tests/config_catalogue_test.go` fails when a shipped key has no entry, a range disagrees with `Validate` or the page is stale.
+
+**Setting changes are journaled** (#256): at every start the bot writes one `config_loaded` line to `orders.log` — the `fingerprint` (12 hex characters of the SHA-256 of the effective strategy settings, `config.Effective`: every YAML key and fixed value, nothing from `.env`), `version`, `deployment`, `config_file`, the full `settings` and the `changes` (key, from, to) since the previous `config_loaded` line; `first: true` on a journal without one, `unchanged: true` on a restart with the same settings. `/api/status` reports `config: {fingerprint, since}` (since = the start that last changed them). `actor` stays empty until settings are changed through an apply flow (files are edited by hand today).
+
 | Key | Default | Meaning |
 |---|---|---|
 | `underlying` | — | `BTC` or `ETH` |
@@ -432,6 +436,7 @@ cmd/monitor-demo/     monitor API with simulated data, for UI development
 | [OptionStrategy.md](OptionStrategy.md) | the strategy in plain language: rules, worked examples, risks |
 | [docs/architecture.md](docs/architecture.md) | detailed design, invariants, limitations |
 | [docs/operations.md](docs/operations.md) | running, monitoring, kill switch, troubleshooting |
+| [docs/parameters.md](docs/parameters.md) | every tunable setting in plain words: unit, valid range, core policy, tools that test it (generated) |
 | [docs/README.md](docs/README.md) | diagram index (Mermaid sources + 4× PNGs) |
 | [CLAUDE.md](CLAUDE.md) | guidance for AI-assisted development in this repo |
 
