@@ -15,6 +15,12 @@
 // each source, as percentages only → <stable>/data/evidence/direction/.
 //
 //	go run ./cmd/evidence -compare-direction -week 2026-W43
+//
+// -track-record (#279) and -trend (#323) join the weekly reports already
+// written: the whole P&L history with one row per ISO week, and the weeks'
+// percentages side by side → <root>/data/evidence/track-record/ and trend/.
+//
+//	go run ./cmd/evidence -env stable -track-record -trend
 package main
 
 import (
@@ -43,8 +49,17 @@ func main() {
 	compare := flag.Bool("compare-direction", false, "the direction trial scorecard (#245): stable's bot (bias) vs mvp's (sma), live and replayed both ways on stable's books → <stable>/data/evidence/direction/<week>.md|.json")
 	stableRoot := flag.String("stable-root", "", "with -compare-direction: the stable clone (default ~/dev/go/optionsBot-env/stable)")
 	mvpRoot := flag.String("mvp-root", "", "with -compare-direction: the mvp clone (default ~/dev/go/optionsBot-env/mvp)")
+	track := flag.Bool("track-record", false, "the track record (#279): the whole P&L history and one row per ISO week from the weekly reports → <root>/data/evidence/track-record/<bot>.md|.json")
+	trend := flag.Bool("trend", false, "the evidence trend (#323): the weekly reports week by week, percentages only → <root>/data/evidence/trend/<bot>.md|.json")
 	flag.Parse()
 
+	if *track || *trend {
+		if err := runTrack(*env, *root, *bots, *track, *trend); err != nil {
+			fmt.Fprintln(os.Stderr, "evidence:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *compare {
 		if err := runCompare(*stableRoot, *mvpRoot, *bots, *week, *from, *to); err != nil {
 			fmt.Fprintln(os.Stderr, "evidence:", err)
@@ -90,6 +105,37 @@ func run(env, root, booksRoot, bots, week, from, to string, equity float64, stre
 			return err
 		}
 		fmt.Printf("%s %s %s: %s, %s\n", env, bot, w.Label, md, js)
+	}
+	return nil
+}
+
+// runTrack writes the track record and/or the trend of each bot from the
+// files already in the clone (the history and the weekly reports).
+func runTrack(env, root, bots string, track, trend bool) error {
+	if env != "stable" && env != "mvp" {
+		return fmt.Errorf("-env %q: stable | mvp", env)
+	}
+	root, err := envRoot(root, env)
+	if err != nil {
+		return err
+	}
+	for _, bot := range strings.Split(bots, ",") {
+		bot = strings.ToLower(strings.TrimSpace(bot))
+		in := evidence.LoadTrack(env, bot, root, os.Stderr)
+		if track {
+			md, js := evidence.TrackOutPaths(root, bot)
+			if err := evidence.WriteTrack(evidence.BuildTrackRecord(in), md, js); err != nil {
+				return err
+			}
+			fmt.Printf("%s %s track record: %s, %s\n", env, bot, md, js)
+		}
+		if trend {
+			md, js := evidence.TrendOutPaths(root, bot)
+			if err := evidence.WriteTrend(evidence.BuildTrend(env, bot, in.WeeklySource, in.Weekly, in.Unreadable), md, js); err != nil {
+				return err
+			}
+			fmt.Printf("%s %s trend: %s, %s\n", env, bot, md, js)
+		}
 	}
 	return nil
 }
