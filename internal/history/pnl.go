@@ -175,6 +175,20 @@ func (s *Store) Utilisation(from, to time.Time) UtilisationStats {
 	return Utilisation(s.points, from, to)
 }
 
+// Points returns a copy of the raw points in [from, to], oldest first: the
+// performance summary needs every point, not one per bucket.
+func (s *Store) Points(from, to time.Time) []Point {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []Point{}
+	for _, p := range s.points {
+		if !p.T.Before(from) && !p.T.After(to) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // Bucket is the pure reduction used by Range.
 func Bucket(points []Point, from, to time.Time, buckets int) []Point {
 	out := []Point{}
