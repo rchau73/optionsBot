@@ -24,7 +24,7 @@ export function newUserProblem(form) {
 /**
  * The confirmation of an action on `user` by the admin `me` (a username):
  * { title, body, button } in plain words, saying what follows.
- * action: "role" (with `role`), "password", "signout" or "delete".
+ * action: "role" (with `role`), "password", "link" (a reset link), "signout" or "delete".
  */
 export function confirmText(action, user, { role = null, me = null } = {}) {
   const self = user.username === me;
@@ -42,6 +42,12 @@ export function confirmText(action, user, { role = null, me = null } = {}) {
         title: `Reset ${user.username}'s password`,
         body: `Sets a new password for ${user.username} and signs them out on every browser. Give them the new password yourself, by a safe channel.`,
         button: "Reset password",
+      };
+    case "link":
+      return {
+        title: `Reset link for ${user.username}`,
+        body: `Creates a link with which ${user.username} sets a new password. It works once, for 30 minutes, and voids any earlier link. You see it only now: send it by a safe channel. ${sessions} when it is used.`,
+        button: "Create link",
       };
     case "signout":
       return {

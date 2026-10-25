@@ -895,10 +895,28 @@
     "source": "frontend/README.md#users-page-306"
   },
   "actions": {
-    "short": "What an admin can do to a person: reset the password, sign them out everywhere, or delete them.",
-    "long": "Users page (admins only). Reset password sets a new one and signs the person out on every browser. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.",
+    "short": "What an admin can do to a person: reset the password, send a reset link, sign them out everywhere, or delete them.",
+    "long": "Users page (admins only). Reset password sets a new one and signs the person out on every browser. Reset link makes a link, valid once for 30 minutes, with which the person chooses their own new password. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.",
     "risk_income": "None on trading: none of these changes a position or an order.",
     "source": "frontend/README.md#users-page-306",
     "labels": ["Actions"]
+  },
+  "person": {
+    "short": "Who did it: the username of the person who signed in, changed a user or acted on a bot.",
+    "long": "Audit page (admins only). The username stored on the audit line. For a failed sign-in it is the name that was typed. Lines written by the monitor itself or the admin command line say system or cli.",
+    "risk_income": "None: it answers who closed a leg or rebalanced, without shell access.",
+    "source": "frontend/README.md#audit-page-308-249"
+  },
+  "target / bot": {
+    "short": "What the action was done to: the person whose account changed, or the bot that was asked to close or rebalance.",
+    "long": "Audit page (admins only). For a user change it is the person changed. For a manual close or rebalance it is the bot. Empty for sign-ins and sign-outs.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#audit-page-308-249"
+  },
+  "detail": {
+    "short": "Every other field of the audit line, as stored: for example the positions closed and the bot's answer.",
+    "long": "Audit page (admins only). The rest of the line, key=value, unchanged: a close's position ids and status, a rebalance's dry run, a role change's from and to, an IP. Never a password, hash or token: the trail holds none.",
+    "risk_income": "None.",
+    "source": "frontend/README.md#audit-page-308-249"
   }
 }

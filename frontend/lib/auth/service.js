@@ -11,6 +11,10 @@ import { roleAtLeast } from "./roles";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
 export const INVALID_LOGIN = "invalid username or password";
+/** The one answer for an unknown, used, expired or replaced reset link (#307). */
+export const RESET_LINK_INVALID = "link expired or already used";
+/** How long a reset link works. */
+export const RESET_LINK_TTL_MS = 30 * 60 * 1000;
 
 /** SHA-256 (hex) of a refresh token: the only form stored. */
 export function hashToken(token) {
@@ -295,6 +299,64 @@ export class AuthService {
     this.store.setPassword(target.id, await hashPassword(password), this.now());
     authLog("INFO", "password reset", { event: "password_reset", by: by.username, username: target.username });
     this.audit("password_reset", { username: by.username, role: by.role, target: target.username });
+    return { ok: true };
+  }
+
+  /**
+   * An admin issues a single-use reset link for another person (#307): 32
+   * random bytes, only their SHA-256 stored, valid RESET_LINK_TTL_MS (30 min).
+   * A new link voids the person's older ones. The token is returned once, for
+   * the URL the admin hands over; it is never stored, logged or audited.
+   * → { ok: true, token, expires_at (ISO) } | { ok: false, status (404 no user, 409 yourself), error }
+   */
+  issueResetLink(by, targetId) {
+    const target = this.store.userById(targetId);
+    if (!target) return { ok: false, status: 404, error: "no such user" };
+    if (target.id === by.id) return { ok: false, status: 409, error: "change your own password with Account ▾ → Change password" };
+    const now = this.now();
+    const token = crypto.randomBytes(32).toString("base64url");
+    const expires = now + RESET_LINK_TTL_MS;
+    this.store.addResetToken(hashToken(token), target.id, expires, by.username, now);
+    const expiresAt = new Date(expires).toISOString();
+    authLog("INFO", "reset link issued", { by: by.username, username: target.username, expires_at: expiresAt });
+    this.audit("reset_link_issued", { username: by.username, role: by.role, target: target.username, expires_at: expiresAt });
+    return { ok: true, token, expires_at: expiresAt };
+  }
+
+  /**
+   * Someone with a reset link sets a new password (#307, public like sign-in):
+   * under the per-IP sign-in limit (429), `next` follows the sign-in rule (400
+   * with the reason, the link stays usable), then the link must be live —
+   * unknown, used, expired or voided all get the one RESET_LINK_INVALID 400.
+   * Success marks the link used and ends every session of the person; it does
+   * not sign anyone in. Lockout is not touched.
+   * → { ok: true } | { ok: false, status, error, retryAfter? }
+   */
+  async resetWithLink({ token, next, ip = "unknown" }) {
+    const wait = this.limiter.takeIp(ip, this.now());
+    if (wait > 0) {
+      authLog("WARN", "reset by link rate limited", { ip, retry_after_sec: wait });
+      return { ok: false, status: 429, error: "too many attempts: try again later", retryAfter: wait };
+    }
+    const weak = passwordProblem(next);
+    if (weak) return { ok: false, status: 400, error: weak };
+    const invalid = { ok: false, status: 400, error: RESET_LINK_INVALID };
+    if (typeof token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      authLog("WARN", "reset by link refused", { ip, reason: "malformed" });
+      return invalid;
+    }
+    // The hash is computed before the link is claimed, so the claim and the check are one statement.
+    const hash = await hashPassword(next);
+    const now = this.now();
+    const link = this.store.useResetToken(hashToken(token), now);
+    const user = link ? this.store.userById(link.user_id) : null;
+    if (!user) {
+      authLog("WARN", "reset by link refused", { ip, reason: "unknown, used or expired" });
+      return invalid;
+    }
+    this.store.setPassword(user.id, hash, now);
+    authLog("INFO", "password reset by link", { event: "password_reset", via: "link", username: user.username, by: link.created_by, ip });
+    this.audit("password_reset_by_link", { username: user.username, role: user.role, by: link.created_by, ip });
     return { ok: true };
   }
 
