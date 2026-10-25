@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { ACCESS_COOKIE, authKey, sessionRequired, verifyAccess } from "@/lib/auth/tokens";
 
 /** Routes reachable without a session. */
-const PUBLIC_API = new Set(["/api/auth/login", "/api/auth/refresh"]);
+const PUBLIC_API = new Set(["/api/auth/login", "/api/auth/refresh", "/api/auth/reset"]);
+/** Pages reachable with or without a session: setting a new password with a reset link (#307). */
+const PUBLIC_PAGES = new Set(["/reset"]);
 const LOGIN_PAGE = "/login";
 const MIN_SERVICE_TOKEN = 32;
 
@@ -24,12 +26,12 @@ export function serviceTokenOk(request, token = process.env.MONITOR_API_TOKEN) {
 
 /**
  * Every page needs a session (else → /login?next=…) and every /api route
- * answers 401 without one, except sign-in and refresh. Route handlers that
- * change trading state check the session again.
+ * answers 401 without one, except sign-in, refresh and the reset link's page
+ * and route. Route handlers that change trading state check the session again.
  */
 export async function proxy(request) {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC_API.has(pathname)) return NextResponse.next();
+  if (PUBLIC_API.has(pathname) || PUBLIC_PAGES.has(pathname)) return NextResponse.next();
 
   let key;
   try {

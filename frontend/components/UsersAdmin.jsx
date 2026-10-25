@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AddUserForm from "./AddUserForm";
 import Badge from "./Badge";
 import Panel from "./Panel";
+import ResetLinkDialog from "./ResetLinkDialog";
 import UserActionDialog from "./UserActionDialog";
 import { fetchUsers } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
@@ -15,8 +16,9 @@ const BUTTON =
 /**
  * The Users page (#306, admins only — the /api/admin/users routes enforce it):
  * every person with role, email, created and last sign-in; add a person;
- * change a role, reset a password, sign out everywhere and delete, each after
- * a confirmation. `me` is the signed-in admin's username.
+ * change a role, reset a password, make a reset link (#307), sign out
+ * everywhere and delete, each after a confirmation. `me` is the signed-in
+ * admin's username.
  */
 export default function UsersAdmin({ me }) {
   const [users, setUsers] = useState(null);
@@ -25,6 +27,7 @@ export default function UsersAdmin({ me }) {
   const [roles, setRoles] = useState({}); // user id → role picked in its row, not yet sent
   const [pending, setPending] = useState(null); // { action, user, role } awaiting confirmation
   const [notice, setNotice] = useState(null); // { tone, text } of the last action
+  const [linkFor, setLinkFor] = useState(null); // the user a reset link is being made for
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -42,6 +45,7 @@ export default function UsersAdmin({ me }) {
 
   const done = (result) => {
     setPending(null);
+    setLinkFor(null);
     setRoles({});
     setNotice(result);
     setReload((n) => n + 1);
@@ -123,6 +127,15 @@ export default function UsersAdmin({ me }) {
                           >
                             Reset password
                           </button>
+                          <button
+                            type="button"
+                            className={BUTTON}
+                            disabled={self}
+                            title={self ? "your own password: Account ▾ → Change password" : undefined}
+                            onClick={() => setLinkFor(u)}
+                          >
+                            Reset link
+                          </button>
                           <button type="button" className={BUTTON} onClick={() => setPending({ action: "signout", user: u })}>
                             Sign out everywhere
                           </button>
@@ -147,6 +160,7 @@ export default function UsersAdmin({ me }) {
       </Panel>
 
       {pending ? <UserActionDialog {...pending} me={me} onDone={done} onCancel={() => setPending(null)} /> : null}
+      {linkFor ? <ResetLinkDialog user={linkFor} me={me} onDone={done} onCancel={() => setLinkFor(null)} /> : null}
     </div>
   );
 }

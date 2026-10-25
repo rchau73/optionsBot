@@ -1,7 +1,8 @@
 // The only module that talks to the backend. Everything goes through the
 // Next.js proxy at /api/bots/... (read-only, except closePositions and
-// rebalanceBot), /api/auth/... (signOut, changePassword) or /api/admin/users
-// (the Users page, admins only), behind the signed-in session's cookies.
+// rebalanceBot), /api/auth/... (signOut, changePassword, resetWithLink — the
+// one call without a session) or /api/admin/... (the Users and Audit pages,
+// admins only), behind the signed-in session's cookies.
 
 let refreshing = null;
 
@@ -123,6 +124,36 @@ export async function signOutUser(id) {
 /** Deletes a user → { events_removed } or { events_error }. */
 export async function deleteUser(id) {
   return adminSend(userUrl(id), "DELETE");
+}
+
+/** Creates a single-use reset link for a user (30 min; voids their older ones) → { url, expires_at }, shown once. */
+export async function issueResetLink(id) {
+  return adminSend(userUrl(id, "/reset-link"), "POST");
+}
+
+/**
+ * Sets a new password with a reset link (no session needed); every session of
+ * that person ends. Throws with the server's reason.
+ */
+export async function resetWithLink(token, next) {
+  const res = await fetch("/api/auth/reset", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, next }),
+  });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+}
+
+/** One page of the audit trail (admins only) → { off, entries, skipped, next_before }; `query` from lib/audit.js auditQueryString. */
+export async function fetchAudit(query, signal) {
+  return getJSON(`/api/admin/audit${query ? `?${query}` : ""}`, signal);
 }
 
 async function getJSON(url, signal) {

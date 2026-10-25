@@ -8,8 +8,9 @@ import SignOut from "./SignOut";
 const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
 
 /**
- * The header's user menu: Users (admins only, #306 — a link only, the routes
- * enforce the role), change your password, sign out of this browser.
+ * The header's user menu: Users and Audit (admins only, #306, #308 — links
+ * only, the routes enforce the role), change your password, sign out of this
+ * browser.
  */
 export default function UserMenu({ role = null }) {
   const [open, setOpen] = useState(false);
@@ -43,9 +44,14 @@ export default function UserMenu({ role = null }) {
       {open ? (
         <div role="menu" className="absolute right-0 z-40 mt-1 w-44 rounded border border-line bg-panel py-1 shadow-xl">
           {role === "admin" ? (
-            <Link role="menuitem" href="/admin/users" className={ITEM}>
-              Users
-            </Link>
+            <>
+              <Link role="menuitem" href="/admin/users" className={ITEM}>
+                Users
+              </Link>
+              <Link role="menuitem" href="/admin/audit" className={ITEM}>
+                Audit
+              </Link>
+            </>
           ) : null}
           <button
             type="button"

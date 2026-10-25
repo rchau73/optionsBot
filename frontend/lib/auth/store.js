@@ -37,6 +37,18 @@ CREATE TABLE IF NOT EXISTS login_locks (
   username TEXT PRIMARY KEY,
   until    INTEGER NOT NULL
 );
+-- Single-use password-reset links an admin issues (#307): only the token's
+-- SHA-256 is stored. Times are in ms; used_at NULL = not used yet; created_by
+-- is the issuing admin's username.
+CREATE TABLE IF NOT EXISTS reset_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  expires_at INTEGER NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  used_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS reset_tokens_user ON reset_tokens(user_id);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -202,9 +214,10 @@ export class AuthStore {
     this.write("UPDATE users SET analytics_consent = ?, updated_at = ? WHERE id = ?", [v, Math.floor(nowMs / 1000), id]);
   }
 
-  /** Deletes a user and every session of theirs. */
+  /** Deletes a user, every session of theirs and their reset links. */
   deleteUser(id) {
     this.db.run("DELETE FROM refresh_tokens WHERE user_id = ?", [id]);
+    this.db.run("DELETE FROM reset_tokens WHERE user_id = ?", [id]);
     this.write("DELETE FROM users WHERE id = ?", [id]);
   }
 
@@ -237,6 +250,38 @@ export class AuthStore {
 
   sessionCount(userId) {
     return this.one("SELECT COUNT(*) AS n FROM refresh_tokens WHERE user_id = ?", [userId]).n;
+  }
+
+  /**
+   * Stores a reset link by its SHA-256 hash and voids every other link of the
+   * user (used or not); links expired by nowMs (any user) are deleted too.
+   */
+  addResetToken(tokenHash, userId, expiresAtMs, createdBy, nowMs) {
+    this.db.run("DELETE FROM reset_tokens WHERE user_id = ? OR expires_at <= ?", [userId, nowMs]);
+    this.write("INSERT INTO reset_tokens (token_hash, user_id, expires_at, created_by, created_at) VALUES (?, ?, ?, ?, ?)", [
+      tokenHash,
+      userId,
+      expiresAtMs,
+      createdBy,
+      nowMs,
+    ]);
+  }
+
+  /**
+   * Marks a live link used — unknown, used or expired at nowMs is refused —
+   * in one statement, so two requests with one link cannot both win.
+   * → { user_id, created_by } or null.
+   */
+  useResetToken(tokenHash, nowMs) {
+    this.db.run("UPDATE reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?", [nowMs, tokenHash, nowMs]);
+    if (this.db.getRowsModified() !== 1) return null;
+    this.save();
+    return this.one("SELECT user_id, created_by FROM reset_tokens WHERE token_hash = ?", [tokenHash]);
+  }
+
+  /** Every stored reset link of a user (tests and the admin CLI): hashes and times only. */
+  resetTokens(userId) {
+    return this.all("SELECT token_hash, user_id, expires_at, created_by, created_at, used_at FROM reset_tokens WHERE user_id = ? ORDER BY created_at", [userId]);
   }
 
   /** The recorded sign-in failure times (ms) of a username, oldest first. */
