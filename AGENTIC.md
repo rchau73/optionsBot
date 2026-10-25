@@ -148,7 +148,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 - **One GitHub identity.** The agents act with the human's `gh` login, so the separation of duties is enforced by tool permissions and the ruleset, not by GitHub identity. Next step: a GitHub App or a machine user for the agents, with "require one approval" on `main`, so GitHub itself enforces that someone other than the author approves.
 - **One machine.** The bots, the monitor and the agents run on one Mac (launchd catches up after sleep). Moving the bots to a server would move the agents with them; moving only the Dev agent to GitHub Actions is possible, but deploy and the SME agent need the bots' local API.
-- **Measure the agents.** Weekly report: see [Agent metrics](#agent-metrics) below. Still not measured: findings the human overrules.
+- **Measure the agents.** Weekly report: see [Agent metrics](#agent-metrics) below, including what a person overruled (#292). Not visible there: board moves and Priority changes, which leave no trace on an issue.
 
 ---
 
@@ -183,8 +183,9 @@ With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<a
 ```
 
 - **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code). Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave. The ledger never stops an agent: a line it cannot write is logged and skipped.
-- **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going).
-- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`, backup `backed_up`, `failed`.
+- **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going), and the sweep below closes them.
+- **The sweep** (#291): each tick, before any new run starts, [`sweep_runs.sh`](scripts/agents/sweep_runs.sh) runs `runs.py --sweep` under the `agent-runs` mutex. An open run whose pid (the one in its `run_id`, `<agent>-<time>-<pid>-<n>`) no longer exists gets an `end` line, outcome `abandoned`, detail `process gone`, built by the same `make_line` as `run_end`. A claim holds that same pid, so a dead run's claim is free too, and a live pid is a live run, claimed or not. A live run past its agent's time limit (`TIME_LIMIT_MIN` in `runs.py`: dev 120 min, review 60, sme 60, pm and pm_answer 30, deploy 30, backup 30, flaky 45, usage 20, pr_gate 20; tune them from the weekly metrics' p90) is reported **once** — a marker `data/agents/runs/flagged/<run_id>` and a notification naming the agent, the card and the log. **Nothing is ever killed.** A sweep failure is logged (`data/agents/tick-sweep.log`) and the tick goes on.
+- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`; backup `backed_up`, `failed`; any agent `abandoned` (the sweep: its process was gone).
 - **Only work is a run:** a tick where an agent finds nothing to do writes nothing. The PM agent is a run when it asks Claude (triage or planning), the PR gate once per PR it changed, the deploy once per new commit it tries.
 - **Paths and ids only:** no secrets, no amounts, no prompt text; the detail is a short fixed phrase (≤ 200 characters).
 
@@ -195,7 +196,16 @@ python3 scripts/agents/runs.py --open               # crashed (killed) or still 
 python3 scripts/agents/runs.py --pr 271 --json
 ```
 
-Tests: `test_runs.py` (line format, queries, the helpers sourced for real — a crash, six parallel runs) and the ledger cases in `test_deploy.py`.
+Tests: `test_runs.py` (line format, queries, the helpers sourced for real — a crash, six parallel runs; the sweep: a killed run, a live run under and over its limit, a claimed pid, idempotence, `sweep_runs.sh` beside parallel writers) and the ledger cases in `test_deploy.py`.
+
+## Stuck cards
+
+A card can sit In progress or In review with nothing working on it: a run that died, a loop that stopped. [`stuck.sh`](scripts/agents/stuck.sh) runs from the tick, at most once every 6 h (#329). It makes no Claude call, moves nothing and changes no label. The rules are in [`stuck.py`](scripts/agents/stuck.py), tested offline in `test_stuck.py`.
+
+- **Stuck** = an open card **In progress for more than 6 h** or **In review for more than 24 h** since its last activity (the card's last update, or its newest run in the ledger), with no open run on it, and without `pm:waiting`, `agent:needs-human` or `ready-to-merge`.
+- **Explained, not a fault:** if the agents are paused or out of budget in `agents.env` (`budget_reason`), or a usage limit was hit in the last 6 h (`data/agents/limit_hit`), the card is listed with that reason (`paused`, `budget: …`, `usage limit … ago`) and gets no comment.
+- **A fault** gets one 🤖 comment naming the card, the idle hours and the last run with its log. The comment is deduplicated by a marker per card, column and last run (`data/agents/stuck/marks/`), so a card is reported again only after a new run stalls.
+- Every card found is appended to `data/agents/stuck/reports.jsonl`. The weekly metrics read it.
 
 ## Only ready PRs reach you
 
@@ -212,7 +222,7 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 
 ## Agent metrics
 
-E6's outcome is "no human toil except approvals", so the loop measures itself (#180). On the first tick of each Monday (UTC), [`metrics.sh`](scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic. It makes no Claude call. The numbers come from [`metrics.py`](scripts/agents/metrics.py), which is standard library only and tested offline on fixture JSON (`test_metrics.py`). Its inputs are the issues and agent PRs updated in the week, the repository's label events and `main`'s git log.
+E6's outcome is "no human toil except approvals", so the loop measures itself (#180). On the first tick of each Monday (UTC), [`metrics.sh`](scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic. It makes no Claude call. The numbers come from [`metrics.py`](scripts/agents/metrics.py), which is standard library only and tested offline on fixture JSON (`test_metrics.py`). Its inputs are the issues and agent PRs updated in the week, the repository's label events, `main`'s git log, the run ledger and the stuck-card log.
 
 | Section | What it counts |
 |---|---|
@@ -220,6 +230,9 @@ E6's outcome is "no human toil except approvals", so the loop measures itself (#
 | Cycle time | Median and p90 (nearest rank) of Ready → PR, PR → merge and merge → deploy, for spans that ended in the week. A card a person moved to Ready leaves no comment, so its Ready time is the first Dev pickup. |
 | Quality | Reviewer rounds per PR merged or closed in the week (each `agent-review` marker counts, blocking ones shown), PRs closed unmerged, `Revert …` commits on `main`, and Dev agent blocks with their first line. |
 | Waiting for a person | Hours in the week that issues carried `agent:needs-human` or `prototype:review`, the waits that ended in the week (median, p90) and the ones still open. |
+| Runs | From the [run ledger](#run-ledger) (#290), the runs that **started** in the week, per agent: count, each outcome's count, failed % (`failed` + `abandoned`), limit % (`skipped_limit`), median and p90 duration (nearest rank) of the runs that ended, and the runs still open at the week's end (no duration). Only the fixed outcome names are shown, never a detail. A missing or unreadable ledger says "ledger unavailable" and leaves every other section as it is. |
+| Overruled by a person | (#292) **SME findings rejected:** `agent:sme` issues closed in the week as not planned, or closed after a person's comment with no merged agent PR, out of the SME findings closed in the week. **PM decisions reversed:** an `E#`, `P#` or `pm:waiting` label removed in the week with no PM comment and no epic retag (another `E#` added) on that issue within 2 min, out of the week's PM comments. Board moves and Priority changes leave no trace on an issue and are not counted. **Clean reviews overruled:** agent PRs whose last review marker was `verdict=clean` on their final head, then closed unmerged in the week or reverted on `main` in the week (a `Revert …` subject naming the PR or its branch), out of those PRs merged or closed in the week. Each item links to its issue or PR. |
+| Stuck cards | The cards [`stuck.sh`](#stuck-cards) found in the week, with their longest idle time and reason (#329). |
 
 Each stage is read from what the agents leave on GitHub, because a move on the board leaves no trace on the issue. If an agent's comment wording changes, update the markers at the top of `metrics.py` to match.
 

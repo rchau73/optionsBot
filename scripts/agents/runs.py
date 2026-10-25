@@ -16,18 +16,35 @@ short fixed phrase from the script, cut to DETAIL_MAX characters).
           [--json] [--file F]                              list runs, oldest first
 
 --open lists the runs with no `end` line: crashed (killed hard) or still running.
+
+  runs.py --sweep [--file F] [--flagged DIR] [--now TS]   (#291, sweep_runs.sh)
+      closes every open run whose process is gone with an `end` line
+      (outcome `abandoned`, detail `process gone`) and prints one line per
+      action: "abandoned <run_id>" or, once per run (a marker in DIR), for a
+      live run past its agent's TIME_LIMIT_MIN:
+      "over_limit\t<agent>\t<issue|->\t<minutes>\t<log|->\t<run_id>".
+      Never kills anything. The caller holds the agent-runs mutex.
 Tests: python3 -m unittest discover -s scripts/agents -p 'test_*.py'
 """
 import argparse
 import datetime
 import json
 import os
+import re
 import sys
 
 FIELDS = ("ts", "agent", "run_id", "issue", "pr", "event", "outcome", "detail", "log", "commit")
 AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky", "backup", "usage")
 EVENTS = ("start", "end")
 DETAIL_MAX = 200
+ABANDONED = "abandoned"
+# Minutes a run may take before the sweep flags it (once; never killed). No
+# ledger p90 was at hand when these were set (2026-10-24, #291): tune them from
+# the weekly metrics' "Runs" p90. A deploy may build twice (a rollback) with a
+# 5 min health check each; the flaky hunt stops itself at 30 min.
+TIME_LIMIT_MIN = {"dev": 120, "review": 60, "pm": 30, "pm_answer": 30, "sme": 60, "pr_gate": 20,
+                  "deploy": 30, "flaky": 45, "backup": 30, "usage": 20}
+RUN_PID = re.compile(r"^[a-z_]+-\d{8}T\d{6}Z-(\d+)-\d+$")  # lib.sh run_begin: <agent>-<time>-<pid>-<n>
 
 
 def default_file():
@@ -139,6 +156,83 @@ def select(all_runs, agent=None, issue=None, pr=None, date=None, open_only=False
     return out
 
 
+def parse_ts(s):
+    """Ledger timestamp ('2026-10-22T10:00:00Z') → aware UTC datetime, or None."""
+    try:
+        return datetime.datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def run_pid(run_id):
+    """The pid lib.sh put in the run_id, or None for an id of another shape."""
+    m = RUN_PID.match(run_id or "")
+    return int(m.group(1)) if m else None
+
+
+def pid_alive(pid):
+    """True while a process with that pid exists (os.kill(pid, 0) sends nothing)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # someone else's process: it exists
+    return True
+
+
+def sweep_plan(all_runs, now, alive, flagged):
+    """What the sweep does → (runs to close as abandoned, live runs to flag).
+
+    alive(pid) tells whether a process exists; flagged is the set of run_ids
+    already reported over their limit. A run whose pid is gone is abandoned:
+    its claim (lib.sh claim) holds that same pid, so a claim never keeps a
+    dead run open — and a live pid, claimed or not, is a live run. A run_id
+    without a pid, or a run without a start time, is left alone (nothing to
+    test it against)."""
+    abandon, flag = [], []
+    for r in all_runs:
+        if r["end"] is not None or r["agent"] not in AGENTS:
+            continue
+        pid = run_pid(r["run_id"])
+        if pid is None:
+            continue
+        if not alive(pid):
+            abandon.append(r)
+            continue
+        start = parse_ts(r["start"])
+        limit = TIME_LIMIT_MIN.get(r["agent"])
+        if start is None or limit is None or r["run_id"] in flagged:
+            continue
+        minutes = (now - start).total_seconds() / 60
+        if minutes > limit:
+            flag.append(dict(r, minutes=int(minutes)))
+    return abandon, flag
+
+
+def sweep(path, flagged_dir, now, alive=pid_alive):
+    """Applies sweep_plan to the ledger at path → printable action lines.
+    Abandoned runs get their end line (same builder as lib.sh run_end, one
+    write each); flagged runs get a marker file in flagged_dir. The caller
+    holds the agent-runs mutex, so no run_end interleaves."""
+    flagged = set(os.listdir(flagged_dir)) if os.path.isdir(flagged_dir) else set()
+    abandon, flag = sweep_plan(runs(read(path)[0]), now, alive, flagged)
+    out = []
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for r in abandon:
+        line = make_line(r["agent"], r["run_id"], "end", r["issue"], r["pr"], ABANDONED, "process gone",
+                         r["log"] or "", r["commit"] or "", stamp)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        out.append(f"{ABANDONED} {r['run_id']}")
+    for r in flag:
+        os.makedirs(flagged_dir, exist_ok=True)
+        open(os.path.join(flagged_dir, r["run_id"]), "w").close()
+        issue = f"#{r['issue']}" if r["issue"] is not None else "-"
+        out.append("\t".join(["over_limit", r["agent"], issue, str(r["minutes"]), r["log"] or "-", r["run_id"]]))
+    return out
+
+
 def table(rows):
     """Plain text, one run per line."""
     if not rows:
@@ -174,7 +268,19 @@ def main(argv):
     p.add_argument("--date", help="UTC day, YYYY-MM-DD")
     p.add_argument("--open", action="store_true", help="only runs without an end line (crashed or running)")
     p.add_argument("--json", action="store_true", help="one JSON object per run")
+    p.add_argument("--sweep", action="store_true", help="close runs whose process is gone; flag runs past their limit")
+    p.add_argument("--flagged", default=None, help="sweep: marker dir of flagged runs")
+    p.add_argument("--now", default=None, help="sweep: the time (YYYY-MM-DDTHH:MM:SSZ), default now")
     a = p.parse_args(argv)
+    if a.sweep:
+        if not a.flagged:
+            p.error("--sweep needs --flagged")
+        now = parse_ts(a.now) if a.now else datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+        if now is None:
+            p.error(f"--now: not a ledger timestamp: {a.now!r}")
+        for line in sweep(a.file or default_file(), a.flagged, now):
+            print(line)
+        return 0
     records, bad = read(a.file or default_file())
     if bad:
         print(f"runs.py: skipped {bad} line(s) that are not ledger records", file=sys.stderr)
