@@ -1,6 +1,10 @@
 package strategy
 
 import (
+	"context"
+	"log/slog"
+
+	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
 )
 
@@ -27,6 +31,27 @@ func RegimeSideBlockReason(optType string, trend int, st risk.Status) string {
 		return "confirmed negative gamma regime in a bull trend: no new calls"
 	}
 	return ""
+}
+
+// cancelRegimeBlockedSides cancels every working entry, repair or top-up
+// sell of a side the regime-side rule blocks now (cancelSide: the whole
+// pending order, what filled is booked). No such sell is sent while the side
+// is blocked, so one working is an order sent before the block: on
+// 2026-10-20 an ETH put repair sent in a one-cycle neutral blip kept working
+// after the trend turned bear again and filled 100 lots (#243). Run every
+// cycle, so a block that starts at any point withdraws the order.
+func (s *Strategy) cancelRegimeBlockedSides(ctx context.Context, dec GammaDecision, st risk.Status) {
+	for _, optType := range []string{"put", "call"} {
+		why := RegimeSideBlockReason(optType, dec.TrendDir, st)
+		if why == "" {
+			continue
+		}
+		if n := s.cancelSide(ctx, optType, orders.TriggerRegimeSide, why); n > 0 {
+			slog.Warn("regime side blocked: working sells of that side cancelled",
+				"option_type", optType, "pending_cancelled", n, "trend", dec.Trend,
+				"direction", dec.Direction, "reason", why)
+		}
+	}
 }
 
 // avoidsSide reports why a new short of optType may not be sold now: the GEX

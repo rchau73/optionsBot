@@ -18,6 +18,7 @@ const (
 	FixedGEXBiasFlipWindowMinutes = 60       // bias: median flip window (pre-expiry flip jumps, 2026-10-14)
 	FixedGammaTrendLookbackDays   = 120      // SMA trend: daily closes kept
 	FixedSwingPivotN              = 5        // SMA trend: bars on each side of a swing pivot
+	FixedSMA9BandSD               = 0.10     // SMA trend: price changes side of SMA9 only past ±0.10 daily σ (#243: 40-second flaps let puts through)
 	FixedIVPercentileWindow       = 252      // DVOL days the IV percentile ranks against
 	FixedIVBandConfirmDays        = 2        // margin band / regime changes confirmed on 2 daily closes
 	FixedStopSpreadGuardPct       = 20       // a stop waits while the ask is > 20 % above mid…
@@ -60,6 +61,7 @@ var fixedKeys = map[string]string{
 	"gex_bias_flip_window_minutes":   "60",
 	"gamma_trend_lookback_days":      "120",
 	"swing_pivot_n":                  "5",
+	"sma9_band_sd":                   "0.10",
 	"iv_percentile_window":           "252",
 	"iv_band_confirm_days":           "2",
 	"stop_spread_guard_pct":          "20",
@@ -98,6 +100,7 @@ func (c *Config) ApplyFixed() {
 	c.GEXBiasFlipWindowMinutes = FixedGEXBiasFlipWindowMinutes
 	c.GammaTrendLookbackDays = FixedGammaTrendLookbackDays
 	c.SwingPivotN = FixedSwingPivotN
+	c.SMA9BandSD = FixedSMA9BandSD
 	c.IVPercentileWindow = FixedIVPercentileWindow
 	c.IVBandConfirmDays = FixedIVBandConfirmDays
 	c.StopSpreadGuardPct = FixedStopSpreadGuardPct

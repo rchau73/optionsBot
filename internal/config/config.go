@@ -91,6 +91,10 @@ type Config struct {
 	GammaTrendLookbackDays int     `yaml:"-"`
 	SwingPivotN            int     `yaml:"-"`
 	GammaRegimeBandPct     float64 `yaml:"-"`
+	// SMA9BandSD: the SMA trend reads the price on a side of SMA9 only once
+	// it is past a band of this many daily standard deviations (DVOL ÷ √365)
+	// around it; within the band it keeps the side it was on (#243).
+	SMA9BandSD float64 `yaml:"-"`
 	// GammaFlipBufferSD: a leg is shed only once spot is this many daily
 	// standard deviations (DVOL ÷ √365) below the gamma flip.
 	GammaFlipBufferSD float64 `yaml:"gamma_flip_buffer_sd"`

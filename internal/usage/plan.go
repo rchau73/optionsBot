@@ -2,7 +2,7 @@
 // (data/monitor/events.jsonl, written by frontend/lib/analytics/collector.js)
 // into the weekly usage and cohort report (#295): active users, cohort
 // retention, panel use, the 5-minute test, help use, the state-changing
-// funnels and trust signals — questions Q1–Q7 of
+// funnels, trust signals and the survey tally — questions Q1–Q8 of
 // docs/product/analytics/event-plan.md. Pure except Load; the report holds
 // counts and shares only, never a user_id or session_id.
 package usage

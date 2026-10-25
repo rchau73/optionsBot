@@ -100,6 +100,7 @@ var (
 	nonCloseTriggers = map[string]bool{
 		orders.TriggerEntry: true, orders.TriggerRepair: true, orders.TriggerRebalanceUpsize: true,
 		orders.TriggerCloseLong: true, orders.TriggerReconciled: true, orders.TriggerTimeout: true, orders.TriggerRiskFrozen: true,
+		orders.TriggerRegimeSide: true,
 	}
 )
 

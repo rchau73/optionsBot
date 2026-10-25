@@ -169,6 +169,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | 24 h (`gex_repair_release_hours`) | …or once the live regime has been non-negative this long |
 | 24 h (`gex_bias_repair_cooldown_hours`), 60 min (`gex_bias_flip_window_minutes`) | under `bias`: a shed leg waits 24 h; the bias must agree against the live flip and the last hour's median flip, and sheds nothing until that hour of flips is recorded (after a restart: `bias_warmup`) |
 | 120 days, 5 bars (`gamma_trend_lookback_days`, `swing_pivot_n`) | SMA trend from daily closes |
+| 0.10 daily σ (`sma9_band_sd`) | SMA trend: the price changes side of SMA9 only past this band around it (#243; `cmd/stress -sma9band`) |
 | 252 days (`iv_percentile_window`), 2 closes (`iv_band_confirm_days`) | DVOL IV percentile; a band or regime change must hold on 2 UTC daily closes (until then new risk is frozen when the change would lower the limit) |
 | 20 %, 5 min (`stop_spread_guard_pct`, `stop_spread_max_wait_minutes`) | a triggered stop waits while the ask is more than 20 % above the mid (an emptied book), at most 5 minutes, then at market |
 | 3 in 60 min (`churn_max_round_trips`, `churn_window_minutes`) | churn breaker: a slot that buys back and re-sells 3 times within an hour is paused for the hour (exits still run) |
@@ -327,7 +328,7 @@ Both outputs are deterministic: the same files give byte-identical JSON. Amounts
 
 ## Usage report
 
-`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q7 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+`cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q8 ask for. It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
 
 ```bash
 go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
@@ -343,8 +344,17 @@ Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Mon
 - **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
 - **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.
 - **Trust** (Q7) — `data_stale_shown` per source, `signed_out` per reason.
+- **Why they stay or leave** (Q8, #342; JSON `survey`, absent without survey events) — per survey (`nps`, `answers`, `exit`) shown, answered, dismissed and the response rate (answered ÷ shown); NPS answers by band (promoters 9–10, passives 7–8, detractors 0–6) and the score (% promoters − % detractors) only from 10 answers, else "too few answers"; the NPS `reason_code` counts, `came_for` and `hardest_to_find`; exit `reason_code` counts with the top 3 first and "Each top reason needs an owner: file it as an E13 story". A code the survey does not ask (a promoter code on an exit answer) counts under `other` and in `miscoded`. Coded values only — free text is never an event. With no survey event the section says "no survey answers yet" and every other section is unchanged.
 
 **No person in it:** counts and shares only — never a `user_id` or `session_id`. **Rejected lines:** every line is checked against the plan's allow-list again (event, envelope, each property and its value — the Go copy in `internal/usage/plan.go`, kept equal to the plan by `tests/usage_test.go`); a line that fails to parse or falls outside it is counted by reason and used in no figure. **No events:** a missing or empty file, or a week without an event, gives a report that says so and why that can be (nobody has consented yet, no screen is instrumented yet, collection off) and fills nothing in; the command still exits 0.
+
+**Engagement drops** (#341, #252: "are users stopping?"): `-alert` also builds the 3 weeks before from the same file and prints the drop check (pure `usage.Drops(current, previous, rules)`, `internal/usage/drops.go`) as one `DROPS {json}` line; it never fails the report. A drop is weekly active users or help used (tips opened + videos played) at least 30 % under the mean of those weeks, or the first-answers, manual-close (confirmed ÷ opened) or rebalance (confirmed ÷ previewed) completion share at least 20 points under theirs. A rule judges only a base of at least 10 users or 10 funnel starts (in the base and in the week) — below that it says `too few to judge`; a week with no events is listed under `missing` and left out of the base, never counted as zero. The thresholds are fixed in code; `-alert-count-pct`, `-alert-funnel-pts`, `-alert-min-base` and `-alert-base-weeks` study them.
+
+```bash
+go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, mean of the base weeks 40.0 (-50 %)" and DROPS {…}
+```
+
+**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
 
 ## Settings comparison
 

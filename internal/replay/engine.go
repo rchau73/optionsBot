@@ -168,6 +168,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	e.gamma.SetGEXSource(e.src)
 	e.gamma.SetFlipBuffer(cfg.GammaFlipBufferSD, e.dvol.Current)
 	e.gamma.SetShedConfirm(cfg.GEXShedConfirmSnapshots)
+	e.gamma.SetSMA9Band(cfg.SMA9BandSD)
 	e.gamma.SetDirection(cfg.GEXDirection)
 	e.gamma.SetBiasFlipWindow(e.flipWindow(snaps, set.GEX))
 	var seed []orders.DailyClose
