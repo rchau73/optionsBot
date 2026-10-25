@@ -165,6 +165,8 @@ type GammaMonitor struct {
 	flips         []flipPoint         // each snapshot's flip within flipWindow, oldest first
 	flipsSince    time.Time           // first flip of the unbroken record (startup, or after a gap longer than the window)
 	dvol          func() float64
+	sma9BandSD    float64 // SMA9 band in daily standard deviations (SetSMA9Band; 0 = none)
+	sma9Side      int     // side of SMA9 the price was last on (SMA9Side), 0 before the first price
 
 	shedConfirm int         // snapshots in a row the signal must hold before Shed (≤ 1 = at once)
 	signal      GammaAction // live signal on the last counted snapshot
@@ -279,6 +281,19 @@ func FlipBufferPct(bufferSD, dvol float64) float64 {
 	return bufferSD * dvol / math.Sqrt(365)
 }
 
+// SetSMA9Band gives SMA9 a band of bandSD daily standard deviations (DVOL ÷
+// √365, the live DVOL from SetFlipBuffer) for the SMA trend: the price
+// changes side of SMA9 only once it is past the band (SMA9Side). 0 = none.
+func (g *GammaMonitor) SetSMA9Band(bandSD float64) { g.sma9BandSD = bandSD }
+
+// sma9BandPct is the SMA9 band now, in % of SMA9 (0 without a DVOL reading).
+func (g *GammaMonitor) sma9BandPct() float64 {
+	if g.dvol == nil {
+		return 0
+	}
+	return FlipBufferPct(g.sma9BandSD, g.dvol())
+}
+
 func NewGammaMonitor(lookbackDays, swingPivotN int) *GammaMonitor {
 	return &GammaMonitor{lookbackDays: lookbackDays, swingPivotN: swingPivotN}
 }
@@ -323,6 +338,7 @@ func (g *GammaMonitor) PushPriceAt(now time.Time, price float64) {
 		g.lastTickDate = today
 	}
 	g.lastTickPrice = price
+	g.sma9Side = SMA9Side(price, smaOf(g.dailyCloses, 9), g.sma9BandPct(), g.sma9Side)
 }
 
 // ResolveGammaAction is the pure decision function for which strangle leg (if any)
@@ -532,7 +548,12 @@ type SMALevels struct {
 	Price         float64 `json:"price"`
 	Trend         string  `json:"trend"` // bull | bear | neutral
 	Reason        string  `json:"reason"`
-	TrendDir      int     `json:"-"`
+	// SMA9BandPct is the band around SMA9 (% of SMA9) the price must cross
+	// to change side (SMA9Side); 0 = none.
+	SMA9BandPct float64 `json:"sma9_band_pct"`
+	TrendDir    int     `json:"-"`
+	// SMA9Side is the side of SMA9 the trend read the price on (SMA9Side).
+	SMA9Side int `json:"-"`
 }
 
 // SMA trend reasons (SMATrendOf): which condition set the trend.
@@ -550,6 +571,42 @@ const (
 // the mirror conditions; neutral (0) otherwise or without a confirmed swing.
 // The reason names the condition that fired. A level of 0 is unknown.
 func SMATrendOf(price, swingHigh, swingLow, sma9, sma21 float64) (int, string) {
+	return SMATrendOfSide(price, SMA9Side(price, sma9, 0, 0), swingHigh, swingLow, sma9, sma21)
+}
+
+// SMA9Side is the side of SMA9 the price is on, with a band of bandPct % of
+// SMA9 around it: +1 above sma9 × (1 + band), −1 below sma9 × (1 − band);
+// inside the band the side it was on (prev), or plainly above/below SMA9
+// when it was on none (prev 0, e.g. startup). 0 without an SMA9, or with the
+// price exactly on it and no prev. Pure. Without the band, spot hugging SMA9
+// flipped the trend bear ↔ neutral every 40-second cycle (ETH 31 changes on
+// 2026-10-20) and the regime-side rule let a put through in a one-cycle
+// blip (#243). 0.10 σ cut the flips 83–92 % on a week of minute snapshots,
+// stopped every leak and still followed each lasting change within 8–12 min.
+func SMA9Side(price, sma9, bandPct float64, prev int) int {
+	if sma9 <= 0 {
+		return 0
+	}
+	band := max(bandPct, 0) / 100
+	switch {
+	case price > sma9*(1+band):
+		return 1
+	case price < sma9*(1-band):
+		return -1
+	case prev != 0:
+		return prev
+	case price > sma9:
+		return 1
+	case price < sma9:
+		return -1
+	}
+	return 0
+}
+
+// SMATrendOfSide is SMATrendOf with the price's side of SMA9 given (side,
+// from SMA9Side) instead of read from price itself: a price within the SMA9
+// band keeps the side it was on.
+func SMATrendOfSide(price float64, side int, swingHigh, swingLow, sma9, sma21 float64) (int, string) {
 	if swingHigh == 0 && swingLow == 0 {
 		return 0, TrendReasonNoSwing
 	}
@@ -561,19 +618,20 @@ func SMATrendOf(price, swingHigh, swingLow, sma9, sma21 float64) (int, string) {
 	switch {
 	case swingHigh > 0 && price > swingHigh:
 		return 1, TrendReasonBreakout
-	case sma21 > 0 && sma9 > sma21 && price > sma9:
+	case sma21 > 0 && sma9 > sma21 && side > 0:
 		return 1, TrendReasonBullSMA
 	case swingLow > 0 && price < swingLow:
 		return -1, TrendReasonBreakdown
-	case sma21 > 0 && sma9 < sma21 && price < sma9:
+	case sma21 > 0 && sma9 < sma21 && side < 0:
 		return -1, TrendReasonBearSMA
 	}
 	return 0, TrendReasonInside
 }
 
-// SMALevels returns the SMA trend's levels now.
+// SMALevels returns the SMA trend's levels now, with the SMA9 band and the
+// side of SMA9 the last price (PushPriceAt) left. Reads only.
 func (g *GammaMonitor) SMALevels() SMALevels {
-	return SMALevelsOf(g.dailyCloses, g.lastTickPrice, g.swingPivotN)
+	return SMALevelsBand(g.dailyCloses, g.lastTickPrice, g.swingPivotN, g.sma9BandPct(), g.sma9Side)
 }
 
 // SMALevelsOf is the SMA trend's levels, pure: the SMAs and swings of the
@@ -581,7 +639,16 @@ func (g *GammaMonitor) SMALevels() SMALevels {
 // spot) by SMATrendOf, and its reason. The bot (detectTrend) and cmd/stress
 // both call it, so the stress trend cannot drift from the bot's.
 func SMALevelsOf(closes []orders.DailyClose, price float64, pivotN int) SMALevels {
-	l := SMALevels{SMA9: smaOf(closes, 9), SMA21: smaOf(closes, 21), Price: price}
+	return SMALevelsBand(closes, price, pivotN, 0, 0)
+}
+
+// SMALevelsBand is SMALevelsOf with a band of bandPct % around SMA9: the
+// price's side of SMA9 is SMA9Side(price, SMA9, bandPct, prevSide), returned
+// in SMA9Side for the next call. Pure: the bot's GammaMonitor and cmd/stress
+// carry the side from one price to the next.
+func SMALevelsBand(closes []orders.DailyClose, price float64, pivotN int, bandPct float64, prevSide int) SMALevels {
+	l := SMALevels{SMA9: smaOf(closes, 9), SMA21: smaOf(closes, 21), Price: price, SMA9BandPct: bandPct}
+	l.SMA9Side = SMA9Side(price, l.SMA9, bandPct, prevSide)
 	var at time.Time
 	if l.SwingHigh, at = lastPivot(closes, pivotN, func(other, p float64) bool { return other >= p }); !at.IsZero() {
 		l.SwingHighDate = at.UTC().Format(time.DateOnly)
@@ -589,7 +656,7 @@ func SMALevelsOf(closes []orders.DailyClose, price float64, pivotN int) SMALevel
 	if l.SwingLow, at = lastPivot(closes, pivotN, func(other, p float64) bool { return other <= p }); !at.IsZero() {
 		l.SwingLowDate = at.UTC().Format(time.DateOnly)
 	}
-	l.TrendDir, l.Reason = SMATrendOf(l.Price, l.SwingHigh, l.SwingLow, l.SMA9, l.SMA21)
+	l.TrendDir, l.Reason = SMATrendOfSide(l.Price, l.SMA9Side, l.SwingHigh, l.SwingLow, l.SMA9, l.SMA21)
 	l.Trend = trendWord(l.TrendDir)
 	return l
 }

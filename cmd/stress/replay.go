@@ -38,6 +38,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 	"tp":           floatField(func(c *config.Config) *float64 { return &c.ROITakeProfit }),
 	"cap":          floatField(func(c *config.Config) *float64 { return &c.MaxLegSizeMultiple }),
 	"liqcap":       floatField(func(c *config.Config) *float64 { return &c.LiquidityCapOIPct }),
+	"sma9band":     floatField(func(c *config.Config) *float64 { return &c.SMA9BandSD }),
 	"shedpersist":  intField(func(c *config.Config) *int { return &c.GEXShedConfirmSnapshots }),
 	"shedcross":    intField(func(c *config.Config) *int { return &c.GEXRepairConfirmSnapshots }),
 	"shedrelease":  intField(func(c *config.Config) *int { return &c.GEXRepairReleaseHours }),
