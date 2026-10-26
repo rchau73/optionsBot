@@ -81,7 +81,12 @@ $open_nf"
 fi
 
 echo "stable: ${prev:-none} → $tag (${commit:0:7}$([[ $new_tag -eq 1 ]] && echo ", new tag"))"
-git -C "$stable" log --oneline "${prev:-$commit~1}..$commit" 2>/dev/null | head -20 | sed 's/^/  /'
+# `|| true`: head closes the pipe after 20 lines, git log then dies of SIGPIPE
+# (141) and pipefail + set -e ended the script silently before the prompt
+# (2026-10-26, v0.1.0 → v0.2.0 is 99 merges).
+{ git -C "$stable" log --oneline "${prev:-$commit~1}..$commit" 2>/dev/null || true; } | head -20 | sed 's/^/  /'
+n="$(git -C "$stable" rev-list --count "${prev:-$commit~1}..$commit" 2>/dev/null || echo 0)"
+[[ "$n" -le 20 ]] || echo "  … and $((n - 20)) more"
 if [[ $yes -ne 1 ]]; then
   read -r -p "Promote stable to $tag? [y/N] " ok
   [[ "$ok" == "y" || "$ok" == "Y" ]] || die "cancelled"
