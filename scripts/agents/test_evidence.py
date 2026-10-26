@@ -32,6 +32,12 @@ def report(**over):
         "return_on_margin": {"live": {"Known": True, "ReturnPct": 6.2, "Return30dPct": 26.57},
                              "replay": {"Known": True, "ReturnPct": 7.15, "Return30dPct": 30.64}},
         "hold": {"known": True, "hold_return_usd_pct": 4.2, "strategy_known": True, "excess_return_pct": -1.3},
+        "e1_reliability": {
+            "target_pct": 60,
+            "margin_use": {"known": True, "mean_pct": 48.21, "allowed_share": 0.9, "target_met": False},
+            "idle_margin": {"known": True, "causes": [{"cause": "no_free_expiry", "hours": 30, "share": 0.75},
+                                                      {"cause": "frozen", "hours": 10, "share": 0.25}]},
+            "restarts": {"known": True, "startups": 3, "restart_made": 1, "restart_made_lots": 0.35}},
         "missing": {"history_days": ["2026-10-20"], "book_days": [], "gex_days": [
             "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25"]},
     }
@@ -88,6 +94,8 @@ class Comment(unittest.TestCase):
         self.assertIn("-0.0040 BTC (-0.20 %)", row)            # worst 7 days
         self.assertIn("+0.0020 BTC (+0.10 %)", row)            # replay gap, % of equity
         self.assertIn("worst crash -12.50 %", row)             # failed shocks left out
+        self.assertIn("IM 48.2 % of limit (target 60 %: not met), entries allowed 90 % · idle top: no_free_expiry 75 %"
+                      " · startups 3, restart-made 1 (0.35 lots)", row)  # E1 reliability (#361)
         self.assertIn("history 10-20 · books none · GEX all 7", row)
         self.assertIn("`stable/data/evidence/2026-W43/btc.md`", row)
         self.assertIn("+0.0123 ETH", self.row(text, "mvp", "eth"))
@@ -102,6 +110,9 @@ class Comment(unittest.TestCase):
         self.assertIn("stable (live)", row)
         self.assertIn("+0.62 %", row)
         self.assertIn("live +6.20 %", row)                     # return on margin is a %: allowed live
+        self.assertIn("IM 48.2 % of limit", row)               # E1: percentages and counts only
+        self.assertIn("startups 3, restart-made 1 |", row)
+        self.assertNotIn("lots", row)
         self.assertNotIn("BTC", row)
         self.assertNotIn("USD", text)
         self.assertNotIn("108123", text)                       # failure details hidden for a live env
@@ -118,12 +129,23 @@ class Comment(unittest.TestCase):
         r["missing"] = {}
         r["return_on_margin"] = {"live": {"Known": False, "Reason": "no point carries im_pct"}, "replay": None}
         r["bridge"] = {"known": False, "note": "no equity recorded on the P&L history in the week"}
+        r["e1_reliability"] = {"target_pct": 60, "margin_use": {"known": False, "note": "P&L history not read"},
+                               "idle_margin": {"known": False, "note": "journal not read"},
+                               "restarts": {"known": False, "note": "journal not read"}}
         self.put("stable", "btc", r)
         row = self.row(self.build(envs=("stable",)), "stable", "btc")
-        for want in ("live — (no point carries im_pct) · replay — (replay did not run)", "— (no P&L history)",
+        for want in ("margin use not measured (P&L history not read) · idle not measured (journal not read)"
+                     " · startups not measured (journal not read)",
+                     "live — (no point carries im_pct) · replay — (replay did not run)", "— (no P&L history)",
                      "— (no equity recorded on the P&L history in the week)", "— (no spot in the history)", "— (under 7 days of history)",
                      "— (no recorded book)", "— (no book in data/stress/btc)", "history none"):
             self.assertIn(want, row)
+
+    def test_report_written_before_the_e1_section_says_so(self):
+        r = report()
+        del r["e1_reliability"]
+        self.put("stable", "btc", r)
+        self.assertIn("— (report without the E1 section)", self.row(self.build(envs=("stable",)), "stable", "btc"))
 
     def test_missing_report_and_failures_are_listed(self):
         write(self.fail_tsv, "mvp\t-\tclone\tno clone at /x/mvp\nstable\teth\tcmd/evidence\texit status 1\n")

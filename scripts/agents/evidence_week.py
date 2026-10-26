@@ -143,6 +143,38 @@ def stress_cell(r):
     return f"worst {w['shock']} {pct(w['return_pct'])}" + (" · stale book" if s.get("stale") else "")
 
 
+def e1_cell(r, live):
+    """E1 reliability (#361): margin use against the target, the top idle
+    cause and the startups by class. Percentages and counts; lots only for a
+    testnet env."""
+    e = r.get("e1_reliability")
+    if not e:
+        return "— (report without the E1 section)"
+    m = e.get("margin_use") or {}
+    if m.get("known"):
+        verdict = "met" if m.get("target_met") else "not met"
+        allowed = m.get("allowed_share")
+        margin = f"IM {m['mean_pct']:.1f} % of limit (target {e.get('target_pct', 60):.0f} %: {verdict})"
+        if allowed is not None:
+            margin += f", entries allowed {allowed * 100:.0f} %"
+    else:
+        margin = f"margin use not measured ({m.get('note') or 'no data'})"
+    d = e.get("idle_margin") or {}
+    if d.get("known"):
+        causes = d.get("causes") or []
+        idle = f"idle top: {causes[0]['cause']} {causes[0]['share'] * 100:.0f} %" if causes else "no idle time"
+    else:
+        idle = f"idle not measured ({d.get('note') or 'no data'})"
+    s = e.get("restarts") or {}
+    if s.get("known"):
+        restarts = f"startups {s.get('startups', 0)}, restart-made {s.get('restart_made', 0)}"
+        if not live and s.get("restart_made"):
+            restarts += f" ({s.get('restart_made_lots', 0):.4g} lots)"
+    else:
+        restarts = f"startups not measured ({s.get('note') or 'no data'})"
+    return " · ".join([margin, idle, restarts])
+
+
 def missing_cell(r):
     m = r.get("missing") or {}
     return (f"history {days_text(m.get('history_days'))} · books {days_text(m.get('book_days'))}"
@@ -168,8 +200,10 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
            "One row per environment × bot, from `cmd/evidence` (README \"Evidence report\"). "
            "Percentages are of the margin balance at the week's start; the replay gap is replay − live. "
            "Return on margin = net P&L ÷ mean IM used (IM % × the margin balance at the week's start, an approximation).", "",
-           "| env | bot | net P&L | return on margin | equity not explained by the bot | excess vs holding the coin | worst 7 days | replay gap | stress | missing days | report |",
-           "|---|---|---|---|---|---|---|---|---|---|---|"]
+           "E1 reliability = mean IM ÷ limit while entries were allowed against the 60 % target, "
+           "the largest cause of idle slot time, and the startups whose first 30 minutes changed the book (restart-made).", "",
+           "| env | bot | net P&L | return on margin | equity not explained by the bot | excess vs holding the coin | worst 7 days | replay gap | stress | E1 reliability | missing days | report |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
     for env in envs:
         root = os.path.join(envs_dir, env)
@@ -184,12 +218,12 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
                 with open(path) as f:
                     r = json.load(f)
             except (OSError, ValueError):
-                out.append(f"| {label} | {bot} | no report | | | | | | | | — |")
+                out.append(f"| {label} | {bot} | no report | | | | | | | | | — |")
                 continue
             cur = bot.upper()
             out.append("| " + " | ".join([
                 label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
-                gap_cell(r, live, cur), stress_cell(r), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
+                gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
     if failures:
         out += ["", "**Failed steps** (the other reports were still written):", ""]
         for env, bot, step, detail in failures:

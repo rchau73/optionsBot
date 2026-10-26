@@ -15,7 +15,9 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/deployeffect"
 	"optionsbot/internal/history"
+	"optionsbot/internal/idlemargin"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/perf"
 	"optionsbot/internal/recorder"
@@ -40,8 +42,16 @@ type Inputs struct {
 	Cfg      *config.Config // the bot's settings (replay)
 	Config   string         // its path
 
-	Trades  []orders.Trade // the journal's opens and closes
-	Journal string
+	Trades      []orders.Trade // the journal's opens and closes
+	Journal     string
+	JournalNote string // why the journal was not read, when it was not
+
+	// The E1 section's journal reads (#361); nil = not read.
+	IdleEvents  []idlemargin.Event    // idlemargin.ReadJournalFile
+	DeployLines []deployeffect.Line   // deployeffect.ReadJournalFile
+	Deploys     []deployeffect.Deploy // deploys.tsv, this env's lines
+	DeploysPath string
+	DeploysNote string // why deploys.tsv was not read
 
 	Points  []history.Point // P&L history, ordered by time
 	History string
@@ -66,22 +76,23 @@ type Inputs struct {
 // Report is the weekly evidence of one bot. Amounts are coin unless named
 // USD; it stays in data/ (gitignored).
 type Report struct {
-	Env       string    `json:"env"`
-	Bot       string    `json:"bot"`
-	Week      string    `json:"week"`
-	From      time.Time `json:"from"`
-	To        time.Time `json:"to"` // exclusive
-	Live      Live      `json:"live"`
-	Bridge    Bridge    `json:"bridge"`
-	Replay    Replay    `json:"replay"`
-	Gap       Gap       `json:"gap"`
-	Stress    Stress    `json:"stress"`
-	Hold      Hold      `json:"hold"`
-	Util      Util      `json:"utilisation"`
-	ROM       ROM       `json:"return_on_margin"`
-	Missing   Missing   `json:"missing"`
-	Equity    float64   `json:"equity"` // coin, at the start (0 = unknown)
-	EquitySrc string    `json:"equity_source"`
+	Env       string      `json:"env"`
+	Bot       string      `json:"bot"`
+	Week      string      `json:"week"`
+	From      time.Time   `json:"from"`
+	To        time.Time   `json:"to"` // exclusive
+	Live      Live        `json:"live"`
+	Bridge    Bridge      `json:"bridge"`
+	Replay    Replay      `json:"replay"`
+	Gap       Gap         `json:"gap"`
+	Stress    Stress      `json:"stress"`
+	Hold      Hold        `json:"hold"`
+	Util      Util        `json:"utilisation"`
+	ROM       ROM         `json:"return_on_margin"`
+	Missing   Missing     `json:"missing"`
+	E1        Reliability `json:"e1_reliability"`
+	Equity    float64     `json:"equity"` // coin, at the start (0 = unknown)
+	EquitySrc string      `json:"equity_source"`
 }
 
 // Live is what the bot did: the journal's closes in the window (realised,
@@ -218,6 +229,7 @@ func Build(in Inputs) Report {
 	r.Replay, r.Gap = buildReplay(in)
 	r.Stress = buildStress(in)
 	r.ROM = buildROM(in, r.Replay)
+	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
 	return r
 }
 
