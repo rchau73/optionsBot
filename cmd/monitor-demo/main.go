@@ -124,6 +124,22 @@ func (s *simulation) smaLevels() strategy.SMALevels {
 	return l
 }
 
+// demoCandles is CandleDays simulated daily candles around base and today's
+// live candle at spot, for the regime chart.
+func (s *simulation) demoCandles() []strategy.Candle {
+	var closes []orders.DailyClose
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	prev := s.base
+	for i := strategy.CandleDays; i >= 1; i-- {
+		c := s.base * (1 + 0.04*math.Sin(float64(i)/7) + 0.01*math.Cos(float64(i)*1.3))
+		closes = append(closes, orders.DailyClose{Date: today.AddDate(0, 0, -i), Open: prev, Close: c,
+			High: math.Max(prev, c) * 1.012, Low: math.Min(prev, c) * 0.988})
+		prev = c
+	}
+	live := orders.DailyClose{Date: today, Open: prev, Close: s.spot, High: math.Max(prev, s.spot) * 1.004, Low: math.Min(prev, s.spot) * 0.996}
+	return strategy.CandlesOf(closes, live, strategy.CandleDays)
+}
+
 // journalTrendChange writes a trend_changed event when the simulated SMA
 // trend changes. Call with s.mu held.
 func (s *simulation) journalTrendChange() {
@@ -369,7 +385,7 @@ func (s *simulation) View() strategy.View {
 	sma := s.smaLevels()
 	v := strategy.View{
 		AsOf: now, StrategyID: strategy.DefaultStrategyID, Underlying: s.underlying, Environment: "testnet (demo)",
-		LoopAt: now, Trend: sma.Trend, Direction: strategy.DirectionSMA, SMATrend: sma.Trend, SMA: sma,
+		LoopAt: now, Trend: sma.Trend, Direction: strategy.DirectionSMA, SMATrend: sma.Trend, SMA: strategy.SMAView{SMALevels: sma, Candles: s.demoCandles()},
 		Market:        orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING", GammaFlip: s.spot * 0.96},
 		FlipBufferPct: strategy.FlipBufferPct(1, s.dvol),
 		Account:       strategy.AccountView{Equity: 2.5, MarginUsed: 0.42, AsOf: now},

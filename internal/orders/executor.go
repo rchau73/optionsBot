@@ -373,6 +373,9 @@ func (e *Executor) simulate(ctx context.Context, currency string, positions map[
 type chartData struct {
 	Status string    `json:"status"`
 	Ticks  []int64   `json:"ticks"`
+	Open   []float64 `json:"open"`
+	High   []float64 `json:"high"`
+	Low    []float64 `json:"low"`
 	Close  []float64 `json:"close"`
 }
 
@@ -397,11 +400,16 @@ func (e *Executor) GetDailyCloses(ctx context.Context, instrument string, days i
 			instrument, len(result.Ticks), len(result.Close))
 	}
 
-	closes := make([]DailyClose, len(result.Ticks))
+	n := len(result.Ticks)
+	ohlc := len(result.Open) == n && len(result.High) == n && len(result.Low) == n
+	closes := make([]DailyClose, n)
 	for i, ts := range result.Ticks {
 		closes[i] = DailyClose{
 			Date:  time.UnixMilli(ts).UTC().Truncate(24 * time.Hour),
 			Close: result.Close[i],
+		}
+		if ohlc { // the monitor's candles (#394); absent → 0, never a guess
+			closes[i].Open, closes[i].High, closes[i].Low = result.Open[i], result.High[i], result.Low[i]
 		}
 	}
 	return closes, nil

@@ -20,7 +20,8 @@ export default function StrangleCards({ bots, onOpen }) {
   );
 }
 
-function BotStrangles({ bot, onOpen }) {
+/** One bot's strangle cards (the overview's dashboard section, #394). */
+export function BotStrangles({ bot, onOpen }) {
   const report = bot.payoff;
   const list = payoffStrangles(report);
   const failure = bot.payoffError ?? (report ? null : bot.error);

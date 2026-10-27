@@ -272,14 +272,14 @@ describe("Scenario: range bar", () => {
   });
 });
 
-describe("Scenario: desktop unchanged", () => {
-  test("the desktop monitor shows every bot's summary, from 640 px", () => {
+describe("Scenario: desktop shows every bot", () => {
+  test("the desktop monitor shows every bot's dashboard, from 640 px (#394)", () => {
     mockBots(twoBots());
     render(<Monitor role="manager" />);
     const desktop = screen.getByTestId("desktop-monitor");
     expect(desktop).toHaveClass("sm:block");
-    expect(within(desktop).getByRole("region", { name: "BTC · investor summary" })).toBeInTheDocument();
-    expect(within(desktop).getByRole("region", { name: "ETH · investor summary" })).toBeInTheDocument();
+    expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
+    expect(within(desktop).getByRole("region", { name: "ETH dashboard" })).toBeInTheDocument();
     expect(within(desktop).getByTestId("bot-btc")).toBeInTheDocument();
     expect(within(desktop).getByTestId("bot-eth")).toBeInTheDocument();
   });
@@ -357,30 +357,29 @@ describe("#321 Scenario: flat later is not a first day", () => {
 });
 
 describe("#288 Scenario: first visit as a user", () => {
-  test("the investor summary and the KPI strip are visible; every detail panel is folded with its one-line summary", () => {
+  test("the dashboards, the P&L charts and the KPI strip are visible; every detail panel is folded with its one-line summary", () => {
     mockBots(twoBots());
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(within(desktop).getByRole("region", { name: "BTC · investor summary" })).toBeInTheDocument();
-    expect(panelTitles(desktop, false)).toEqual([
-      "Account & collateral (shared by all bots)",
-      "Open positions",
-      "Missing legs: why repair holds them",
-      "Not managed by the bot (still uses margin)",
-      "Trade history & profitability",
-      "Activity",
-      "P&L (USD, all bots)",
-      "P&L in coin (per bot)",
-      "Working orders (placed, not filled yet)",
-    ]);
-    expect(panelTitles(desktop, true)).toHaveLength(0);
+    expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
+    expect(panelTitles(desktop, false)).toEqual(DETAIL_PANELS);
+    // #394: the P&L charts belong to the dashboard, open for everyone.
+    expect(panelTitles(desktop, true)).toEqual(PNL_PANELS);
     // The KPI strip is outside every panel: visible.
     expect(within(desktop).getByText("Bots online")).toBeVisible();
     expect(within(desktop).getByText("8 legs, 4 strangles")).toBeInTheDocument();
     expect(within(desktop).getByText("2 working")).toBeInTheDocument();
-    expect(within(desktop).getByText("nothing yet")).toBeInTheDocument();
   });
 });
+
+const PNL_PANELS = ["P&L (USD, all bots)", "P&L in coin (per bot)"];
+const DETAIL_PANELS = [
+  "Open positions",
+  "Missing legs: why repair holds them",
+  "Not managed by the bot (still uses margin)",
+  "Trade history & profitability",
+  "Working orders (placed, not filled yet)",
+];
 
 describe("#288 Scenario: a saved choice wins", () => {
   test("Trade history opened before in this browser is open on reload", () => {
@@ -388,7 +387,7 @@ describe("#288 Scenario: a saved choice wins", () => {
     mockBots(twoBots());
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, true)).toEqual(["Trade history & profitability"]);
+    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, "Trade history & profitability"]);
   });
 });
 
@@ -398,7 +397,7 @@ describe("#288 Scenario: managers unchanged", () => {
     render(<Monitor role={role} />);
     const desktop = screen.getByTestId("desktop-monitor");
     expect(panelTitles(desktop, false)).toHaveLength(0);
-    expect(panelTitles(desktop, true)).toHaveLength(9);
+    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, ...DETAIL_PANELS]);
   });
 });
 
@@ -409,7 +408,7 @@ describe("#288 Scenario: warnings never folded away", () => {
     mockBots(bots);
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, false)).toHaveLength(9);
+    expect(panelTitles(desktop, false)).toEqual(DETAIL_PANELS);
     expect(within(within(desktop).getByTestId("bot-btc")).getByText("LOOP STALLED")).toBeInTheDocument();
     // And on the phone header.
     expect(within(screen.getByTestId("phone-warnings")).getByText("LOOP STALLED")).toBeInTheDocument();

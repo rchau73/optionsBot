@@ -30,10 +30,12 @@ type View struct {
 
 	Market        orders.MarketSnapshot `json:"market"`
 	FlipBufferPct float64               `json:"flip_buffer_pct"` // the flip's ±1σ shed band, % of spot (0 = no DVOL / no buffer)
+	MedianFlip    float64               `json:"median_flip"`     // the bias window's median flip under gex_direction bias (0 = not bias / none yet)
+	GEXAsOf       *time.Time            `json:"gex_as_of"`       // when the GEX snapshot in Market was computed (null = none yet), for the monitor's freshness
 	Trend         string                `json:"trend"`           // the direction the rules use (bull | bear | neutral)
 	Direction     string                `json:"direction"`       // its source: sma | bias (gex_direction)
 	SMATrend      string                `json:"sma_trend"`       // recorded for comparison whatever the source
-	SMA           SMALevels             `json:"sma"`             // the levels behind SMATrend
+	SMA           SMAView               `json:"sma"`             // the levels behind SMATrend, with the daily candles
 	Bias          string                `json:"gex_bias"`        // up | down | neutral
 	Account       AccountView           `json:"account"`
 	Risk          RiskView              `json:"risk"`
@@ -172,18 +174,20 @@ type PnLView struct {
 // pending legs and the gamma monitor without locks); the loop copies it here
 // at the end of every cycle for readers on other goroutines.
 type published struct {
-	mu      sync.RWMutex
-	at      time.Time
-	trend   string
-	sma     string
-	levels  SMALevels
-	bias    string
-	pending []PendingView
-	account AccountView
-	risk    RiskView
-	usage   risk.Usage
-	halted  bool
-	held    []HeldLegView
+	mu     sync.RWMutex
+	at     time.Time
+	trend  string
+	sma    string
+	levels SMAView
+	bias   string
+	// medianFlip: the bias window's median flip (GammaMonitor.MedianFlip).
+	medianFlip float64
+	pending    []PendingView
+	account    AccountView
+	risk       RiskView
+	usage      risk.Usage
+	halted     bool
+	held       []HeldLegView
 
 	manualOn  bool   // manual closes enabled (SetManualClose)
 	manualOff string // why not, shown on every leg
@@ -207,12 +211,15 @@ func (s *Strategy) publish() {
 		pending = append(pending, pv)
 	}
 	sort.Slice(pending, func(i, j int) bool { return pending[i].SubmittedAt.Before(pending[j].SubmittedAt) })
-	trend, levels, bias := s.gamma.Trend(), s.gamma.SMALevels(), s.gamma.Bias()
+	trend, bias := s.gamma.Trend(), s.gamma.Bias()
+	levels := SMAView{SMALevels: s.gamma.SMALevels(), Candles: s.gamma.Candles()}
+	medianFlip := s.gamma.MedianFlip()
 
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
 	s.pub.at = time.Now()
 	s.pub.trend, s.pub.sma, s.pub.levels, s.pub.bias = trend, levels.Trend, levels, bias
+	s.pub.medianFlip = medianFlip
 	s.pub.pending = pending
 }
 
@@ -266,10 +273,11 @@ func (s *Strategy) setHalted() {
 func (s *Strategy) View() View {
 	s.pub.mu.RLock()
 	pub := published{at: s.pub.at, trend: s.pub.trend, sma: s.pub.sma, levels: s.pub.levels, bias: s.pub.bias, pending: s.pub.pending, account: s.pub.account, risk: s.pub.risk, halted: s.pub.halted, held: s.pub.held,
-		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff}
+		manualOn: s.pub.manualOn, manualOff: s.pub.manualOff, medianFlip: s.pub.medianFlip}
 	s.pub.mu.RUnlock()
 
 	now := time.Now()
+	gexSnap := s.gamma.CurrentGEXSnapshot()
 	v := View{
 		AsOf:                now,
 		StrategyID:          s.strategyID(),
@@ -283,9 +291,11 @@ func (s *Strategy) View() View {
 		RepairCooldownHours: s.cfg.RepairCooldownHours,
 		Market: BuildMarketSnapshot(SnapshotInput{
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
-			GEX: s.gamma.CurrentGEXSnapshot(),
+			GEX: gexSnap,
 		}),
 		FlipBufferPct: s.gamma.FlipBuffer(),
+		MedianFlip:    pub.medianFlip,
+		GEXAsOf:       gexAsOf(gexSnap),
 		Trend:         pub.trend,
 		Direction:     s.cfg.GEXDirection,
 		SMATrend:      pub.sma,

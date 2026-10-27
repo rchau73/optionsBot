@@ -369,6 +369,8 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"sma":              v.SMA,
 		"gex_bias":         v.Bias,
 		"flip_buffer_pct":  v.FlipBufferPct,
+		"median_flip":      v.MedianFlip,
+		"gex_as_of":        v.GEXAsOf,
 		"account":          v.Account,
 		"risk":             v.Risk,
 		"greeks":           v.Greeks,

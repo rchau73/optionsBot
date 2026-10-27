@@ -219,7 +219,7 @@
     "long": "Initial margin (IM) is the amount the exchange sets aside for open positions and orders. The monitor shows it in dollars and as a percentage of the margin balance. 'Proj.' is the figure without the nearest expiry. The bot sizes new positions so IM stays under its limit.",
     "risk_income": "More IM in use means bigger positions: more income and more risk.",
     "source": "OptionStrategy.md#8-risk-controls",
-    "labels": ["Initial margin", "IM (proj.)", "IM %", "IM used", "IM used / limit", "IM / MM"]
+    "labels": ["Initial margin", "IM (proj.)", "IM %", "IM used", "IM used / limit", "IM / MM", "Margin used"]
   },
   "mm": {
     "short": "Maintenance margin: the floor. At 100 % of the margin balance the exchange closes positions by force.",
@@ -681,6 +681,13 @@
     "risk_income": "It is the drop an investor would have lived through in one week.",
     "source": "frontend/README.md#income-page",
     "labels": ["Worst week"]
+  },
+  "worst case": {
+    "short": "A model of what one very bad day would cost the open positions: a fall or rise of 3 typical daily swings.",
+    "long": "The bot reprices each open leg with Black–Scholes on its own implied volatility after one day, with the coin 3 daily standard deviations lower and higher (from DVOL). The tile shows the worse side in the coin, in dollars and as a % of the account. It is a model, not a quote.",
+    "risk_income": "Real days can move more than 3 swings, so a loss can be larger than this figure.",
+    "source": "frontend/README.md#what-you-see",
+    "labels": ["Worst case"]
   },
   "win rate": {
     "short": "The share of closes that made money.",

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describeEvent, smaLevels } from "@/lib/monitor";
-import { SmaLevels } from "@/components/Header";
+import RegimeChart from "@/components/RegimeChart";
 
 const status = {
   market: { spot: 82500 },
@@ -33,20 +33,16 @@ describe("smaLevels (#118)", () => {
   });
 });
 
-describe("SmaLevels", () => {
-  test("shows the levels, distances and swing days, with the reason on hover", () => {
-    render(<SmaLevels sma={smaLevels(status)} />);
-    const el = screen.getByTestId("sma-levels");
-    expect(el.textContent).toContain("SMA9 $82,756");
-    expect(el.textContent).toContain("SMA21 $83,741");
-    expect(el.textContent).toContain("Swing high $86,207 (+4.5%) 10-04");
-    expect(el.textContent).toContain("Swing low $82,620 (+0.1%) 10-08");
-    expect(el.getAttribute("title")).toContain("SMA trend bear: price < swing low");
-  });
-
-  test("renders nothing without levels", () => {
-    const { container } = render(<SmaLevels sma={null} />);
-    expect(container).toBeEmptyDOMElement();
+// #394: the levels moved from the header chip onto the regime chart; its text alternative states them.
+describe("the regime chart states the SMA levels", () => {
+  test("spot against SMA9, SMA21 and the swings with their days, and the trend's reason", () => {
+    render(<RegimeChart status={{ ...status, trend: "bear" }} coin="BTC" />);
+    const text = screen.getByRole("figure").querySelector("figcaption").textContent;
+    expect(text).toContain("trend bear: price < swing low");
+    expect(text).toContain("below SMA9 $82,756");
+    expect(text).toContain("below SMA21 $83,741");
+    expect(text).toContain("swing high $86,207 (2026-10-04)");
+    expect(text).toContain("swing low $82,620 (2026-10-08)");
   });
 });
 

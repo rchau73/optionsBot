@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import MenuBar, { MenuNav } from "@/components/MenuBar";
 import { botParam, menuItems, showMenu } from "@/lib/menu";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -9,7 +9,7 @@ import { fetchMonitorConfig } from "@/lib/api";
 jest.mock("next/navigation", () => ({ usePathname: jest.fn(), useSearchParams: jest.fn() }));
 jest.mock("@/lib/api", () => ({ fetchMonitorConfig: jest.fn() }));
 
-const LABELS = ["Overview", "Income", "Worst case", "Positions", "How it works", "Activity", "Details (pro)"];
+const LABELS = ["Overview", "Income", "Worst case", "Positions", "How it works", "Activity", "Account", "Details (pro)"];
 
 const at = (pathname, query = "") => {
   usePathname.mockReturnValue(pathname);
@@ -29,6 +29,7 @@ describe("Scenario: every view is one click from any page", () => {
     ["/positions", "bot=eth", "Positions"],
     ["/how-it-works", "bot=eth", "How it works"],
     ["/activity", "bot=eth", "Activity"],
+    ["/account", "bot=eth", "Account"],
     ["/", "bot=eth&view=details", "Details (pro)"],
   ])("on %s?%s the menu shows every view and marks %s", (pathname, query, current) => {
     at(pathname, query);
@@ -49,6 +50,7 @@ describe("Scenario: every view is one click from any page", () => {
     expect(href("Positions")).toBe("/positions?bot=eth");
     expect(href("How it works")).toBe("/how-it-works?bot=eth");
     expect(href("Activity")).toBe("/activity?bot=eth");
+    expect(href("Account")).toBe("/account?bot=eth");
     expect(href("Details (pro)")).toBe("/?bot=eth&view=details#details");
     expect(fetchMonitorConfig).not.toHaveBeenCalled();
   });
@@ -73,6 +75,41 @@ describe("Scenario: every view is one click from any page", () => {
   });
 });
 
+// #394 Scenario: the person menu lives in the menu bar.
+describe("Scenario: the person menu lives in the menu bar", () => {
+  const open = (name) => fireEvent.click(screen.getByRole("button", { name }));
+  const items = () => within(screen.getByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent);
+
+  test("the bar ends with my name; its menu holds Change password and Sign out", () => {
+    at("/", "bot=btc");
+    render(<MenuBar person={{ username: "bob", role: "user" }} />);
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    const last = nav.querySelector("ul").lastElementChild;
+    expect(within(last).getByRole("button", { name: "bob ▾" })).toHaveClass("min-h-11");
+    open("bob ▾");
+    expect(items()).toEqual(["Change password", "Sign out"]);
+  });
+
+  test("for an admin it also holds Users and Audit", () => {
+    at("/", "bot=btc");
+    render(<MenuBar person={{ username: "ana", role: "admin" }} />);
+    open("ana ▾");
+    expect(items()).toEqual(["Users", "Audit", "Change password", "Sign out"]);
+    expect(screen.getByRole("menuitem", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+  });
+
+  test("an unreadable session still offers the menu, as Account ▾", () => {
+    at("/", "bot=btc");
+    render(<MenuBar />);
+    expect(screen.getByRole("button", { name: "Account ▾" })).toBeInTheDocument();
+  });
+
+  test("Account is a menu item placed after Activity", () => {
+    const keys = menuItems("/", {}).map((i) => i.key);
+    expect(keys.indexOf("account")).toBe(keys.indexOf("activity") + 1);
+  });
+});
+
 describe("Scenario: phone", () => {
   test("the items wrap, each a 44 px target, so the menu fits 390 px without sideways scroll", () => {
     render(<MenuNav pathname="/activity" bot="btc" />);
@@ -92,6 +129,7 @@ describe("lib/menu", () => {
       "/positions",
       "/how-it-works",
       "/activity",
+      "/account",
       "/?view=details#details",
     ]);
   });
@@ -100,8 +138,8 @@ describe("lib/menu", () => {
   const NOT_IN_MENU = {
     "/login": "signed out: no menu",
     "/reset": "signed out (a reset link): no menu",
-    "/admin/users": "admins only, from the account menu",
-    "/admin/audit": "admins only, from the account menu",
+    "/admin/users": "admins only, from the person's menu (the menu bar's last item)",
+    "/admin/audit": "admins only, from the person's menu (the menu bar's last item)",
   };
 
   test("every page is in the menu or on the allow-list with its reason", () => {

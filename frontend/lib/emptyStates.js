@@ -16,8 +16,8 @@ export const MAX_TEXT = 140;
  */
 export const PANELS = {
   "monitor.header": "<Header",
-  "monitor.gex": "GEX regime and gamma flip (header chips)",
-  "monitor.summary": "<InvestorSummary",
+  "monitor.gex": "GEX regime and gamma flip (each bot's regime chart and badges)",
+  "monitor.summary": "<BotDashboards",
   "monitor.kpi": "<KpiStrip",
   "monitor.panel.account": "Account & collateral (shared by all bots)",
   "monitor.panel.positions": "Open positions",
