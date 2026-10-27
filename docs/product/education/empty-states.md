@@ -67,7 +67,7 @@ Tips: `margin`, `im`, `mm`, `equity`. Account and collateral, as Deribit reports
 | `stale` · answers stopped | The account figures are older than the bot's poll interval. They are the last ones Deribit reported. | `/api/account` `as_of` older than the poll interval |
 | `error` · unavailable | Account not loaded: the bot could not read it. New entries wait while margin is unknown; exits keep running. | `/api/status` `risk.error` set |
 
-### monitor.positions
+### monitor.panel.positions
 
 Tips: `position`, `strangle`, `leg`. Open positions, one row per leg.
 
@@ -111,7 +111,7 @@ Tips: `close`, `realized p&l`, `reason`. Trade history and profitability.
 | `stale` · answers stopped | A bot stopped updating. Its trades are listed up to its last answer. | `/api/status` `as_of` older than a few polls |
 | `error` · unavailable | The trade history could not be read. The journal on the bot is unchanged. | no answer from `/api/trades` |
 
-### monitor.activity
+### monitor.panel.activity
 
 Tips: `skipped`, `filled`, `cancelled`, `freeze`. The feed of events.
 
@@ -122,7 +122,7 @@ Tips: `skipped`, `filled`, `cancelled`, `freeze`. The feed of events.
 | `stale` · answers stopped | A bot stopped updating. The feed resumes from where it stopped once the bot answers. | `/api/status` `as_of` older than a few polls |
 | `error` · unavailable | Events could not be read. The bot keeps journaling them; they appear here once it answers. | no answer from `/api/events` |
 
-### monitor.pnl
+### monitor.panel.pnl
 
 Tips: `p&l`, `realized p&l`. The P&L chart in USD, all bots.
 
@@ -133,7 +133,7 @@ Tips: `p&l`, `realized p&l`. The P&L chart in USD, all bots.
 | `stale` · answers stopped | No new P&L point lately. The chart ends at the last point a bot reported. | last point of `/api/pnl/history` older than the report interval |
 | `error` · unavailable | P&L history could not be read. Missing time is left blank, never filled in. | no answer from `/api/pnl/history` |
 
-### monitor.pnl_coin
+### monitor.panel.pnl_coin
 
 Tips: `p&l`. One chart per bot, in its own coin.
 
@@ -144,7 +144,7 @@ Tips: `p&l`. One chart per bot, in its own coin.
 | `stale` · answers stopped | No new point lately. Each chart ends at the last point its bot reported. | last point older than the report interval |
 | `error` · unavailable | P&L in coin could not be read for this bot. Missing time is left blank, never filled in. | no answer from `/api/pnl/history` |
 
-### monitor.orders
+### monitor.panel.orders
 
 Tips: `working order`, `fill timeout`, `limit price`. Orders resting on Deribit.
 
