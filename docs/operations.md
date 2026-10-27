@@ -59,9 +59,12 @@ Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD
 ### Releasing to stable
 
 ```bash
-scripts/promote.sh v0.3.0          # tags the commit mvp runs (if the tag is new), checks, asks, promotes
+scripts/promote.sh v0.3.0          # a new tag: picks the newest mvp build that has soaked 3 days, checks, asks, tags, promotes
+scripts/promote.sh v0.3.1 --commit 9c58ea6   # a new tag on an older build that ran in mvp (same checks)
 scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the soak
 ```
+
+**What a new tag goes on** (#360): the newest `mvp` deploy line of `deploys.tsv` (never a `rollback` line) that is at least `PROMOTE_SOAK_DAYS` old — not the build mvp runs now, which a merge replaces several times a day and so never soaks. Every later deploy contains it (mvp runs `main`), so the soak gate below passes by construction and still checks it. The confirmation shows the commit, since when it has been in mvp and for how many days, and the commits since stable's release. When every mvp deploy is newer than the soak, it refuses and says when the oldest will have soaked. `--commit <sha>` names another build: it must appear on an mvp line of `deploys.tsv`, and the same checks apply. An existing tag (a rollback, or one made by hand) is used as it is. `promote.sh` and `envctl.sh … init` refuse to run from inside an environment's clone (a folder with a `deploy.env`).
 
 A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable). Promotion is testnet-only: a live stable is promoted by hand.
 

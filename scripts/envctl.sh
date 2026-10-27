@@ -22,6 +22,7 @@ dir="$(env_dir "$name")"
 
 case "$cmd" in
   init)
+    why="$(env_not_in_clone)" || { echo "refusing to init $name: $why" >&2; exit 1; }
     case " $ENV_NAMES " in *" $name "*) ;; *) echo "unknown environment '$name' (stable | mvp)" >&2; exit 1 ;; esac
     if [[ ! -d "$dir/.git" ]]; then
       mkdir -p "$ENVS_DIR"

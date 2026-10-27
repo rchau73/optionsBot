@@ -13,7 +13,7 @@ make test                      # go test ./tests/... -race -count=1
 make cover                     # coverage across ./internal/... (tests live in ./tests)
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
-scripts/promote.sh v0.3.0      # stable → a release: 3 days in mvp, no open sme:not-fixed; rollback = an older tag
+scripts/promote.sh v0.3.0      # stable → a release: a new tag goes on the newest mvp deploy (deploys.tsv, never a rollback line) 3 days old (`--commit <sha>` = another build that ran in mvp); no open sme:not-fixed; rollback = an older tag; refuses inside an env clone (#360)
 scripts/prune_branches.sh      # delete local branches already in main (GitHub deletes merged PR branches itself)
 make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
 
