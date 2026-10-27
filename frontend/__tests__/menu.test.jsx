@@ -9,7 +9,7 @@ import { fetchMonitorConfig } from "@/lib/api";
 jest.mock("next/navigation", () => ({ usePathname: jest.fn(), useSearchParams: jest.fn() }));
 jest.mock("@/lib/api", () => ({ fetchMonitorConfig: jest.fn() }));
 
-const LABELS = ["Overview", "Income", "Worst case", "How it works", "Activity", "Details (pro)"];
+const LABELS = ["Overview", "Income", "Worst case", "Positions", "How it works", "Activity", "Details (pro)"];
 
 const at = (pathname, query = "") => {
   usePathname.mockReturnValue(pathname);
@@ -26,6 +26,7 @@ describe("Scenario: every view is one click from any page", () => {
     ["/", "bot=btc", "Overview"],
     ["/income", "bot=eth", "Income"],
     ["/worst-case", "bot=eth", "Worst case"],
+    ["/positions", "bot=eth", "Positions"],
     ["/how-it-works", "bot=eth", "How it works"],
     ["/activity", "bot=eth", "Activity"],
     ["/", "bot=eth&view=details", "Details (pro)"],
@@ -45,6 +46,7 @@ describe("Scenario: every view is one click from any page", () => {
     const href = (name) => screen.getByRole("link", { name }).getAttribute("href");
     expect(href("Overview")).toBe("/?bot=eth");
     expect(href("Worst case")).toBe("/worst-case?bot=eth");
+    expect(href("Positions")).toBe("/positions?bot=eth");
     expect(href("How it works")).toBe("/how-it-works?bot=eth");
     expect(href("Activity")).toBe("/activity?bot=eth");
     expect(href("Details (pro)")).toBe("/?bot=eth&view=details#details");
@@ -83,7 +85,41 @@ describe("Scenario: phone", () => {
 
 describe("lib/menu", () => {
   test("menuItems without a bot has no ?bot=", () => {
-    expect(menuItems("/", {}).map((i) => i.href)).toEqual(["/", "/income", "/worst-case", "/how-it-works", "/activity", "/?view=details#details"]);
+    expect(menuItems("/", {}).map((i) => i.href)).toEqual([
+      "/",
+      "/income",
+      "/worst-case",
+      "/positions",
+      "/how-it-works",
+      "/activity",
+      "/?view=details#details",
+    ]);
+  });
+
+  // Product owner, 2026-10-27: a page is in the menu, or here with its reason.
+  const NOT_IN_MENU = {
+    "/login": "signed out: no menu",
+    "/reset": "signed out (a reset link): no menu",
+    "/admin/users": "admins only, from the account menu",
+    "/admin/audit": "admins only, from the account menu",
+  };
+
+  test("every page is in the menu or on the allow-list with its reason", () => {
+    const fs = jest.requireActual("node:fs");
+    const path = jest.requireActual("node:path");
+    const app = path.join(__dirname, "..", "app");
+    const pages = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory() && e.name !== "api") walk(full);
+        else if (e.name === "page.jsx") pages.push(`/${path.relative(app, dir).split(path.sep).join("/")}`.replace(/\/$/, "") || "/");
+      }
+    };
+    walk(app);
+    const inMenu = menuItems("/", {}).map((i) => i.href.split(/[?#]/)[0]);
+    expect(pages).toEqual(expect.arrayContaining(["/", "/positions"]));
+    expect(pages.filter((p) => !inMenu.includes(p) && !NOT_IN_MENU[p])).toEqual([]);
   });
 
   test("botParam accepts a bot name only", () => {

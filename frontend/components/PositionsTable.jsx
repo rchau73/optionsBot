@@ -45,8 +45,11 @@ function GreekCells({ greeks }) {
   );
 }
 
-/** Open legs, one row per bot + slot + strike (see consolidateRows), grouped (strategy, slot, expiry or type), with unrealized P&L per group. Live values flash when they change. */
-export default function PositionsTable({ groups, statuses = {} }) {
+/**
+ * Open legs, one row per bot + slot + strike (see consolidateRows), grouped (strategy, slot, expiry or type), with unrealized P&L per group.
+ * Live values flash when they change. With onOpenChart(bot, strangleId, element), the instrument opens its strangle's payoff chart (#391).
+ */
+export default function PositionsTable({ groups, statuses = {}, onOpenChart }) {
   const [closing, setClosing] = useState(null); // the row whose close is being confirmed
   if (!groups.length) {
     return <p className="px-1 py-6 text-center text-sm text-muted">No open positions match the filters.</p>;
@@ -102,7 +105,19 @@ export default function PositionsTable({ groups, statuses = {} }) {
             {g.rows.map((r) => (
               <tr key={r.key} className="hover:bg-slate-800/30">
                 <td className="px-2 py-1 font-mono text-xs">
-                  {r.instrument}
+                  {onOpenChart ? (
+                    <button
+                      type="button"
+                      aria-haspopup="dialog"
+                      onClick={(e) => onOpenChart(r.bot, r.strangleId, e.currentTarget)}
+                      className="text-left underline decoration-dotted underline-offset-2 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet"
+                      title="Open the payoff chart of this leg's strangle"
+                    >
+                      {r.instrument}
+                    </button>
+                  ) : (
+                    r.instrument
+                  )}
                   {r.positions > 1 ? (
                     <span className="ml-1 text-[10px] text-muted" title={`${r.positions} positions on this strike, shown as one (entry is their average; stop is the first to fire)`}>
                       ×{r.positions}

@@ -9,7 +9,7 @@ import { botParam, menuItems, showMenu } from "@/lib/menu";
 
 /**
  * The menu bar on every signed-in page (#385): Overview · Income · Worst case
- * · How it works · Activity · Details (pro). The bot is the page's ?bot=, else
+ * · Positions · How it works · Activity · Details (pro). The bot is the page's ?bot=, else
  * the first configured bot, and every link keeps it. Not shown on sign-in or
  * the reset-link page.
  */
