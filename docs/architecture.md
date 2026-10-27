@@ -218,7 +218,7 @@ What the strategy asks of an exchange, and the Deribit call behind each:
 | `AccountReader.GetAccountSummary` | `private/get_account_summary` (`extended`: IM, MM, margin balance, cross collateral) | the margin figures and models are each exchange's own |
 | `AccountReader.GetPositions` | `private/get_positions` (`kind=option`) | no |
 | `AccountReader.GetMargins` | `private/get_margins` | margin per order is not universal |
-| `AccountReader.GetDailyCloses` | `public/get_tradingview_chart_data` (daily candles for the SMA trend) | no |
+| `AccountReader.GetDailyCloses` | `public/get_tradingview_chart_data` (daily candles for the SMA trend — closes; with the open, high and low for the monitor's regime chart, `/api/status` `sma.candles`, #394) | no |
 | `PortfolioSimulator.SimulatePortfolio`, `SimulateAlone` | `private/simulate_portfolio` (≤ 1 call/s, `add_positions`): entry and top-up sizing, the size cap | **yes**: without it, sizing needs a local margin model the bot does not have |
 | `OptionChain` (`UnderlyingPrice`, `GetInstrument`, `AllInstruments`, `Track`) | `public/get_instruments`; subscriptions `deribit_price_index.*`, `ticker.<name>.100ms` | channel names and ticker greeks are Deribit's |
 | `VolIndex` (`DVOL`, `IVPercentile`, `DVOLDaily`) | `public/get_volatility_index_data`; subscription `deribit_volatility_index.*` | **yes** (DVOL); elsewhere read it from Deribit over a public connection, or use a substitute |

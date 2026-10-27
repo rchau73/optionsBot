@@ -1,6 +1,6 @@
 // The menu bar on every signed-in page (#385, E3 prototype screens 4 and 7):
 // one link per view, the current one marked, the chosen bot kept from page to
-// page through ?bot=.
+// page through ?bot=; the signed-in person's menu ends it (#394).
 
 /** Pages without the menu: signed out (sign-in, set a new password with a reset link). */
 const NO_MENU = ["/login", "/reset"];
@@ -34,6 +34,7 @@ export function menuItems(pathname, { bot = null, view = null } = {}) {
     { key: "positions", label: "Positions", href: `/positions${q}`, current: pathname === "/positions" },
     { key: "how-it-works", label: "How it works", href: `/how-it-works${q}`, current: pathname === "/how-it-works" },
     { key: "activity", label: "Activity", href: `/activity${q}`, current: pathname === "/activity" },
+    { key: "account", label: "Account", href: `/account${q}`, current: pathname === "/account" },
     {
       key: "details",
       label: "Details (pro)",

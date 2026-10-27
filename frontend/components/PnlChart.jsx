@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
 import clsx from "clsx";
 import { Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePnlHistory } from "@/hooks/usePnlHistory";
+import { useStoredChoice } from "@/hooks/useStoredChoice";
 import { prefillLive } from "@/lib/monitor";
 import { formatDateTime, formatUSD } from "@/lib/format";
 import { localParts } from "@/lib/time";
@@ -17,6 +17,12 @@ export const RANGES = [
   ["1m", "1m"],
   ["all", "All"],
 ];
+
+const RANGE_KEYS = RANGES.map(([key]) => key);
+
+/** Both P&L charts open on one week (#394); a range the person picks is remembered per browser. */
+export const DEFAULT_RANGE = "1w";
+export const RANGE_KEY = "monitor.pnl.range";
 
 const SHORT = new Set(["live", "1h", "6h", "1d"]);
 
@@ -46,7 +52,7 @@ export function tickLabel(t, range) {
  * stored history survives restarts of the bots and of the monitor.
  */
 export default function PnlChart({ live, names }) {
-  const [range, setRange] = useState("live");
+  const [range, setRange] = useStoredChoice(RANGE_KEY, DEFAULT_RANGE, RANGE_KEYS);
   const stored = usePnlHistory(names, range);
   // Live starts from the last 15 minutes of stored history, then this session.
   const seed = usePnlHistory(names, range === "live" ? "15m" : null);

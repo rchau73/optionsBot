@@ -1,6 +1,5 @@
 import Link from "next/link";
 import AuditTrail from "@/components/AuditTrail";
-import UserMenu from "@/components/UserMenu";
 import { viewer } from "@/lib/auth/viewer";
 
 export const metadata = { title: "Audit · optionsBot monitor" };
@@ -16,7 +15,6 @@ export default async function AuditPage() {
         <Link href="/" className="text-sm text-muted underline hover:text-inherit">
           ← Monitor
         </Link>
-        <UserMenu role={me?.role ?? null} />
       </header>
       <main className="mx-auto max-w-6xl p-4">
         {admin ? (

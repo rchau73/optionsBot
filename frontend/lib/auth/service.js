@@ -321,7 +321,7 @@ export class AuthService {
   async resetPassword(by, targetId, password) {
     const target = this.store.userById(targetId);
     if (!target) return { ok: false, status: 404, error: "no such user" };
-    if (target.id === by.id) return { ok: false, status: 409, error: "reset your own password with Account ▾ → Change password" };
+    if (target.id === by.id) return { ok: false, status: 409, error: "reset your own password with your name ▾ in the menu bar → Change password" };
     const weak = passwordProblem(password);
     if (weak) return { ok: false, status: 400, error: weak };
     this.store.setPassword(target.id, await hashPassword(password), this.now());
@@ -340,7 +340,7 @@ export class AuthService {
   issueResetLink(by, targetId) {
     const target = this.store.userById(targetId);
     if (!target) return { ok: false, status: 404, error: "no such user" };
-    if (target.id === by.id) return { ok: false, status: 409, error: "change your own password with Account ▾ → Change password" };
+    if (target.id === by.id) return { ok: false, status: 409, error: "change your own password with your name ▾ in the menu bar → Change password" };
     const now = this.now();
     const token = crypto.randomBytes(32).toString("base64url");
     const expires = now + RESET_LINK_TTL_MS;

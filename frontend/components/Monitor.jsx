@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useEffect, useMemo, useState } from "react";
 import Header from "./Header";
 import PhoneOverview from "./PhoneOverview";
-import InvestorSummary from "./InvestorSummary";
+import BotDashboards from "./BotDashboard";
 import KpiStrip from "./KpiStrip";
 import Panel from "./Panel";
 import Filters from "./Filters";
@@ -12,25 +12,25 @@ import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
 import HeldLegs from "./HeldLegs";
 import PayoffModal from "./PayoffModal";
-import StrangleCards from "./StrangleCards";
-import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
 import CoinPnlChart from "./CoinPnlChart";
-import AccountPanel, { AccountSummary } from "./AccountPanel";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
 import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
-import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
+import { pickAccount, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 import { roleAtLeast } from "@/lib/auth/roles";
-import { activitySummary, ordersSummary, positionsSummary } from "@/lib/overview";
+import { ordersSummary, positionsSummary } from "@/lib/overview";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
 /**
- * The single monitor page: header, the investor summary first, then KPIs, positions, working orders, feed, P&L.
+ * The overview as a dashboard (#394): the header's chips and warnings, then per bot its regime chart, strangle
+ * payoff cards and four stat tiles, then the two P&L charts (one week by default); then Details (pro) — the KPI
+ * strip, positions, missing legs, other positions, trades and working orders. Activity and Account are their own
+ * pages (/activity, /account).
  * role (the signed-in person's) only picks display defaults: technical details open for managers and admins,
  * and for a user the detail panels start folded (#288; a choice saved in this browser wins).
  * On a phone (< 640 px) the overview shows one bot (`bot`, ?bot=) with a coin switch (#320); its menu's
@@ -38,7 +38,7 @@ const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "s
  * details (?view=details, the menu bar's "Details (pro)", #385) shows the detail panels, opened, and scrolls to them.
  */
 export default function Monitor({ role = null, bot = null, details = false }) {
-  const { names, bots, feed, history, trades, error, pollMs, polledAt } = useMonitor();
+  const { names, bots, history, trades, error, pollMs, polledAt } = useMonitor();
   const detailsOpen = roleAtLeast(role, "manager");
   const panelsOpen = role !== "user";
   const fold = { defaultOpen: panelsOpen, forceOpen: details };
@@ -78,9 +78,7 @@ export default function Monitor({ role = null, bot = null, details = false }) {
     [bots, rows],
   );
   const kpi = summarise(bots);
-  const account = pickAccount(bots, polledAt);
-  const risk = riskRows(bots);
-  const others = unmanagedPositions(account, bots);
+  const others = unmanagedPositions(pickAccount(bots, polledAt), bots);
   const statuses = Object.fromEntries(bots.map((b) => [b.name, b.status]));
   const units = Object.fromEntries(bots.map((b) => [b.name, b.status?.underlying ?? b.name.toUpperCase()]));
 
@@ -90,27 +88,26 @@ export default function Monitor({ role = null, bot = null, details = false }) {
         <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} details={phoneDetails} onDetails={showPhoneDetails} />
       </div>
       <div className={clsx(!phoneDetails && "hidden", "sm:block")} data-testid="desktop-monitor">
-        <Header bots={bots} error={error} role={role} />
+        <Header bots={bots} error={error} />
         <main className="space-y-3 p-3">
           {kpi.halted ? (
             <div role="alert" className="rounded border border-loss bg-loss/10 px-3 py-2 text-loss">
               Kill switch fired — trading is halted on at least one bot.
             </div>
           ) : null}
-          <InvestorSummary bots={bots} />
-          <StrangleCards bots={bots} onOpen={openChart} />
-          <div id="details" className="scroll-mt-3">
+          <BotDashboards bots={bots} onOpen={openChart} />
+          <div className="grid gap-3 xl:grid-cols-2">
+            <Panel title="P&L (USD, all bots)" collapsible storageKey="monitor.panel.pnl" summary="chart, all bots">
+              <PnlChart live={history} names={names} />
+            </Panel>
+            <Panel title="P&L in coin (per bot)" collapsible storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
+              <CoinPnlChart names={names} units={units} />
+            </Panel>
+          </div>
+          <div id="details" className="scroll-mt-3 space-y-3">
+            <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-muted">Details (pro)</h2>
             <KpiStrip kpi={kpi} />
           </div>
-          <Panel
-            title="Account & collateral (shared by all bots)"
-            collapsible
-            {...fold}
-            storageKey="monitor.panel.account"
-            summary={<AccountSummary account={account} risk={risk} />}
-          >
-            <AccountPanel account={account} risk={risk} />
-          </Panel>
           <Panel
             title="Open positions"
             collapsible
@@ -148,41 +145,19 @@ export default function Monitor({ role = null, bot = null, details = false }) {
           >
             <TradeHistory trades={allTrades} detailsOpen={detailsOpen} />
           </Panel>
-          <div className="grid gap-3 lg:grid-cols-3">
-            <Panel
-              id="activity"
-              title="Activity"
-              className="lg:col-span-2"
-              fill
-              collapsible
-              {...fold}
-              storageKey="monitor.panel.activity"
-              summary={activitySummary(feed)}
-            >
-              <ActivityFeed feed={feed} detailsOpen={detailsOpen} />
-            </Panel>
-            <div className="space-y-3">
-              <Panel title="P&L (USD, all bots)" collapsible {...fold} storageKey="monitor.panel.pnl" summary="chart, all bots">
-                <PnlChart live={history} names={names} />
-              </Panel>
-              <Panel title="P&L in coin (per bot)" collapsible {...fold} storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
-                <CoinPnlChart names={names} units={units} />
-              </Panel>
-              <Panel
-                title="Working orders (placed, not filled yet)"
-                collapsible
-                {...fold}
-                storageKey="monitor.panel.orders"
-                summary={ordersSummary(bots)}
-              >
-                <p className="mb-2 text-xs text-muted">
-                  Limit orders resting on Deribit. Filled orders move to Open positions; unfilled ones are cancelled after the
-                  fill timeout and retried on a later cycle.
-                </p>
-                <PendingOrders bots={bots} />
-              </Panel>
-            </div>
-          </div>
+          <Panel
+            title="Working orders (placed, not filled yet)"
+            collapsible
+            {...fold}
+            storageKey="monitor.panel.orders"
+            summary={ordersSummary(bots)}
+          >
+            <p className="mb-2 text-xs text-muted">
+              Limit orders resting on Deribit. Filled orders move to Open positions; unfilled ones are cancelled after the fill
+              timeout and retried on a later cycle.
+            </p>
+            <PendingOrders bots={bots} />
+          </Panel>
           {chart ? (
             <PayoffModal
               report={chartBot?.payoff ?? null}

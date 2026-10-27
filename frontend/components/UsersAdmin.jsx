@@ -122,7 +122,7 @@ export default function UsersAdmin({ me }) {
                             type="button"
                             className={BUTTON}
                             disabled={self}
-                            title={self ? "your own password: Account ▾ → Change password" : undefined}
+                            title={self ? "your own password: your name ▾ in the menu bar → Change password" : undefined}
                             onClick={() => setPending({ action: "password", user: u })}
                           >
                             Reset password
@@ -131,7 +131,7 @@ export default function UsersAdmin({ me }) {
                             type="button"
                             className={BUTTON}
                             disabled={self}
-                            title={self ? "your own password: Account ▾ → Change password" : undefined}
+                            title={self ? "your own password: your name ▾ in the menu bar → Change password" : undefined}
                             onClick={() => setLinkFor(u)}
                           >
                             Reset link

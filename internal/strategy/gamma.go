@@ -157,6 +157,7 @@ type GammaMonitor struct {
 	dailyCloses   []orders.DailyClose // one entry per completed UTC day
 	lastTickDate  time.Time           // UTC day of the last processed tick
 	lastTickPrice float64             // most recent price (current day's running close)
+	live          orders.DailyClose   // today's candle so far (candles.go), committed on the day roll
 	gexSrc        GEXSource           // nil until wired; Evaluate then reports no regime
 	lastAction    GammaAction         // last action announced, so changes are logged once
 	bufferSD      float64             // flip buffer in daily standard deviations (0 = none)
@@ -312,6 +313,7 @@ func (g *GammaMonitor) SeedDailyCloses(closes []orders.DailyClose) {
 		last := closes[len(closes)-1]
 		g.lastTickPrice = last.Close
 		g.lastTickDate = last.Date.Truncate(24 * time.Hour)
+		g.live = candleFrom(last, g.lastTickDate)
 	}
 }
 
@@ -327,9 +329,12 @@ func (g *GammaMonitor) PushPriceAt(now time.Time, price float64) {
 		// First call — initialise without recording a close yet.
 		g.lastTickDate = today
 		g.lastTickPrice = price
+		g.live = orders.DailyClose{Date: today, Open: price, High: price, Low: price, Close: price}
 	} else if today.After(g.lastTickDate) {
-		// Day rolled over: commit the previous day's last price as a daily close.
-		g.dailyCloses = append(g.dailyCloses, orders.DailyClose{Date: g.lastTickDate, Close: g.lastTickPrice})
+		// Day rolled over: commit the previous day's last price as a daily
+		// close, with the candle its prices made (only Close drives the trend).
+		g.dailyCloses = append(g.dailyCloses, committedCandle(g.live, g.lastTickDate, g.lastTickPrice))
+		g.live = orders.DailyClose{Date: today, Open: price, High: price, Low: price, Close: price}
 		// Keep enough history for lookback + pivot neighbours + 1 buffer day.
 		cutoff := today.AddDate(0, 0, -(g.lookbackDays + g.swingPivotN + 1))
 		for len(g.dailyCloses) > 1 && g.dailyCloses[0].Date.Before(cutoff) {
@@ -338,6 +343,7 @@ func (g *GammaMonitor) PushPriceAt(now time.Time, price float64) {
 		g.lastTickDate = today
 	}
 	g.lastTickPrice = price
+	g.live = extendCandle(g.live, price)
 	g.sma9Side = SMA9Side(price, smaOf(g.dailyCloses, 9), g.sma9BandPct(), g.sma9Side)
 }
 

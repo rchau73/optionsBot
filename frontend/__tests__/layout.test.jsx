@@ -65,8 +65,10 @@ describe("Scenario: Resizing the window resizes the panels", () => {
       { t: Date.parse("2026-10-08T12:00:00Z"), totalUsd: 10, realisedUsd: 0, bots: {} },
       { t: Date.parse("2026-10-08T12:00:05Z"), totalUsd: 12, realisedUsd: 0, bots: {} },
     ];
+    window.localStorage.setItem("monitor.pnl.range", "live");
     render(<PnlChart live={live} names={null} />);
     expect(classesOf(screen.getByLabelText("P&L, range live"))).toContain("h-[clamp(14rem,30vh,28rem)]");
+    window.localStorage.removeItem("monitor.pnl.range");
   });
 
   test("the coin P&L chart follows the window within a minimum and maximum", async () => {
@@ -80,7 +82,7 @@ describe("Scenario: Resizing the window resizes the panels", () => {
       }),
     });
     render(<CoinPnlChart names={["btc"]} units={{ btc: "BTC" }} />);
-    const chart = await screen.findByLabelText("P&L in BTC, range 1d");
+    const chart = await screen.findByLabelText("P&L in BTC, range 1w");
     expect(classesOf(chart)).toContain("h-[clamp(10rem,20vh,20rem)]");
   });
 

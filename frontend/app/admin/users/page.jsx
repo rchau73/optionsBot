@@ -1,5 +1,4 @@
 import Link from "next/link";
-import UserMenu from "@/components/UserMenu";
 import UsersAdmin from "@/components/UsersAdmin";
 import { viewer } from "@/lib/auth/viewer";
 
@@ -16,7 +15,6 @@ export default async function UsersPage() {
         <Link href="/" className="text-sm text-muted underline hover:text-inherit">
           ← Monitor
         </Link>
-        <UserMenu role={me?.role ?? null} />
       </header>
       <main className="mx-auto max-w-6xl p-4">
         {admin ? (

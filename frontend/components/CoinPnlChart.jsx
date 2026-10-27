@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import clsx from "clsx";
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { usePnlHistory } from "@/hooks/usePnlHistory";
+import { useStoredChoice } from "@/hooks/useStoredChoice";
 import { formatCoin, formatDateTime } from "@/lib/format";
-import { RANGES, tickLabel } from "./PnlChart";
+import { DEFAULT_RANGE, RANGES, tickLabel } from "./PnlChart";
 
 const COIN_RANGES = RANGES.filter(([key]) => key !== "live"); // stored history only
+export const COIN_RANGE_KEY = "monitor.pnl_coin.range";
 
 /** Legend and tooltip name of a coin series key. */
 export function coinSeriesName(key) {
@@ -21,7 +22,11 @@ export function coinSeriesName(key) {
  * coins differ, so each bot has its own chart (they cannot be summed).
  */
 export default function CoinPnlChart({ names, units = {} }) {
-  const [range, setRange] = useState("1d");
+  const [range, setRange] = useStoredChoice(
+    COIN_RANGE_KEY,
+    DEFAULT_RANGE,
+    COIN_RANGES.map(([key]) => key),
+  );
   const { perBot, error, loading } = usePnlHistory(names, range);
 
   return (

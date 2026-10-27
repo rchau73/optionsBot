@@ -114,8 +114,8 @@ func setPrice(f *strategyFixture, p float64) {
 // /api/status serves the view's SMA levels as "sma".
 func TestAPI_StatusServesSMALevels(t *testing.T) {
 	v := sampleView()
-	v.SMA = strategy.SMALevels{SMA9: 82756.2, SMA21: 83741.4, SwingHigh: 86206.5, SwingHighDate: "2026-10-04",
-		SwingLow: 82619.5, SwingLowDate: "2026-10-08", Price: 82500, Trend: "bear", Reason: strategy.TrendReasonBreakdown}
+	v.SMA = strategy.SMAView{SMALevels: strategy.SMALevels{SMA9: 82756.2, SMA21: 83741.4, SwingHigh: 86206.5, SwingHighDate: "2026-10-04",
+		SwingLow: 82619.5, SwingLowDate: "2026-10-08", Price: 82500, Trend: "bear", Reason: strategy.TrendReasonBreakdown}}
 	h := api.New(staticView{v}, orders.NewWriterLogger(io.Discard, 0)).Handler()
 
 	code, body := getJSON(t, h, "/api/status")

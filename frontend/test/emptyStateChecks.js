@@ -45,7 +45,7 @@ export function monitorPanels(src = fs.readFileSync(path.join(FRONTEND, "compone
   const storageKeys = [...src.matchAll(/storageKey="([^"]+)"/g)].map((m) => m[1]);
   const titles = [...src.matchAll(/<Panel\b[^>]*?\stitle="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
   // Blocks rendered outside a Panel, straight in <main> or the header.
-  const blocks = ["<Header", "<InvestorSummary", "<KpiStrip"].filter((tag) => src.includes(`${tag} `));
+  const blocks = ["<Header", "<BotDashboards", "<KpiStrip"].filter((tag) => src.includes(`${tag} `));
   return { storageKeys, titles, blocks };
 }
 

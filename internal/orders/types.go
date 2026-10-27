@@ -218,10 +218,15 @@ func OptionFee(feePerContract, optionPrice, qty float64) float64 {
 	return math.Min(feePerContract, 0.125*optionPrice) * qty
 }
 
-// DailyClose holds the closing price for a single UTC day.
+// DailyClose holds the closing price for a single UTC day, with the day's
+// open, high and low when known (0 = not known; the SMA trend reads only
+// Close, the monitor's regime chart draws the candle, #394).
 type DailyClose struct {
 	Date  time.Time
 	Close float64
+	Open  float64
+	High  float64
+	Low   float64
 }
 
 // Order is an outbound order request.

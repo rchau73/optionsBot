@@ -6,9 +6,11 @@ import { useId, useState } from "react";
 import Badge from "./Badge";
 import FirstDayPanel from "./FirstDayPanel";
 import { Signed } from "./InvestorSummary";
+import MonthBars from "./MonthBars";
+import RegimeChart from "./RegimeChart";
 import { formatCoin, formatDate, formatUSD, isNumber } from "@/lib/format";
-import { clockHM, coinOf, isFirstDay, monthBars, monthSoFar, moveSince, rangeBar, stateWords, warningChips, worstCaseLine } from "@/lib/overview";
-import { formatSignedPct, formatSignedUSD, toneOf } from "@/lib/summary";
+import { clockHM, coinOf, isFirstDay, monthSoFar, moveSince, rangeBar, stateWords, warningChips, worstCaseLine } from "@/lib/overview";
+import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 
 // The overview on a phone (#320, prototype screen 5, < 640 px): one bot at a
 // time with a coin switch, the month's result as the headline and four
@@ -41,6 +43,9 @@ export default function PhoneOverview({ bots, selected, onSelect, details = fals
         ) : (
           <>
             <Headline bot={bot} />
+            <Card title={`${coinOf(bot)} market regime`}>
+              <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
+            </Card>
             <HoldsCard summary={s} />
             <MakingCard summary={s} bot={bot.name} />
             <WorstCard summary={s} bot={bot.name} />
@@ -205,7 +210,6 @@ export function RangeBar({ bar }) {
 function MakingCard({ summary: s, bot }) {
   const coin = s.underlying;
   const m = s.income?.this_month;
-  const { bars, label } = monthBars(s.income);
   return (
     <Card title="Making or losing">
       <dl className="grid grid-cols-2 gap-2 text-base tabular-nums">
@@ -224,20 +228,7 @@ function MakingCard({ summary: s, bot }) {
           </dd>
         </div>
       </dl>
-      {bars.length ? (
-        <div role="img" aria-label={label} data-testid="month-bars" className="flex h-12 items-end gap-1">
-          {bars.map((b) => (
-            <div key={b.month} className="flex flex-1 flex-col items-center gap-0.5">
-              <div
-                data-loss={b.loss || undefined}
-                className={clsx("w-full rounded-sm", b.loss ? "hatch-loss border border-loss" : toneOf(b.value) === "profit" ? "bg-profit" : "bg-slate-700")}
-                style={{ height: `${Math.max(b.height, 2)}%` }}
-              />
-              <span className="text-[10px] leading-none text-muted">{b.label}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <MonthBars income={s.income} />
       <Link href={`/income?bot=${encodeURIComponent(bot)}`} className={LINK}>
         Month by month →
       </Link>

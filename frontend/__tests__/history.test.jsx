@@ -50,6 +50,7 @@ describe("PnlChart ranges", () => {
       ok: true,
       json: async () => ({ points: [] }),
     });
+    window.localStorage.setItem("monitor.pnl.range", "live");
     render(<PnlChart live={[]} names={["btc", "eth"]} />);
     expect(screen.getByText("Collecting data…")).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
@@ -59,6 +60,7 @@ describe("PnlChart ranges", () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(4));
     expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1w", expect.anything());
     expect(await screen.findByText("No history for this range yet.")).toBeInTheDocument();
+    window.localStorage.clear();
   });
 });
 
@@ -114,10 +116,67 @@ describe("coin P&L", () => {
       }),
     }));
     render(<CoinPnlChart names={["btc", "eth"]} units={{ btc: "BTC", eth: "ETH" }} />);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1d", expect.anything()));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1w", expect.anything()));
     expect(await screen.findByText("+0.0125 BTC")).toBeInTheDocument();
     expect(screen.getByText("ETH")).toBeInTheDocument();
     expect(screen.getByText("No history for this range yet.")).toBeInTheDocument(); // ETH has none
     expect(screen.queryByRole("tab", { name: "Live" })).toBeNull();
+  });
+});
+
+// #394 Scenario: P&L weekly by default.
+describe("Scenario: P&L weekly by default", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => {
+    window.localStorage.clear();
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ points: [] }) });
+  });
+  afterEach(() => {
+    global.fetch = realFetch;
+    window.localStorage.clear();
+  });
+
+  test("a browser that never chose a range opens both charts on 1w", async () => {
+    render(
+      <>
+        <PnlChart live={[]} names={["btc"]} />
+        <CoinPnlChart names={["btc"]} units={{ btc: "BTC" }} />
+      </>,
+    );
+    for (const list of ["P&L range", "Coin P&L range"]) {
+      const selected = screen.getByRole("tablist", { name: list }).querySelectorAll('[aria-selected="true"]');
+      expect([list, [...selected].map((t) => t.textContent)]).toEqual([list, ["1w"]]);
+    }
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1w", expect.anything()));
+    await loaded(2);
+  });
+
+  const loaded = (n) => waitFor(() => expect(screen.getAllByText("No history for this range yet.")).toHaveLength(n));
+
+  test("a range the person chose is remembered per browser, per chart", async () => {
+    const first = render(<PnlChart live={[]} names={["btc"]} />);
+    await loaded(1);
+    fireEvent.click(screen.getByRole("tab", { name: "1d" }));
+    expect(window.localStorage.getItem("monitor.pnl.range")).toBe("1d");
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/bots/btc/pnl/history?range=1d", expect.anything()));
+    await loaded(1);
+    first.unmount();
+    render(
+      <>
+        <PnlChart live={[]} names={["btc"]} />
+        <CoinPnlChart names={["btc"]} units={{ btc: "BTC" }} />
+      </>,
+    );
+    const sel = (name) => screen.getByRole("tablist", { name }).querySelector('[aria-selected="true"]').textContent;
+    expect(sel("P&L range")).toBe("1d");
+    expect(sel("Coin P&L range")).toBe("1w"); // its own choice
+    await loaded(2);
+  });
+
+  test("a stored range the chart does not offer falls back to 1w", async () => {
+    window.localStorage.setItem("monitor.pnl_coin.range", "live"); // the coin chart has no Live
+    render(<CoinPnlChart names={["btc"]} units={{ btc: "BTC" }} />);
+    expect(screen.getByRole("tablist", { name: "Coin P&L range" }).querySelector('[aria-selected="true"]').textContent).toBe("1w");
+    await loaded(1);
   });
 });
