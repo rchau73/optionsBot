@@ -24,8 +24,6 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export LC_ALL=C # awk prints 71.4, never 71,4, whatever the person's locale
 
-
-
 TOLERANCE="0.2"
 baseline="${COVER_BASELINE:-scripts/cover_baseline.txt}"
 pkg_baseline="${baseline%.txt}_packages.txt"
