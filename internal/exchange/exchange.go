@@ -1,10 +1,11 @@
 // Package exchange names what the bot asks of an exchange, so that a second
 // exchange can be added behind the same boundary without touching the
 // strategy (E8, #181). It holds interfaces only: today's Deribit types
-// satisfy them as they are (see deribit.go), and nothing in the bot depends
-// on this package yet — the strategy keeps its own consumer-defined
-// interfaces in internal/strategy/deps.go, which tests/exchange_test.go
-// checks are the same method sets as the ones below.
+// satisfy them as they are (see deribit.go) and are the only adapter. The
+// strategy depends on these interfaces (internal/strategy/deps.go names them,
+// #182); marketdata and account depend on the connection's parts in the
+// transport subpackage (marketdata cannot import this package: it names
+// marketdata.Instrument).
 //
 // The data types (orders.Order, orders.AccountSummary, marketdata.Instrument,
 // …) are the bot's own and stay where they are; an adapter for another
@@ -16,6 +17,7 @@ import (
 	"context"
 	"time"
 
+	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
@@ -110,9 +112,8 @@ type OpenInterest interface {
 // request/reply, subscriptions and their pushes, and failure reporting. It is
 // where rate-limit pools, priorities, retries and the circuit breaker live.
 type Transport interface {
-	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
-	Subscribe(ctx context.Context, channels []string) error
-	Notifications() <-chan gateway.JSONRPCResponse
+	transport.Caller
+	transport.Streamer
 	// Fatal reports that the connection gave up reconnecting.
 	Fatal() <-chan error
 	ConnStats() gateway.ConnStats

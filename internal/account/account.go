@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
 )
 
-// rpcCaller is the slice of the gateway the poller uses.
-type rpcCaller interface {
-	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
-}
+// rpcCaller is the slice of the exchange connection the poller uses (the
+// Deribit gateway in production).
+type rpcCaller = transport.Caller
 
 // Asset is the collateral and margin of one currency, as Deribit reports it.
 // Amounts are in that currency.
