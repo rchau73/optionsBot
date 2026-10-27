@@ -3,8 +3,19 @@
 // (both cookies are HttpOnly).
 import { SignJWT, jwtVerify } from "jose";
 
-export const ACCESS_COOKIE = "access_token";
-export const REFRESH_COOKIE = "refresh_token";
+/**
+ * The cookie names carry the environment (MONITOR_DEPLOYMENT, set by compose):
+ * a browser keeps cookies per host, not per port, so stable (127.0.0.1:3000)
+ * and mvp (:3100) shared one access_token and each sign-in signed the other
+ * environment out (#368). Without it (local runs, tests) the plain names.
+ */
+export function cookieNames(deployment = process.env.MONITOR_DEPLOYMENT) {
+  const env = String(deployment ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const suffix = env ? `_${env}` : "";
+  return { access: `access_token${suffix}`, refresh: `refresh_token${suffix}` };
+}
+export const ACCESS_COOKIE = cookieNames().access;
+export const REFRESH_COOKIE = cookieNames().refresh;
 export const ACCESS_TTL_SEC = 15 * 60;
 export const REFRESH_TTL_SEC = 14 * 24 * 3600;
 /** The refresh cookie is sent only to the auth routes (refresh, logout). */
