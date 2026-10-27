@@ -20,14 +20,14 @@ export const PANELS = {
   "monitor.summary": "<InvestorSummary",
   "monitor.kpi": "<KpiStrip",
   "monitor.panel.account": "Account & collateral (shared by all bots)",
-  "monitor.positions": "Open positions",
+  "monitor.panel.positions": "Open positions",
   "monitor.panel.held": "Missing legs: why repair holds them",
   "monitor.panel.others": "Not managed by the bot (still uses margin)",
   "monitor.panel.trades": "Trade history & profitability",
-  "monitor.activity": "Activity",
-  "monitor.pnl": "P&L (USD, all bots)",
-  "monitor.pnl_coin": "P&L in coin (per bot)",
-  "monitor.orders": "Working orders (placed, not filled yet)",
+  "monitor.panel.activity": "Activity",
+  "monitor.panel.pnl": "P&L (USD, all bots)",
+  "monitor.panel.pnl_coin": "P&L in coin (per bot)",
+  "monitor.panel.orders": "Working orders (placed, not filled yet)",
 };
 
 /** The sentence for a panel in a state (empty | loading | stale | error), or null. */

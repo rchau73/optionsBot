@@ -75,7 +75,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `entry_screen` | enum | `monitor`, `login` |
 | `screen` | enum | `monitor`, `login` |
 | `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
-| `panel` | enum | `account`, `held`, `others`, `trades` (the `monitor.panel.*` keys) |
+| `panel` | enum | `account`, `positions`, `held`, `others`, `trades`, `activity`, `pnl`, `pnl_coin`, `orders` (the `monitor.panel.*` keys) |
 | `open_ms` | duration | milliseconds, capped at 1 h |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |

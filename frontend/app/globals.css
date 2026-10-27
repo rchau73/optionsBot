@@ -22,6 +22,11 @@ body {
   color: #e2e8f0;
 }
 
+/* A loss mark that is not colour alone (month bars, #320): diagonal hatching. */
+.hatch-loss {
+  background-image: repeating-linear-gradient(45deg, var(--color-loss) 0 3px, transparent 3px 6px);
+}
+
 /* Brief highlight when a live value changes (the element is re-keyed by value). */
 @keyframes value-flash {
   from {

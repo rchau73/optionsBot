@@ -14,7 +14,17 @@ describe("empty states (#298)", () => {
   // Scenario: Every panel is covered
   test("every panel is covered: each panel key the monitor renders has empty, loading, stale and error", () => {
     const rendered = monitorPanels();
-    expect(rendered.storageKeys).toEqual(["monitor.panel.account", "monitor.panel.held", "monitor.panel.others", "monitor.panel.trades"]);
+    expect(rendered.storageKeys).toEqual([
+      "monitor.panel.account",
+      "monitor.panel.positions",
+      "monitor.panel.held",
+      "monitor.panel.others",
+      "monitor.panel.trades",
+      "monitor.panel.activity",
+      "monitor.panel.pnl",
+      "monitor.panel.pnl_coin",
+      "monitor.panel.orders",
+    ]);
     expect(rendered.titles).toEqual(expect.arrayContaining(["Open positions", "Activity", "P&L (USD, all bots)"]));
     expect(rendered.blocks).toEqual(["<Header", "<InvestorSummary", "<KpiStrip"]);
     expect(missingStates(emptyStates, PANELS, rendered)).toEqual([]);
@@ -33,9 +43,9 @@ describe("empty states (#298)", () => {
   });
 
   test("the examples the story names are covered", () => {
-    expect(emptyStateFor("monitor.positions", "empty")).toMatch(/no open strangle/i);
+    expect(emptyStateFor("monitor.panel.positions", "empty")).toMatch(/no open strangle/i);
     expect(emptyStateFor("monitor.panel.trades", "empty")).toMatch(/first close/i);
-    expect(emptyStateFor("monitor.pnl", "empty")).toMatch(/report interval/i);
+    expect(emptyStateFor("monitor.panel.pnl", "empty")).toMatch(/report interval/i);
     expect(emptyStateFor("monitor.panel.account", "error")).toMatch(/account not loaded/i);
     expect(emptyStateFor("monitor.header", "error")).toMatch(/not answering/i);
     expect(emptyStateFor("monitor.gex", "empty")).toMatch(/GEX not computed/i);
@@ -112,8 +122,8 @@ describe("emptyStateFor", () => {
 
   test("unknown panel or state → null, never a guess", () => {
     expect(emptyStateFor("monitor.nope", "empty")).toBeNull();
-    expect(emptyStateFor("monitor.positions", "source")).toBeNull();
-    expect(emptyStateFor("monitor.positions", "broken")).toBeNull();
+    expect(emptyStateFor("monitor.panel.positions", "source")).toBeNull();
+    expect(emptyStateFor("monitor.panel.positions", "broken")).toBeNull();
     expect(emptyStateFor(undefined, undefined)).toBeNull();
   });
 

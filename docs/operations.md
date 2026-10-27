@@ -107,6 +107,8 @@ It prints the two files written per bot and, on stderr, every input it could not
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
+Why each environment needs its own Deribit account, and what a bot does to an account it shares: [account-isolation.md](account-isolation.md).
+
 ## Live monitor
 
 Each environment also starts its **monitor** (stable <http://localhost:3000>, mvp <http://localhost:3100>, this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. The P&L chart's longer ranges (1h to all) read each bot's P&L history (`data/<underlying>/data/pnl_history.jsonl`), which survives restarts and rebuilds; delete it to start the history over. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
