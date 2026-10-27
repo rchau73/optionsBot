@@ -203,8 +203,8 @@ export async function fetchBotSummary(name, signal) {
 }
 
 /** Journal events after `since` (sequence number), oldest first. */
-export async function fetchBotEvents(name, since, signal) {
-  const { events } = await getJSON(`/api/bots/${encodeURIComponent(name)}/events?since=${since}&limit=200`, signal);
+export async function fetchBotEvents(name, since, signal, limit = 200) {
+  const { events } = await getJSON(`/api/bots/${encodeURIComponent(name)}/events?since=${since}&limit=${limit}`, signal);
   return events;
 }
 

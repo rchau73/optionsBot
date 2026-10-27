@@ -175,7 +175,8 @@ describe("Scenario: phone overview", () => {
     const last = screen.getByRole("region", { name: /Last action/ });
     expect(last).toHaveTextContent("Bought back the put: it kept most of its premium (take-profit)");
     expect(last).toHaveTextContent("BTC +2.0 % since · result +0.00200 BTC");
-    expect(within(last).getByRole("button", { name: /All actions, explained/ })).toBeInTheDocument();
+    // #385: the last-action card opens the Activity page.
+    expect(within(last).getByRole("link", { name: /All actions, explained/ })).toHaveAttribute("href", "/activity?bot=btc");
   });
 
   test("the menu opens the other views and Details", () => {
@@ -197,6 +198,16 @@ describe("Scenario: phone overview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     expect(screen.getByTestId("desktop-monitor")).not.toHaveClass("hidden");
+  });
+
+  test("Details (pro) from the menu bar shows the detail panels opened, whatever was saved (#385)", () => {
+    mockBots(twoBots());
+    window.localStorage.setItem("monitor.panel.positions", "0");
+    render(<Monitor role="user" details />);
+    expect(screen.getByTestId("desktop-monitor")).not.toHaveClass("hidden");
+    expect(screen.getByRole("button", { name: /Open positions/ })).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("details")).not.toBeNull();
+    window.localStorage.removeItem("monitor.panel.positions");
   });
 
   test("a warning is shown in the phone header and the headline", () => {

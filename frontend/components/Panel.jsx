@@ -39,12 +39,24 @@ const writeOpen = (key, open) => {
  * browser under `storageKey`. With `fill`, the body stretches to the panel's
  * height (e.g. its grid row), so a scrolling child can take the rest of it.
  */
-export default function Panel({ id, title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true, fill = false }) {
+export default function Panel({
+  id,
+  title,
+  right,
+  children,
+  className = "",
+  collapsible = false,
+  storageKey,
+  summary,
+  defaultOpen = true,
+  forceOpen = false, // open on arrival whatever was saved (the menu's Details (pro), #385); a click still folds it
+  fill = false,
+}) {
   const bodyId = useId();
   const [local, setLocal] = useState(null); // this session's choice when storage is unavailable
   const getSnapshot = useCallback(() => (collapsible && storageKey ? readOpen(storageKey) : null), [collapsible, storageKey]);
   const saved = useSyncExternalStore(subscribe, getSnapshot, () => null);
-  const open = local ?? (saved == null ? defaultOpen : saved === "1");
+  const open = local ?? (forceOpen || (saved == null ? defaultOpen : saved === "1"));
 
   const toggle = () => {
     setLocal(!open);
