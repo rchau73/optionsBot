@@ -66,9 +66,10 @@ export function upDownLine(s) {
   return `${up} month${up === 1 ? "" : "s"} up, ${down} down`;
 }
 
-/** "+1.2 % more BTC than holding", or the reason the % is unknown. */
+/** "+1.2 % more BTC than holding", "1.2 % less BTC than holding", or the reason the % is unknown. */
 export function returnLine(s, coin) {
   if (!isNumber(s?.return_pct)) return `% of the account unknown: ${s?.equity_note || "no balance recorded"}`;
+  if (Number(s.return_pct.toFixed(1)) < 0) return `${Math.abs(s.return_pct).toFixed(1)} % less ${coin} than holding`;
   return `${formatSignedPct(s.return_pct).replace("%", " %")} more ${coin} than holding`;
 }
 

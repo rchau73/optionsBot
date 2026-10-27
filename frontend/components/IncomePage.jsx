@@ -167,14 +167,14 @@ function Tiles({ income, unit, coin }) {
       </Tile>
       <Tile
         label="Worst month"
-        loss
+        loss={s?.worst_month?.coin < 0}
         sub={s?.worst_month ? [monthLabel(s.worst_month.month), worstMonthMove(s.worst_month, coin)].filter(Boolean).join(" · ") : "not yet: no month with a close"}
       >
         {isNumber(worst) ? amount(worst) : <span className="text-muted">not yet</span>}
       </Tile>
       <Tile
         label="Worst week"
-        loss
+        loss={ww?.coin < 0}
         sub={ww?.known ? `${formatDate(ww.start)} → ${formatDate(ww.end)} · ${worstWeekPct(ww)}${wwUSD ? " · in coin (P&L history)" : ""}` : "not yet: needs 7 days of P&L history"}
       >
         {ww?.known ? <Signed value={ww.coin}>{formatAmount(ww.coin, "coin", coin)}</Signed> : <span className="text-muted">not yet</span>}

@@ -456,14 +456,14 @@
     "long": "Realized P&L is booked when a leg is bought back: the premium received minus the buy-back price, its share of the opening fees and the closing fee. It does not change after the close.",
     "risk_income": "It is income (or loss) already earned; no more risk is attached to it.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["Realized P&L", "Result"]
+    "labels": ["Realized P&L", "Result", "This month"]
   },
   "unrealized p&l": {
     "short": "Profit or loss of open legs if they were bought back now at the mark, after opening fees.",
     "long": "Unrealized P&L is the premium received minus what it would cost to buy the open legs back at the current mark, minus the fees paid to open. It changes with every price move until the leg is closed.",
     "risk_income": "It can still change a lot: a profit on paper is not yet income.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["Unrealized P&L"]
+    "labels": ["Unrealized P&L", "Open now"]
   },
   "p&l %": {
     "short": "Unrealized P&L as a % of the premium received: +50 % is half the premium earned.",

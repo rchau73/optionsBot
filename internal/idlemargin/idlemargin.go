@@ -21,15 +21,15 @@ const (
 	RowOccupied       = "occupied"                  // open strangle (even one-legged) or pending entry
 	RowOccupiedCapped = "occupied_liquidity_cap"    // occupied, its entry or a top-up cut by the liquidity cap
 	RowFrozen         = "frozen"                    // vacant while entries were not allowed, whatever the skip
-	RowNoSkip         = "no_skip_logged"            // vacant, no skip journaled since it became vacant
-	RowNotMeasured    = "not_measured"              // bot down or no margin data: never under a reason
+	RowNoSkip         = orders.IdleNoSkip           // vacant, no skip journaled since it became vacant
+	RowNotMeasured    = orders.IdleNotMeasured      // bot down or no margin data: never under a reason
 	skipLiquidityCap  = "liquidity_cap"             // strategy.SkipLiquidityCap
 	qtyEpsilon        = 1e-9                        // a leg closed down to float noise is closed
 	pendingMaxAge     = history.MaxSampleGap        // an entry order outlives its 90 s timeout only if the bot stopped
-	bookSlotEmpty     = "slot_empty"                // some slot vacant
-	bookRebalanceWait = "rebalance_waiting"         // every slot occupied, a short top-up waiting for its retry
-	bookSizedSmall    = "sized_small_liquidity_cap" // every slot occupied, one sized down by the liquidity cap
-	bookFull          = "all_full"                  // every slot occupied, nothing capped or waiting
+	bookSlotEmpty     = orders.IdleSlotEmpty        // some slot vacant (the shared vocabulary, orders.Idle*)
+	bookRebalanceWait = orders.IdleRebalanceWaiting // every slot occupied, a short top-up waiting for its retry
+	bookSizedSmall    = orders.IdleSizedSmall       // every slot occupied, one sized down by the liquidity cap
+	bookFull          = orders.IdleAllFull          // every slot occupied, nothing capped or waiting
 )
 
 // BookStates are the book states of Report.Book, in print order.

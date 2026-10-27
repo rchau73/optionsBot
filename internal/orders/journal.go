@@ -51,6 +51,22 @@ const (
 	RiskMMBreach        = "mm_breach"             // maintenance margin above max_mm_pct: reducing now
 	RiskIMOverLimit     = "im_over_limit"         // IM above the limit beyond the band, no rebalance due: alert only, no order (#166)
 	RiskIMOverLimitDone = "im_over_limit_cleared" // IM back at or under the limit: the episode ends
+	RiskIMUnderUse      = "im_under_use"          // entries allowed, IM under 60 % of the limit for the window: alert only, no order (#369)
+	RiskIMUnderUseDone  = "im_under_use_cleared"  // IM back at or over 60 % of the limit, or entries no longer allowed: the episode ends
+)
+
+// Causes of unused approved margin: the one vocabulary cmd/idlemargin
+// (internal/idlemargin) attributes idle time to and the im_under_use alert
+// names (#369). The alert names a vacant slot by its last skip reason (the
+// strategy's Skip* constants, as idlemargin's slot rows do) or IdleNoSkip;
+// the other values describe the book when no slot is vacant.
+const (
+	IdleSlotEmpty        = "slot_empty"                // some slot vacant (idlemargin's book state)
+	IdleNoSkip           = "no_skip_logged"            // a slot vacant with no skip journaled since it became vacant
+	IdleRebalanceWaiting = "rebalance_waiting"         // every slot occupied, a short top-up waiting for its retry
+	IdleSizedSmall       = "sized_small_liquidity_cap" // every slot occupied, one sized down by the liquidity cap
+	IdleAllFull          = "all_full"                  // every slot occupied, nothing capped or waiting
+	IdleNotMeasured      = "not_measured"              // bot down or no margin data
 )
 
 // RiskRecord is one margin-policy decision with the figures behind it.
@@ -74,10 +90,16 @@ type RiskRecord struct {
 	// last rebalance or confirmed limit change, so a reader sees whether it moved.
 	MarginBalance    float64 `json:"margin_balance,omitempty"`
 	RefMarginBalance float64 `json:"ref_margin_balance,omitempty"`
-	DVOL             float64 `json:"dvol"`
-	IVPercentile     float64 `json:"iv_percentile"`
-	Regime           string  `json:"regime"`
-	Frozen           bool    `json:"frozen"`
+	// On im_under_use records only (#369): IM ÷ limit in %, how long it has
+	// stayed under the target with entries allowed, and why (an Idle* value
+	// or a strategy Skip* reason).
+	UtilisationPct float64 `json:"utilisation_pct,omitempty"`
+	Minutes        float64 `json:"minutes,omitempty"`
+	Cause          string  `json:"cause,omitempty"`
+	DVOL           float64 `json:"dvol"`
+	IVPercentile   float64 `json:"iv_percentile"`
+	Regime         string  `json:"regime"`
+	Frozen         bool    `json:"frozen"`
 }
 
 // SlotRef identifies the (DTE, delta) strategy slot a record belongs to.

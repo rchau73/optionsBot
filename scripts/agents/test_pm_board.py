@@ -487,6 +487,29 @@ class TestPlanOneStory(unittest.TestCase):
         self.assertEqual([s["title"] for s in got], ["[E1] Something else entirely"])
 
 
+class TestDevTokenSavers(unittest.TestCase):
+    def test_a_busy_epic_waits_and_the_next_epic_is_picked(self):
+        """Scenario: a card of an epic being built waits; another epic's card is picked first."""
+        b = [card(320, "In progress", labels=["E3"], priority="P2"),
+             card(322, "Ready", labels=["E3"], priority="P1"),
+             card(279, "Ready", labels=["E2"], priority="P2")]
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [320])], [279])
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [])], [322, 279])
+
+    def test_cards_without_an_epic_never_wait(self):
+        b = [card(1, "In progress", priority="P2"), card(2, "Ready", priority="P2")]
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [1])], [2])
+
+    def test_model_per_card(self):
+        """Scenario: documents and research use the lighter model, code the default, DEV_MODEL wins."""
+        self.assertEqual(pm_board.dev_model(["E5", "enhancement"]), "sonnet")
+        self.assertEqual(pm_board.dev_model(["E1", "documentation"]), "sonnet")
+        self.assertEqual(pm_board.dev_model(["E1", "bug"]), "")
+        self.assertEqual(pm_board.dev_model(["E5"], explicit="opus"), "opus")
+        self.assertEqual(pm_board.dev_model(["E8"], light_epics="E8, E11"), "sonnet")
+        self.assertEqual(pm_board.dev_model(["E5"], light_model=""), "")
+
+
 class TestAnsweredAll(unittest.TestCase):
     def test_oldest_message_first(self):
         def t(n, at):

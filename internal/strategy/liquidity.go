@@ -70,11 +70,13 @@ func (s *Strategy) capToLiquidity(call, put *marketdata.Instrument, openCall, op
 		kind = "top-up"
 	}
 	capped, legs, known := s.liquidityLimit(call, put, openCall, openPut, qty, lot)
+	key := makeSlotKey(targetDTE, entryDelta)
 	var detail string
 	switch {
 	case !known:
 		detail = kind + " not sent: no mainnet open interest yet, the market's size is unknown"
 	case capped >= qty-qtyEpsilon:
+		delete(s.liqCapped, key)
 		return qty, nil
 	case capped < lot:
 		detail = fmt.Sprintf("%s of %g not sent: %g%% of mainnet open interest is under one lot of %g (%s)",
@@ -87,6 +89,7 @@ func (s *Strategy) capToLiquidity(call, put *marketdata.Instrument, openCall, op
 		"kind", kind, "target_dte", targetDTE, "entry_delta", entryDelta, "call", call.Name, "put", put.Name,
 		"margin_qty", qty, "capped_qty", capped, "cap_oi_pct", pct, "legs", strings.Join(legs, "; "))
 	sent := known && capped >= lot
+	s.liqCapped[key] = true // the slot's last order was cut: the im_under_use cause (underuse.go)
 	if sent || complement {
 		s.journal.LogSkipped(SkipLiquidityCap+": "+detail, s.eventContext(nil, slotRef(targetDTE, entryDelta)))
 	} else {

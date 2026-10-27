@@ -23,6 +23,7 @@
   "RebalanceBackoffAfter": 3,
   "RebalanceRetryMaxMinutes": 60,
   "RebalanceStartupBandPct": 1.5,
+  "IMUnderUseWindowMinutes": 360,
   "ChurnMaxRoundTrips": 3,
   "MarketRecordMinutes": 60,
   "ChurnWindowMinutes": 60,

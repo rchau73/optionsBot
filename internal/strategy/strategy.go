@@ -49,8 +49,9 @@ type Strategy struct {
 	history      PnLRecorder // may be nil
 	pnl          *pnlBook
 
-	lastSkip map[slotKey]string // last skip reason journaled per slot (decision loop only)
-	noQuote  map[string]bool    // held instruments already warned about missing quotes (decision loop only)
+	lastSkip  map[slotKey]string // last skip reason journaled per slot (decision loop only)
+	liqCapped map[slotKey]bool   // the slot's last entry or top-up was cut by the liquidity cap (decision loop only)
+	noQuote   map[string]bool    // held instruments already warned about missing quotes (decision loop only)
 	// Legs lost to a stop-loss, by strangle and type, and the last reason
 	// their repair was held (decision loop only). In memory: after a restart
 	// the freeze and regime conditions still apply, the cooldown does not.
@@ -100,6 +101,7 @@ type Strategy struct {
 	pass             rebalancePass
 	waitEntryNoted   bool      // a due rebalance waiting for a working entry was journaled (#97)
 	imOverSince      time.Time // an im_over_limit episode is open since then (zero: none; imalert.go, #166)
+	underUse         UnderUse  // the im_under_use window and episode (underuse.go, #369)
 	refBalance       float64   // margin balance at the last rebalance or confirmed limit change (0: none yet)
 	flattening       bool      // the kill switch is flattening: nothing re-arms the rebalance
 	pub              published // loop-owned state copied for View()
@@ -158,6 +160,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		history:          d.History,
 		pnl:              newPnLBook(),
 		lastSkip:         make(map[slotKey]string),
+		liqCapped:        make(map[slotKey]bool),
 		noQuote:          make(map[string]bool),
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
@@ -200,6 +203,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	if err := s.maybeOpenStrangles(ctx, gammaDec, m); err != nil {
 		slog.Error("initial strangle open failed", "err", err)
 	}
+	s.noteIMUnderUse(m, time.Now())
 	s.publish()
 
 	evalInterval := time.Duration(s.cfg.EvalIntervalMS) * time.Millisecond
@@ -329,6 +333,8 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	if err := s.maybeOpenStrangles(ctx, gammaDec, m); err != nil {
 		slog.Warn("maybeOpenStrangles error", "err", err)
 	}
+	// Alert only, after this cycle's skips are known (underuse.go, #369).
+	s.noteIMUnderUse(m, time.Now())
 }
 
 // trackPositions makes sure every held instrument has a ticker, whatever

@@ -4,6 +4,13 @@
 //
 //	go run ./cmd/monitor-demo                     # BTC on :8081
 //	go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082
+//	go run ./cmd/monitor-demo -scenario mixed     # a losing month among winning ones (#203)
+//
+// -scenario good|mixed|drawdown shapes the investor summary for design and
+// user tests: steady income, a losing month, or an open loss near its stop
+// with a worst case large next to the month's income. Without it the demo is
+// as before. A scenario reports deployment "demo" and version "scenario
+// <name>" in /api/status, so it is never mistaken for a track record.
 package main
 
 import (
@@ -33,12 +40,17 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8081", "listen address")
 	underlying := flag.String("underlying", "BTC", "BTC or ETH")
+	scenario := flag.String("scenario", "", "investor-summary scenario: good | mixed | drawdown (default: the usual demo)")
 	flag.Parse()
+	if !validScenario(*scenario) {
+		fmt.Fprintf(os.Stderr, "unknown -scenario %q: want good, mixed or drawdown\n", *scenario)
+		os.Exit(2)
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	sim := newSimulation(*underlying)
+	sim := newSimulation(*underlying, *scenario)
 	hist, err := demoHistory(*underlying, sim.spot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -48,8 +60,12 @@ func main() {
 	sim.history = hist
 	go sim.run(ctx)
 
-	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr)
-	if err := api.New(sim, sim.journal, api.WithPnLHistory(hist), api.WithAccount(sim)).ListenAndServe(ctx, *addr); err != nil {
+	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr, "scenario", *scenario)
+	opts := []api.Option{api.WithPnLHistory(hist), api.WithAccount(sim)}
+	if *scenario != "" {
+		opts = append(opts, api.WithDeployment("demo", "scenario "+*scenario))
+	}
+	if err := api.New(sim, sim.journal, opts...).ListenAndServe(ctx, *addr); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -71,7 +87,28 @@ type simulation struct {
 	started    time.Time
 	base       float64 // starting spot: the simulated SMAs and swings sit around it
 	trend      string  // last SMA trend, so a change is journaled once
+	scenario   string  // "" | good | mixed | drawdown
 }
+
+// The investor-summary scenarios (#203).
+const (
+	scenarioGood     = "good"     // steady monthly income
+	scenarioMixed    = "mixed"    // a losing month among winning ones
+	scenarioDrawdown = "drawdown" // an open loss near its stop, a large worst case
+)
+
+func validScenario(s string) bool {
+	switch s {
+	case "", scenarioGood, scenarioMixed, scenarioDrawdown:
+		return true
+	}
+	return false
+}
+
+// drawdownMarkMultiple pins the drawdown scenario's stressed put at this
+// multiple of its entry price: 2.6 of the 3× stop mark (premium + 2×
+// premium lost) is within 20 % of the stop.
+const drawdownMarkMultiple = 2.6
 
 // smaLevels simulates the SMA trend's levels around the starting spot and
 // reads the trend with the bot's own rule. Call with s.mu held.
@@ -150,36 +187,63 @@ type simLeg struct {
 	qty      float64
 	entry    float64
 	mark     float64
+	// pinned: the drawdown scenario holds this leg's mark at
+	// drawdownMarkMultiple × entry, near its stop.
+	pinned bool
 }
 
-func newSimulation(underlying string) *simulation {
+func newSimulation(underlying, scenario string) *simulation {
 	spot := 100000.0
 	if underlying == "ETH" {
 		spot = 3500
 	}
-	s := &simulation{underlying: underlying, spot: spot, base: spot, dvol: 52, journal: orders.NewWriterLogger(io.Discard, 0.05), started: time.Now()}
-	s.journal.Restore(demoTrades(spot))
+	s := &simulation{underlying: underlying, spot: spot, base: spot, dvol: 52, journal: orders.NewWriterLogger(io.Discard, 0.05), started: time.Now(), scenario: scenario}
+	s.journal.Restore(demoTrades(spot, scenario, time.Now()))
+	qty := 0.3
+	if scenario == scenarioDrawdown {
+		qty = 1.5 // a book large next to its income: the worst case dwarfs the month
+	}
 	for i, slot := range []orders.SlotRef{{DTE: 25, Delta: 0.16}, {DTE: 45, Delta: 0.16}, {DTE: 60, Delta: 0.18}} {
 		exp := time.Now().AddDate(0, 0, slot.DTE).Truncate(24 * time.Hour).Add(8 * time.Hour)
 		id := fmt.Sprintf("st-%d", i+1)
 		k := spot * (0.06 + float64(slot.DTE)/600)
 		s.legs = append(s.legs,
-			&simLeg{strangle: id, slot: slot, typ: "call", strike: roundStrike(spot+k, spot), expiry: exp, qty: 0.3, entry: 0.012, mark: 0.012},
-			&simLeg{strangle: id, slot: slot, typ: "put", strike: roundStrike(spot-k, spot), expiry: exp, qty: 0.3, entry: 0.014, mark: 0.014},
+			&simLeg{strangle: id, slot: slot, typ: "call", strike: roundStrike(spot+k, spot), expiry: exp, qty: qty, entry: 0.012, mark: 0.012},
+			&simLeg{strangle: id, slot: slot, typ: "put", strike: roundStrike(spot-k, spot), expiry: exp, qty: qty, entry: 0.014, mark: 0.014},
 		)
+	}
+	if scenario == scenarioDrawdown {
+		put := s.legs[1] // the 25-day put
+		put.pinned, put.mark = true, put.entry*drawdownMarkMultiple
 	}
 	return s
 }
 
 // demoTrades is six months of simulated closes (a few a week, mostly
 // take-profits, now and then a stop-loss), so /api/summary's monthly income
-// and /api/trades have history from the start.
-func demoTrades(spot float64) orders.Replay {
-	rp := orders.Replay{FirstAt: time.Now().AddDate(0, -6, 0)}
+// and /api/trades have history from the start. The scenarios change the
+// mix: good has no stop-loss, mixed and drawdown turn every close of the
+// month two months back into a stop-loss (a losing month), and drawdown
+// earns little this month.
+func demoTrades(spot float64, scenario string, now time.Time) orders.Replay {
+	rp := orders.Replay{FirstAt: now.AddDate(0, -6, 0)}
 	reasons := []string{"roi_target", "roi_target", "delta_drift", "roi_target", "stop_loss", "dte_rollout"}
-	for i, at := 0, rp.FirstAt; at.Before(time.Now().Add(-time.Hour)); i, at = i+1, at.Add(40*time.Hour) {
+	if scenario == scenarioGood {
+		reasons = []string{"roi_target", "roi_target", "delta_drift", "roi_target", "dte_rollout"}
+	}
+	u := now.UTC()
+	losingMonth := time.Date(u.Year(), u.Month()-2, 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+	thisMonth := u.Format("2006-01")
+	for i, at := 0, rp.FirstAt; at.Before(now.Add(-time.Hour)); i, at = i+1, at.Add(40*time.Hour) {
 		reason := reasons[i%len(reasons)]
+		month := at.UTC().Format("2006-01")
+		if (scenario == scenarioMixed || scenario == scenarioDrawdown) && month == losingMonth {
+			reason = "stop_loss"
+		}
 		pnl := 0.002 + rand.Float64()*0.002
+		if scenario == scenarioDrawdown && month == thisMonth {
+			pnl = 0.0003 + rand.Float64()*0.0002 // a thin month so far
+		}
 		detail := ""
 		if reason == "stop_loss" {
 			pnl, detail = -0.006-rand.Float64()*0.004, "stop-loss: loss 2.05× the premium ≥ 2.00× (demo)"
@@ -225,6 +289,9 @@ func (s *simulation) step() {
 			moneyness = -moneyness
 		}
 		l.mark = math.Max(0.0005, l.entry*math.Exp(moneyness*12)*(1+rand.NormFloat64()*0.01))
+		if l.pinned {
+			l.mark = l.entry * drawdownMarkMultiple * (1 + rand.NormFloat64()*0.005)
+		}
 	}
 	if s.history != nil {
 		unrealised := 0.0
