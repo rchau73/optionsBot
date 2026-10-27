@@ -82,6 +82,7 @@ The `option-bot-specialist` skill owns trading ideas, risk limits, backtest verd
 ## React checklist (for the dashboard)
 
 - Functional components + hooks only — no class components.
+- **Pages and the menu:** the menu (`lib/menu.js`, every page's menu bar, #385): a change that adds, renames or removes a page updates the menu in the same PR — or lists the page, with its reason, in the menu test's allow-list (product owner, 2026-10-27). The menu test (`__tests__/menu.test.js`) fails on a page that is in neither; never silence it by widening the allow-list without a reason.
 - New UI goes in its own file under `frontend/components/`. Keep `app/**/page.jsx` and `layout.jsx` thin; if a page grows logic, pull it into a component or hook.
 - **Server vs Client Components:** default to Server Components; add `"use client"` only where you need state, effects, event handlers or browser APIs (polling hooks, charts, sortable tables). Keep the client boundary as low in the tree as possible.
 - Separate data-fetching/state logic (a small hook) from presentation (Tailwind-styled JSX) where it's a natural seam — don't force it where the component is already trivial.
