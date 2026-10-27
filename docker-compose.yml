@@ -66,6 +66,9 @@ services:
       - ANALYTICS_SALT=${ANALYTICS_SALT:-}
       - MONITOR_DEPLOYMENT=${OPTIONSBOT_ENV}
       - MONITOR_VERSION=${BOT_VERSION:-}
+      # Help assistant (#191, frontend/README.md "Assistant"): off while empty;
+      # its review log is assistant.jsonl beside auth.db.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       # Users and sessions (auth.db), analytics events (events.jsonl). A named
       # volume: one per environment, as the compose project name includes OPTIONSBOT_ENV.

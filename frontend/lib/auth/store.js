@@ -49,6 +49,19 @@ CREATE TABLE IF NOT EXISTS reset_tokens (
   used_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS reset_tokens_user ON reset_tokens(user_id);
+-- In-product survey answers (#363, docs/product/analytics/surveys.md §5): the
+-- codes (a JSON object of the survey's allow-listed fields) and the optional
+-- free text — personal data, kept here beside the user, deleted with them and
+-- never sent in an event or a log line. created_at in Unix seconds.
+CREATE TABLE IF NOT EXISTS survey_answers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  survey_id  TEXT NOT NULL,
+  codes      TEXT NOT NULL,
+  free_text  TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS survey_answers_user ON survey_answers(user_id);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -107,7 +120,10 @@ export class AuthStore {
       ["last_sign_in_at", "INTEGER"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
-    return added.length > 0;
+    // Answers whose user is gone: a deletion whose survey step failed (AuthService.deleteUser) finishes here.
+    this.db.run("DELETE FROM survey_answers WHERE user_id NOT IN (SELECT id FROM users)");
+    const orphans = this.db.getRowsModified();
+    return added.length > 0 || orphans > 0;
   }
 
   save() {
@@ -212,6 +228,43 @@ export class AuthStore {
   setAnalyticsConsent(id, consent, nowMs = Date.now()) {
     const v = consent === true ? 1 : consent === false ? 0 : null;
     this.write("UPDATE users SET analytics_consent = ?, updated_at = ? WHERE id = ?", [v, Math.floor(nowMs / 1000), id]);
+  }
+
+  /** Stores one survey answer (validated by lib/analytics/surveys.js) → its row id. */
+  addSurveyAnswer(userId, { surveyId, codes, text = null }, nowMs = Date.now()) {
+    this.db.run("INSERT INTO survey_answers (user_id, survey_id, codes, free_text, created_at) VALUES (?, ?, ?, ?, ?)", [
+      userId,
+      surveyId,
+      JSON.stringify(codes),
+      text,
+      Math.floor(nowMs / 1000),
+    ]);
+    const id = this.one("SELECT last_insert_rowid() AS id").id;
+    this.save();
+    return id;
+  }
+
+  /** Removes one answer (its event could not be stored). */
+  deleteSurveyAnswer(id) {
+    this.write("DELETE FROM survey_answers WHERE id = ?", [id]);
+  }
+
+  /** A user's survey answers, oldest first: { survey_id, codes, text, created_at (ISO) } — for an access request's export. */
+  surveyAnswers(userId) {
+    return this.all("SELECT survey_id, codes, free_text, created_at FROM survey_answers WHERE user_id = ? ORDER BY id", [userId]).map((r) => ({
+      survey_id: r.survey_id,
+      codes: JSON.parse(r.codes),
+      text: r.free_text ?? null,
+      created_at: new Date(r.created_at * 1000).toISOString(),
+    }));
+  }
+
+  /** Deletes every survey answer of a user → how many. */
+  deleteSurveyAnswers(userId) {
+    this.db.run("DELETE FROM survey_answers WHERE user_id = ?", [userId]);
+    const removed = this.db.getRowsModified();
+    this.save();
+    return removed;
   }
 
   /** Deletes a user, every session of theirs and their reset links. */

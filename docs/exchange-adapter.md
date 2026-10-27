@@ -228,7 +228,7 @@ var (
 )
 ```
 
-**Types that change** (none in this PR): `Exchange` and `BookSummary` are new; `GetDailyCloses` moves from the account reader to market data (`Candles`); `Capabilities` is new and Deribit's value is all `true`. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` keeps its consumer-defined interfaces (`tests/exchange_test.go` keeps them equal to the boundary).
+**Types that change** (none in this PR): `Exchange` and `BookSummary` are new; `GetDailyCloses` moves from the account reader to market data (`Candles`); `Capabilities` is new and Deribit's value is all `true`. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` names the boundary's interfaces as aliases (#182: `Exchange = exchange.Trading`, `MarketData = exchange.MarketData`, `OISource = exchange.OpenInterest`), so a change here is a change to what the strategy asks.
 
 **Deribit's capabilities**: all true. A second exchange's row of this table is the E8 feasibility brief's job (#183).
 

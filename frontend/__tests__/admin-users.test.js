@@ -220,12 +220,12 @@ describe("role change, sign out everywhere and delete", () => {
 
     const del = await remove(req(`/api/admin/users/${bob.id}`, { method: "DELETE", cookie }), ctx(bob.id));
     expect(del.status).toBe(200);
-    expect(await del.json()).toEqual({ events_removed: 0 });
+    expect(await del.json()).toEqual({ events_removed: 0, survey_answers_removed: 0 });
     expect(auth.store.userById(bob.id)).toBeNull();
     expect((await remove(req(`/api/admin/users/${bob.id}`, { method: "DELETE", cookie }), ctx(bob.id))).status).toBe(404);
 
     const changes = audit.map((e) => e.action).filter((a) => a !== "signed_in");
-    expect(changes).toEqual(["user_created", "role_changed", "signed_out_everywhere", "user_deleted", "events_deleted"]);
+    expect(changes).toEqual(["user_created", "role_changed", "signed_out_everywhere", "user_deleted", "events_deleted", "survey_answers_deleted"]);
     expect(audit.filter((e) => e.action !== "signed_in").every((e) => e.username === "admin")).toBe(true);
   });
 });

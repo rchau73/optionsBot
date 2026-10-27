@@ -22,7 +22,8 @@ async function run(action, user, { role, password }) {
       return { tone: "good", text: `${user.username} is signed out everywhere.` };
     case "delete": {
       const r = await deleteUser(user.id);
-      if (r.events_error) return { tone: "warn", text: `${user.username} is deleted, but: ${r.events_error}` };
+      const errors = [r.events_error, r.survey_answers_error].filter(Boolean);
+      if (errors.length) return { tone: "warn", text: `${user.username} is deleted, but: ${errors.join("; ")}` };
       return { tone: "good", text: `${user.username} is deleted (${r.events_removed ?? 0} analytics events removed).` };
     }
     default:

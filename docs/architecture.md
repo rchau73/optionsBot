@@ -41,7 +41,7 @@ Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshot
 | `internal/risk` | Margin policy, pure: IM limit by DVOL IV-percentile band, negative-gamma override, changes confirmed on daily closes, fixed MM limit | — |
 | `internal/strategy` | Decision loop: entry, fill tracking, exits, margin policy, repair, reconcile, rebalance, kill switch; pure rule functions | orders, marketdata, gex, risk (interfaces) |
 | `internal/orders` | `Executor` (Deribit order/account calls), `StateManager` (in-memory book), order journal | gateway (interface) |
-| `internal/exchange` | Exchange boundary for E8: interfaces only (orders, account, portfolio simulation, option chain, vol index, open interest, transport, naming, rate-limit pools, fees) with compile-time checks that the Deribit types satisfy them; nothing depends on it yet ([§15](#15-exchange-adapters)) | gateway, marketdata, orders, gex (types) |
+| `internal/exchange` | Exchange boundary for E8: interfaces only (orders, account, portfolio simulation, option chain, vol index, open interest, transport, naming, rate-limit pools, fees) with compile-time checks that the Deribit types satisfy them; the strategy's exchange, market-data and open-interest dependencies are its interfaces, and marketdata/account use its `transport` subpackage ([§15](#15-exchange-adapters)) | gateway, marketdata, orders, gex (types) |
 | `internal/hedge` | Writes `hedge_report.json`; never trades | — |
 | `internal/history` | P&L history (`data/pnl_history.jsonl`, bucketed range queries) and gamma regime per UTC daily close (`data/regime_history.jsonl`, which Deribit does not keep); append-only, reloaded on start, corrupt lines skipped | — |
 | `internal/account` | Polls `private/get_account_summaries` (fallback: per-currency `get_account_summary`) every `BOT_ACCOUNT_POLL_SEC` and caches collateral per asset, margin model and IM/MM — Deribit's figures, plus IM %/MM % of margin balance | gateway (interface) |
@@ -51,7 +51,7 @@ Setting names in `code` such as `eval_interval_ms` or `gex_shed_confirm_snapshot
 | `internal/backtest` | CSV feed, simulated executor, day-loop engine, metrics, sweep, walk-forward | strategy (pure functions), orders |
 | `internal/logger` | `slog` JSON to stdout + `bot.log` | — |
 
-`internal/strategy/deps.go` lists every interface the strategy consumes (`OrderPlacer`, `OrderTracker`, `AccountReader`, `MarketData`, `TradeJournal`, `HedgeReporter`, `GEXSource`) and the `Deps` struct `main` fills in.
+`internal/strategy/deps.go` lists every interface the strategy consumes (`Exchange` and `MarketData`, `OISource` — aliases of `internal/exchange`'s `Trading`, `MarketData`, `OpenInterest` — and `TradeJournal`, `HedgeReporter`, `GEXSource`) and the `Deps` struct `main` fills in.
 
 ## 3. Concurrency model
 
@@ -202,7 +202,7 @@ See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 
 ## 15. Exchange adapters
 
-The bot trades on Deribit only. E8 (PRD "Multi-customer, multi-account, multi-exchange") adds exchanges behind one boundary, so that a new exchange does not change the strategy. `internal/exchange` (#181) names that boundary: **interfaces only**, no behaviour. Today's Deribit types satisfy them as they are (compile-time checks in `internal/exchange/deribit.go`), and nothing depends on the package yet. The strategy keeps its consumer-defined interfaces in `internal/strategy/deps.go`, and `tests/exchange_test.go` checks that they and the boundary have the same method sets (assignable both ways), so the two cannot drift. A second exchange is an adapter that satisfies these interfaces and converts to the bot's own types (`orders.Order`, `orders.AccountSummary`, `marketdata.Instrument`, …). Moving the Deribit code behind an adapter is a later step.
+The bot trades on Deribit only. E8 (PRD "Multi-customer, multi-account, multi-exchange") adds exchanges behind one boundary, so that a new exchange does not change the strategy. `internal/exchange` (#181) names that boundary: **interfaces only**, no behaviour. Today's Deribit types satisfy them as they are (compile-time checks in `internal/exchange/deribit.go`) and are the only adapter. Since #182 the strategy depends on the boundary itself: `internal/strategy/deps.go` names `Exchange = exchange.Trading`, `MarketData = exchange.MarketData` and `OISource = exchange.OpenInterest` (type aliases, so there is one definition), and `tests/exchange_test.go` checks that `Deps` carries exactly those types. `marketdata` and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; `exchange.Transport` is built from them) — a subpackage because `marketdata` cannot import `internal/exchange`, which names `marketdata.Instrument`. A second exchange is an adapter that satisfies these interfaces and converts to the bot's own types (`orders.Order`, `orders.AccountSummary`, `marketdata.Instrument`, …). Moving the Deribit code behind an adapter is a later step.
 
 What the strategy asks of an exchange, and the Deribit call behind each:
 

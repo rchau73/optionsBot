@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"optionsbot/internal/exchange"
+	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
@@ -12,20 +13,55 @@ import (
 	"optionsbot/internal/strategy"
 )
 
-// The exchange boundary (#181) must describe exactly what the strategy asks:
-// each pair below is assignable both ways, so the method sets are equal.
-// A method added to the strategy's Deps without the boundary (or the other
-// way round) fails the build.
-var (
-	_ strategy.Exchange = exchange.Trading(nil)
-	_ exchange.Trading  = strategy.Exchange(nil)
+// Scenario: pure refactor (#182) — the strategy depends on the exchange
+// boundary itself, not a copy of it: the Deps fields that reach the exchange
+// have exactly the internal/exchange interface types (identical types, not
+// merely equal method sets), and Deribit's types are what main wires into them.
+// The behaviour half of the scenario is every other test in this package,
+// unchanged by the refactor.
+func TestExchange_PureRefactor_StrategyDependsOnTheBoundary(t *testing.T) {
+	deps := reflect.TypeOf(strategy.Deps{})
+	for field, want := range map[string]reflect.Type{
+		"Exchange": reflect.TypeOf((*exchange.Trading)(nil)).Elem(),
+		"Market":   reflect.TypeOf((*exchange.MarketData)(nil)).Elem(),
+		"OI":       reflect.TypeOf((*exchange.OpenInterest)(nil)).Elem(),
+	} {
+		f, ok := deps.FieldByName(field)
+		if !ok {
+			t.Errorf("strategy.Deps has no field %s", field)
+			continue
+		}
+		if f.Type != want {
+			t.Errorf("strategy.Deps.%s is %v, want %v", field, f.Type, want)
+		}
+	}
 
-	_ strategy.MarketData = exchange.MarketData(nil)
-	_ exchange.MarketData = strategy.MarketData(nil)
+	// Deribit is the only adapter: main wires these into those fields.
+	_ = strategy.Deps{
+		Exchange: (*orders.Executor)(nil),
+		Market:   (*marketdata.Manager)(nil),
+		OI:       (*gex.Manager)(nil),
+	}
+}
 
-	_ strategy.OISource     = exchange.OpenInterest(nil)
-	_ exchange.OpenInterest = strategy.OISource(nil)
-)
+// Scenario: pure refactor (#182) — marketdata and account read the exchange
+// connection through internal/exchange/transport, which the Deribit gateway
+// implements, and exchange.Transport is built from the same parts.
+func TestExchange_TransportParts(t *testing.T) {
+	gw := reflect.TypeOf((*gateway.Gateway)(nil))
+	tr := reflect.TypeOf((*exchange.Transport)(nil)).Elem()
+	for _, iface := range []reflect.Type{
+		reflect.TypeOf((*transport.Caller)(nil)).Elem(),
+		reflect.TypeOf((*transport.Streamer)(nil)).Elem(),
+	} {
+		if !gw.Implements(iface) {
+			t.Errorf("gateway.Gateway does not implement transport.%s", iface.Name())
+		}
+		if !tr.Implements(iface) {
+			t.Errorf("exchange.Transport does not include transport.%s", iface.Name())
+		}
+	}
+}
 
 // Scenario: Deribit satisfies the interfaces.
 // internal/exchange/deribit.go holds the compile-time checks; this test

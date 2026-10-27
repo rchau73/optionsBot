@@ -59,6 +59,14 @@ describe("Users page", () => {
     expect(sent()).toEqual([["/api/admin/users/2", expect.objectContaining({ method: "DELETE" })]]);
   });
 
+  test("a deletion whose survey answers could not be removed says so (#363)", async () => {
+    mockFetch(reply(200, { events_removed: 1, survey_answers_error: "the user is deleted but their survey answers are not (disk full): the monitor deletes them at its next start" }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("bob is deleted, but: the user is deleted but their survey answers are not (disk full)");
+  });
+
   test("a role change asks first and sends PATCH with the new role; the server's refusal is shown", async () => {
     mockFetch(reply(409, { error: "the last admin cannot be removed or demoted: there must always be an admin" }));
     render(<UsersAdmin me="admin" />);

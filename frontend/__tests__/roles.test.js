@@ -164,7 +164,7 @@ describe("Scenario: there is always an admin", () => {
     expect(auth.changeRole(admin, admin.id, "user")).toMatchObject({ ok: false, status: 409 });
     expect(auth.changeRole(admin, other.id, "root")).toMatchObject({ ok: false, status: 400 });
     expect(auth.changeRole(admin, 999, "user")).toMatchObject({ ok: false, status: 404 });
-    expect(auth.deleteUser(admin, other.id)).toEqual({ ok: true, events_removed: 0 });
+    expect(auth.deleteUser(admin, other.id)).toEqual({ ok: true, events_removed: 0, survey_answers_removed: 0 });
   });
 });
 

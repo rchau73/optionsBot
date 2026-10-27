@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Header from "./Header";
 import PhoneOverview from "./PhoneOverview";
 import InvestorSummary from "./InvestorSummary";
@@ -33,15 +33,26 @@ const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "s
  * and for a user the detail panels start folded (#288; a choice saved in this browser wins).
  * On a phone (< 640 px) the overview shows one bot (`bot`, ?bot=) with a coin switch (#320); its menu's
  * Details shows the full monitor below.
+ * details (?view=details, the menu bar's "Details (pro)", #385) shows the detail panels, opened, and scrolls to them.
  */
-export default function Monitor({ role = null, bot = null }) {
+export default function Monitor({ role = null, bot = null, details = false }) {
   const { names, bots, feed, history, trades, error, pollMs, polledAt } = useMonitor();
   const detailsOpen = roleAtLeast(role, "manager");
   const panelsOpen = role !== "user";
+  const fold = { defaultOpen: panelsOpen, forceOpen: details };
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
   const [filters, setFilters] = useState(NO_FILTERS);
   const [phoneBot, setPhoneBot] = useState(bot);
-  const [phoneDetails, setPhoneDetails] = useState(false);
+  const [phoneDetails, setPhoneDetails] = useState(details);
+  // A later "Details (pro)" on this page (client navigation) opens them too.
+  const [seenDetails, setSeenDetails] = useState(details);
+  if (details !== seenDetails) {
+    setSeenDetails(details);
+    if (details) setPhoneDetails(true);
+  }
+  useEffect(() => {
+    if (details) requestAnimationFrame(() => document.getElementById("details")?.scrollIntoView?.());
+  }, [details]);
 
   const selectPhoneBot = (name) => {
     setPhoneBot(name);
@@ -81,11 +92,13 @@ export default function Monitor({ role = null, bot = null }) {
             </div>
           ) : null}
           <InvestorSummary bots={bots} />
-          <KpiStrip kpi={kpi} />
+          <div id="details" className="scroll-mt-3">
+            <KpiStrip kpi={kpi} />
+          </div>
           <Panel
             title="Account & collateral (shared by all bots)"
             collapsible
-            defaultOpen={panelsOpen}
+            {...fold}
             storageKey="monitor.panel.account"
             summary={<AccountSummary account={account} risk={risk} />}
           >
@@ -94,7 +107,7 @@ export default function Monitor({ role = null, bot = null }) {
           <Panel
             title="Open positions"
             collapsible
-            defaultOpen={panelsOpen}
+            {...fold}
             storageKey="monitor.panel.positions"
             summary={positionsSummary(bots)}
             right={<Filters filters={filters} options={options} onChange={setFilters} />}
@@ -104,7 +117,7 @@ export default function Monitor({ role = null, bot = null }) {
           <Panel
             title="Missing legs: why repair holds them"
             collapsible
-            defaultOpen={panelsOpen}
+            {...fold}
             storageKey="monitor.panel.held"
             summary={heldSummary(bots)}
           >
@@ -113,7 +126,7 @@ export default function Monitor({ role = null, bot = null }) {
           <Panel
             title="Not managed by the bot (still uses margin)"
             collapsible
-            defaultOpen={panelsOpen}
+            {...fold}
             storageKey="monitor.panel.others"
             summary={otherPositionsSummary(others)}
           >
@@ -122,7 +135,7 @@ export default function Monitor({ role = null, bot = null }) {
           <Panel
             title="Trade history & profitability"
             collapsible
-            defaultOpen={panelsOpen}
+            {...fold}
             storageKey="monitor.panel.trades"
             summary={tradeHistorySummary(allTrades)}
           >
@@ -135,23 +148,23 @@ export default function Monitor({ role = null, bot = null }) {
               className="lg:col-span-2"
               fill
               collapsible
-              defaultOpen={panelsOpen}
+              {...fold}
               storageKey="monitor.panel.activity"
               summary={activitySummary(feed)}
             >
               <ActivityFeed feed={feed} detailsOpen={detailsOpen} />
             </Panel>
             <div className="space-y-3">
-              <Panel title="P&L (USD, all bots)" collapsible defaultOpen={panelsOpen} storageKey="monitor.panel.pnl" summary="chart, all bots">
+              <Panel title="P&L (USD, all bots)" collapsible {...fold} storageKey="monitor.panel.pnl" summary="chart, all bots">
                 <PnlChart live={history} names={names} />
               </Panel>
-              <Panel title="P&L in coin (per bot)" collapsible defaultOpen={panelsOpen} storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
+              <Panel title="P&L in coin (per bot)" collapsible {...fold} storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
                 <CoinPnlChart names={names} units={units} />
               </Panel>
               <Panel
                 title="Working orders (placed, not filled yet)"
                 collapsible
-                defaultOpen={panelsOpen}
+                {...fold}
                 storageKey="monitor.panel.orders"
                 summary={ordersSummary(bots)}
               >

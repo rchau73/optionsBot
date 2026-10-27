@@ -1,6 +1,6 @@
 # In-product surveys (E13)
 
-**Status:** content and data rules (#251, #297). Nothing is on screen yet: the survey cards and the exit step wait for E13's prototype. The events they send are already in the event plan (`event-plan.md` §2 and §4) and the collector's allow-list (`frontend/lib/analytics/plan.js`), so the collector accepts them. Everything else waits for a build story. **No survey ships before the legal review in §6.**
+**Status:** content and data rules (#251, #297). Nothing is on screen yet: the survey cards and the exit step wait for E13's prototype. The events they send are already in the event plan (`event-plan.md` §2 and §4) and the collector's allow-list (`frontend/lib/analytics/plan.js`), so the collector accepts them. The server side is built (#363): `POST /api/survey` stores an answer's codes and free text in `auth.db` beside the user and sends the codes-only event (§5). The screens wait for E13's prototype. **No survey ships before the legal review in §6.**
 
 **Rule in one line:** every reason a person stays or leaves is recorded as a **code**, so the weekly report can count it. A survey never asks about amounts. It is never timed to flatter the score. Leaving is never delayed by a question.
 
@@ -70,7 +70,7 @@ These are the "why" choice questions tied to E3's four investor answers: what it
 
 The exit question shows the exit codes only, never the promoter codes.
 
-**Events:** `survey_shown {survey_id: exit}`; `survey_answered {survey_id: exit, reason_code}`; `survey_dismissed {survey_id: exit}` on Skip or close. These events are sent only for a person who said yes to analytics. A person who said no still sees the question; their coded reason is not stored until §6 settles how (counsel question C3).
+**Events:** `survey_shown {survey_id: exit}`; `survey_answered {survey_id: exit, reason_code}`; `survey_dismissed {survey_id: exit}` on Skip or close. These events are sent only for a person who said yes to analytics. A person who said no still sees the question; their coded reason is not stored until §6 settles how (counsel question C3): `POST /api/survey` answers 403 for them and stores nothing, which the screen ignores (leaving goes ahead).
 
 **Open point (account deletion):** deleting a user also deletes all their events in the same step (`AuthService.deleteUser`, event plan §5). As built today, an exit answer from a deleted account is therefore deleted with it, and so is its free text. The proposal for the build story, pending counsel (C4): the deletion step adds one to an anonymous weekly counter `(ISO week, reason_code)`, with no `user_id`, no session and no time finer than the week, and then deletes the user's events and text as now. Until then, only a bot switched off for good (the account stays) keeps its exit answer.
 
@@ -105,9 +105,11 @@ The collector checks each property on its own. It does not refuse a promoter cod
 
 Every one is an enum: `survey_id` (`nps`, `answers`, `exit`), `score` (the strings `0` to `10`), `reason_code` (§4), and `came_for` and `hardest_to_find` (`holding`, `income`, `worst_case`, `last_action`, `none`). None can hold an amount, a secret or free text. `tests/event_plan_test.go` and `frontend/__tests__/events-plan.test.js` check this against the plan, and `tests/surveys_doc_test.go` checks this file against the plan. An event with any other property, or a value outside its enum, is refused whole (400, nothing stored).
 
-**In `auth.db`, beside the user** (not built yet; the build story adds it):
-- A survey's last-shown date, per survey: the frequency caps of §1–§3.
-- The free text of NPS step 3 and the exit `other` box, in a `survey_texts` table: the user's row id, `survey_id`, the ISO week, and the text (≤ 500 characters). Never in an event or a log line. Deleted with the user in the same step. Read only by admins, in the weekly review.
+**In `auth.db`, beside the user** (as built, #363):
+- Each answer in the `survey_answers` table: the user's row id, `survey_id`, the codes (JSON of the survey's fields above), the free text of NPS step 3 or the exit `other` box (`free_text`, ≤ 500 characters, optional) and `created_at` (Unix seconds). Written by `POST /api/survey` (`frontend/README.md` "Analytics"), which checks the survey id, every code and the text against this file (`frontend/lib/analytics/surveys.js`: each survey's own codes — an exit answer with a promoter code is refused here, unlike the collector — and text only where §1 or §3 has a box) and refuses anything else whole (400, nothing stored). The `survey_answered` event goes through the collector's allow-list with the codes only. The text is never in an event or a log line.
+- **Consent:** the route takes an answer only from a person who said yes to analytics, for every survey: §1 and §2 are shown only then, and §3 stores no exit reason of a person who said no until counsel answers C3.
+- Deleted with the user in the same step (`AuthService.deleteUser`: `survey_answers_deleted`, or an ERROR log and `survey_answers_delete_failed`; rows left without a user are deleted when the monitor next starts). Exported with the person's events on an access request (`analytics-user.mjs export`, counts printed only). `cmd/usage` reads events only and never this table (`tests/usage_free_text_test.go`). Read by admins only, in the weekly review.
+- Not built yet: a survey's last-shown date, per survey, for the frequency caps of §1–§3 (the screens' story).
 
 **Never stored:** an amount, a position, the P&L sign used by the NPS timing rule, the text typed in any other field, the time spent on a question.
 
@@ -122,7 +124,7 @@ Every one is an enum: `survey_id` (`nps`, `answers`, `exit`), `score` (the strin
 **Retention and deletion** (proposal):
 - Coded answers are analytics events, so the event plan's 13 months apply (`EVENT_RETENTION_DAYS`), and they are deleted with the user.
 - Free text is kept 24 months (`data-protection.md` §4), or until the user is deleted, whichever comes first.
-- A deletion or access request covers both, through the same admin CLI as the events (`frontend/README.md` "Analytics"), extended by the build story.
+- A deletion or access request covers both: deleting the user removes the answers in the same step, and the admin CLI's export carries them with the events (`frontend/README.md` "Analytics", #363). The 24-month limit on free text is not enforced by a job yet.
 
 **Questions for counsel:**
 - **C1.** Is the analytics consent enough for the coded answers (they are analytics events), or do surveys need their own consent, given `data-protection.md` puts surveys on consent (LGPD art. 7º I, GDPR art. 6(1)(a))?

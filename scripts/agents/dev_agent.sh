@@ -107,13 +107,15 @@ Implement it with tests and commit your work (git add + git commit).
 Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group', npx jest <file>,
 python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
 every suite once after you finish and sends a failure back to you.
-Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
+You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
+allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run ./cmd/stress:*)" "Bash(go mod tidy)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
-  "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)" )
+  "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"
+  "Bash(cd:*)" ) # cd: a "cd <dir> && go test …" line was refused whole (#257, 2026-10-27); the other part is still checked
 denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(gh:*)" "Bash(curl:*)"
   "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
 # The model: DEV_MODEL when set, else the lighter one for a documents/research

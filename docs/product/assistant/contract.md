@@ -68,6 +68,6 @@ For each golden question the answer:
 
 It prints passed / total per category and every failure with its reasons; exit 1 when one fails. The grader only reads files: no model, no network.
 
-## 8. Logging and labels (later, with the assistant)
+## 8. Logging and labels
 
-Every question and answer is logged for review, and every answer is labelled as AI-generated (avisos.md's fixed notice, PRD §11, L12). That belongs to the story that wires a model in, after counsel's answer.
+Every question and answer is logged for review, and every answer is labelled as AI-generated (avisos.md's fixed notice, PRD §11, L12). The monitor's `POST /api/assistant` (#191, API only, no UI; off until the person writes `ANTHROPIC_API_KEY` in the monitor's `.env`) does both: it runs the guard's JavaScript twin (`frontend/lib/assistant/guard.js`, kept equal to `internal/assistant/guard` by its tests) on every model answer — an answer with no citation becomes "I don't know", any other rejection the fallback — logs the question, the sources given, the model's text and what was shown in `data/monitor/assistant.jsonl`, lets a person flag a wrong answer (`POST /api/assistant/flag`), and returns the AI notice with every answer (`frontend/README.md` "Assistant"). Showing it to users still waits for counsel's answer and E10's prototype.
