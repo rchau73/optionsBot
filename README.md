@@ -505,6 +505,7 @@ cmd/monitor-demo/     monitor API with simulated data, for UI development
 | [docs/operations.md](docs/operations.md) | running, monitoring, kill switch, troubleshooting |
 | [docs/parameters.md](docs/parameters.md) | every tunable setting in plain words: unit, valid range, core policy, tools that test it (generated) |
 | [docs/exchange-adapter.md](docs/exchange-adapter.md) | every Deribit method and assumption the bot relies on, the proposed exchange adapter interface and its migration (pinned by `tests/exchange_coupling_test.go`) |
+| [docs/ai-analysis.md](docs/ai-analysis.md) | contract of the AI analysis of a settings comparison (input, sections, rules) and its offline grounding checker `internal/aianalysis` (#257); nothing is shown to users before legal L10 |
 | [docs/README.md](docs/README.md) | diagram index (Mermaid sources + 4× PNGs) |
 | [CLAUDE.md](CLAUDE.md) | guidance for AI-assisted development in this repo |
 
