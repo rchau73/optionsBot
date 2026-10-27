@@ -1,7 +1,8 @@
 // Package guard checks an assistant answer before it could be shown (#260,
 // E10): it must cite the help, its numbers must come from what it cites, and
-// it must not advise or forecast. Pure: no model, no network. Nothing uses it
-// yet — wiring it to an assistant waits for counsel's answer to L11/L12. The
+// it must not advise or forecast. Pure: no model, no network. The monitor's
+// assistant (#191) runs its JavaScript twin, frontend/lib/assistant/guard.js,
+// whose tests keep both equal (phrases, cases, golden set): change both. The
 // answer contract it enforces is docs/product/assistant/contract.md.
 package guard
 

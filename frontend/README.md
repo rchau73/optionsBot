@@ -146,6 +146,19 @@ Usage events from the event plan (`docs/product/analytics/event-plan.md`) — wh
 
   `EVENTS_PATH` and `AUDIT_PATH` default to the files beside `auth.db`. An export writes a new 0600 file (default `analytics-export-<user>-<time>.jsonl` beside the events) and never overwrites one. The CLI reads `auth.db` without writing it, so the monitor can keep running. It prints counts and paths only and writes an `events_exported` / `events_deleted` audit line (`username` = `cli:<host account>`). It does not change the person's consent: to stop collection they answer no, or the admin deletes the user.
 
+## Assistant (#191, E10)
+
+A help assistant behind the sign-in, API only (no UI yet: the chat waits for E10's prototype). It answers from the published help and the user's own bot journal, cites them, says "I don't know" otherwise, and never advises or forecasts — the answer contract is `docs/product/assistant/contract.md` (draft, needs legal review, L11/L12).
+
+- **Flow** (`lib/assistant/service.js`): the question's best `HELP_PASSAGES` (6) passages of `content/help-index.json` (`lib/assistant/search.js`, the BM25 of `internal/helpkb`) and, with `bot`, that bot's last 20 journal events from its `/api/events` (each a passage `journal:<bot>/<seq>` holding its plain-words sentence) go to the model (`lib/assistant/model.js`, Claude through the Messages API, `claude-opus-5-5` unless `ASSISTANT_MODEL`; answer as JSON `{answer, citations}`). When no passage matches and no journal was asked for, the reply is "I don't know" with no model call. Then the guard (`lib/assistant/guard.js`, the twin of `internal/assistant/guard`) checks the answer: **no citation → "I don't know"**; an unknown citation, a number in no cited passage, advice or a forecast → the fallback reply. A bot that does not answer leaves the help alone as the source (WARN log).
+- **Twins of the Go code:** `lib/assistant/phrases.js` copies `internal/assistant/guard/phrases.go` (`__tests__/assistant-parity.test.js` fails when they differ: change both); `__tests__/assistant-guard.test.js` runs the Go guard's cases and the golden set on the JS guard; `__tests__/assistant-search.test.js` scores the JS search on `tests/testdata/helpkb_questions.yaml` against `helpkb_baseline.json`.
+- **Review log:** `data/monitor/assistant.jsonl` beside `auth.db` (`ASSISTANT_LOG_PATH`; off for an in-memory database), append-only, owner-only. One `"kind": "answer"` line per question — `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false` — and one `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten. An answer that cannot be logged is not shown (500). The monitor's stdout gets one line per question with the id and outcome only.
+
+| Route | Does | Refusals |
+|---|---|---|
+| `POST /api/assistant` `{"question", "bot"?}` | `{"id", "answer", "citations": [{id, source, title}], "outcome", "ai_generated": true, "notice"}` — `outcome` `answered` \| `dont_know` \| `refused` \| `no_citation` \| `rejected`; `citations` only for `answered`; `notice` the AI label (avisos.md's fixed notice), to show with every answer | 401 no session · 403 cross-origin · 415 not JSON · 400 no question, over 500 characters, `bot` not a string · 404 unknown bot · 413 body over 2 KB · 429 over `QUESTIONS_PER_HOUR` (30) per person, with `Retry-After` (in memory) · 502 the model failed (logged) · 503 no `ANTHROPIC_API_KEY` |
+| `POST /api/assistant/flag` `{"id", "note"?}` | 204: a flag line for that answer | 401 · 403 cross-origin, or someone else's answer (the person who asked, a manager or an admin may flag) · 400 no id, a note over 500 characters · 404 unknown id |
+
 ## Run it
 
 **With Docker (recommended)** — from the repository root:
@@ -188,6 +201,9 @@ Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ig
 | `ANALYTICS_SALT` | — (off) | salt of the analytics `user_id` (≥ 16 chars), from `.env`, never in git or an event |
 | `EVENTS_PATH` | `events.jsonl` beside `AUTH_DB_PATH` | the analytics events |
 | `MONITOR_DEPLOYMENT`, `MONITOR_VERSION` | — | the environment (`stable`/`mvp`) and release tagged on each event (compose sets them) |
+| `ANTHROPIC_API_KEY` | — (off) | the assistant's Claude API key, from `.env`, written by the person; never logged or sent to the browser |
+| `ASSISTANT_MODEL` | `claude-opus-5-5` | the assistant's model |
+| `ASSISTANT_LOG_PATH` | `assistant.jsonl` beside `AUTH_DB_PATH` | the assistant's review log |
 
 ## Develop
 
