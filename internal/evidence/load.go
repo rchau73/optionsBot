@@ -3,6 +3,7 @@ package evidence
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/coverage"
 	"optionsbot/internal/deployeffect"
 	"optionsbot/internal/idlemargin"
 	"optionsbot/internal/orders"
@@ -50,8 +52,10 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 		in.Trades = rp.Trades
 		loadE1Journal(&in, p, env, note)
 	}
+	readErrs := map[string]error{} // dataset → why Load could not read it (coverage)
 	if pts, bad, err := idlemargin.ReadHistoryFile(p.History); err != nil {
 		note("P&L history not read: %v", err)
+		readErrs["pnl_history"] = err
 	} else {
 		in.Points = pts
 		if bad > 0 {
@@ -61,10 +65,13 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 	var err error
 	if in.Snaps, err = recorder.ReadDir(p.Market, w.From.Add(-WarmUp), w.Last()); err != nil {
 		note("recorded books not read: %v", err)
+		readErrs["market"] = err
 	}
 	if in.GEX, err = recorder.ReadGEXDir(p.GEX, w.From.Add(-WarmUp), w.Last()); err != nil {
 		note("minute GEX not read: %v", err)
+		readErrs["market_gex"] = err
 	}
+	in.Recorded = loadRecorded(&in, p, w, readErrs, note)
 	if in.Closes, in.DVOL, err = replay.ReadMarketJSON(in.MarketJ); err != nil {
 		note("%v: the SMA trend and IV percentile start from the recording alone", err)
 	}
@@ -147,6 +154,54 @@ func loadE1Journal(in *Inputs, p Paths, env string, note func(string, ...any)) {
 	if bad > 0 {
 		note("deploys: %d unreadable lines skipped", bad)
 	}
+}
+
+// loadRecorded reads the record times of every dataset cmd/datacoverage
+// knows (#362), under the books' folder (beside p.Market) — except the P&L
+// history, which is the bot's own (p.History). The books, the minute GEX and
+// the history Load already read are reused, not read again (readErrs: why
+// Load could not read one of them).
+func loadRecorded(in *Inputs, p Paths, w Window, readErrs map[string]error, note func(string, ...any)) []RecordedSet {
+	var sets []RecordedSet
+	for _, ds := range coverage.Datasets(filepath.Dir(p.Market)) {
+		switch ds.Name {
+		case "market":
+			ds.Path = p.Market
+		case "market_gex":
+			ds.Path = p.GEX
+		case "pnl_history":
+			ds.Path = p.History
+		}
+		s := RecordedSet{Name: ds.Name, Path: ds.Path, Step: ds.Step}
+		_, statErr := os.Stat(ds.Path)
+		s.Found = statErr == nil
+		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+			s.Err = statErr.Error()
+		}
+		if err := readErrs[ds.Name]; s.Found && err != nil {
+			s.Err = err.Error()
+		} else if s.Found {
+			switch ds.Name {
+			case "market":
+				s.Times = bookTimes(in.Snaps)
+			case "market_gex":
+				s.Times = gexTimes(in.GEX)
+			case "pnl_history":
+				for _, pt := range in.Points {
+					s.Times = append(s.Times, pt.T)
+				}
+			default:
+				ts, _, err := coverage.ReadTimes(ds, w.From, w.Last())
+				if err != nil {
+					note("%s not read for coverage: %v", ds.Name, err)
+					s.Err = err.Error()
+				}
+				s.Times = ts
+			}
+		}
+		sets = append(sets, s)
+	}
+	return sets
 }
 
 func lastLine(s string) string {
