@@ -38,6 +38,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	missing("recorded books", r.Missing.BookDays)
 	missing("minute GEX records", r.Missing.GEXDays)
 	p("\n")
+	writeCoverage(p, r.Coverage) // the hours behind those days (#362)
 
 	l := r.Live
 	p("## Live\n\nSource: %s; %s.\n\n", l.Source, l.PerfSource)
@@ -79,7 +80,11 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	writeBridge(p, r.Bridge)
 
 	rp := r.Replay
-	p("## Replay\n\nSource: the bot's rules (`internal/replay`, %s, direction %s) on %s, starting from the journal's book at the week's start.\n\n", rp.ConfigPath, rp.Direction, rp.Source)
+	p("## Replay\n\n")
+	if rp.Partial != "" {
+		p("**%s** (see Recorded-history coverage).\n\n", rp.Partial)
+	}
+	p("Source: the bot's rules (`internal/replay`, %s, direction %s) on %s, starting from the journal's book at the week's start.\n\n", rp.ConfigPath, rp.Direction, rp.Source)
 	if !rp.Ran {
 		p("Not run: %s.\n\n", rp.Note)
 	} else {
@@ -98,6 +103,9 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	if !g.Known {
 		p("Not available: the replay did not run.\n\n")
 	} else {
+		if g.Partial != "" {
+			p("**%s** (see Recorded-history coverage).\n\n", g.Partial)
+		}
 		p("Source: %s, over the replay's window.\n\n", g.Source)
 		p("- live **%+.4f** = realised %+.4f + unrealised %+.4f → %+.4f (%d opens, %d closes; %d leg marks without a recorded quote)\n",
 			g.Live.Net, g.Live.Realised, g.Live.Unrealised0, g.Live.Unrealised1, g.Live.Opens, g.Live.Closes, g.Live.Unmarked)

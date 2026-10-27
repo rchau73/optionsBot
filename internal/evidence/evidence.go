@@ -71,6 +71,10 @@ type Inputs struct {
 	StressDir    string
 	StressBookAt time.Time // when the stressed book was captured (zero = unknown)
 	StressNote   string    // why the stress did not run, when it did not
+
+	// Every recorded dataset's record times over the week, for the coverage
+	// section (#362); nil = not read.
+	Recorded []RecordedSet
 }
 
 // Report is the weekly evidence of one bot. Amounts are coin unless named
@@ -91,6 +95,7 @@ type Report struct {
 	ROM       ROM         `json:"return_on_margin"`
 	Missing   Missing     `json:"missing"`
 	E1        Reliability `json:"e1_reliability"`
+	Coverage  Coverage    `json:"coverage"`
 	Equity    float64     `json:"equity"` // coin, at the start (0 = unknown)
 	EquitySrc string      `json:"equity_source"`
 }
@@ -119,7 +124,8 @@ type ReasonStat struct {
 // from the journal's book at the window start.
 type Replay struct {
 	Ran        bool   `json:"ran"`
-	Note       string `json:"note,omitempty"` // why it did not run
+	Note       string `json:"note,omitempty"`    // why it did not run
+	Partial    string `json:"partial,omitempty"` // why it stands for part of the week only (Coverage)
 	Source     string `json:"source"`
 	ConfigPath string `json:"config"`
 	Direction  string `json:"direction"`
@@ -154,6 +160,7 @@ type Replay struct {
 // recorded mids (replay.ActualPnL), with what the replay does not model.
 type Gap struct {
 	Known      bool          `json:"known"`
+	Partial    string        `json:"partial,omitempty"` // as Replay.Partial
 	Source     string        `json:"source"`
 	Live       replay.Actual `json:"live"`
 	Replay     float64       `json:"replay"`
@@ -226,7 +233,11 @@ func Build(in Inputs) Report {
 		BookDays:    missingDays(w, bookTimes(in.Snaps)),
 		GEXDays:     missingDays(w, gexTimes(in.GEX)),
 	}
+	r.Coverage = buildCoverage(in.Recorded, w)
 	r.Replay, r.Gap = buildReplay(in)
+	if note := r.Coverage.partialNote(); note != "" && r.Replay.Ran {
+		r.Replay.Partial, r.Gap.Partial = note, note
+	}
 	r.Stress = buildStress(in)
 	r.ROM = buildROM(in, r.Replay)
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)

@@ -171,6 +171,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.mux.HandleFunc("GET /api/summary", s.summary)
 	s.mux.HandleFunc("GET /api/performance", s.performance)
 	s.mux.HandleFunc("GET /api/income", s.income)
+	s.mux.HandleFunc("GET /api/strangles/payoff", s.payoff)
 	if s.closer != nil && s.token != "" {
 		s.mux.HandleFunc("POST /api/positions/close", s.manualClose)
 	}
