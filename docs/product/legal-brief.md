@@ -68,6 +68,8 @@ These describe the product as planned in the PRD; where today's build differs, i
 | L23 | Scope risk | All | Which epics may be built and used internally (our own accounts, our own capital, testnet) before any authorisation, and which need the answers above before even a private beta with invited users? | E4, E5, E13 | Build everything for internal use only; no third party until the answers are in. |
 | L24 | Open questions | All | If managers may be customers' own advisers rather than our staff (PRD §11 open question 2), or one manager's change applies to many customers' accounts (open question 1), does that make us or them the regulated party? | E9, E7 | Managers are our staff only, and each parameter change applies to one account with that customer's confirmation. |
 
+**L11 against a concrete contract:** the assistant's draft answer contract — what a correct answer, an "I don't know" and a refusal look like, the phrases it never says, and the offline checks that enforce it — is `docs/product/assistant/contract.md` (#313, marked needs legal review).
+
 ## 4. What each answer unlocks
 
 | Epic | Waits for | Decision unlocked |

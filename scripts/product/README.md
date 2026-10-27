@@ -87,3 +87,19 @@ python3 scripts/product/fakedoor.py data/product/fakedoor/run1 --survey-share 0.
 Only these columns are read; any other — an `email` column — is ignored and never written. An unknown value in a yes/no or year column is refused with its line number.
 
 **Output:** `result.md` and `result.json` beside the input — US sign-ups that got through first (a guardrail line telling the product owner to stop the run), then visits, confirmed sign-ups, the rate with its Wilson 95 % interval, per-channel rates with intervals, the cycle-holder share (confirmed sign-ups that bought before 2022 and kept most ÷ confirmed sign-ups that answered both), the secondary shares, the confirmation rate (confirmed ÷ submitted) and the outcome: **Not enough traffic** (< 400 visits, whatever the rate) · **Success** · **Kill** (with `--survey-share`: whether PRD §6's kill criterion is met) · **Iterate** (everything between, or a Success rate with cycle holders under half or none answering).
+
+## Assistant answer grader (`assistant_grade.py`, #313)
+
+Grades a JSONL file of help-assistant answers — `{"id", "text", "citations"}` per line, from any source; no model is called — against the golden question set `docs/product/assistant/golden.jsonl` and the help index `frontend/content/help-index.json` (epic E10). Rules: `docs/product/assistant/contract.md`; the set's fields: `docs/product/assistant/README.md`.
+
+```bash
+python3 scripts/product/assistant_grade.py answers.jsonl          # passed / total per category, then each failure
+python3 scripts/product/assistant_grade.py answers.jsonl --json
+```
+
+- **Answer questions:** every citation exists in the index (an unknown one is named), one is an expected source, every `must_say` fact is there, and the answer neither refuses nor says "I don't know".
+- **Refusals** (`refuse_advice`, `refuse_forecast`): a refusal is given (the contract's reply, or "I can't recommend / predict…"), with no number with % or a currency.
+- **Unknown:** "I don't know".
+- **Every question:** none of its `must_not_say` phrases.
+
+Exit 0 when every question passes, 1 when one fails, 2 on bad input (unreadable JSON, an answer for an unknown id, two answers for one id).
