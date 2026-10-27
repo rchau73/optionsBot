@@ -15,8 +15,9 @@ export async function PATCH(request, { params }) {
 }
 
 /**
- * DELETE /api/admin/users/<id> (body {}) → {"events_removed"} or
- * {"events_error"}: AuthService.deleteUser — never yourself, never the last
+ * DELETE /api/admin/users/<id> (body {}) → {"events_removed" or
+ * "events_error", "survey_answers_removed" or "survey_answers_error"}:
+ * AuthService.deleteUser — never yourself, never the last
  * admin (409). Admins only, same-origin JSON.
  */
 export async function DELETE(request, { params }) {

@@ -25,6 +25,9 @@ export const AUDIT_ACTIONS = [
   "events_deleted",
   "events_delete_failed",
   "events_exported",
+  "analytics_consent_changed",
+  "survey_answers_deleted",
+  "survey_answers_delete_failed",
 ];
 
 /** Lines a page lists unless `limit` says otherwise, and the most it may say. */

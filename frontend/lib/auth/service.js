@@ -205,10 +205,11 @@ export class AuthService {
 
   /**
    * An admin deletes a user: every session of theirs, their consent (a column
-   * of the row) and their analytics events (event plan §5, #296). Access goes
-   * first; events that cannot be deleted are an ERROR log, an audit line and
-   * `events_error` in the answer, with the row id the admin CLI needs to retry.
-   * → { ok: true, events_removed } | { ok: true, events_error } | { ok: false, status, error }
+   * of the row), their analytics events (event plan §5, #296) and their survey
+   * answers with any free text (surveys.md §5, #363). Access goes first; events
+   * or answers that cannot be deleted are an ERROR log, an audit line and
+   * `events_error` / `survey_answers_error` in the answer, saying how they go.
+   * → { ok: true, events_removed | events_error, survey_answers_removed | survey_answers_error } | { ok: false, status, error }
    */
   deleteUser(by, targetId) {
     const target = this.store.userById(targetId);
@@ -219,11 +220,12 @@ export class AuthService {
     this.audit("user_deleted", { username: by.username, role: by.role, target: target.username });
 
     const who = { username: by.username, role: by.role, target: target.username, target_row_id: target.id, reason: "user_deleted" };
+    const result = { ok: true };
     try {
       const { removed } = this.deleteEvents(target.id);
       authLog("INFO", "analytics events of a deleted user deleted", { component: "analytics", by: by.username, username: target.username, removed });
       this.audit("events_deleted", { ...who, removed });
-      return { ok: true, events_removed: removed };
+      result.events_removed = removed;
     } catch (err) {
       authLog("ERROR", "analytics events of a deleted user NOT deleted", {
         component: "analytics",
@@ -233,11 +235,37 @@ export class AuthService {
         error: err.message,
       });
       this.audit("events_delete_failed", { ...who, error: err.message });
-      return {
-        ok: true,
-        events_error: `the user is deleted but their analytics events are not (${err.message}): run scripts/analytics-user.mjs delete --row-id ${target.id}`,
-      };
+      result.events_error = `the user is deleted but their analytics events are not (${err.message}): run scripts/analytics-user.mjs delete --row-id ${target.id}`;
     }
+    try {
+      const removed = this.store.deleteSurveyAnswers(target.id);
+      authLog("INFO", "survey answers of a deleted user deleted", { component: "analytics", by: by.username, username: target.username, removed });
+      this.audit("survey_answers_deleted", { ...who, removed });
+      result.survey_answers_removed = removed;
+    } catch (err) {
+      authLog("ERROR", "survey answers of a deleted user NOT deleted", {
+        component: "analytics",
+        by: by.username,
+        username: target.username,
+        user_row_id: target.id,
+        error: err.message,
+      });
+      this.audit("survey_answers_delete_failed", { ...who, error: err.message });
+      result.survey_answers_error = `the user is deleted but their survey answers are not (${err.message}): the monitor deletes them at its next start`;
+    }
+    return result;
+  }
+
+  /**
+   * The person's answer to usage analytics (event plan §5, #363): stored on
+   * their row and audited as `analytics_consent_changed` with who and the new
+   * value only. No (false) stops collection at once; events already stored
+   * stay until the person asks for their deletion.
+   */
+  setAnalyticsConsent(user, consent) {
+    this.store.setAnalyticsConsent(user.id, consent, this.now());
+    authLog("INFO", "analytics consent changed", { component: "analytics", username: user.username, consent });
+    this.audit("analytics_consent_changed", { username: user.username, consent });
   }
 
   /** Every user for the Users page: id, username, role, email, created and last sign-in (ISO, null = never); never a hash. */

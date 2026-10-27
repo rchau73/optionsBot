@@ -121,7 +121,7 @@ export async function signOutUser(id) {
   await adminSend(userUrl(id, "/signout"), "POST");
 }
 
-/** Deletes a user → { events_removed } or { events_error }. */
+/** Deletes a user → { events_removed | events_error, survey_answers_removed | survey_answers_error }. */
 export async function deleteUser(id) {
   return adminSend(userUrl(id), "DELETE");
 }
