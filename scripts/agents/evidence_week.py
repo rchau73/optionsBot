@@ -6,6 +6,8 @@ comment from the reports it wrote.
     evidence_week.py week [<YYYY-MM-DD>]                     → the last complete ISO week before that day (today, UTC): 2026-W43
     evidence_week.py comment <week> <envs dir> <failures.tsv> <bots> [envs]
                                                              → the epic comment (Markdown) on stdout
+    evidence_week.py gaps <week> <envs dir> <bots> [envs]    → one line per env × bot × dataset with a
+                                                               recorder gap over 3 h (#362), for the notify
 
 <envs dir> holds one clone per environment (<envs dir>/<env>, as
 scripts/env_lib.sh lays them out); each report is
@@ -177,8 +179,52 @@ def e1_cell(r, live):
 
 def missing_cell(r):
     m = r.get("missing") or {}
-    return (f"history {days_text(m.get('history_days'))} · books {days_text(m.get('book_days'))}"
+    cell = (f"history {days_text(m.get('history_days'))} · books {days_text(m.get('book_days'))}"
             f" · GEX {days_text(m.get('gex_days'))}")
+    c = r.get("coverage") or {}
+    if c.get("known"):
+        if c.get("market_pct") is None:
+            cell += " · market hours not recorded"
+        else:
+            cell += f" · market hours {c['market_pct']:.1f} %"
+        if c.get("partial"):
+            cell += " (replay partial)"
+    return cell
+
+
+def when(ts):
+    """2026-10-14T03:00:00Z → 2026-10-14 03:00 UTC."""
+    return ts[:16].replace("T", " ") + " UTC"
+
+
+def gap_notices(r):
+    """One line per recorded dataset with a gap over the report's threshold
+    (#362): the dataset, how many such gaps, the longest with its start. Times
+    and hours only, so the same for a live env."""
+    c = r.get("coverage") or {}
+    by = {}
+    for g in c.get("long_gaps") or []:
+        by.setdefault(g["dataset"], []).append(g)
+    out = []
+    for ds, gaps in by.items():
+        g = max(gaps, key=lambda x: x["hours"])
+        n = f"{len(gaps)} gaps over {c.get('long_gap_hours', 3):.0f} h, longest " if len(gaps) > 1 else "gap "
+        out.append(f"{ds} {n}{g['hours']:.1f} h from {when(g['from'])}")
+    return out
+
+
+def notices(week, envs_dir, bots, envs=("stable", "mvp")):
+    """Every env × bot's gap notices, as "env bot: notice" lines."""
+    out = []
+    for env in envs:
+        for bot in bots:
+            try:
+                with open(os.path.join(envs_dir, env, "data", "evidence", week, f"{bot}.json")) as f:
+                    r = json.load(f)
+            except (OSError, ValueError):
+                continue
+            out += [f"{env} {bot}: {n}" for n in gap_notices(r)]
+    return out
 
 
 def load_failures(path):
@@ -224,6 +270,10 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
             out.append("| " + " | ".join([
                 label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
+    gaps = notices(week, envs_dir, bots, envs)
+    if gaps:
+        out += ["", "**Recorder gaps** (over 3 h in the week; fix the recorder — the report's \"Recorded-history coverage\" lists every missing hour):", ""]
+        out += [f"- {g}" for g in gaps]
     if failures:
         out += ["", "**Failed steps** (the other reports were still written):", ""]
         for env, bot, step, detail in failures:
@@ -241,6 +291,11 @@ def main(argv):
     if len(argv) >= 2 and argv[1] == "week":
         day = dt.date.fromisoformat(argv[2]) if len(argv) > 2 else dt.datetime.now(dt.timezone.utc).date()
         print(previous_week(day))
+    elif len(argv) in (5, 6) and argv[1] == "gaps":
+        bots = [b.strip().lower() for b in argv[4].split(",") if b.strip()]
+        envs = tuple(argv[5].split(",")) if len(argv) == 6 else ("stable", "mvp")
+        for line in notices(argv[2], argv[3], bots, envs):
+            print(line)
     elif len(argv) in (6, 7) and argv[1] == "comment":
         bots = [b.strip().lower() for b in argv[5].split(",") if b.strip()]
         envs = tuple(argv[6].split(",")) if len(argv) == 7 else ("stable", "mvp")

@@ -9,7 +9,9 @@
 #       (mvp records no books: -books-root = stable's clone)
 #     → <env clone>/data/evidence/<week>/<bot>.md and .json;
 #   one comment on the E2 epic: a row per env × bot and every failed step
-#   (evidence_week.py, offline and tested; percentages only for a live env).
+#   (evidence_week.py, offline and tested; percentages only for a live env),
+#   with one line per recorded dataset that missed more than 3 h in the week
+#   (the report's coverage section, #362), also sent as a notify.
 # A failed step is listed and the rest goes on. The week is retried once (the
 # comment could not be posted); after the second attempt it is done whatever
 # happened: data/agents/evidence/<week>.done. Reads the bots' files and
@@ -67,6 +69,14 @@ done
 comment="$state/$week/comment.md"
 python3 "$EV_PY" comment "$week" "$ENVS_DIR" "$failures" "$(echo $BOTS | tr ' ' ',')" "$(echo $ENV_NAMES | tr ' ' ',')" > "$comment"
 log "evidence: wrote $comment"
+# A recorder that left a gap over 3 h (#362) is named in the comment and
+# notified now, so it can be fixed before the next week's report.
+gaps="$(python3 "$EV_PY" gaps "$week" "$ENVS_DIR" "$(echo $BOTS | tr ' ' ',')" "$(echo $ENV_NAMES | tr ' ' ',')" || true)"
+if [[ -n "$gaps" ]]; then
+  n="$(wc -l <<< "$gaps" | tr -d ' ')"
+  log "evidence: recorder gaps: ${gaps//$'\n'/; }"
+  notify "Recorder gap ($week)" "$(head -1 <<< "$gaps")$([[ $n -gt 1 ]] && echo " (+$((n - 1)) more)")"
+fi
 
 posted=0
 slug="$(repo_slug)"

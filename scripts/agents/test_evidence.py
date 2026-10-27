@@ -147,6 +147,33 @@ class Comment(unittest.TestCase):
         self.put("stable", "btc", r)
         self.assertIn("— (report without the E1 section)", self.row(self.build(envs=("stable",)), "stable", "btc"))
 
+    def test_complete_week_has_no_gap_notice(self):
+        r = report(coverage={"known": True, "market_pct": 100.0, "partial": False, "long_gap_hours": 3, "long_gaps": []})
+        self.put("stable", "btc", r)
+        text = self.build(envs=("stable",))
+        self.assertIn("· market hours 100.0 % |", self.row(text, "stable", "btc"))
+        self.assertNotIn("Recorder gaps", text)
+        self.assertEqual(evidence_week.notices("2026-W43", self.envs, ["btc"], ("stable",)), [])
+
+    def test_a_recorder_gap_is_one_line_naming_the_dataset_and_the_gap(self):
+        gaps = [{"dataset": "market", "from": "2026-10-21T03:00:00Z", "to": "2026-10-21T09:00:00Z", "hours": 6},
+                {"dataset": "market_gex", "from": "2026-10-20T01:00:00Z", "to": "2026-10-20T05:00:00Z", "hours": 4},
+                {"dataset": "market_gex", "from": "2026-10-22T01:00:00Z", "to": "2026-10-22T06:30:00Z", "hours": 5.5}]
+        r = report(coverage={"known": True, "market_pct": 52.4, "partial": True, "long_gap_hours": 3, "long_gaps": gaps})
+        self.put("stable", "btc", r, "DERIBIT_ENV=live\n")  # times and hours only: the same for a live env
+        text = self.build(envs=("stable",))
+        self.assertIn("· market hours 52.4 % (replay partial) |", self.row(text, "stable", "btc"))
+        self.assertIn("**Recorder gaps**", text)
+        self.assertIn("- stable btc: market gap 6.0 h from 2026-10-21 03:00 UTC", text)
+        self.assertIn("- stable btc: market_gex 2 gaps over 3 h, longest 5.5 h from 2026-10-22 01:00 UTC", text)
+        self.assertEqual(evidence_week.notices("2026-W43", self.envs, ["btc", "eth"], ("stable", "mvp")),
+                         ["stable btc: market gap 6.0 h from 2026-10-21 03:00 UTC",
+                          "stable btc: market_gex 2 gaps over 3 h, longest 5.5 h from 2026-10-22 01:00 UTC"])
+
+    def test_market_not_recorded_is_said(self):
+        self.put("stable", "btc", report(coverage={"known": True, "market_pct": None, "partial": True, "long_gaps": []}))
+        self.assertIn("market hours not recorded (replay partial)", self.row(self.build(envs=("stable",)), "stable", "btc"))
+
     def test_missing_report_and_failures_are_listed(self):
         write(self.fail_tsv, "mvp\t-\tclone\tno clone at /x/mvp\nstable\teth\tcmd/evidence\texit status 1\n")
         self.put("stable", "btc", report())
@@ -263,6 +290,21 @@ class EvidenceScript(unittest.TestCase):
                 self.assertIn(f"| {env} | {bot} | +0.0123 {bot.upper()}", comments[0])
         self.assertIn("GEX all 7", comments[0])
         self.assertTrue(self.done())
+
+    def test_a_recorder_gap_is_posted_and_notified(self):
+        r = report(coverage={"known": True, "market_pct": 96.4, "partial": False, "long_gap_hours": 3, "long_gaps": [
+            {"dataset": "market", "from": "2026-10-21T03:00:00Z", "to": "2026-10-21T09:00:00Z", "hours": 6}]})
+        write(self.t("report.json"), json.dumps(r))
+        self.run_script()
+        comment = self.comments()[0]
+        self.assertIn("- stable btc: market gap 6.0 h from 2026-10-21 03:00 UTC", comment)
+        self.assertIn("- mvp eth: market gap 6.0 h from 2026-10-21 03:00 UTC", comment)
+        self.assertIn("evidence: recorder gaps: stable btc: market gap 6.0 h", self.output)
+
+    def test_no_gap_no_notice(self):
+        self.run_script()
+        self.assertNotIn("Recorder gaps", self.comments()[0])
+        self.assertNotIn("recorder gaps", self.output)
 
     def test_a_later_tick_after_the_done_marker_does_nothing(self):
         write(self.t("repo", "data", "agents", "evidence", self.week + ".done"), "x\n")
