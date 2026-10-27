@@ -402,8 +402,10 @@ go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -t
 ```bash
 make test      # go test ./tests/... -race
 make cover     # coverage across ./internal/... (tests live in ./tests)
-make check     # what CI runs: gofmt, vet, shell scripts, race tests
+make check     # what CI runs: gofmt, vet, shell scripts, race tests, coverage floor
 ```
+
+The coverage floor (`scripts/check_cover.sh`, #330) reads the race run's own profile (no second test run) and fails when the total statement coverage of `./internal/...` is more than 0.2 points under `scripts/cover_baseline.txt`, listing the packages that fell against `scripts/cover_baseline_packages.txt`. A total above the baseline prints a hint; `scripts/check_cover.sh --update` rewrites both files and is run only by a person or a PR that says so. No test is excluded to reach the number.
 
 Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_shell.sh`: `bash -n`, then `shellcheck -x --severity=warning` (sources resolved beside each script, `.shellcheckrc`), and every `disable` directive must give its reason on the same line. CI installs shellcheck and requires it; `make check` skips that step with a message when it is not installed.
 
@@ -414,7 +416,7 @@ Shell scripts (`scripts/**/*.sh`, `.githooks/*`) are checked by `scripts/check_s
 | marketdata, gex, orders, config, hedge | 92–97 % | push handling, DVOL history, expiry window, order journal, validation |
 | backtest | 81 % | historical-date regression, writers, sweep, walk-forward |
 
-Regression tests for critical fixes were mutation-checked: they fail when the fix is reverted. CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary, `govulncheck` and a Docker build on every push and pull request.
+Regression tests for critical fixes were mutation-checked: they fail when the fix is reverted. CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary and the coverage floor, `govulncheck` and a Docker build on every push and pull request.
 
 ## Project layout
 

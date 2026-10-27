@@ -51,6 +51,9 @@ jobs:
           echo "Total coverage: $total"
           echo "### Coverage: $total" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Coverage floor
+        run: bash scripts/check_cover.sh --profile coverage.out
+
       - uses: actions/upload-artifact@v4
         with:
           name: coverage
