@@ -89,6 +89,7 @@ data/btc/
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
   data/market_gex/    every GEX snapshot (one a minute), read by the replay
   data/market_usdc/   recorded USDC-settled books, to compare liquidity
+  data/market_usdc_sol/, data/market_usdc_xrp/   SOL's and XRP's USDC books (BTC bot only, #356)
 data/stress/btc/      stress inputs captured by scripts/stress_inputs.sh (positions, account, market.json)
 data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cmd/evidence, below)
 ```
@@ -151,6 +152,8 @@ Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot. It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it. The log lines carry `dir`.
+
+**SOL and XRP books** (#356, for the SOL/XRP decision #117). The BTC bot of the environment with `BOT_RECORD_MARKET` on (stable) also writes the `SOL_USDC-…` and `XRP_USDC-…` options to `data/btc/data/market_usdc_sol/` and `market_usdc_xrp/`, same columns and hour, from the **same** USDC book summary (`recorder.USDCBooks`: fetched once per snapshot and split by underlying, so no extra Deribit call), through the mainnet public gateway. They have no DVOL index: `dvol_index` is empty. XRP strikes are fractional (`2d5` = 2.5, parsed by `marketdata.ParseOptionName`). Coverage: `cmd/datacoverage` lists both datasets. The liquidity report: `go run ./cmd/usdcstudy -dir data/btc,data/eth -from … -to …` → `data/usdcstudy/<time>/report.md|json` (README "USDC-settled study").
 
 **GEX every minute** (#122). Each GEX snapshot the bot computes (one a minute) is also written as one JSON line to `data/<coin>/data/market_gex/YYYY-MM-DD.jsonl.gz` (gzip member per line; `zcat` reads it): `computed_at, spot, regime, flip, flip_found, median_flip` (the bias's window median, `StableBiasDir`), `gex_sum` (Σ weighted signed GEX), `dvol, flip_buffer_pct`. No Deribit call, a few hundred KB a day, never read by trading, not touched by `--reset-history`; recorded whenever the market history is. `cmd/stress -replay` reads it to decide the GEX side at the bot's pace. Log lines: `gex recorder started` / `gex snapshot not recorded`.
 

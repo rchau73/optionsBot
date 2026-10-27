@@ -39,9 +39,11 @@ const pnlHistoryPath = "data/pnl_history.jsonl"
 // is not part of the trading history: --reset-history leaves it in place.
 const marketHistoryDir = "data/market"
 
-// linearHistoryDir holds the same record for the underlying's USDC-settled
-// options (prices in USDC), to compare their liquidity with data/market.
-const linearHistoryDir = "data/market_usdc"
+// usdcHistoryParent holds the same record for the underlying's USDC-settled
+// options (prices in USDC) in data/market_usdc, to compare their liquidity
+// with data/market; the BTC bot also records SOL's and XRP's beside it
+// (market_usdc_sol, market_usdc_xrp).
+const usdcHistoryParent = "data"
 
 // gexHistoryDir holds every GEX snapshot (one JSON line a minute, a gzip file
 // per UTC day) for the replay; like data/market, never reset.
@@ -199,8 +201,19 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	// quotes, once per interval. Reads only what is already fetched.
 	if cfg.MarketRecordMinutes > 0 && cfg.RecordMarket {
 		go recorder.New(gexMgr, md.DVOL, marketHistoryDir, time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
-		go recorder.New(recorder.NewLinearBook(marketGW, cfg.Underlying), md.DVOL, linearHistoryDir,
-			time.Duration(cfg.MarketRecordMinutes)*time.Minute).Run(ctx)
+		// USDC-settled books: one mainnet USDC summary per snapshot, split by
+		// underlying. SOL and XRP from the BTC bot only, so once (#356).
+		every := time.Duration(cfg.MarketRecordMinutes) * time.Minute
+		usdc := recorder.NewUSDCBooks(marketGW)
+		linear := []*recorder.Recorder{recorder.New(usdc.Book(cfg.Underlying), md.DVOL,
+			filepath.Join(usdcHistoryParent, recorder.USDCDataset(cfg.Underlying, true)), every)}
+		if cfg.Underlying == "BTC" {
+			for _, u := range recorder.ExtraUSDC {
+				linear = append(linear, recorder.New(usdc.Book(u), nil,
+					filepath.Join(usdcHistoryParent, recorder.USDCDataset(u, false)), every))
+			}
+		}
+		go recorder.NewGroup(usdc, every, linear...).Run(ctx)
 		// Every GEX snapshot (one a minute), so the replay can step the GEX
 		// side at the bot's pace (#122).
 		flipBuffer := func() float64 { return strategy.FlipBufferPct(cfg.GammaFlipBufferSD, md.DVOL()) }

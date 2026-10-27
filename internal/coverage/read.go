@@ -35,13 +35,19 @@ type Dataset struct {
 // bot's own data/, e.g. data/btc/data), with the period each is written at.
 func Datasets(base string) []Dataset {
 	hourly := time.Duration(config.FixedMarketRecordMinutes) * time.Minute
-	return []Dataset{
+	sets := []Dataset{
 		{Name: "market", Path: filepath.Join(base, "market"), Kind: KindBooks, Step: hourly},
 		{Name: "market_gex", Path: filepath.Join(base, "market_gex"), Kind: KindGEX, Step: time.Minute}, // one GEX snapshot a minute
 		{Name: "market_usdc", Path: filepath.Join(base, "market_usdc"), Kind: KindBooks, Step: hourly},
-		{Name: "pnl_history", Path: filepath.Join(base, "pnl_history.jsonl"), Kind: KindPnL,
-			Step: time.Duration(config.FixedReportIntervalSec) * time.Second},
 	}
+	// SOL's and XRP's USDC books (#356): recorded by the BTC bot only, so
+	// another bot's folder lists them as not found.
+	for _, u := range recorder.ExtraUSDC {
+		name := recorder.USDCDataset(u, false)
+		sets = append(sets, Dataset{Name: name, Path: filepath.Join(base, name), Kind: KindBooks, Step: hourly})
+	}
+	return append(sets, Dataset{Name: "pnl_history", Path: filepath.Join(base, "pnl_history.jsonl"), Kind: KindPnL,
+		Step: time.Duration(config.FixedReportIntervalSec) * time.Second})
 }
 
 // BaseDir accepts a bot folder (data/btc, whose files are in data/btc/data)

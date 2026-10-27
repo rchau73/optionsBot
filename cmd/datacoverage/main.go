@@ -1,6 +1,7 @@
 // Command datacoverage reports how much recorded history one bot has (#233):
 // for data/market (hourly books), data/market_gex (minute GEX),
-// data/market_usdc (USDC books) and data/pnl_history.jsonl, the first and
+// data/market_usdc (USDC books), data/market_usdc_sol and _xrp (SOL's and
+// XRP's USDC books, #356) and data/pnl_history.jsonl, the first and
 // last record, the days and hours covered, the missing days and the gaps,
 // and the days a replay can only decide hourly (books without minute GEX).
 // Research tool: it reads files only — no Deribit call, no trading state —

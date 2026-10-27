@@ -23,7 +23,9 @@ func ParseOptionName(name string) (underlying string, expiry time.Time, strike f
 	if err != nil {
 		return "", time.Time{}, 0, "", fmt.Errorf("parse expiry %q: %w", parts[1], err)
 	}
-	strike, err = strconv.ParseFloat(parts[2], 64)
+	// A fractional strike is written with a "d" for the decimal point
+	// (XRP_USDC-27NOV26-2d5-C is the 2.5 strike).
+	strike, err = strconv.ParseFloat(strings.Replace(parts[2], "d", ".", 1), 64)
 	if err != nil {
 		return "", time.Time{}, 0, "", fmt.Errorf("parse strike %q: %w", parts[2], err)
 	}
