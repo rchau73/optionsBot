@@ -4,7 +4,10 @@
 // goes into the plan first; __tests__/events-plan.test.js keeps this file
 // equal to the plan's tables.
 
-const enumOf = (...values) => ({ type: "enum", values });
+import glossary from "@/content/glossary.json";
+import videos from "@/content/videos.json";
+
+const enumOf =(...values) => ({ type: "enum", values });
 const duration = (capMs) => ({ type: "duration", capMs });
 const BOOL = { type: "bool" };
 
@@ -15,7 +18,15 @@ const FOUR_ANSWERS = ["holding", "income", "worst_case", "last_action", "none"];
 
 // A catalogue key: "<prefix>.<words>" of lower-case letters and "_" only — no
 // digit, so a number from the page can never be smuggled in as an id.
-const catalogue = (prefix) => ({ type: "catalogue id", pattern: new RegExp(`^${prefix}\\.[a-z]+(_[a-z]+)*$`) });
+// `known` is the set of ids that exist in the content catalogue (#300): a
+// well-formed id that is not in it is refused too.
+const catalogue = (prefix, known) => ({ type: "catalogue id", pattern: new RegExp(`^${prefix}\\.[a-z]+(_[a-z]+)*$`), known });
+
+/** A glossary key as a tip id: lower case, every run of other characters one "_" ("stop-loss" → "tip.stop_loss"). */
+export const tipIdOf = (term) => `tip.${String(term).toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_+|_+$/g, "")}`;
+
+export const VIDEO_IDS = new Set(Object.keys(videos));
+export const TIP_IDS = new Set(Object.keys(glossary).map(tipIdOf));
 
 /** §4: property → its rule. */
 export const PROPERTIES = {
@@ -26,8 +37,8 @@ export const PROPERTIES = {
   open_ms: duration(HOUR_MS),
   filter: enumOf("bot", "strategy", "type", "moneyness", "group_by"),
   level: enumOf("strategy", "slot", "structure", "leg", "orders"),
-  tip_id: catalogue("tip"),
-  video_id: catalogue("video"),
+  tip_id: catalogue("tip", TIP_IDS),
+  video_id: catalogue("video", VIDEO_IDS),
   watched_ms: duration(10 * 60 * 1000),
   helped: BOOL,
   elapsed_ms: duration(HOUR_MS),
@@ -85,7 +96,8 @@ function valueProblem(rule, value) {
     case "duration":
       return Number.isInteger(value) && value >= 0 && value <= rule.capMs ? null : `whole milliseconds, 0 to ${rule.capMs}`;
     case "catalogue id":
-      return typeof value === "string" && value.length <= 64 && rule.pattern.test(value) ? null : "a help catalogue key, letters and _ only";
+      if (typeof value !== "string" || value.length > 64 || !rule.pattern.test(value)) return "a help catalogue key, letters and _ only";
+      return rule.known.has(value) ? null : "an id that is in the content catalogue";
     default:
       return "unknown rule";
   }
