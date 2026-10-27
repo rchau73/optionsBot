@@ -356,6 +356,16 @@ go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, m
 
 **Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
 
+## Help knowledge index
+
+The E10 assistant's only corpus (#312, #259): `internal/helpkb` cuts OptionStrategy.md (by heading), the monitor's glossary and the plain-words catalogue (`api.Catalogue`) into passages of at most 1,200 characters, each citing `OptionStrategy.md#<anchor>`, `glossary:<term>` or `explain:<journal value>`, and finds the best ones for a question by keyword (BM25) — no model, no network, nothing in the bot uses it.
+
+```bash
+go run ./cmd/helpindex                                         # rewrite frontend/content/help-index.json (tests fail until a changed source is rebuilt)
+go run ./cmd/helpkb -q "what is a stop-loss"                  # top passages with their citations, or "I don't know"
+go run ./cmd/helpkb -eval tests/testdata/helpkb_questions.yaml   # hit@1, hit@3, dont_know precision per category
+```
+
 ## Settings comparison
 
 `cmd/compare` (#186, epic E9) runs the same evidence for two configs — the current one and a proposal — and writes them side by side to `data/compare/<UTC time>/report.md` and `report.json` (`-out` changes the folder). It reads files only: no Deribit call, no order, no new rule. Both configs load with `config.Load` (so the same fixed values, `config.ApplyFixed`) and must trade the same coin; both runs read the same data.
@@ -416,6 +426,9 @@ internal/evidence/    builds that report (pure Build) and reads its inputs
 scripts/              stress_inputs.sh — captures the stress test's inputs
 internal/recorder/    hourly mainnet book recording (data/market/) and its reader
 internal/replay/      the bot's rules over recorded books (cmd/stress -replay)
+cmd/helpindex/        writes the assistant's help index, frontend/content/help-index.json (see Help knowledge index)
+cmd/helpkb/           searches it from the command line and scores retrieval on a question set
+internal/helpkb/      passages with citations and keyword search (pure), not wired to the bot
 internal/perf/        pure performance summary of the P&L history: net return (coin, USD), hold-the-coin benchmark, max drawdown, worst 7 days, missing days
 internal/config/      config.yaml + .env loading and validation
 internal/gateway/     Deribit WebSocket client (queue, limits, breaker, retry, reconnect)

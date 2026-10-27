@@ -1,0 +1,52 @@
+# Fixture question set for the help knowledge index (internal/helpkb, #259,
+# #190), until the product's question set (docs/product/assistant/questions.yaml)
+# lands. Each answerable question lists the sources that answer it (a hit
+# matches by prefix: a section accepts every passage of it); dont_know marks
+# a question the help does not answer, where "I don't know" is right.
+# Scored by tests/helpkb_test.go and `go run ./cmd/helpkb -eval <this file>`.
+questions:
+  - question: what is a stop-loss
+    category: exits
+    expect: ["glossary:stop-loss", "OptionStrategy.md#4-how-a-trade-can-end", "OptionStrategy.md#loss-a-sharp-drop-stop-loss"]
+  - question: what happens when a leg's delta reaches 0.30
+    category: exits
+    expect: ["OptionStrategy.md#4-how-a-trade-can-end", "OptionStrategy.md#10-the-parameters-in-plain-words", "glossary:delta exit", "glossary:delta_exit_threshold"]
+  - question: when does the bot take profit
+    category: exits
+    expect: ["glossary:take-profit", "glossary:roi_take_profit", "OptionStrategy.md#4-how-a-trade-can-end", "OptionStrategy.md#win-a-calm-market-take-profit"]
+  - question: why does the bot close a position 15 days before expiry
+    category: exits
+    expect: ["glossary:time roll", "glossary:rollout_dte", "OptionStrategy.md#4-how-a-trade-can-end", "OptionStrategy.md#win-b-time-roll", "OptionStrategy.md#8-risk-controls"]
+  - question: what is a short strangle
+    category: basics
+    expect: ["glossary:strangle", "OptionStrategy.md#2-options-in-five-minutes"]
+  - question: what is theta time decay
+    category: basics
+    expect: ["glossary:theta", "OptionStrategy.md#2-options-in-five-minutes"]
+  - question: what is the gamma flip
+    category: basics
+    expect: ["glossary:gamma flip", "glossary:gex", "OptionStrategy.md#12-glossary"]
+  - question: how much of the account is used as margin when DVOL is high
+    category: risk
+    expect: ["OptionStrategy.md#8-risk-controls", "glossary:iv_margin_bands", "glossary:im limit", "OptionStrategy.md#10-the-parameters-in-plain-words"]
+  - question: what does the kill switch do
+    category: risk
+    expect: ["glossary:kill switch", "OptionStrategy.md#7-edge-cases-the-bot-handles", "OptionStrategy.md#4-how-a-trade-can-end", "explain:closed:kill_switch"]
+  - question: what happens if only one leg fills
+    category: edge_cases
+    expect: ["OptionStrategy.md#7-edge-cases-the-bot-handles", "glossary:fill timeout", "glossary:missing leg", "glossary:repair", "explain:cancelled:timeout"]
+  - question: why was a missing leg not sold again after a stop-loss
+    category: journal
+    expect: ["explain:skipped:repair_held", "glossary:stop hold", "OptionStrategy.md#9-market-regimes-and-what-the-bot-does", "glossary:repair"]
+  - question: why is no new strangle opened while GEX data is missing
+    category: journal
+    expect: ["explain:skipped:gex_wait", "glossary:gex wait", "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"]
+  - question: what are Binance's option fees
+    category: off_topic
+    dont_know: true
+  - question: should I buy Solana or Cardano this year
+    category: off_topic
+    dont_know: true
+  - question: what is the weather in Lisbon tomorrow
+    category: off_topic
+    dont_know: true

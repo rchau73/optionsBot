@@ -195,7 +195,7 @@ npm run test:phone                # phone-width check (#309): Playwright at 360,
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor` (+ `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`); the Users page: `UsersAdmin`, `AddUserForm`, `UserActionDialog`, `ResetLinkDialog`; `ResetPasswordForm` (`/reset`); `AuditTrail` (Audit page) |
 | `hooks/` | `useMonitor` — polling, incremental events, staleness, session history |
 | `lib/` | `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `users.js` (Users page form checks and confirmation words), `audit.js` (the audit actions, the Audit page's query rules and detail column), `format.js` (units), `bots.js` (server config) |
-| `content/` | `glossary.json` — the plain-words tips (below); `confirm-notes.json` — the risk notes before a confirmation (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below) |
+| `content/` | `glossary.json` — the plain-words tips (below); `confirm-notes.json` — the risk notes before a confirmation (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below); `help-index.json` — generated, never hand-edited: the E10 assistant's only corpus, OptionStrategy.md, this glossary and the bot's plain-words catalogue as cited passages (`go run ./cmd/helpindex` after a change to any of them, #312) |
 | `__tests__/`, `test/` | tests and shared fixtures |
 | `e2e/` | the phone-width check (Playwright, `npm run test:phone`): config, sign-in fixture, in-page measuring, baseline comparison |
 
