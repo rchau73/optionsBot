@@ -53,7 +53,8 @@ type Recorder struct {
 	every time.Duration
 }
 
-// New returns a recorder writing to dir every interval.
+// New returns a recorder writing to dir every interval. A nil dvol is an
+// underlying with no DVOL index (SOL, XRP): dvol_index is left empty.
 func New(src Source, dvol func() float64, dir string, every time.Duration) *Recorder {
 	return &Recorder{src: src, dvol: dvol, dir: dir, every: every}
 }
@@ -94,9 +95,18 @@ func (r *Recorder) Snapshot(now time.Time) (int, error) {
 	if now.Sub(at) > maxSummaryAge {
 		return 0, fmt.Errorf("book summary is %s old", now.Sub(at).Round(time.Second))
 	}
-	records := Rows(rows, at, r.dvol())
+	dvol := 0.0
+	if r.dvol != nil {
+		dvol = r.dvol()
+	}
+	records := Rows(rows, at, dvol)
 	if len(records) == 0 {
 		return 0, fmt.Errorf("no option in the book summary could be parsed")
+	}
+	if r.dvol == nil { // no DVOL index for this underlying (SOL, XRP): an empty column
+		for _, rec := range records {
+			rec[len(rec)-1] = ""
+		}
 	}
 	return len(records), appendGzipCSV(filepath.Join(r.dir, at.UTC().Format("2006-01-02")+".csv.gz"), records)
 }

@@ -183,7 +183,7 @@ Only the settings that are tuned live in the YAML files (2026-10-14: 47 keys bec
 | 0.03 (`delta_slippage`) | max distance from the target delta. An entry picks its call and put **as a pair** within this band; a repair takes the strike nearest the target |
 | 0.1 (`min_trade_amount`) | lot size only when Deribit gives none (it is read per option) |
 | 40 s, 60 s (`eval_interval_ms`, `report_interval_sec`) | decision-loop period; heartbeat and P&L journal line |
-| 60 min (`market_record_minutes`) | market history for backtests and stress tests: the coin's options as Deribit **mainnet** quotes them (bid/ask/mid/mark, mark IV, forward, open interest, Black–Scholes greeks, DVOL) to `data/market/YYYY-MM-DD.csv.gz`, reusing the GEX poll; the USDC-settled options (prices in USDC) to `data/market_usdc/`, one extra mainnet call, for a liquidity comparison |
+| 60 min (`market_record_minutes`) | market history for backtests and stress tests: the coin's options as Deribit **mainnet** quotes them (bid/ask/mid/mark, mark IV, forward, open interest, Black–Scholes greeks, DVOL) to `data/market/YYYY-MM-DD.csv.gz`, reusing the GEX poll; the USDC-settled options (prices in USDC) to `data/market_usdc/`, one extra mainnet call, for a liquidity comparison; the BTC bot also writes SOL's and XRP's USDC options to `data/market_usdc_sol/` and `market_usdc_xrp/` from that same call (empty `dvol_index`, #356) |
 | 5 % (`spread_alert_threshold`), 0.05 (`hedge_report_threshold`) | journal warning on wide fill spreads; `hedge_report.json` from this \|net delta\| |
 
 ### Platform — `.env`
@@ -289,7 +289,31 @@ go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a re
 go run ./cmd/datacoverage -dir data/eth -json
 ```
 
-`-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory. For each dataset — `market` (hourly books), `market_gex` (minute GEX), `market_usdc` (hourly USDC books), `pnl_history.jsonl` (a point a minute) — it reports the first and last record, the bins of the window (an hour or a minute, the dataset's recording period) covered and their share, the hours missing, the days with records, complete and without any, the hours missing per day and the gaps (the 10 longest in text, all in `-json`). An empty bin between two records at most 1.5 periods apart is a ticker's jitter, not a gap. Then the **days a replay decides hourly**: books but no minute GEX record (`cmd/stress -replay` falls back to the books there). Without `-from`/`-to` the window runs from the first to the end of the last recorded day, never past the current hour; days of a window outside the data are reported missing, never filled in. Pure core: `coverage.Coverage(times, from, to, step)` in `internal/coverage`.
+`-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory. For each dataset — `market` (hourly books), `market_gex` (minute GEX), `market_usdc` (hourly USDC books), `market_usdc_sol` and `market_usdc_xrp` (SOL's and XRP's hourly USDC books, the BTC bot only: another bot's folder lists them as not found), `pnl_history.jsonl` (a point a minute) — it reports the first and last record, the bins of the window (an hour or a minute, the dataset's recording period) covered and their share, the hours missing, the days with records, complete and without any, the hours missing per day and the gaps (the 10 longest in text, all in `-json`). An empty bin between two records at most 1.5 periods apart is a ticker's jitter, not a gap. Then the **days a replay decides hourly**: books but no minute GEX record (`cmd/stress -replay` falls back to the books there). Without `-from`/`-to` the window runs from the first to the end of the last recorded day, never past the current hour; days of a window outside the data are reported missing, never filled in. Pure core: `coverage.Coverage(times, from, to, step)` in `internal/coverage`.
+
+## USDC-settled study
+
+`cmd/usdcstudy` (#356, for the SOL/XRP decision #117) compares the liquidity of every recorded option book — BTC and ETH coin-settled (`market`), BTC_USDC and ETH_USDC (`market_usdc`), SOL_USDC and XRP_USDC (`market_usdc_sol`, `market_usdc_xrp`) — on the same hours. It reads recorded files only (no Deribit call, no trading state) and writes counts, percentages and sizes to `data/usdcstudy/<UTC time>/report.md` and `report.json`:
+
+```bash
+go run ./cmd/usdcstudy -dir data/btc,data/eth -from 2026-10-24 -to 2026-11-07   # -to day included; one or more bot folders or data dirs
+```
+
+Per book and slot band (18–40 and 40–60 DTE as the bot counts it, legs with 0.10 ≤ |Δ| ≤ 0.22):
+
+| Column | Meaning |
+|---|---|
+| Quotes | option-hours in the band (each option once per snapshot) |
+| One-sided % | share of them with no bid, no ask or neither |
+| Spread % mid (all) | (ask − bid) ÷ mid of the two-sided quotes: median / 90th percentile, every hour |
+| Spread % mid (volatile) | the same over the volatile hours: the 10 % of hours with the largest hourly spot move, measured on the same books (spot = the nearest expiry's forward) |
+| Strangle hours | hours with a 0.16 Δ strangle in the band: the call and the put nearest 0.16 Δ on the band's expiry nearest its middle DTE |
+| OI call / put | median open interest at those strikes, in the coin |
+| Premium at bid % spot | median of (call bid + put bid) as % of spot, hours with both bids |
+| Cap size (coin, USD) | median of what the bot's liquidity cap (`liquidity_cap_oi_pct`, 10 % of the smaller leg's open interest) allows, floored to the contract step — BTC 0.1, ETH 1, BTC_USDC 0.01, ETH_USDC 0.1, SOL 10, XRP 1,000 — and in USD at that hour's spot |
+| Hours cap < 1 contract | hours the cap allowed nothing |
+
+A second table gives each book's snapshots, missing hours and missing days (a day with no snapshot is listed, never filled), longest gap, the window's **largest hourly move** (signed, with its time) and the volatile hours' threshold. Folders absent from a `-dir` (e.g. SOL under `data/eth`) are listed as not recorded. Pure core: `usdcstudy.Build` in `internal/usdcstudy`.
 
 ## Evidence report
 
