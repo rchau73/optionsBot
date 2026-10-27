@@ -171,7 +171,9 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	if ut.AllowedShare != nil {
 		p(" · allowed %.0f %% of %.1f measured hours", *ut.AllowedShare*100, ut.MeasuredHours)
 	}
-	p("\n")
+	p("\n\n")
+
+	writeReliability(p, r.E1)
 
 	_, err := io.WriteString(w, b.String())
 	return err

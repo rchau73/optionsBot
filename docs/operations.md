@@ -73,7 +73,7 @@ go run ./cmd/deployeffect -journal $M/data/btc/orders.log -config $M/config_btc.
 go run ./cmd/deployeffect -journal $M/data/eth/orders.log -config $M/config_eth.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
 ```
 
-It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger). The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting. The full rules are in `internal/deployeffect` (package comment).
+It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger). The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting. The full rules are in `internal/deployeffect` (package comment). The weekly evidence report's **E1 reliability** section (#361, README "Evidence report") runs the same classification on every bot's week, with the startups' times, commits and restart-made lots, so the count is there each Monday without running the tool.
 
 ### Inside an environment
 
@@ -124,6 +124,8 @@ curl -s localhost:8081/api/status | jq '.utilisation_7d, .utilisation_30d'
 - `mean_pct` — the time-weighted mean of IM ÷ IM limit, in %, over the time entries were allowed (null if they never were). E1's target is ≥ 60 %; a bot at 10 % of a 20 % limit shows 50.
 - `allowed_share` — the share (0–1) of the measured time entries were allowed. A low `mean_pct` with a high `allowed_share` is idle capital; a low `allowed_share` means the policy kept the bot out.
 - `allowed_hours`, `measured_hours` — the time behind the two figures. Each line stands for the time until the next one, at most 15 minutes, so the hours a bot was down are not counted.
+
+Every week the evidence report's **E1 reliability** section (#361, README "Evidence report") states the week's `mean_pct` against the 60 % target and splits the slots' idle time by cause (`internal/idlemargin`, as `cmd/idlemargin`).
 
 ### Sign-in (each environment)
 

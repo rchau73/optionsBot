@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/deployeffect"
 	"optionsbot/internal/idlemargin"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
@@ -41,10 +42,13 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 	}
 	if _, err := os.Stat(p.Journal); err != nil {
 		note("journal not read: %v", err)
+		in.JournalNote = err.Error()
 	} else if rp, err := orders.ReplayFile(p.Journal, 0); err != nil {
 		note("journal not read: %v", err)
+		in.JournalNote = err.Error()
 	} else {
 		in.Trades = rp.Trades
+		loadE1Journal(&in, p, env, note)
 	}
 	if pts, bad, err := idlemargin.ReadHistoryFile(p.History); err != nil {
 		note("P&L history not read: %v", err)
@@ -108,6 +112,40 @@ func RunStress(in *Inputs, stressCmd string) {
 		}
 		o.Command = strings.Join(append([]string{cmd[0]}, args...), " ")
 		in.Stress = append(in.Stress, o)
+	}
+}
+
+// loadE1Journal reads the journal again for the E1 section (#361): the
+// idle-margin events and the startup lines each package decodes, and the
+// environment's deploys.tsv. An empty journal gives empty, non-nil reads.
+func loadE1Journal(in *Inputs, p Paths, env string, note func(string, ...any)) {
+	in.DeploysPath = p.Deploys
+	if ev, bad, err := idlemargin.ReadJournalFile(p.Journal); err != nil {
+		note("journal not read for idle margin: %v", err)
+	} else {
+		in.IdleEvents = append([]idlemargin.Event{}, ev...)
+		if bad > 0 {
+			note("journal: %d unreadable lines skipped", bad)
+		}
+	}
+	if lines, _, err := deployeffect.ReadJournalFile(p.Journal); err != nil {
+		note("journal not read for startups: %v", err)
+	} else {
+		in.DeployLines = append([]deployeffect.Line{}, lines...)
+	}
+	if p.Deploys == "" {
+		in.DeploysNote = "no deploys.tsv: startups from the journal only, commits not named"
+		return
+	}
+	deps, bad, err := deployeffect.ReadDeploysFile(p.Deploys, env)
+	if err != nil {
+		note("deploys not read: %v", err)
+		in.DeploysNote = "deploys.tsv not read: startups from the journal only, commits not named, restarts into a flat book not counted"
+		return
+	}
+	in.Deploys = deps
+	if bad > 0 {
+		note("deploys: %d unreadable lines skipped", bad)
 	}
 }
 
