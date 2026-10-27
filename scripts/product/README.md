@@ -103,3 +103,21 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 - **Every question:** none of its `must_not_say` phrases.
 
 Exit 0 when every question passes, 1 when one fails, 2 on bad input (unreadable JSON, an answer for an unknown id, two answers for one id).
+
+## Go / no-go scorecard (`go_no_go.py`, #305)
+
+Puts E5's decision inputs side by side — rows, thresholds and the E2 window in `docs/product/go-no-go.md`:
+
+| Row | Source | Threshold |
+|---|---|---|
+| Survey: cycle holders who would delegate | `survey_tally.py -json` output (`--tally`, default `data/product/interviews/tally.json`) | ≥ 30 % (PRD §6 kill if under) |
+| Fake door outcome | `fakedoor.py`'s `result.json` (`--fakedoor`, default the newest under `data/product/fakedoor/`) | Success |
+| E2: engine vs holding the coin | weekly evidence reports `<--evidence-root>/data/evidence/<week>/<--bot>.json` | engine's weekly Sharpe > hold's over the last 12 weeks |
+| Legal gate L1–L6, L9 | `docs/legal/preliminary-answers.md` (`--legal`) | all answered by counsel |
+
+```bash
+python3 scripts/product/go_no_go.py
+python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stable --bot btc -json
+```
+
+Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date. A missing input stays `missing`. **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's. Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.

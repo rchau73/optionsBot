@@ -62,6 +62,8 @@ Count **cycle holders only**; active option traders are reported beside them but
 - **Kill criterion met** — Share < 30 %. Recommend **no-go** on letting software trade customer accounts, with the F2 quotes that explain why.
 - **Kill criterion not met** — Share ≥ 30 %. Discovery continues to the waiting-list and pricing tests of E5.
 
+The verdict is one row of E5's go / no-go scorecard (`../go-no-go.md`, `scripts/product/go_no_go.py`), beside the fake door, the hold-the-coin test and the legal gate.
+
 Undecided counts as not joined: a "not now" is not a decision to let software trade. If Share and Past delegation point in different directions (for example many joined but none ever delegated before), say so beside the verdict — it is the first thing to probe in the next round.
 
 ## 5. What changes in the PRD
