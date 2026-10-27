@@ -32,6 +32,17 @@ ENV_NAMES="stable mvp"
 
 env_dir() { echo "$ENVS_DIR/$1"; }
 
+# env_not_in_clone — fails, printing why, when the script runs from inside an
+# environment's clone (it has a deploy.env). promote.sh and `envctl.sh … init`
+# call it: 2026-10-24 stable's own v0.1.0 copy looked in ~/optionsbot-env and
+# init created a stray clone there (#360). The agents (deploy.sh) do run from
+# the mvp clone and do not call it.
+env_not_in_clone() {
+  [[ ! -f "$_env_repo/deploy.env" ]] && return 0
+  echo "$_env_repo is an environment's clone: run it from the dev checkout"
+  return 1
+}
+
 # env_file_var <file> <KEY> → value of KEY in a dotenv file (quotes stripped).
 env_file_var() {
   [[ -f "$1" ]] || return 0
