@@ -2,7 +2,9 @@
 // request (event plan §5, LGPD art. 18 / GDPR arts. 15 and 17; #296) — the
 // logic of scripts/analytics-user.mjs, kept here so tests call it directly.
 // Reads auth.db (never writes it: the running monitor holds its own copy) and
-// prints counts and paths only, never an event's contents.
+// prints counts and paths only, never an event's contents. An export also
+// carries the person's survey answers from auth.db (codes and free text, one
+// {"record": "survey_answer", …} line each, after the events; #363).
 // Explicit extensions: the CLI loads this with plain `node`.
 import fs from "node:fs";
 import path from "node:path";
@@ -40,6 +42,12 @@ export function parseArgs(argv) {
   return req;
 }
 
+/** A user's survey answers, or [] when the file predates the survey_answers table (#363). */
+function surveyAnswersOf(store, rowId) {
+  if (!store.one("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'survey_answers'")) return [];
+  return store.surveyAnswers(rowId);
+}
+
 function stamp(nowMs) {
   return new Date(nowMs).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
@@ -64,13 +72,20 @@ export async function runUserRequest({ argv, env = process.env, cwd = process.cw
 
   let rowId = req.rowId;
   let target = rowId ? `row ${rowId}` : req.username;
-  if (!rowId) {
-    const store = await AuthStore.openReadOnly(dbPath);
-    const user = store.userByName(req.username);
+  const store = await AuthStore.openReadOnly(dbPath);
+  let answers;
+  try {
+    if (!rowId) {
+      const user = store.userByName(req.username);
+      if (!user) return { code: 1, out: [`no user ${req.username} in ${dbPath} (already deleted? use --row-id from the deletion's log line)`] };
+      rowId = user.id;
+      target = user.username;
+    }
+    // Survey answers live in auth.db beside the user (#363): deleted with the
+    // user by the monitor, exported here. A file from before #363 has none.
+    answers = req.action === "export" ? surveyAnswersOf(store, rowId) : [];
+  } finally {
     store.db.close();
-    if (!user) return { code: 1, out: [`no user ${req.username} in ${dbPath} (already deleted? use --row-id from the deletion's log line)`] };
-    rowId = user.id;
-    target = user.username;
   }
   const userId = pseudonymousId(salt, rowId);
   const time = new Date(nowMs).toISOString();
@@ -80,9 +95,9 @@ export async function runUserRequest({ argv, env = process.env, cwd = process.cw
     if (req.action === "export") {
       const lines = exportEventsOf(file, userId);
       const out = path.resolve(cwd, req.out ?? path.join(path.dirname(file), `analytics-export-${target.replace(/\W+/g, "-")}-${stamp(nowMs)}.jsonl`));
-      writeExport(out, lines);
-      audit({ time, action: "events_exported", ...who, lines: lines.length, file: out });
-      return { code: 0, out: [`exported ${lines.length} events of ${target} to ${out}`] };
+      writeExport(out, [...lines, ...answers.map((a) => JSON.stringify({ record: "survey_answer", ...a }))]);
+      audit({ time, action: "events_exported", ...who, lines: lines.length, survey_answers: answers.length, file: out });
+      return { code: 0, out: [`exported ${lines.length} events and ${answers.length} survey answers of ${target} to ${out}`] };
     }
     const { removed } = deleteEventsOf(file, userId);
     audit({ time, action: "events_deleted", ...who, removed });

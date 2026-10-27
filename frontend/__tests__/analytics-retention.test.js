@@ -138,7 +138,7 @@ describe("Scenario: Deleting a user deletes their events", () => {
     write([event(a, 3), event(b, 3), event(a, 2), event(b, 1, "help_opened")]);
     const bobLines = lines().filter((l) => JSON.parse(l).user_id === b);
 
-    expect(auth.deleteUser(admin, alice.id)).toEqual({ ok: true, events_removed: 2 });
+    expect(auth.deleteUser(admin, alice.id)).toEqual({ ok: true, events_removed: 2, survey_answers_removed: 0 });
     expect(lines().some((l) => l.includes(a))).toBe(false);
     expect(lines()).toEqual(bobLines);
     expect(mode(file)).toBe(0o600);
@@ -171,7 +171,57 @@ describe("Scenario: Deleting a user deletes their events", () => {
 
   test("no events file: deletion succeeds with nothing removed", async () => {
     const { auth, admin, alice } = await service();
-    expect(auth.deleteUser(admin, alice.id)).toEqual({ ok: true, events_removed: 0 });
+    expect(auth.deleteUser(admin, alice.id)).toEqual({ ok: true, events_removed: 0, survey_answers_removed: 0 });
+  });
+});
+
+describe("Scenario: deleting a user removes the answers (#363)", () => {
+  async function withAnswers(audit) {
+    const store = await AuthStore.open(":memory:");
+    const auth = new AuthService({ store, key: authKey(TEST_SECRET), audit: (e) => audit.push(e), deleteEvents: userEventsEraser(file, SALT) });
+    await auth.bootstrapAdmin({ ADMIN_USERNAME: "admin", ADMIN_PASSWORD: "admin password for tests" });
+    const alice = store.createUser({ username: "alice", passwordHash: "x", role: "user" });
+    const bob = store.createUser({ username: "bob", passwordHash: "x", role: "user" });
+    store.addSurveyAnswer(alice.id, { surveyId: "nps", codes: { score: "3", reason_code: "other" }, text: "alice's words" }, NOW);
+    store.addSurveyAnswer(alice.id, { surveyId: "answers", codes: { came_for: "holding" } }, NOW);
+    store.addSurveyAnswer(bob.id, { surveyId: "nps", codes: { score: "10" } }, NOW);
+    return { auth, store, admin: store.userByName("admin"), alice, bob };
+  }
+
+  test("a user with survey answers is deleted: their rows are gone, the others' stay, and it is audited", async () => {
+    const audit = [];
+    const { auth, store, admin, alice, bob } = await withAnswers(audit);
+    expect(auth.deleteUser(admin, alice.id)).toEqual({ ok: true, events_removed: 0, survey_answers_removed: 2 });
+    expect(store.surveyAnswers(alice.id)).toEqual([]);
+    expect(store.all("SELECT COUNT(*) AS n FROM survey_answers WHERE free_text LIKE '%alice%'")[0].n).toBe(0);
+    expect(store.surveyAnswers(bob.id)).toHaveLength(1);
+    expect(audit).toContainEqual(
+      expect.objectContaining({ action: "survey_answers_deleted", username: "admin", target: "alice", target_row_id: alice.id, removed: 2, reason: "user_deleted" }),
+    );
+  });
+
+  test("a failed delete is logged at ERROR with an audit line, and the next start finishes it", async () => {
+    const audit = [];
+    const { auth, store, admin, alice } = await withAnswers(audit);
+    jest.spyOn(store, "deleteSurveyAnswers").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    const r = auth.deleteUser(admin, alice.id);
+    expect(r.ok).toBe(true);
+    expect(r.survey_answers_error).toMatch(/disk full.*next start/);
+    expect(store.userById(alice.id)).toBeNull(); // access is removed regardless
+    expect(audit).toContainEqual(expect.objectContaining({ action: "survey_answers_delete_failed", target: "alice", target_row_id: alice.id, error: "disk full" }));
+    expect(console.error.mock.calls.map((c) => JSON.parse(c[0]))).toContainEqual(
+      expect.objectContaining({ level: "ERROR", msg: "survey answers of a deleted user NOT deleted", user_row_id: alice.id }),
+    );
+
+    // The rows left behind belong to no user: the next open deletes them.
+    const dbFile = path.join(dir, "auth.db");
+    store.file = dbFile;
+    store.save();
+    const reopened = await AuthStore.open(dbFile);
+    expect(reopened.all("SELECT user_id FROM survey_answers").map((x) => x.user_id)).toEqual([3]);
+    expect((await AuthStore.openReadOnly(dbFile)).surveyAnswers(alice.id)).toEqual([]);
   });
 
   test("deleteEventsOf refuses an id that is not a pseudonymous id", () => {
@@ -203,13 +253,53 @@ describe("Scenario: Access request", () => {
     const out = path.join(dir, "alice.jsonl");
 
     const r = await runUserRequest({ argv: ["export", "alice", "--out", out], env: env(), cwd: dir, nowMs: NOW, by: "cli:ops" });
-    expect(r).toEqual({ code: 0, out: [`exported 5 events of alice to ${out}`] });
+    expect(r).toEqual({ code: 0, out: [`exported 5 events and 0 survey answers of alice to ${out}`] });
     expect(fs.readFileSync(out, "utf8").split("\n").filter(Boolean)).toEqual(aliceLines);
     expect(mode(out)).toBe(0o600);
     expect(lines()).toHaveLength(7); // export removes nothing
     expect(audits()).toEqual([
-      { time: new Date(NOW).toISOString(), action: "events_exported", username: "cli:ops", role: "admin", target: "alice", target_row_id: 2, reason: "request", lines: 5, file: out },
+      {
+        time: new Date(NOW).toISOString(),
+        action: "events_exported",
+        username: "cli:ops",
+        role: "admin",
+        target: "alice",
+        target_row_id: 2,
+        reason: "request",
+        lines: 5,
+        survey_answers: 0,
+        file: out,
+      },
     ]);
+  });
+
+  test("export carries the person's survey answers, free text included, and prints counts only (#363)", async () => {
+    const store = await AuthStore.open(db);
+    store.addSurveyAnswer(2, { surveyId: "nps", codes: { score: "9", reason_code: "saves_time" }, text: "private words" }, NOW);
+    store.addSurveyAnswer(1, { surveyId: "exit", codes: { reason_code: "price" } }, NOW);
+    store.addSurveyAnswer(2, { surveyId: "answers", codes: { came_for: "income" } }, NOW + 1000);
+    write([event(pseudonymousId(SALT, 2), 1)]);
+    const out = path.join(dir, "alice.jsonl");
+
+    const r = await runUserRequest({ argv: ["export", "alice", "--out", out], env: env(), cwd: dir, nowMs: NOW });
+    expect(r).toEqual({ code: 0, out: [`exported 1 events and 2 survey answers of alice to ${out}`] });
+    expect(r.out.join()).not.toContain("private words");
+    const exported = fs.readFileSync(out, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    expect(exported.slice(1)).toEqual([
+      { record: "survey_answer", survey_id: "nps", codes: { score: "9", reason_code: "saves_time" }, text: "private words", created_at: new Date(NOW).toISOString() },
+      { record: "survey_answer", survey_id: "answers", codes: { came_for: "income" }, text: null, created_at: new Date(NOW + 1000).toISOString() },
+    ]);
+    expect(audits()).toEqual([expect.objectContaining({ action: "events_exported", lines: 1, survey_answers: 2 })]);
+  });
+
+  test("a user database from before #363 (no survey_answers table) exports events only", async () => {
+    const store = await AuthStore.open(db);
+    store.db.exec("DROP TABLE survey_answers");
+    store.save();
+    write([event(pseudonymousId(SALT, 2), 1)]);
+    const out = path.join(dir, "alice.jsonl");
+    const r = await runUserRequest({ argv: ["export", "alice", "--out", out], env: env(), cwd: dir, nowMs: NOW });
+    expect(r).toEqual({ code: 0, out: [`exported 1 events and 0 survey answers of alice to ${out}`] });
   });
 
   test("scripts/analytics-user.mjs runs under plain node from the repository root: counts and path only", () => {
@@ -223,7 +313,7 @@ describe("Scenario: Access request", () => {
     });
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
-    expect(r.stdout).toBe(`exported 2 events of alice to ${out}\n`);
+    expect(r.stdout).toBe(`exported 2 events and 0 survey answers of alice to ${out}\n`);
     expect(fs.readFileSync(out, "utf8").split("\n").filter(Boolean)).toHaveLength(2);
     expect(audits()).toEqual([expect.objectContaining({ action: "events_exported", target: "alice", lines: 2 })]);
 
@@ -240,7 +330,7 @@ describe("Scenario: Access request", () => {
     write([event(pseudonymousId(SALT, 2), 1)]);
     const r = await runUserRequest({ argv: ["export", "alice"], env: env(), cwd: dir, nowMs: NOW });
     const out = path.join(dir, "analytics-export-alice-20261023T120000Z.jsonl");
-    expect(r.out).toEqual([`exported 1 events of alice to ${out}`]);
+    expect(r.out).toEqual([`exported 1 events and 0 survey answers of alice to ${out}`]);
     const again = await runUserRequest({ argv: ["export", "alice"], env: env(), cwd: dir, nowMs: NOW });
     expect(again.code).toBe(1);
     expect(again.out[0]).toMatch(/export failed: EEXIST/);
