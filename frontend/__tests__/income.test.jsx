@@ -90,6 +90,19 @@ describe("Scenario: a losing month is as visible as a winning one", () => {
     expect(tile).toHaveTextContent("July: BTC fell 14.0 % in 5 days");
     expect(tile).toHaveClass("border-loss/60");
   });
+
+  test("worst month and worst week are loss-styled only when negative (review of #349)", () => {
+    const s = fixture().summary;
+    render(
+      <Page
+        income={fixture({
+          summary: { ...s, worst_month: { ...s.worst_month, coin: 0.004, usd: 240 }, worst_week: { ...s.worst_week, coin: 0.001, pct: 0.05 } },
+        })}
+      />,
+    );
+    expect(screen.getByRole("region", { name: "Worst month" })).not.toHaveClass("border-loss/60");
+    expect(screen.getByRole("region", { name: "Worst week" })).not.toHaveClass("border-loss/60");
+  });
 });
 
 describe("Scenario: the columns add up", () => {
@@ -204,7 +217,8 @@ describe("wiring", () => {
       holding: null,
       income: { coin: "BTC", months: [] },
       worst_case: { available: false },
-      last_action: null,
+      // A close in the journal: flat now, not a first day (#321).
+      last_action: { at: "2026-10-21T15:00:00Z", kind: "close", instrument: "BTC-X-P", qty: 0.1, rule: "roi_target", reason: "Took profit" },
     };
     render(<BotSummary bot={{ name: "btc", summary }} />);
     expect(screen.getByRole("link", { name: /Income, month by month/ })).toHaveAttribute("href", "/income?bot=btc");
@@ -249,7 +263,10 @@ describe("income helpers", () => {
     expect(formatAmount(-0.0123, "coin", "BTC")).toBe("−0.01230 BTC");
     expect(formatAmount(1200, "usd", "BTC")).toBe("+$1,200");
     expect(upDownLine({ up_months: 1, down_months: 0 })).toBe("1 month up, 0 down");
-    expect(returnLine({ return_pct: -1.25 }, "ETH")).toBe("−1.3 % more ETH than holding");
+    // A negative return reads "less", never "−… more" (review of #349).
+    expect(returnLine({ return_pct: -1.25 }, "ETH")).toBe("1.3 % less ETH than holding");
+    expect(returnLine({ return_pct: 1.2 }, "BTC")).toBe("+1.2 % more BTC than holding");
+    expect(returnLine({ return_pct: -0.01 }, "BTC")).toBe("0.0 % more BTC than holding");
     expect(worstMonthMove({ month: "2026-03", spot_move_pct: 4.2, spot_days: 1 }, "ETH")).toBe("March: ETH rose 4.2 % in 1 day");
     expect(worstMonthMove({ month: "2026-03", spot_move_pct: null }, "ETH")).toBeNull();
     expect(worstWeekPct({ known: true, pct: null })).toBe("% of the account unknown");

@@ -165,8 +165,9 @@ func TestUsabilityKit_Privacy(t *testing.T) {
 }
 
 // demoAPI builds cmd/monitor-demo, starts it on a free local port with the
-// kit's flags (none but the address) and returns a JSON getter.
-func demoAPI(t *testing.T) func(path string, into any) {
+// kit's flags (none but the address, plus any extra args) and returns a JSON
+// getter.
+func demoAPI(t *testing.T, args ...string) func(path string, into any) {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("builds and runs cmd/monitor-demo")
@@ -183,7 +184,7 @@ func demoAPI(t *testing.T) func(path string, into any) {
 	l.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, bin, "-addr", addr)
+	cmd := exec.CommandContext(ctx, bin, append([]string{"-addr", addr}, args...)...)
 	if err := cmd.Start(); err != nil {
 		cancel()
 		t.Fatalf("start monitor-demo: %v", err)

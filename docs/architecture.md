@@ -83,6 +83,7 @@ See [seq_gateway](seq_gateway.png), [rate limiter](gateway_ratelimiter.png), [ci
 - **Connection stats** (`connstats.go`, `Gateway.ConnStats`): drops (with the read error), successful reconnects and request timeouts per UTC day, plus the last time of each — served by `/api/status` under `connections.<gateway name>`. In memory, so they restart with the process (`uptime_sec` says when).
 - **Decision-loop watchdog** (`strategy.WatchProgress`, in `main`): if no decision cycle completes for max(10 × `eval_interval_ms`, 10 min), the bot logs `decision loop stalled` and exits non-zero for a supervised restart — a stalled loop checks no stop-loss. A halted bot (kill switch) is idle on purpose and never trips it.
 - **Heartbeats:** Deribit `test_request`s are answered directly on the socket, bypassing the queue.
+- **Every method sent through it** (and every subscription channel), with package, pool, retry and lane: [exchange-adapter.md §1](exchange-adapter.md#1-inventory-every-deribit-method-and-subscription), pinned by `tests/exchange_coupling_test.go`.
 
 ## 5. Market data
 
@@ -197,7 +198,7 @@ See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 - **Backtest ≠ live loop.** The backtest engine re-implements the day loop around the shared pure functions instead of running `strategy.Strategy` itself, so order-lifecycle behaviour (pending fills, amends, partial fills) is only tested live/testnet and in the end-to-end tests. Running the real strategy against `SimExecutor` is the planned next step.
 - **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only (`-calendar deribit`: weeklies, monthlies and quarterlies as Deribit lists them, for the ladder sweep); results on it validate mechanics, not profitability.
 - **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions. The only persisted state is the P&L history for the monitor chart (`data/pnl_history.jsonl`); trading never reads it.
-- **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating.
+- **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating. Two bots on one account also cancel and adopt each other's orders and positions: every account-wide action, the isolation options and key handling ("Tenancy and keys", #326) are in [account-isolation.md](account-isolation.md).
 
 ## 15. Exchange adapters
 
@@ -226,5 +227,7 @@ What the strategy asks of an exchange, and the Deribit call behind each:
 | `RateLimitPool` | `gateway.IsMatchingEngine`: two credit pools, matching engine (buy/sell/edit/cancel) and everything else | pool layout and limits differ per exchange |
 | `OptionNameParser` | `marketdata.ParseOptionName` (`BTC-4OCT26-60000-P`) | **yes**: instrument naming |
 | `FeeModel` | `orders.OptionFee`: 0.03 % of the underlying, capped at 12.5 % of the price (backtest and stress; live books the fee Deribit reports) | **yes**: each exchange has its own schedule |
+
+The full inventory — every Deribit method and subscription with its package, access, rate-limit pool, retry and lane, the Deribit-specific assumptions outside the gateway, the proposed four-group adapter interface with its capability list, and the migration steps — is [exchange-adapter.md](exchange-adapter.md) (#325, #253); `tests/exchange_coupling_test.go` fails when a `"public/…"`/`"private/…"` literal under `internal/` is missing from it or appears under `internal/strategy`.
 
 Order handling, reconcile and the trading rules do not change with this boundary. A change that a new exchange needs (e.g. no portfolio simulation, no amend) is a person's decision. The capability gaps per exchange (Bybit, OKX, Binance, Hyperliquid) belong to the E8 feasibility briefs, in their own document, linked here when it exists.

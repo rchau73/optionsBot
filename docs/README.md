@@ -6,6 +6,7 @@
 | [../OptionStrategy.md](../OptionStrategy.md) | The trading strategy in plain language, with examples and risks |
 | [architecture.md](architecture.md) | Detailed design: packages, concurrency, invariants, limitations |
 | [operations.md](operations.md) | Running, monitoring, kill switch, troubleshooting |
+| [exchange-adapter.md](exchange-adapter.md) | Every Deribit method the bot uses, the Deribit-specific assumptions, the proposed exchange adapter interface and its migration steps (E8) |
 | [direction-trial.md](direction-trial.md) | GEX direction trial (bias vs sma): decision rule, kill rule and review date, written before the result |
 
 ## Diagrams

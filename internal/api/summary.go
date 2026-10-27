@@ -52,7 +52,19 @@ type HoldingSummary struct {
 	NotionalUSD   float64    `json:"notional_usd"`  // notional_coin × spot
 	NearestExpiry *time.Time `json:"nearest_expiry"`
 	NearestDTE    *float64   `json:"nearest_dte"` // days, fractional
-	Coin          string     `json:"coin"`
+	// Nearest is the short strikes on the nearest expiry, for the phone
+	// overview's range bar (#320); null with nothing held.
+	Nearest *NearestStrangle `json:"nearest"`
+	Coin    string           `json:"coin"`
+}
+
+// NearestStrangle is the band the book is short on its nearest expiry: the
+// highest short put and the lowest short call there (the tightest pair when
+// several strangles share the expiry). A side with no short leg is null.
+type NearestStrangle struct {
+	Expiry     time.Time `json:"expiry"`
+	PutStrike  *float64  `json:"put_strike"`
+	CallStrike *float64  `json:"call_strike"`
 }
 
 // IncomeSummary is realised P&L per calendar month (net of fees, from the
@@ -146,6 +158,9 @@ type LastAction struct {
 	Detail     string    `json:"detail,omitempty"`
 	PnLCoin    *float64  `json:"pnl_coin,omitempty"` // closes only
 	PnLUSD     *float64  `json:"pnl_usd,omitempty"`
+	// Spot is the coin's index price at the action (USD), for "the coin's
+	// move since" on the phone overview (#320); omitted when not journaled.
+	Spot *float64 `json:"spot,omitempty"`
 }
 
 // summary serves GET /api/summary.
@@ -208,8 +223,30 @@ func holdingOf(strangles []strategy.StrangleView, spot float64, coin string, now
 	if h.NearestExpiry != nil {
 		dte := h.NearestExpiry.Sub(now).Hours() / 24
 		h.NearestDTE = &dte
+		h.Nearest = nearestOf(strangles, *h.NearestExpiry)
 	}
 	return h
+}
+
+// nearestOf is the band of short strikes on expiry: the highest put and the
+// lowest call (longs are not part of the band).
+func nearestOf(strangles []strategy.StrangleView, expiry time.Time) *NearestStrangle {
+	n := &NearestStrangle{Expiry: expiry}
+	for _, st := range strangles {
+		for _, l := range st.Legs {
+			if !l.Expiry.Equal(expiry) || l.Side == orders.DirectionBuy {
+				continue
+			}
+			strike := l.Strike
+			switch {
+			case l.OptionType == "call" && (n.CallStrike == nil || strike < *n.CallStrike):
+				n.CallStrike = &strike
+			case l.OptionType == "put" && (n.PutStrike == nil || strike > *n.PutStrike):
+				n.PutStrike = &strike
+			}
+		}
+	}
+	return n
 }
 
 // IncomeOf sums the journal's closes per UTC calendar month over the last
@@ -334,6 +371,10 @@ func lastActionOf(t orders.Trade) LastAction {
 	if t.Kind == "close" {
 		pnl, usd := t.PnL, t.PnLUSD
 		la.PnLCoin, la.PnLUSD = &pnl, &usd
+	}
+	if t.Spot > 0 {
+		spot := t.Spot
+		la.Spot = &spot
 	}
 	return la
 }
