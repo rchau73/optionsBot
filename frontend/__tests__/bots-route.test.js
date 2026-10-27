@@ -73,6 +73,15 @@ describe("read-only proxy", () => {
     expect((await call("btc", ["performance"], "?range=1y")).status).toBe(400);
   });
 
+  test("forwards the explain endpoint with its seq, and the bot's 404 (#314)", async () => {
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"source":"journal"}', { status: 200 }));
+    const res = await call("btc", ["explain"], "?seq=812");
+    expect(global.fetch).toHaveBeenCalledWith("http://bot-btc:8081/api/explain?seq=812", expect.anything());
+    expect(res.status).toBe(200);
+    global.fetch = jest.fn().mockResolvedValue(new Response('{"error":"not in recent history"}', { status: 404 }));
+    expect((await call("btc", ["explain"], "?seq=5")).status).toBe(404);
+  });
+
   test("refuses unknown bots and endpoints", async () => {
     global.fetch = jest.fn();
     expect((await call("eth", ["status"])).status).toBe(404);
