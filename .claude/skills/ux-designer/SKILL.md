@@ -53,7 +53,7 @@ The monitor is Next.js + Tailwind (`frontend/`; app/, components/, hooks/, lib/)
 ```markdown
 # Design handoff: <screen or flow> (epic E<n>, prototype <link>, approved <date>)
 Job and metric: <the user job · the metric this should move · analytics events to add>
-Flow: <steps, entry points, exits>
+Flow: <steps, entry points, exits; the menu entry: label, position, roles — every new, renamed or removed page states its menu change>
 Layout: <desktop · tablet · phone behaviour>
 Components: <existing ones reused · new ones with their props and variants>
 States: empty · loading · partial · stale · error · success · a loss scenario

@@ -113,3 +113,4 @@ Never reintroduce env-var overrides for logic parameters.
 - `OptionStrategy.md` §9 "Market regimes and what the bot does" is the table of every open/close/hold rule by market state (normal, freeze, confirmed negative regime, GEX shedding, MM limit). Update it in the same PR as any rule change.
 - Diagrams are Mermaid `.mmd` in `docs/` rendered to PNG with `make diagrams`; update both when a flow changes.
 - The planned dashboard lives in `frontend/` with its own `frontend/README.md`; keep UI/UX material out of the backend docs.
+- **Monitor pages and the menu** (product owner, 2026-10-27): every change that adds, renames or removes a monitor page updates the menu in the same PR (`frontend/lib/menu.js`, #385), or names the page in the menu test's allow-list with its reason; the test fails on a page that is in neither.
