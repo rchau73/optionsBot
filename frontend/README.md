@@ -113,6 +113,8 @@ The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PA
 | `POST /api/admin/users/<id>/password` `{"password"}` | `resetPassword`: sets it and ends every session of that user (each browser's next request that re-reads the session, and its refresh, answer 401); audited `password_reset` | 400 under 12 characters · 404 · 409 yourself |
 | `POST /api/admin/users/<id>/reset-link` `{}` | `issueResetLink` → `{"url", "expires_at"}` once (Reset link, above); audited `reset_link_issued`, never with the token | 404 · 409 yourself |
 | `POST /api/admin/users/<id>/signout` `{}` | `signOutEverywhere`; audited `signed_out_everywhere` | 404 |
+| `GET /api/compare` (#302) | `{"reports": [{id, underlying, base, proposed, from, to, ran: {backtest, replay, stress}}]}` from `COMPARE_DIR/<id>/report.json`: newest first, 50 at most, file names only (never paths), a folder that is not a report time or whose report cannot be read skipped (WARN with the ids); missing or empty dir → empty list. Manager or admin; every read logged with the person; read-only | 401 no session · 403 role user |
+| `GET /api/compare/<id>` (#302) | that `report.json` exactly as stored, `disclaimer` included. `<id>` is a folder time (`20261012T093000Z`) | 400 any other id (`..`, a slash, …; the disk is not touched) · 404 no report · 500 unreadable or malformed JSON (a log line with the id, never the content) · 401/403 as above |
 | `DELETE /api/admin/users/<id>` `{}` | `deleteUser` (and the person's analytics events, "Analytics" below) → `{"events_removed"}` or `{"events_error"}` | 404 · 409 yourself or the last admin |
 
 All state-changing ones are same-origin JSON only (403 cross-origin, 415 without `application/json`); an ended session is 401. Every change is one audit line and one JSON log line naming the admin and the person — never a password. `last_sign_in_at` is a column of `users`, added to an older `auth.db` at start and set by each successful sign-in.
@@ -211,6 +213,7 @@ Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ig
 | `ANTHROPIC_API_KEY` | — (off) | the assistant's Claude API key, from `.env`, written by the person; never logged or sent to the browser |
 | `ASSISTANT_MODEL` | `claude-opus-5-5` | the assistant's model |
 | `ASSISTANT_LOG_PATH` | `assistant.jsonl` beside `AUTH_DB_PATH` | the assistant's review log |
+| `COMPARE_DIR` | `data/compare` in the clone | the comparison reports `cmd/compare` writes (`<UTC time>/report.json`), read-only through `/api/compare` |
 
 ## Develop
 
