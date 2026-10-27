@@ -23,6 +23,10 @@ type View struct {
 	// StopLossMultiple: a leg is bought back once its loss reaches this
 	// multiple of its premium (stop_loss_multiplier), for the plain words.
 	StopLossMultiple float64 `json:"stop_loss_multiple"`
+	// DeltaExitThreshold and RepairCooldownHours: the delta exit and the wait
+	// after a stop, for the "How it works" page (#322).
+	DeltaExitThreshold  float64 `json:"delta_exit_threshold"`
+	RepairCooldownHours int     `json:"repair_cooldown_hours"`
 
 	Market        orders.MarketSnapshot `json:"market"`
 	FlipBufferPct float64               `json:"flip_buffer_pct"` // the flip's ±1σ shed band, % of spot (0 = no DVOL / no buffer)
@@ -253,14 +257,16 @@ func (s *Strategy) View() View {
 
 	now := time.Now()
 	v := View{
-		AsOf:             now,
-		StrategyID:       s.strategyID(),
-		Underlying:       s.cfg.Underlying,
-		Environment:      s.cfg.Environment,
-		Halted:           pub.halted,
-		LoopAt:           pub.at,
-		EvalEveryMS:      s.cfg.EvalIntervalMS,
-		StopLossMultiple: s.cfg.StopLossMultiplier,
+		AsOf:                now,
+		StrategyID:          s.strategyID(),
+		Underlying:          s.cfg.Underlying,
+		Environment:         s.cfg.Environment,
+		Halted:              pub.halted,
+		LoopAt:              pub.at,
+		EvalEveryMS:         s.cfg.EvalIntervalMS,
+		StopLossMultiple:    s.cfg.StopLossMultiplier,
+		DeltaExitThreshold:  s.cfg.DeltaExitThreshold,
+		RepairCooldownHours: s.cfg.RepairCooldownHours,
 		Market: BuildMarketSnapshot(SnapshotInput{
 			Now: now, Spot: s.md.UnderlyingPrice(), DVOL: s.md.DVOL(), IVPercentile: s.md.IVPercentile(),
 			GEX: s.gamma.CurrentGEXSnapshot(),
