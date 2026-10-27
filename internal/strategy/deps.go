@@ -1,69 +1,27 @@
 package strategy
 
 import (
-	"context"
 	"time"
 
+	"optionsbot/internal/exchange"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/history"
-	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
 // The strategy talks to the outside world only through the small interfaces
-// below, defined here where they are consumed. *orders.Executor,
-// *marketdata.Manager, *orders.Logger, *hedge.Reporter and *gex.Manager
-// satisfy them in production; tests substitute fakes.
+// below. What it asks of the exchange — orders, account, margin simulation,
+// market data, open interest — is the exchange boundary in internal/exchange
+// (#182); Deribit's *orders.Executor, *marketdata.Manager and *gex.Manager
+// are its only adapter. The rest (journal, hedge report, histories) are the
+// bot's own and defined here where they are consumed. Tests substitute fakes.
 
-// OrderPlacer creates and cancels orders.
-type OrderPlacer interface {
-	Submit(ctx context.Context, order orders.Order) (orders.Fill, error)
-	Cancel(ctx context.Context, orderID string) error
-	CancelAllOrders(ctx context.Context, currency string) error
-	// CancelByLabel cancels the open orders carrying label; returns how many.
-	CancelByLabel(ctx context.Context, currency, label string) (int, error)
-}
+// Exchange is everything the strategy asks of an exchange account.
+type Exchange = exchange.Trading
 
-// OrderTracker follows resting limit orders until they fill.
-type OrderTracker interface {
-	GetOrderState(ctx context.Context, orderID string) (orders.OrderStateInfo, error)
-	AmendOrder(ctx context.Context, orderID string, qty, price float64) error
-	// OrderFee is the total fee charged for an order's fills (coin).
-	OrderFee(ctx context.Context, orderID string) (float64, error)
-}
-
-// AccountReader reads account, position and margin data.
-type AccountReader interface {
-	GetAccountSummary(ctx context.Context, currency string) (orders.AccountSummary, error)
-	GetPositions(ctx context.Context, currency string) ([]orders.RawPosition, error)
-	GetMargins(ctx context.Context, instrument string, amount, price float64) (orders.MarginInfo, error)
-	GetDailyCloses(ctx context.Context, instrument string, days int) ([]orders.DailyClose, error)
-	// SimulatePortfolio returns the account summary Deribit would report with
-	// positions (instrument → coin size, negative = short) added to the book.
-	SimulatePortfolio(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
-	// SimulateAlone is the margin of positions on their own (no book offsets).
-	SimulateAlone(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
-}
-
-// Exchange is everything the strategy needs from Deribit.
-type Exchange interface {
-	OrderPlacer
-	OrderTracker
-	AccountReader
-}
-
-// MarketData provides the latest option chain snapshot and index price.
-type MarketData interface {
-	UnderlyingPrice() float64
-	DVOL() float64
-	IVPercentile() float64
-	// DVOLDaily returns recent daily DVOL closes and today, with percentiles.
-	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
-	GetInstrument(name string) (*marketdata.Instrument, bool)
-	AllInstruments() []*marketdata.Instrument
-	// Track subscribes to the tickers of instruments that have none yet.
-	Track(ctx context.Context, instruments []string) error
-}
+// MarketData provides the latest option chain snapshot, index price and
+// volatility index.
+type MarketData = exchange.MarketData
 
 // TradeJournal records every order event, with its market snapshot, and the
 // periodic P&L to the audit log (orders.log).
@@ -92,9 +50,7 @@ type GEXSource interface {
 }
 
 // OISource provides open interest per instrument (refreshed periodically).
-type OISource interface {
-	OpenInterest() *gex.OISnapshot
-}
+type OISource = exchange.OpenInterest
 
 // PnLRecorder persists the strategy's total P&L over time (for charts).
 // realised is cumulative since the journal began (restored at startup);

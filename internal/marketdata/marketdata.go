@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
 )
 
-// gatewayClient is the slice of the gateway the manager uses.
+// gatewayClient is the slice of the exchange connection the manager uses
+// (the Deribit gateway in production).
 type gatewayClient interface {
-	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
-	Subscribe(ctx context.Context, channels []string) error
-	Notifications() <-chan gateway.JSONRPCResponse
+	transport.Caller
+	transport.Streamer
 }
 
 // Channel prefixes of the subscription pushes the manager handles.
