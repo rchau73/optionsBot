@@ -22,7 +22,7 @@ export const PROPERTIES = {
   entry_screen: enumOf("monitor", "login"),
   screen: enumOf("monitor", "login"),
   viewport: enumOf("phone", "tablet", "desktop"),
-  panel: enumOf("account", "held", "others", "trades"),
+  panel: enumOf("account", "positions", "held", "others", "trades", "activity", "pnl", "pnl_coin", "orders"),
   open_ms: duration(HOUR_MS),
   filter: enumOf("bot", "strategy", "type", "moneyness", "group_by"),
   level: enumOf("strategy", "slot", "structure", "leg", "orders"),

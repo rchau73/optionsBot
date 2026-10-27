@@ -53,10 +53,12 @@ BOT_APIS=btc=http://127.0.0.1:8081 npm run dev
 1. Open <http://localhost:3000> and sign in as `moderator` with the password printed above. Sign in **before** the participant sits down: signing in is not part of the test. Run terminal 2's commands again, in a new terminal, at the start of every round (and whenever terminal 2 was closed): each run gets its own empty user database, so the printed password always works.
 2. **Desktop run:** a browser window of **1440 × 900** (Chrome: DevTools → device toolbar → Responsive → 1440 × 900, then close DevTools). Zoom 100 %. Scroll to the top.
 3. **Phone run (E12):** one of the 5 sessions — P5 — uses a phone layout: Chrome DevTools device toolbar, **iPhone 12 Pro (390 × 844)**, or a real phone on the same network. Write "mobile" as its layout in the results table.
-4. Check the page shows the **BTC · investor summary** block with four parts: *What it holds*, *Income per month*, *Worst case now*, *Last action*. If it says "Summary unavailable", restart terminal 1.
+4. Check the page shows the **BTC · investor summary** block with four parts: *What it holds*, *Income per month*, *Worst case now*, *Last action*. If it says "Summary unavailable", restart terminal 1. At phone width (under 640 px) the page is the phone overview instead (#320): the month's result as the headline and four cards (*What it holds*, *Making or losing*, *Worst case right now*, *Last action*); the full monitor is under the menu's *Details*.
 5. Restart `go run ./cmd/monitor-demo` (terminal 1) between participants, so each one starts from the same demo state. Reload the page after the restart.
 
 The demo moves on its own: spot follows a random walk, marks follow spot, and now and then a leg is bought back and sold again. That is expected; the answer key says which answers stay fixed and which you read off the screen at the moment the participant answers.
+
+The answer key is for the demo **without flags**. To test how losses read, `go run ./cmd/monitor-demo -scenario mixed` (a losing month among winning ones) or `-scenario drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key's fixed answers do not hold for them.
 
 ## 4. Moderator script
 
