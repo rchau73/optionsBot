@@ -499,6 +499,40 @@ def new_stories(pm, epics, board=None):
     return out
 
 
+# ── Token savers for the Dev agents (product owner 2026-10-27) ──────────────
+EPIC_LABEL = re.compile(r"^E\d+$")
+
+
+def ready_order(cards, busy_numbers):
+    """Ready cards in pick order (Priority, then oldest), skipping every card of
+    an epic that already has a Dev run in progress (busy_numbers: the issues
+    being built): cards of one epic touch the same files, and building two at
+    once made the second PR conflict and cost a fix-up run (#320/#322)."""
+    by_num = {c["number"]: c for c in cards}
+    busy_epics = {l for n in busy_numbers for l in by_num.get(n, {}).get("labels", []) if EPIC_LABEL.match(l)}
+    out = []
+    for c in cards:
+        if c["status"] != "Ready" or c["state"] != "OPEN" or "epic" in c["labels"] or "agent:pm" in c["labels"]:
+            continue
+        if busy_epics & {l for l in c["labels"] if EPIC_LABEL.match(l)}:
+            continue
+        out.append(c)
+    rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c.get("priority"), 9), c["number"])
+    return sorted(out, key=rank)
+
+
+def dev_model(labels, explicit="", light_model="sonnet", light_epics="E5,E11"):
+    """The model for one Dev run: DEV_MODEL when set; else the lighter model for
+    a documents/research card (label `documentation`, or an epic in
+    DEV_LIGHT_EPICS); else "" (the account default, for code)."""
+    if explicit:
+        return explicit
+    light = {e.strip() for e in (light_epics or "").split(",") if e.strip()}
+    if "documentation" in labels or light & set(labels):
+        return light_model or ""
+    return ""
+
+
 def _load(path, default):
     try:
         return json.load(open(path))
@@ -528,6 +562,12 @@ def main(argv):
         json.dump(epic_tags(json.load(open(argv[2])), json.load(open(argv[3]))), open(argv[4], "w"), indent=1)
     elif cmd == "order":
         json.dump(order_changes(json.load(open(argv[2])), _load(argv[3], {})), open(argv[4], "w"), indent=1)
+    elif cmd == "ready":
+        busy = [int(n) for n in argv[3:] if n.isdigit()]
+        for c in ready_order(json.load(open(argv[2])), busy):
+            print(c["item"], c["number"])
+    elif cmd == "model":
+        print(dev_model(argv[2].split(",") if argv[2] else [], *argv[3:6]))
     elif cmd == "plan":
         print(" ".join(plan_due(json.load(open(argv[2])), json.load(open(argv[3])), _load(argv[4], {}), argv[5])))
     elif cmd == "stories":

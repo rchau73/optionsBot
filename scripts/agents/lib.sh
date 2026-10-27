@@ -156,11 +156,18 @@ json.dump(out, sys.stdout)' "$num"
 # <date>"), nor one another instance of <claim kind> is already building.
 ready_next() {
   local cands item num why
-  cands="$(board_json | py 'import json,sys
-cards = [c for c in json.load(sys.stdin) if c["status"] == "Ready" and c["state"] == "OPEN"
-         and "epic" not in c["labels"] and "agent:pm" not in c["labels"]]
-rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c["priority"], 9), c["number"])
-for c in sorted(cards, key=rank): print(c["item"], c["number"])')"
+  # Cards of an epic another instance is building wait (pm_board.py ready).
+  local busy="" d k f
+  if [[ -n "${1:-}" ]]; then
+    for d in "$CLAIMS_DIR/$1"-*; do
+      [[ -d "$d" ]] || continue
+      k="${d##*/}"; k="${k#"$1"-}"; claim_alive "$1" "$k" && busy="$busy $k"
+    done
+  fi
+  f="$(mktemp)"; board_json > "$f"
+  # shellcheck disable=SC2086 # busy is a list of issue numbers
+  cands="$(python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" ready "$f" $busy)"
+  rm -f "$f"
   while read -r item num; do
     [[ -n "$num" ]] || continue
     [[ -n "${1:-}" ]] && claim_alive "$1" "$num" && continue
