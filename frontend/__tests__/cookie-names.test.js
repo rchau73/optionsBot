@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 import { cookieNames } from "@/lib/auth/tokens";
 
 // #368: a browser keeps cookies per host, not per port, so the stable (:3000)
