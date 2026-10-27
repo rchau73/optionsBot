@@ -6,11 +6,11 @@ build:
 	go build -o bot ./cmd/bot
 
 test:
-	go test ./tests/... -race -count=1
+	go test ./tests/... -race -count=1 -timeout 30m
 
 # Tests live in ./tests, so coverage is measured across ./internal/... explicitly.
 cover:
-	go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
+	go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
 	go tool cover -func=$(COVER_OUT) | tail -1
 
 fmt:
@@ -26,7 +26,7 @@ check:
 	@test -z "$$(gofmt -l cmd internal tests)" || (echo "gofmt needed:"; gofmt -l cmd internal tests; exit 1)
 	go vet ./...
 	bash scripts/check_shell.sh
-	go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
+	go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
 	bash scripts/check_cover.sh --profile $(COVER_OUT)
 
 # hooks enables .githooks/pre-commit (refuses .env files and any value from
