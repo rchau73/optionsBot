@@ -1,0 +1,15 @@
+{
+  "InvestorSummary": {},
+  "Header": {},
+  "KpiStrip": {},
+  "AccountPanel": {},
+  "PositionsTable": {},
+  "HeldLegs": {},
+  "OtherPositions": {},
+  "TradeHistory": {},
+  "ActivityFeed": {},
+  "PendingOrders": {},
+  "ConfirmCloseModal": {},
+  "RebalanceModal": {},
+  "LoginForm": {}
+}
