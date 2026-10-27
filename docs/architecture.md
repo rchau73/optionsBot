@@ -195,7 +195,7 @@ See [backtest_flow](backtest_flow.png) and [SimExecutor](backtest_simexec.png).
 ## 14. Known limitations
 
 - **Backtest ≠ live loop.** The backtest engine re-implements the day loop around the shared pure functions instead of running `strategy.Strategy` itself, so order-lifecycle behaviour (pending fills, amends, partial fills) is only tested live/testnet and in the end-to-end tests. Running the real strategy against `SimExecutor` is the planned next step.
-- **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only; results on it validate mechanics, not profitability.
+- **Synthetic data.** `cmd/gendata` produces Black-Scholes prices in USD with monthly expiries only (`-calendar deribit`: weeklies, monthlies and quarterlies as Deribit lists them, for the ladder sweep); results on it validate mechanics, not profitability.
 - **In-memory state.** Pending orders are not persisted; a restart cancels them and reconciles positions. The only persisted state is the P&L history for the monitor chart (`data/pnl_history.jsonl`); trading never reads it.
 - **One account, two processes.** BTC and ETH bots share the account's rate limit without coordinating.
 

@@ -35,12 +35,14 @@ func (l Ladder) Name() string {
 	return name
 }
 
-// DefaultLadders are today's ladders (BTC 25/50, ETH 30/50) and the
-// candidates of issue #89, each with and without weeklies: monthlies are
-// 28–35 days apart, wider than a slot's ±10-DTE window.
+// DefaultLadders are today's ladders (BTC 25/50, ETH 30/50), the candidates
+// of issue #89 and the longer ladders of #83 (45/75, 50/80, 60/90: with two
+// slots on separate monthlies, the monthly free after a roll is 71–85 days
+// out), each with and without weeklies: monthlies are 28–35 days apart, wider
+// than a slot's ±10-DTE window.
 func DefaultLadders() []Ladder {
 	var out []Ladder
-	for _, dtes := range [][]int{{25, 50}, {30, 50}, {30, 60}, {35, 60}} {
+	for _, dtes := range [][]int{{25, 50}, {30, 50}, {30, 60}, {35, 60}, {45, 75}, {50, 80}, {60, 90}} {
 		out = append(out, Ladder{DTEs: dtes, Weeklies: true}, Ladder{DTEs: dtes, Weeklies: false})
 	}
 	return out
@@ -111,7 +113,11 @@ type LadderResult struct {
 // ladder_comparison.csv (slot occupancy, return on margin, worst week) in the
 // order of DefaultLadders. It fails if any ladder fails.
 func RunLadderSweep(cfg *config.Config, csvPath string, from, to time.Time, outputDir string) ([]LadderResult, error) {
-	ladders := DefaultLadders()
+	return RunLadders(cfg, DefaultLadders(), csvPath, from, to, outputDir)
+}
+
+// RunLadders is RunLadderSweep over the given ladders, in their order.
+func RunLadders(cfg *config.Config, ladders []Ladder, csvPath string, from, to time.Time, outputDir string) ([]LadderResult, error) {
 	results := make([]LadderResult, len(ladders))
 	errs := make([]error, len(ladders))
 	var wg sync.WaitGroup
