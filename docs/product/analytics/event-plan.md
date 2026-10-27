@@ -79,8 +79,8 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `open_ms` | duration | milliseconds, capped at 1 h |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
-| `tip_id` | catalogue id | a key of the E11 tip catalogue (e.g. `tip.gamma_flip`); never generated from data |
-| `video_id` | catalogue id | a key of the E11 video catalogue (e.g. `video.read_monitor`) |
+| `tip_id` | catalogue id | `tip.` + a key of `frontend/content/glossary.json` in letters and `_` (e.g. `tip.gamma_flip`, `tip.stop_loss`); an id not in the glossary is refused (#300); never generated from data |
+| `video_id` | catalogue id | a key of `frontend/content/videos.json` (e.g. `video.read_summary`); an id not in it is refused (#300) |
 | `watched_ms` | duration | milliseconds, capped at 10 min |
 | `helped` | bool | `true`, `false` |
 | `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |

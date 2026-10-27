@@ -1,0 +1,83 @@
+{
+  "video.read_summary": {
+    "title": "Read the summary card",
+    "task": "Read the monitor's summary card and know what the bot holds, what it earned and what the worst case is.",
+    "seconds": 60,
+    "captions": "frontend/content/captions/read_summary.vtt",
+    "screen": "investor summary card",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.position_worst_case": {
+    "title": "One position and the worst case",
+    "task": "Understand one open position and the worst-case page.",
+    "seconds": 75,
+    "captions": "frontend/content/captions/position_worst_case.vtt",
+    "screen": "open positions table and worst-case page",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.last_trade": {
+    "title": "Why the last trade",
+    "task": "Find out why the bot made its last trade.",
+    "seconds": 60,
+    "captions": "frontend/content/captions/last_trade.vtt",
+    "screen": "activity feed and trade history",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.margin_bar": {
+    "title": "Read the margin bar",
+    "task": "Read the margin bar and know what the limit and the colours mean.",
+    "seconds": 60,
+    "captions": "frontend/content/captions/margin_bar.vtt",
+    "screen": "account panel margin bars",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.freeze": {
+    "title": "Why entries are frozen",
+    "task": "Understand why new entries are frozen and what still runs.",
+    "seconds": 45,
+    "captions": "frontend/content/captions/freeze.vtt",
+    "screen": "account panel margin policy",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.manual_close": {
+    "title": "Close one leg by hand",
+    "task": "Close one leg by hand and know what follows.",
+    "seconds": 75,
+    "captions": "frontend/content/captions/manual_close.vtt",
+    "screen": "manual close window",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.rebalance": {
+    "title": "Preview and run a rebalance",
+    "task": "Preview and run a rebalance and know what follows.",
+    "seconds": 75,
+    "captions": "frontend/content/captions/rebalance.vtt",
+    "screen": "rebalance preview and window",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.income_month": {
+    "title": "Income, month by month",
+    "task": "Read the income page, month by month.",
+    "seconds": 60,
+    "captions": "frontend/content/captions/income_month.vtt",
+    "screen": "income page",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  },
+  "video.change_setting": {
+    "title": "Change one setting safely",
+    "task": "Change one setting safely and see what it changed.",
+    "seconds": 60,
+    "captions": "frontend/content/captions/change_setting.vtt",
+    "screen": "setting tip (waiting for the E11 prototype)",
+    "storyboard": "docs/product/education/video-storyboards.md",
+    "status": "planned"
+  }
+}
