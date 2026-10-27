@@ -35,11 +35,18 @@ type Summary struct {
 	Spot        float64   `json:"spot"`        // USD
 	// StopLossMultiple: a leg is bought back once it has lost this multiple
 	// of its premium (stop_loss_multiplier) — the worst-case page's words.
-	StopLossMultiple float64        `json:"stop_loss_multiple"`
-	Holding          HoldingSummary `json:"holding"`
-	Income           IncomeSummary  `json:"income"`
-	WorstCase        WorstCase      `json:"worst_case"`
-	LastAction       *LastAction    `json:"last_action"` // null before the first trade
+	StopLossMultiple float64 `json:"stop_loss_multiple"`
+	// DeltaExitThreshold (delta_exit_threshold) and RepairCooldownHours
+	// (repair_cooldown_hours): the "How it works" page's words (#322).
+	DeltaExitThreshold  float64        `json:"delta_exit_threshold"`
+	RepairCooldownHours int            `json:"repair_cooldown_hours"`
+	Holding             HoldingSummary `json:"holding"`
+	Income              IncomeSummary  `json:"income"`
+	WorstCase           WorstCase      `json:"worst_case"`
+	LastAction          *LastAction    `json:"last_action"` // null before the first trade
+	// Strangle is the nearest two-legged strangle explained (#322); null when
+	// none is held.
+	Strangle *HowItWorks `json:"strangle"`
 }
 
 // HoldingSummary is what the bot holds now.
@@ -177,10 +184,13 @@ func BuildSummary(v strategy.View, trades []orders.Trade, now time.Time) Summary
 	coin, spot := v.Underlying, v.Market.Spot
 	sum := Summary{
 		AsOf: now, StrategyID: v.StrategyID, Underlying: coin, Environment: v.Environment, Spot: spot,
-		StopLossMultiple: v.StopLossMultiple,
-		Holding:          holdingOf(v.Strangles, spot, coin, now),
-		Income:           incomeOfView(v, trades, now),
-		WorstCase:        WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
+		StopLossMultiple:    v.StopLossMultiple,
+		DeltaExitThreshold:  v.DeltaExitThreshold,
+		RepairCooldownHours: v.RepairCooldownHours,
+		Holding:             holdingOf(v.Strangles, spot, coin, now),
+		Income:              incomeOfView(v, trades, now),
+		WorstCase:           WorstCaseOf(v.Strangles, spot, v.Market.DVOL, v.Account.Equity, now),
+		Strangle:            HowItWorksOf(v.Strangles, spot, v.Market.DVOL, v.DeltaExitThreshold, now),
 	}
 	sum.WorstCase.Coin = coin
 	if n := len(trades); n > 0 {

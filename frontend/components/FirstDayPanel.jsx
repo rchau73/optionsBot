@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import Link from "next/link";
 import { coinOf, firstDaySteps, startedAgo } from "@/lib/overview";
 
 // The first-day panel (#321): a brand-new bot — nothing held, no trade in its
@@ -50,6 +51,12 @@ export default function FirstDayPanel({ bot, headingLevel = 2 }) {
           Income comes from being paid to take on a risk most holders avoid: big, fast moves. Months with calm markets pay; a crash month can lose. The
           first month&apos;s result says little; look at several.
         </p>
+        <Link
+          href={`/how-it-works?bot=${encodeURIComponent(bot.name)}`}
+          className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-testnet"
+        >
+          How it works: a strangle in three pictures →
+        </Link>
       </div>
     </section>
   );

@@ -42,7 +42,7 @@ export function BotSummary({ bot }) {
         <p className="px-4 py-3 text-base text-muted">Loading the summary…</p>
       ) : (
         <div className="grid gap-4 p-4 md:grid-cols-2">
-          <Holding holding={s.holding} />
+          <Holding holding={s.holding} bot={bot.name} />
           <Income income={s.income} bot={bot.name} />
           <WorstCase wc={s.worst_case} bot={bot.name} />
           <LastAction action={s.last_action} coin={s.underlying} />
@@ -67,11 +67,20 @@ export function Signed({ children, value }) {
   return <span className={clsx("font-semibold tabular-nums", tone === "profit" && "text-profit", tone === "loss" && "text-loss")}>{children}</span>;
 }
 
-function Holding({ holding: h }) {
+function Holding({ holding: h, bot }) {
+  const howLink = (
+    <Link
+      href={`/how-it-works?bot=${encodeURIComponent(bot)}`}
+      className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-testnet"
+    >
+      How it works: a strangle in three pictures →
+    </Link>
+  );
   if (!h || !h.legs) {
     return (
       <Answer question="What it holds">
         <p className="text-base">Nothing open right now. New strangles appear here once the bot sells them.</p>
+        {howLink}
       </Answer>
     );
   }
@@ -85,6 +94,7 @@ function Holding({ holding: h }) {
         Nearest expiry {formatDate(h.nearest_expiry)}
         {isNumber(h.nearest_dte) ? ` (in ${formatNumber(h.nearest_dte, 1)} days)` : ""}
       </p>
+      {howLink}
     </Answer>
   );
 }
