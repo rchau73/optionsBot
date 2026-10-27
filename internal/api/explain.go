@@ -185,6 +185,34 @@ var riskWords = map[string]func(l journalLine) string{
 	orders.RiskIMOverLimitDone: func(journalLine) string {
 		return "Margin in use is back at or under its limit; the alert ends."
 	},
+	orders.RiskIMUnderUse: func(l journalLine) string {
+		return fmt.Sprintf("Margin in use (%s) has stayed under 60 %% of its limit (%s) for hours while new trades were allowed%s. "+
+			"This is an alert only: the bot sends no order for it.", pct(l.IMPct), pct(l.LimitIMPct), underUseCause(l.Cause))
+	},
+	orders.RiskIMUnderUseDone: func(journalLine) string {
+		return "The unused-margin alert ends: margin in use is back at 60 % of its limit or more, or new trades are no longer allowed."
+	},
+}
+
+// causeWords puts the im_under_use cause in everyday words (orders.Idle*;
+// a vacant slot's skip reason is named as it was journaled).
+var causeWords = map[string]string{
+	orders.IdleSlotEmpty:        "a slot is empty",
+	orders.IdleNoSkip:           "a slot is empty with no reason recorded yet",
+	orders.IdleRebalanceWaiting: "every slot is taken and a rebalance top-up waits to try again",
+	orders.IdleSizedSmall:       "every slot is taken but one was sized down to what the market can trade",
+	orders.IdleAllFull:          "every slot is taken at its normal size",
+	orders.IdleNotMeasured:      "the cause was not measured",
+}
+
+func underUseCause(cause string) string {
+	switch {
+	case cause == "":
+		return ""
+	case causeWords[cause] != "":
+		return "; cause: " + causeWords[cause]
+	}
+	return "; cause: a slot is empty, last skipped for " + strings.ReplaceAll(cause, "_", " ")
 }
 
 // trendWords and trendWhy put the SMA trend and its reason in everyday words.
@@ -218,7 +246,8 @@ type journalLine struct {
 	Change        string        `json:"change"` // risk_limit
 	LimitIMPct    float64       `json:"limit_im_pct"`
 	IMPct         float64       `json:"im_pct"`
-	From          string        `json:"from"` // trend_changed
+	Cause         string        `json:"cause"` // im_under_use
+	From          string        `json:"from"`  // trend_changed
 	To            string        `json:"to"`
 	Reason        string        `json:"reason"`
 	First         bool          `json:"first"` // config_loaded

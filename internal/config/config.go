@@ -59,6 +59,10 @@ type Config struct {
 	// (either side), so a deploy does not trade on market drift (#123).
 	// Confirmed limit changes and the MM cut ignore it. ≤ 0 turns it off.
 	RebalanceStartupBandPct float64 `yaml:"-"`
+	// IMUnderUseWindowMinutes: entries allowed and IM under 60 % of the
+	// limit for this long, with no sample gap over 15 min, opens one
+	// im_under_use alert (#369; alert only, never an order). ≤ 0 turns it off.
+	IMUnderUseWindowMinutes float64 `yaml:"-"`
 	// ChurnMaxRoundTrips / ChurnWindowMinutes: a slot that buys back and
 	// re-sells this many times within the window is paused for the window
 	// (no entries, repairs, upsizes or leg balancing; exits still run).
