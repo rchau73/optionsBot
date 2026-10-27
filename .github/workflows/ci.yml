@@ -43,7 +43,9 @@ jobs:
         run: python3 -m unittest discover -s scripts/product -p 'test_*.py'
 
       - name: Tests (race detector, coverage)
-        run: go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=coverage.out
+        # -timeout 30m: the race + coverage run passed Go's default 10 min on the
+        # runner on 2026-10-27 (PR #390), with no test stuck.
+        run: go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=coverage.out
 
       - name: Coverage summary
         run: |
