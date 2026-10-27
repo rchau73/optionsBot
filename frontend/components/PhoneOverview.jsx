@@ -44,7 +44,7 @@ export default function PhoneOverview({ bots, selected, onSelect, details = fals
             <HoldsCard summary={s} />
             <MakingCard summary={s} bot={bot.name} />
             <WorstCard summary={s} bot={bot.name} />
-            <LastActionCard summary={s} onActivity={() => onDetails?.(true, "activity")} />
+            <LastActionCard summary={s} bot={bot.name} />
           </>
         )}
         <p className="text-center text-xs text-muted">From the bot&apos;s journal, after fees. Worst case is an estimate. Not investment advice.</p>
@@ -268,7 +268,7 @@ function WorstCard({ summary: s, bot }) {
   );
 }
 
-function LastActionCard({ summary: s, onActivity }) {
+function LastActionCard({ summary: s, bot }) {
   const a = s.last_action;
   const coin = s.underlying;
   const at = a ? clockHM(a.at) : null;
@@ -291,9 +291,9 @@ function LastActionCard({ summary: s, onActivity }) {
       ) : (
         <p className="text-base">No trade yet. The bot&apos;s first sale or buy-back is explained here when it happens.</p>
       )}
-      <button type="button" onClick={onActivity} className={clsx(LINK, "text-left")}>
+      <Link href={`/activity?bot=${encodeURIComponent(bot)}`} className={LINK}>
         All actions, explained →
-      </button>
+      </Link>
     </Card>
   );
 }
