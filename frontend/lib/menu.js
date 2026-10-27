@@ -31,6 +31,7 @@ export function menuItems(pathname, { bot = null, view = null } = {}) {
     { key: "overview", label: "Overview", href: `/${q}`, current: onOverview && !details },
     { key: "income", label: "Income", href: `/income${q}`, current: pathname === "/income" },
     { key: "worst-case", label: "Worst case", href: `/worst-case${q}`, current: pathname === "/worst-case" },
+    { key: "positions", label: "Positions", href: `/positions${q}`, current: pathname === "/positions" },
     { key: "how-it-works", label: "How it works", href: `/how-it-works${q}`, current: pathname === "/how-it-works" },
     { key: "activity", label: "Activity", href: `/activity${q}`, current: pathname === "/activity" },
     {

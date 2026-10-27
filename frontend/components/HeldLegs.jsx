@@ -18,8 +18,9 @@ function Level({ level, pct }) {
  * the rule the bot applies now, and the levels each release is measured
  * against — the live flip + buffer next to the flip a GEX-shed leg was shed
  * at (its anchor), the stop cooldown, and the script's direction label.
+ * With onOpenChart(bot, strangleId, element), the held leg opens its strangle's payoff chart (#391).
  */
-export default function HeldLegs({ bots }) {
+export default function HeldLegs({ bots, onOpenChart }) {
   const rows = heldRows(bots);
   if (!rows.length) return <p className="py-3 text-center text-sm text-muted">Every strangle has both legs.</p>;
   return (
@@ -52,7 +53,22 @@ export default function HeldLegs({ bots }) {
                 <td className="px-2 py-1 uppercase">{r.bot}</td>
                 <td className="px-2 py-1">
                   <Badge tone={r.missing}>{r.missing}</Badge> <span className="text-xs text-muted">{slotLabel(r.slot)}</span>
-                  <div className="font-mono text-xs text-muted">with {r.open_leg}</div>
+                  <div className="font-mono text-xs text-muted">
+                    with{" "}
+                    {onOpenChart ? (
+                      <button
+                        type="button"
+                        aria-haspopup="dialog"
+                        onClick={(e) => onOpenChart(r.bot, r.strangle_id, e.currentTarget)}
+                        className="text-left underline decoration-dotted underline-offset-2 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet"
+                        title="Open the payoff chart of this strangle"
+                      >
+                        {r.open_leg}
+                      </button>
+                    ) : (
+                      r.open_leg
+                    )}
+                  </div>
                 </td>
                 <td className="px-2 py-1">
                   <Badge tone={rule.tone}>{rule.label}</Badge>

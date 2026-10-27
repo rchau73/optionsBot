@@ -183,7 +183,7 @@ export async function fetchMonitorConfig(signal) {
  */
 export async function fetchBotState(name, signal) {
   const base = `/api/bots/${encodeURIComponent(name)}`;
-  const [status, positions, orders, account, summary] = await Promise.all([
+  const [status, positions, orders, account, summary, payoff] = await Promise.all([
     getJSON(`${base}/status`, signal),
     getJSON(`${base}/positions`, signal),
     getJSON(`${base}/orders`, signal),
@@ -193,8 +193,27 @@ export async function fetchBotState(name, signal) {
       (data) => ({ data, error: null }),
       (e) => ({ data: null, error: e.message }),
     ),
+    // The payoff charts (#391); a failure leaves the rest of the bot shown.
+    getJSON(`${base}/strangles/payoff`, signal).then(
+      (data) => ({ data, error: null }),
+      (e) => ({ data: null, error: e.message }),
+    ),
   ]);
-  return { status, positions, orders, account, summary: summary.data, summaryError: summary.error };
+  return {
+    status,
+    positions,
+    orders,
+    account,
+    summary: summary.data,
+    summaryError: summary.error,
+    payoff: payoff.data,
+    payoffError: payoff.error,
+  };
+}
+
+/** The payoff chart of each open strangle of one bot (/api/strangles/payoff, #391). */
+export async function fetchBotPayoff(name, signal) {
+  return getJSON(`/api/bots/${encodeURIComponent(name)}/strangles/payoff`, signal);
 }
 
 /** The investor summary of one bot (/api/summary): holding, income, worst case, last action. */

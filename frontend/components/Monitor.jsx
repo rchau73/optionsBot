@@ -11,6 +11,8 @@ import Filters from "./Filters";
 import PositionsTable from "./PositionsTable";
 import PendingOrders from "./PendingOrders";
 import HeldLegs from "./HeldLegs";
+import PayoffModal from "./PayoffModal";
+import StrangleCards from "./StrangleCards";
 import ActivityFeed from "./ActivityFeed";
 import PnlChart from "./PnlChart";
 import CoinPnlChart from "./CoinPnlChart";
@@ -42,6 +44,10 @@ export default function Monitor({ role = null, bot = null, details = false }) {
   const fold = { defaultOpen: panelsOpen, forceOpen: details };
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
   const [filters, setFilters] = useState(NO_FILTERS);
+  // The payoff modal (#391): { bot, strangleId, opener } — opener gets the focus back on close.
+  const [chart, setChart] = useState(null);
+  const openChart = (botName, strangleId, opener) => setChart({ bot: botName, strangleId, opener });
+  const chartBot = chart ? bots.find((b) => b.name === chart.bot) : null;
   const [phoneBot, setPhoneBot] = useState(bot);
   const [phoneDetails, setPhoneDetails] = useState(details);
   // A later "Details (pro)" on this page (client navigation) opens them too.
@@ -92,6 +98,7 @@ export default function Monitor({ role = null, bot = null, details = false }) {
             </div>
           ) : null}
           <InvestorSummary bots={bots} />
+          <StrangleCards bots={bots} onOpen={openChart} />
           <div id="details" className="scroll-mt-3">
             <KpiStrip kpi={kpi} />
           </div>
@@ -112,7 +119,7 @@ export default function Monitor({ role = null, bot = null, details = false }) {
             summary={positionsSummary(bots)}
             right={<Filters filters={filters} options={options} onChange={setFilters} />}
           >
-            <PositionsTable groups={groups} statuses={statuses} />
+            <PositionsTable groups={groups} statuses={statuses} onOpenChart={openChart} />
           </Panel>
           <Panel
             title="Missing legs: why repair holds them"
@@ -121,7 +128,7 @@ export default function Monitor({ role = null, bot = null, details = false }) {
             storageKey="monitor.panel.held"
             summary={heldSummary(bots)}
           >
-            <HeldLegs bots={bots} />
+            <HeldLegs bots={bots} onOpenChart={openChart} />
           </Panel>
           <Panel
             title="Not managed by the bot (still uses margin)"
@@ -176,6 +183,15 @@ export default function Monitor({ role = null, bot = null, details = false }) {
               </Panel>
             </div>
           </div>
+          {chart ? (
+            <PayoffModal
+              report={chartBot?.payoff ?? null}
+              error={chartBot?.payoffError ?? chartBot?.error ?? null}
+              strangleId={chart.strangleId}
+              opener={chart.opener}
+              onClose={() => setChart(null)}
+            />
+          ) : null}
           <p className="text-center text-xs text-muted">
             Read-only · refreshes every {pollMs / 1000}s · times in {DISPLAY_TZ_LABEL} (UTC−3) · history and counts restored from each bot&apos;s journal · educational study, not investment advice
           </p>
