@@ -107,7 +107,7 @@ Implement it with tests and commit your work (git add + git commit).
 Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group', npx jest <file>,
 python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
 every suite once after you finish and sends a failure back to you.
-You are already in the worktree: run each command directly (no "cd … &&" prefix); only the listed commands are
+You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
 allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
