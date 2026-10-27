@@ -1,7 +1,9 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { formatCoin, formatDate, formatDateTime, formatNumber, formatPct, formatUSD, isNumber } from "@/lib/format";
+import { isFirstDay } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, toneOf, worstCaseRows } from "@/lib/summary";
+import FirstDayPanel from "./FirstDayPanel";
 
 // The investor view (#246): per bot, the four answers of /api/summary — what it
 // holds, income per month, the worst case now in money, the last action in
@@ -21,6 +23,8 @@ export default function InvestorSummary({ bots }) {
 
 /** One bot's four answers, or why they cannot be shown. */
 export function BotSummary({ bot }) {
+  // A brand-new bot (nothing held, no trade yet) shows its first day (#321).
+  if (isFirstDay(bot)) return <FirstDayPanel bot={bot} />;
   const s = bot.summary;
   const failure = bot.summaryError ?? bot.error;
   const title = `${bot.name.toUpperCase()} · investor summary`;
@@ -58,7 +62,7 @@ function Answer({ question, children }) {
 }
 
 /** A signed amount; the colour follows the sign, the size never changes. */
-function Signed({ children, value }) {
+export function Signed({ children, value }) {
   const tone = toneOf(value);
   return <span className={clsx("font-semibold tabular-nums", tone === "profit" && "text-profit", tone === "loss" && "text-loss")}>{children}</span>;
 }

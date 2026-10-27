@@ -39,7 +39,7 @@ const writeOpen = (key, open) => {
  * browser under `storageKey`. With `fill`, the body stretches to the panel's
  * height (e.g. its grid row), so a scrolling child can take the rest of it.
  */
-export default function Panel({ title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true, fill = false }) {
+export default function Panel({ id, title, right, children, className = "", collapsible = false, storageKey, summary, defaultOpen = true, fill = false }) {
   const bodyId = useId();
   const [local, setLocal] = useState(null); // this session's choice when storage is unavailable
   const getSnapshot = useCallback(() => (collapsible && storageKey ? readOpen(storageKey) : null), [collapsible, storageKey]);
@@ -53,7 +53,7 @@ export default function Panel({ title, right, children, className = "", collapsi
 
   const heading = <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>;
   return (
-    <section className={clsx("rounded-lg border border-line bg-panel", fill && "flex flex-col", className)}>
+    <section id={id} className={clsx("rounded-lg border border-line bg-panel", fill && "flex flex-col", className)}>
       <header className={`flex items-center justify-between gap-3 px-4 py-2 ${open ? "border-b border-line" : ""}`}>
         {collapsible ? (
           <button

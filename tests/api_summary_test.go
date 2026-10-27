@@ -79,6 +79,53 @@ func TestAPISummary_TheFourAnswers(t *testing.T) {
 	}
 }
 
+// Scenario (#320): range bar — the nearest strangle's put and call strikes.
+func TestAPISummary_NearestStranglesStrikes(t *testing.T) {
+	now := time.Now().UTC()
+	v := summaryView(now)
+	near := now.Add(7 * 24 * time.Hour)
+	// A second strangle on a nearer expiry, two puts there (the highest is
+	// the band's floor) and a long call that is not part of the band.
+	v.Strangles = append(v.Strangles, strategy.StrangleView{ID: "st-2", Legs: []strategy.LegView{
+		{OptionType: "call", Side: orders.DirectionSell, Strike: 110000, Expiry: near, Qty: 1},
+		{OptionType: "call", Side: orders.DirectionBuy, Strike: 101000, Expiry: near, Qty: 1},
+		{OptionType: "put", Side: orders.DirectionSell, Strike: 90000, Expiry: near, Qty: 1},
+		{OptionType: "put", Side: orders.DirectionSell, Strike: 92000, Expiry: near, Qty: 1},
+	}})
+	n := api.BuildSummary(v, nil, now).Holding.Nearest
+	if n == nil || !n.Expiry.Equal(near) || n.PutStrike == nil || *n.PutStrike != 92000 || n.CallStrike == nil || *n.CallStrike != 110000 {
+		t.Fatalf("nearest %+v", n)
+	}
+
+	// One-legged: the missing side is null.
+	v = summaryView(now)
+	v.Strangles[0].Legs = v.Strangles[0].Legs[:1] // call only
+	n = api.BuildSummary(v, nil, now).Holding.Nearest
+	if n == nil || n.PutStrike != nil || n.CallStrike == nil || *n.CallStrike != 105000 {
+		t.Fatalf("one-legged nearest %+v", n)
+	}
+
+	// Nothing held: null.
+	v.Strangles = nil
+	if n := api.BuildSummary(v, nil, now).Holding.Nearest; n != nil {
+		t.Fatalf("flat book nearest %+v", n)
+	}
+}
+
+// The last action carries the coin's spot at the action (the phone card's
+// "the coin's move since"), omitted when the journal has none.
+func TestAPISummary_LastActionSpot(t *testing.T) {
+	now := time.Now().UTC()
+	la := api.BuildSummary(summaryView(now), []orders.Trade{{Seq: 1, At: now, Kind: "close", OptionType: "put", Reason: "roi_target", Spot: 98000}}, now).LastAction
+	if la == nil || la.Spot == nil || *la.Spot != 98000 {
+		t.Fatalf("last action %+v", la)
+	}
+	la = api.BuildSummary(summaryView(now), []orders.Trade{{Seq: 1, At: now, Kind: "open", OptionType: "put", Reason: "entry"}}, now).LastAction
+	if la == nil || la.Spot != nil {
+		t.Fatalf("last action without spot %+v", la)
+	}
+}
+
 // Scenario: worst case is a model, in money.
 func TestAPISummary_WorstCaseIsAModelInMoney(t *testing.T) {
 	now := time.Now().UTC()

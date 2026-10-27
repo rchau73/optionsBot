@@ -218,12 +218,13 @@ describe("empty states", () => {
     expect(within(el).queryByRole("table")).toBeNull();
   });
 
-  test("nothing held and no trade yet", () => {
+  // #321 "flat later is not a first day": closes in the journal, nothing open.
+  test("nothing held after trading: the normal empty state", () => {
     const el = card({
-      summary: fixture({ holding: { strangles: 0, legs: 0, calls: 0, puts: 0, notional_coin: 0, notional_usd: 0, nearest_expiry: null, nearest_dte: null, coin: "BTC" }, last_action: null }),
+      summary: fixture({ holding: { strangles: 0, legs: 0, calls: 0, puts: 0, notional_coin: 0, notional_usd: 0, nearest_expiry: null, nearest_dte: null, coin: "BTC" } }),
     });
     expect(el).toHaveTextContent("Nothing open right now");
-    expect(el).toHaveTextContent("No trade yet");
+    expect(screen.queryByRole("region", { name: "BTC · first day" })).toBeNull();
   });
 
   test("an opening trade has no result line", () => {

@@ -34,7 +34,7 @@
     "error": "Account not loaded: the bot could not read it. New entries wait while margin is unknown; exits keep running.",
     "source": "OptionStrategy.md#8-risk-controls"
   },
-  "monitor.positions": {
+  "monitor.panel.positions": {
     "empty": "No open strangle yet. A row appears once an entry order fills on a vacant slot.",
     "loading": "Loading the bots' open positions. Rows show each leg with its mark, P&L and Greeks.",
     "stale": "Positions from a bot that stopped updating. Marks and P&L are the last ones received.",
@@ -62,28 +62,28 @@
     "error": "The trade history could not be read. The journal on the bot is unchanged.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end"
   },
-  "monitor.activity": {
+  "monitor.panel.activity": {
     "empty": "No activity yet. Every order, fill, close, skip and margin change the bot journals appears here.",
     "loading": "Loading the bots' recent events from their journals.",
     "stale": "A bot stopped updating. The feed resumes from where it stopped once the bot answers.",
     "error": "Events could not be read. The bot keeps journaling them; they appear here once it answers.",
     "source": "frontend/README.md#what-you-see"
   },
-  "monitor.pnl": {
+  "monitor.panel.pnl": {
     "empty": "No P&L history yet. The bot writes a point each report interval; the first point starts this chart.",
     "loading": "Loading the stored P&L history for the selected range.",
     "stale": "No new P&L point lately. The chart ends at the last point a bot reported.",
     "error": "P&L history could not be read. Missing time is left blank, never filled in.",
     "source": "frontend/README.md#what-you-see"
   },
-  "monitor.pnl_coin": {
+  "monitor.panel.pnl_coin": {
     "empty": "No P&L history in coin yet. Each bot's chart starts at its first stored point.",
     "loading": "Loading each bot's P&L in its own coin.",
     "stale": "No new point lately. Each chart ends at the last point its bot reported.",
     "error": "P&L in coin could not be read for this bot. Missing time is left blank, never filled in.",
     "source": "frontend/README.md#what-you-see"
   },
-  "monitor.orders": {
+  "monitor.panel.orders": {
     "empty": "No working order. Entry and repair orders show here while they rest on Deribit, until filled or cancelled.",
     "loading": "Loading the orders the bots have resting on Deribit.",
     "stale": "A bot stopped updating. Its working orders are the last ones it reported.",
