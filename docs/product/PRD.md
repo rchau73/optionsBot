@@ -168,6 +168,7 @@ Proof points available today: the decision journal (every action with its reason
 **Outcome:** a non-technical user can read the monitor and a manager can set up a strategy using only the tips and videos in the product. Measured with user tests and the share of help questions they resolve.
 **Why:** the persona may struggle to read the monitor and to set strategy parameters (product owner on #149).
 **Scope:** a contextual tip for every jargon term and every parameter (what it is, how it changes risk and income); 30–90 s captioned how-to videos, one task each, linked where the task happens; empty states that explain what will appear; risk explained before any commitment.
+**Content so far (stories #337, #338, #250, #339):** video storyboards `docs/product/education/video-storyboards.md`, the comprehension-test protocol `docs/product/education/comprehension-test.md` (pass bar is an assumption to confirm after the first round) and the empty-state inventory `docs/product/education/empty-states.md`; the glossary and empty-state texts are checked for sentence length and undefined jargon. Videos are not recorded yet.
 **Out of scope:** courses and long-form content (marketing, E5).
 
 ### E12 · Responsive web for phones

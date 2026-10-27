@@ -1,7 +1,14 @@
 import glossary, { MAX_LONG, MAX_SHORT, buildIndex, findTerm, normalise } from "@/lib/glossary";
 import { configKeys, jsxLabels, mapLabels, markdownAnchors, monitorLabels, yamlKeys } from "@/test/glossarySources";
 
+import { longSentences, undefinedJargon } from "@/test/plainWords";
+
 const entries = Object.entries(glossary);
+
+// Jargon an entry may use without a glossary entry of its own: "<entry>:<word>" → why.
+const JARGON_ALLOWED = {
+  "implied volatility:iv": "the entry spells out its own abbreviation: 'Implied volatility (IV)'",
+};
 
 describe("glossary (#188)", () => {
   // Scenario: complete — every config key and every monitor column label has an entry.
@@ -71,6 +78,37 @@ describe("glossary (#188)", () => {
         expect([term, sentence.split(/\s+/).length <= 35 ? "ok" : sentence]).toEqual([term, "ok"]);
       }
     }
+  });
+});
+
+describe("plain words (#339)", () => {
+  // Scenario: A very long sentence
+  test("no short tip has a sentence over 25 words", () => {
+    const bad = entries.flatMap(([term, e]) => longSentences(e.short).map((s) => `${term}: ${s}`));
+    expect(bad).toEqual([]);
+  });
+
+  test("a sentence over 25 words is reported, naming its text", () => {
+    const long = Array(26).fill("word").join(" ");
+    expect(longSentences(`Short one. ${long}.`)).toEqual([`${long}.`]);
+    expect(longSentences(Array(25).fill("word").join(" "))).toEqual([]);
+  });
+
+  // Scenario: A tip uses an undefined jargon word
+  test("every jargon word in a text has an entry of its own", () => {
+    const bad = entries.flatMap(([term, e]) =>
+      [e.short, e.long, e.risk_income].flatMap((t) => undefinedJargon(t, term, findTerm, JARGON_ALLOWED).map((w) => `${term}: ${w}`)),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  test("an undefined jargon word is reported, a defined one or the entry's own term is not", () => {
+    const g = { delta: { short: "d" }, "iv rank": { short: "r" } };
+    const find = (w) => (g[w] ? { term: w } : null);
+    expect(undefinedJargon("Vega and delta move with gamma.", "premium", find)).toEqual(["vega", "gamma"]);
+    expect(undefinedJargon("The IV rank of vega.", "iv rank", find)).toEqual(["vega"]);
+    expect(undefinedJargon("Vega here.", "premium", find, { "premium:vega": "reason" })).toEqual([]);
+    expect(undefinedJargon(undefined, "x", find)).toEqual([]);
   });
 });
 

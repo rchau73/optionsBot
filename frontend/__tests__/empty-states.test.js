@@ -1,5 +1,6 @@
 import emptyStates, { MAX_TEXT, PANELS, STATES, emptyStateFor } from "@/lib/emptyStates";
 import { brokenSources, missingStates, monitorPanels, promiseWords, tooLong } from "@/test/emptyStateChecks";
+import { longSentences, undefinedJargon } from "@/test/plainWords";
 
 const fullEntry = {
   empty: "Nothing yet.",
@@ -75,6 +76,30 @@ describe("empty states (#298)", () => {
       "monitor.elsewhere: README.md#what-you-see",
       "monitor.none: undefined",
     ]);
+  });
+});
+
+describe("plain words (#339)", () => {
+  // Scenario: A very long sentence
+  test("no empty-state sentence is over 25 words", () => {
+    const bad = Object.entries(emptyStates).flatMap(([panel, e]) =>
+      STATES.flatMap((s) => longSentences(e[s]).map((t) => `${panel}.${s}: ${t}`)),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  // Scenario: A tip uses an undefined jargon word
+  test("every jargon word in an empty state has a glossary entry", () => {
+    const bad = Object.entries(emptyStates).flatMap(([panel, e]) =>
+      STATES.flatMap((s) => undefinedJargon(e[s], panel).map((w) => `${panel}.${s}: ${w}`)),
+    );
+    expect(bad).toEqual([]);
+  });
+
+  test("a long sentence or an undefined jargon word in an empty state is named", () => {
+    const text = `${Array(26).fill("word").join(" ")}. Vega moves.`;
+    expect(longSentences(text)).toHaveLength(1);
+    expect(undefinedJargon(text, "monitor.x", () => null)).toEqual(["vega"]);
   });
 });
 
