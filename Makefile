@@ -20,12 +20,14 @@ vet:
 	go vet ./...
 
 # check is what CI runs: formatting, vet, the shell scripts (bash -n, and
-# shellcheck when installed) and the race-enabled test suite.
+# shellcheck when installed), the race-enabled test suite and the coverage
+# floor (scripts/cover_baseline.txt, #330) on that same run's profile.
 check:
 	@test -z "$$(gofmt -l cmd internal tests)" || (echo "gofmt needed:"; gofmt -l cmd internal tests; exit 1)
 	go vet ./...
 	bash scripts/check_shell.sh
-	go test ./tests/... -race -count=1
+	go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
+	bash scripts/check_cover.sh --profile $(COVER_OUT)
 
 # hooks enables .githooks/pre-commit (refuses .env files and any value from
 # the local .env in a commit — the repository is public). Once per clone.
