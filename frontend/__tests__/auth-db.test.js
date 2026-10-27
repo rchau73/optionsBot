@@ -84,15 +84,20 @@ describe("Scenario: same answer for a wrong user or a wrong password", () => {
   test("both answer 401 'invalid username or password' in about the same time", async () => {
     const { auth } = await setup();
     await timed(auth, "nobody", "warm up the dummy hash");
+    await timed(auth, "admin", "warm up the real hash");
     const unknown = [];
     const wrong = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 7; i++) {
       unknown.push(await timed(auth, `nobody${i}`, "wrong password"));
       wrong.push(await timed(auth, "admin", "wrong password"));
     }
     for (const { r } of [...unknown, ...wrong]) expect(r).toEqual({ ok: false, status: 401, error: INVALID_LOGIN });
-    const median = (xs) => xs.map((x) => x.ms).sort((a, b) => a - b)[1];
-    const [a, b] = [median(unknown), median(wrong)];
+    // The fastest of 7 interleaved tries per path: load only ever adds time, so
+    // the minimum is each path's own cost even on a busy machine (a median of 3
+    // measured 7x apart under load, 2026-10-27), while a path that skipped the
+    // argon2id verification would still be many times faster.
+    const fastest = (xs) => Math.min(...xs.map((x) => x.ms));
+    const [a, b] = [fastest(unknown), fastest(wrong)];
     // Both paths run exactly one argon2id verification (~tens of ms each).
     expect(Math.max(a, b) / Math.min(a, b)).toBeLessThan(3);
   });
