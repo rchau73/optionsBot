@@ -103,7 +103,10 @@ echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # n
 
 PROMPT="Use the developer skill in its \"Agent mode\" and implement the GitHub issue described in .agent-task.md
 (read it first; it includes any review feedback to address). You are on branch $branch in an isolated worktree.
-Implement it with tests, run the checks the skill lists, and commit your work (git add + git commit).
+Implement it with tests and commit your work (git add + git commit).
+Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group', npx jest <file>,
+python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
+every suite once after you finish and sends a failure back to you.
 Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
@@ -113,8 +116,13 @@ allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)" )
 denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(gh:*)" "Bash(curl:*)"
   "Bash(docker:*)" "Bash(rm:*)" "WebFetch" "WebSearch" "Agent" )
+# The model: DEV_MODEL when set, else the lighter one for a documents/research
+# card (label documentation, or an epic in DEV_LIGHT_EPICS), else the default.
+labels="$(gh issue view "$issue" -R "$slug" --json labels -q '[.labels[].name] | join(",")' 2>/dev/null || true)"
+model="$(python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" model "$labels" "${DEV_MODEL:-}" "${DEV_LIGHT_MODEL-sonnet}" "${DEV_LIGHT_EPICS-E5,E11}")"
 model_args=()
-[[ -n "${DEV_MODEL:-}" ]] && model_args=(--model "$DEV_MODEL")
+[[ -n "$model" ]] && model_args=(--model "$model")
+log "dev: model ${model:-account default}"
 budget_take dev # the daily budget (limit_lib.sh)
 
 log "dev: running the agent in $wt"
