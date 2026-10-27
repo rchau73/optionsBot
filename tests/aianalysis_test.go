@@ -122,6 +122,11 @@ func TestAIAnalysis_ThinDataMustBeAdmitted(t *testing.T) {
 	if got := aianalysis.Check(comparisonJSON(7, ""), said); len(got) != 0 {
 		t.Fatalf("violations: %v", got)
 	}
+	// Words that merely contain "thin" do not admit anything.
+	within := goodAnalysis + "\nIn the backtest the result is within range, something to note."
+	if got := aianalysis.Check(comparisonJSON(7, ""), within); kinds(got) != aianalysis.KindCaveat {
+		t.Fatalf("violations: %v", got)
+	}
 	// A tool that did not run is not asked for a caveat.
 	notRun := []byte(`{"backtest":{"ran":false,"base":{"trades":0},"proposed":{"trades":0}}}`)
 	if got := aianalysis.Check(notRun, aianalysisLabel); len(got) != 0 {

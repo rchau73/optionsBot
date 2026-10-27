@@ -47,7 +47,8 @@ var BannedPhrases = []string{
 
 // uncertainWords say a result is thin. A caveat is one sentence naming the
 // tool with one of them.
-var uncertainWords = []string{"can't tell", "cannot tell", "can not tell", "uncertain", "too few", "thin", "not enough", "fragile", "unreliable"}
+// They match whole words, so "within" or "something" never count as "thin".
+var uncertainRe = regexp.MustCompile(`\b(?:can't tell|cannot tell|can not tell|uncertain|too few|thin|not enough|fragile|unreliable)\b`)
 
 // Violation kinds.
 const (
@@ -194,10 +195,8 @@ func caveats(in *input, sents []string) []Violation {
 			if !strings.Contains(low, word) {
 				continue
 			}
-			for _, u := range uncertainWords {
-				if strings.Contains(low, u) {
-					return true
-				}
+			if uncertainRe.MatchString(low) {
+				return true
 			}
 		}
 		return false
