@@ -331,16 +331,18 @@ fi
 # ── 7. Board order: Ready by priority; Triage free cards first ─────────────
 board_json > "$run/board.json"
 python3 "$BOARD_PY" order "$run/board.json" "$STATE" "$run/order.json"
-for col in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))))' "$run/order.json"); do
+# One name per line on fd 3/4: "In review" has a space (#437), and gh inside
+# set_position must not read the list from stdin.
+while IFS= read -r col <&3; do
   prev=""
   ok=1
-  for it in $(py 'import json,sys; print(" ".join(json.load(open(sys.argv[1]))[sys.argv[2]]))' "$run/order.json" "$col"); do
+  while IFS= read -r it <&4; do
     set_position "$it" "$prev" || ok=0
     prev="$it"
-  done
+  done 4< <(json_lines "$run/order.json" "$col")
   if [[ $ok -eq 1 ]]; then
     state_set 's.setdefault("order", {})[sys.argv[2]] = json.load(open(sys.argv[3]))[sys.argv[2]]' "$col" "$run/order.json"
     log "pm: ordered $col"
   fi
-done
+done 3< <(json_lines "$run/order.json")
 run_end "${pm_outcome:-done}" "$pm_detail" # a no-op when Claude was not asked

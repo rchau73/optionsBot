@@ -40,6 +40,15 @@ notify() { # title, message
 # py <code> [args...] — run a small Python 3 snippet (JSON handling).
 py() { local code="$1"; shift; python3 -c "$code" "$@"; }
 
+# json_lines <file> [key] — the keys of the JSON object in <file>, or the items
+# of its list at <key>, one per line. Read them with `while IFS= read -r`, never
+# `for x in $(...)`: a name with a space ("In review") must stay whole (#437).
+json_lines() {
+  py 'import json,sys
+d = json.load(open(sys.argv[1]))
+for x in (d[sys.argv[2]] if len(sys.argv) > 2 else d): print(x)' "$@"
+}
+
 repo_slug() { gh repo view --json nameWithOwner -q .nameWithOwner; }
 repo_owner() { repo_slug | cut -d/ -f1; }
 
