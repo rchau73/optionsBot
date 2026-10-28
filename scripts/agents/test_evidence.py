@@ -45,6 +45,18 @@ def report(**over):
     return r
 
 
+def scorecard(bias=0.5, sma=0.8, bias_sheds=0, sma_sheds=0, live_sheds=(0, 0), gaps=(0.1, -0.3), book_days=()):
+    """A cmd/evidence -compare-direction .json (percentages and counts only)."""
+    return {
+        "bot": "btc", "week": "2026-W43", "units": "percentages",
+        "replay": [{"source": "bias", "ran": bias is not None, "net_pct": bias, "max_drawdown_pct": 1.2, "sheds": bias_sheds},
+                   {"source": "sma", "ran": sma is not None, "net_pct": sma, "max_drawdown_pct": 0.9, "sheds": sma_sheds}],
+        "live": [{"source": "bias", "env": "stable", "sheds": live_sheds[0], "live_minus_replay_pp": gaps[0]},
+                 {"source": "sma", "env": "mvp", "sheds": live_sheds[1], "live_minus_replay_pp": gaps[1]}],
+        "missing": {"book_days": list(book_days), "gex_days": []},
+    }
+
+
 def write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -183,13 +195,150 @@ class Comment(unittest.TestCase):
         self.assertIn("- stable eth: cmd/evidence — `exit status 1`", text)
 
 
+class DirectionTrial(unittest.TestCase):
+    """The direction trial block and its decision tickets (#440)."""
+
+    def setUp(self):
+        self.envs = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.envs, True)
+        self.stable = os.path.join(self.envs, "stable")
+        self.fail_tsv = os.path.join(self.envs, "failures.tsv")
+        write(self.fail_tsv, "")
+
+    def card(self, week, **over):
+        write(evidence_week.scorecard_path(self.stable, week), json.dumps(scorecard(**over)))
+
+    def comment(self, week):
+        return evidence_week.comment(week, self.envs, self.fail_tsv, ["btc"], ("stable", "mvp"))
+
+    def test_trial_weeks_start_at_w43(self):
+        self.assertEqual(evidence_week.trial_weeks("2026-W42"), [])
+        self.assertEqual(evidence_week.trial_weeks("2026-W45"), ["2026-W43", "2026-W44", "2026-W45"])
+        self.assertEqual(evidence_week.trial_weeks("2027-W01")[-2:], ["2026-W53", "2027-W01"])
+
+    def test_back_fill_lists_the_missing_weeks_and_always_the_last(self):
+        self.card("2026-W44")
+        self.card("2026-W45")
+        self.assertEqual(evidence_week.direction_weeks("2026-W45", self.stable), ["2026-W43", "2026-W45"])
+        self.assertEqual(evidence_week.direction_weeks("2026-W42", self.stable), [])
+
+    def test_weekly_scorecard_posted_with_percentages_and_counts_only(self):
+        self.card("2026-W43", gaps=(0.1, -0.3))
+        self.card("2026-W44", bias=-0.2, sma=0.4, book_days=("2026-10-26", "2026-10-27", "2026-10-28"))
+        text = self.comment("2026-W44")
+        self.assertIn("**Direction trial** — bias (stable BTC) vs sma (mvp BTC), `stable/data/evidence/direction/2026-W44.md`", text)
+        self.assertIn("| bias | -0.20 % | +1.20 % | 0 | 0 | +0.10 pp |", text)
+        self.assertIn("| sma | +0.40 % | +0.90 % | 0 | 0 | -0.30 pp |", text)
+        self.assertIn("- Weeks counted toward 6: 1 (2026-W43) · excluded, books missing over 2 days: 2026-W44", text)
+        self.assertIn("bias − sma, replay net (mean of the counted weeks): -0.30 pp · noise (mean live − replay): +0.20 pp", text)
+        self.assertIn("Early-stop streak (bias's replay net under sma's by more than the noise): 1 of 3", text)
+        self.assertIn("- First GEX shed: none yet", text)
+        self.assertIn("- Review: 2026-12-07", text)
+        self.assertNotIn("BTC |", text.split("**Direction trial**")[1])  # no amount column
+        self.assertNotIn("🚩", text)
+
+    def test_no_scorecard_is_said_and_before_the_trial_no_block(self):
+        self.assertIn("No scorecard for 2026-W43 (see the failed steps).", self.comment("2026-W43"))
+        self.assertNotIn("Direction trial", self.comment("2026-W42"))
+
+    def test_a_replay_that_did_not_run_counts_toward_neither(self):
+        self.card("2026-W43", bias=None)
+        text = self.comment("2026-W43")
+        self.assertIn("| bias | — (replay did not run) | — | — | 0 |", text)
+        self.assertIn("Weeks counted toward 6: 0 (none)", text)
+        self.assertIn("no scorecard or replay: 2026-W43", text)
+
+    def test_first_shed_on_the_comments_first_line_and_one_ticket(self):
+        self.card("2026-W43")
+        self.card("2026-W44", live_sheds=(2, 0))
+        text = self.comment("2026-W44")
+        self.assertTrue(text.splitlines()[0].startswith(evidence_week.HEADER))
+        self.assertIn("🚩 **first GEX shed of the direction trial", text.splitlines()[0])
+        self.assertIn("- First GEX shed: 2026-W44", text)
+        tickets = evidence_week.trial_tickets("2026-W44", self.stable, [])
+        self.assertEqual([(k, t) for k, t, _ in tickets],
+                         [("first-shed", "[E2] Direction trial: first GEX shed in 2026-W44, review bias vs sma")])
+        body = tickets[0][2]
+        self.assertIn("| 2026-W44 | counted | +0.50 % | +0.80 % | -0.30 pp | 0 / 0 · 2 / 0 |", body)
+        self.assertIn("<!-- direction-trial: first-shed 2026-W44 -->", body)
+        self.assertIn("no agent", body)
+
+    def test_first_shed_filed_once(self):
+        self.card("2026-W43", bias_sheds=1)
+        issues = [{"number": 7, "title": "[E2] Direction trial: first GEX shed in 2026-W43, review bias vs sma", "state": "CLOSED"}]
+        self.assertEqual(evidence_week.trial_tickets("2026-W43", self.stable, issues), [])
+        # a later week with sheds only counts in the comment
+        self.card("2026-W44", sma_sheds=3)
+        self.assertEqual(evidence_week.trial_tickets("2026-W44", self.stable, issues), [])
+        text = self.comment("2026-W44")
+        self.assertNotIn("🚩", text)
+        self.assertIn("| sma | +0.80 % | +0.90 % | 3 |", text)
+        self.assertIn("- First GEX shed: 2026-W43", text)
+
+    def test_early_stop_after_three_weeks_under_by_more_than_noise(self):
+        for w in ("2026-W43", "2026-W44", "2026-W45"):
+            self.card(w, bias=-1.0, sma=1.0, gaps=(0.5, 0.5))
+        s = evidence_week.trial_state(self.stable, "2026-W45")
+        self.assertEqual(s["streak"], 3)
+        self.assertTrue(s["early_stop"])
+        kinds = [k for k, _, _ in evidence_week.trial_tickets("2026-W45", self.stable, [])]
+        self.assertEqual(kinds, ["early-stop"])
+        self.assertIn("**early stop: decision ticket filed**", self.comment("2026-W45"))
+
+    def test_a_week_inside_the_noise_breaks_the_streak(self):
+        self.card("2026-W43", bias=-1.0, sma=1.0, gaps=(1.0, 1.0))
+        self.card("2026-W44", bias=-1.0, sma=1.0, gaps=(1.0, 1.0))
+        self.card("2026-W45", bias=0.0, sma=0.5, gaps=(1.0, 1.0))  # d −0.5 within noise 1.0
+        self.assertEqual(evidence_week.trial_state(self.stable, "2026-W45")["streak"], 0)
+
+    def test_no_gap_no_streak(self):
+        self.card("2026-W43", bias=-1.0, sma=1.0, gaps=(None, None))
+        self.assertIn("not measured (no live − replay gap yet)", self.comment("2026-W43"))
+
+    def test_review_due_after_six_counted_weeks_or_the_review_date(self):
+        for w in evidence_week.trial_weeks("2026-W48"):
+            self.card(w, bias=0.5, sma=0.5)  # no difference: no early stop
+        self.assertEqual(evidence_week.trial_state(self.stable, "2026-W47")["review_reason"], None)
+        s = evidence_week.trial_state(self.stable, "2026-W48")
+        self.assertIn("6 weeks counted", s["review_reason"])
+        self.assertEqual([k for k, _, _ in evidence_week.trial_tickets("2026-W48", self.stable, [])], ["review"])
+        self.assertIn("**due** — 6 weeks counted", self.comment("2026-W48"))
+        # Two weeks short of books: 5 counted at W49, reported on 2026-12-07, the review date.
+        self.card("2026-W47", book_days=("a", "b", "c"))
+        self.card("2026-W48", book_days=("a", "b", "c"))
+        self.assertIsNone(evidence_week.trial_state(self.stable, "2026-W48")["review_reason"])
+        self.card("2026-W49", bias=0.5, sma=0.5)
+        self.assertIn("review date 2026-12-07 is reached with 5 of 6",
+                      evidence_week.trial_state(self.stable, "2026-W49")["review_reason"])
+        issues = [{"title": "[E2] Direction trial: review due in 2026-W48, decide bias vs sma"}]
+        self.assertEqual(evidence_week.trial_tickets("2026-W49", self.stable, issues), [])
+
+    def test_unreadable_issue_list_files_nothing(self):
+        self.card("2026-W43", bias_sheds=1)
+        out = os.path.join(self.envs, "tickets")
+        with self.assertRaises(SystemExit):
+            evidence_week.write_tickets("2026-W43", self.stable, os.path.join(self.envs, "nope.json"), out)
+        self.assertFalse(os.path.exists(out))
+
+
 GO = """#!/usr/bin/env bash
 # go run ./cmd/evidence -env E -root R [-books-root B] -bot b -week W → R/data/evidence/W/b.{md,json}
+# go run ./cmd/evidence -compare-direction -bot btc -week W -stable-root S -mvp-root M → S/data/evidence/direction/W.{md,json}
 echo "$*" >> "$EV_TEST_DIR/go.log"
+compare=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in -env) env="$2"; shift ;; -root) root="$2"; shift ;; -bot) bot="$2"; shift ;; -week) week="$2"; shift ;; esac
+  case "$1" in -env) env="$2"; shift ;; -root) root="$2"; shift ;; -bot) bot="$2"; shift ;; -week) week="$2"; shift ;;
+    -compare-direction) compare=1 ;; -stable-root) root="$2"; shift ;; esac
   shift
 done
+if [[ -n "$compare" ]]; then
+  [[ -f "$EV_TEST_DIR/direction_fails" ]] && { echo "direction: no recorded book"; exit 1; }
+  mkdir -p "$root/data/evidence/direction"
+  src="$EV_TEST_DIR/scorecard-$week.json"; [[ -f "$src" ]] || src="$EV_TEST_DIR/scorecard.json"
+  cp "$src" "$root/data/evidence/direction/$week.json"
+  echo "# direction $week" > "$root/data/evidence/direction/$week.md"
+  exit 0
+fi
 grep -qx "$env $bot" "$EV_TEST_DIR/go_fails" 2>/dev/null && { echo "evidence: broken"; exit 1; }
 mkdir -p "$root/data/evidence/$week"
 cp "$EV_TEST_DIR/report.json" "$root/data/evidence/$week/$bot.json"
@@ -216,7 +365,27 @@ GH = """#!/usr/bin/env bash
 echo "$*" >> "$EV_TEST_DIR/gh.log"
 case "$1 $2" in
   "repo view") echo owner/repo ;;
-  "issue list") [[ -f "$EV_TEST_DIR/no_epic" ]] || echo 31 ;;
+  "issue list")
+    if [[ "$*" == *"Direction trial"* ]]; then
+      [[ -f "$EV_TEST_DIR/issues_down" ]] && exit 1
+      cat "$EV_TEST_DIR/trial_issues.json" 2>/dev/null || echo '[]'
+    else
+      [[ -f "$EV_TEST_DIR/no_epic" ]] || echo 31
+    fi ;;
+  "issue create")
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --title) printf '%s\\n' "$2" >> "$EV_TEST_DIR/created.txt"
+                 python3 -c 'import json,sys; p=sys.argv[1]; t=sys.argv[2]
+try: l=json.load(open(p))
+except Exception: l=[]
+l.append({"number": 900+len(l), "title": t, "state": "OPEN"}); json.dump(l, open(p, "w"))' "$EV_TEST_DIR/trial_issues.json" "$2" ;;
+        --body-file) cat "$2" >> "$EV_TEST_DIR/created_bodies.txt" ;;
+        --label) echo "$2" >> "$EV_TEST_DIR/created_labels.txt" ;;
+      esac
+      shift
+    done
+    echo "https://github.com/owner/repo/issues/900" ;;
   "issue comment")
     [[ -f "$EV_TEST_DIR/gh_down" ]] && exit 1
     n="$(ls "$EV_TEST_DIR" | grep -c '^comment-' || true)"
@@ -236,6 +405,7 @@ class EvidenceScript(unittest.TestCase):
             write(t("envs", env, ".env"), f"DERIBIT_CLIENT_ID={env}id\nMONITOR_API_TOKEN={tok}\nDERIBIT_ENV=testnet\n")
             write(t("envs", env, "deploy.env"), f"OPTIONSBOT_ENV={env}\nMONITOR_PORT={port}\n")
         write(t("report.json"), json.dumps(report()))
+        write(t("scorecard.json"), json.dumps(scorecard()))
         for name, text in (("go", GO), ("curl", CURL), ("gh", GH)):
             write(t("bin", name), text)
             os.chmod(t("bin", name), 0o755)
@@ -272,7 +442,7 @@ class EvidenceScript(unittest.TestCase):
                 for ext in ("md", "json"):
                     self.assertTrue(os.path.exists(self.t("envs", env, "data", "evidence", self.week, f"{bot}.{ext}")),
                                     f"{env} {bot}.{ext}\n{self.output}")
-        go = self.read("go.log").splitlines()
+        go = [l for l in self.read("go.log").splitlines() if "-compare-direction" not in l]
         self.assertEqual(len(go), 4)
         self.assertTrue(all(f"-week {self.week}" in l for l in go))
         self.assertTrue(all("-books-root " + self.t("envs", "stable") in l for l in go if "-env mvp" in l))
@@ -350,7 +520,60 @@ class EvidenceScript(unittest.TestCase):
         self.run_script()
         self.assertTrue(self.done())
         self.run_script()  # a third tick: nothing more
-        self.assertEqual(len(self.read("go.log").splitlines()), 8)
+        go = [l for l in self.read("go.log").splitlines() if "-compare-direction" not in l]
+        self.assertEqual(len(go), 8)
+
+    def created(self):
+        return self.read("created.txt").splitlines()
+
+    def test_weekly_scorecard_posted(self):
+        self.run_script()
+        for ext in ("md", "json"):
+            self.assertTrue(os.path.exists(self.t("envs", "stable", "data", "evidence", "direction", f"{self.week}.{ext}")))
+        compare = [l for l in self.read("go.log").splitlines() if "-compare-direction" in l]
+        self.assertEqual(len(compare), len(evidence_week.trial_weeks(self.week)))  # last week + back-fill
+        self.assertTrue(all("-stable-root " + self.t("envs", "stable") in l and "-mvp-root " + self.t("envs", "mvp") in l
+                            for l in compare))
+        self.assertIn(f"-week {self.week} ", compare[-1] + " ")
+        self.assertIn("**Direction trial**", self.comments()[0])
+        self.assertFalse(any("first GEX shed" in c for c in self.created()))
+
+    def test_first_shed_flagged_once(self):
+        write(self.t(f"scorecard-{self.week}.json"), json.dumps(scorecard(live_sheds=(0, 1))))
+        self.run_script()
+        title = f"[E2] Direction trial: first GEX shed in {self.week}, review bias vs sma"
+        self.assertIn(title, self.created())
+        self.assertIn("agent:needs-human", self.read("created_labels.txt"))
+        self.assertIn("🚩", self.comments()[0].splitlines()[0])
+        os.remove(self.t("repo", "data", "agents", "evidence", self.week + ".done"))
+        self.run_script()  # a later run for the same week
+        self.assertEqual(self.created().count(title), 1)
+
+    def test_scorecard_fails(self):
+        write(self.t("direction_fails"), "")
+        self.run_script()
+        comment = self.comments()[0]
+        for env in ("stable", "mvp"):
+            for bot in ("btc", "eth"):
+                self.assertIn(f"| {env} | {bot} | +0.0123 {bot.upper()}", comment)
+        self.assertIn(f"- stable btc: direction scorecard {self.week} — `direction: no recorded book`", comment)
+        self.assertIn(f"No scorecard for {self.week}", comment)
+        self.assertTrue(self.done())
+
+    def test_an_unreadable_issue_list_files_no_ticket(self):
+        write(self.t(f"scorecard-{self.week}.json"), json.dumps(scorecard(bias_sheds=2)))
+        write(self.t("issues_down"), "")
+        self.run_script()
+        self.assertEqual(self.created(), [])
+        self.assertIn("direction trial issues not read", self.output)
+
+    def test_nothing_changes_in_trading(self):
+        # The job reads and reports; a decision is a person's config PR.
+        for name in ("evidence.sh", "evidence_week.py"):
+            with open(os.path.join(SCRIPTS, "agents", name)) as f:
+                text = f.read()
+            for touched in ("config_btc.yaml", "config_btc.mvp.yaml", "gamma.go"):
+                self.assertNotIn(touched, text, name)
 
     def test_tick_starts_evidence(self):
         with open(os.path.join(SCRIPTS, "agents", "tick.sh")) as f:

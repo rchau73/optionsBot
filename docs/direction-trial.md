@@ -19,7 +19,7 @@ The two environments use different Deribit testnet accounts and different books,
 
 ## The evidence: the weekly scorecard
 
-`go run ./cmd/evidence -compare-direction -week <YYYY-Www>` → `<stable>/data/evidence/direction/<week>.md|.json` (#245; README "Replay of recorded books"). Percentages of equity, counts and hours only. The **rows that decide** are:
+`go run ./cmd/evidence -compare-direction -week <YYYY-Www>` → `<stable>/data/evidence/direction/<week>.md|.json` (#245; README "Replay of recorded books"). It runs weekly, from the agents' Monday evidence job (`scripts/agents/evidence.sh`, #440). Percentages of equity, counts and hours only. The **rows that decide** are:
 
 | Metric | Scorecard row and column | Weight |
 |---|---|---|
@@ -54,6 +54,6 @@ Stop the trial early and file the decision ticket at once if, over any 3 consecu
 
 ## What happens at the review
 
-1. Run the scorecard for each week of the span (`evidence.sh` already runs the weekly reports; the scorecard runs by hand, `-compare-direction -week`).
+1. The scorecard of each week of the span is already there: `scripts/agents/evidence.sh` runs it every Monday for the week before (and back-fills the weeks since 2026-W43), posts its counters on the E2 epic and files the `agent:needs-human` ticket for the first GEX shed, the kill rule and the review (#440, AGENTIC.md "Weekly evidence report"). By hand: `-compare-direction -week`.
 2. Fill the outcome above from the decisive rows, with d, noise and each week listed.
 3. File one ticket marked `agent:needs-human` with the outcome and its numbers. The product owner decides whether to keep `bias` on stable, move it to `sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges. It is never made by an agent.

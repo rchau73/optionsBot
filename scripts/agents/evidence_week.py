@@ -8,6 +8,15 @@ comment from the reports it wrote.
                                                              → the epic comment (Markdown) on stdout
     evidence_week.py gaps <week> <envs dir> <bots> [envs]    → one line per env × bot × dataset with a
                                                                recorder gap over 3 h (#362), for the notify
+    evidence_week.py direction-weeks <week> <stable root>    → the direction trial weeks to (re)build (#440):
+                                                               <week> and every week since TRIAL_START
+                                                               without a scorecard (the back-fill)
+    evidence_week.py tickets <week> <stable root> <issues.json> <out dir>
+                                                             → <out dir>/<n>.title and <n>.body for every
+                                                               direction trial decision ticket (first GEX
+                                                               shed, early stop, review due) no issue
+                                                               carries yet; issues.json: gh issue list
+                                                               --state all --json number,title,state
 
 <envs dir> holds one clone per environment (<envs dir>/<env>, as
 scripts/env_lib.sh lays them out); each report is
@@ -18,6 +27,13 @@ whole env). <bots> is comma-separated; [envs] defaults to "stable,mvp".
 Live accounts: an env whose .env says DERIBIT_ENV=live gets percentages and
 the report's path only — never a coin or USD amount, nor a failure's detail
 (the same rule as sme_review.sh: the repository is public).
+
+The direction trial (docs/direction-trial.md, #324, #440): cmd/evidence
+-compare-direction writes <stable>/data/evidence/direction/<week>.json, which
+holds percentages, counts and hours only. The comment's "Direction trial"
+block and the decision tickets are built from those files with the brief's
+rules (minimum span, noise, kill rule, review date); a ticket only asks a
+person to decide — no agent changes gex_direction.
 
 Standard library only: launchd runs it with the system python3.
 """
@@ -227,6 +243,224 @@ def notices(week, envs_dir, bots, envs=("stable", "mvp")):
     return out
 
 
+# The direction trial's brief (docs/direction-trial.md, #324): the first week
+# both setups ran live, the minimum span, the book days a week may miss and
+# still count, the kill rule's streak and the review date.
+TRIAL_START = "2026-W43"
+TRIAL_WEEKS = 6
+TRIAL_MAX_MISSING_BOOK_DAYS = 2
+TRIAL_STREAK = 3
+TRIAL_REVIEW_DATE = dt.date(2026, 12, 7)
+TRIAL_SOURCES = ("bias", "sma")
+TICKET_PREFIX = "[E2] Direction trial: "
+TICKET_KINDS = {  # kind → the title's start; one ticket of each kind, ever
+    "first-shed": TICKET_PREFIX + "first GEX shed",
+    "early-stop": TICKET_PREFIX + "early stop",
+    "review": TICKET_PREFIX + "review due",
+}
+
+
+def week_monday(label):
+    y, w = label.split("-W")
+    return dt.date.fromisocalendar(int(y), int(w), 1)
+
+
+def trial_weeks(week):
+    """TRIAL_START … week, oldest first; [] before the trial."""
+    out, d, last = [], week_monday(TRIAL_START), week_monday(week)
+    while d <= last:
+        y, w, _ = d.isocalendar()
+        out.append(f"{y}-W{w:02d}")
+        d += dt.timedelta(days=7)
+    return out
+
+
+def scorecard_path(stable_root, week):
+    return os.path.join(stable_root, "data", "evidence", "direction", week + ".json")
+
+
+def load_scorecard(stable_root, week):
+    try:
+        with open(scorecard_path(stable_root, week)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def direction_weeks(week, stable_root):
+    """The weeks evidence.sh runs -compare-direction for: <week> itself and
+    every trial week before it without a scorecard (the back-fill)."""
+    return [w for w in trial_weeks(week) if w == week or not os.path.exists(scorecard_path(stable_root, w))]
+
+
+def _row(rows, src):
+    return next((r for r in rows or [] if r.get("source") == src), {})
+
+
+def trial_week(week, card):
+    """One week of the trial: its status (counted | excluded | no replay |
+    no scorecard), bias − sma of the replays' Net %, the live gaps and the sheds."""
+    e = {"week": week, "card": card, "d": None, "gaps": [], "shed": False}
+    if card is None:
+        e["status"] = "no scorecard"
+        return e
+    rep = {s: _row(card.get("replay"), s) for s in TRIAL_SOURCES}
+    live = {s: _row(card.get("live"), s) for s in TRIAL_SOURCES}
+    e["shed"] = any((r.get("sheds") or 0) > 0 for r in list(rep.values()) + list(live.values()))
+    e["gaps"] = [abs(r["live_minus_replay_pp"]) for r in live.values() if r.get("live_minus_replay_pp") is not None]
+    nets = [rep[s].get("net_pct") for s in TRIAL_SOURCES]
+    if len((card.get("missing") or {}).get("book_days") or []) > TRIAL_MAX_MISSING_BOOK_DAYS:
+        e["status"] = "excluded"
+    elif None in nets:
+        e["status"] = "no replay"  # counts toward neither d nor noise (the brief)
+    else:
+        e["status"] = "counted"
+        e["d"] = nets[0] - nets[1]
+    return e
+
+
+def trial_state(stable_root, week):
+    """The brief's running counters up to <week>, from the scorecard files."""
+    weeks = [trial_week(w, load_scorecard(stable_root, w)) for w in trial_weeks(week)]
+    counted = [e for e in weeks if e["status"] == "counted"]
+    gaps = [g for e in counted for g in e["gaps"]]
+    noise = sum(gaps) / len(gaps) if gaps else None
+    streak = 0
+    if noise is not None:
+        for e in reversed(counted):
+            if e["d"] >= -noise:
+                break
+            streak += 1
+    first_shed = next((e["week"] for e in weeks if e["shed"]), None)
+    review_reason = None
+    if len(counted) >= TRIAL_WEEKS:
+        review_reason = f"{len(counted)} weeks counted (the brief's minimum is {TRIAL_WEEKS})"
+    elif weeks and week_monday(week) + dt.timedelta(days=7) >= TRIAL_REVIEW_DATE:
+        review_reason = f"the review date {TRIAL_REVIEW_DATE} is reached with {len(counted)} of {TRIAL_WEEKS} weeks counted"
+    return {
+        "week": week, "weeks": weeks, "counted": counted, "noise": noise, "streak": streak,
+        "mean_d": sum(e["d"] for e in counted) / len(counted) if counted else None,
+        "first_shed": first_shed, "early_stop": streak >= TRIAL_STREAK, "review_reason": review_reason,
+    }
+
+
+def pp(v):
+    return "—" if v is None else f"{v:+.2f} pp"
+
+
+def opt_pct(v):
+    return "—" if v is None else pct(v)
+
+
+def week_list(weeks):
+    return ", ".join(e["week"] for e in weeks) or "none"
+
+
+def direction_block(stable_root, week):
+    """The comment's "Direction trial" block: percentages and counts only
+    (the scorecard holds nothing else). [] before the trial."""
+    if not trial_weeks(week):
+        return []
+    s = trial_state(stable_root, week)
+    out = ["", f"**Direction trial** — bias (stable BTC) vs sma (mvp BTC), "
+               f"`stable/data/evidence/direction/{week}.md` (rules: `docs/direction-trial.md`; a person decides):", ""]
+    card = s["weeks"][-1]["card"]
+    if card is None:
+        out.append(f"No scorecard for {week} (see the failed steps).")
+    else:
+        out += ["| source | replay net % | replay max drawdown % | replay sheds | live sheds | live − replay |",
+                "|---|---|---|---|---|---|"]
+        for src in TRIAL_SOURCES:
+            r, l = _row(card.get("replay"), src), _row(card.get("live"), src)
+            if r.get("ran"):
+                net, dd, sheds = opt_pct(r.get("net_pct")), opt_pct(r.get("max_drawdown_pct")), str(r.get("sheds", 0))
+            else:
+                net, dd, sheds = "— (replay did not run)", "—", "—"
+            live_sheds = str(l["sheds"]) if l else "— (no live row)"
+            out.append(f"| {src} | {net} | {dd} | {sheds} | {live_sheds} | {pp(l.get('live_minus_replay_pp'))} |")
+        out.append("")
+    excluded = [e for e in s["weeks"] if e["status"] == "excluded"]
+    unbuilt = [e for e in s["weeks"] if e["status"] in ("no scorecard", "no replay")]
+    out.append(f"- Weeks counted toward {TRIAL_WEEKS}: {len(s['counted'])} ({week_list(s['counted'])})"
+               f" · excluded, books missing over {TRIAL_MAX_MISSING_BOOK_DAYS} days: {week_list(excluded)}"
+               f" · no scorecard or replay: {week_list(unbuilt)}")
+    out.append(f"- bias − sma, replay net (mean of the counted weeks): {pp(s['mean_d'])} · noise (mean live − replay): {pp(s['noise'])}")
+    streak = f"{s['streak']} of {TRIAL_STREAK}" if s["noise"] is not None else "not measured (no live − replay gap yet)"
+    out.append(f"- Early-stop streak (bias's replay net under sma's by more than the noise): {streak}"
+               + (" — **early stop: decision ticket filed**" if s["early_stop"] else ""))
+    out.append("- First GEX shed: " + (s["first_shed"] or "none yet (the review waits for one)"))
+    out.append("- Review: " + (f"**due** — {s['review_reason']}" if s["review_reason"] else f"{TRIAL_REVIEW_DATE}"))
+    out.append("- The kill rule's live drawdown (stable over 2× mvp) is not in the scorecard: read the weekly reports above.")
+    return out
+
+
+def trial_table(s):
+    out = ["| week | status | bias net % | sma net % | bias − sma | sheds (replay bias / sma · live bias / sma) | live − replay |",
+           "|---|---|---|---|---|---|---|"]
+    for e in s["weeks"]:
+        c = e["card"] or {}
+        rep = [_row(c.get("replay"), x) for x in TRIAL_SOURCES]
+        live = [_row(c.get("live"), x) for x in TRIAL_SOURCES]
+        sheds = " / ".join(str(r.get("sheds", "—")) for r in rep) + " · " + " / ".join(str(r.get("sheds", "—")) for r in live)
+        gaps = ", ".join(pp(r.get("live_minus_replay_pp")) for r in live)
+        out.append(f"| {e['week']} | {e['status']} | {opt_pct(rep[0].get('net_pct'))} | {opt_pct(rep[1].get('net_pct'))}"
+                   f" | {pp(e['d'])} | {sheds} | {gaps} |")
+    return out
+
+
+def trial_tickets(week, stable_root, issues):
+    """The decision tickets due at <week> that no issue (any state) carries
+    yet: [(kind, title, body)]. Each kind is filed once, ever."""
+    titles = [i.get("title", "") for i in issues]
+    s = trial_state(stable_root, week)
+    due = []
+    if s["first_shed"]:
+        due.append(("first-shed", f"{TICKET_KINDS['first-shed']} in {s['first_shed']}, review bias vs sma",
+                    f"The direction trial's first week with a GEX shed is **{s['first_shed']}** (a replay or a live "
+                    "row of the scorecard has sheds > 0). The product owner held the bias-vs-sma review until one (#88)."))
+    if s["early_stop"]:
+        due.append(("early-stop", f"{TICKET_KINDS['early-stop']} in {week}, decide bias vs sma",
+                    f"The brief's kill rule: bias's replay net was under sma's by more than the noise "
+                    f"({pp(s['noise'])}) for {s['streak']} counted weeks in a row, up to {week}."))
+    if s["review_reason"]:
+        due.append(("review", f"{TICKET_KINDS['review']} in {week}, decide bias vs sma",
+                    f"The trial's review is due: {s['review_reason']}."))
+    out = []
+    for kind, title, why in due:
+        if any(t.startswith(TICKET_KINDS[kind]) for t in titles):
+            continue
+        body = [why, "", f"- Weeks counted toward {TRIAL_WEEKS}: {len(s['counted'])} ({week_list(s['counted'])})",
+                f"- d = bias − sma, replay net, mean of the counted weeks: {pp(s['mean_d'])}",
+                f"- noise = mean |live − replay|: {pp(s['noise'])}",
+                f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}", "", *trial_table(s), "",
+                "Decide by the outcomes in `docs/direction-trial.md` (no difference / bias better / sma better; "
+                "the live drawdown kill rule is in the weekly evidence reports): keep `bias` on stable, move it to "
+                "`sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges — no agent "
+                "changes it.", "",
+                "Scorecards: `stable/data/evidence/direction/<week>.md|json` (`cmd/evidence -compare-direction`). "
+                "Percentages and counts only.", "",
+                "_Filed by `scripts/agents/evidence.sh` (#440)._",
+                f"<!-- direction-trial: {kind} {week} -->"]
+        out.append((kind, title, "\n".join(body) + "\n"))
+    return out
+
+
+def write_tickets(week, stable_root, issues_path, out_dir):
+    try:
+        with open(issues_path) as f:
+            issues = json.load(f)
+    except (OSError, ValueError) as err:
+        raise SystemExit(f"issues list unreadable ({err}): nothing filed")  # never file blind
+    os.makedirs(out_dir, exist_ok=True)
+    tickets = trial_tickets(week, stable_root, issues)
+    for n, (kind, title, body) in enumerate(tickets, 1):
+        with open(os.path.join(out_dir, f"{n}.title"), "w") as f:
+            f.write(title)
+        with open(os.path.join(out_dir, f"{n}.body"), "w") as f:
+            f.write(body)
+        print(f"{kind}: {title}")
+
+
 def load_failures(path):
     out = []
     try:
@@ -242,7 +476,11 @@ def load_failures(path):
 
 def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
     failures = load_failures(failures_path)
-    out = [f"{HEADER} — week {week} (`scripts/agents/evidence.sh`, #244)", "",
+    stable_root = os.path.join(envs_dir, "stable")
+    first = f"{HEADER} — week {week} (`scripts/agents/evidence.sh`, #244)"
+    if "stable" in envs and trial_weeks(week) and trial_state(stable_root, week)["first_shed"] == week:
+        first += " · 🚩 **first GEX shed of the direction trial: review bias vs sma**"
+    out = [first, "",
            "One row per environment × bot, from `cmd/evidence` (README \"Evidence report\"). "
            "Percentages are of the margin balance at the week's start; the replay gap is replay − live. "
            "Return on margin = net P&L ÷ mean IM used (IM % × the margin balance at the week's start, an approximation).", "",
@@ -270,6 +508,8 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
             out.append("| " + " | ".join([
                 label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
+    if "stable" in envs:
+        out += direction_block(stable_root, week)
     gaps = notices(week, envs_dir, bots, envs)
     if gaps:
         out += ["", "**Recorder gaps** (over 3 h in the week; fix the recorder — the report's \"Recorded-history coverage\" lists every missing hour):", ""]
@@ -300,6 +540,11 @@ def main(argv):
         bots = [b.strip().lower() for b in argv[5].split(",") if b.strip()]
         envs = tuple(argv[6].split(",")) if len(argv) == 7 else ("stable", "mvp")
         sys.stdout.write(comment(argv[2], argv[3], argv[4], bots, envs))
+    elif len(argv) == 4 and argv[1] == "direction-weeks":
+        for w in direction_weeks(argv[2], argv[3]):
+            print(w)
+    elif len(argv) == 6 and argv[1] == "tickets":
+        write_tickets(argv[2], argv[3], argv[4], argv[5])
     else:
         raise SystemExit(__doc__)
 
