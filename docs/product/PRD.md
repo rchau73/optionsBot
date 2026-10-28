@@ -40,8 +40,8 @@ The cycle holder is confirmed as the target by the product owner. How many there
 
 | Role | May | May not |
 |---|---|---|
-| **Admin** | everything | — |
-| **Manager** | adjust strategy parameters (after a comparison backtest, E9), close legs manually, everything a user may | — |
+| **Admin** (our staff) | everything on every account and customer | change the settings of an account already onboarded and running; those belong to the account's managers (#185) |
+| **Manager** (customer side: the subscriber or their adviser, linked n:n to accounts) | on the accounts they manage: adjust strategy parameters (after a comparison backtest, E9), close legs manually, everything a user may | act on an account they don't manage; change anything platform-wide (#185) |
 | **User** (the money owner) | monitor the dashboard, suggest enhancements, ask questions (E10) | change strategies or parameters; deposit, transfer or withdraw through the platform (that happens only on their exchange) |
 
 Changes to a **core trading policy** (margin limits, exits, entry, repair, GEX shedding, order handling, kill switch) need the product owner's approval before they become the product's default, whoever proposes them (§12).
@@ -204,7 +204,7 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 - **Risk of ruin:** short options can lose far more than the premium. Every product surface shows the worst case; defaults are conservative; defined-risk structures (iron condors) are considered before any retail offer (OptionStrategy.md §11.3).
 - **Key security:** trade-only API keys, no withdrawal rights, encrypted at rest, revocable by the user; passwords hashed; roles enforced on the server (E7, E8).
 - **Scope risk:** thirteen epics are more than a team runs at once. Ranks and the roadmap set the order: Now epics first, Later epics only once their prerequisites (E2 evidence, E7 accounts) exist.
-- **Open questions:** (1) does a manager's parameter change apply to one customer account or to every account running that strategy? (2) who are managers — our staff only, or also customers' advisers? Both are needed before E9's stories go to Ready.
+- **Open questions:** both answered on #185 (2026-10-20). (1) a manager's parameter change applies to one account at a time, an account they manage; an "apply to all my accounts" shortcut may come later. (2) Managers are on the customer's side, the subscriber or a customer's adviser, linked n:n to accounts; admins are our staff. **Needs legal review:** an adviser who is not the account owner changing a strategy for that owner (legal brief, advice and mandate questions), and E8's tenancy (accounts, links of managers to accounts) before E9's UI lets an adviser act.
 
 ## 12. Decision log
 
@@ -219,5 +219,6 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 | 2026-10-18 | Roles admin / manager / user; the platform never handles deposits, transfers or withdrawals — those stay on the customer's exchange | — | the platform only places orders | product owner on #149 |
 | 2026-10-18 | New epics E7–E13 (accounts and roles, multi-exchange, strategy-change lab, AI assistant, education, responsive web, analytics) | all; some | requested by the product owner | product owner on #149 |
 | 2026-10-18 | Pricing: the PM proposes in E5 (fair, low churn, no profit share); the product owner decides | — | monetization is a product decision with legal limits | product owner on #149 |
-| 2026-10-28 | E13: NPS once a month (was every 90 days), optional, inside the assistant panel with a badge on Ask; an in-app notification centre (bell) for what needs the person and for updates | NPS every 90 days as a page card; monthly in the assistant · no notifications; a bell | the person answers where they already talk to the product; the app needs one place to tell people what happened and what waits for them | product owner in chat, recorded on #164 |
+| 2026-10-20 | E9 roles: a manager's change applies to one account they manage (1A); managers are the customer's side, the subscriber or their adviser, n:n with accounts, never platform-wide; admins are staff and don't change established accounts (2B) | 1A/1B, 2A/2B | the customer owns their account's settings; advisers manage several customers | product owner on #185 |
 | 2026-10-27 | E10: the assistant drafts bug/enhancement requests that pass its evidence filter; the person sends them; they go to a private queue the PM agent triages into redacted public issues | file to GitHub directly; private queue | the repository is public; requests must carry data or examples | product owner in chat, recorded on #161 |
+| 2026-10-28 | E13: NPS once a month (was every 90 days), optional, inside the assistant panel with a badge on Ask; an in-app notification centre (bell) for what needs the person and for updates | NPS every 90 days as a page card; monthly in the assistant · no notifications; a bell | the person answers where they already talk to the product; the app needs one place to tell people what happened and what waits for them | product owner in chat, recorded on #164 |
