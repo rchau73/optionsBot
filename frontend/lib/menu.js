@@ -34,23 +34,23 @@ export function detailsRedirect({ bot, view } = {}) {
  */
 export function menuItems(pathname, { bot = null } = {}) {
   const q = bot ? `?bot=${encodeURIComponent(bot)}` : "";
-  const item = (key, label, path, group = null) => ({ key, label, href: `${path}${q}`, current: pathname === path, group });
+  const item = ({ key, label, path, group = null }) => ({ key, label, href: `${path}${q}`, current: pathname === path, group });
   return [
-    item("overview", "Overview", "/"),
-    item("details", "Details (pro)", "/details"),
-    item("positions", "Positions", "/positions", "operational"),
-    item("income", "Income", "/income", "operational"),
-    item("worst-case", "Worst case", "/worst-case", "operational"),
-    item("activity", "Activity", "/activity", "operational"),
-    item("account", "Account", "/account", "operational"),
-    item("how-it-works", "How it works", "/how-it-works", "help"),
-  ];
+    { key: "overview", label: "Overview", path: "/" },
+    { key: "details", label: "Details (pro)", path: "/details" },
+    { key: "positions", label: "Positions", path: "/positions", group: "operational" },
+    { key: "income", label: "Income", path: "/income", group: "operational" },
+    { key: "worst-case", label: "Worst case", path: "/worst-case", group: "operational" },
+    { key: "activity", label: "Activity", path: "/activity", group: "operational" },
+    { key: "account", label: "Account", path: "/account", group: "operational" },
+    { key: "how-it-works", label: "How it works", path: "/how-it-works", group: "help" },
+  ].map(item);
 }
 
-/** The dropdowns of the menu bar, in order (#450). */
+/** The dropdowns of the menu bar, in order (#450): group key → label. Not pages, so not in the monitor guide's page list. */
 const GROUPS = [
-  { key: "operational", label: "Operational" },
-  { key: "help", label: "Help" },
+  ["operational", "Operational"],
+  ["help", "Help"],
 ];
 
 /**
@@ -60,9 +60,9 @@ const GROUPS = [
 export function menuGroups(pathname, { bot = null } = {}) {
   const items = menuItems(pathname, { bot });
   const entries = items.filter((i) => !i.group);
-  for (const g of GROUPS) {
-    const children = items.filter((i) => i.group === g.key);
-    entries.push({ ...g, current: children.some((c) => c.current), items: children });
+  for (const [key, label] of GROUPS) {
+    const children = items.filter((i) => i.group === key);
+    entries.push({ key, label, current: children.some((c) => c.current), items: children });
   }
   return entries;
 }
