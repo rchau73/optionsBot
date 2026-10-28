@@ -81,8 +81,12 @@ async function renderIn(ui) {
   render(<AssistantProvider>{ui}</AssistantProvider>);
   await act(async () => {});
 }
-const renderMenu = () => renderIn(<MenuNav pathname="/" bot="btc" />);
-const askButton = () => within(screen.getByRole("navigation", { name: "Main" })).getByRole("button", { name: "Ask" });
+// The floating Ask (#419) asks about the page's bot, read from ?bot=.
+const renderMenu = () => {
+  window.history.replaceState(null, "", "/?bot=btc");
+  return renderIn(<MenuNav pathname="/" bot="btc" />);
+};
+const askButton = () => screen.getByRole("button", { name: "Ask" });
 const panel = () => screen.getByRole("complementary", { name: "Assistant" });
 
 async function openPanel() {

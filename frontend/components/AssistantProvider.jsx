@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
 import { askAssistant, fetchAssistantState, flagAssistantAnswer } from "@/lib/api";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
@@ -121,6 +122,7 @@ export default function AssistantProvider({ children }) {
   return (
     <AssistantContext.Provider value={value}>
       {children}
+      <AskButton />
       {open ? <AssistantPanel assistant={value} /> : null}
     </AssistantContext.Provider>
   );
