@@ -63,6 +63,13 @@ var forecastPhrases = compile(
 	`%\s*(a|per|each) (day|week|month|year)\b`,
 )
 
+// adviceNegations are the assistant declining to advise ("I can't say whether
+// you should use it"): blanked before advicePhrases are matched (#422: a good
+// answer ending so was replaced by the fallback).
+var adviceNegations = compile(
+	`\b(whether|if) you (should|ought to)\b`,
+)
+
 // negations deny a promise ("a stop is a trigger, not a guaranteed price"):
 // they are blanked before forecastPhrases are matched.
 var negations = compile(

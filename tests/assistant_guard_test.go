@@ -103,6 +103,8 @@ func TestAssistantGuard_Rules(t *testing.T) {
 		{"advice: your setting", "Increase your margin limit.", []string{srcParams}, guard.ReasonAdvice},
 		{"advice: good time", "It is a good time to sell options.", []string{srcIdea}, guard.ReasonAdvice},
 		{"not advice: the bot does not sell", "In a down-trend the bot does not sell puts.", []string{srcRegimes}, ""},
+		{"not advice: declining to advise (#422)", "I can explain how a manual close works, but I can't say whether you should use it.", []string{srcIdea}, ""},
+		{"advice: you should", "You should sell more puts.", []string{srcParams}, guard.ReasonAdvice},
 		{"not advice: puts gain", "Puts gain value when the price falls below the strike.", []string{"glossary:put"}, ""},
 		{"forecast: price", "Bitcoin will go up after the expiry.", []string{srcIdea}, guard.ReasonForecast},
 		{"forecast: return", "The expected return of the strategy is high.", []string{srcIdea}, guard.ReasonForecast},
