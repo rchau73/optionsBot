@@ -349,7 +349,7 @@ describe("lib/assistantPanel", () => {
     [{ source: "docs/parameters.md#delta_exit_threshold" }, { href: `${DOCS_BASE}/docs/parameters.md#delta_exit_threshold`, external: true }],
     [{ source: "glossary:no-such-term" }, null],
     [{ id: "explain:closed:stop_loss", source: "explain:closed:stop_loss" }, { href: "/activity?bot=btc", external: false }],
-    [{ id: "journal:eth", source: "journal:eth" }, { href: "/?bot=eth&view=details#details", external: false }],
+    [{ id: "journal:eth", source: "journal:eth" }, { href: "/details?bot=eth#trades", external: false }],
     [{ source: "somewhere" }, null],
   ])("citationHref(%j)", (citation, want) => {
     expect(citationHref(citation, "btc")).toEqual(want);
