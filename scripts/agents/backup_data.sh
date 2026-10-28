@@ -8,7 +8,8 @@
 #   to <envs>/history/backups/<date>/<env>/<bot>/ (orders.log, the three
 #   .jsonl files, archive/) — named files only: no .env, no secret; and each
 #   environment's monitor request queue, data/monitor/requests.jsonl and
-#   requests_status.jsonl, to <date>/<env>/monitor/ (#409);
+#   requests_status.jsonl, to <date>/<env>/monitor/ (#409), with the
+#   assistant's review log data/monitor/assistant.jsonl (#438);
 #   then go run ./cmd/backupcheck on each copy: the journal must replay
 #   (orders.ReplayFile) and hold no fewer events than the previous good copy.
 # The copy is built in <backups>/.<date>.partial and becomes <date> only when
@@ -110,15 +111,25 @@ done <<< "$sources"
 
 # The monitor's private request queue (#409): requests.jsonl and the review's
 # requests_status.jsonl of each environment, copied as they are to
-# <date>/<env>/monitor/ (not journals: no restore check).
+# <date>/<env>/monitor/ (not journals: no restore check); and the assistant's
+# review log, assistant.jsonl (#438, the L11/L12 audit trail), whose every
+# line must parse (backupcheck -lines; a torn last line is allowed).
 for env in $ENV_NAMES; do
   msrc="$(env_dir "$env")/data/monitor"
-  for f in requests.jsonl requests_status.jsonl; do
+  for f in requests.jsonl requests_status.jsonl assistant.jsonl; do
     if [[ -f "$msrc/$f" ]]; then
       mkdir -p "$work/$env/monitor"
       cp -p "$msrc/$f" "$work/$env/monitor/"
     fi
   done
+  alog="$work/$env/monitor/assistant.jsonl"
+  if [[ -f "$alog" && -z "$failed" ]]; then
+    if out="$("$check" -lines "$alog" 2>&1)"; then
+      log "backup: $env assistant log ok — ${out#RESULT }"
+    else
+      fail "$env" monitor "assistant log check: $(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tail -1)"
+    fi
+  fi
 done
 
 if [[ -n "$failed" ]]; then

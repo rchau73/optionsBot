@@ -150,7 +150,69 @@ class Pure(unittest.TestCase):
         self.assertEqual(usage_week.issue(WEEK, self.envs, self.state, [], NOW), ("no engagement drop", None))
 
 
+AR_SUMMARY = {
+    "answers": 10, "skipped_lines": 1, "flagged": 2, "flag_pct": 20.0, "answered_pct": 60.0,
+    "by_outcome": [{"kind": "answered", "answers": 6, "flagged": 1, "flag_pct": 16.7},
+                   {"kind": "dont_know", "answers": 2, "flagged": 1, "flag_pct": 50.0},
+                   {"kind": "refused", "answers": 1, "flagged": 0, "flag_pct": 0.0},
+                   {"kind": "rejected", "answers": 1, "flagged": 0, "flag_pct": 0.0},
+                   {"kind": "What did alice ask about 0.5 BTC?", "answers": 99, "flagged": 0}],
+    "guard_reasons": [{"reason": "advice", "answers": 1}, {"reason": "forecast", "answers": 0},
+                      {"reason": "secret question text", "answers": 7}],
+    "review_items": 3, "late_flags": 0, "gap_groups": 1, "no_passage_close": 1,
+    "question": "What did alice ask about 0.5 BTC?", "user": "alice",
+}
+
+
+class AssistantComment(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def put(self, env, s, dotenv="DERIBIT_ENV=testnet\n"):
+        write(os.path.join(self.tmp, env, ".env"), dotenv)
+        write(os.path.join(self.tmp, env, "data", "monitor", "assistant_reviews", f"{WEEK}.summary.json"), json.dumps(s))
+
+    def test_counts_and_percentages(self):
+        self.put("mvp", AR_SUMMARY)
+        c = usage_week.assistant_comment(WEEK, self.tmp)
+        self.assertIn(f"Assistant quality review** — week {WEEK}", c)
+        self.assertIn("| mvp | 10 | 6 (60 %) | 2 (20 %) | 2 (20 %) | 1 (10 %) | 1 (10 %) | 3 | 1 |", c)
+        self.assertIn("- mvp: advice 1", c)
+        self.assertIn("flag rate by kind: answered 17 %, dont_know 50 %", c)
+
+    def test_scenario_no_free_text_reaches_the_comment(self):
+        """Only named fields and the fixed kinds and reasons are read: a stray text field never reaches GitHub."""
+        self.put("mvp", AR_SUMMARY)
+        c = usage_week.assistant_comment(WEEK, self.tmp)
+        for leak in ("alice", "0.5 BTC", "secret question", "99"):
+            self.assertNotIn(leak, c)
+
+    def test_live_env_shows_percentages_only(self):
+        self.put("stable", AR_SUMMARY, dotenv="DERIBIT_ENV=live\n")
+        c = usage_week.assistant_comment(WEEK, self.tmp)
+        self.assertIn("| stable (live) | — | 60 % | 20 % | 20 % | 10 % | 10 % | — | — |", c)
+        self.assertIn("advice 10 %", c)
+        self.assertIn("percentages only", c)
+
+    def test_env_without_answers_is_left_out(self):
+        self.put("mvp", dict(AR_SUMMARY, answers=0))
+        self.assertNotIn("| mvp |", usage_week.assistant_comment(WEEK, self.tmp))
+        self.assertEqual(usage_week.assistant_answers(usage_week.assistant_summary(self.tmp, "stable", WEEK)), 0)
+
+
 GO = """#!/usr/bin/env bash
+if [[ "$*" == *cmd/assistantreview* ]]; then
+  # go run ./cmd/assistantreview -log L -week W -out O → O/W.summary.json
+  echo "$*" >> "$US_TEST_DIR/ar.log"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in -log) alog="$2"; shift ;; -week) week="$2"; shift ;; -out) out="$2"; shift ;; esac
+    shift
+  done
+  mkdir -p "$out"
+  if grep -q OLD "$alog"; then echo '{"answers": 0}' > "$out/$week.summary.json"; else cp "$US_TEST_DIR/ar_summary.json" "$out/$week.summary.json"; fi
+  exit 0
+fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
 echo "$*" >> "$US_TEST_DIR/go.log"
 while [[ $# -gt 0 ]]; do
@@ -207,6 +269,7 @@ class UsageScript(unittest.TestCase):
             write(t("envs", env, "deploy.env"), f"OPTIONSBOT_ENV={env}\nMONITOR_PORT={port}\n")
         write(t("report.json"), json.dumps(report()))
         write(t("drops.json"), json.dumps(drops(ACTIVE_DROP)))
+        write(t("ar_summary.json"), json.dumps(AR_SUMMARY))
         for name, text in (("go", GO), ("gh", GH)):
             write(t("bin", name), text)
             os.chmod(t("bin", name), 0o755)
@@ -315,6 +378,49 @@ class UsageScript(unittest.TestCase):
         self.run_script()  # a third tick: nothing more
         self.assertEqual(len(self.read("go.log").splitlines()), 2)
         self.assertEqual(len(self.files("title-")), 1)  # the retry finds the first attempt's issue
+
+    def assistant_log(self, env, text='{"kind":"answer","id":"a"}\n'):
+        write(self.t("envs", env, "data", "monitor", "assistant.jsonl"), text)
+
+    def ar_done(self):
+        return os.path.exists(self.t("repo", "data", "agents", "assistant_review", self.week + ".done"))
+
+    def test_scenario_assistant_review_posts_its_summary_on_the_e10_epic(self):
+        """#438: the review runs in the usage job's tick, posts the summary on E10 and marks its week done."""
+        self.events("mvp")
+        self.assistant_log("mvp")
+        self.run_script()
+        ar = self.read("ar.log").splitlines()
+        self.assertEqual(len(ar), 1, self.output)
+        self.assertIn(f"-week {self.week}", ar[0])
+        self.assertIn("-out " + self.t("envs", "mvp", "data", "monitor", "assistant_reviews"), ar[0])
+        comments = self.files("comment-")
+        self.assertEqual(len(comments), 2, self.output)  # the assistant review's and the usage report's
+        review = [c for c in comments if "Assistant quality review" in c]
+        self.assertEqual(len(review), 1)
+        self.assertIn("| mvp | 10 |", review[0])
+        self.assertNotIn("alice", review[0])
+        self.assertTrue(self.ar_done())
+        self.assertTrue(self.done())
+        agents = [(r["agent"], r["event"]) for r in self.ledger()]
+        self.assertIn(("assistant_review", "end"), agents)
+        self.run_script()  # done: not run again
+        self.assertEqual(len(self.read("ar.log").splitlines()), 1)
+
+    def test_scenario_a_quiet_week_posts_nothing_and_writes_no_marker(self):
+        """Given no assistant lines in the week, nothing is posted and no marker is written."""
+        self.assistant_log("mvp", "OLD\n")
+        self.run_script()
+        self.assertIn("no answer in", self.output)
+        self.assertEqual(self.files("comment-"), [])
+        self.assertFalse(self.ar_done())
+        self.assertEqual([r["outcome"] for r in self.ledger() if r["event"] == "end"], ["skipped"])
+
+    def test_no_assistant_log_runs_nothing(self):
+        self.events("mvp")
+        self.run_script()
+        self.assertEqual(self.read("ar.log"), "")
+        self.assertNotIn("assistant_review", [r["agent"] for r in self.ledger()])
 
     def test_tick_starts_usage(self):
         with open(os.path.join(SCRIPTS, "agents", "tick.sh")) as f:

@@ -113,6 +113,20 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(dst)), ["requests.jsonl", "requests_status.jsonl"])
         self.assertFalse(os.path.exists(os.path.join(self.backups, today(), "stable", "monitor")))
 
+    def test_scenario_the_assistant_log_is_backed_up(self):
+        """#438: data/monitor/assistant.jsonl is copied to <date>/<env>/monitor/ and its lines checked."""
+        self.write("mvp/data/monitor/assistant.jsonl", '{"kind":"answer","id":"a"}\n{"kind":"flag","id":"a"}\n')
+        self.assertEqual(self.run_backup(), 0, self.output)
+        dst = os.path.join(self.backups, today(), "mvp", "monitor")
+        self.assertEqual(os.listdir(dst), ["assistant.jsonl"])
+        self.assertIn("mvp assistant log ok — lines=2 skipped=0", self.output)
+
+    def test_scenario_an_unparseable_assistant_log_fails_the_check(self):
+        self.write("stable/data/monitor/assistant.jsonl", '{"kind":"answer","id":"a"}\nnot json\n{"kind":"flag","id":"a"}\n')
+        self.assertNotEqual(self.run_backup(), 0, self.output)
+        self.assertIn("stable monitor failed: assistant log check", self.output)
+        self.assertTrue(os.path.isdir(os.path.join(self.backups, f"{today()}.failed")))
+
     def test_corrupt_journal_is_caught(self):
         """Scenario: A corrupt journal is caught."""
         good = os.path.join(self.backups, "2026-01-01", "stable", "btc")

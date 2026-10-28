@@ -386,6 +386,14 @@ go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, m
 
 **Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
 
+**Assistant quality review** (#438): `cmd/usage` stays counts-only. The question text the assistant could not answer, or that people flagged, is reviewed separately from the monitor's private review log:
+
+```bash
+go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/<week>.md|json, .summary.json, .golden_candidates.jsonl
+```
+
+It reports answers by kind, guard reasons and flag rates. It lists every flagged and every `dont_know` answer, groups those questions by the nearest help passage (`helpkb.Search`, or "no passage close") and writes golden-set candidates (nothing is added to `golden.jsonl`). It calls no model and no network. Only `<week>.summary.json` (counts and percentages) is posted, on the E10 epic, by the same Monday job. Details: [docs/product/assistant/README.md](docs/product/assistant/README.md#weekly-quality-review).
+
 ## Help knowledge index
 
 The E10 assistant's only corpus (#312, #259): `internal/helpkb` cuts OptionStrategy.md (by heading), the monitor's glossary and the plain-words catalogue (`api.Catalogue`) into passages of at most 1,200 characters, each citing `OptionStrategy.md#<anchor>`, `glossary:<term>` or `explain:<journal value>`, and finds the best ones for a question by keyword (BM25) — no model, no network, nothing in the bot uses it.
