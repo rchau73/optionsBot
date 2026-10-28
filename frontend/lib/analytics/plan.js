@@ -54,7 +54,7 @@ export const PROPERTIES = {
   // only — a survey's free text is kept beside the user, never in an event.
   survey_id: enumOf("nps", "answers", "exit"),
   score: enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
-  reason_code: enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
+  reason_code: enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"),
   came_for: enumOf(...FOUR_ANSWERS),
   hardest_to_find: enumOf(...FOUR_ANSWERS),
   // The assistant panel's opener (#408).

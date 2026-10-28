@@ -26,7 +26,7 @@ const OwnerLine = "Each top reason needs an owner: file it as an E13 story."
 // Codes each survey asks (surveys.md §4); an answer with another code is
 // counted under "other" and in Miscoded.
 var (
-	npsCodes  = []string{"value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "other"}
+	npsCodes  = []string{"value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"}
 	exitCodes = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
 )
 

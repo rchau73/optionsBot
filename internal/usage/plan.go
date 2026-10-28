@@ -58,7 +58,7 @@ var Properties = map[string]Rule{
 	// The in-product surveys (docs/product/analytics/surveys.md, #297).
 	"survey_id":       enumOf("nps", "answers", "exit"),
 	"score":           enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
-	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
+	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"),
 	"came_for":        enumOf(fourAnswers...),
 	"hardest_to_find": enumOf(fourAnswers...),
 	// The assistant panel's opener (#408).

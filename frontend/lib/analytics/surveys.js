@@ -10,7 +10,7 @@ import { PROPERTIES } from "./plan.js";
 export const MAX_SURVEY_TEXT = 500;
 
 // surveys.md §4: the reason codes each survey asks.
-const NPS_REASONS = ["value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "other"];
+const NPS_REASONS = ["value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"];
 const EXIT_REASONS = ["value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"];
 
 /**
