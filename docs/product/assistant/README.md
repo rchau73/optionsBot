@@ -51,3 +51,38 @@ Minimum counts: 15 `how_it_works`, 10 `parameter` (one per tuned setting of CLAU
 | `forecast` | "will earn", "you can expect", "expected return", "will go up", "guaranteed" (not "not guaranteed"), "% a month" |
 
 The phrase lists and the three canonical replies are in `internal/assistant/guard/phrases.go`. Counsel's answer to L11 changes those lists, not the design. Not wired to anything yet.
+
+## Weekly quality review
+
+The monitor logs every answer and every "this answer is wrong" flag in `data/monitor/assistant.jsonl` (#191). `cmd/assistantreview` (#438, pure `internal/assistantreview`) reads it once a week and measures the PRD's guardrail "assistant answers flagged wrong" and an input to "self-service understanding". It calls no model and no network, and it never writes the log.
+
+```bash
+go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/2026-W44.*
+```
+
+**Metrics** (questions asked Monday 00:00 UTC to the next Monday):
+
+- answers by kind (`answered`, `dont_know`, `refused`, `no_citation`, `rejected` = the fallback reply, `model_error`, `needs_info`, `draft`, `other`), and the share `answered`;
+- the guard reasons the answers hit (`no_citation`, `unknown_citation`, `ungrounded_number`, `advice`, `forecast`), each answer once per reason;
+- the share flagged, and the flag rate of each kind. A flag placed later still counts for its answer's week. A flag placed this week on an older answer puts that answer in this week's review list (`late`);
+- unreadable log lines, counted and skipped.
+
+**Files** in `data/monitor/assistant_reviews/` (gitignored, 0600):
+
+| File | Holds | Shared? |
+|---|---|---|
+| `<week>.md`, `<week>.json` | the metrics, the **review list** (every flagged and every `dont_know` answer: id, time, kind, sources given, citations, guard verdict, the question, the answer shown, flag notes) and the **gap candidates** (those questions grouped by the nearest help passage, `helpkb.Search`, at least 25 % of the question's weight, else "no passage close") | no: private, personal data |
+| `<week>.summary.json` | `Summary(report)`: counts and percentages only, plus kinds and reasons from the fixed lists | yes |
+| `<week>.golden_candidates.jsonl` | each review question once, in the format of `golden.jsonl` with `category`, `expected_behaviour` and `expected_sources` empty | no |
+
+Nothing is added to `golden.jsonl` automatically.
+
+**Who reads the review list:** the product owner (or a manager they name), each week, on the host. **The rule:** every flagged answer is closed within 7 days in one of three ways:
+
+1. a help-source fix (a passage of OptionStrategy.md, the glossary or the monitor guide, then `go run ./cmd/helpindex`). A gap with a passage named means a better passage or a glossary term; "no passage close" means a new section;
+2. a golden-set case (copy the candidate into `golden.jsonl` and fill in its category, behaviour and sources);
+3. a recorded "answer was right", with the reason.
+
+**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (AGENTIC.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.
+
+**Needs legal review** (L11/L12 in `docs/product/legal-brief.md`): the review files hold question text, which is personal data. Until counsel answers on retention, they stay local, gitignored and in the 14-day backup only. Nothing of them goes to GitHub.

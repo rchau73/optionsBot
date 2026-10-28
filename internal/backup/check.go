@@ -113,6 +113,43 @@ func endsTorn(path string) (bool, error) {
 	return !bytes.Equal(last, []byte{'\n'}), nil
 }
 
+// LinesResult is the line check of a copied JSON-lines file.
+type LinesResult struct {
+	Lines   int // lines that parse as JSON
+	Skipped int // unreadable lines (at most a torn last one, else Check fails)
+}
+
+// CheckLines checks a copied JSON-lines file (the monitor's assistant.jsonl,
+// #438): every non-empty line must parse as JSON, except a torn last line
+// (the copy raced an append). A missing file has no lines.
+func CheckLines(path string) (LinesResult, error) {
+	var res LinesResult
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return res, nil
+	}
+	if err != nil {
+		return res, fmt.Errorf("read %s: %w", path, err)
+	}
+	torn := len(b) > 0 && b[len(b)-1] != '\n'
+	lines := bytes.Split(b, []byte{'\n'})
+	for i, line := range lines {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		if json.Valid(line) {
+			res.Lines++
+			continue
+		}
+		res.Skipped++
+		if !(torn && i == len(lines)-1) {
+			return res, fmt.Errorf("%s: line %d is not JSON", path, i+1)
+		}
+	}
+	return res, nil
+}
+
 // ReadResult reads dir/check.json; ok is false when there is none.
 func ReadResult(dir string) (Result, bool, error) {
 	b, err := os.ReadFile(filepath.Join(dir, ResultFile))

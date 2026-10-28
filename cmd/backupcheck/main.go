@@ -6,6 +6,11 @@
 //
 //	go run ./cmd/backupcheck -dir <envs>/history/backups/2026-10-24/stable/btc \
 //	  -previous <envs>/history/backups/2026-10-23/stable/btc
+//
+// With -lines <file> it checks a copied JSON-lines file instead (the monitor's
+// assistant.jsonl, #438): every line must parse, a torn last one aside.
+//
+//	go run ./cmd/backupcheck -lines <envs>/history/backups/2026-10-24/mvp/monitor/assistant.jsonl
 package main
 
 import (
@@ -20,9 +25,19 @@ import (
 func main() {
 	dir := flag.String("dir", "", "the copied bot folder (orders.log, archive/, …)")
 	prev := flag.String("previous", "", "the previous good copy of the same bot (optional)")
+	lines := flag.String("lines", "", "instead: check that every line of this copied JSON-lines file parses (the monitor's assistant.jsonl, #438)")
 	flag.Parse()
+	if *lines != "" {
+		res, err := backup.CheckLines(*lines)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "backupcheck:", err)
+			os.Exit(1)
+		}
+		fmt.Printf("RESULT lines=%d skipped=%d\n", res.Lines, res.Skipped)
+		return
+	}
 	if *dir == "" {
-		fmt.Fprintln(os.Stderr, "backupcheck: -dir is required")
+		fmt.Fprintln(os.Stderr, "backupcheck: -dir or -lines is required")
 		os.Exit(2)
 	}
 	res, err := backup.Check(*dir, *prev, time.Now())

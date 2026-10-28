@@ -10,6 +10,10 @@ this reads what it wrote and builds the E13 epic comment and the drop issue.
     usage_week.py issue <week> <envs dir> <state dir> <issues.json> <out dir> [envs]
                                             → <out dir>/drop.title and .body when a drop is
                                               new this week; a log line on stdout
+    usage_week.py assistant-answers <envs dir> <env> <week>
+                                            → the answers in that env's assistant review summary (#438)
+    usage_week.py assistant-comment <week> <envs dir> [envs]
+                                            → the E10 epic comment of the assistant quality review
 
 <envs dir> holds one clone per environment; each report is
 <env>/data/monitor/reports/<week>.json (cmd/usage). <state dir> holds
@@ -235,8 +239,88 @@ def issue(week, envs_dir, state_dir, issues, now, envs=("stable", "mvp")):
     return f"engagement drop {week}: filing ({', '.join(str(m) for m in metrics)})", (title, "\n".join(lines) + "\n")
 
 
+ASSISTANT_HEADER = "🤖 **Assistant quality review**"
+ASSISTANT_KINDS = ("answered", "dont_know", "refused", "no_citation", "rejected", "model_error", "needs_info", "draft", "other")
+GUARD_REASONS = ("no_citation", "unknown_citation", "ungrounded_number", "advice", "forecast")
+
+
+def assistant_summary(envs_dir, env, week):
+    """The env's cmd/assistantreview <week>.summary.json, or None."""
+    s = load_json(os.path.join(envs_dir, env, "data", "monitor", "assistant_reviews", f"{week}.summary.json"))
+    return s if isinstance(s, dict) else None
+
+
+def assistant_answers(summary):
+    return num((summary or {}).get("answers")) or 0
+
+
+def _by(items, key, allowed):
+    """{name: item} for the items whose key is one of the fixed names (never free text)."""
+    return {i.get(key): i for i in items or [] if isinstance(i, dict) and i.get(key) in allowed}
+
+
+def assistant_comment(week, envs_dir, envs=("stable", "mvp")):
+    """The E10 epic comment from each env's summary (#438): named count and
+    percentage fields only, kinds and reasons from the fixed lists; a live env
+    gets percentages only. No question, answer or user can be in it: the
+    summary has none, and nothing else is read."""
+    out = [f"{ASSISTANT_HEADER} — week {week} (`scripts/agents/usage.sh`, #438)", "",
+           "From `cmd/assistantreview` over each environment's `data/monitor/assistant.jsonl` "
+           "(docs/product/assistant/README.md \"Weekly quality review\"). Counts and percentages only: "
+           "the questions and answers stay in the private review file.", "",
+           "| env | answers | answered | flagged | dont_know | refused | guard rejected (fallback / no citation) | review list | no passage close | review file |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
+    live_envs, reasons = [], []
+    for env in envs:
+        s = assistant_summary(envs_dir, env, week)
+        if assistant_answers(s) == 0:
+            continue
+        live = is_live(os.path.join(envs_dir, env))
+        if live:
+            live_envs.append(env)
+        kinds = _by(s.get("by_outcome"), "kind", ASSISTANT_KINDS)
+        n = assistant_answers(s)
+
+        def cell(count, p):
+            return pct(p) if live else f"{count} ({pct(p)})"
+
+        def kind_cell(k):
+            c = num((kinds.get(k) or {}).get("answers")) or 0
+            return cell(c, share(c, n))
+
+        rejected = sum(num((kinds.get(k) or {}).get("answers")) or 0 for k in ("rejected", "no_citation"))
+        cells = ["—" if live else str(n), cell(num(kinds.get("answered", {}).get("answers")) or 0, num(s.get("answered_pct"))),
+                 cell(num(s.get("flagged")) or 0, num(s.get("flag_pct"))), kind_cell("dont_know"), kind_cell("refused"),
+                 cell(rejected, share(rejected, n)),
+                 "—" if live else str(num(s.get("review_items")) or 0),
+                 "—" if live else str(num(s.get("no_passage_close")) or 0),
+                 f"`{env}/data/monitor/assistant_reviews/{week}.md`"]
+        out.append("| " + " | ".join([env + (" (live)" if live else "")] + cells) + " |")
+        hit = [(r, num(i.get("answers")) or 0) for r, i in _by(s.get("guard_reasons"), "reason", GUARD_REASONS).items()]
+        hit = [f"{r} {pct(share(c, n)) if live else c}" for r, c in sorted(hit) if c]
+        if hit:
+            reasons.append(f"- {env}: " + ", ".join(hit))
+        flags = [(k, i) for k, i in kinds.items() if num(i.get("flagged"))]
+        if flags:
+            reasons.append(f"- {env} flag rate by kind: " + ", ".join(
+                f"{k} {pct(num(i.get('flag_pct')))}" for k, i in sorted(flags)))
+    if reasons:
+        out += ["", "**Guard reasons and flags:**", ""] + reasons
+    out += ["", "Every flagged answer ends as a help-source fix, a golden-set case or a recorded \"answer was right\" within 7 days."]
+    if live_envs:
+        out += ["", f"_{', '.join(live_envs)}: live account — percentages only; counts are in the review files._"]
+    return "\n".join(out) + "\n"
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
+    if cmd == "assistant-answers" and len(argv) == 5:
+        print(assistant_answers(assistant_summary(argv[2], argv[3], argv[4])))
+        return
+    if cmd == "assistant-comment" and len(argv) in (4, 5):
+        envs = tuple(argv[4].split(",")) if len(argv) == 5 else ("stable", "mvp")
+        sys.stdout.write(assistant_comment(argv[2], argv[3], envs))
+        return
     if cmd == "week":
         day = dt.date.fromisoformat(argv[2]) if len(argv) > 2 else dt.datetime.now(dt.timezone.utc).date()
         print(previous_week(day))
