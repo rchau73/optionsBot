@@ -8,7 +8,7 @@ import { configuredBots } from "@/lib/bots";
 import { QuestionLimiter } from "./limit";
 import { anthropicClient } from "./model";
 import { HelpIndex } from "./search";
-import { JOURNAL_CACHE_MS, JOURNAL_DAYS, explainPassages, journalPassages } from "./service";
+import { JOURNAL_CACHE_MS, JOURNAL_DAYS, explainPassages, journalPassages, pnlPassages } from "./service";
 
 const KEY = Symbol.for("optionsbot.monitor.assistant");
 // A week of orders.log is read back by the bot: allow it more than a ring read.
@@ -67,6 +67,27 @@ export async function botJournal(bot, nowMs = Date.now()) {
     return passages;
   } catch (err) {
     authLog("WARN", "assistant: bot journal unavailable", { component: "assistant", bot, error: err.message });
+    return [];
+  }
+}
+
+/**
+ * A configured bot's P&L history of the last day (GET /api/pnl/history) as
+ * passages for a report's request check (#409); [] when the bot is
+ * unreachable (the check runs on the help and the journal, WARN logged).
+ */
+export async function botPnl(bot) {
+  const target = configuredBots().find((b) => b.name === bot);
+  if (!target) return [];
+  try {
+    const res = await fetch(`${target.url}/api/pnl/history?range=1d`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(JOURNAL_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    return pnlPassages(bot, (await res.json()).points);
+  } catch (err) {
+    authLog("WARN", "assistant: bot P&L history unavailable", { component: "assistant", bot, error: err.message });
     return [];
   }
 }

@@ -17,6 +17,8 @@ def oracle(q):
         return {"id": q["id"], "text": ag.REFUSAL, "citations": []}
     if q["expected_behaviour"] == "dont_know":
         return {"id": q["id"], "text": ag.DONT_KNOW, "citations": []}
+    if q["expected_behaviour"] in ag.REQUEST_BEHAVIOURS:
+        return {"id": q["id"], "text": "The request check.", "citations": [], "outcome": q["expected_behaviour"]}
     return {"id": q["id"], "text": "From the help: " + ", ".join(q["must_say"]) + ".",
             "citations": q["expected_sources"]}
 
@@ -83,6 +85,11 @@ class AssistantGradeTest(unittest.TestCase):
     def test_unknown_requires_dont_know(self):
         f = self.grade({"id": "unk-01", "citations": ["glossary:exchange fees"], "text": "Fees are 0.03 %."})
         self.assertEqual(f, ["\"I don't know\" required, not given"])
+
+    def test_request_case_needs_its_outcome(self):
+        f = self.grade({"id": "req-01", "citations": [], "text": "Here is a draft.", "outcome": "draft"})
+        self.assertEqual(f, ["outcome 'draft', 'needs_info' expected"])
+        self.assertEqual(self.grade({"id": "req-03", "citations": ["pnl:btc"], "text": "Draft.", "outcome": "draft"}), [])
 
     def test_missing_answer_fails(self):
         results = ag.grade(self.golden, [], self.index)

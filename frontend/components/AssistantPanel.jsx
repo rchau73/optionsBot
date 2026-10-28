@@ -3,6 +3,9 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import MyRequests from "./MyRequests";
+import RequestChecklist from "./RequestChecklist";
+import RequestDraftCard from "./RequestDraftCard";
 import {
   EXAMPLES,
   MAX_QUESTION,
@@ -35,7 +38,12 @@ function usePhone() {
   return phone;
 }
 
-const FOCUSABLE = 'a[href], button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const TABS = [
+  ["ask", "Ask"],
+  ["requests", "My requests"],
+];
+
+const FOCUSABLE ='a[href], button:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function AssistantPanel({ assistant }) {
   const { bot, messages, enabled, remaining, close, ask } = assistant;
@@ -43,6 +51,7 @@ export default function AssistantPanel({ assistant }) {
   const ref = useRef(null);
   const input = useRef(null);
   const [draft, setDraft] = useState("");
+  const [tab, setTab] = useState("ask");
   const thinking = messages.some((m) => m.role === "thinking");
 
   useEffect(() => {
@@ -94,22 +103,36 @@ export default function AssistantPanel({ assistant }) {
           ×
         </button>
       </header>
-      {/* "My requests" arrives with the next story (#408 out of scope): until then only Ask. */}
       <div role="tablist" aria-label="Assistant" className="flex gap-1 border-b border-line px-3">
-        <button type="button" role="tab" aria-selected="true" className={clsx(BUTTON, "border-b-2 border-testnet font-semibold")}>
-          Ask
-        </button>
-      </div>
-
-      <div role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
-        {enabled === false && !messages.length ? <OffNotice /> : null}
-        {!messages.length && enabled !== false ? <Examples onAsk={send} /> : null}
-        {messages.map((m) => (
-          <Message key={m.id} message={m} assistant={assistant} />
+        {TABS.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={clsx(BUTTON, tab === key ? "border-b-2 border-testnet font-semibold" : "text-muted hover:text-white")}
+          >
+            {label}
+          </button>
         ))}
       </div>
 
-      <form
+      {tab === "requests" ? (
+        <div role="tabpanel" aria-label="My requests" className="flex-1 overflow-y-auto px-3 py-3">
+          <MyRequests />
+        </div>
+      ) : (
+        <div role="log" aria-live="polite" aria-label="Conversation" className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+          {enabled === false && !messages.length ? <OffNotice /> : null}
+          {!messages.length && enabled !== false ? <Examples onAsk={send} /> : null}
+          {messages.map((m) => (
+            <Message key={m.id} message={m} assistant={assistant} onShowRequests={() => setTab("requests")} />
+          ))}
+        </div>
+      )}
+
+      {tab === "requests" ? null : <form
         className="space-y-1 border-t border-line px-3 py-2"
         onSubmit={(e) => {
           e.preventDefault();
@@ -143,7 +166,7 @@ export default function AssistantPanel({ assistant }) {
         </div>
         <p className="text-xs text-muted">{NOTICE}</p>
         {remaining != null ? <p className="text-xs text-muted">{remainingText(remaining)}</p> : null}
-      </form>
+      </form>}
     </aside>
   );
 }
@@ -169,7 +192,7 @@ function Examples({ onAsk }) {
   );
 }
 
-function Message({ message: m, assistant }) {
+function Message({ message: m, assistant, onShowRequests }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -205,10 +228,10 @@ function Message({ message: m, assistant }) {
       </div>
     );
   }
-  return <Answer message={m} assistant={assistant} />;
+  return <Answer message={m} assistant={assistant} onShowRequests={onShowRequests} />;
 }
 
-function Answer({ message: m, assistant }) {
+function Answer({ message: m, assistant, onShowRequests }) {
   const [liked, setLiked] = useState(false);
   const [flagError, setFlagError] = useState(null);
   const bot = m.bot ?? assistant.bot;
@@ -227,6 +250,8 @@ function Answer({ message: m, assistant }) {
   return (
     <div className="max-w-[92%] space-y-2 rounded-lg bg-slate-800 px-3 py-2 text-sm" data-testid="assistant-answer">
       <p className="whitespace-pre-line">{m.text}</p>
+      <RequestChecklist checklist={m.checklist} />
+      {m.draft ? <RequestDraftCard message={m} assistant={assistant} onShowRequests={onShowRequests} /> : null}
       {dontKnow ? (
         <p>
           <Link href={`/how-it-works${q}`} className="text-testnet underline">

@@ -336,6 +336,31 @@ export async function flagAssistantAnswer(id) {
 }
 
 /**
+ * Sends a draft request for review (#409): { answerId, kind, fields } →
+ * { id, status }. Only the draft card's Send calls it; throws with the
+ * server's reason (limit, already sent, …).
+ */
+export async function sendAssistantRequest({ answerId, kind, fields }) {
+  const res = await apiFetch("/api/assistant/requests", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answer_id: answerId, kind, fields }),
+  });
+  const body = await jsonOrNull(res);
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body;
+}
+
+/** The signed-in person's own requests, newest first (#409); throws with the server's reason. */
+export async function fetchAssistantRequests(signal) {
+  const res = await apiFetch("/api/assistant/requests", { cache: "no-store", signal });
+  const body = await jsonOrNull(res);
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body?.requests ?? [];
+}
+
+/**
  * Manual rebalance of one bot through the monitor's proxy. dryRun: only report
  * what the pass would do. Returns the bot's report; throws with the bot's
  * reason when it refuses (frozen, cooldown, no margin data...).

@@ -117,7 +117,7 @@ describe("Scenario: Ask opens the panel; Esc closes it and returns focus", () =>
     expect(within(p).getByRole("heading", { name: "Assistant" })).toBeInTheDocument();
     expect(within(p).getByText("AI · answers from the docs and your journal")).toBeInTheDocument();
     expect(within(p).getByRole("tab", { name: "Ask" })).toHaveAttribute("aria-selected", "true");
-    expect(within(p).queryByRole("tab", { name: "My requests" })).toBeNull();
+    expect(within(p).getByRole("tab", { name: "My requests" })).toHaveAttribute("aria-selected", "false");
     for (const q of EXAMPLES) expect(within(p).getByRole("button", { name: q })).toBeInTheDocument();
     expect(within(p).getByRole("log")).toHaveAttribute("aria-live", "polite");
     expect(within(p).getByText("Answers can be wrong: check the linked source. Not investment advice.")).toBeInTheDocument();
