@@ -286,6 +286,21 @@ export async function fetchAssistantState(signal) {
 }
 
 /**
+ * The signed-in person's stored analytics answer (#363, #424): true, false or
+ * null (never answered). Anything but a 200 with a boolean — signed out, an
+ * error, no network — is null, so nothing is sent on a guess. Never throws.
+ */
+export async function fetchConsent(signal) {
+  try {
+    const res = await apiFetch("/api/consent", { cache: "no-store", signal });
+    const body = res.ok ? await jsonOrNull(res) : null;
+    return typeof body?.consent === "boolean" ? body.consent : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Asks the assistant (#191, #408): { question, bot?, seq? } → { status, body,
  * retryAfter } with the route's status as is (200, 429, 503, …), so the panel
  * shows each state. Never throws: a network failure is status 0.

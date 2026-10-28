@@ -1,6 +1,6 @@
 # Analytics event plan (E13)
 
-**Status:** plan (#192); the collector exists (#193: `POST /api/events`, `frontend/lib/track.js`, `frontend/README.md` "Analytics") and accepts exactly this file's events and properties — anything else is refused whole (400). No screen sends an event yet. Consent can now be set through `GET`/`POST /api/consent` and a survey answer stored through `POST /api/survey` (#363), but no screen calls them: the consent notice and the survey screens wait for E13's prototype. The in-product surveys (NPS, the four answers, the exit survey) and their wording, triggers, caps and data rules are in [`surveys.md`](surveys.md) (#251, #297).
+**Status:** plan (#192); the collector exists (#193: `POST /api/events`, `frontend/lib/track.js`, `frontend/README.md` "Analytics") and accepts exactly this file's events and properties — anything else is refused whole (400). Consent can be set through `GET`/`POST /api/consent` and a survey answer stored through `POST /api/survey` (#363); the consent notice and the survey screens wait for E13's prototype. Instrumented (#424): every signed-in page sends `screen_viewed` (one `screen` per page of `frontend/lib/menu.js`) and the assistant panel its four events — only for a person whose stored answer is yes (the monitor reads it from `GET /api/consent` when a page loads; not asked or no sends nothing). The in-product surveys (NPS, the four answers, the exit survey) and their wording, triggers, caps and data rules are in [`surveys.md`](surveys.md) (#251, #297).
 
 **Rule in one line:** an event says *what a person looked at or did*, never *what the account holds*. No amount, size, price, P&L, margin figure, instrument name, secret or email can travel in an event — the allow-list below is the only set of properties the collector accepts, and `tests/event_plan_test.go` checks this file against that rule.
 
@@ -12,9 +12,9 @@ Every event answers at least one of these. An event that answers none is not col
 |---|---|---|---|
 | Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
 | Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +4 weeks), "Active users" |
-| Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, screens) |
+| Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, page views per screen) |
 | Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`) |
-| Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11 | "Help" (tips, videos played/completed, share helped) |
+| Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11, E10 | "Help" (tips, videos played/completed, share helped), "Assistant" (opened and asked per entry, replies per kind, flagged) |
 | Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
 | Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | "Why they stay or leave" (#342: each survey's shown/answered/dismissed and response rate, NPS bands and the score from 10 answers, coded why, came for / hardest to find, exit reasons with the top 3) |
@@ -28,7 +28,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | Event | Trigger | Properties | Answers |
 |---|---|---|---|
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
-| `screen_viewed` | a route is shown (`/` monitor, `/login`) | `screen` | Q1, Q2, Q3 |
+| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424); `login` is in the list but never sent (signed out, no consent known) | `screen` | Q1, Q2, Q3 |
 | `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
 | `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
@@ -53,6 +53,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `survey_dismissed` | the card is closed or the exit question skipped (one click) without an answer | `survey_id` | Q8 |
 | `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
 | `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
+| `assistant_answered` | the panel shows the monitor's reply to a question (status 200; a limit, an error or the assistant being off is no reply) — its kind only, never the question, the answer or their ids (#424) | `answer` | Q5 |
 | `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
 | `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
 | `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
@@ -80,7 +81,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | Property | Type | Allowed values |
 |---|---|---|
 | `entry_screen` | enum | `monitor`, `login` |
-| `screen` | enum | `monitor`, `login` |
+| `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login` (one per page of the menu, #424) |
 | `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
 | `panel` | enum | `account`, `positions`, `held`, `others`, `trades`, `activity`, `pnl`, `pnl_coin`, `orders` (the `monitor.panel.*` keys) |
 | `open_ms` | duration | milliseconds, capped at 1 h |
@@ -104,6 +105,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
+| `answer` | enum | `answered`, `dont_know`, `refused`, `fallback` (the kind of the assistant's reply: a cited answer, "I don't know", the refusal, the safe fallback) |
 | `unit` | enum | `coin`, `usd` (the unit picked) |
 | `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
 

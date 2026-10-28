@@ -1,8 +1,8 @@
 // The phone-width check (#309): `npm run test:phone`. Starts two
 // cmd/monitor-demo bots (BTC, ETH: simulated data, no exchange) and a
 // production build of the monitor wired to them only, signs in with a
-// throwaway admin on an in-memory user database, and measures the page at
-// 360, 390 and 768 px (e2e/phone.spec.js). Chromium only; not part of
+// throwaway admin on an in-memory user database, and measures every menu page
+// and the assistant at 360, 768 and 1280 px (e2e/phone.spec.js, #425). Chromium only; not part of
 // `npm test` (Jest) nor of CI — it needs `npx playwright install chromium` once.
 import crypto from "node:crypto";
 import path from "node:path";

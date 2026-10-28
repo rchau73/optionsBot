@@ -5,6 +5,7 @@ import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
 import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
+import { answerOf } from "@/lib/analytics/screens";
 import { track } from "@/lib/track";
 
 // The assistant panel's state for the whole monitor (#408): one provider in
@@ -69,6 +70,9 @@ export default function AssistantProvider({ children }) {
       const { status, body, retryAfter } = await askAssistant(request);
       if (body?.remaining != null) setRemaining(body.remaining);
       if (status === 200) {
+        // The kind of reply only — never the question, the answer or its id (#424).
+        const answer = answerOf(body.outcome);
+        if (answer) track("assistant_answered", { answer });
         replace(pending, {
           role: "assistant",
           answerId: body.id,

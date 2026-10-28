@@ -15,6 +15,9 @@ export function measurePage() {
 
   // Where an element is: its panel's title, the top header, or a dialog.
   const panelOf = (el) => {
+    // The assistant (a side panel on desktop, a dialog-sheet on a phone).
+    const aside = el.closest("aside[aria-label]");
+    if (aside) return `Panel: ${aside.getAttribute("aria-label")}`;
     const dialog = el.closest("[role=dialog]");
     if (dialog) return `Dialog: ${text(dialog.querySelector("h2")) || "untitled"}`;
     const section = el.closest("section");
@@ -39,17 +42,23 @@ export function measurePage() {
     el.style.display = prev;
     return px;
   };
-  const header = [...document.querySelectorAll("header")].find((h) => !h.closest("section")) ?? null;
+  const header = [...document.querySelectorAll("header")].find((h) => !h.closest("section") && !h.closest("aside")) ?? null;
   const causes = [];
   const base = overflowPx();
   if (base > 0) {
-    const blocks = [header, ...document.querySelectorAll("main section")].filter(Boolean);
+    const blocks = [header, ...document.querySelectorAll("nav[aria-label=Main], main section, aside[aria-label]")].filter(Boolean);
     for (const block of blocks) {
       if (without(block) >= base) continue;
       const tables = [...block.querySelectorAll("table")].filter((t) => without(t) < base);
       const panel = panelOf(block);
       if (tables.length) for (const t of tables) causes.push({ panel, element: "table", width: t.getBoundingClientRect().width });
-      else causes.push({ panel, element: "panel", width: block.scrollWidth });
+      else causes.push({ panel, element: block.tagName === "NAV" ? "menu bar" : "panel", width: block.scrollWidth });
+    }
+    // A page without panels: the block of <main> whose absence lowers it.
+    if (!causes.length) {
+      for (const block of document.querySelectorAll("main > *")) {
+        if (without(block) < base) causes.push({ panel: panelOf(block), element: block.tagName.toLowerCase(), width: block.scrollWidth });
+      }
     }
   }
 
