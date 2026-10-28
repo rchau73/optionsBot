@@ -1,0 +1,57 @@
+{
+  "disclaimer": "Backtested/replayed, not a promise: modelled fills, prices and margin on past or scripted data. Past or simulated results do not predict future results.",
+  "underlying": "btc",
+  "base": "config_btc.yaml",
+  "proposed": "proposed.yaml",
+  "from": "2026-10-12T00:00:00Z",
+  "to": "2026-10-25T00:00:00Z",
+  "diffs": [
+    {"key": "gamma_flip_buffer_sd", "base": "1.5", "proposed": "1.25"},
+    {"key": "repair_cooldown_hours", "base": "72", "proposed": "48"}
+  ],
+  "backtest": {
+    "ran": true,
+    "source": "data/historical/options.csv",
+    "equity_usd": 100000,
+    "base": {"net_usd": 1840.2, "return_pct": 1.84, "realised_usd": 1510.7, "fees_usd": 212.4, "worst_week_usd": -620.5, "worst_week_pct": -0.62, "max_drawdown_usd": 910.3, "max_drawdown_pct": 0.91, "trades": 26, "stops": 2, "delta_exits": 3, "sheds": 1, "rolls": 9, "sharpe": 1.42},
+    "proposed": {"net_usd": 2105.9, "return_pct": 2.11, "realised_usd": 1702.3, "fees_usd": 241.8, "worst_week_usd": -880.1, "worst_week_pct": -0.88, "max_drawdown_usd": 1150.6, "max_drawdown_pct": 1.15, "trades": 31, "stops": 3, "delta_exits": 3, "sheds": 2, "rolls": 11, "sharpe": 1.37}
+  },
+  "replay": {
+    "ran": true,
+    "source": "data/btc/data/market",
+    "equity": 1.25,
+    "equity_source": "account.json",
+    "base": {"start": "2026-10-12T00:00:00Z", "end": "2026-10-25T23:00:00Z", "decisions": 336, "net": 0.0084, "return_pct": 0.67, "realised": 0.0061, "fees": 0.0009, "worst_week": -0.0031, "worst_week_pct": -0.25, "max_drawdown": 0.0042, "trades": 18, "entries": 4, "repairs": 3, "sheds": 2, "stops": 1, "delta_exits": 1, "rolls": 5, "mm_cuts": 0, "max_im_pct": 19.6, "avg_im_pct": 14.2},
+    "proposed": {"start": "2026-10-12T00:00:00Z", "end": "2026-10-25T23:00:00Z", "decisions": 336, "net": 0.0071, "return_pct": 0.57, "realised": 0.0049, "fees": 0.0011, "worst_week": -0.0048, "worst_week_pct": -0.38, "max_drawdown": 0.0055, "trades": 22, "entries": 4, "repairs": 6, "sheds": 4, "stops": 2, "delta_exits": 1, "rolls": 5, "mm_cuts": 0, "max_im_pct": 19.9, "avg_im_pct": 15.1}
+  },
+  "stress": {
+    "ran": true,
+    "source": "data/stress/btc",
+    "book_at": "2026-10-25T23:00:00Z",
+    "base": [
+      {"shock": "crash", "equity_end": 1.19, "return_pct": -4.8, "vs_hold_coin": 0.02, "vs_hold_usd": 1300, "realised": -0.031, "stops": 2, "delta_exits": 1, "rolls": 0, "worst_mm_pct": 9.4, "worst_equity_pct": -6.1},
+      {"shock": "rally", "equity_end": 1.23, "return_pct": -1.6, "vs_hold_coin": -0.02, "vs_hold_usd": -1500, "realised": -0.012, "stops": 1, "delta_exits": 1, "rolls": 0, "worst_mm_pct": 7.2, "worst_equity_pct": -2.3}
+    ],
+    "proposed": [
+      {"shock": "crash", "equity_end": 1.18, "return_pct": -5.6, "vs_hold_coin": 0.01, "vs_hold_usd": 650, "realised": -0.036, "stops": 2, "delta_exits": 2, "rolls": 0, "worst_mm_pct": 9.8, "worst_equity_pct": -6.9},
+      {"shock": "rally", "equity_end": 1.23, "return_pct": -1.6, "vs_hold_coin": -0.02, "vs_hold_usd": -1500, "realised": -0.012, "stops": 1, "delta_exits": 1, "rolls": 0, "worst_mm_pct": 7.2, "worst_equity_pct": -2.3}
+    ],
+    "not_modelled": ["repair_cooldown_hours"]
+  },
+  "windows": {
+    "unit": "week",
+    "stress_note": "stress is one run on the captured book (section Stress shocks), not windowed",
+    "rows": [],
+    "summary": {
+      "backtest": {"run": 2, "proposed_wins": 1, "base_wins": 1, "median_diff": 132.85, "median_diff_pp": 0.13, "best_diff": 540.1, "worst_diff": -274.4,
+        "worst_base": {"label": "2026-W43", "net": -410.2, "return_pct": -0.41},
+        "worst_proposed": {"label": "2026-W43", "net": -684.6, "return_pct": -0.68},
+        "missing": []},
+      "replay": {"run": 2, "proposed_wins": 0, "base_wins": 2, "median_diff": -0.00065, "median_diff_pp": -0.05, "best_diff": -0.0002, "worst_diff": -0.0011,
+        "worst_base": {"label": "2026-W43", "net": 0.0012, "return_pct": 0.1},
+        "worst_proposed": {"label": "2026-W43", "net": 0.0001, "return_pct": 0.01},
+        "missing": []},
+      "order_flips": ["2026-W42"]
+    }
+  }
+}

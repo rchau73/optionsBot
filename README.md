@@ -422,6 +422,17 @@ go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -t
     -replay data/btc/data/market -stress data/stress/btc -windows week
 ```
 
+## AI analysis of a comparison
+
+`cmd/analyze` (#426, epic E9) turns one comparison's `report.json` into a plain-words analysis and writes `analysis.md` and `analysis.json` beside it. Offline only: no monitor page or route serves it (that waits for legal question L10 and E9's UI prototype), and the AI never changes a setting.
+
+```bash
+go run ./cmd/analyze -report data/compare/20261028T120000Z/report.json            # one Messages API call (ANTHROPIC_API_KEY)
+go run ./cmd/analyze -report data/compare/20261028T120000Z/report.json -fake my-answer.md   # a written answer, nothing sent
+```
+
+It sends the contract's prompt (`aianalysis.Prompt`, model `aianalysis.Model`) with the report as the user turn — one call, never retried — and checks the answer with the #257 checker (`aianalysis.Check`, rules in `docs/ai-analysis.md`): every number must be a value of the report, no advice or forecast wording, the AI label, a caveat for thin data; and the four sections in order (what changed, where the proposal is better or worse, where it is fragile, what to test next). The settings the stress does not model (`stress.not_modelled`) are always named in the fragile section — the command adds one sentence when the answer leaves one out. `analysis.md` starts with the comparison's `Disclaimer`, then the label. An answer that fails is **not written**: the command prints each violation and exits 1. Without `ANTHROPIC_API_KEY` in the environment of whoever runs it (and without `-fake`) it stops with that message before sending anything. A saved example: `docs/product/lab/example-analysis.md`.
+
 ## Testing and CI
 
 ```bash
