@@ -14,6 +14,7 @@ const STATUS_CLASS = {
   in_review: "text-testnet",
   filed: "text-testnet",
   fixed: "text-profit",
+  not_planned: "text-muted",
   not_a_bug: "text-muted",
   duplicate: "text-muted",
   needs_info: "text-warn",

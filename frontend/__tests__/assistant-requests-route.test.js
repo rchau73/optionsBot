@@ -10,7 +10,7 @@ import { appendLine } from "@/lib/assistant/log";
 import { myRequests, nextRequestId, readLines, sentToday } from "@/lib/assistant/requests";
 import { parseRequestReply } from "@/lib/assistant/model";
 import { setAssistantModel } from "@/lib/assistant/server";
-import { REQUESTS_PER_DAY, requestFields } from "@/lib/assistantRequests";
+import { REQUESTS_PER_DAY, requestFields, statusLabel } from "@/lib/assistantRequests";
 import { signedIn, useTestAuth } from "@/test/auth";
 
 // The private request queue (#409): POST and GET /api/assistant/requests —
@@ -238,5 +238,16 @@ describe("the queue's pure helpers", () => {
   test("an issue link that is not https is dropped", () => {
     const [r] = myRequests([{ id: "R-0001", user: "a", fields: { title: "t" } }], [{ id: "R-0001", status: "filed", issue_url: "javascript:alert(1)" }], "a");
     expect(r.issue_url).toBeNull();
+  });
+
+  test("the PM agent's not_planned status (#410) is shown, its issue link kept", () => {
+    const statuses = [
+      { id: "R-0001", status: "filed", issue: 7, issue_url: "https://github.com/o/r/issues/7" },
+      { id: "R-0001", status: "not_planned", issue: 7, issue_url: "https://github.com/o/r/issues/7", note: "The issue was closed as not planned" },
+    ];
+    const [r] = myRequests([{ id: "R-0001", user: "a", fields: { title: "t" } }], statuses, "a");
+    expect(r.status).toBe("not_planned");
+    expect(statusLabel(r.status)).toBe("Not planned");
+    expect(r.issue_url).toBe("https://github.com/o/r/issues/7");
   });
 });
