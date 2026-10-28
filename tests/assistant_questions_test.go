@@ -39,7 +39,15 @@ type goldenQuestion struct {
 	MustNotSay        []string       `json:"must_not_say"`
 	Setting           string         `json:"setting,omitempty"`
 	Journal           *goldenJournal `json:"journal,omitempty"`
+	// Request is a request-check case's fixture (#409): the passages, the
+	// model's verdict and the expected checklist; the monitor's
+	// __tests__/assistant-request.test.js runs it through lib/assistant/request.js.
+	Request json.RawMessage `json:"request,omitempty"`
 }
+
+// requestBehaviours are the request check's outcomes (#409): its category
+// expects one of them, not a single behaviour.
+var requestBehaviours = []string{"needs_info", "answered", "draft"}
 
 // goldenMinimum is each category's minimum count; the behaviour each must
 // expect is goldenBehaviour.
@@ -52,6 +60,7 @@ var goldenMinimum = map[string]int{
 	"refuse_advice":   5,
 	"refuse_forecast": 5,
 	"unknown":         5,
+	"request":         3, // vague → needs_info, consistent figures → answered, evidence → draft
 }
 
 var goldenBehaviour = map[string]string{
@@ -154,6 +163,10 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		count[q.Category]++
 		want, known := goldenBehaviour[q.Category]
 		switch {
+		case q.Category == "request":
+			if !slices.Contains(requestBehaviours, q.ExpectedBehaviour) {
+				t.Errorf("%s: a request case expects one of %v, has %q", q.ID, requestBehaviours, q.ExpectedBehaviour)
+			}
 		case !known:
 			t.Errorf("%s: unknown category %q", q.ID, q.Category)
 		case q.ExpectedBehaviour != want:
@@ -176,6 +189,9 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		}
 		if (q.Category == "parameter") != (q.Setting != "") {
 			t.Errorf("%s: a setting belongs to parameter questions only", q.ID)
+		}
+		if (q.Category == "request") != (len(q.Request) > 0) {
+			t.Errorf("%s: a request fixture belongs to request cases only", q.ID)
 		}
 	}
 	for cat, min := range goldenMinimum {

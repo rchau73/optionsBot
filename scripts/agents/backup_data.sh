@@ -6,7 +6,9 @@
 #   folder <clone>/data/<bot> exists, copy orders.log, data/pnl_history.jsonl,
 #   data/regime_history.jsonl, data/direction_history.jsonl and data/archive/
 #   to <envs>/history/backups/<date>/<env>/<bot>/ (orders.log, the three
-#   .jsonl files, archive/) — named files only: no .env, no secret;
+#   .jsonl files, archive/) — named files only: no .env, no secret; and each
+#   environment's monitor request queue, data/monitor/requests.jsonl and
+#   requests_status.jsonl, to <date>/<env>/monitor/ (#409);
 #   then go run ./cmd/backupcheck on each copy: the journal must replay
 #   (orders.ReplayFile) and hold no fewer events than the previous good copy.
 # The copy is built in <backups>/.<date>.partial and becomes <date> only when
@@ -105,6 +107,19 @@ while read -r env bot; do
     fail "$env" "$bot" "restore check: $(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tail -1)"
   fi
 done <<< "$sources"
+
+# The monitor's private request queue (#409): requests.jsonl and the review's
+# requests_status.jsonl of each environment, copied as they are to
+# <date>/<env>/monitor/ (not journals: no restore check).
+for env in $ENV_NAMES; do
+  msrc="$(env_dir "$env")/data/monitor"
+  for f in requests.jsonl requests_status.jsonl; do
+    if [[ -f "$msrc/$f" ]]; then
+      mkdir -p "$work/$env/monitor"
+      cp -p "$msrc/$f" "$work/$env/monitor/"
+    fi
+  done
+done
 
 if [[ -n "$failed" ]]; then
   rm -rf "$backups/$day.failed"

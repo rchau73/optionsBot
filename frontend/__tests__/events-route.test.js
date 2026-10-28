@@ -96,9 +96,19 @@ describe("Scenario: allow-list", () => {
   });
 
   test("events append one line each", async () => {
-    await post({ event: "screen_viewed", session_id: SESSION, props: { screen: "monitor" } });
+    await post({ event: "screen_viewed", session_id: SESSION, props: { screen: "overview" } });
     await post({ event: "signed_out", session_id: SESSION, props: { reason: "user" } });
     expect(stored().map((l) => l.event)).toEqual(["screen_viewed", "signed_out"]);
+  });
+
+  // #424: one screen per menu page; the old single "monitor" value is gone.
+  test("a view of the Income page is stored with screen=income; screen=monitor is refused", async () => {
+    expect((await post({ event: "screen_viewed", session_id: SESSION, props: { screen: "income" } })).status).toBe(204);
+    expect(stored().map((l) => l.screen)).toEqual(["income"]);
+    expect((await post({ event: "screen_viewed", session_id: SESSION, props: { screen: "monitor" } })).status).toBe(400);
+    expect((await post({ event: "assistant_answered", session_id: SESSION, props: { answer: "dont_know" } })).status).toBe(204);
+    expect((await post({ event: "assistant_answered", session_id: SESSION, props: { answer: "I don't know." } })).status).toBe(400);
+    expect(stored().map((l) => l.event)).toEqual(["screen_viewed", "assistant_answered"]);
   });
 
   test("an environment or version the deployment did not set well is left out", async () => {

@@ -120,7 +120,7 @@ func TestUsage_NoPersonInTheOutput(t *testing.T) {
 		lines = append(lines,
 			usageLine(t, "session_started", at, 10+n, nil),
 			usageLine(t, "first_answers_seen", at.Add(time.Minute), 10+n, map[string]any{"elapsed_ms": 60000 * n}),
-			usageLine(t, "tip_opened", at.Add(2*time.Minute), 10+n, map[string]any{"tip_id": "tip.gamma_flip", "screen": "monitor"}),
+			usageLine(t, "tip_opened", at.Add(2*time.Minute), 10+n, map[string]any{"tip_id": "tip.gamma_flip", "screen": "overview"}),
 			usageLine(t, "help_resolved", at.Add(3*time.Minute), 10+n, map[string]any{"tip_id": "tip.gamma_flip", "helped": n%2 == 0}),
 			usageLine(t, "manual_close_opened", at.Add(4*time.Minute), 10+n, map[string]any{"side": "put", "allowed": true}),
 			usageLine(t, "manual_close_confirmed", at.Add(5*time.Minute), 10+n, map[string]any{"side": "put", "last_leg": false}),

@@ -1,6 +1,6 @@
 # AI analysis of a settings comparison — contract and checker
 
-Status: **offline only** (#257, epic E9). No analysis is shown to any user, no endpoint serves one, no model is called and no trading code reads this. Showing one to a manager waits for legal question **L10** (is an AI analysis shown to a manager investment advice?) and the E9 open questions (#185, linked to L24). Until then the fallback of the legal brief applies: only the comparison's own numbers are shown. L12 (EU AI Act labelling) is met by design: every output carries the label below and is to be logged.
+Status: **offline only** (#257, epic E9). No analysis is shown to any user, no endpoint serves one and no trading code reads this; the model is called only by a person running `cmd/analyze` (#426, below). Showing one to a manager waits for legal question **L10** (is an AI analysis shown to a manager investment advice?) and the E9 open questions (#185, linked to L24). Until then the fallback of the legal brief applies: only the comparison's own numbers are shown. L12 (EU AI Act labelling) is met by design: every output carries the label below and is to be logged.
 
 ## Input
 
@@ -34,6 +34,10 @@ Four sections, in this order, in plain words:
 violations := aianalysis.Check(reportJSON, analysisText) // empty = meets the contract
 ```
 
-A `Violation` is `{kind, text, sentence}`; kinds: `number` (the figure and its sentence), `label`, `banned_phrase`, `missing_caveat`, `bad_input`. The prompt is `internal/aianalysis/prompt.txt` (embedded as `aianalysis.Prompt`); the model is the constant `aianalysis.Model` (`claude-opus-5-5`). Calling it is a later story, after L10; whatever it returns must pass `Check` before anyone could see it, and a failing text is replaced by the comparison's numbers alone.
+A `Violation` is `{kind, text, sentence}`; kinds: `number` (the figure and its sentence), `label`, `banned_phrase`, `missing_caveat`, `bad_input`. The prompt is `internal/aianalysis/prompt.txt` (embedded as `aianalysis.Prompt`); the model is the constant `aianalysis.Model` (`claude-opus-5-5`). Whatever it returns must pass `Check` before anyone could see it, and a failing text is replaced by the comparison's numbers alone.
 
-Tests: `tests/aianalysis_test.go` (fixed sample analyses: grounded passes, invented number, advice wording, thin data, missing days, label).
+## Generator (#426)
+
+`go run ./cmd/analyze -report data/compare/<time>/report.json` (`aianalysis.Run`): one Messages API call through the `AnalysisModel` interface (`aianalysis.Anthropic`; `-fake <answer.md>` = `FileModel`, nothing sent; no `ANTHROPIC_API_KEY` → `ErrNoAPIKey` before any request), the answer's fragile section completed with every `stress.not_modelled` key it does not name (`NameNotModelled`), then `Check` on the comparison's `Disclaimer` + the answer, plus the generator's own rule that the four `## ` sections appear in order (`missing_section`). No violation → `analysis.md` (Disclaimer first, then the label and the four sections, a footer naming the model and the report) and `analysis.json` (`disclaimer`, `label`, `model`, `report`, `generated_at`, `not_modelled`, `sections`, `text`) beside the report. Any violation → nothing written, every violation printed, exit 1. Example: `docs/product/lab/example-analysis.md`.
+
+Tests: `tests/aianalysis_generate_test.go` (the generator, fake models only), `tests/aianalysis_test.go` (fixed sample analyses: grounded passes, invented number, advice wording, thin data, missing days, label).

@@ -103,6 +103,16 @@ class BackupTest(unittest.TestCase):
         check = json.load(open(os.path.join(self.backups, today(), "stable", "btc", "check.json")))
         self.assertEqual(check["archived_events"], 2)
 
+    def test_monitor_request_queue_is_copied(self):
+        """The assistant's private request queue (#409) is in the backup; nothing else of the monitor."""
+        self.write("mvp/data/monitor/requests.jsonl", '{"id":"R-0001"}\n')
+        self.write("mvp/data/monitor/requests_status.jsonl", '{"id":"R-0001","status":"filed"}\n')
+        self.write("mvp/data/monitor/auth.db", "users")
+        self.assertEqual(self.run_backup(), 0, self.output)
+        dst = os.path.join(self.backups, today(), "mvp", "monitor")
+        self.assertEqual(sorted(os.listdir(dst)), ["requests.jsonl", "requests_status.jsonl"])
+        self.assertFalse(os.path.exists(os.path.join(self.backups, today(), "stable", "monitor")))
+
     def test_corrupt_journal_is_caught(self):
         """Scenario: A corrupt journal is caught."""
         good = os.path.join(self.backups, "2026-01-01", "stable", "btc")
