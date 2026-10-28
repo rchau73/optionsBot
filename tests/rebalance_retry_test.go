@@ -157,7 +157,7 @@ func TestRebalanceRetry_RepeatedUnfilledComplementsBackOff(t *testing.T) {
 	}
 }
 
-// A fill resets the count: the book does trade at our price.
+// A fill on both legs resets the count: the book does trade at our price.
 func TestRebalanceRetry_FillResetsBackoff(t *testing.T) {
 	f := newStrategyFixture(t)
 	f.withOpenStrangle(0.1, 0.02)
@@ -178,6 +178,37 @@ func TestRebalanceRetry_FillResetsBackoff(t *testing.T) {
 		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
 	if d := f.journal.riskChanges(orders.RiskRebalanceRetry)[0].Detail; !strings.Contains(d, "retry in 15m0s") {
 		t.Errorf("a complement that filled something retries at the base wait, got %q", d)
+	}
+}
+
+// Scenario (#98, option 2): a top-up pass where only the put filled counts as
+// unfilled, and the rebalance_retry line says which legs filled. Before, the
+// put fill reset the back-off although the call then came from a repair at
+// the bid (2026-10-11, 10-15, 10-23 BTC).
+func TestRebalanceRetry_PutOnlyTopUpCountsAsUnfilled(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.upshiftToTwoLots()
+	f.cfg.RebalanceRetryMinutes = 15
+	f.cfg.RebalanceBackoffAfter = 1
+	f.cfg.RebalanceRetryMaxMinutes = 60
+	f.exch.onSubmit = func(o orders.Order, _ string) orders.Fill {
+		if o.Direction == orders.DirectionSell && o.Instrument == f.put {
+			return orders.Fill{Qty: o.Qty, FillPrice: 0.02} // the put fills whole
+		}
+		if o.Direction == orders.DirectionBuy {
+			return orders.Fill{Qty: o.Qty, FillPrice: 0.01}
+		}
+		return orders.Fill{} // the call rests unfilled
+	}
+	f.startRun()
+
+	eventually(t, 3*time.Second, "retry scheduled after the one-sided top-up",
+		func() bool { return len(f.journal.riskChanges(orders.RiskRebalanceRetry)) > 0 })
+	d := f.journal.riskChanges(orders.RiskRebalanceRetry)[0].Detail
+	for _, want := range []string{"filled: put", "1 filled on one side only", "1 passes in a row unfilled", "backed off to 30m0s"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("a put-only top-up is an unfilled pass: retry line %q lacks %q", d, want)
+		}
 	}
 }
 

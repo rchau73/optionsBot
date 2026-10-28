@@ -347,7 +347,7 @@ func (s *Strategy) slotLegTotals(key slotKey) (call, put float64) {
 // the book, so whatever did fill is accounted for.
 //
 // With backoff the wait grows (RebalanceRetryWait) once rebalance_backoff_after
-// passes in a row filled nothing: on a book where nobody trades at mid the
+// passes in a row filled no complement on both legs (#98): on a book where nobody trades at mid the
 // same order would otherwise be re-sent every 15 minutes for nothing
 // (2026-10-14 BTC: 12 orders in 1.5 h, zero fills). A held or failed top-up
 // re-arms without it: the hold says nothing about fills (#93). Exits, stops
@@ -385,8 +385,9 @@ type rebalancePass struct {
 	sending  bool     // the pass is still sending complements
 	finished int      // complements finalized
 	timedOut int      // of which ended at the fill timeout
-	filled   bool     // any complement filled something
-	short    []string // complements that filled short of their size
+	filled   bool     // a complement filled on every leg it sent (#98)
+	oneSided int      // complements that filled on one side only
+	short    []string // complements that filled short of their size, with the legs that filled
 }
 
 // startRebalancePass opens the outcome record of a real pass.
@@ -407,9 +408,14 @@ func (s *Strategy) noteComplementOutcome(ps *pendingStrangle) {
 	if ps.timedOut {
 		s.pass.timedOut++
 	}
-	s.pass.filled = s.pass.filled || ps.filledAny()
+	legs := ps.filledLegs()
+	both := ps.filledEveryLeg()
+	s.pass.filled = s.pass.filled || both
+	if !both && legs != "none" {
+		s.pass.oneSided++
+	}
 	if ps.underfilled() {
-		s.pass.short = append(s.pass.short, ps.id)
+		s.pass.short = append(s.pass.short, fmt.Sprintf("%s filled: %s", ps.id, legs))
 	}
 	s.settleRebalancePass()
 }
@@ -425,17 +431,23 @@ func (s *Strategy) settleRebalancePass() {
 	s.pass = rebalancePass{}
 	s.unfilledPasses = NextUnfilledPasses(s.unfilledPasses, p.finished, p.timedOut, p.filled)
 	if len(p.short) > 0 {
-		s.rearmRebalance(fmt.Sprintf("%d complement(s) filled short of their size (%s)",
-			len(p.short), strings.Join(p.short, ", ")), true)
+		reason := fmt.Sprintf("%d complement(s) filled short of their size (%s)",
+			len(p.short), strings.Join(p.short, ", "))
+		if p.oneSided > 0 && !p.filled {
+			reason += fmt.Sprintf(" · %d filled on one side only: not a filled pass", p.oneSided)
+		}
+		s.rearmRebalance(reason, true)
 	}
 }
 
-// NextUnfilledPasses is the count of rebalance passes in a row that filled
-// nothing, after a pass of `finished` complements of which `timedOut` ran to
-// their fill timeout (#93). Any fill resets it (the book does trade at our
-// price); a pass whose every complement timed out unfilled adds one; a pass
-// with a complement the bot cancelled itself (freeze, GEX shed, kill switch)
-// leaves it alone — the market never decided. Pure.
+// NextUnfilledPasses is the count of rebalance passes in a row that did not
+// fill, after a pass of `finished` complements of which `timedOut` ran to
+// their fill timeout (#93). `filled` means a complement of the pass filled on
+// both legs (#98: a put-only fill ends as a repair of the call at the bid,
+// not a trade at our price): that resets it; a pass whose every complement
+// timed out without filling both legs adds one; a pass with a complement the
+// bot cancelled itself (freeze, GEX shed, kill switch) leaves it alone — the
+// market never decided. Pure.
 func NextUnfilledPasses(count, finished, timedOut int, filled bool) int {
 	switch {
 	case filled:
