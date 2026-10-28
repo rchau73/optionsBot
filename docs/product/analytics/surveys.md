@@ -19,18 +19,20 @@ Three surveys:
 | Step | PT-BR | EN | Answer | Stored |
 |---|---|---|---|---|
 | 1. Score | "De 0 a 10, quanto você recomendaria este monitor a um amigo que investe?" | "From 0 to 10, how likely are you to recommend this monitor to a friend who invests?" | 0 … 10, one tap | `score` (event) |
-| 2. Why (choice) | "Qual o principal motivo da sua nota?" | "What is the main reason for your score?" | one of the reason codes of §4 | `reason_code` (event) |
+| 2a. Why, score 9–10 (choice) | "O que fazemos de melhor?" | "What do we do best?" | one *what works* code of §4 | `reason_code` (event) |
+| 2b. Why, score 0–8 (choice) | "O que devemos melhorar primeiro?" | "What should we improve first?" | one *to improve* code of §4 | `reason_code` (event) |
 | 3. Anything else (text) | "Quer contar mais? (opcional)" | "Anything you want to add? (optional)" | free text, ≤ 500 characters | `auth.db` only (§5), never an event |
 
-Step 2 shows the promoter codes first for scores 9–10 and the detractor codes first for 0–8. All codes are always shown, so the order does not decide the answer.
+Step 2 asks one question by score (product owner on #164, 2026-10-28: for a high score the old list was all complaints, and "we should know what we are doing well too"). For **9–10** it asks what we do best and shows only the *what works* codes. For **0–8** it asks what to improve first and shows only the *to improve* codes. Both lists end with `other`. The weekly report counts the two lists apart, so what works is tracked like what doesn't.
 
 **Trigger and frequency cap:**
 - Shown only to a person who said yes to analytics (event plan §5). Without that consent nothing is shown, so nothing can be sent.
-- Shown on the monitor screen, at the start of a session, as a card the person can close. It is never a modal, never on `/login`, and never during a manual close or a rebalance.
+- **Where (product owner, 2026-10-28):** inside the assistant panel, as an optional card at the top of the chat, marked "From the team · optional · once a month". It is never a card on the monitor's pages, never a modal, never on `/login`, and never while a manual close or a rebalance dialog is open. While it is due, the Ask button carries a static "1" badge (it never moves or blinks), and the notification bell lists it under *Needs you*. The assistant works the same whether or not it is answered. Prototype: https://claude.ai/artifact/BB9X65gAbafTCJWdgusQdm (board "Monthly NPS in the assistant").
 - **Never in the first 14 days** after the account is created. **Only after ≥ 3 sessions.**
-- **At most once per 90 days per person,** counted from the day it was *shown*, whether answered or not. The date is kept on the user's row in `auth.db`, not in the browser, so another device does not show it again.
+- **At most once per 30 days per person** (product owner, 2026-10-28; was 90), counted from the day it was *shown*: the day the person first opens the panel with the card in it, whether answered or not. The badge alone does not count as shown. The date is kept on the user's row in `auth.db`, not in the browser, so another device does not show it again.
 - **Not right after a loss-making week is shown:** the card is postponed to a later session if the latest full UTC week (Monday–Sunday) on the monitor's performance view was a net loss. The page reads that sign from `/api/performance?range=7d`. Only the sign is used, and it is never sent or stored. Apart from this rule, the timing never depends on results: it is not shown after a winning week on purpose, and not after a good trade.
-- **Always dismissible:** a close button (×) and Escape. Dismissing counts as shown for the 90-day cap, so a person who closes the card is not asked again the next day.
+- **Always dismissible:** a close button (×), "Not now" and Escape. Dismissing counts as shown for the 30-day cap, so a person who closes the card is not asked again the next day. **"Don't ask me again"** turns NPS off for that person (kept on their user row; they can turn it back on in Account › Privacy).
+- **The score with monthly answers:** the same person may answer every month. A score over a window counts each person's latest answer in it, so frequent answerers do not weigh more.
 
 **Events:** `survey_shown {survey_id: nps}` when the card appears; `survey_answered {survey_id: nps, score, reason_code}` when the person sends at least a score; `survey_dismissed {survey_id: nps}` when the card is closed without a score. A text from step 3 never goes into the event.
 
@@ -80,15 +82,21 @@ One enumeration, `reason_code`, in the event plan's allow-list. The weekly revie
 
 | Code | PT-BR | EN | Asked in |
 |---|---|---|---|
-| `value_unclear` | não vejo o valor | I don't see the value | NPS, exit |
-| `losses` | risco ou perdas | risk or losses | NPS, exit |
-| `too_complex` | difícil de entender | too hard to understand | NPS, exit |
-| `price` | preço | price | NPS, exit |
-| `trust` | não confio no que vejo | I don't trust what I see | NPS, exit |
+| `value_unclear` | não vejo o valor | I don't see the value | NPS (to improve), exit |
+| `losses` | risco ou perdas | risk or losses | NPS (to improve), exit |
+| `too_complex` | difícil de entender | too hard to understand | NPS (to improve), exit |
+| `price` | preço | price | NPS (to improve), exit |
+| `trust` | não confio no que vejo | I don't trust what I see | NPS (to improve), exit |
 | `switched` | mudei para outro produto | switched to another product | exit |
-| `steady_income` | renda constante | steady income | NPS (promoter) |
-| `easy_to_follow` | fácil de acompanhar | easy to follow | NPS (promoter) |
-| `saves_time` | me poupa tempo | saves me time | NPS (promoter) |
+| `hard_to_find` | difícil achar o que preciso | hard to find what I need | NPS (to improve) |
+| `missing_feature` | falta algo que eu preciso | something I need is missing | NPS (to improve) |
+| `steady_income` | renda constante | steady income | NPS (what works) |
+| `easy_to_follow` | fácil de acompanhar | easy to follow | NPS (what works) |
+| `saves_time` | me poupa tempo | saves me time | NPS (what works) |
+| `clear_risk` | vejo o risco com clareza | I see the risk clearly | NPS (what works) |
+| `explains_trades` | explica por que operou | it explains why it traded | NPS (what works) |
+| `trust_numbers` | confio nos números | I trust the numbers | NPS (what works) |
+| `helpful_answers` | o assistente responde minhas dúvidas | the assistant answers my questions | NPS (what works) |
 | `other` | outro | other | NPS, exit (exit: opens the text box) |
 
 The collector checks each property on its own. It does not refuse a promoter code on an exit answer. The weekly report counts such a line under `other` and logs it, rather than guessing.

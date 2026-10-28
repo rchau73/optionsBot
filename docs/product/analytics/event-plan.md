@@ -101,7 +101,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `reason` | enum | `user`, `expired`, `refresh_failed` |
 | `survey_id` | enum | `nps`, `answers`, `exit` |
 | `score` | enum | `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10` (strings: the NPS score) |
-| `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `other` (`surveys.md` §4) |
+| `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `clear_risk`, `explains_trades`, `trust_numbers`, `helpful_answers`, `hard_to_find`, `missing_feature`, `other` (`surveys.md` §4) |
 | `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
