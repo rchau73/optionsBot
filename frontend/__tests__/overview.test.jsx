@@ -26,7 +26,7 @@ import {
 // the mocked useMonitor.
 jest.mock("@/hooks/useMonitor", () => ({ useMonitor: jest.fn() }));
 jest.mock("@/components/PnlChart", () => () => null);
-jest.mock("@/components/CoinPnlChart", () => () => null);
+jest.mock("@/components/OverviewPnl", () => () => null);
 
 const month = (m, coin, usd, closes = 2) => ({ month: m, realised_coin: coin, realised_usd: usd, closes });
 
@@ -357,14 +357,15 @@ describe("#321 Scenario: flat later is not a first day", () => {
 });
 
 describe("#288 Scenario: first visit as a user", () => {
-  test("the dashboards, the P&L charts and the KPI strip are visible; every detail panel is folded with its one-line summary", () => {
+  test("the dashboards, the tiles and the KPI strip are visible; every detail panel is folded with its one-line summary", () => {
     mockBots(twoBots());
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
     expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
+    expect(within(desktop).getByRole("region", { name: "Coins earned this month" })).toBeVisible();
     expect(panelTitles(desktop, false)).toEqual(DETAIL_PANELS);
-    // #394: the P&L charts belong to the dashboard, open for everyone.
-    expect(panelTitles(desktop, true)).toEqual(PNL_PANELS);
+    // #404: the overview's P&L chart is no panel (never folded); the USD one over every range is in Details.
+    expect(panelTitles(desktop, true)).toEqual([]);
     // The KPI strip is outside every panel: visible.
     expect(within(desktop).getByText("Bots online")).toBeVisible();
     expect(within(desktop).getByText("8 legs, 4 strangles")).toBeInTheDocument();
@@ -372,8 +373,8 @@ describe("#288 Scenario: first visit as a user", () => {
   });
 });
 
-const PNL_PANELS = ["P&L (USD, all bots)", "P&L in coin (per bot)"];
 const DETAIL_PANELS = [
+  "P&L in USD (every range)",
   "Open positions",
   "Missing legs: why repair holds them",
   "Not managed by the bot (still uses margin)",
@@ -387,7 +388,7 @@ describe("#288 Scenario: a saved choice wins", () => {
     mockBots(twoBots());
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, "Trade history & profitability"]);
+    expect(panelTitles(desktop, true)).toEqual(["Trade history & profitability"]);
   });
 });
 
@@ -397,7 +398,7 @@ describe("#288 Scenario: managers unchanged", () => {
     render(<Monitor role={role} />);
     const desktop = screen.getByTestId("desktop-monitor");
     expect(panelTitles(desktop, false)).toHaveLength(0);
-    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, ...DETAIL_PANELS]);
+    expect(panelTitles(desktop, true)).toEqual(DETAIL_PANELS);
   });
 });
 

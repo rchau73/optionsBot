@@ -60,6 +60,9 @@ var Properties = map[string]Rule{
 	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
 	"came_for":        enumOf(fourAnswers...),
 	"hardest_to_find": enumOf(fourAnswers...),
+	// The overview's switches (#404).
+	"unit":  enumOf("coin", "usd"),
+	"layer": enumOf("sma", "flip", "strikes"),
 }
 
 // E3's four investor answers, plus "none of these" (surveys.md §2).
@@ -89,6 +92,8 @@ var Events = map[string][]string{
 	"survey_shown":           {"survey_id"},
 	"survey_answered":        {"survey_id", "score", "reason_code", "came_for", "hardest_to_find"},
 	"survey_dismissed":       {"survey_id"},
+	"overview_unit_toggle":   {"unit"},
+	"overview_layer_toggle":  {"layer"},
 }
 
 // The envelope's own rules (§3 and collector.js).

@@ -1,11 +1,15 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import Header from "./Header";
 import PhoneOverview from "./PhoneOverview";
 import BotDashboards from "./BotDashboard";
 import KpiStrip from "./KpiStrip";
+import OverviewPnl from "./OverviewPnl";
+import OverviewStatus from "./OverviewStatus";
+import OverviewTiles from "./OverviewTiles";
 import Panel from "./Panel";
 import Filters from "./Filters";
 import PositionsTable from "./PositionsTable";
@@ -13,7 +17,6 @@ import PendingOrders from "./PendingOrders";
 import HeldLegs from "./HeldLegs";
 import PayoffModal from "./PayoffModal";
 import PnlChart from "./PnlChart";
-import CoinPnlChart from "./CoinPnlChart";
 import OtherPositions, { otherPositionsSummary } from "./OtherPositions";
 import TradeHistory, { tradeHistorySummary } from "./TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
@@ -22,15 +25,17 @@ import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/li
 import { pickAccount, unmanagedPositions } from "@/lib/account";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 import { roleAtLeast } from "@/lib/auth/roles";
+import { DETAILS_VIEW } from "@/lib/menu";
 import { ordersSummary, positionsSummary } from "@/lib/overview";
 
 const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "strategy" };
 
 /**
- * The overview as a dashboard (#394): the header's chips and warnings, then per bot its regime chart, strangle
- * payoff cards and four stat tiles, then the two P&L charts (one week by default); then Details (pro) — the KPI
- * strip, positions, missing legs, other positions, trades and working orders. Activity and Account are their own
- * pages (/activity, /account).
+ * The overview, answer first (#404): the status line and the amber "held back" lines, the four tiles (coin
+ * first, ≈ USD on the footer), the P&L chart (Coin per bot | USD all bots), then one band per bot — price chart
+ * with the sold-strike corridor and its strangle rows, a row opening the payoff modal; then Details (pro) — the
+ * KPI strip, the USD P&L over every range, positions, missing legs, other positions, trades and working orders.
+ * Activity and Account are their own pages (/activity, /account).
  * role (the signed-in person's) only picks display defaults: technical details open for managers and admins,
  * and for a user the detail panels start folded (#288; a choice saved in this browser wins).
  * On a phone (< 640 px) the overview shows one bot (`bot`, ?bot=) with a coin switch (#320); its menu's
@@ -95,19 +100,25 @@ export default function Monitor({ role = null, bot = null, details = false }) {
               Kill switch fired — trading is halted on at least one bot.
             </div>
           ) : null}
+          <OverviewStatus bots={bots} />
+          <OverviewTiles bots={bots} loading={!bots.length && !error} />
+          <OverviewPnl names={names} units={units} />
           <BotDashboards bots={bots} onOpen={openChart} />
-          <div className="grid gap-3 xl:grid-cols-2">
-            <Panel title="P&L (USD, all bots)" collapsible storageKey="monitor.panel.pnl" summary="chart, all bots">
-              <PnlChart live={history} names={names} />
-            </Panel>
-            <Panel title="P&L in coin (per bot)" collapsible storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
-              <CoinPnlChart names={names} units={units} />
-            </Panel>
-          </div>
+          <p>
+            <Link
+              href={`/?view=${DETAILS_VIEW}`}
+              className="inline-flex min-h-11 items-center text-sm text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+            >
+              Details (pro) →
+            </Link>
+          </p>
           <div id="details" className="scroll-mt-3 space-y-3">
             <h2 className="pt-2 text-sm font-semibold uppercase tracking-wide text-muted">Details (pro)</h2>
             <KpiStrip kpi={kpi} />
           </div>
+          <Panel title="P&L in USD (every range)" collapsible {...fold} storageKey="monitor.panel.pnl" summary="chart, all bots, live to all">
+            <PnlChart live={history} names={names} />
+          </Panel>
           <Panel
             title="Open positions"
             collapsible
