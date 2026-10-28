@@ -1,13 +1,15 @@
-// The phone-width check (#309): measures the monitor on demo data at 360,
-// 390 and 768 px and its dialogs at 360 × 640 / 640 × 360, writes
+// The viewport check (#309, every page since #425): measures every page of the
+// menu (lib/menu.js) and the assistant panel opened on demo data at 360, 768
+// and 1280 px, and the overview's dialogs at 360 × 640 / 640 × 360, writes
 // docs/responsive-measured.json and screenshots under test-results/phone/
 // (both git-ignored), and fails only when something is worse than
-// e2e/phone-baseline.json. UPDATE_PHONE_BASELINE=1 (re)records the baseline.
+// e2e/phone-baseline.json, naming page, viewport and element.
+// UPDATE_PHONE_BASELINE=1 (re)records the baseline.
 import fs from "node:fs";
 import path from "node:path";
 import { demoLoaded, expect, test } from "./fixtures.js";
 import { measureDialog, measurePage } from "./measure.js";
-import { DIALOG_VIEWPORTS, WIDTHS, baselineOf, compareToBaseline, summariseDialog, summariseWidth } from "./phone.js";
+import { DIALOG_VIEWPORTS, WIDTHS, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
 
 const FRONTEND = process.env.PHONE_FRONTEND_DIR;
 const REPORT = path.join(FRONTEND, "docs", "responsive-measured.json");
@@ -69,20 +71,40 @@ const DIALOGS = {
   },
 };
 
-test("phone widths: measured on demo data, no worse than the baseline", async ({ page }) => {
+// A page is rendered: the URL stayed on it (not sent to sign-in) and its <main> is shown.
+async function openPage(page, target) {
+  await page.goto(target.path);
+  await expect(page, `${target.name}: did not stay on ${target.path}`).toHaveURL((url) => url.pathname === target.path);
+  await expect(page.locator("main").first(), `${target.name}: no <main> rendered`).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(2000); // the first poll of both demo bots arrives
+  if (target.assistant) {
+    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    await expect(page.getByLabel("Assistant", { exact: true }).first()).toBeVisible();
+  }
+}
+
+test("every menu page and the assistant: measured on demo data, no worse than the baseline", async ({ page }) => {
   fs.mkdirSync(SHOTS, { recursive: true });
   await enableOrderDialogs(page);
   await page.reload();
   await demoLoaded(page);
 
-  const report = { generated_at: new Date().toISOString(), source: "cmd/monitor-demo (BTC, ETH), simulated data", widths: {}, dialogs: {} };
-  for (const vp of WIDTHS) {
-    await page.setViewportSize({ width: vp.width, height: vp.height });
-    await page.waitForTimeout(800);
-    report.widths[vp.name] = summariseWidth(vp, await page.evaluate(measurePage));
-    await page.screenshot({ path: path.join(SHOTS, `monitor-${vp.name}.png`), fullPage: true });
+  const report = { generated_at: new Date().toISOString(), source: "cmd/monitor-demo (BTC, ETH), simulated data", pages: {}, dialogs: {} };
+  for (const target of viewportPages()) {
+    await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
+    await openPage(page, target);
+    report.pages[target.name] = { path: target.path, widths: {} };
+    for (const vp of WIDTHS) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.waitForTimeout(800);
+      report.pages[target.name].widths[vp.name] = summariseWidth(vp, await page.evaluate(measurePage));
+      await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
+    }
   }
 
+  // The dialogs are the overview's.
+  await page.goto("/");
+  await demoLoaded(page);
   for (const [name, open] of Object.entries(DIALOGS)) {
     report.dialogs[name] = {};
     for (const vp of DIALOG_VIEWPORTS) {
@@ -100,13 +122,18 @@ test("phone widths: measured on demo data, no worse than the baseline", async ({
   fs.writeFileSync(REPORT, `${JSON.stringify(report, null, 2)}\n`);
 
   // Every overflow is explained: the report names what causes it.
-  for (const [name, w] of Object.entries(report.widths)) {
-    if (w.overflow.overflow_px > 0) expect(w.overflow.causes, `${name} px overflows by ${w.overflow.overflow_px} px with no cause named`).not.toHaveLength(0);
+  for (const [pageName, p] of Object.entries(report.pages)) {
+    for (const [name, w] of Object.entries(p.widths)) {
+      if (w.overflow.overflow_px > 0) expect(w.overflow.causes, `${pageName} ${name} px overflows by ${w.overflow.overflow_px} px with no cause named`).not.toHaveLength(0);
+    }
   }
 
   if (process.env.UPDATE_PHONE_BASELINE === "1" || !fs.existsSync(BASELINE)) {
-    fs.writeFileSync(BASELINE, `${JSON.stringify(baselineOf(report), null, 2)}\n`);
+    const baseline = baselineOf(report);
+    fs.writeFileSync(BASELINE, `${JSON.stringify(baseline, null, 2)}\n`);
     test.info().annotations.push({ type: "baseline", description: `recorded ${path.relative(FRONTEND, BASELINE)}: review and commit it` });
+    // The known problems, one per line: the follow-up notes of the PR that commits the baseline.
+    console.log(`Baseline entries (follow-ups):\n${baselineNotes(baseline).join("\n")}`);
     return;
   }
   const problems = compareToBaseline(JSON.parse(fs.readFileSync(BASELINE, "utf8")), report);

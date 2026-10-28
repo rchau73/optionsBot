@@ -9,7 +9,7 @@ import (
 
 // NoEventsWhy says why a week can have no events at all.
 const NoEventsWhy = "No events were recorded in the week. That can be because nobody has said yes to analytics yet " +
-	"(the consent notice waits for E13's prototype), no screen of the monitor sends events yet (no instrumented screen), " +
+	"(the consent notice waits for E13's prototype; no instrumented screen sends an event before a yes), " +
 	"ANALYTICS_SALT is not set (collection off), or nobody signed in to the monitor that week."
 
 // MonthDays is the window of the monthly active count: the 30 days ending
@@ -34,6 +34,7 @@ type Report struct {
 	Panels       *Panels       `json:"panels,omitempty"`        // Q3
 	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
 	Help         *Help         `json:"help,omitempty"`          // Q5
+	Assistant    *Assistant    `json:"assistant,omitempty"`     // Q5
 	ManualClose  *ManualClose  `json:"manual_close,omitempty"`  // Q6
 	Rebalance    *Rebalance    `json:"rebalance,omitempty"`     // Q6
 	Trust        *Trust        `json:"trust,omitempty"`         // Q7
@@ -119,6 +120,18 @@ type Help struct {
 	HelpedPct       *float64       `json:"helped_pct,omitempty"`
 }
 
+// Assistant is Q5's assistant panel (#424): how often it is opened and asked
+// (per entry: the menu's Ask or Why? on a trade), the kind of each reply and
+// the flags. Counts only: never a question, an answer or an id.
+type Assistant struct {
+	Opened      map[string]int `json:"opened"`  // assistant_open per entry
+	Asked       map[string]int `json:"asked"`   // assistant_ask per entry
+	Answers     map[string]int `json:"answers"` // assistant_answered per answer kind
+	Replies     int            `json:"replies"` // assistant_answered, all kinds
+	AnsweredPct *float64       `json:"answered_pct,omitempty"`
+	Flagged     int            `json:"flagged"` // assistant_flag
+}
+
 // ManualClose is Q6's manual-close funnel.
 type ManualClose struct {
 	Opened           int            `json:"opened"`
@@ -197,6 +210,7 @@ func Build(events []Event, from, to time.Time) Report {
 	r.Panels = buildPanels(week)
 	r.FirstAnswers = buildFirstAnswers(past, from)
 	r.Help = buildHelp(week)
+	r.Assistant = buildAssistant(week)
 	r.ManualClose, r.Rebalance = buildFunnels(week)
 	r.Trust = buildTrust(week)
 	r.Survey = buildSurvey(week)
@@ -396,6 +410,26 @@ func buildHelp(week []Event) *Help {
 	}
 	h.HelpedPct = pct(h.Helped, h.Answers)
 	return h
+}
+
+func buildAssistant(week []Event) *Assistant {
+	entries := Properties["entry"].Values
+	a := &Assistant{Opened: zeroMap(entries), Asked: zeroMap(entries), Answers: zeroMap(AssistantAnswers)}
+	for _, e := range week {
+		switch e.Name {
+		case "assistant_open":
+			inc(a.Opened, e.Props["entry"])
+		case "assistant_ask":
+			inc(a.Asked, e.Props["entry"])
+		case "assistant_answered":
+			inc(a.Answers, e.Props["answer"])
+			a.Replies++
+		case "assistant_flag":
+			a.Flagged++
+		}
+	}
+	a.AnsweredPct = pct(a.Answers["answered"], a.Replies)
+	return a
 }
 
 func buildFunnels(week []Event) (*ManualClose, *Rebalance) {

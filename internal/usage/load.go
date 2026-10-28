@@ -47,7 +47,7 @@ type Log struct {
 }
 
 // Load reads an events file. A missing file is an empty Log with Missing
-// set, not an error: no screen sends events yet.
+// set, not an error: nothing is written until someone has said yes.
 func Load(path string) (Log, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
