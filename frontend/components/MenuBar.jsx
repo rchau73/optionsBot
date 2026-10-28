@@ -4,15 +4,14 @@ import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import AskButton from "./AskButton";
 import UserMenu from "./UserMenu";
 import { fetchMonitorConfig } from "@/lib/api";
 import { botParam, menuItems, showMenu } from "@/lib/menu";
 
 /**
  * The menu bar on every signed-in page (#385): Overview · Income · Worst case
- * · Positions · How it works · Activity · Account · Details (pro), then Ask
- * (the assistant panel, #408) and the signed-in person's menu ("bob ▾": Users and Audit for admins, Change
+ * · Positions · How it works · Activity · Account · Details (pro), then the
+ * signed-in person's menu ("bob ▾": Users and Audit for admins, Change
  * password, Sign out; #394). The bot is the page's ?bot=, else the first
  * configured bot, and every link keeps it. Not shown on sign-in or the
  * reset-link page. person: { username, role } from the layout (the access
@@ -62,9 +61,6 @@ export function MenuNav({ pathname, bot = null, person = null }) {
           </li>
         ))}
         <li className="ml-auto">
-          <AskButton bot={bot} />
-        </li>
-        <li>
           <UserMenu role={person?.role ?? null} username={person?.username ?? null} />
         </li>
       </ul>
