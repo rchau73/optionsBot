@@ -1,27 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import Header from "./Header";
 import PhoneOverview from "./PhoneOverview";
 import BotDashboards from "./BotDashboard";
-import Panel from "./Panel";
+import OverviewPnl from "./OverviewPnl";
+import OverviewStatus from "./OverviewStatus";
+import OverviewTiles from "./OverviewTiles";
 import PayoffModal from "./PayoffModal";
-import PnlChart from "./PnlChart";
-import CoinPnlChart from "./CoinPnlChart";
 import { useMonitor } from "@/hooks/useMonitor";
 import { summarise } from "@/lib/monitor";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 /**
- * The overview as a dashboard (#394): the header's chips and warnings, then per bot its regime chart, strangle
- * payoff cards and four stat tiles, then the two P&L charts (one week by default). The detail panels — positions,
- * missing legs, trades, working orders, not managed — are their own page, Details (pro) at /details (#405);
- * Activity and Account too (/activity, /account).
+ * The overview, answer first (#404): the status line and the amber "held back" lines, the four tiles (coin
+ * first, ≈ USD on the footer), the P&L chart (Coin per bot | USD all bots), then one band per bot — price chart
+ * with the sold-strike corridor and its strangle rows, a row opening the payoff modal. The detail panels —
+ * positions, missing legs, trades, working orders, not managed, the USD P&L over every range — are their own
+ * page, Details (pro) at /details (#405); Activity and Account too (/activity, /account).
  * On a phone (< 640 px) the overview shows one bot (`bot`, ?bot=) with a coin switch (#320); its menu links to
  * Details (pro).
  */
 export default function Monitor({ bot = null }) {
-  const { names, bots, history, error, pollMs } = useMonitor();
+  const { names, bots, error, pollMs } = useMonitor();
   // The payoff modal (#391): { bot, strangleId, opener } — opener gets the focus back on close.
   const [chart, setChart] = useState(null);
   const openChart = (botName, strangleId, opener) => setChart({ bot: botName, strangleId, opener });
@@ -51,15 +53,18 @@ export default function Monitor({ bot = null }) {
               Kill switch fired — trading is halted on at least one bot.
             </div>
           ) : null}
+          <OverviewStatus bots={bots} />
+          <OverviewTiles bots={bots} loading={!bots.length && !error} />
+          <OverviewPnl names={names} units={units} />
           <BotDashboards bots={bots} onOpen={openChart} />
-          <div className="grid gap-3 xl:grid-cols-2">
-            <Panel title="P&L (USD, all bots)" collapsible storageKey="monitor.panel.pnl" summary="chart, all bots">
-              <PnlChart live={history} names={names} />
-            </Panel>
-            <Panel title="P&L in coin (per bot)" collapsible storageKey="monitor.panel.pnl_coin" summary="one chart per bot">
-              <CoinPnlChart names={names} units={units} />
-            </Panel>
-          </div>
+          <p>
+            <Link
+              href="/details"
+              className="inline-flex min-h-11 items-center text-sm text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+            >
+              Details (pro) →
+            </Link>
+          </p>
           {chart ? (
             <PayoffModal
               report={chartBot?.payoff ?? null}

@@ -10,6 +10,7 @@ import TradeHistory from "./TradeHistory";
 import PendingOrders from "./PendingOrders";
 import OtherPositions from "./OtherPositions";
 import PayoffModal from "./PayoffModal";
+import PnlChart from "./PnlChart";
 import { useMonitor } from "@/hooks/useMonitor";
 import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
@@ -92,7 +93,7 @@ function OneLine({ id, title, text, hint }) {
  * together. Reads the existing APIs only, through useMonitor.
  */
 export default function DetailsPage() {
-  const { names, bots, trades, error, pollMs, polledAt } = useMonitor();
+  const { names, bots, history, trades, error, pollMs, polledAt } = useMonitor();
   const [filters, setFilters] = useState(NO_FILTERS);
   // The payoff modal (#391): { bot, strangleId, opener } — opener gets the focus back on close.
   const [chart, setChart] = useState(null);
@@ -183,6 +184,10 @@ export default function DetailsPage() {
           {loading ? <Skeleton rows={1} /> : <OtherPositions data={others} />}
         </Panel>
       )}
+
+      <Panel title="P&L in USD (every range)" collapsible defaultOpen={false} storageKey="monitor.panel.pnl" summary="chart, all bots, live to all">
+        <PnlChart live={history} names={names} />
+      </Panel>
 
       {chart ? (
         <PayoffModal

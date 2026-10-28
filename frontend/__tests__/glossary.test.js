@@ -21,7 +21,8 @@ describe("glossary (#188)", () => {
 
   test("complete: every monitor column and label has an entry", () => {
     const labels = monitorLabels();
-    expect(labels.map((l) => l.label)).toEqual(expect.arrayContaining(["DTE", "IM %", "Stop-loss", "GEX shed"]));
+    // #405: Details (pro)'s positions table has no DTE column (days left are in each strangle's group row).
+    expect(labels.map((l) => l.label)).toEqual(expect.arrayContaining(["OTM %", "IM %", "Stop-loss", "GEX shed"]));
     const missing = labels.filter((l) => !findTerm(l.label)).map((l) => `"${l.label}" (${l.file})`);
     expect(missing).toEqual([]);
   });

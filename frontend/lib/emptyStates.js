@@ -25,8 +25,9 @@ export const PANELS = {
   "monitor.panel.others": "Not managed by the bot (still uses margin)",
   "monitor.panel.trades": "Trades and results",
   "monitor.panel.activity": "Activity",
-  "monitor.panel.pnl": "P&L (USD, all bots)",
-  "monitor.panel.pnl_coin": "P&L in coin (per bot)",
+  "monitor.panel.pnl": "P&L in USD (every range)",
+  // #404: the overview's P&L chart (Coin per bot by default); no longer a panel of its own.
+  "monitor.panel.pnl_coin": "the overview's P&L chart (<OverviewPnl)",
   "monitor.panel.orders": "Working orders (placed, not filled yet)",
 };
 

@@ -13,7 +13,7 @@ import { candleRows, gexFreshness, regimeBadge, regimeLevels, regimeText, strike
 
 jest.mock("@/hooks/useMonitor", () => ({ useMonitor: jest.fn() }));
 jest.mock("@/components/PnlChart", () => () => null);
-jest.mock("@/components/CoinPnlChart", () => () => null);
+jest.mock("@/components/OverviewPnl", () => () => null);
 // jsdom has no layout: give Recharts a fixed size so the chart's SVG is drawn.
 jest.mock("recharts", () => {
   const actual = jest.requireActual("recharts");
@@ -95,26 +95,26 @@ function mockBots(bots) {
 beforeEach(() => window.localStorage.clear());
 
 describe("Scenario: the Overview reads as a dashboard", () => {
-  test("each bot shows its regime chart, strangle cards, four stat tiles and the P&L charts; no Activity or Account panel", () => {
+  test("one band per bot (price chart, strangle rows) under the four tiles; no Activity or Account panel", () => {
     mockBots([bot("btc", "BTC"), bot("eth", "ETH")]);
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
     for (const coin of ["BTC", "ETH"]) {
       const dash = within(desktop).getByRole("region", { name: `${coin} dashboard` });
-      expect(within(dash).getByTestId(`regime-chart-${coin}`)).toBeInTheDocument();
+      expect(within(dash).getByTestId(`band-chart-${coin}`)).toBeInTheDocument();
       expect(within(dash).getByRole("region", { name: `${coin} · strangles` })).toBeInTheDocument();
-      for (const tile of ["This month", "Open now", "Worst case", "Margin used"]) {
-        expect(within(dash).getByRole("region", { name: tile })).toBeInTheDocument();
-      }
+    }
+    for (const tile of ["Coins earned this month", "Open now", "Worst case", "Margin used"]) {
+      expect(within(desktop).getAllByRole("region", { name: tile })).toHaveLength(1); // one tile, a line per bot
     }
     const titles = within(desktop)
       .getAllByRole("heading", { level: 2 })
       .map((h) => h.textContent);
-    expect(titles).toEqual(expect.arrayContaining(["P&L (USD, all bots)", "P&L in coin (per bot)"]));
     expect(titles.some((t) => /^Activity$/.test(t) || /Account & collateral/.test(t))).toBe(false);
     expect(within(desktop).queryByTestId("activity-list")).toBeNull();
-    // The P&L charts are part of the dashboard: open even for a user.
-    expect(within(desktop).getByRole("button", { name: /P&L \(USD, all bots\)/ })).toHaveAttribute("aria-expanded", "true");
+    // #405: the detail panels are on their own page, linked under the bands.
+    expect(within(desktop).queryByRole("button", { name: /Open positions/ })).toBeNull();
+    expect(within(desktop).getByRole("link", { name: "Details (pro) →" })).toHaveAttribute("href", "/details");
   });
 
   // #405: Details (pro) is its own page now.

@@ -85,14 +85,14 @@
     "long": "Gamma measures how quickly an option's delta changes when the coin moves. Sellers of options are 'short gamma': their losses speed up in big moves, more so close to expiry. That is one reason the bot closes positions with 15 days or fewer left.",
     "risk_income": "High gamma means a loss can grow fast; it is highest near expiry.",
     "source": "OptionStrategy.md#2-options-in-five-minutes",
-    "labels": ["Γ"]
+    "labels": ["Γ", "Γ ×10⁻⁵"]
   },
   "theta": {
     "short": "Time decay: how much value an option loses each day.",
     "long": "Theta is the amount an option's price drops each day if nothing else changes. An option seller earns this decay. It speeds up in the last weeks before expiry.",
     "risk_income": "Theta is the seller's daily income from time passing; it does not protect against a big price move.",
     "source": "OptionStrategy.md#2-options-in-five-minutes",
-    "labels": ["Θ"]
+    "labels": ["Θ", "Θ/day"]
   },
   "vega": {
     "short": "How much an option's price changes when implied volatility changes by 1 point.",
@@ -138,7 +138,7 @@
     "long": "Moneyness compares a strike with the current price. OTM (out of the money) means the option would pay nothing today. ATM (at the money) means the strike is about at the price. ITM (in the money) means the option would pay something today. The bot sells OTM options.",
     "risk_income": "A sold option moving from OTM toward ITM is losing money.",
     "source": "OptionStrategy.md#12-glossary",
-    "labels": ["Moneyness"]
+    "labels": ["Moneyness", "OTM %"]
   },
   "gex": {
     "short": "Gamma exposure: an estimate of how option dealers' hedging pushes the price.",
@@ -407,7 +407,7 @@
     "long": "An order can fill in full, in part, or not at all. The bot always records exactly what filled, never the amount it asked for. 'Opened' in the feed is a sale that filled.",
     "risk_income": "Each filled sale adds premium income and risk.",
     "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
-    "labels": ["Filled", "Opened"]
+    "labels": ["Filled", "Opened", "Opens"]
   },
   "close": {
     "short": "Buying back a sold option, which ends that leg's position.",
@@ -442,7 +442,7 @@
     "long": "For every one-sided strangle the monitor names the rule holding its repair: a stop hold, the regime side, a GEX anchor or shed, the MM limit, a waiting stop, no fresh GEX, a working order, an unknown order, a churn pause or the roll window.",
     "risk_income": "While a rule holds, the strangle earns from one leg only.",
     "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
-    "labels": ["Held by"]
+    "labels": ["Held by", "Released when"]
   },
   "p&l": {
     "short": "Profit and loss, after Deribit's fees, in US dollars or in the coin.",
@@ -456,7 +456,7 @@
     "long": "Realized P&L is booked when a leg is bought back: the premium received minus the buy-back price, its share of the opening fees and the closing fee. It does not change after the close.",
     "risk_income": "It is income (or loss) already earned; no more risk is attached to it.",
     "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
-    "labels": ["Realized P&L", "Result", "This month"]
+    "labels": ["Realized P&L", "Result", "This month", "Coins earned this month", "Realized", "Realized (net of fees)"]
   },
   "unrealized p&l": {
     "short": "Profit or loss of open legs if they were bought back now at the mark, after opening fees.",
@@ -694,7 +694,7 @@
     "long": "Win rate counts closes with a positive result after fees. A high win rate is normal for option selling and does not tell you the size of the losses: compare it with the average win and loss.",
     "risk_income": "A high win rate can sit beside rare large losses.",
     "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
-    "labels": ["Win rate", "Wins"]
+    "labels": ["Win rate", "Wins", "Won"]
   },
   "avg win": {
     "short": "The average profit of the closes that made money.",

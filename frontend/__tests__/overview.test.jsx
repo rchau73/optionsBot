@@ -26,7 +26,7 @@ import {
 // the mocked useMonitor.
 jest.mock("@/hooks/useMonitor", () => ({ useMonitor: jest.fn() }));
 jest.mock("@/components/PnlChart", () => () => null);
-jest.mock("@/components/CoinPnlChart", () => () => null);
+jest.mock("@/components/OverviewPnl", () => () => null);
 
 const month = (m, coin, usd, closes = 2) => ({ month: m, realised_coin: coin, realised_usd: usd, closes });
 
@@ -336,27 +336,19 @@ describe("#321 Scenario: flat later is not a first day", () => {
   });
 });
 
-const PNL_PANELS = ["P&L (USD, all bots)", "P&L in coin (per bot)"];
-
-// #405: the detail panels left the overview for Details (pro), /details.
+// #405: the detail panels left the overview for Details (pro), /details. #404: its P&L chart is no panel.
 describe("Scenario: the Overview loses the detail panels", () => {
-  test.each(["user", "manager", null])("%s: the dashboards and the P&L charts only, open", (role) => {
+  test.each(["user", "manager", null])("%s: the dashboards and the tiles, no panel", (role) => {
     mockBots(twoBots());
     render(<Monitor role={role} />);
     const desktop = screen.getByTestId("desktop-monitor");
     expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
+    expect(within(desktop).getByRole("region", { name: "Coins earned this month" })).toBeVisible();
     expect(panelTitles(desktop, false)).toEqual([]);
-    expect(panelTitles(desktop, true)).toEqual(PNL_PANELS);
+    expect(panelTitles(desktop, true)).toEqual([]);
     expect(within(desktop).queryAllByRole("heading", { name: /Open positions|Missing legs|Working orders|Trade/ })).toEqual([]);
     expect(within(desktop).queryAllByText("Bots online")).toEqual([]);
     expect(document.getElementById("details")).toBeNull();
-  });
-
-  test("a saved choice still folds a P&L chart", () => {
-    window.localStorage.setItem("monitor.panel.pnl", "0");
-    mockBots(twoBots());
-    render(<Monitor role="user" />);
-    expect(panelTitles(screen.getByTestId("desktop-monitor"), false)).toEqual(["P&L (USD, all bots)"]);
   });
 });
 

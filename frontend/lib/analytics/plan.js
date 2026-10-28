@@ -56,6 +56,9 @@ export const PROPERTIES = {
   reason_code: enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
   came_for: enumOf(...FOUR_ANSWERS),
   hardest_to_find: enumOf(...FOUR_ANSWERS),
+  // The overview's switches (#404).
+  unit: enumOf("coin", "usd"),
+  layer: enumOf("sma", "sma21", "swings", "flip", "strikes"),
 };
 
 /** §2: event → the properties it may carry (each optional). */
@@ -84,6 +87,8 @@ export const EVENTS = {
   survey_shown: ["survey_id"],
   survey_answered: ["survey_id", "score", "reason_code", "came_for", "hardest_to_find"],
   survey_dismissed: ["survey_id"],
+  overview_unit_toggle: ["unit"],
+  overview_layer_toggle: ["layer"],
 };
 
 // The browser's random per-session id (lib/track.js): 32 hex characters.
