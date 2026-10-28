@@ -123,7 +123,8 @@ describe("Scenario: the investor summary is the first block for that bot", () =>
     const main = src.slice(src.indexOf("<main"));
     expect(main.indexOf("<BotDashboards")).toBeGreaterThan(-1);
     expect(main).not.toContain("<KpiStrip");
-    expect(main.indexOf("<BotDashboards")).toBeLessThan(main.indexOf("<Panel"));
+    // #405: the detail panels moved to /details, so nothing folds on the overview.
+    expect(main).not.toContain("<Panel");
   });
 });
 

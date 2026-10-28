@@ -151,7 +151,7 @@
     "long": "The regime is the sign of the dealers' gamma exposure (GEX). Positive: dealer hedging tends to slow the price down. Negative: it tends to push the price further the way it is going. A change must hold for 2 daily closes before the bot treats it as confirmed.",
     "risk_income": "A confirmed negative regime lowers the margin limit and stops sales on the side the price runs toward.",
     "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
-    "labels": ["Gamma regime", "Regime · bias · SMA"]
+    "labels": ["Gamma regime", "Regime · bias · SMA", "Market now"]
   },
   "gamma flip": {
     "short": "The price where dealer gamma changes from positive to negative.",
@@ -164,7 +164,8 @@
     "short": "The distance from the gamma flip that counts as a real move: 1.5 normal days of price change.",
     "long": "The buffer is a margin around the gamma flip so that small moves do not trigger a shed. It is 1.5 times a normal day's move, taken from DVOL. A side is shed only when spot is more than this buffer beyond the flip, and sold again only when spot is back past the flip plus the buffer.",
     "risk_income": "A wider buffer means fewer sheds and more exposure in a real move; a narrower one sheds more often.",
-    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Spot vs flip + buffer"]
   },
   "sma trend": {
     "short": "The price trend (bull, bear or neutral) read from the 9-day and 21-day moving averages.",
@@ -288,7 +289,7 @@
     "long": "The stop-loss is the first exit rule. When a leg's loss reaches the set multiple of its premium (2 times), the bot buys it back at market, ahead of everything else. 'Stop @' is the option price at which that happens. If the order book is empty it waits up to 5 minutes.",
     "risk_income": "It caps the loss on most moves; a sudden gap can still go past it.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
-    "labels": ["Stop-loss", "Stop @"]
+    "labels": ["Stop-loss", "Stop @", "Stop at"]
   },
   "stop hold": {
     "short": "After a stop-loss, delta exit or manual close, that side is not sold again for 72 hours.",
@@ -309,7 +310,7 @@
     "long": "When the price moves toward a sold strike, that leg's delta grows. At 0.30 the bot buys the leg back before it reaches the 2 times stop-loss. Afterwards the side is held like after a stop-loss.",
     "risk_income": "It takes smaller losses earlier, and more of them, instead of fewer larger stop-losses.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
-    "labels": ["Delta exit"]
+    "labels": ["Delta exit", "|Δ| → exit"]
   },
   "delta drift": {
     "short": "Buying back a leg whose delta fell below 0.10: far from the price, little premium left.",
@@ -477,7 +478,7 @@
     "long": "The mark is the price at which the bot values a leg, from the exchange's live quote. Without a live quote it keeps the last known mark and says so. Unrealized P&L and the stop-loss use the mark.",
     "risk_income": "A rising mark on a sold option is a growing loss.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
-    "labels": ["Mark"]
+    "labels": ["Mark", "Entry → mark"]
   },
   "bid / ask": {
     "short": "The best price a buyer offers (bid) and the best price a seller asks (ask).",
@@ -715,7 +716,7 @@
     "long": "Below 1 means a typical loss is bigger than a typical win, which is normal for option selling. Read it together with the win rate.",
     "risk_income": "A lower ratio needs a higher win rate to break even.",
     "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
-    "labels": ["Win / loss size"]
+    "labels": ["Win / loss size", "Avg win ÷ avg loss"]
   },
   "underlying": {
     "short": "The coin this bot trades options on: BTC or ETH.",
@@ -925,5 +926,12 @@
     "long": "Audit page (admins only). The rest of the line, key=value, unchanged: a close's position ids and status, a rebalance's dry run, a role change's from and to, an IP. Never a password, hash or token: the trail holds none.",
     "risk_income": "None.",
     "source": "frontend/README.md#audit-page-308-249"
+  },
+  "premium kept": {
+    "short": "The share of a leg's premium the bot would keep if it bought the leg back now.",
+    "long": "Premium kept compares the price the leg was sold at with its price now. If a leg was sold for 0.0100 and now costs 0.0060, 40 % of the premium is kept. It turns negative when the option costs more than it was sold for: that leg is at a loss.",
+    "risk_income": "It is the income already earned on a leg; the take-profit closes a leg once enough of it is kept.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["Premium kept", "% kept"]
   }
 }
