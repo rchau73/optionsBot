@@ -1,14 +1,15 @@
-// The phone-width check (#309): the in-browser measurement (e2e/measure.js)
-// on a page with a faked layout, the comparison with the baseline
-// (e2e/phone.js), and that the check reads demo data only and commits
-// nothing. The browser run itself is `npm run test:phone` (Playwright).
+// The viewport check (#309, #425): the pages it measures (every menu page and
+// the assistant), the in-browser measurement (e2e/measure.js) on a page with a
+// faked layout, the comparison with the per-page baseline (e2e/phone.js), and
+// that the check reads demo data only and commits nothing. The browser run itself is `npm run test:phone` (Playwright).
 import fs from "node:fs";
 import path from "node:path";
 import { render } from "@testing-library/react";
 import Panel from "@/components/Panel";
 import PendingOrders from "@/components/PendingOrders";
 import { measureDialog, measurePage } from "@/e2e/measure";
-import { baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, WIDTHS } from "@/e2e/phone";
+import { baselineNotes, baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
+import { menuItems } from "@/lib/menu";
 import { bot } from "@/test/fixtures";
 
 const ROOT = path.join(__dirname, "..");
@@ -74,6 +75,40 @@ describe("Scenario: the known overflow is measured", () => {
     expect(w.title_only.kinds).toEqual(["Open positions › Γ", "Working orders (placed, not filled yet) › Timeout"]);
   });
 
+  test("the assistant panel's controls are named by the panel, and its header is not the page's", () => {
+    render(
+      <>
+        <header>
+          <button type="button">Account ▾</button>
+        </header>
+        <aside aria-label="Assistant">
+          <header>
+            <h2>Assistant</h2>
+            <button type="button" aria-label="Close the assistant">
+              ×
+            </button>
+          </header>
+        </aside>
+      </>,
+    );
+    fakeLayout();
+    const w = summariseWidth(WIDTHS[0], measurePage());
+    expect(w.controls.under_24_kinds.map((k) => k.key)).toEqual(['Header › button "Account ▾"', 'Panel: Assistant › button "Close the assistant"']);
+  });
+
+  test("an overflow outside any panel is named by its block of <main>", () => {
+    render(
+      <main>
+        <div className="wide">wide</div>
+      </main>,
+    );
+    const de = document.documentElement;
+    Object.defineProperty(de, "clientWidth", { configurable: true, get: () => 360 });
+    Object.defineProperty(de, "scrollWidth", { configurable: true, get: () => (shown(document.querySelector(".wide")) ? 500 : 360) });
+    const w = summariseWidth(WIDTHS[0], measurePage());
+    expect(w.overflow.causes).toEqual([{ panel: "Page", element: "div", width_px: 0 }]);
+  });
+
   test("a dialog taller than the screen does not fit", () => {
     render(
       <div role="dialog">
@@ -87,9 +122,10 @@ describe("Scenario: the known overflow is measured", () => {
   });
 });
 
-// A report as summariseWidth builds it, for the comparison tests.
-function report({ under24 = [], causes = [{ panel: "Working orders (placed, not filled yet)", element: "table", width_px: 540 }], overflow = 230, header = 420, titles = [], fits = true } = {}) {
-  const width = () => ({
+// One width's measurement as summariseWidth builds it, for the comparison tests.
+const WORKING_ORDERS = { panel: "Working orders (placed, not filled yet)", element: "table", width_px: 540 };
+function width({ under24 = [], causes = [WORKING_ORDERS], overflow = 230, header = 420, titles = [] } = {}) {
+  return {
     overflow: { overflow_px: overflow, causes },
     controls: {
       under_24_kinds: [{ key: 'Activity › button[tab] "All"', width: 30, height: 20, count: 4 }, ...under24],
@@ -97,45 +133,110 @@ function report({ under24 = [], causes = [{ panel: "Working orders (placed, not 
     },
     title_only: { kinds: titles },
     header_height_px: header,
-  });
+  };
+}
+const CLEAN = { causes: [], overflow: 0 };
+
+// A report: the overview with today's overflow, the income page clean, at every width.
+function report({ fits = true, ...overview } = {}) {
+  const widths = (opts) => ({ 360: width(opts), 768: width(opts), 1280: width(opts) });
   return {
-    widths: { 360: width(), 390: width(), 768: width() },
+    pages: { overview: { widths: widths(overview) }, income: { widths: widths(CLEAN) } },
     dialogs: { close: { portrait: { fits }, landscape: { fits: false } } },
   };
 }
 
-describe("Scenario: no regression", () => {
+describe("Scenario: a page listed in menu.js is checked at 360 px", () => {
+  const baseline = baselineOf(report());
+
+  test("a page whose document width equals the viewport passes", () => {
+    expect(baseline.pages.income.widths[360]).toMatchObject({ overflow_px: 0, overflow_causes: [] });
+    expect(compareToBaseline(baseline, report())).toEqual([]);
+  });
+
+  test("an overflow in the baseline passes; the same overflow on a page where it is not fails naming page, viewport and element", () => {
+    const now = report();
+    now.pages.income.widths[360] = width();
+    expect(compareToBaseline(baseline, now)).toEqual([
+      "income 360 px: page overflow now caused by Working orders (placed, not filled yet) › table (540 px wide)",
+      "income 360 px: page overflows by 230 px, baseline 0 px",
+    ]);
+  });
+
+  test("the widths measured are 360, 768 and 1280 px", () => {
+    expect(WIDTHS.map((w) => w.width)).toEqual([360, 768, 1280]);
+  });
+});
+
+describe("Scenario: a new page added to menu.js is checked without editing the test", () => {
+  test("the pages measured are the menu's, then the assistant panel opened", () => {
+    expect(viewportPages()).toEqual([...menuItems("/").map((m) => ({ name: m.key, path: m.href, assistant: false })), { name: "assistant", path: "/", assistant: true }]);
+    expect(viewportPages().map((p) => p.path)).toEqual(expect.arrayContaining(["/", "/income", "/details"]));
+  });
+
+  test("a page added to the menu is in the list", () => {
+    jest.isolateModules(() => {
+      jest.doMock("@/lib/menu", () => ({ menuItems: () => [{ key: "overview", href: "/" }, { key: "news", href: "/news" }] }));
+      const { viewportPages: pages } = require("@/e2e/phone");
+      expect(pages().map((p) => p.name)).toEqual(["overview", "news", "assistant"]);
+    });
+    jest.dontMock("@/lib/menu");
+  });
+
+  test("the spec measures viewportPages(), not a typed list", () => {
+    const spec = read("e2e/phone.spec.js");
+    expect(spec).toMatch(/for \(const target of viewportPages\(\)\)/);
+    expect(spec).not.toMatch(/"\/income"|"\/details"|"\/positions"/);
+  });
+
+  test("a new page not in the baseline: clean passes, held to what the recorded pages accept", () => {
+    const baseline = baselineOf(report());
+    const now = report();
+    now.pages.news = { widths: { 360: width(CLEAN), 768: width(CLEAN), 1280: width(CLEAN) } };
+    // Its shared controls (the overview's known small tab) are not new.
+    expect(compareToBaseline(baseline, now)).toEqual([]);
+    now.pages.news.widths[360] = width({ causes: [{ panel: "Headlines", element: "table", width_px: 700 }], overflow: 340, under24: [{ key: 'Headlines › a "More"', width: 30, height: 16, count: 1 }] });
+    expect(compareToBaseline(baseline, now)).toEqual([
+      "news 360 px: page overflow now caused by Headlines › table (700 px wide)",
+      "news 360 px: page overflows by 340 px, baseline 230 px",
+      'news 360 px: new control under 24 px: Headlines › a "More" (30×16 px)',
+      'news 360 px: new control under 44 px: Headlines › a "More" (30×16 px)',
+    ]);
+  });
+});
+
+describe("Scenario: a new overflow not in the baseline fails naming page, viewport and element", () => {
   const baseline = baselineOf(report());
 
   test("today's failures pass", () => {
     expect(compareToBaseline(baseline, report())).toEqual([]);
   });
 
-  test("a control added under 24 px at 390 px fails naming the control", () => {
+  test("a control added under 24 px at 768 px fails naming the page and the control", () => {
     const now = report();
-    now.widths[390].controls.under_24_kinds.push({ key: 'Open positions › button "Hide"', width: 40, height: 18, count: 1 });
-    expect(compareToBaseline(baseline, now)).toEqual(['390 px: new control under 24 px: Open positions › button "Hide" (40×18 px)']);
+    now.pages.overview.widths[768].controls.under_24_kinds.push({ key: 'Open positions › button "Hide"', width: 40, height: 18, count: 1 });
+    expect(compareToBaseline(baseline, now)).toEqual(['overview 768 px: new control under 24 px: Open positions › button "Hide" (40×18 px)']);
   });
 
   test("more rows of a known control are not a regression (demo data varies)", () => {
     const now = report();
-    now.widths[390].controls.under_24_kinds[0].count = 40;
+    now.pages.overview.widths[768].controls.under_24_kinds[0].count = 40;
     expect(compareToBaseline(baseline, now)).toEqual([]);
   });
 
   test("a new overflow cause, more overflow, a taller header, a new title, a dialog that stops fitting all fail", () => {
     const now = report({
-      causes: [...report().widths[360].overflow.causes, { panel: "Activity", element: "panel", width_px: 500 }],
+      causes: [WORKING_ORDERS, { panel: "Activity", element: "panel", width_px: 500 }],
       overflow: 230 + 17,
       header: 420 + 25,
       titles: ["Header › LOOP STALLED"],
       fits: false,
     });
     const problems = compareToBaseline(baseline, now);
-    expect(problems).toContain("360 px: page overflow now caused by Activity › panel (500 px wide)");
-    expect(problems).toContain("360 px: page overflows by 247 px, baseline 230 px");
-    expect(problems).toContain("768 px: header 445 px tall, baseline 420 px");
-    expect(problems).toContain("390 px: new hover-only explanation (title): Header › LOOP STALLED");
+    expect(problems).toContain("overview 360 px: page overflow now caused by Activity › panel (500 px wide)");
+    expect(problems).toContain("overview 360 px: page overflows by 247 px, baseline 230 px");
+    expect(problems).toContain("overview 768 px: header 445 px tall, baseline 420 px");
+    expect(problems).toContain("overview 1280 px: new hover-only explanation (title): Header › LOOP STALLED");
     expect(problems).toContain("close dialog no longer fits portrait");
   });
 
@@ -143,12 +244,19 @@ describe("Scenario: no regression", () => {
     expect(compareToBaseline(baseline, report({ overflow: 230 + 16, header: 420 + 24, causes: [], fits: true }))).toEqual([]);
   });
 
-  test("a width missing from the baseline fails", () => {
-    const partial = { widths: { 360: baseline.widths[360] }, dialogs: {} };
+  test("a width missing from a recorded page fails", () => {
+    const partial = { pages: { overview: { widths: { 360: baseline.pages.overview.widths[360] } }, income: baseline.pages.income }, dialogs: {} };
     expect(compareToBaseline(partial, report())).toEqual([
-      "390 px: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)",
-      "768 px: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)",
+      "overview 768 px: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)",
+      "overview 1280 px: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)",
     ]);
+  });
+
+  test("the baseline's entries become follow-up notes: page, viewport, element", () => {
+    const notes = baselineNotes(baselineOf(report()));
+    expect(notes).toContain("overview 360 px: page overflows by 230 px, caused by Working orders (placed, not filled yet) › table");
+    expect(notes).toContain('income 1280 px: control under 24 px: Activity › button[tab] "All"');
+    expect(notes).toHaveLength(9); // overview: 3 × (overflow + control); income: 3 × control
   });
 
   test("labels are stable across demo runs: numbers become #", () => {

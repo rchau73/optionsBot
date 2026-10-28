@@ -11,7 +11,7 @@ The input for E12's prototype ("every monitor and settings screen works on a pho
 
 ## Measured in a browser (#309)
 
-`npm run test:phone` (`e2e/`, frontend/README.md "Develop") starts two `cmd/monitor-demo` bots, a production build of the monitor and headless Chromium, signs in as a throwaway admin, and measures the page at 360 × 800, 390 × 844 and 768 × 1024 and each dialog at 360 × 640 and 640 × 360. It writes `docs/responsive-measured.json` and screenshots under `test-results/phone/` (both git-ignored: demo data only, regenerated on every run), and fails only when something is worse than `e2e/phone-baseline.json`, which records today's state.
+`npm run test:phone` (`e2e/`, frontend/README.md "Develop") starts two `cmd/monitor-demo` bots, a production build of the monitor and headless Chromium, signs in as a throwaway admin, and measures every page of the menu (`lib/menu.js`) and the assistant panel opened at 360 × 800, 768 × 1024 and 1280 × 800 (#425; 390 × 844 until then) and the overview's dialogs at 360 × 640 and 640 × 360. Each page's figures are under `pages.<page>` (below, `widths.<w>` stands for `pages.<page>.widths.<w>`). It writes `docs/responsive-measured.json` and screenshots under `test-results/phone/` (both git-ignored: demo data only, regenerated on every run), and fails only when something is worse than `e2e/phone-baseline.json`, which records today's state.
 
 | Estimate above | Where the measurement is (`responsive-measured.json`) | How it is measured |
 |---|---|---|

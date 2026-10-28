@@ -1,13 +1,28 @@
-// Pure helpers of the phone-width check (#309): turn what the browser
-// measured (e2e/measure.js) into the report, and compare a report with the
-// recorded baseline. No browser, no file system: Jest tests them directly.
+// Pure helpers of the phone-width check (#309, every page since #425): the
+// pages to measure, turn what the browser measured (e2e/measure.js) into the
+// report, and compare a report with the recorded baseline. No browser, no
+// file system: Jest tests them directly.
+import { menuItems } from "../lib/menu.js";
 
-/** The widths the audit (docs/responsive-audit.md, #207) estimated. */
+/** Every page is measured at these widths (#425): a small phone, a tablet upright, a laptop. */
 export const WIDTHS = [
   { name: "360", width: 360, height: 800 }, // small Android
-  { name: "390", width: 390, height: 844 }, // iPhone 12–15
   { name: "768", width: 768, height: 1024 }, // iPad portrait
+  { name: "1280", width: 1280, height: 800 }, // laptop
 ];
+
+/** The assistant panel, measured open over the overview (it is on every signed-in page). */
+export const ASSISTANT_PAGE = { name: "assistant", path: "/", assistant: true };
+
+/**
+ * What the check measures, each { name, path, assistant }: every page of the
+ * menu (lib/menu.js — a page added there is measured without editing the
+ * check), then the assistant panel opened.
+ */
+export function viewportPages() {
+  const pages = menuItems("/").map((item) => ({ name: item.key, path: item.href, assistant: false }));
+  return [...pages, ASSISTANT_PAGE];
+}
 
 /** Where each dialog must fit: a small phone held upright and on its side. */
 export const DIALOG_VIEWPORTS = [
@@ -100,24 +115,29 @@ export function summariseDialog(viewport, box) {
   };
 }
 
-/** What the baseline keeps of a report: only what compareToBaseline reads. */
+/** What the baseline keeps of one width's measurement: only what compareToBaseline reads. */
+function widthBaseline(w) {
+  return {
+    overflow_px: w.overflow.overflow_px,
+    overflow_causes: w.overflow.causes.map(causeKey).sort(),
+    [`under_${TARGET_AA}`]: w.controls[`under_${TARGET_AA}_kinds`].map((k) => k.key),
+    [`under_${TARGET_AAA}`]: w.controls[`under_${TARGET_AAA}_kinds`].map((k) => k.key),
+    title_only: w.title_only.kinds,
+    header_height_px: w.header_height_px,
+  };
+}
+
+/** What the baseline keeps of a report: each page's widths, and whether each dialog fit. */
 export function baselineOf(report) {
-  const widths = {};
-  for (const [name, w] of Object.entries(report.widths)) {
-    widths[name] = {
-      overflow_px: w.overflow.overflow_px,
-      overflow_causes: w.overflow.causes.map(causeKey).sort(),
-      [`under_${TARGET_AA}`]: w.controls[`under_${TARGET_AA}_kinds`].map((k) => k.key),
-      [`under_${TARGET_AAA}`]: w.controls[`under_${TARGET_AAA}_kinds`].map((k) => k.key),
-      title_only: w.title_only.kinds,
-      header_height_px: w.header_height_px,
-    };
+  const pages = {};
+  for (const [page, p] of Object.entries(report.pages)) {
+    pages[page] = { widths: Object.fromEntries(Object.entries(p.widths).map(([w, m]) => [w, widthBaseline(m)])) };
   }
   const dialogs = {};
   for (const [name, d] of Object.entries(report.dialogs ?? {})) {
     dialogs[name] = Object.fromEntries(Object.entries(d).map(([vp, m]) => [vp, { fits: m.fits }]));
   }
-  return { widths, dialogs };
+  return { pages, dialogs };
 }
 
 function causeKey(c) {
@@ -125,38 +145,65 @@ function causeKey(c) {
 }
 
 /**
- * Every way `report` is worse than `baseline`, one sentence each naming what
- * got worse; [] when nothing did. Today's failures are in the baseline and
- * pass; only something new fails: a new cause of page overflow or more
- * overflow, a new kind of control under 24 or 44 px, a new hover-only
- * explanation, a taller header, a dialog that no longer fits.
+ * What a page missing from the baseline is held to at one width: what the
+ * recorded pages accept there (the shared header, menu bar and panels), their
+ * largest overflow and header. So a page added to the menu is checked at once:
+ * a new cause of overflow or a new small control on it fails.
+ */
+function sharedBaseline(baseline, width) {
+  const all = Object.values(baseline.pages ?? {})
+    .map((p) => p.widths?.[width])
+    .filter(Boolean);
+  const union = (field) => [...new Set(all.flatMap((b) => b[field] ?? []))].sort();
+  return {
+    overflow_px: Math.max(0, ...all.map((b) => b.overflow_px)),
+    overflow_causes: union("overflow_causes"),
+    [`under_${TARGET_AA}`]: union(`under_${TARGET_AA}`),
+    [`under_${TARGET_AAA}`]: union(`under_${TARGET_AAA}`),
+    title_only: union("title_only"),
+    header_height_px: Math.max(0, ...all.map((b) => b.header_height_px)),
+  };
+}
+
+/**
+ * Every way `report` is worse than `baseline`, one sentence each naming the
+ * page, the viewport and what got worse; [] when nothing did. Today's failures
+ * are in the baseline and pass; only something new fails: a new cause of page
+ * overflow or more overflow, a new kind of control under 24 or 44 px, a new
+ * hover-only explanation, a taller header, a dialog that no longer fits. A
+ * page missing from the baseline is held to what the recorded pages accept
+ * (sharedBaseline); a width missing from a recorded page fails.
  */
 export function compareToBaseline(baseline, report) {
   const problems = [];
-  for (const [name, w] of Object.entries(report.widths)) {
-    const base = baseline.widths?.[name];
-    if (!base) {
-      problems.push(`${name} px: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)`);
-      continue;
-    }
-    for (const c of w.overflow.causes) {
-      if (!base.overflow_causes.includes(causeKey(c))) problems.push(`${name} px: page overflow now caused by ${causeKey(c)} (${c.width_px} px wide)`);
-    }
-    if (w.overflow.overflow_px > base.overflow_px + OVERFLOW_TOLERANCE_PX) {
-      problems.push(`${name} px: page overflows by ${w.overflow.overflow_px} px, baseline ${base.overflow_px} px`);
-    }
-    for (const limit of [TARGET_AA, TARGET_AAA]) {
-      const known = new Set(base[`under_${limit}`]);
-      for (const k of w.controls[`under_${limit}_kinds`]) {
-        if (!known.has(k.key)) problems.push(`${name} px: new control under ${limit} px: ${k.key} (${k.width}×${k.height} px)`);
+  for (const [page, p] of Object.entries(report.pages)) {
+    const recorded = baseline.pages?.[page];
+    for (const [name, w] of Object.entries(p.widths)) {
+      const at = `${page} ${name} px`;
+      const base = recorded ? recorded.widths?.[name] : sharedBaseline(baseline, name);
+      if (!base) {
+        problems.push(`${at}: not in the baseline (record it with UPDATE_PHONE_BASELINE=1)`);
+        continue;
       }
-    }
-    const titles = new Set(base.title_only);
-    for (const t of w.title_only.kinds) {
-      if (!titles.has(t)) problems.push(`${name} px: new hover-only explanation (title): ${t}`);
-    }
-    if (w.header_height_px > base.header_height_px + HEADER_TOLERANCE_PX) {
-      problems.push(`${name} px: header ${w.header_height_px} px tall, baseline ${base.header_height_px} px`);
+      for (const c of w.overflow.causes) {
+        if (!base.overflow_causes.includes(causeKey(c))) problems.push(`${at}: page overflow now caused by ${causeKey(c)} (${c.width_px} px wide)`);
+      }
+      if (w.overflow.overflow_px > base.overflow_px + OVERFLOW_TOLERANCE_PX) {
+        problems.push(`${at}: page overflows by ${w.overflow.overflow_px} px, baseline ${base.overflow_px} px`);
+      }
+      for (const limit of [TARGET_AA, TARGET_AAA]) {
+        const known = new Set(base[`under_${limit}`]);
+        for (const k of w.controls[`under_${limit}_kinds`]) {
+          if (!known.has(k.key)) problems.push(`${at}: new control under ${limit} px: ${k.key} (${k.width}×${k.height} px)`);
+        }
+      }
+      const titles = new Set(base.title_only);
+      for (const t of w.title_only.kinds) {
+        if (!titles.has(t)) problems.push(`${at}: new hover-only explanation (title): ${t}`);
+      }
+      if (w.header_height_px > base.header_height_px + HEADER_TOLERANCE_PX) {
+        problems.push(`${at}: header ${w.header_height_px} px tall, baseline ${base.header_height_px} px`);
+      }
     }
   }
   for (const [name, d] of Object.entries(report.dialogs ?? {})) {
@@ -165,4 +212,20 @@ export function compareToBaseline(baseline, report) {
     }
   }
   return problems;
+}
+
+/**
+ * The baseline's overflows and controls under 24 px, one line each naming
+ * page, viewport and element: the follow-up notes of the PR that records it
+ * (#425). The spec prints them after recording.
+ */
+export function baselineNotes(baseline) {
+  const notes = [];
+  for (const [page, p] of Object.entries(baseline.pages ?? {})) {
+    for (const [w, b] of Object.entries(p.widths ?? {})) {
+      for (const c of b.overflow_causes) notes.push(`${page} ${w} px: page overflows by ${b.overflow_px} px, caused by ${c}`);
+      for (const k of b[`under_${TARGET_AA}`]) notes.push(`${page} ${w} px: control under ${TARGET_AA} px: ${k}`);
+    }
+  }
+  return notes;
 }
