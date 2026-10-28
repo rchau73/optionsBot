@@ -59,6 +59,7 @@ export const STATUS_LABELS = {
   in_review: "In review",
   filed: "Filed",
   fixed: "Fixed",
+  not_planned: "Not planned",
   not_a_bug: "Not a bug",
   duplicate: "Duplicate",
   needs_info: "Needs info",

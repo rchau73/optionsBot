@@ -34,7 +34,7 @@ import re
 import sys
 
 FIELDS = ("ts", "agent", "run_id", "issue", "pr", "event", "outcome", "detail", "log", "commit")
-AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky", "backup", "usage")
+AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky", "backup", "usage", "requests")
 EVENTS = ("start", "end")
 DETAIL_MAX = 200
 ABANDONED = "abandoned"
@@ -43,7 +43,7 @@ ABANDONED = "abandoned"
 # the weekly metrics' "Runs" p90. A deploy may build twice (a rollback) with a
 # 5 min health check each; the flaky hunt stops itself at 30 min.
 TIME_LIMIT_MIN = {"dev": 120, "review": 60, "pm": 30, "pm_answer": 30, "sme": 60, "pr_gate": 20,
-                  "deploy": 30, "flaky": 45, "backup": 30, "usage": 20}
+                  "deploy": 30, "flaky": 45, "backup": 30, "usage": 20, "requests": 30}
 RUN_PID = re.compile(r"^[a-z_]+-\d{8}T\d{6}Z-(\d+)-\d+$")  # lib.sh run_begin: <agent>-<time>-<pid>-<n>
 
 
