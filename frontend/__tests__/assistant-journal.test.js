@@ -10,6 +10,7 @@ import {
   JOURNAL_PASSAGES,
   JOURNAL_TOKENS,
   answerQuestion,
+  explainPassages,
   journalPassages,
   passageTokens,
   selectJournal,
@@ -112,6 +113,17 @@ describe("selectJournal", () => {
       Array.from({ length: 10 }, (_, i) => item(i + 1, "filled", "entry", NOW - i * 3600_000, `Sold leg ${i}.`)),
     );
     expect(selectJournal("anything", many, { maxPassages: 3 }).map((p) => p.seq)).toEqual([8, 9, 10]);
+  });
+
+  test("a Why? keeps the facts of the trade asked about, outside the budget", () => {
+    const why = explainPassages("btc", {
+      event: { seq: 2, event: "closed", at: new Date(NOW - 6 * 86400_000).toISOString(), plain: "Bought back the put: delta exit." },
+      rule: "delta_exit",
+      related: [],
+    });
+    const sent = selectJournal("zxqv", [...why, ...passages], { maxPassages: 1, maxTokens: 1 });
+    expect(sent.map((p) => p.id)).toEqual(["journal:btc/2"]);
+    expect(sent[0].pinned).toBe(true);
   });
 });
 

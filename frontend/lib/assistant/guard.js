@@ -3,7 +3,7 @@
 // answer must cite a passage it was given, every number in it must come from
 // what it cites, and it must not advise or forecast. Pure: no model, no
 // network. __tests__/assistant-guard.test.js runs the Go tests' cases on it.
-import { ADVICE_PATTERNS, DONT_KNOW, FALLBACK_REPLY, FORECAST_PATTERNS, NEGATION_PATTERNS, REFUSAL } from "./phrases";
+import { ADVICE_NEGATION_PATTERNS, ADVICE_PATTERNS, DONT_KNOW, FALLBACK_REPLY, FORECAST_PATTERNS, NEGATION_PATTERNS, REFUSAL } from "./phrases";
 
 export const REASON_NO_CITATION = "no_citation";
 export const REASON_UNKNOWN_CITATION = "unknown_citation";
@@ -12,6 +12,7 @@ export const REASON_ADVICE = "advice";
 export const REASON_FORECAST = "forecast";
 
 const advice = ADVICE_PATTERNS.map((p) => new RegExp(p, "i"));
+const adviceNegations = ADVICE_NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
 const forecasts = FORECAST_PATTERNS.map((p) => new RegExp(p, "i"));
 const negations = NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
 
@@ -85,8 +86,10 @@ export function check(answer, passages) {
     if (!grounded.has(n.key) && !(n.isValue && matchesValue(n.value, values))) add(REASON_UNGROUNDED_NUMBER, n.text);
   }
 
+  let unadvised = text;
+  for (const re of adviceNegations) unadvised = unadvised.replace(re, " ");
   for (const re of advice) {
-    const m = text.match(re);
+    const m = unadvised.match(re);
     if (m) add(REASON_ADVICE, m[0].trim());
   }
   let unnegated = text;

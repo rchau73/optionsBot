@@ -112,16 +112,17 @@ describe("Scenario: the Overview reads as a dashboard", () => {
       .map((h) => h.textContent);
     expect(titles.some((t) => /^Activity$/.test(t) || /Account & collateral/.test(t))).toBe(false);
     expect(within(desktop).queryByTestId("activity-list")).toBeNull();
-    expect(within(desktop).getByRole("button", { name: /Open positions/ })).toHaveAttribute("aria-expanded", "false");
-    expect(within(desktop).getByRole("link", { name: "Details (pro) →" })).toHaveAttribute("href", "/?view=details");
+    // #405: the detail panels are on their own page, linked under the bands.
+    expect(within(desktop).queryByRole("button", { name: /Open positions/ })).toBeNull();
+    expect(within(desktop).getByRole("link", { name: "Details (pro) →" })).toHaveAttribute("href", "/details");
   });
 
-  test("the dashboards come before Details (pro)", () => {
+  // #405: Details (pro) is its own page now.
+  test("no Details (pro) section on the overview", () => {
     mockBots([bot()]);
     render(<Monitor role="manager" />);
-    const dash = screen.getByRole("region", { name: "BTC dashboard" });
-    const details = document.getElementById("details");
-    expect(dash.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.getElementById("details")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open positions/ })).toBeNull();
   });
 });
 

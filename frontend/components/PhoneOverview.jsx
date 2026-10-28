@@ -20,17 +20,17 @@ import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 const LINK = "inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2";
 
 /**
- * bots: every bot; selected/onSelect: the bot shown (by name); details and
- * onDetails: whether the full monitor is shown below (the menu's Details).
+ * bots: every bot; selected/onSelect: the bot shown (by name). Its menu opens
+ * the other views, Details (pro) included (/details, #405).
  */
-export default function PhoneOverview({ bots, selected, onSelect, details = false, onDetails }) {
+export default function PhoneOverview({ bots, selected, onSelect }) {
   const bot = bots.find((b) => b.name === selected) ?? bots[0];
   if (!bot) return null;
   const s = bot.summary;
   const failure = bot.summaryError ?? bot.error;
   return (
     <div className="space-y-3 pb-3" data-testid="phone-overview">
-      <PhoneHeader bots={bots} bot={bot} onSelect={onSelect} details={details} onDetails={onDetails} />
+      <PhoneHeader bots={bots} bot={bot} onSelect={onSelect} />
       <div className="space-y-3 px-3">
         {isFirstDay(bot) ? (
           <FirstDayPanel bot={bot} headingLevel={1} />
@@ -58,7 +58,7 @@ export default function PhoneOverview({ bots, selected, onSelect, details = fals
   );
 }
 
-function PhoneHeader({ bots, bot, onSelect, details, onDetails }) {
+function PhoneHeader({ bots, bot, onSelect }) {
   const [menu, setMenu] = useState(false);
   const menuId = useId();
   const live = bot.status?.environment === "live";
@@ -111,9 +111,9 @@ function PhoneHeader({ bots, bot, onSelect, details, onDetails }) {
           <Link href={`/worst-case?bot=${encodeURIComponent(bot.name)}`} className={LINK}>
             Worst case right now
           </Link>
-          <button type="button" aria-pressed={details} onClick={() => onDetails?.(!details)} className={clsx(LINK, "text-left")}>
-            {details ? "Hide details" : "Details"}
-          </button>
+          <Link href={`/details?bot=${encodeURIComponent(bot.name)}`} className={LINK}>
+            Details (pro)
+          </Link>
         </nav>
       ) : null}
     </header>

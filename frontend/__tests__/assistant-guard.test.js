@@ -60,6 +60,7 @@ test.each([
   ["advice: good time", "It is a good time to sell options.", [srcIdea], REASON_ADVICE],
   ["advice: you should", "You should sell more puts.", [srcParams], REASON_ADVICE],
   ["not advice: the bot does not sell", "In a down-trend the bot does not sell puts.", [srcRegimes], ""],
+  ["not advice: declining to advise (#422)", "I can explain how a manual close works, but I can't say whether you should use it.", [srcIdea], ""],
   ["not advice: puts gain", "Puts gain value when the price falls below the strike.", ["glossary:put"], ""],
   ["forecast: price", "Bitcoin will go up after the expiry.", [srcIdea], REASON_FORECAST],
   ["forecast: return", "The expected return of the strategy is high.", [srcIdea], REASON_FORECAST],

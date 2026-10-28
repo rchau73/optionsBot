@@ -50,21 +50,28 @@ export function summarizeTrades(trades) {
     const m = new Map();
     for (const t of closes) {
       const k = key(t);
-      const g = m.get(k) ?? { key: k, closes: 0, wins: 0, pnlUsd: 0 };
+      const g = m.get(k) ?? { key: k, closes: 0, wins: 0, pnlUsd: 0, coins: {} };
       g.closes++;
       g.wins += (t.pnl ?? 0) > 0 ? 1 : 0;
       g.pnlUsd += t.pnl_usd ?? 0;
+      g.coins[t.unit] = (g.coins[t.unit] ?? 0) + (t.pnl ?? 0); // per coin: coins are never added together
       m.set(k, g);
     }
     return [...m.values()].sort((a, b) => a.pnlUsd - b.pnlUsd);
   };
   const byCoin = {};
-  for (const t of closes) byCoin[t.unit] = (byCoin[t.unit] ?? 0) + (t.pnl ?? 0);
+  const usdByCoin = {};
+  for (const t of closes) {
+    byCoin[t.unit] = (byCoin[t.unit] ?? 0) + (t.pnl ?? 0);
+    usdByCoin[t.unit] = (usdByCoin[t.unit] ?? 0) + (t.pnl_usd ?? 0);
+  }
   return {
     opens: opens.length,
     closes: closes.length,
     realisedUsd: sum(closes, (t) => t.pnl_usd),
     realisedByCoin: byCoin,
+    realisedUsdByCoin: usdByCoin, // each coin's closes in USD at their own spot
+    coins: Object.keys(byCoin).sort(),
     wins: wins.length,
     losses: losses.length,
     winRate: closes.length ? (wins.length / closes.length) * 100 : null,

@@ -77,8 +77,12 @@ func Check(a Answer, sources []helpkb.Passage) Verdict {
 		}
 	}
 
+	unadvised := text
+	for _, re := range adviceNegations {
+		unadvised = re.ReplaceAllString(unadvised, " ")
+	}
 	for _, re := range advicePhrases {
-		if m := re.FindString(text); m != "" {
+		if m := re.FindString(unadvised); m != "" {
 			v.add(ReasonAdvice, strings.TrimSpace(m))
 		}
 	}

@@ -60,17 +60,26 @@ describe("held legs helpers", () => {
 });
 
 describe("HeldLegs", () => {
-  test("shows the rule, the regime and both release levels side by side", () => {
+  // #405: one row per missing leg — leg, held by, market now, spot vs flip + buffer, released when.
+  test("shows the leg, the hold, the market now, spot vs flip + buffer and when it is released", () => {
     render(<HeldLegs bots={[withHeld([regimeSide, shed])]} />);
     const row = screen.getByTestId("held-eth:st-1:put");
-    expect(within(row).getByText("regime side")).toBeInTheDocument();
-    expect(within(row).getByText(/no new puts/)).toBeInTheDocument();
+    expect(row).toHaveTextContent("30d · 0.16Δ · 30 Oct · with ETH-30OCT26-2800-C");
+    expect(within(row).getByText("regime side")).toHaveAttribute("title", expect.stringMatching(/no new puts/));
     expect(within(row).getByText(/bias up · SMA bear/)).toBeInTheDocument();
-    expect(within(row).getByText("not shed by GEX")).toBeInTheDocument();
+    expect(row).toHaveTextContent("spot $2,545 · flip $2,476 · +buffer $2,540");
+    expect(within(row).getByTestId("flip-bar")).toHaveAttribute("aria-hidden", "true");
+    expect(within(row).getByText(/^confirmed negative gamma regime in a bear trend: no new puts$/)).toBeInTheDocument(); // released when: the rule's words
 
     const anchored = screen.getByTestId("held-eth:st-2:put");
     expect(within(anchored).getByText("GEX anchor")).toBeInTheDocument();
-    expect(within(anchored).getByText(/flip \$2,697 · 0\/2 snapshots · or 24 h non-negative/)).toBeInTheDocument();
+    expect(anchored).toHaveTextContent(/spot above \$2,767 \(\+8\.7%\) on 2 snapshots \(0\/2\), or 24 h non-negative · shed at flip \$2,697/);
+  });
+
+  test("a stopped leg's release names its cooldown time", () => {
+    const stopped = { ...regimeSide, strangle_id: "st-4", rule: "stopped", reason: "stopped 2026-10-12", cooldown_until: "2026-10-15T16:00:00Z" };
+    render(<HeldLegs bots={[withHeld([stopped])]} />);
+    expect(screen.getByTestId("held-eth:st-4:put")).toHaveTextContent("not before 2026-10-15 13:00:00 BRT");
   });
 
   test("a leg shed under the bias rule shows its cooldown and the snapshots counted", () => {
@@ -85,8 +94,7 @@ describe("HeldLegs", () => {
     };
     render(<HeldLegs bots={[withHeld([biasShed])]} />);
     const row = screen.getByTestId("held-eth:st-3:call");
-    expect(within(row).getByText(/cooldown 2026-10-12 13:00:00 BRT/)).toBeInTheDocument();
-    expect(within(row).getByText(/then bias off the side 1\/2 snapshots/)).toBeInTheDocument();
+    expect(row).toHaveTextContent(/cooldown until 2026-10-12 13:00:00 BRT, then the bias off the side on 2 snapshots \(1\/2\)/);
   });
 
   test("empty state", () => {

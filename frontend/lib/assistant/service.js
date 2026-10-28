@@ -85,7 +85,9 @@ export function passageTokens(p) {
  * (newest first if they alone fill the budget), then the other facts the
  * question matches best — the help's BM25 over each one's sentence and rule
  * word — and the decisions within 30 min of a trade sent, while the budget
- * lasts. Oldest first, as the journal reads.
+ * lasts. A pinned passage (the facts of the trade a "Why?" asks about,
+ * explainPassages) always goes first, outside the budget. Oldest first, as
+ * the journal reads.
  */
 export function selectJournal(question, passages, { maxPassages = JOURNAL_PASSAGES, maxTokens = JOURNAL_TOKENS } = {}) {
   const picked = [];
@@ -97,7 +99,12 @@ export function selectJournal(question, passages, { maxPassages = JOURNAL_PASSAG
     tokens += cost;
     return true;
   };
-  const all = passages ?? [];
+  const pinned = (passages ?? []).filter((x) => x.pinned);
+  for (const p of pinned) {
+    picked.push(p);
+    tokens += passageTokens(p);
+  }
+  const all = (passages ?? []).filter((x) => !x.pinned);
   for (const p of all.filter((x) => x.trade).sort((a, b) => b.seq - a.seq)) {
     if (!take(p)) break;
   }
@@ -117,6 +124,64 @@ export function selectJournal(question, passages, { maxPassages = JOURNAL_PASSAG
     }
   }
   return picked.sort((a, b) => a.seq - b.seq);
+}
+
+/** "spot 67,000, DVOL 52.1, regime negative" — the market an explanation recorded, as words. */
+function marketWords(m) {
+  if (!m) return "";
+  const parts = [
+    ["spot", m.spot],
+    ["DVOL", m.dvol],
+    ["IV percentile", m.iv_percentile],
+    ["GEX regime", m.gex_regime],
+    ["gamma flip", m.gamma_flip],
+    ["flip buffer %", m.flip_buffer_pct],
+    ["trend", m.trend],
+    ["delta", m.delta],
+    ["bid", m.bid],
+    ["ask", m.ask],
+    ["mid", m.mid],
+  ].filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== 0);
+  return parts.map(([k, v]) => `${k} ${v}`).join(", ");
+}
+
+/**
+ * The facts of one journal event (/api/explain, #314) as citable passages:
+ * the event itself — its plain sentence, rule, detail and recorded market —
+ * then its related events, each with the same "journal:<bot>/<seq>" id as
+ * journalPassages, all pinned. [] for no explanation.
+ */
+export function explainPassages(bot, explanation) {
+  const e = explanation?.event;
+  if (!e || e.seq == null) return [];
+  const market = marketWords(explanation.market);
+  const text = [
+    e.plain,
+    explanation.rule ? `Rule: ${explanation.rule}.` : "",
+    explanation.detail ? `Detail: ${explanation.detail}.` : "",
+    market ? `Market then: ${market}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const own = {
+    id: `journal:${bot}/${e.seq}`,
+    source: `journal:${bot}`,
+    title: `${bot} journal: ${e.event} at ${e.at}`,
+    text,
+    trade: TRADE_EVENTS.has(e.event),
+    reason: typeof explanation.rule === "string" ? explanation.rule : "",
+    seq: Number(e.seq),
+    atMs: Date.parse(e.at),
+    firstMs: Date.parse(e.at),
+  };
+  // Pinned (#417): selectJournal always sends the facts of the trade asked about.
+  return [own, ...journalPassages(bot, explanation.related)].map((p) => ({ ...p, pinned: true }));
+}
+
+/** The passages of both lists, each id once: the first list's copy wins. */
+export function mergePassages(first, second) {
+  const ids = new Set(first.map((p) => p.id));
+  return [...first, ...second.filter((p) => !ids.has(p.id))];
 }
 
 function outcomeOf(reply, verdict) {

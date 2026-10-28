@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { POST as ask } from "@/app/api/assistant/route";
+import { GET as getState, POST as ask } from "@/app/api/assistant/route";
 import { POST as flag } from "@/app/api/assistant/flag/route";
 import { readAnswers } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
@@ -28,6 +28,7 @@ const request = (url, body, headers = {}) =>
 const askQ = (body, headers) => ask(request("/api/assistant", body, headers));
 const flagA = (body, headers) => flag(request("/api/assistant/flag", body, headers));
 const logged = () => [...readAnswers(file).values()];
+const state = (headers = {}) => getState(new Request("http://monitor/api/assistant", { headers: { host: "monitor", cookie, ...headers } }));
 
 /** A model that always replies `reply` and records what it was asked. */
 function fakeModel(reply) {
@@ -170,6 +171,72 @@ describe("the request", () => {
     expect(body.outcome).toBe("answered");
     expect(body.citations).toEqual([{ id: "journal:btc/41", source: "journal:btc", title: "btc journal: closed at 2026-10-27T10:00:00Z" }]);
     expect(logged()[0].sources).toContain("journal:btc/41");
+  });
+
+  // #408: the panel shows "n of 30 questions left this hour".
+  test("every answer carries the questions left this hour; a 429 says when and how many", async () => {
+    expect((await (await askQ({ question: "what is a stop-loss" })).json()).remaining).toBe(QUESTIONS_PER_HOUR - 1);
+    expect((await (await state()).json())).toEqual({ enabled: true, remaining: QUESTIONS_PER_HOUR - 1, per_hour: QUESTIONS_PER_HOUR });
+    for (let i = 1; i < QUESTIONS_PER_HOUR; i++) await askQ({ question: "what is a stop-loss" });
+    const res = await askQ({ question: "what is a stop-loss" });
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body).toMatchObject({ remaining: 0, retry_after: Number(res.headers.get("retry-after")) });
+  });
+
+  test("GET answers 503 while the assistant is off and 401 without a session", async () => {
+    setAssistantModel(null);
+    const res = await state();
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ enabled: false });
+    expect((await state({ cookie: "" })).status).toBe(401);
+  });
+
+  // #408 Why?: the trade's own facts (GET /api/explain) are sources too.
+  test("with bot and seq, the event's facts from /api/explain are sources the answer may cite", async () => {
+    process.env.BOT_APIS = "btc=http://bot-btc:8081";
+    const explanation = {
+      event: { seq: 7, event: "closed", at: "2026-10-01T10:00:00Z", plain: "The bot bought back the put: its stop-loss fired at 2× the premium." },
+      rule: "stop_loss",
+      detail: "mark 0.024 ≥ 2.0 × premium 0.012",
+      market: { spot: 61000, dvol: 55.2, gex_regime: "negative" },
+      related: [{ seq: 6, event: "submitted", at: "2026-10-01T09:59:00Z", plain: "The bot sent a buy order for the put." }],
+      source: "journal",
+    };
+    const fetchSpy = jest.spyOn(global, "fetch").mockImplementation(async (url) =>
+      url.includes("/api/explain") ? Response.json(explanation) : Response.json({ events: [] }),
+    );
+    const why = fakeModel({ text: "Its stop-loss fired: mark 0.024 against premium 0.012.", citations: ["journal:btc/7"] });
+    setAssistantModel(why);
+    const body = await (await askQ({ question: "Why did BTC close the put?", bot: "btc", seq: 7 })).json();
+    expect(fetchSpy).toHaveBeenCalledWith("http://bot-btc:8081/api/explain?seq=7", expect.anything());
+    // Grounded: the answer's numbers are in the event's own passage (its detail).
+    expect(body.outcome).toBe("answered");
+    expect(body.citations).toEqual([{ id: "journal:btc/7", source: "journal:btc", title: "btc journal: closed at 2026-10-01T10:00:00Z" }]);
+    const own = why.calls[0].passages.find((p) => p.id === "journal:btc/7");
+    expect(own.text).toBe(
+      "The bot bought back the put: its stop-loss fired at 2× the premium. Rule: stop_loss. Detail: mark 0.024 ≥ 2.0 × premium 0.012. " +
+        "Market then: spot 61000, DVOL 55.2, GEX regime negative.",
+    );
+    expect(logged()[0].sources).toEqual(expect.arrayContaining(["journal:btc/7", "journal:btc/6"]));
+  });
+
+  test("an event that left the bot's memory: answered from the journal and the help", async () => {
+    process.env.BOT_APIS = "btc=http://bot-btc:8081";
+    jest.spyOn(global, "fetch").mockImplementation(async (url) =>
+      url.includes("/api/explain") ? Response.json({ error: "not in recent history" }, { status: 404 }) : Response.json({ events: [] }),
+    );
+    const res = await askQ({ question: "what is a stop-loss", bot: "btc", seq: 7 });
+    expect(res.status).toBe(200);
+    expect(logged()[0].sources.some((s) => s.startsWith("journal:"))).toBe(false);
+  });
+
+  test.each([
+    ["a seq without a bot", { question: "why", seq: 7 }],
+    ["a seq that is not a positive integer", { question: "why", bot: "btc", seq: "7" }],
+    ["a zero seq", { question: "why", bot: "btc", seq: 0 }],
+  ])("%s is refused (400)", async (_name, body) => {
+    expect((await askQ(body)).status).toBe(400);
   });
 
   test("an unknown bot gets 404", async () => {

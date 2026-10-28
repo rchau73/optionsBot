@@ -40,12 +40,16 @@ export const DENY = [
   "forecast",
 ];
 
-/** What the monitor renders, read from components/Monitor.jsx. */
-export function monitorPanels(src = fs.readFileSync(path.join(FRONTEND, "components", "Monitor.jsx"), "utf8")) {
+/** The monitor's pages: the overview and Details (pro) (#405). */
+export const MONITOR_SOURCES = ["Monitor.jsx", "DetailsPage.jsx"];
+const readSources = () => MONITOR_SOURCES.map((f) => fs.readFileSync(path.join(FRONTEND, "components", f), "utf8")).join("\n");
+
+/** What the monitor renders, read from components/Monitor.jsx and components/DetailsPage.jsx. */
+export function monitorPanels(src = readSources()) {
   const storageKeys = [...src.matchAll(/storageKey="([^"]+)"/g)].map((m) => m[1]);
-  const titles = [...src.matchAll(/<Panel\b[^>]*?\stitle="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+  const titles = [...src.matchAll(/<(?:Panel|OneLine)\b[^>]*?\stitle="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
   // Blocks rendered outside a Panel, straight in <main> or the header.
-  const blocks = ["<Header", "<BotDashboards", "<KpiStrip"].filter((tag) => src.includes(`${tag} `));
+  const blocks = ["<Header", "<BotDashboards", "<CountsLine"].filter((tag) => src.includes(`${tag} `));
   return { storageKeys, titles, blocks };
 }
 

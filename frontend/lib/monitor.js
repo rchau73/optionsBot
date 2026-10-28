@@ -2,6 +2,7 @@
 // report. No React, no fetching — everything here is unit-tested.
 
 import { formatCoin, formatNumber, formatPct, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
+import { strangleLabel } from "./details";
 
 /** Data older than this (seconds) is shown as stale. */
 export const STALE_AFTER_SEC = 5;
@@ -71,6 +72,7 @@ export function legRows(bots) {
   for (const bot of bots) {
     const unit = bot.status?.underlying ?? bot.name.toUpperCase();
     const spot = bot.status?.market?.spot;
+    const deltaExit = bot.summary?.delta_exit_threshold ?? null; // from /api/summary; null on an older bot
     for (const st of bot.positions?.strangles ?? []) {
       for (const leg of st.legs ?? []) {
         rows.push({
@@ -107,6 +109,7 @@ export function legRows(bots) {
           gamma: leg.greeks?.gamma,
           theta: leg.greeks?.theta,
           vega: leg.greeks?.vega,
+          deltaExit,
         });
       }
     }
@@ -180,6 +183,8 @@ export function filterRows(rows, filters = {}) {
 }
 
 export const GROUP_KEYS = {
+  // One strangle (its slot and expiry): "BTC · 25-day slot · expires 13 Nov · 16 days" (Details (pro), #405).
+  strangle: (r) => strangleLabel(r),
   strategy: (r) => `${r.bot.toUpperCase()} · ${r.strategyId}`,
   slot: (r) => `${r.bot.toUpperCase()} · ${r.slot}`,
   expiry: (r) => `${r.bot.toUpperCase()} · ${r.instrument.split("-")[1] ?? "?"}`,
@@ -211,6 +216,9 @@ export function groupRows(rows, by = "strategy") {
       legs: g.rows.length,
       unit: single,
       pnl: single ? sum(g.rows, "pnl") : null,
+      pnlByCoin: pnlByCoin(g.rows), // { BTC: …, ETH: … }: coins are never added together
+      bot: g.rows[0].bot,
+      strangleId: g.rows[0].strangleId,
       pnlUsd,
       roiPct: premiumUsd > 0 ? (pnlUsd / premiumUsd) * 100 : null,
       greeks: positionGreeks(g.rows, single),
@@ -406,6 +414,12 @@ export function positionGreeks(rows, unit) {
     theta: total("theta"),
     vega: total("vega"),
   };
+}
+
+function pnlByCoin(rows) {
+  const out = {};
+  for (const r of rows) if (isNumber(r.pnl)) out[r.unit] = (out[r.unit] ?? 0) + r.pnl;
+  return out;
 }
 
 function sum(rows, field) {

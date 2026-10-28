@@ -33,6 +33,8 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
 | `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
+| `details_section_jump` | a link of the Details (pro) page's section bar is followed (#405) | `section` | Q3 |
+| `details_trade_expand` | a trade row of Details (pro) is opened to its detail row (#405) | — | Q3 |
 | `tip_opened` | a contextual tip (E11) is shown for longer than 1 s | `tip_id`, `screen` | Q5 |
 | `video_played` | a how-to video starts | `video_id` | Q5 |
 | `video_completed` | a how-to video reaches 90 % | `video_id`, `watched_ms` | Q5 |
@@ -49,6 +51,9 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `survey_shown` | an in-product survey card or the exit question is shown (`surveys.md`: frequency caps, never in the first 14 days) | `survey_id` | Q8 |
 | `survey_answered` | the person sends a survey: NPS with at least a score, the four-answers card or the exit reason; free text never travels here | `survey_id`, `score`, `reason_code`, `came_for`, `hardest_to_find` | Q4, Q8 |
 | `survey_dismissed` | the card is closed or the exit question skipped (one click) without an answer | `survey_id` | Q8 |
+| `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
+| `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
+| `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
 | `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
 | `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
 
@@ -81,6 +86,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `open_ms` | duration | milliseconds, capped at 1 h |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
+| `section` | enum | `positions`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
 | `tip_id` | catalogue id | `tip.` + a key of `frontend/content/glossary.json` in letters and `_` (e.g. `tip.gamma_flip`, `tip.stop_loss`); an id not in the glossary is refused (#300); never generated from data |
 | `video_id` | catalogue id | a key of `frontend/content/videos.json` (e.g. `video.read_summary`); an id not in it is refused (#300) |
 | `watched_ms` | duration | milliseconds, capped at 10 min |
@@ -97,6 +103,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `other` (`surveys.md` §4) |
 | `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
+| `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
 | `unit` | enum | `coin`, `usd` (the unit picked) |
 | `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
 
