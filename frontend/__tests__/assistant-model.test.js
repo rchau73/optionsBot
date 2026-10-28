@@ -50,3 +50,11 @@ test.each([
 ])("parseReply: %s has no usable citation", (_name, body, want) => {
   expect(parseReply(body)).toEqual(want);
 });
+
+test("parseReply keeps only the id a model copies from the sources list (#412)", () => {
+  const body = {
+    stop_reason: "end_turn",
+    content: [{ type: "text", text: '{"answer":"a","citations":["[glossary:delta/1]"," glossary:theta ","[glossary:dvol/1] dvol","[x"]}' }],
+  };
+  expect(parseReply(body).citations).toEqual(["glossary:delta/1", "glossary:theta", "glossary:dvol/1", "[x"]);
+});
