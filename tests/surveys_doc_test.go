@@ -40,7 +40,7 @@ func docSection(t *testing.T, doc, n string) string {
 func TestSurveys_EachHasWordingTriggerCapAndFields(t *testing.T) {
 	doc := readSurveys(t)
 	for _, s := range []struct{ section, name, cap string }{
-		{"1", "NPS", "once per 90 days"},
+		{"1", "NPS", "once per 30 days"},
 		{"2", "four answers", "once per 30 days"},
 		{"3", "exit", "once per leaving"},
 	} {

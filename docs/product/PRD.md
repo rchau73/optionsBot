@@ -182,7 +182,7 @@ Proof points available today: the decision journal (every action with its reason
 <!-- epic: {"id": "E13", "status": "approved", "rank": 6, "rule_areas": [], "ui": true} -->
 **Outcome:** we know how people use the product and why they stay or leave: weekly engagement, cohort retention and churn reasons are reported without manual work.
 **Why:** excelling at understanding customer pains is how we keep them (product owner on #149).
-**Scope:** an event plan and instrumentation of the monitor (screens, actions, help used); dashboards and cohort reports on engagement and retention; in-product surveys (NPS, short "why" questions) and an exit survey; alerts when engagement or a key flow drops; privacy by design (consent, no secrets or amounts in events, data protection review).
+**Scope:** an event plan and instrumentation of the monitor (screens, actions, help used); dashboards and cohort reports on engagement and retention, including an admin-only Analytics page; in-product surveys (a monthly, optional NPS in the assistant panel, short "why" questions) and an exit survey; an in-app notification centre (the bell in the menu bar): *Needs you* items (a survey waiting, a request needing more) counted on the badge, and updates (bot events that change the book, the status of a person's requests, what's new per release), in-app only, never promotional; alerts when engagement or a key flow drops; privacy by design (consent, no secrets or amounts in events, data protection review).
 **Out of scope:** selling or sharing user data; tracking outside the product.
 
 ## 10. Design
@@ -193,6 +193,7 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 |---|---|---|
 | E3 | — | needed (designer starts now that the persona is confirmed) |
 | E7, E8, E9, E10, E11, E12 | — | needed before their UI stories go to Ready |
+| E13 | https://claude.ai/artifact/BB9X65gAbafTCJWdgusQdm (admin Analytics, monthly NPS in the assistant, notification bell) | in review (`prototype:review` on the epic) |
 
 ## 11. Risks, compliance and open questions
 
@@ -218,4 +219,5 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 | 2026-10-18 | Roles admin / manager / user; the platform never handles deposits, transfers or withdrawals — those stay on the customer's exchange | — | the platform only places orders | product owner on #149 |
 | 2026-10-18 | New epics E7–E13 (accounts and roles, multi-exchange, strategy-change lab, AI assistant, education, responsive web, analytics) | all; some | requested by the product owner | product owner on #149 |
 | 2026-10-18 | Pricing: the PM proposes in E5 (fair, low churn, no profit share); the product owner decides | — | monetization is a product decision with legal limits | product owner on #149 |
+| 2026-10-28 | E13: NPS once a month (was every 90 days), optional, inside the assistant panel with a badge on Ask; an in-app notification centre (bell) for what needs the person and for updates | NPS every 90 days as a page card; monthly in the assistant · no notifications; a bell | the person answers where they already talk to the product; the app needs one place to tell people what happened and what waits for them | product owner in chat, recorded on #164 |
 | 2026-10-27 | E10: the assistant drafts bug/enhancement requests that pass its evidence filter; the person sends them; they go to a private queue the PM agent triages into redacted public issues | file to GitHub directly; private queue | the repository is public; requests must carry data or examples | product owner in chat, recorded on #161 |
