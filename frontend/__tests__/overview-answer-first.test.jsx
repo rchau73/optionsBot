@@ -31,7 +31,7 @@ const status = (coin, extra = {}) => ({
   direction: "sma",
   trend: "bear",
   gex_as_of: new Date(Date.now() - 30_000).toISOString(),
-  sma: { sma9: 95500, sma21: 94000, reason: "SMA9 > SMA21", candles: candles() },
+  sma: { sma9: 95500, sma21: 94000, swing_high: 99000, swing_high_date: "2026-10-20", swing_low: 91000, swing_low_date: "2026-10-14", reason: "SMA9 > SMA21", candles: candles() },
   risk: { status: { limit_im_pct: 20, max_mm_pct: 50, frozen: false, regime_known: true, regime_negative: true }, im_pct: 14.2, mm_pct: 10, as_of: new Date().toISOString() },
   held_legs: [],
   ...extra,
@@ -273,6 +273,8 @@ describe("the band's price chart", () => {
     const pills = screen.getByRole("group", { name: "BTC chart layers" });
     expect(within(pills).getAllByRole("button").map((b) => [b.textContent, b.getAttribute("aria-pressed")])).toEqual([
       ["SMA9", "true"],
+      ["SMA21", "true"],
+      ["Swing walls", "true"],
       ["Flip band", "true"],
       ["Sold strikes", "true"],
     ]);
@@ -284,8 +286,14 @@ describe("the band's price chart", () => {
     expect(screen.queryByTestId("sma9")).toBeNull();
     fireEvent.click(within(pills).getByRole("button", { name: "Flip band" }));
     expect(screen.queryByTestId("flip-band")).toBeNull();
+    expect(screen.getByTestId("sma21")).toBeInTheDocument();
+    fireEvent.click(within(pills).getByRole("button", { name: "SMA21" }));
+    expect(screen.queryByTestId("sma21")).toBeNull();
+    expect(screen.getAllByTestId("swing-wall")).toHaveLength(2);
+    fireEvent.click(within(pills).getByRole("button", { name: "Swing walls" }));
+    expect(screen.queryAllByTestId("swing-wall")).toHaveLength(0);
     const sent = global.fetch.mock.calls.map(([, init]) => JSON.parse(init.body).props.layer);
-    expect(sent).toEqual(["strikes", "sma", "flip"]);
+    expect(sent).toEqual(["strikes", "sma", "flip", "sma21", "swings"]);
     global.fetch = realFetch;
   });
 

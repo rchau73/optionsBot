@@ -2,21 +2,22 @@
 
 import clsx from "clsx";
 import { useState } from "react";
-import { BAND_LAYERS, bandChart, bandChartText } from "@/lib/band";
+import { ALL_BAND_LAYERS, BAND_LAYERS, bandChart, bandChartText } from "@/lib/band";
 import { track } from "@/lib/track";
 
 // The bot band's price chart (#404): 60 daily candles — up green, down neutral
 // grey (#64748b), so red always means a loss — the corridor between the lowest
-// and the highest sold strike shaded green, the flip with its shed band, SMA9
-// and the dashed sold strikes, each labelled on the right edge (nudged apart,
-// never overlapping), and the spot. SMA9, the flip band and the sold strikes
-// toggle from pills, all on by default.
+// and the highest sold strike shaded green, the flip with its shed band, SMA9,
+// SMA21 (dashed), the swing high/low walls and the dashed sold strikes, each
+// labelled on the right edge (nudged apart, never overlapping), and the spot.
+// Every layer toggles from a pill, all on by default (#415: SMA21 and the
+// swing walls back on the overview at the product owner's request).
 
-const LABEL = { put: "fill-put", call: "fill-call", flip: "fill-testnet", sma: "fill-warn", spot: "fill-slate-100" };
+const LABEL = { put: "fill-put", call: "fill-call", flip: "fill-testnet", sma: "fill-warn", sma21: "fill-action", swing: "fill-slate-300", spot: "fill-slate-100" };
 
 /** status: the bot's /api/status; payoff: its /api/strangles/payoff; coin: BTC, ETH. */
 export default function BandChart({ status, payoff, coin }) {
-  const [layers, setLayers] = useState({ sma: true, flip: true, strikes: true });
+  const [layers, setLayers] = useState(ALL_BAND_LAYERS);
   const g = bandChart(status, payoff, layers);
   const toggle = (key) => {
     track("overview_layer_toggle", { layer: key });
@@ -53,6 +54,10 @@ export default function BandChart({ status, payoff, coin }) {
                 <rect x={c.x - c.w / 2} y={c.bodyTop} width={c.w} height={c.bodyHeight} strokeWidth={0} />
               </g>
             ))}
+            {g.swings.map((w) => (
+              <line key={w.label} data-testid="swing-wall" x1={g.box.left} x2={g.box.plotRight} y1={w.y} y2={w.y} className="stroke-slate-300" strokeWidth={1} />
+            ))}
+            {g.sma21 ? <polyline data-testid="sma21" points={g.sma21} fill="none" className="stroke-action" strokeWidth={1.5} strokeDasharray="5 4" /> : null}
             {g.sma ? <polyline data-testid="sma9" points={g.sma} fill="none" className="stroke-warn" strokeWidth={1.5} /> : null}
             {g.spot ? <circle cx={g.spot.x} cy={g.spot.y} r={4} className="fill-slate-100 stroke-panel" /> : null}
           </g>

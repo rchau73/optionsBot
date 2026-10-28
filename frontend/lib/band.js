@@ -12,9 +12,14 @@ const positive = (v) => isNumber(v) && v > 0;
 /** The price chart's layers, each a toggle pill (all on by default); the keys are overview_layer_toggle's. */
 export const BAND_LAYERS = [
   { key: "sma", label: "SMA9" },
+  { key: "sma21", label: "SMA21" },
+  { key: "swings", label: "Swing walls" },
   { key: "flip", label: "Flip band" },
   { key: "strikes", label: "Sold strikes" },
 ];
+
+/** Every layer shown: the chart's start. */
+export const ALL_BAND_LAYERS = Object.fromEntries(BAND_LAYERS.map((l) => [l.key, true]));
 
 /** Days left to a payoff strangle's expiry (whole days, rounded down as the bot counts DTE); null when unknown. */
 export function daysLeft(sp) {
@@ -77,16 +82,18 @@ export const BAND_BOX = { width: 800, height: 240, left: 4, right: 150, top: 10,
 /**
  * The price chart's geometry, or null without two candles: the last 60 daily
  * candles (x, wick, body, up), the y scale over the candles and every sold
- * strike (and spot), the strike corridor, the flip and its shed band, SMA9's
- * path and the right-edge labels — only of the layers shown, nudged apart.
- * layers: { sma, flip, strikes } booleans.
+ * strike, swing wall (and spot), the strike corridor, the flip and its shed
+ * band, SMA9's and SMA21's paths, the swing walls and the right-edge labels —
+ * only of the layers shown, nudged apart.
+ * layers: { sma, sma21, swings, flip, strikes } booleans.
  */
-export function bandChart(status, payoff, layers = { sma: true, flip: true, strikes: true }, box = BAND_BOX) {
+export function bandChart(status, payoff, layers = ALL_BAND_LAYERS, box = BAND_BOX) {
   const rows = candleRows(status).slice(-60);
   if (rows.length < 2) return null;
   const levels = regimeLevels(status);
   const strikes = soldStrikes(payoff);
-  const prices = [...rows.flatMap((r) => [r.low, r.high]), ...strikes.map((s) => s.price), ...(levels.spot ? [levels.spot] : [])];
+  const walls = [levels.swingHigh, levels.swingLow].filter(Boolean);
+  const prices = [...rows.flatMap((r) => [r.low, r.high]), ...strikes.map((s) => s.price), ...walls.map((w) => w.price), ...(levels.spot ? [levels.spot] : [])];
   const lo0 = Math.min(...prices);
   const hi0 = Math.max(...prices);
   const pad = Math.max((hi0 - lo0) * 0.04, hi0 * 0.002);
@@ -103,12 +110,14 @@ export function bandChart(status, payoff, layers = { sma: true, flip: true, stri
     const top = y(Math.max(r.open, r.close));
     return { date: r.date, x: xOf(i), w: Math.max(slot * 0.65, 1), high: y(r.high), low: y(r.low), bodyTop: top, bodyHeight: Math.max(y(Math.min(r.open, r.close)) - top, 1), up: r.up };
   });
-  const sma = layers.sma
-    ? rows
-        .map((r, i) => (positive(r.sma9) && inRange(r.sma9) ? `${xOf(i).toFixed(1)},${y(r.sma9).toFixed(1)}` : null))
-        .filter(Boolean)
-        .join(" ")
-    : "";
+  const path = (key) =>
+    rows
+      .map((r, i) => (positive(r[key]) && inRange(r[key]) ? `${xOf(i).toFixed(1)},${y(r[key]).toFixed(1)}` : null))
+      .filter(Boolean)
+      .join(" ");
+  const sma = layers.sma ? path("sma9") : "";
+  const sma21 = layers.sma21 ? path("sma21") : "";
+  const swings = layers.swings ? walls.map((w) => ({ ...w, y: y(w.price) })) : [];
   const corridorPrices = strikeCorridor(strikes);
   const corridor = layers.strikes && corridorPrices ? { y1: y(corridorPrices.high), y2: y(corridorPrices.low), ...corridorPrices } : null;
   const f = levels.flip;
@@ -124,6 +133,8 @@ export function bandChart(status, payoff, layers = { sma: true, flip: true, stri
   if (flip?.y != null) labels.push({ key: "flip", kind: "flip", y: flip.y, text: `flip ${price0(f.price)}` });
   const sma9Now = levels.sma9;
   if (layers.sma && inRange(sma9Now)) labels.push({ key: "sma9", kind: "sma", y: y(sma9Now), text: `SMA9 ${price0(sma9Now)}` });
+  if (layers.sma21 && inRange(levels.sma21)) labels.push({ key: "sma21", kind: "sma21", y: y(levels.sma21), text: `SMA21 ${price0(levels.sma21)}` });
+  for (const w of swings) labels.push({ key: w.label, kind: "swing", y: w.y, text: w.label });
   if (levels.spot) labels.push({ key: "spot", kind: "spot", y: y(levels.spot), text: `spot ${price0(levels.spot)}` });
 
   return {
@@ -131,6 +142,8 @@ export function bandChart(status, payoff, layers = { sma: true, flip: true, stri
     domain: [lo, hi],
     candles,
     sma,
+    sma21,
+    swings,
     corridor,
     flip,
     strikes: shownStrikes,
@@ -153,6 +166,8 @@ export function bandChartText(coin, status, payoff) {
   else parts.push("no strike sold");
   parts.push(l.flip ? `flip ${price0(l.flip.price)}${l.flip.low && l.flip.high ? `, shed band ${price0(l.flip.low)}–${price0(l.flip.high)}` : ""}` : "flip unknown");
   parts.push(l.sma9 ? `SMA9 ${price0(l.sma9)}` : "SMA9 unknown");
+  parts.push(l.sma21 ? `SMA21 ${price0(l.sma21)}` : "SMA21 unknown");
+  for (const w of [l.swingHigh, l.swingLow]) if (w) parts.push(`${w.label} ${price0(w.price)}`);
   return `${parts.join("; ")}.`;
 }
 

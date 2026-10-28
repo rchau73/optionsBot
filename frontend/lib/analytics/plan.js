@@ -57,7 +57,7 @@ export const PROPERTIES = {
   hardest_to_find: enumOf(...FOUR_ANSWERS),
   // The overview's switches (#404).
   unit: enumOf("coin", "usd"),
-  layer: enumOf("sma", "flip", "strikes"),
+  layer: enumOf("sma", "sma21", "swings", "flip", "strikes"),
 };
 
 /** §2: event → the properties it may carry (each optional). */

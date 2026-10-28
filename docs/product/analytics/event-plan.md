@@ -98,7 +98,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `unit` | enum | `coin`, `usd` (the unit picked) |
-| `layer` | enum | `sma`, `flip`, `strikes` (the layer toggled) |
+| `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
 
 Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage), a survey's free text (the NPS "anything else" and the exit `other` box: personal data, kept in `auth.db` beside the user and deleted with them, never in an event — *needs legal review*, `surveys.md` §6).
 
