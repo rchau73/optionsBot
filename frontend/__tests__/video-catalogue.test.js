@@ -72,7 +72,7 @@ describe("the collector checks ids against the catalogues (#300)", () => {
 
   test("a known tip id is accepted and an unknown one refused", () => {
     expect(TIP_IDS.has("tip.gamma_flip")).toBe(true);
-    expect(event("tip_opened", { tip_id: "tip.gamma_flip", screen: "monitor" }).ok).toBe(true);
+    expect(event("tip_opened", { tip_id: "tip.gamma_flip", screen: "overview" }).ok).toBe(true);
     expect(event("tip_opened", { tip_id: "tip.no_such_term" }).ok).toBe(false);
     expect(event("help_resolved", { tip_id: "tip.gamma_flip", video_id: "video.nope", helped: true }).ok).toBe(false);
   });

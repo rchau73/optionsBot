@@ -31,7 +31,8 @@ export const TIP_IDS = new Set(Object.keys(glossary).map(tipIdOf));
 /** §4: property → its rule. */
 export const PROPERTIES = {
   entry_screen: enumOf("monitor", "login"),
-  screen: enumOf("monitor", "login"),
+  // One per page of the menu (lib/menu.js, lib/analytics/screens.js, #424).
+  screen: enumOf("overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login"),
   viewport: enumOf("phone", "tablet", "desktop"),
   panel: enumOf("account", "positions", "held", "others", "trades", "activity", "pnl", "pnl_coin", "orders"),
   open_ms: duration(HOUR_MS),
@@ -58,6 +59,8 @@ export const PROPERTIES = {
   hardest_to_find: enumOf(...FOUR_ANSWERS),
   // The assistant panel's opener (#408).
   entry: enumOf("menu", "why"),
+  // The kind of the assistant's reply, never its text (#424).
+  answer: enumOf("answered", "dont_know", "refused", "fallback"),
   // The overview's switches (#404).
   unit: enumOf("coin", "usd"),
   layer: enumOf("sma", "sma21", "swings", "flip", "strikes"),
@@ -91,6 +94,7 @@ export const EVENTS = {
   survey_dismissed: ["survey_id"],
   assistant_open: ["entry"],
   assistant_ask: ["entry"],
+  assistant_answered: ["answer"],
   assistant_flag: [],
   overview_unit_toggle: ["unit"],
   overview_layer_toggle: ["layer"],
