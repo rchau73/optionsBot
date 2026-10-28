@@ -135,8 +135,10 @@ func TestNextUnfilledPasses(t *testing.T) {
 		want                     int
 	}{
 		{"every complement timed out unfilled", 2, 3, 3, false, 3},
-		{"a fill resets", 5, 3, 3, true, 0},
-		{"a fill in a cancelled complement resets too", 5, 2, 1, true, 0},
+		{"a fill on both legs resets", 5, 3, 3, true, 0},
+		{"a both-leg fill in a cancelled complement resets too", 5, 2, 1, true, 0},
+		{"one-sided fills only, all timed out (#98): adds one", 2, 2, 2, false, 3},
+		{"one-sided fill in a bot-cancelled pass: unchanged", 2, 2, 1, false, 2},
 		{"one complement cancelled by the bot: unchanged", 2, 3, 2, false, 2},
 		{"all cancelled by the bot: unchanged", 2, 3, 0, false, 2},
 		{"nothing finished: unchanged", 2, 0, 0, false, 2},

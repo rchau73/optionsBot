@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"optionsbot/internal/marketdata"
@@ -198,14 +199,33 @@ func (ps *pendingStrangle) underfilled() bool {
 	return false
 }
 
-// filledAny reports whether any leg filled something.
-func (ps *pendingStrangle) filledAny() bool {
-	for _, l := range ps.legs() {
-		if l.filledQty > qtyEpsilon {
-			return true
+// filledEveryLeg reports whether every leg it sent filled something. For a
+// rebalance complement that is "the market took both sides" (#98): a fill of
+// the put alone ends as a repair of the call at the bid, not a trade at our
+// price.
+func (ps *pendingStrangle) filledEveryLeg() bool {
+	legs := ps.legs()
+	for _, l := range legs {
+		if l.filledQty <= qtyEpsilon {
+			return false
 		}
 	}
-	return false
+	return len(legs) > 0
+}
+
+// filledLegs names the legs that filled something, for the journal:
+// "call+put", "call", "put" or "none".
+func (ps *pendingStrangle) filledLegs() string {
+	var names []string
+	for _, l := range ps.legs() {
+		if l.filledQty > qtyEpsilon {
+			names = append(names, l.optionType)
+		}
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, "+")
 }
 
 func (s *Strategy) pendingSnapshot() []*pendingStrangle {
