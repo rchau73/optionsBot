@@ -4,7 +4,9 @@
 #   1. finds the `agent:pm` ticket (a PRD change or a decision request) whose
 #      newest message from a person — on the ticket, or on its open PRD pull
 #      request — is newer than the PM agent's last comment (pm_board.py answered;
-#      one ticket per run, the oldest answer first);
+#      one ticket per run, the oldest answer first). A failed run's comment
+#      (<!-- agent:pm-failed -->) is not the PM's answer: a run that did not
+#      finish is retried, up to 3 runs of one answer (#441);
 #   2. runs Claude Code headless with the product-manager skill ("Answers →
 #      PRD (agent mode)") in a worktree on branch pm/issue-<n>. It may edit only
 #      docs/product/ and commit — no push, no gh, no network;
@@ -144,12 +146,31 @@ hold_pr() { # extra gh pr edit args...
   gh pr edit "$existing_pr" -R "$slug" --remove-label "pm:self-merge" "$@" >/dev/null ||
     { log "pm-answer: could not take pm:self-merge off PR #$existing_pr: stopped, the answer stays due"; exit 1; }
 }
+# A failed run's comment carries <!-- agent:pm-failed -->: pm_board.py answered
+# does not read it as the PM's answer, so only mark_done ends the answer (#441).
 fail() { # message, ledger detail (a short fixed phrase)
-  echo "$1" > "$run_dir/fail.md"
+  { echo "$1"; echo "<!-- agent:pm-failed -->"; } > "$run_dir/fail.md"
   hold_pr # exits 1 (ledger: failed) when GitHub refuses
   run_end blocked "$2"
   reply "$run_dir/fail.md" --add-label agent:needs-human
   mark_done; notify "PM agent: #$issue needs a person" "$1"; log "pm-answer: #$issue — $1"; exit 0
+}
+# A run that did not finish is retried on a later tick: the answer is not marked
+# done, up to pm_board.py MAX_ANSWER_ATTEMPTS runs of it; the last one fails.
+retry_or_fail() { # message, ledger detail
+  local count
+  mutex pm-state || exit 1
+  if count="$(python3 "$BOARD_PY" attempt "$STATE" "$issue" "$answer_at")"; then
+    unmutex pm-state
+    { echo "$1"; echo; echo "Your answer stays due: it is run again on a later tick (attempt ${count% *} of ${count#* })."; echo "<!-- agent:pm-failed -->"; } > "$run_dir/fail.md"
+    hold_pr
+    run_end failed "$2: retried"
+    reply "$run_dir/fail.md"
+    log "pm-answer: #$issue — $1 (attempt ${count% *} of ${count#* }, retried)"
+    git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
+  fi
+  unmutex pm-state
+  fail "$1 It failed ${count% *} times on this answer: a person is needed." "$2"
 }
 
 # ── 2. Worktree and task ────────────────────────────────────────────────────
@@ -225,7 +246,7 @@ if [[ $rc -ne 0 || -z "$result" ]]; then
     run_end skipped_limit "exit $rc after ${elapsed}s"
     git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
   fi
-  fail "Stopped because $why. Run log: \`data/agents/pm/$(basename "$run_dir")\`." "the agent did not finish (exit $rc)"
+  retry_or_fail "Stopped because $why. Run log: \`data/agents/pm/$(basename "$run_dir")\`." "the agent did not finish (exit $rc)"
 fi
 commits="$(git -C "$wt" rev-list --count "$base"..HEAD)"
 
