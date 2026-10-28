@@ -41,6 +41,9 @@ export const ADVICE_PATTERNS = [
   String.raw`(?:^|[.!?]\s+|\n\s*)(buy|sell|increase|raise|lower|reduce|decrease|set|turn (on|off)|enable|disable|switch to|withdraw|deposit|invest)\b`,
 ];
 
+/** The assistant declining to advise ("I can't say whether you should use it"): blanked before ADVICE_PATTERNS match (#422). */
+export const ADVICE_NEGATION_PATTERNS = [String.raw`\b(whether|if) you (should|ought to)\b`];
+
 /** Forward-looking price or return phrasing, or a promise. */
 export const FORECAST_PATTERNS = [
   String.raw`\bwill (earn|make|return|yield|gain|profit|go up|go down|rise|fall|drop|climb|crash|rally|double|recover)\b`,
