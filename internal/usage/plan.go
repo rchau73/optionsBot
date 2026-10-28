@@ -62,7 +62,7 @@ var Properties = map[string]Rule{
 	"hardest_to_find": enumOf(fourAnswers...),
 	// The overview's switches (#404).
 	"unit":  enumOf("coin", "usd"),
-	"layer": enumOf("sma", "flip", "strikes"),
+	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
 }
 
 // E3's four investor answers, plus "none of these" (surveys.md §2).
