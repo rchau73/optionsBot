@@ -150,23 +150,32 @@ func ReplayJournal(r io.Reader, keepRecent int) (Replay, error) {
 	return rp, nil
 }
 
+// decodeLine reads a line's event; fills and closes are decoded in full into
+// rec. ok is false for an unreadable line (a torn write), which a replay
+// skips without numbering it — so does JournalBack, to keep the same seqs.
+func decodeLine(line []byte) (event string, rec OrderLog, ok bool) {
+	event = field(line, eventKey)
+	if event == "" || line[0] != '{' || line[len(line)-1] != '}' {
+		return "", rec, false
+	}
+	if event == EventFilled || event == EventClosed {
+		if err := json.Unmarshal(line, &rec); err != nil {
+			return "", rec, false
+		}
+	}
+	return event, rec, true
+}
+
 // add counts one line. Most lines (submits, skips, P&L ticks) only need
 // their event and time, read without decoding; fills and closes — the P&L —
 // are decoded in full, and a torn one is skipped rather than half-counted.
 func (rp *Replay) add(ring *recentRing, line []byte) {
-	event := field(line, eventKey)
-	if event == "" || line[0] != '{' || line[len(line)-1] != '}' {
+	event, rec, ok := decodeLine(line)
+	if !ok {
 		rp.Skipped++
 		return
 	}
-	var rec OrderLog
 	trade := event == EventFilled || event == EventClosed
-	if trade {
-		if err := json.Unmarshal(line, &rec); err != nil {
-			rp.Skipped++
-			return
-		}
-	}
 	at, _ := time.Parse(time.RFC3339Nano, field(line, timestampKey))
 	rp.Events++
 	rp.Counts[event]++

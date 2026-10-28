@@ -18,6 +18,7 @@ import (
 type Logger struct {
 	mu                   sync.Mutex
 	file                 *os.File
+	path                 string // orders.log ("" for a writer-only logger)
 	w                    io.Writer
 	spreadAlertThreshold float64
 	recent               *recentRing // last events, for the monitor API
@@ -39,7 +40,7 @@ func NewLogger(path string, spreadAlertThreshold float64) (*Logger, error) {
 		return nil, fmt.Errorf("open order log %s: %w", path, err)
 	}
 	l := NewWriterLogger(io.MultiWriter(os.Stdout, f), spreadAlertThreshold)
-	l.file = f
+	l.file, l.path = f, path
 	return l, nil
 }
 
@@ -345,6 +346,10 @@ func (l *Logger) writeJSON(event string, v any, ctxLog *slog.Logger) {
 		ctxLog.Error("order log marshal error", "err", err)
 		return
 	}
+	// One lock over numbering and writing: line n of the file is always seq n,
+	// so JournalBack numbers a file it reads as the ring and a restart do.
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	seq := l.recent.add(event, data)
 	if event == EventFilled || event == EventClosed {
 		if rec, ok := v.(OrderLog); ok {
@@ -361,8 +366,6 @@ func (l *Logger) writeJSON(event string, v any, ctxLog *slog.Logger) {
 	}
 	l.tradesMu.Unlock()
 	data = append(data, '\n')
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	// orders.log is the audit trail of every fill; a failed write must be visible.
 	if _, err := l.w.Write(data); err != nil {
 		ctxLog.Error("order log write failed", "err", err)
