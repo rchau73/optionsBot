@@ -54,6 +54,14 @@ import sys
 # apart by its header (🧭 PM, 🤖 Dev/Reviewer, 🚀 deploy, **SME …) or a marker.
 AGENT_COMMENT = re.compile(r"^\s*(🧭|🤖|🚀|🔎|🩺|\*\*SME\b)|<!--\s*agent:", re.S)
 PM_COMMENT = re.compile(r"^\s*🧭|<!--\s*agent:pm\s*-->", re.S)
+# pm_answer.sh marks the comment of a run that failed: it is the PM's, but not an
+# answer, so the person's message before it stays due (#441: on #185 a run stopped
+# by a limit hid the product owner's answer for 8 days).
+PM_FAILED = re.compile(r"<!--\s*agent:pm-failed\s*-->")
+# Runs of one person's message that may fail before the PM gives up on it and
+# leaves it for a person (agent:needs-human), so a run that always fails is not
+# retried every tick.
+MAX_ANSWER_ATTEMPTS = 3
 
 RULE_AREAS = {
     "entry", "exits", "repair", "rebalance", "margin", "gex", "sizing",
@@ -214,10 +222,26 @@ def answered_all(tickets, state):
         if t.get("body") and not is_agent_comment(t["body"]):
             msgs.append({"at": t["created"], "body": t["body"]})
         person = max((m["at"] for m in msgs if not is_agent_comment(m["body"])), default="")
-        pm = max((m["at"] for m in msgs if PM_COMMENT.search(m["body"] or "")), default="")
+        pm = max((m["at"] for m in msgs if is_pm_answer(m["body"])), default="")
         if person and person > pm and person > done.get(str(t["number"]), ""):
             due.append((person, t["number"]))
     return [n for _, n in sorted(due)]
+
+
+def is_pm_answer(body):
+    """True for a PM comment that handled the message before it (not a failed run's)."""
+    return bool(PM_COMMENT.search(body or "")) and not PM_FAILED.search(body or "")
+
+
+def note_attempt(state, issue, answer_at):
+    """Counts one failed run on the issue's answer at `answer_at` (a newer answer
+    starts again at 1). Returns (state, attempts, last): `last` once the run was
+    the MAX_ANSWER_ATTEMPTS-th, and pm_answer.sh then gives up on that answer."""
+    attempts = state.setdefault("attempts", {})
+    prev = attempts.get(str(issue)) or {}
+    n = prev.get("n", 0) + 1 if prev.get("at") == answer_at else 1
+    attempts[str(issue)] = {"at": answer_at, "n": n}
+    return state, n, n >= MAX_ANSWER_ATTEMPTS
 
 
 # The PM merges its own PRD pull request (product owner on #151) unless it changes
@@ -556,6 +580,12 @@ def main(argv):
     elif cmd == "answered":
         for n in answered_all(json.load(open(argv[2])), _load(argv[3], {})):
             print(n)
+    elif cmd == "attempt":  # attempt <state.json> <issue> <answer_at> → prints "<n> <max>", exit 1 on the last
+        state, n, last = note_attempt(_load(argv[2], {}), argv[3], argv[4])
+        json.dump(state, open(argv[2], "w"), indent=1)
+        print(n, MAX_ANSWER_ATTEMPTS)
+        if last:
+            raise SystemExit(1)
     elif cmd == "wait":
         print(wait_reason(sys.stdin.read(), _load(argv[3], {}), argv[2]))
     elif cmd == "tags":

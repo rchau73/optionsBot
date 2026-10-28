@@ -168,6 +168,26 @@ class TestAnswered(unittest.TestCase):
         t = ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes"), ("2026-10-18T03:00:00Z", "x\n<!-- agent:pm -->")])
         self.assertIsNone(pm_board.answered([t], {}))
 
+    def test_a_failed_run_does_not_hide_the_answer(self):
+        # #185: "1a and 2b" at 01:59, the run at 02:03 failed (weekly limit) — still picked.
+        fail = ("🧭 **PM agent**\n\nStopped because the agent did not finish (exit 1, result 'none').\n"
+                "<!-- agent:pm-failed -->\n\n_The PM agent …_\n<!-- agent:pm -->")
+        t = ticket(msgs=[("2026-10-19T12:00:00Z", self.PM), ("2026-10-20T01:59:00Z", "1a and 2b"),
+                         ("2026-10-20T02:03:00Z", fail)])
+        self.assertEqual(pm_board.answered([t], {}), 149)
+        self.assertTrue(pm_board.is_agent_comment(fail))  # never read as a person's
+
+    def test_a_failed_run_after_a_real_answer_changes_nothing(self):
+        fail = "🧭 **PM agent**\n\nStopped.\n<!-- agent:pm-failed -->\n<!-- agent:pm -->"
+        t = ticket(msgs=[("2026-10-20T01:59:00Z", "1a"), ("2026-10-20T02:10:00Z", self.PM),
+                         ("2026-10-20T03:00:00Z", fail)])
+        self.assertIsNone(pm_board.answered([t], {}))
+
+    def test_a_given_up_answer_is_not_retried(self):
+        fail = "🧭 **PM agent**\n\nStopped.\n<!-- agent:pm-failed -->\n<!-- agent:pm -->"
+        t = ticket(msgs=[("2026-10-20T01:59:00Z", "1a"), ("2026-10-20T02:03:00Z", fail)])
+        self.assertIsNone(pm_board.answered([t], {"answered": {"149": "2026-10-20T01:59:00Z"}}))
+
     def test_a_handled_run_is_not_repeated(self):
         t = ticket(msgs=[("2026-10-18T02:40:00Z", "1. Yes")])
         self.assertIsNone(pm_board.answered([t], {"answered": {"149": "2026-10-18T02:40:00Z"}}))
@@ -190,6 +210,40 @@ class TestAnswered(unittest.TestCase):
 
 def prd_with(marker_e1, extra=""):
     return f"## Epics\n### E1 · Engine\n<!-- epic: {marker_e1} -->\n{extra}"
+
+
+class TestAnswerAttempts(unittest.TestCase):
+    def test_counts_up_to_the_last(self):
+        s = {}
+        for want in (1, 2):
+            s, n, last = pm_board.note_attempt(s, 149, "2026-10-20T01:59:00Z")
+            self.assertEqual((n, last), (want, False))
+        s, n, last = pm_board.note_attempt(s, 149, "2026-10-20T01:59:00Z")
+        self.assertEqual((n, last), (pm_board.MAX_ANSWER_ATTEMPTS, True))
+
+    def test_a_newer_answer_starts_again(self):
+        s = {"attempts": {"149": {"at": "2026-10-20T01:59:00Z", "n": 2}}}
+        s, n, last = pm_board.note_attempt(s, 149, "2026-10-21T09:00:00Z")
+        self.assertEqual((n, last), (1, False))
+        s, n, _ = pm_board.note_attempt(s, 150, "2026-10-21T09:00:00Z")
+        self.assertEqual(n, 1)  # per ticket
+
+    def test_cli_keeps_the_state_and_exits_1_on_the_last(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "state.json")
+            json.dump({"answered": {"7": "x"}}, open(p, "w"))
+            for want, code in (("1 3", 0), ("2 3", 0), ("3 3", 1)):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    try:
+                        pm_board.main(["pm_board.py", "attempt", p, "149", "2026-10-20T01:59:00Z"])
+                        got = 0
+                    except SystemExit as e:
+                        got = e.code
+                self.assertEqual((out.getvalue().strip(), got), (want, code))
+            s = json.load(open(p))
+            self.assertEqual(s["answered"], {"7": "x"})
+            self.assertEqual(s["attempts"]["149"]["n"], 3)
 
 
 class TestPolicyReasons(unittest.TestCase):
