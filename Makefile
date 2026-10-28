@@ -5,12 +5,14 @@ COVER_OUT := coverage.out
 build:
 	go build -o bot ./cmd/bot
 
+# The suite in two groups (scripts/go_tests.sh, #429): the core under -race, the
+# single-goroutine report and research tests without it.
 test:
-	go test ./tests/... -race -count=1 -timeout 30m
+	bash scripts/go_tests.sh all
 
 # Tests live in ./tests, so coverage is measured across ./internal/... explicitly.
 cover:
-	go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
+	bash scripts/go_tests.sh all $(COVER_OUT)
 	go tool cover -func=$(COVER_OUT) | tail -1
 
 fmt:
@@ -20,13 +22,14 @@ vet:
 	go vet ./...
 
 # check is what CI runs: formatting, vet, the shell scripts (bash -n, and
-# shellcheck when installed), the race-enabled test suite and the coverage
-# floor (scripts/cover_baseline.txt, #330) on that same run's profile.
+# shellcheck when installed), the test suite in its two groups (the core under
+# -race, #429) and the coverage floor (scripts/cover_baseline.txt, #330) on
+# their merged profile. CI runs the two groups as parallel jobs.
 check:
 	@test -z "$$(gofmt -l cmd internal tests)" || (echo "gofmt needed:"; gofmt -l cmd internal tests; exit 1)
 	go vet ./...
 	bash scripts/check_shell.sh
-	go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=$(COVER_OUT)
+	bash scripts/go_tests.sh all $(COVER_OUT)
 	bash scripts/check_cover.sh --profile $(COVER_OUT)
 
 # hooks enables .githooks/pre-commit (refuses .env files and any value from

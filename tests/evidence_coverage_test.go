@@ -71,6 +71,7 @@ func covDataset(t *testing.T, c evidence.Coverage, name string) evidence.Dataset
 // Scenario: Complete week — hourly market books for every hour of the week:
 // 100 % for the market dataset, no gap, no "partial" label on the replay.
 func TestEvidenceCoverage_CompleteWeek(t *testing.T) {
+	t.Parallel()
 	snaps := evRecord(t)
 	in := evInputs(t, snaps)
 	in.Recorded = covSets(snaps)
@@ -103,6 +104,7 @@ func TestEvidenceCoverage_CompleteWeek(t *testing.T) {
 // on one day: the section lists the gap with its start and length and it
 // is a notice; 96 % of the hours stay over the share, so no partial label.
 func TestEvidenceCoverage_ARecorderGap(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2026, 10, 14, 3, 0, 0, 0, time.UTC)
 	snaps := dropHours(evRecord(t), start, 6)
 	in := evInputs(t, snaps)
@@ -139,6 +141,7 @@ func TestEvidenceCoverage_ARecorderGap(t *testing.T) {
 // Scenario: A recorder gap under the stated share — three days of books
 // missing (57 % of the hours): the replay and the gap are labelled partial.
 func TestEvidenceCoverage_UnderTheShareIsPartial(t *testing.T) {
+	t.Parallel()
 	snaps := evRecord(t, 14, 15, 16)
 	in := evInputs(t, snaps)
 	in.Recorded = covSets(snaps)
@@ -159,6 +162,7 @@ func TestEvidenceCoverage_UnderTheShareIsPartial(t *testing.T) {
 // section says "not recorded" for it, names no gap for it, and the report
 // still builds; read through Load on a clone that has only the books.
 func TestEvidenceCoverage_AbsentDatasetIsNotRecorded(t *testing.T) {
+	t.Parallel()
 	snaps := evRecord(t)
 	in := evInputs(t, snaps)
 	in.Recorded = covSets(snaps)
@@ -229,6 +233,7 @@ func TestEvidenceCoverage_AbsentDatasetIsNotRecorded(t *testing.T) {
 // Scenario: Nothing filled in — with a gap, the market's records are only
 // the recorded ones and the missing hours are listed by day.
 func TestEvidenceCoverage_NothingFilledIn(t *testing.T) {
+	t.Parallel()
 	snaps := dropHours(evRecord(t), time.Date(2026, 10, 15, 20, 0, 0, 0, time.UTC), 8) // across midnight
 	in := evInputs(t, snaps)
 	in.Recorded = covSets(snaps)

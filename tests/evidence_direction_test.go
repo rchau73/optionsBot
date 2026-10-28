@@ -75,6 +75,7 @@ func dirInputs(t *testing.T, snaps []recorder.Snapshot) evidence.DirectionInputs
 // week, the scorecard writes one row per source for live and one for
 // replay, and each row names its source file.
 func TestDirectionScorecard_OneRowPerSourceLiveAndReplay(t *testing.T) {
+	t.Parallel()
 	r := evidence.BuildDirection(dirInputs(t, evRecord(t)))
 	if len(r.Live) != 2 || r.Live[0].Source != "bias" || r.Live[1].Source != "sma" {
 		t.Fatalf("live rows %+v: want bias (stable) and sma (mvp)", r.Live)
@@ -131,6 +132,7 @@ func TestDirectionScorecard_OneRowPerSourceLiveAndReplay(t *testing.T) {
 // Scenario: given the replay runs bias and sma on the same week, both runs
 // start from the same book and read the same recorded books.
 func TestDirectionScorecard_ReplaysStartFromTheSameBook(t *testing.T) {
+	t.Parallel()
 	in := dirInputs(t, evRecord(t))
 	bias, err := evidence.DirectionReplaySettings(in, "bias")
 	if err != nil {
@@ -159,6 +161,7 @@ func TestDirectionScorecard_ReplaysStartFromTheSameBook(t *testing.T) {
 // Scenario: given a day with no recorded books, that day is listed as
 // missing and never filled in.
 func TestDirectionScorecard_MissingDayListedNotFilled(t *testing.T) {
+	t.Parallel()
 	r := evidence.BuildDirection(dirInputs(t, evRecord(t, 14)))
 	if want := []string{"2026-10-14"}; !reflect.DeepEqual(r.Missing.BookDays, want) {
 		t.Errorf("missing book days %v, want %v", r.Missing.BookDays, want)
@@ -185,6 +188,7 @@ func TestDirectionScorecard_MissingDayListedNotFilled(t *testing.T) {
 // Scenario: given any env runs live, the report shows only percentages,
 // never coin or USD amounts.
 func TestDirectionScorecard_PercentagesOnly(t *testing.T) {
+	t.Parallel()
 	r := evidence.BuildDirection(dirInputs(t, evRecord(t)))
 	dir := t.TempDir()
 	md, js := evidence.DirectionOutPaths(dir, r.Week)
@@ -223,6 +227,7 @@ func TestDirectionScorecard_PercentagesOnly(t *testing.T) {
 // ShedHours: a record before the week sets the state at its start; each
 // state lasts until the next record or the week's end.
 func TestDirectionScorecard_ShedHours(t *testing.T) {
+	t.Parallel()
 	recs := []history.DirectionRecord{
 		{At: evWeek.From.Add(-time.Hour), Direction: "sma", Shed: "close_calls", OtherAction: "close_puts"},
 		{At: evWeek.From.Add(2 * time.Hour), Direction: "sma", Shed: "none", OtherAction: "none"},
@@ -242,6 +247,7 @@ func TestDirectionScorecard_ShedHours(t *testing.T) {
 }
 
 func TestDirectionScorecard_ReadDirectionHistory(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "direction_history.jsonl")
 	content := `{"at":"2026-10-12T00:00:00Z","direction":"bias","shed":"close_puts","other_action":"none"}
 not json

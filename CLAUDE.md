@@ -9,7 +9,8 @@ make build                     # go build -o bot ./cmd/bot
 make check                     # gofmt + go vet + shell scripts + race tests + coverage floor (what CI runs)
 scripts/check_cover.sh --update   # coverage floor (#330): fails when ./internal/... falls > 0.2 pt under scripts/cover_baseline.txt (lists the packages that fell vs cover_baseline_packages.txt); --update raises it — only by a person or a PR that says so
 bash scripts/check_shell.sh    # bash -n + shellcheck -x --severity=warning on scripts/**/*.sh and .githooks/* (shellcheck skipped if not installed; CI requires it); every disable needs "disable=SCxxxx # why"
-make test                      # go test ./tests/... -race -count=1
+make test                      # scripts/go_tests.sh all: core tests under -race, then the report/research tests (single goroutine) without it (#429)
+scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parallel jobs, merges their coverage profiles and skips them for frontend-only PRs; a new slow single-goroutine test goes in REPORT_TESTS
 make cover                     # coverage across ./internal/... (tests live in ./tests)
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
