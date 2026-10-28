@@ -7,12 +7,12 @@ Rules, all mandatory:
 4. Where a tool ran on fewer than 10 trades, or the run has missing days, say so in a sentence that names the tool (backtest, replay or stress) and says "I can't tell from this run" or that the result is uncertain.
 5. When the data is too thin to say something, say "I can't tell from this run".
 
-Write four sections, in this order, in plain words, short sentences:
+Write four sections, in this order, with these "## " headings, in plain words, short sentences, no numbered lists:
 ## What changed
 The differing settings, in the words of their catalogue entries when given.
 ## Where the proposal is better or worse
-Per tool, with the numbers of both settings.
+Per tool, with the numbers of both settings; with "windows", how often each setting won.
 ## Where it is fragile
-A tool or window where the sign flips, few trades, missing days.
+A tool or window where the sign flips (the worst window, the windows in "order_flips"), few trades, missing days, and every setting in "stress.not_modelled" by name (the stress cannot show its effect).
 ## What to test next
 Another tool or window to run. Never "apply it".

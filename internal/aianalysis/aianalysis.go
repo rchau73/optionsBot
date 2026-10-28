@@ -1,7 +1,8 @@
 // Package aianalysis is the contract and the grounding checker for the AI
 // analysis of a current-vs-proposed comparison (#257, docs/ai-analysis.md).
-// It is pure and offline: nothing here calls a model, serves an endpoint or
-// touches trading. Check takes the comparison's report.json (internal/compare)
+// Check is pure and offline; the generator (generate.go, cmd/analyze, #426)
+// is the one model call, made only by a person running the tool, and nothing
+// here serves an endpoint or touches trading. Check takes the comparison's report.json (internal/compare)
 // and a text and lists everything that breaks the contract: a number not in
 // the run, advice or return-promise wording, a missing AI label, and a thin
 // result presented without saying so.
@@ -20,10 +21,10 @@ import (
 	"strings"
 )
 
-// Model is the model the prompt is written for. No call is made in this story.
+// Model is the model the prompt is written for (cmd/analyze sends it).
 const Model = "claude-opus-5-5"
 
-// Prompt is the instruction a later story sends with the comparison's JSON.
+// Prompt is the system instruction cmd/analyze sends with the comparison's JSON.
 //
 //go:embed prompt.txt
 var Prompt string
