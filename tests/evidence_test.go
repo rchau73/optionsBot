@@ -93,6 +93,7 @@ func evInputs(t *testing.T, snaps []recorder.Snapshot) evidence.Inputs {
 // books for a week, the report shows live, replay, gap, stress and hold
 // figures, each with its source.
 func TestEvidence_AWeeksReport(t *testing.T) {
+	t.Parallel()
 	r := evidence.Build(evInputs(t, evRecord(t)))
 
 	l := r.Live
@@ -150,6 +151,7 @@ func TestEvidence_AWeeksReport(t *testing.T) {
 // Scenario: missing inputs — given no recorded books for two days, the
 // report says which days are missing and computes the rest.
 func TestEvidence_MissingInputs(t *testing.T) {
+	t.Parallel()
 	r := evidence.Build(evInputs(t, evRecord(t, 14, 15)))
 	if want := []string{"2026-10-14", "2026-10-15"}; !reflect.DeepEqual(r.Missing.BookDays, want) {
 		t.Errorf("missing book days %v, want %v", r.Missing.BookDays, want)
@@ -170,6 +172,7 @@ func TestEvidence_MissingInputs(t *testing.T) {
 // No books, no equity, no stress inputs, no history: every section says why
 // it is empty instead of showing zeros.
 func TestEvidence_EmptyInputsSayWhy(t *testing.T) {
+	t.Parallel()
 	in := evInputs(t, nil)
 	in.Points, in.Stress, in.StressBookAt, in.StressNote = nil, nil, time.Time{}, "no captured book"
 	r := evidence.Build(in)
@@ -200,6 +203,7 @@ func TestEvidence_EmptyInputsSayWhy(t *testing.T) {
 }
 
 func TestEvidence_Weeks(t *testing.T) {
+	t.Parallel()
 	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 	for _, c := range []struct {
 		in   string
@@ -236,6 +240,7 @@ func TestEvidence_Weeks(t *testing.T) {
 }
 
 func TestEvidence_StressResultAndArgs(t *testing.T) {
+	t.Parallel()
 	if _, err := evidence.ParseStressResult("crash", "no result here\n"); err == nil {
 		t.Errorf("output without RESULT: want an error")
 	}
@@ -267,6 +272,7 @@ func TestEvidence_StressResultAndArgs(t *testing.T) {
 }
 
 func TestEvidence_Paths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if got := evidence.ConfigPath(root, "btc"); got != filepath.Join(root, "config_btc.yaml") {
 		t.Errorf("no deploy.env: %s", got)
@@ -296,6 +302,7 @@ func TestEvidence_Paths(t *testing.T) {
 // runs every standard shock through the stress command (a fake here, one
 // shock failing), and Write leaves the .md and .json in data/evidence/<week>/.
 func TestEvidence_LoadRunStressWrite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mkfile := func(rel, body string) {
 		t.Helper()
