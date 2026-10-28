@@ -16,7 +16,11 @@ const (
 	StrategyFile = "OptionStrategy.md"
 	GlossaryFile = "frontend/content/glossary.json"
 	ExplainFile  = "internal/api/explain.go"
-	IndexFile    = "frontend/content/help-index.json"
+	// ParametersFile and GuideFile are cited by their base names
+	// ("parameters.md#<anchor>", "monitor-guide.md#<anchor>").
+	ParametersFile = "docs/parameters.md"
+	GuideFile      = "frontend/content/monitor-guide.md"
+	IndexFile      = "frontend/content/help-index.json"
 )
 
 // Source kinds, the prefix of every passage's Source but the strategy's.
@@ -37,10 +41,14 @@ type CatalogueEntry struct {
 // Sources are the raw inputs of the index: the two files' bytes, the
 // catalogue's sentences and the bytes of the file they are written in.
 type Sources struct {
-	Strategy  []byte
-	Glossary  []byte
-	Catalogue []CatalogueEntry
-	Explain   []byte
+	Strategy []byte
+	// Parameters is docs/parameters.md, the settings reference; Guide is the
+	// user-facing Monitor guide, one section per page (#418).
+	Parameters []byte
+	Guide      []byte
+	Glossary   []byte
+	Catalogue  []CatalogueEntry
+	Explain    []byte
 }
 
 // GlossaryEntry is the part of a glossary.json entry the index reads.
@@ -81,6 +89,8 @@ func Build(s Sources) (File, error) {
 		}
 	}
 	add(Parse(StrategyFile, s.Strategy), BlobHash(s.Strategy))
+	add(Parse("parameters.md", s.Parameters), BlobHash(s.Parameters))
+	add(Parse("monitor-guide.md", s.Guide), BlobHash(s.Guide))
 
 	terms := make([]string, 0, len(gloss))
 	for t := range gloss {
