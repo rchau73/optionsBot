@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import DetailsPage from "@/components/DetailsPage";
 import Monitor from "@/components/Monitor";
 import PayoffCard from "@/components/PayoffCard";
 import { PositionsScreen } from "@/components/PositionsPage";
@@ -187,9 +188,11 @@ describe("Scenario: open from a leg", () => {
     useMonitor.mockReturnValue({ names: ["btc"], bots: [bot()], feed: [], history: [], trades: {}, error: null, pollMs: 1000, polledAt: Date.now() });
   });
 
+  // #405: the positions table and the missing legs are on Details (pro); a leg is named by its strike, the instrument in its title.
   test("a leg in the positions table opens the modal with that leg's strangle; Esc closes it and focus returns to the row", () => {
-    render(<Monitor role="manager" />);
-    const row = screen.getByRole("button", { name: "BTC-27NOV26-75000-P" });
+    render(<DetailsPage />);
+    const row = screen.getByRole("button", { name: "75,000" });
+    expect(row).toHaveAttribute("title", expect.stringContaining("BTC-27NOV26-75000-P"));
     row.focus();
     fireEvent.click(row);
     const dialog = screen.getByRole("dialog", { name: "Payoff of the strangle" });
@@ -201,8 +204,8 @@ describe("Scenario: open from a leg", () => {
   });
 
   test("focus is trapped inside the dialog; × closes it", () => {
-    render(<Monitor role="manager" />);
-    fireEvent.click(screen.getByRole("button", { name: "BTC-27NOV26-75000-P" }));
+    render(<DetailsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "75,000" }));
     const dialog = screen.getByRole("dialog");
     const close = within(dialog).getByRole("button", { name: "Close" });
     const toggles = within(dialog).getAllByRole("button", { pressed: true });
@@ -220,7 +223,7 @@ describe("Scenario: open from a leg", () => {
     const b = bot();
     b.status.held_legs = [{ strangle_id: "a", slot: { dte: 25, delta: 0.16 }, missing: "call", open_leg: "BTC-27NOV26-75000-P", rule: "stopped", reason: "stopped out" }];
     useMonitor.mockReturnValue({ names: ["btc"], bots: [b], feed: [], history: [], trades: {}, error: null, pollMs: 1000, polledAt: Date.now() });
-    render(<Monitor role="manager" />);
+    render(<DetailsPage />);
     const held = within(screen.getByTestId("held-btc:a:call")).getByRole("button", { name: "BTC-27NOV26-75000-P" });
     fireEvent.click(held);
     expect(within(screen.getByRole("dialog")).getByRole("heading", { level: 3 })).toHaveTextContent(/^BTC · 25 d slot/);
@@ -239,8 +242,8 @@ describe("Scenario: open from a leg", () => {
     const b = bot();
     b.payoff = report([]);
     useMonitor.mockReturnValue({ names: ["btc"], bots: [b], feed: [], history: [], trades: {}, error: null, pollMs: 1000, polledAt: Date.now() });
-    render(<Monitor role="manager" />);
-    fireEvent.click(screen.getByRole("button", { name: "BTC-27NOV26-75000-P" }));
+    render(<DetailsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "75,000" }));
     expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Chart unknown: this strangle is no longer open");
   });
 });

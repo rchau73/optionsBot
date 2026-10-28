@@ -100,51 +100,50 @@ describe("Trade history", () => {
     trade(3, "close", { pnl: 0.004, pnl_usd: 340, detail: "roi 52% ≥ 50%" }), // an older bot: no plain
   ];
 
-  test("Scenario: trade history row — reason cell shows plain; expanding shows the rule and its numbers", () => {
-    render(<TradeHistory trades={trades} detailsOpen={false} />);
-    const row = screen.getByText(STOP_PLAIN).closest("tr");
-    const toggle = within(row).getByRole("button", { name: "details" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    const rule = within(row).getByText("stop_loss_200pct: mark 0.02 ≥ 2 × 0.01");
-    expect(rule).not.toBeVisible();
-    expect(within(row).getByText("Stop-loss")).not.toBeVisible();
-    fireEvent.click(toggle);
-    expect(rule).toBeVisible();
-    expect(within(row).getByText("Stop-loss")).toBeVisible();
-  });
-
-  test("details open by default for a manager", () => {
-    render(<TradeHistory trades={trades} detailsOpen={openFor("manager")} />);
-    const row = screen.getByText(STOP_PLAIN).closest("tr");
-    expect(within(row).getByRole("button", { name: "hide details" })).toHaveAttribute("aria-expanded", "true");
-    expect(within(row).getByText("stop_loss_200pct: mark 0.02 ≥ 2 × 0.01")).toBeVisible();
-  });
-
-  test("a row without plain shows today's reason and detail, no toggle", () => {
+  // #405: the row shows the reason chip and the plain words' first sentence; its caret opens a detail row with the
+  // full sentence, the rule and its numbers — collapsed at first for every role, so the log stays one line per trade.
+  test("Scenario: trade history row — reason chip and plain; expanding shows the rule and its numbers", () => {
     render(<TradeHistory trades={trades} />);
-    const row = screen.getByText("BTC-X-3").closest("tr");
+    const row = screen.getByTestId("trade-btc-2");
+    expect(within(row).getByText("Stop-loss")).toBeVisible();
+    expect(row).toHaveTextContent(STOP_PLAIN);
+    const toggle = within(row).getByRole("button", { name: /Show details/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const detail = document.getElementById(toggle.getAttribute("aria-controls"));
+    expect(detail).toHaveTextContent("Stop-loss: stop_loss_200pct: mark 0.02 ≥ 2 × 0.01");
+    expect(detail).not.toBeVisible();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(detail).toBeVisible();
+    expect(within(detail).getByText(STOP_PLAIN)).toBeVisible();
+  });
+
+  test("a row without plain shows today's reason; its detail row the rule's numbers", () => {
+    render(<TradeHistory trades={trades} />);
+    const row = screen.getByTestId("trade-btc-3");
     expect(within(row).getByText("Take-profit")).toBeVisible();
-    expect(within(row).getByText("roi 52% ≥ 50%")).toBeVisible();
-    expect(within(row).queryByRole("button")).toBeNull();
+    const toggle = within(row).getByRole("button");
+    fireEvent.click(toggle);
+    expect(document.getElementById(toggle.getAttribute("aria-controls"))).toHaveTextContent("Take-profit: roi 52% ≥ 50%");
   });
 
   test("the generic fallback is shown as it is", () => {
     render(<TradeHistory trades={[trade(1, "close", { reason: "odd", plain: GENERIC })]} />);
-    expect(screen.getByText(GENERIC)).toBeVisible();
+    expect(screen.getByTestId("trade-btc-1")).toHaveTextContent(GENERIC);
   });
 
   test("Scenario: filters unchanged — exit reason stop-loss lists only stop-loss closes", () => {
     render(<TradeHistory trades={trades} />);
     fireEvent.change(screen.getByLabelText(/Exit reason/), { target: { value: "Stop-loss" } });
     expect(screen.getByText("1 rows")).toBeInTheDocument();
-    expect(screen.getByText(STOP_PLAIN)).toBeInTheDocument();
-    expect(screen.queryByText("BTC-X-3")).toBeNull();
+    expect(screen.getByTestId("trade-btc-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("trade-btc-3")).toBeNull();
   });
 
   test("losses and gains share size and weight in the P&L cells", () => {
     render(<TradeHistory trades={trades} />);
-    const loss = screen.getByText(STOP_PLAIN).closest("tr").querySelector(".text-loss");
-    const gain = screen.getByText("BTC-X-3").closest("tr").querySelector(".text-profit");
+    const loss = screen.getByTestId("trade-btc-2").querySelector(".text-loss");
+    const gain = screen.getByTestId("trade-btc-3").querySelector(".text-profit");
     const sizeWeight = (el) => el.className.split(/\s+/).filter((c) => /^(text-(xs|sm|base|lg)|font-)/.test(c));
     expect(sizeWeight(loss)).toEqual(sizeWeight(gain));
   });

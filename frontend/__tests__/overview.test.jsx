@@ -179,35 +179,15 @@ describe("Scenario: phone overview", () => {
     expect(within(last).getByRole("link", { name: /All actions, explained/ })).toHaveAttribute("href", "/activity?bot=btc");
   });
 
-  test("the menu opens the other views and Details", () => {
-    const onDetails = jest.fn();
-    render(<PhoneOverview bots={twoBots()} selected="btc" onDetails={onDetails} />);
+  test("the menu opens the other views and Details (pro), its own page (#405)", () => {
+    render(<PhoneOverview bots={twoBots()} selected="btc" />);
     const menu = screen.getByRole("button", { name: "Menu" });
     expect(menu).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(menu);
     const nav = screen.getByRole("navigation", { name: "Views" });
     expect(within(nav).getByRole("link", { name: "Income, month by month" })).toHaveAttribute("href", "/income?bot=btc");
     expect(within(nav).getByRole("link", { name: "Worst case right now" })).toHaveAttribute("href", "/worst-case?bot=btc");
-    fireEvent.click(within(nav).getByRole("button", { name: "Details" }));
-    expect(onDetails).toHaveBeenCalledWith(true);
-  });
-
-  test("Details on a phone shows the full monitor", () => {
-    mockBots(twoBots());
-    render(<Monitor role="user" />);
-    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-    fireEvent.click(screen.getByRole("button", { name: "Details" }));
-    expect(screen.getByTestId("desktop-monitor")).not.toHaveClass("hidden");
-  });
-
-  test("Details (pro) from the menu bar shows the detail panels opened, whatever was saved (#385)", () => {
-    mockBots(twoBots());
-    window.localStorage.setItem("monitor.panel.positions", "0");
-    render(<Monitor role="user" details />);
-    expect(screen.getByTestId("desktop-monitor")).not.toHaveClass("hidden");
-    expect(screen.getByRole("button", { name: /Open positions/ })).toHaveAttribute("aria-expanded", "true");
-    expect(document.getElementById("details")).not.toBeNull();
-    window.localStorage.removeItem("monitor.panel.positions");
+    expect(within(nav).getByRole("link", { name: "Details (pro)" })).toHaveAttribute("href", "/details?bot=btc");
   });
 
   test("a warning is shown in the phone header and the headline", () => {
@@ -356,59 +336,37 @@ describe("#321 Scenario: flat later is not a first day", () => {
   });
 });
 
-describe("#288 Scenario: first visit as a user", () => {
-  test("the dashboards, the P&L charts and the KPI strip are visible; every detail panel is folded with its one-line summary", () => {
-    mockBots(twoBots());
-    render(<Monitor role="user" />);
-    const desktop = screen.getByTestId("desktop-monitor");
-    expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
-    expect(panelTitles(desktop, false)).toEqual(DETAIL_PANELS);
-    // #394: the P&L charts belong to the dashboard, open for everyone.
-    expect(panelTitles(desktop, true)).toEqual(PNL_PANELS);
-    // The KPI strip is outside every panel: visible.
-    expect(within(desktop).getByText("Bots online")).toBeVisible();
-    expect(within(desktop).getByText("8 legs, 4 strangles")).toBeInTheDocument();
-    expect(within(desktop).getByText("2 working")).toBeInTheDocument();
-  });
-});
-
 const PNL_PANELS = ["P&L (USD, all bots)", "P&L in coin (per bot)"];
-const DETAIL_PANELS = [
-  "Open positions",
-  "Missing legs: why repair holds them",
-  "Not managed by the bot (still uses margin)",
-  "Trade history & profitability",
-  "Working orders (placed, not filled yet)",
-];
 
-describe("#288 Scenario: a saved choice wins", () => {
-  test("Trade history opened before in this browser is open on reload", () => {
-    window.localStorage.setItem("monitor.panel.trades", "1");
-    mockBots(twoBots());
-    render(<Monitor role="user" />);
-    const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, "Trade history & profitability"]);
-  });
-});
-
-describe("#288 Scenario: managers unchanged", () => {
-  test.each(["manager", "admin", null])("%s with no saved choices: every panel is open", (role) => {
+// #405: the detail panels left the overview for Details (pro), /details.
+describe("Scenario: the Overview loses the detail panels", () => {
+  test.each(["user", "manager", null])("%s: the dashboards and the P&L charts only, open", (role) => {
     mockBots(twoBots());
     render(<Monitor role={role} />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, false)).toHaveLength(0);
-    expect(panelTitles(desktop, true)).toEqual([...PNL_PANELS, ...DETAIL_PANELS]);
+    expect(within(desktop).getByRole("region", { name: "BTC dashboard" })).toBeInTheDocument();
+    expect(panelTitles(desktop, false)).toEqual([]);
+    expect(panelTitles(desktop, true)).toEqual(PNL_PANELS);
+    expect(within(desktop).queryAllByRole("heading", { name: /Open positions|Missing legs|Working orders|Trade/ })).toEqual([]);
+    expect(within(desktop).queryAllByText("Bots online")).toEqual([]);
+    expect(document.getElementById("details")).toBeNull();
+  });
+
+  test("a saved choice still folds a P&L chart", () => {
+    window.localStorage.setItem("monitor.panel.pnl", "0");
+    mockBots(twoBots());
+    render(<Monitor role="user" />);
+    expect(panelTitles(screen.getByTestId("desktop-monitor"), false)).toEqual(["P&L (USD, all bots)"]);
   });
 });
 
 describe("#288 Scenario: warnings never folded away", () => {
-  test("LOOP STALLED shows in the header while the user's panels are folded", () => {
+  test("LOOP STALLED shows in the header", () => {
     const bots = twoBots();
     bots[0].status = { ...bots[0].status, loop_at: new Date(Date.now() - 3600_000).toISOString(), eval_interval_ms: 40000 };
     mockBots(bots);
     render(<Monitor role="user" />);
     const desktop = screen.getByTestId("desktop-monitor");
-    expect(panelTitles(desktop, false)).toEqual(DETAIL_PANELS);
     expect(within(within(desktop).getByTestId("bot-btc")).getByText("LOOP STALLED")).toBeInTheDocument();
     // And on the phone header.
     expect(within(screen.getByTestId("phone-warnings")).getByText("LOOP STALLED")).toBeInTheDocument();

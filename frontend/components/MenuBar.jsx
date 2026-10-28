@@ -24,7 +24,7 @@ export default function MenuBar({ person = null }) {
   const bot = botParam(params?.get("bot"));
   const first = useFirstBot(shown && !bot);
   if (!shown) return null;
-  return <MenuNav pathname={pathname} bot={bot ?? first} view={params?.get("view") ?? null} person={person} />;
+  return <MenuNav pathname={pathname} bot={bot ?? first} person={person} />;
 }
 
 /** The first configured bot, fetched once when wanted (no ?bot= on the page). */
@@ -42,11 +42,11 @@ function useFirstBot(wanted) {
 }
 
 /** Pure render of the menu, for tests. */
-export function MenuNav({ pathname, bot = null, view = null, person = null }) {
+export function MenuNav({ pathname, bot = null, person = null }) {
   return (
     <nav aria-label="Main" className="border-b border-line bg-panel px-2 py-1 sm:px-4">
       <ul className="flex flex-wrap items-center gap-1">
-        {menuItems(pathname, { bot, view }).map((item) => (
+        {menuItems(pathname, { bot }).map((item) => (
           <li key={item.key}>
             <Link
               href={item.href}

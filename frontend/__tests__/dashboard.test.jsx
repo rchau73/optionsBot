@@ -113,17 +113,16 @@ describe("Scenario: the Overview reads as a dashboard", () => {
     expect(titles).toEqual(expect.arrayContaining(["P&L (USD, all bots)", "P&L in coin (per bot)"]));
     expect(titles.some((t) => /^Activity$/.test(t) || /Account & collateral/.test(t))).toBe(false);
     expect(within(desktop).queryByTestId("activity-list")).toBeNull();
-    // The P&L charts are part of the dashboard: open even for a user, whose detail panels start folded.
+    // The P&L charts are part of the dashboard: open even for a user.
     expect(within(desktop).getByRole("button", { name: /P&L \(USD, all bots\)/ })).toHaveAttribute("aria-expanded", "true");
-    expect(within(desktop).getByRole("button", { name: /Open positions/ })).toHaveAttribute("aria-expanded", "false");
   });
 
-  test("the dashboards come before Details (pro)", () => {
+  // #405: Details (pro) is its own page now.
+  test("no Details (pro) section on the overview", () => {
     mockBots([bot()]);
     render(<Monitor role="manager" />);
-    const dash = screen.getByRole("region", { name: "BTC dashboard" });
-    const details = document.getElementById("details");
-    expect(dash.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(document.getElementById("details")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open positions/ })).toBeNull();
   });
 });
 
