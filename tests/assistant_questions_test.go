@@ -43,6 +43,29 @@ type goldenQuestion struct {
 	// model's verdict and the expected checklist; the monitor's
 	// __tests__/assistant-request.test.js runs it through lib/assistant/request.js.
 	Request json.RawMessage `json:"request,omitempty"`
+	// Bot is a question about a bot's own data (#427): its routes' answers
+	// (/api/status, /api/positions, /api/strangles/payoff, /api/journal) and
+	// a correct answer citing the passages the monitor builds from them
+	// (live:<bot>/…, journal:<bot>/…); the monitor's
+	// __tests__/assistant-live.test.js builds them and checks that answer.
+	Bot *goldenBot `json:"bot,omitempty"`
+}
+
+type goldenBot struct {
+	Status    json.RawMessage `json:"status"`
+	Positions json.RawMessage `json:"positions"`
+	Payoff    json.RawMessage `json:"payoff"`
+	Journal   json.RawMessage `json:"journal"`
+	Answer    struct {
+		Text      string   `json:"text"`
+		Citations []string `json:"citations"`
+	} `json:"answer"`
+}
+
+// botSource says whether a source names a bot's own data (#427), which a
+// question's bot fixture provides, never the help index.
+func botSource(s string) bool {
+	return strings.HasPrefix(s, "live:") || strings.HasPrefix(s, "journal:")
 }
 
 // requestBehaviours are the request check's outcomes (#409): its category
@@ -79,6 +102,7 @@ var journalEvent = map[string]string{
 	"close": orders.EventClosed,
 	"skip":  orders.EventSkipped,
 	"risk":  orders.EventRisk,
+	"fill":  orders.EventFilled,
 }
 
 func loadGolden(t *testing.T) []goldenQuestion {
@@ -124,7 +148,7 @@ func unresolvedSources(qs []goldenQuestion, strategy []byte, index helpkb.File) 
 	var out []string
 	for _, q := range qs {
 		for _, s := range q.ExpectedSources {
-			ok := inIndex[s]
+			ok := inIndex[s] || (q.Bot != nil && botSource(s))
 			if a, isStrategy := strings.CutPrefix(s, helpkb.StrategyFile+"#"); isStrategy {
 				ok = anchors[a]
 			}
@@ -192,6 +216,9 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		}
 		if (q.Category == "request") != (len(q.Request) > 0) {
 			t.Errorf("%s: a request fixture belongs to request cases only", q.ID)
+		}
+		if q.Bot != nil && (q.ExpectedBehaviour != "answer" || len(q.Bot.Answer.Citations) == 0 || len(q.Bot.Status) == 0 || len(q.Bot.Journal) == 0) {
+			t.Errorf("%s: a bot fixture needs status, journal and a cited answer to an answer question", q.ID)
 		}
 	}
 	for cat, min := range goldenMinimum {
@@ -295,6 +322,15 @@ func TestAssistantQuestions_MustSayComesFromSources(t *testing.T) {
 	}
 	for _, q := range loadGolden(t) {
 		for _, phrase := range q.MustSay {
+			// A question about the bot's own data (#427): what its correct
+			// answer reads from the cited figures ("price fell"), checked by
+			// the monitor's guard against the passages built from them.
+			if q.Bot != nil {
+				if !strings.Contains(normText(q.Bot.Answer.Text), normText(phrase)) {
+					t.Errorf("%s: must_say %q is not in the fixture's answer", q.ID, phrase)
+				}
+				continue
+			}
 			found := false
 			for _, s := range q.ExpectedSources {
 				found = found || strings.Contains(text[s], normText(phrase))

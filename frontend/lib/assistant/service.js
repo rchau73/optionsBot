@@ -1,7 +1,9 @@
 // Server-side only: one question through the assistant (#191). The help
-// passages that match it and, when a bot is named, that bot's journal facts of
-// the last JOURNAL_DAYS (#417: every open, close and fill, plus the other
-// facts most relevant to the question, within a budget) go to the model; its answer passes the guard before anyone sees it,
+// passages that match it and, when a bot is named, that bot's live page data
+// (#427: its open legs and the market now) and its journal facts of the last
+// JOURNAL_DAYS plus the whole history of the legs it holds (#417, #427: every
+// open, close and fill with the market it recorded, plus the other facts most
+// relevant to the question, within a budget) go to the model; its answer passes the guard before anyone sees it,
 // and the question, the sources, the model's text and what was shown are
 // logged for review. An answer with no citation becomes "I don't know"; any
 // other rejected answer becomes the fallback reply.
@@ -11,6 +13,7 @@ import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
 import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyChecklist, looksLikeReport } from "./request";
 import { HelpIndex, noAnswer } from "./search";
 import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
+import { formatCoin, formatPct, formatPrice } from "@/lib/format";
 
 export const MAX_QUESTION = 500;
 // Passages of the help sent with a question: enough for an answer, few enough to keep the call small.
@@ -57,27 +60,191 @@ export function shortTime(iso) {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
 
+const UNKNOWN = "unknown";
+const isNum = (v) => typeof v === "number" && Number.isFinite(v);
+/** v through f, or "unknown" when it is not a number: a missing figure is never guessed. */
+const fig = (v, f) => (isNum(v) ? f(v) : UNKNOWN);
+/** "84,498" (at most `digits` decimals), as the monitor groups thousands. */
+const grouped = (digits) => (v) => v.toLocaleString("en-US", { maximumFractionDigits: digits });
+
+/**
+ * "Market recorded at 21 Oct 14:30 UTC: spot 84,498, DVOL 37.2, IV percentile
+ * 15 %, regime POSITIVE/PINNING." — the market a fill or a close's journal
+ * line holds (/api/journal item.market, #427), as words; "" without one.
+ */
+function recordedMarket(e) {
+  const m = e.market;
+  if (!m) return "";
+  const regime = m.gex_regime || UNKNOWN;
+  return (
+    `Market recorded at ${shortTime(e.at)} UTC: spot ${fig(m.spot, grouped(0))}, DVOL ${fig(m.dvol, grouped(1))}, ` +
+    `IV percentile ${fig(m.iv_percentile, grouped(1))} %, regime ${regime}.`
+  );
+}
+
 /**
  * A bot's journal items (/api/journal, oldest first) as citable passages: id
  * "journal:<bot>/<seq>" (the last occurrence's seq), the plain-words sentence
  * and its time — the facts the journal recorded, nothing recomputed. A
- * collapsed item reads "×42, 20 Oct 08:00 → 21 Oct 14:30: <plain>". `trade`
- * marks an open, close or fill; `reason` is the rule word, for the search.
+ * collapsed item reads "×42, 20 Oct 08:00 → 21 Oct 14:30: <plain>"; a fill or
+ * a close adds the market its line recorded (#427). `trade` marks an open,
+ * close or fill; `reason` is the rule word, for the search; `held` marks an
+ * event of an instrument the bot holds now (`held`, the answer's list, #427).
  */
-export function journalPassages(bot, items) {
+export function journalPassages(bot, items, held = []) {
+  const holds = new Set(held ?? []);
   return (items ?? [])
     .filter((e) => e && typeof e.plain === "string" && e.plain && e.seq != null)
-    .map((e) => ({
-      id: `journal:${bot}/${e.seq}`,
-      source: `journal:${bot}`,
-      title: `${bot} journal: ${e.event} at ${e.at}`,
-      text: e.count > 1 ? `×${e.count}, ${shortTime(e.first)} → ${shortTime(e.last)}: ${e.plain}` : e.plain,
-      trade: TRADE_EVENTS.has(e.event),
-      reason: typeof e.reason === "string" ? e.reason : "",
-      seq: Number(e.seq),
-      atMs: Date.parse(e.at),
-      firstMs: Date.parse(e.first ?? e.at),
-    }));
+    .map((e) => {
+      const said = e.count > 1 ? `×${e.count}, ${shortTime(e.first)} → ${shortTime(e.last)}: ${e.plain}` : e.plain;
+      const market = recordedMarket(e);
+      const instrument = typeof e.instrument === "string" ? e.instrument : "";
+      return {
+        id: `journal:${bot}/${e.seq}`,
+        source: `journal:${bot}`,
+        title: `${bot} journal: ${e.event} at ${e.at}`,
+        text: market ? `${said} ${market}` : said,
+        trade: TRADE_EVENTS.has(e.event),
+        reason: typeof e.reason === "string" ? e.reason : "",
+        instrument,
+        held: instrument !== "" && holds.has(instrument),
+        seq: Number(e.seq),
+        atMs: Date.parse(e.at),
+        firstMs: Date.parse(e.first ?? e.at),
+      };
+    });
+}
+
+// The bot's live page data (#427): its open legs and the market now, read
+// for a question (GET /api/status, /api/positions, /api/strangles/payoff),
+// kept LIVE_CACHE_MS per bot; a full book (8 legs + the market) stays under
+// LIVE_TOKENS.
+export const LIVE_CACHE_MS = 10_000;
+export const LIVE_TOKENS = 1500;
+
+/** "27 Nov 2026" (UTC), or "unknown". */
+function day(iso) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime()) || d.getUTCFullYear() < 2000) return UNKNOWN;
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** The market now as words, from /api/status (its own fields; nothing recomputed). */
+function marketPassage(bot, status) {
+  const m = status.market ?? {};
+  const risk = status.risk ?? {};
+  const policy = risk.status;
+  let confirmed = "confirmation unknown";
+  if (policy) {
+    if (!policy.regime_known) confirmed = "no regime confirmed yet";
+    else confirmed = policy.regime_negative ? "confirmed regime negative" : "confirmed regime not negative";
+  }
+  const trend = status.trend ? `${status.trend}${status.direction ? ` (from ${status.direction})` : ""}` : UNKNOWN;
+  const band = fig(status.flip_buffer_pct, (v) => (v > 0 ? `±${grouped(2)(v)} % of spot` : UNKNOWN));
+  const frozen = policy?.frozen ? ` New risk is frozen: ${policy.freeze_reason || UNKNOWN}.` : "";
+  return {
+    id: `live:${bot}/market`,
+    source: `live:${bot}`,
+    title: `${bot} market now${status.as_of ? ` at ${status.as_of}` : ""}`,
+    text:
+      `Market now (${status.as_of ? `${shortTime(status.as_of)} UTC` : "time unknown"}): spot ${fig(m.spot, grouped(0))}, ` +
+      `DVOL ${fig(m.dvol, grouped(1))}, IV percentile ${fig(m.iv_percentile, grouped(1))} %, ` +
+      `gamma regime ${m.gex_regime || UNKNOWN} (${confirmed}), trend ${trend}, gamma flip ${fig(m.gamma_flip, grouped(0))}, ` +
+      `shed band ${band} around the flip. IM ${fig(risk.im_pct, grouped(1))} % of margin balance, ` +
+      `limit ${fig(policy?.limit_im_pct, grouped(1))} %.${frozen}`,
+    live: true,
+  };
+}
+
+/** One open leg as words, from /api/positions, its payoff chart and the held legs. */
+function legPassage(bot, strangle, leg, chart, holds, unit) {
+  const drawn = (chart?.legs ?? []).find((l) => l.position_id === leg.position_id);
+  const type = leg.option_type || UNKNOWN;
+  const side = leg.side === "sell" ? "short" : leg.side === "buy" ? "long" : UNKNOWN;
+  const slot = strangle.slot ? `${strangle.slot.dte}-day ${strangle.slot.delta} delta` : UNKNOWN;
+  const pnl = fig(leg.unrealised_pnl, (v) => formatCoin(v, unit, 5));
+  const roi = fig(leg.roi_pct, (v) => formatPct(v, 0, { signed: true }));
+  const otm = isNum(leg.distance_to_strike_pct) ? `${leg.moneyness || "distance"} ${leg.distance_to_strike_pct.toFixed(1)}%` : `distance to strike ${UNKNOWN}`;
+  const missing = holds.map((h) => ` Its ${h.missing} is not held: ${h.reason || UNKNOWN}.`).join("");
+  return {
+    id: `live:${bot}/leg/${leg.instrument}`,
+    source: `live:${bot}`,
+    title: `${bot} open leg ${leg.instrument}`,
+    text:
+      `${leg.instrument}: ${side} ${type}, strike ${fig(leg.strike, grouped(0))}, slot ${slot}, expiry ${day(leg.expiry)}, ` +
+      `${fig(leg.dte, (v) => v.toFixed(1))} days left. Qty ${fig(leg.qty, String)}, entry price ${fig(leg.entry_price, formatPrice)}, ` +
+      `mark ${fig(leg.mark, formatPrice)}, P&L ${pnl}, ${roi} of its premium. ` +
+      `Delta ${fig(leg.greeks?.delta, (v) => v.toFixed(2))}, ${otm}. ` +
+      `Stop-loss at mark ${fig(leg.stop_loss_mark, formatPrice)} (spot ${fig(drawn?.stop_level, grouped(0))} on the model); ` +
+      `delta-exit line at spot ${fig(drawn?.exit_line, grouped(0))}.${missing}`,
+    live: true,
+  };
+}
+
+/**
+ * The bot's live page data as citable passages (#427): "live:<bot>/market"
+ * (spot, DVOL, IV percentile, gamma regime and its confirmation, trend, flip
+ * and shed band, IM against its limit) and one "live:<bot>/leg/<instrument>"
+ * per open leg (side, strike, slot, expiry and days left, qty, entry price,
+ * mark, P&L in coin and % of premium, delta, OTM %, the stop and the
+ * delta-exit line, the missing leg's hold). Plain text from the API's own
+ * fields, as the Positions page shows them; a missing figure reads "unknown".
+ * status, positions, payoff: the routes' JSON (null when not read). [] when
+ * neither status nor positions was read.
+ */
+export function livePassages(bot, { status = null, positions = null, payoff = null } = {}) {
+  if (!status && !positions) return [];
+  const out = status ? [marketPassage(bot, status)] : [];
+  const unit = status?.underlying ?? positions?.underlying ?? "";
+  const charts = new Map((payoff?.strangles ?? []).map((s) => [s.strangle_id, s]));
+  for (const st of positions?.strangles ?? []) {
+    const chart = charts.get(st.id);
+    let holds = (status?.held_legs ?? []).filter((h) => h.strangle_id === st.id);
+    if (!status) holds = (chart?.missing ?? []).map((m) => ({ missing: m.option_type, reason: m.reason }));
+    for (const leg of st.legs ?? []) {
+      if (leg?.instrument) out.push(legPassage(bot, st, leg, chart, holds, unit));
+    }
+  }
+  return out;
+}
+
+/** "BTC-27NOV26-75000-P" → { name, strike: 75000, type: "put" } (XRP's "2d5" strike = 2.5). */
+function legOf(name) {
+  const parts = name.split("-");
+  const strike = Number((parts[2] ?? "").replace("d", "."));
+  return { name, strike, type: parts[3] === "P" ? "put" : parts[3] === "C" ? "call" : "" };
+}
+
+/** The numbers a question writes: "75.000" and "75,000" = 75000, "75k" = 75000. */
+function questionNumbers(question) {
+  const out = new Set();
+  for (const m of question.matchAll(/(\d{1,3}(?:[.,]\d{3})+|\d+(?:\.\d+)?)(\s*k\b)?/gi)) {
+    let v = /^\d{1,3}(?:[.,]\d{3})+$/.test(m[1]) ? Number(m[1].replace(/[.,]/g, "")) : Number(m[1]);
+    if (m[2]) v *= 1000;
+    out.add(v);
+  }
+  return out;
+}
+
+/**
+ * The held instruments a question names (#427): by name; else by strike and
+ * side ("the put at 75.000"), each only when it matches a held leg; else
+ * every one of them.
+ */
+export function namedInstruments(question, instruments) {
+  const q = question.toUpperCase();
+  const direct = instruments.filter((i) => q.includes(i.toUpperCase()));
+  if (direct.length) return direct;
+  let legs = instruments.map(legOf);
+  const nums = questionNumbers(question);
+  const byStrike = legs.filter((l) => nums.has(l.strike));
+  if (byStrike.length) legs = byStrike;
+  const puts = /\bputs?\b/i.test(question);
+  if (puts !== /\bcalls?\b/i.test(question)) {
+    const side = legs.filter((l) => l.type === (puts ? "put" : "call"));
+    if (side.length) legs = side;
+  }
+  return legs.map((l) => l.name);
 }
 
 /** About how many tokens a passage costs in the prompt (≈ 4 characters a token). */
@@ -90,30 +257,47 @@ export function passageTokens(p) {
  * (newest first if they alone fill the budget), then the other facts the
  * question matches best — the help's BM25 over each one's sentence and rule
  * word — and the decisions within 30 min of a trade sent, while the budget
- * lasts. A pinned passage (the facts of the trade a "Why?" asks about,
- * explainPassages) always goes first, outside the budget. Oldest first, as
- * the journal reads.
+ * lasts. The history of the held legs the question names (namedInstruments:
+ * by instrument, strike or side, else every held leg; #427) goes before the
+ * rest: their trades oldest first (the entry first, however old), then the
+ * week's other trades, then those legs' other events newest first. A pinned
+ * passage (the facts of the trade a "Why?" asks about, explainPassages)
+ * always goes first, outside the budget. Oldest first, as the journal reads.
  */
 export function selectJournal(question, passages, { maxPassages = JOURNAL_PASSAGES, maxTokens = JOURNAL_TOKENS } = {}) {
   const picked = [];
+  const chosen = new Set();
   let tokens = 0;
   const take = (p) => {
+    if (chosen.has(p)) return true;
     const cost = passageTokens(p);
     if (picked.length >= maxPassages || tokens + cost > maxTokens) return false;
     picked.push(p);
+    chosen.add(p);
     tokens += cost;
     return true;
   };
   const pinned = (passages ?? []).filter((x) => x.pinned);
   for (const p of pinned) {
     picked.push(p);
+    chosen.add(p);
     tokens += passageTokens(p);
   }
   const all = (passages ?? []).filter((x) => !x.pinned);
-  for (const p of all.filter((x) => x.trade).sort((a, b) => b.seq - a.seq)) {
+  const held = [...new Set(all.filter((x) => x.held).map((x) => x.instrument))];
+  const named = new Set(namedInstruments(question, held));
+  const ofNamed = all.filter((x) => x.held && named.has(x.instrument));
+  const newest = (a, b) => b.seq - a.seq;
+  for (const p of ofNamed.filter((x) => x.trade).sort((a, b) => a.seq - b.seq)) {
     if (!take(p)) break;
   }
-  const others = all.filter((x) => !x.trade);
+  for (const p of all.filter((x) => x.trade).sort(newest)) {
+    if (!take(p)) break;
+  }
+  for (const p of ofNamed.filter((x) => !x.trade).sort(newest)) {
+    if (!take(p)) break;
+  }
+  const others = all.filter((x) => !x.trade && !chosen.has(x));
   if (others.length > 0) {
     const byId = new Map(others.map((p) => [p.id, p]));
     const index = new HelpIndex(others.map((p) => ({ ...p, text: `${p.text} ${(p.reason ?? "").replaceAll("_", " ")}` })));
@@ -122,7 +306,6 @@ export function selectJournal(question, passages, { maxPassages = JOURNAL_PASSAG
     }
     // Then the decisions around each trade taken (±30 min, as /api/explain's related).
     const tradeTimes = picked.filter((p) => p.trade).map((p) => p.atMs);
-    const chosen = new Set(picked);
     for (const p of others) {
       if (chosen.has(p) || !tradeTimes.some((t) => p.firstMs - AROUND_MS <= t && t <= p.atMs + AROUND_MS)) continue;
       if (!take(p)) break;
@@ -230,7 +413,11 @@ function outcomeOf(reply, verdict) {
     const t = reply.text.trim().split(/\s+/).join(" ");
     if (t === DONT_KNOW) return [OUTCOME_DONT_KNOW, DONT_KNOW];
     if (t === REFUSAL) return [OUTCOME_REFUSED, REFUSAL];
+    // No fact answered, the advice part declined (#427).
+    if (t === `${DONT_KNOW} ${REFUSAL}`) return [OUTCOME_DONT_KNOW, t];
     if (isCanonical(t)) return [OUTCOME_REJECTED, FALLBACK_REPLY];
+    // Cited facts, with the advice or forecast part declined by the refusal or
+    // not (#427): an answer — the guard has checked its citations.
     return [OUTCOME_ANSWERED, reply.text.trim()];
   }
   if (verdict.reasons.includes(REASON_NO_CITATION)) return [OUTCOME_NO_CITATION, DONT_KNOW];
@@ -299,7 +486,9 @@ function applyRequestCheck(entry, verdict, passages) {
  * Answers one question. model: { model, ask({question, passages}) → {text,
  * citations, report}, checkRequest?({question, passages}) → a verdict };
  * index: a HelpIndex; journal: the bot's week of passages from journalPassages
- * (selectJournal picks what this question sends, #417); reportPassages:
+ * plus its held legs' whole history (selectJournal picks what this question
+ * sends, #417, #427); live: the bot's page data from livePassages, all sent
+ * (#427); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409); file:
  * the review log. A question that reads as a report (looksLikeReport, or the
  * model's report flag on its answer) runs the request check instead of the
@@ -307,10 +496,10 @@ function applyRequestCheck(entry, verdict, passages) {
  * citations, outcome, checklist?, draft?, ai_generated, notice }, 502 when
  * the model failed, 500 when the log could not be written (nothing is shown unlogged).
  */
-export async function answerQuestion({ question, bot = null, journal = [], reportPassages = async () => [], user, model, index, file, nowMs = Date.now() }) {
+export async function answerQuestion({ question, bot = null, journal = [], live = [], reportPassages = async () => [], user, model, index, file, nowMs = Date.now() }) {
   const hits = index.search(question, HELP_PASSAGES);
   const facts = selectJournal(question, journal);
-  let passages = [...hits.map((h) => h.passage), ...facts];
+  let passages = [...hits.map((h) => h.passage), ...live, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -333,7 +522,7 @@ export async function answerQuestion({ question, bot = null, journal = [], repor
 
   let reply = null;
   let verdict = null;
-  if (noAnswer(hits) && facts.length === 0) {
+  if (noAnswer(hits) && facts.length === 0 && live.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;

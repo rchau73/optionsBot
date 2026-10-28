@@ -90,6 +90,9 @@ func TestAssistantGuard_Rules(t *testing.T) {
 		{"I don't know needs no citation", guard.DontKnow, nil, ""},
 		{"the refusal needs no citation", guard.Refusal, nil, ""},
 		{"a refusal with more text needs a citation", guard.Refusal + " The stop-loss is a rule.", nil, guard.ReasonNoCitation},
+		// #427: a mixed question — the facts cited, the advice part declined with the refusal.
+		{"cited facts with the refusal pass", "A leg is closed early when its delta reaches 0.30. " + guard.Refusal, []string{srcParams}, ""},
+		{"I don't know plus the refusal needs no citation", guard.DontKnow + " " + guard.Refusal, nil, ""},
 		{"unknown citation", "The bot sells options.", []string{"glossary:no-such-term"}, guard.ReasonUnknownCitation},
 		{"a passage id is a citation", "The bot sells options.", []string{srcIdea + "/1"}, ""},
 		{"ungrounded number", "The stop-loss fires at 3× the premium.", []string{"glossary:stop-loss"}, guard.ReasonUngroundedNumber},
@@ -166,6 +169,11 @@ func TestAssistantGuard_GoldenSet(t *testing.T) {
 		// A request case's answer is checked against its own fixture's
 		// passages, by the monitor's request check (#409).
 		if q.Category == "request" {
+			a = valid
+		}
+		// A question about a bot's own data is checked against the passages
+		// the monitor builds from its fixture (assistant-live.test.js, #427).
+		if q.Bot != nil {
 			a = valid
 		}
 		if v := guard.Check(a, passages); !v.OK {

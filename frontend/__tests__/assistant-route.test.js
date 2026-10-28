@@ -164,13 +164,21 @@ describe("the request", () => {
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
     const at = "2026-10-27T10:00:00Z";
     const items = [{ seq: 41, event: "closed", reason: "stop_loss", at, first: at, last: at, count: 1, plain: "The bot bought back the put: its stop-loss fired at 2× the premium." }];
-    const fetchSpy = jest.spyOn(global, "fetch").mockResolvedValue(Response.json({ items }));
+    const routes = {
+      "/api/journal": { items },
+      "/api/status": { as_of: at, underlying: "BTC", market: { spot: 80123 } },
+      "/api/positions": { strangles: [] },
+      "/api/strangles/payoff": { strangles: [] },
+    };
+    const fetchSpy = jest.spyOn(global, "fetch").mockImplementation(async (url) => Response.json(routes[new URL(url).pathname]));
     setAssistantModel(fakeModel({ text: "Its stop-loss fired at 2× the premium.", citations: ["journal:btc/41"] }));
     const body = await (await askQ({ question: "why did the bot close the put", bot: "btc" })).json();
-    expect(fetchSpy).toHaveBeenCalledWith("http://bot-btc:8081/api/journal?days=7", expect.anything());
+    expect(fetchSpy).toHaveBeenCalledWith("http://bot-btc:8081/api/journal?days=7&held=1", expect.anything());
     expect(body.outcome).toBe("answered");
     expect(body.citations).toEqual([{ id: "journal:btc/41", source: "journal:btc", title: "btc journal: closed at 2026-10-27T10:00:00Z" }]);
     expect(logged()[0].sources).toContain("journal:btc/41");
+    // #427: the page's live data is a source too.
+    expect(logged()[0].sources).toContain("live:btc/market");
   });
 
   // #408: the panel shows "n of 30 questions left this hour".

@@ -82,6 +82,15 @@ class AssistantGradeTest(unittest.TestCase):
         f = self.grade({"id": "jar-03", "citations": [], "text": ag.DONT_KNOW})
         self.assertIn("refused or said it does not know; an answer was expected", f)
 
+    # #427: a question about the bot's own data, facts cited and the advice declined.
+    def test_bot_data_answer_with_the_refusal_passes(self):
+        q = self.by_id["why-16"]
+        self.assertEqual(self.grade({"id": q["id"], **q["bot"]["answer"]}), [])
+        f = self.grade({"id": q["id"], "citations": [], "text": ag.REFUSAL})
+        self.assertIn("refused or said it does not know; an answer was expected", f)
+        f = self.grade({"id": "how-08", "citations": ["live:btc/market"], "text": "The first one that applies wins."})
+        self.assertIn("unknown citation: live:btc/market", f)
+
     def test_unknown_requires_dont_know(self):
         f = self.grade({"id": "unk-01", "citations": ["glossary:exchange fees"], "text": "Fees are 0.03 %."})
         self.assertEqual(f, ["\"I don't know\" required, not given"])

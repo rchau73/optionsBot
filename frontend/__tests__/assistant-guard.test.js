@@ -46,6 +46,9 @@ test.each([
   ["the refusal needs no citation", REFUSAL, [], ""],
   ["the fallback needs no citation", FALLBACK_REPLY, [], ""],
   ["a refusal with more text needs a citation", `${REFUSAL} The stop-loss is a rule.`, [], REASON_NO_CITATION],
+  // #427: a mixed question — the facts cited, the advice part declined with the refusal.
+  ["cited facts with the refusal pass", `A leg is closed early when its delta reaches 0.30. ${REFUSAL}`, [srcParams], ""],
+  ["I don't know plus the refusal needs no citation", `${DONT_KNOW} ${REFUSAL}`, [], ""],
   ["unknown citation", "The bot sells options.", ["glossary:no-such-term"], REASON_UNKNOWN_CITATION],
   ["a passage id is a citation", "The bot sells options.", [`${srcIdea}/1`], ""],
   ["ungrounded number", "The stop-loss fires at 3× the premium.", ["glossary:stop-loss"], REASON_UNGROUNDED_NUMBER],
@@ -98,6 +101,8 @@ test("the golden set: correct answers pass, must_not_say phrases are rejected", 
     if (q.expected_behaviour === "dont_know") a = { text: DONT_KNOW, citations: [] };
     // A request case is checked against its own passages (assistant-request.test.js, #409).
     if (q.category === "request") a = valid;
+    // A question about the bot's own data is checked against its fixture's passages (assistant-live.test.js, #427).
+    if (q.bot) a = valid;
     const v = check(a, passages);
     if (!v.ok) failures.push(`${q.id}: correct answer rejected: ${v.details}`);
     const base = q.expected_behaviour === "answer" ? a : valid;

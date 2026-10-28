@@ -163,10 +163,10 @@ describe("botJournal", () => {
     delete process.env.BOT_APIS;
   });
 
-  test("reads /api/journal?days=7 once a minute per bot", async () => {
+  test("reads /api/journal?days=7&held=1 once a minute per bot", async () => {
     const fetchSpy = jest.spyOn(global, "fetch").mockImplementation(async () => Response.json({ items: week() }));
     const first = await botJournal("btc", NOW);
-    expect(fetchSpy).toHaveBeenCalledWith("http://bot-btc:8081/api/journal?days=7", expect.anything());
+    expect(fetchSpy).toHaveBeenCalledWith("http://bot-btc:8081/api/journal?days=7&held=1", expect.anything());
     expect(first.length).toBe(week().length);
     expect(await botJournal("btc", NOW + JOURNAL_CACHE_MS - 1)).toBe(first);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
