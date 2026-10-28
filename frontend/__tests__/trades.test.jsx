@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import TradeHistory, { tradeHistorySummary } from "@/components/TradeHistory";
 import { closeLabel, filterTrades, mergeTrades, summarizeTrades } from "@/lib/trades";
 import { prefillLive, summarise } from "@/lib/monitor";
@@ -52,12 +52,43 @@ describe("trade statistics", () => {
 });
 
 describe("TradeHistory", () => {
-  test("summary tiles and rows; filters work", () => {
+  test("summary line and rows; All / Opens / Closes and the bot filter work", () => {
     render(<TradeHistory trades={trades} />);
     expect(screen.getByText("67%")).toBeInTheDocument(); // win rate
     expect(screen.getByText("5 rows")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "close" } });
+    fireEvent.click(screen.getByRole("button", { name: "Closes" }));
+    expect(screen.getByRole("button", { name: "Closes" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("3 rows")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Opens" }));
+    expect(screen.getByText("2 rows")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.change(screen.getByLabelText(/Bot/), { target: { value: "eth" } });
+    expect(screen.getByText("1 rows")).toBeInTheDocument();
+  });
+
+  test("coin first: realized per coin with ≈ USD under, never added together; by reason a column per coin", () => {
+    render(<TradeHistory trades={trades} />);
+    const line = screen.getByTestId("trades-summary");
+    expect(line).toHaveTextContent("+0.00200 BTC≈ +$170");
+    expect(line).toHaveTextContent("+0.0010 ETH≈ +$85");
+    expect(within(line).getByRole("img", { name: "2 of 3 won" })).toBeInTheDocument();
+    expect(line).toHaveTextContent("1.25×"); // avg win $212.50 ÷ avg loss $170
+    const reasons = screen.getByText("By exit reason").closest("table");
+    expect([...reasons.querySelectorAll("th")].map((th) => th.textContent)).toEqual(["By exit reason", "Closes", "Won", "BTC", "ETH"]);
+    const tp = within(reasons).getByText("Take-profit").closest("tr");
+    expect(tp).toHaveTextContent("+0.00400 BTC");
+    expect(tp).toHaveTextContent("+0.0010 ETH");
+    const slots = screen.getByText("By slot").closest("table");
+    expect(within(slots).getByText("BTC 60d · Δ0.18").closest("tr")).toHaveTextContent("−0.00200 BTC");
+  });
+
+  test("a log row is one line: short leg name, the instrument in its title", () => {
+    render(<TradeHistory trades={[t(1, "close", { instrument: "ETH-27NOV26-2850-C", unit: "ETH", bot: "eth", pnl: 0.01, pnl_usd: 30 })]} />);
+    const leg = screen.getByText("27 Nov 2,850 C");
+    expect(leg).toHaveAttribute("title", "ETH-27NOV26-2850-C");
+    expect(leg).toHaveClass("font-mono");
+    expect(leg.closest("table")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByTestId("trade-eth-1")).toHaveTextContent("+0.0100 ETH ≈ +$30");
   });
 
   test("pages long histories", () => {

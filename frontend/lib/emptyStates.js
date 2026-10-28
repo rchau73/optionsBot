@@ -18,12 +18,12 @@ export const PANELS = {
   "monitor.header": "<Header",
   "monitor.gex": "GEX regime and gamma flip (each bot's regime chart and badges)",
   "monitor.summary": "<BotDashboards",
-  "monitor.kpi": "<KpiStrip",
+  "monitor.kpi": "<CountsLine", // Details (pro)'s one line of counts (#405)
   "monitor.panel.account": "Account & collateral (shared by all bots)",
   "monitor.panel.positions": "Open positions",
   "monitor.panel.held": "Missing legs: why repair holds them",
   "monitor.panel.others": "Not managed by the bot (still uses margin)",
-  "monitor.panel.trades": "Trade history & profitability",
+  "monitor.panel.trades": "Trades and results",
   "monitor.panel.activity": "Activity",
   "monitor.panel.pnl": "P&L in USD (every range)",
   // #404: the overview's P&L chart (Coin per bot by default); no longer a panel of its own.

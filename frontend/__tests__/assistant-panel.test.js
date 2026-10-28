@@ -179,7 +179,7 @@ describe("Scenario: citations render as chips linking to their source", () => {
     expect(chips.map((c) => [c.textContent, c.getAttribute("href")])).toEqual([
       ["7. Exit rules", `${DOCS_BASE}/OptionStrategy.md#7-exit-rules`],
       ["Stop-loss", `${DOCS_BASE}/OptionStrategy.md#4-how-a-trade-can-end`],
-      ["btc journal: closed at 2026-10-27T13:00:00Z", "/?bot=btc&view=details#trade-btc-41"],
+      ["btc journal: closed at 2026-10-27T13:00:00Z", "/details?bot=btc#trade-btc-41"],
     ]);
     expect(chips[0]).toHaveAttribute("target", "_blank");
     expect(within(answer).getByText(FOOT_SOURCES)).toBeInTheDocument();
@@ -349,7 +349,7 @@ describe("lib/assistantPanel", () => {
     [{ source: "docs/parameters.md#delta_exit_threshold" }, { href: `${DOCS_BASE}/docs/parameters.md#delta_exit_threshold`, external: true }],
     [{ source: "glossary:no-such-term" }, null],
     [{ id: "explain:closed:stop_loss", source: "explain:closed:stop_loss" }, { href: "/activity?bot=btc", external: false }],
-    [{ id: "journal:eth", source: "journal:eth" }, { href: "/?bot=eth&view=details#details", external: false }],
+    [{ id: "journal:eth", source: "journal:eth" }, { href: "/details?bot=eth#trades", external: false }],
     [{ source: "somewhere" }, null],
   ])("citationHref(%j)", (citation, want) => {
     expect(citationHref(citation, "btc")).toEqual(want);

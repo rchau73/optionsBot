@@ -117,12 +117,14 @@ describe("Scenario: the investor summary is the first block for that bot", () =>
   });
 
   // #394: the overview's first block is each bot's dashboard (chart, cards, tiles); the four answers moved into the tiles.
-  test("Monitor renders the bots' dashboards before the KPI strip", () => {
+  // #405: the KPI strip left the overview; Details (pro) has a line of counts instead.
+  test("Monitor renders the bots' dashboards first, and no KPI strip", () => {
     const src = require("fs").readFileSync(require("path").join(__dirname, "../components/Monitor.jsx"), "utf8");
     const main = src.slice(src.indexOf("<main"));
     expect(main.indexOf("<BotDashboards")).toBeGreaterThan(-1);
-    expect(main.indexOf("<BotDashboards")).toBeLessThan(main.indexOf("<KpiStrip"));
-    expect(main.indexOf("<BotDashboards")).toBeLessThan(main.indexOf("<Panel"));
+    expect(main).not.toContain("<KpiStrip");
+    // #405: the detail panels moved to /details, so nothing folds on the overview.
+    expect(main).not.toContain("<Panel");
   });
 });
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import MenuBar, { MenuNav } from "@/components/MenuBar";
-import { botParam, menuItems, showMenu } from "@/lib/menu";
+import { botParam, detailsRedirect, menuItems, showMenu } from "@/lib/menu";
 import { usePathname, useSearchParams } from "next/navigation";
 import { fetchMonitorConfig } from "@/lib/api";
 
@@ -30,7 +30,7 @@ describe("Scenario: every view is one click from any page", () => {
     ["/how-it-works", "bot=eth", "How it works"],
     ["/activity", "bot=eth", "Activity"],
     ["/account", "bot=eth", "Account"],
-    ["/", "bot=eth&view=details", "Details (pro)"],
+    ["/details", "bot=eth", "Details (pro)"],
   ])("on %s?%s the menu shows every view and marks %s", (pathname, query, current) => {
     at(pathname, query);
     render(<MenuBar />);
@@ -51,7 +51,7 @@ describe("Scenario: every view is one click from any page", () => {
     expect(href("How it works")).toBe("/how-it-works?bot=eth");
     expect(href("Activity")).toBe("/activity?bot=eth");
     expect(href("Account")).toBe("/account?bot=eth");
-    expect(href("Details (pro)")).toBe("/?bot=eth&view=details#details");
+    expect(href("Details (pro)")).toBe("/details?bot=eth");
     expect(fetchMonitorConfig).not.toHaveBeenCalled();
   });
 
@@ -130,8 +130,39 @@ describe("lib/menu", () => {
       "/how-it-works",
       "/activity",
       "/account",
-      "/?view=details#details",
+      "/details",
     ]);
+  });
+
+  // #405 Scenario: Details (pro) is its own page; the old link redirects there.
+  test("/?view=details redirects to /details, keeping a valid ?bot=", () => {
+    expect(detailsRedirect({ view: "details" })).toBe("/details");
+    expect(detailsRedirect({ view: "details", bot: "ETH" })).toBe("/details?bot=eth");
+    expect(detailsRedirect({ view: "details", bot: "eth&x=1" })).toBe("/details");
+    expect(detailsRedirect({ bot: "eth" })).toBeNull();
+    expect(detailsRedirect({ view: "other" })).toBeNull();
+    expect(detailsRedirect()).toBeNull();
+  });
+
+  test("the overview page redirects /?view=details", async () => {
+    const redirect = jest.fn(() => {
+      throw new Error("NEXT_REDIRECT");
+    });
+    jest.resetModules();
+    jest.doMock("next/navigation", () => ({ redirect }));
+    jest.doMock("@/components/Monitor", () => () => null);
+    const { default: Page } = require("@/app/page");
+    await expect(Page({ searchParams: Promise.resolve({ view: "details", bot: "btc" }) })).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/details?bot=btc");
+    redirect.mockClear();
+    const page = await Page({ searchParams: Promise.resolve({ bot: "btc" }) });
+    expect(redirect).not.toHaveBeenCalled();
+    expect(page.props.bot).toBe("btc");
+  });
+
+  test("Details (pro) is marked current on /details only", () => {
+    expect(menuItems("/details", {}).filter((i) => i.current).map((i) => i.key)).toEqual(["details"]);
+    expect(menuItems("/", {}).filter((i) => i.current).map((i) => i.key)).toEqual(["overview"]);
   });
 
   // Product owner, 2026-10-27: a page is in the menu, or here with its reason.

@@ -5,7 +5,6 @@ import glossary from "@/content/glossary.json";
 import { DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "@/lib/assistant/phrases";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
 import { clockOf } from "./activity";
-import { DETAILS_VIEW } from "./menu";
 import { formatDateTime } from "./format";
 
 export { DONT_KNOW, FALLBACK_REPLY, QUESTIONS_PER_HOUR, REFUSAL };
@@ -80,8 +79,9 @@ export function citationHref(citation, bot = null) {
   if (source.startsWith("journal:")) {
     const name = source.slice("journal:".length);
     const seq = journalSeqOf(id);
-    const base = `/${q(name)}${name ? "&" : "?"}view=${DETAILS_VIEW}`;
-    return { href: seq ? `${base}#trade-${name}-${seq}` : `${base}#details`, external: false };
+    // Details (pro) is its own page (#405); the trade's row carries id trade-<bot>-<seq>.
+    const base = `/details${q(name)}`;
+    return { href: seq ? `${base}#trade-${name}-${seq}` : `${base}#trades`, external: false };
   }
   if (source.startsWith("glossary:")) {
     const term = glossary[source.slice("glossary:".length)];

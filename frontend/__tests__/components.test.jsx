@@ -67,28 +67,25 @@ describe("KpiStrip", () => {
 });
 
 describe("PositionsTable", () => {
-  test("renders groups with strikes, DTE and greeks", () => {
+  test("renders groups with strikes (the full instrument in the title) and greeks", () => {
     render(<PositionsTable groups={groupRows(legRows([bot()]), "slot")} />);
     expect(screen.getByText("BTC · 45d · 0.16Δ")).toBeInTheDocument();
-    expect(screen.getByText("BTC-27DEC26-115000-C")).toBeInTheDocument();
-    expect(screen.getByText("115,000")).toBeInTheDocument();
-    expect(screen.getAllByText("44.5")).toHaveLength(2);
+    expect(screen.getByText("115,000")).toHaveAttribute("title", "BTC-27DEC26-115000-C");
+    expect(screen.getAllByText("1.0")).toHaveLength(2); // Γ ×10⁻⁵ of each leg
   });
 
-  test("labels unrealized P&L, shows bid/ask and flags non-live marks", () => {
+  test("labels unrealized P&L, shows entry → mark and flags non-live marks", () => {
     render(<PositionsTable groups={groupRows(legRows([bot()]), "slot")} />);
     expect(screen.getByText("Unrealized P&L")).toBeInTheDocument();
-    expect(screen.getByText("0.0085 / 0.0095")).toBeInTheDocument();
+    expect(screen.getByTestId("leg-btc:p-1")).toHaveTextContent("0.0120 → 0.0090");
     expect(screen.getAllByText("last cycle")).toHaveLength(1); // only the put has no live ticker
   });
 
-  test("shows each leg's side and its P&L % of premium, signed", () => {
+  test("shows each leg's premium kept, signed, beside its bar", () => {
     render(<PositionsTable groups={groupRows(legRows([bot()]), "slot")} />);
-    expect(screen.getByText("Side")).toBeInTheDocument();
-    expect(screen.getAllByText("SELL")).toHaveLength(2);
-    const pnlPct = screen.getByText("P&L %");
-    expect(pnlPct).toHaveAttribute("title", expect.stringContaining("% of the premium"));
+    expect(screen.getByText("Premium kept")).toHaveAttribute("title", expect.stringContaining("% of the premium"));
     expect(screen.getByText("+25%")).toHaveClass("text-profit");
+    expect(screen.getByTestId("leg-btc:p-1").querySelector('[data-testid="micro-bar"]')).toHaveAttribute("aria-hidden", "true");
   });
 
   test("a bought leg (e.g. an iron-condor wing) shows BUY, and a losing leg is red", () => {

@@ -51,6 +51,7 @@ export default function Panel({
   defaultOpen = true,
   forceOpen = false, // open on arrival whatever was saved (the menu's Details (pro), #385); a click still folds it
   fill = false,
+  hint, // the title's tooltip: what the panel explains (Details (pro), #405)
 }) {
   const bodyId = useId();
   const [local, setLocal] = useState(null); // this session's choice when storage is unavailable
@@ -63,7 +64,11 @@ export default function Panel({
     if (storageKey) writeOpen(storageKey, !open);
   };
 
-  const heading = <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>;
+  const heading = (
+    <h2 title={hint} className="text-sm font-semibold uppercase tracking-wide text-muted">
+      {title}
+    </h2>
+  );
   return (
     <section id={id} className={clsx("rounded-lg border border-line bg-panel", fill && "flex flex-col", className)}>
       <header className={`flex items-center justify-between gap-3 px-4 py-2 ${open ? "border-b border-line" : ""}`}>

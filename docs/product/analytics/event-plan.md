@@ -33,6 +33,8 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
 | `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
+| `details_section_jump` | a link of the Details (pro) page's section bar is followed (#405) | `section` | Q3 |
+| `details_trade_expand` | a trade row of Details (pro) is opened to its detail row (#405) | — | Q3 |
 | `tip_opened` | a contextual tip (E11) is shown for longer than 1 s | `tip_id`, `screen` | Q5 |
 | `video_played` | a how-to video starts | `video_id` | Q5 |
 | `video_completed` | a how-to video reaches 90 % | `video_id`, `watched_ms` | Q5 |
@@ -84,6 +86,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `open_ms` | duration | milliseconds, capped at 1 h |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
+| `section` | enum | `positions`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
 | `tip_id` | catalogue id | `tip.` + a key of `frontend/content/glossary.json` in letters and `_` (e.g. `tip.gamma_flip`, `tip.stop_loss`); an id not in the glossary is refused (#300); never generated from data |
 | `video_id` | catalogue id | a key of `frontend/content/videos.json` (e.g. `video.read_summary`); an id not in it is refused (#300) |
 | `watched_ms` | duration | milliseconds, capped at 10 min |

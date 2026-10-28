@@ -14,18 +14,19 @@ describe("empty states (#298)", () => {
   // Scenario: Every panel is covered
   test("every panel is covered: each panel key the monitor renders has empty, loading, stale and error", () => {
     const rendered = monitorPanels();
-    // #394: Account and Activity are their own pages. #404: the overview's P&L chart is no panel; the USD one
-    // over every range is the first of Details (pro).
-    expect(rendered.storageKeys).toEqual([
-      "monitor.panel.pnl",
-      "monitor.panel.positions",
-      "monitor.panel.held",
-      "monitor.panel.others",
-      "monitor.panel.trades",
-      "monitor.panel.orders",
-    ]);
-    expect(rendered.titles).toEqual(expect.arrayContaining(["Open positions", "P&L in USD (every range)"]));
-    expect(rendered.blocks).toEqual(["<Header", "<BotDashboards", "<KpiStrip"]);
+    // #394: Account and Activity are their own pages. #404: the overview's P&L chart is no panel. #405: Details
+    // (pro) is its own page, its sections not collapsible; the USD P&L over every range is its last, folded panel.
+    expect(rendered.storageKeys).toEqual(["monitor.panel.pnl"]);
+    expect(rendered.titles).toEqual(
+      expect.arrayContaining([
+        "Open positions",
+        "Missing legs: why repair holds them",
+        "Trades and results",
+        "Working orders (placed, not filled yet)",
+        "P&L in USD (every range)",
+      ]),
+    );
+    expect(rendered.blocks).toEqual(["<Header", "<BotDashboards", "<CountsLine"]);
     expect(missingStates(emptyStates, PANELS, rendered)).toEqual([]);
   });
 

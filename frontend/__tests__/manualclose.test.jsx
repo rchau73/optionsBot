@@ -29,20 +29,29 @@ describe("manual close", () => {
     global.fetch = realFetch;
   });
 
-  test("gray with the bot's reason as tooltip when not allowed", () => {
+  // #405 Scenario: given a leg the manual-close rule does not allow, then no Close button is rendered.
+  test("no Close button where the rule does not allow it; Close… outlined red with the bot's reason where it does", () => {
     renderTable(botWith(blocked, allowedPut()));
-    const call = screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-115000-C:sell");
-    expect(within(call).getByRole("button")).toBeDisabled();
-    expect(call).toHaveAttribute("title", blocked.reason);
+    expect(screen.queryByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-115000-C:sell")).toBeNull();
+    const callRow = screen.getByTestId("leg-btc:45d · 0.16Δ:BTC-27DEC26-115000-C:sell");
+    expect(within(callRow).queryByRole("button", { name: /Close/ })).toBeNull();
     const put = screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-88000-P:sell");
-    expect(within(put).getByRole("button")).toBeEnabled();
+    expect(put).toHaveAccessibleName("Close…");
+    expect(put).toBeEnabled();
+    expect(put).toHaveClass("border-loss", "text-loss");
+    expect(put).toHaveAttribute("title", `Close at market: ${allowedPut().reason}`);
+  });
+
+  test("no Close button on a bot that does not report the rule", () => {
+    renderTable(botWith(undefined, undefined));
+    expect(screen.queryAllByRole("button", { name: /Close/ })).toEqual([]);
   });
 
   test("confirmation shows the regime, GEX and what follows; confirm closes", async () => {
     const results = [{ position_id: "p-2", instrument: "BTC-27DEC26-88000-P", qty: 0.1, filled: 0.1 }];
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ results }) });
     renderTable(botWith(blocked, allowedPut()));
-    fireEvent.click(within(screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-88000-P:sell")).getByRole("button"));
+    fireEvent.click(screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-88000-P:sell"));
 
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveTextContent("Close BTC-27DEC26-88000-P × 0.1 at market?");
@@ -58,7 +67,7 @@ describe("manual close", () => {
 
   test("flagged red when the close would be rebuilt", () => {
     renderTable(botWith(blocked, allowedPut({ rebuilt: true, after: "this is the strangle's last leg: its slot becomes vacant" })));
-    fireEvent.click(within(screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-88000-P:sell")).getByRole("button"));
+    fireEvent.click(screen.getByTestId("close-btc:45d · 0.16Δ:BTC-27DEC26-88000-P:sell"));
     const after = screen.getByTestId("close-after");
     expect(after).toHaveClass("text-loss");
     expect(after).toHaveTextContent("Would be rebuilt: this is the strangle's last leg");

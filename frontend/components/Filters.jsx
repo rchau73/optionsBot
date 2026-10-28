@@ -1,6 +1,7 @@
 "use client";
 
 const GROUPS = [
+  ["strangle", "Strangle"],
   ["strategy", "Strategy"],
   ["slot", "Slot (DTE · Δ)"],
   ["expiry", "Expiry"],

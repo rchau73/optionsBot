@@ -5,31 +5,27 @@ import { closePositions } from "@/lib/api";
 import { flipBand } from "@/lib/monitor";
 import { formatCoin, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
 
+/** Whether the bot lets a person close this row by hand (ManualCloseBlockReason empty for every position of it). */
+export const closeAllowed = (row) => Boolean(row.manualClose?.allowed) && row.side !== "buy";
+
 /**
- * Close button of a position row. The bot decides: it is active only while
- * the regime-side block keeps the bot from selling this leg's side; otherwise
- * it is gray and its tooltip says why.
+ * "Close…" of a position row (Details (pro), #405). The bot decides: it is
+ * rendered only while the regime-side block keeps the bot from selling this
+ * leg's side, outlined red, its tooltip giving the bot's reason; otherwise
+ * nothing is rendered and the cell stays empty.
  */
 export function CloseButton({ row, onOpen }) {
-  const mc = row.manualClose;
-  const allowed = Boolean(mc?.allowed) && row.side !== "buy";
-  const tip = allowed
-    ? `Close at market: ${mc.reason}`
-    : mc?.reason || "manual close is not available on this bot";
+  if (!closeAllowed(row)) return null;
   return (
-    <span title={tip} data-testid={`close-${row.key}`}>
-      <button
-        type="button"
-        disabled={!allowed}
-        onClick={() => onOpen(row)}
-        className={clsx(
-          "rounded px-2 py-0.5 text-xs font-semibold",
-          allowed ? "bg-loss/20 text-loss hover:bg-loss/30" : "cursor-not-allowed bg-slate-800 text-slate-500",
-        )}
-      >
-        Close
-      </button>
-    </span>
+    <button
+      type="button"
+      title={`Close at market: ${row.manualClose.reason}`}
+      data-testid={`close-${row.key}`}
+      onClick={() => onOpen(row)}
+      className="rounded border border-loss px-2 py-0.5 text-xs font-semibold text-loss hover:bg-loss/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet"
+    >
+      Close…
+    </button>
   );
 }
 
