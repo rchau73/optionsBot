@@ -13,7 +13,7 @@ import { cardTitle, chartGeometry, chartLines, deltaLine, earnedLine, missingLin
 // (internal/api/payoff.go).
 jest.mock("@/hooks/useMonitor", () => ({ useMonitor: jest.fn() }));
 jest.mock("@/components/PnlChart", () => () => null);
-jest.mock("@/components/CoinPnlChart", () => () => null);
+jest.mock("@/components/OverviewPnl", () => () => null);
 
 /** A coin-settled short strangle's curves at a few prices. */
 function points(put, call, premium, today) {
@@ -226,13 +226,19 @@ describe("Scenario: open from a leg", () => {
     expect(within(screen.getByRole("dialog")).getByRole("heading", { level: 3 })).toHaveTextContent(/^BTC · 25 d slot/);
   });
 
-  test("the overview shows each strangle as a compact chart that opens the modal", () => {
+  // #404 Scenario: a click on a strangle row opens the payoff modal for that strangle; focus returns to the row on close.
+  test("the overview shows each strangle as a row-button that opens the modal; focus returns to the row", () => {
     render(<Monitor role="user" />);
-    const cards = screen.getByRole("region", { name: "BTC · strangles" });
-    const open = within(cards).getByRole("button", { name: /BTC · 25 d slot .* open the payoff chart/ });
-    expect(within(cards).getByText("Δ −0.10 BTC · −$82 per +1 %")).toBeInTheDocument();
-    fireEvent.click(open);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    const list = screen.getByRole("region", { name: "BTC · strangles" });
+    const row = within(list).getByRole("button", { name: /^BTC 25 d slot, .* open the payoff chart$/ });
+    expect(within(list).queryByTestId("payoff-chart")).toBeNull(); // the mini payoff charts live on Positions
+    row.focus();
+    fireEvent.click(row);
+    const dialog = screen.getByRole("dialog", { name: "Payoff of the strangle" });
+    expect(within(dialog).getByRole("heading", { level: 3 })).toHaveTextContent(/^BTC · 25 d slot/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(row).toHaveFocus();
   });
 
   test("a strangle that is gone says so in the modal", () => {

@@ -27,6 +27,11 @@ body {
   background-image: repeating-linear-gradient(45deg, var(--color-loss) 0 3px, transparent 3px 6px);
 }
 
+/* A side with no leg on a strangle row's range bar (#404): amber = held back. */
+.hatch-warn {
+  background-image: repeating-linear-gradient(45deg, var(--color-warn) 0 2px, transparent 2px 5px);
+}
+
 /* Brief highlight when a live value changes (the element is re-keyed by value). */
 @keyframes value-flash {
   from {
