@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import AssistantProvider from "@/components/AssistantProvider";
 import MenuBar from "@/components/MenuBar";
 import { viewer } from "@/lib/auth/viewer";
 import "./globals.css";
@@ -8,6 +9,11 @@ export const metadata = {
   description: "Live, read-only monitor of the optionsBot strategies.",
 };
 
+/** The assistant's provider for a signed-in person; the signed-out pages render as they are. */
+function AssistantRoot({ signedIn, children }) {
+  return signedIn ? <AssistantProvider>{children}</AssistantProvider> : children;
+}
+
 export default async function RootLayout({ children }) {
   // The menu bar ends with the signed-in person's menu (#394): name and role
   // from the access token, display only (the routes re-check the role).
@@ -16,11 +22,14 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="en" className="dark">
       <body className="antialiased">
-        {/* The menu reads ?bot= (useSearchParams), which needs a Suspense boundary. */}
-        <Suspense fallback={null}>
-          <MenuBar person={person} />
-        </Suspense>
-        {children}
+        {/* The assistant panel (#408) lives above the pages, so it stays open across them; signed in only. */}
+        <AssistantRoot signedIn={Boolean(me)}>
+          {/* The menu reads ?bot= (useSearchParams), which needs a Suspense boundary. */}
+          <Suspense fallback={null}>
+            <MenuBar person={person} />
+          </Suspense>
+          {children}
+        </AssistantRoot>
       </body>
     </html>
   );

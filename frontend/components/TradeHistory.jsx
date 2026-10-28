@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Badge from "./Badge";
 import Details from "./Details";
 import StatTile from "./StatTile";
+import WhyButton from "./WhyButton";
 import { formatCoin, formatDateTime, formatNumber, formatPct, formatPrice, formatUSD } from "@/lib/format";
 import { closeLabel, filterTrades, positionDelta, summarizeTrades } from "@/lib/trades";
 
@@ -139,7 +140,7 @@ export default function TradeHistory({ trades, detailsOpen = false }) {
           </thead>
           <tbody>
             {rows.slice(0, shown).map((t) => (
-              <tr key={`${t.bot}:${t.seq}`} className="border-b border-line/50">
+              <tr key={`${t.bot}:${t.seq}`} id={`trade-${t.bot}-${t.seq}`} className="border-b border-line/50">
                 <td className="whitespace-nowrap px-2 py-1 text-xs tabular-nums text-muted">{formatDateTime(t.at)}</td>
                 <td className="px-2 py-1 uppercase">{t.bot}</td>
                 <td className="px-2 py-1">
@@ -164,6 +165,7 @@ export default function TradeHistory({ trades, detailsOpen = false }) {
                       {t.detail ? <div className="text-[11px] leading-snug text-muted">{t.detail}</div> : null}
                     </>
                   )}
+                  <WhyButton trade={t} className="mt-1" />
                 </td>
                 <td className="whitespace-nowrap px-2 py-1 text-right text-xs tabular-nums">
                   {formatNumber(t.delta, 3)} ({formatNumber(positionDelta(t), 2)})
