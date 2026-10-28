@@ -62,6 +62,9 @@ var Properties = map[string]Rule{
 	"hardest_to_find": enumOf(fourAnswers...),
 	// The assistant panel's opener (#408).
 	"entry": enumOf("menu", "why"),
+	// The overview's switches (#404).
+	"unit":  enumOf("coin", "usd"),
+	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
 }
 
 // E3's four investor answers, plus "none of these" (surveys.md §2).
@@ -94,6 +97,8 @@ var Events = map[string][]string{
 	"assistant_open":         {"entry"},
 	"assistant_ask":          {"entry"},
 	"assistant_flag":         {},
+	"overview_unit_toggle":   {"unit"},
+	"overview_layer_toggle":  {"layer"},
 }
 
 // The envelope's own rules (§3 and collector.js).

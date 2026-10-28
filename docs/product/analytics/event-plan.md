@@ -52,6 +52,8 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
 | `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
 | `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
+| `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
+| `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
 
 What is deliberately **not** an event: each poll of the bot API, mouse movement, scrolling, keystrokes, text typed anywhere (the sign-in form included), hovering over numbers, and anything the bot itself does (that is the journal's job, not analytics).
 
@@ -99,6 +101,8 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
+| `unit` | enum | `coin`, `usd` (the unit picked) |
+| `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
 
 Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage), a survey's free text (the NPS "anything else" and the exit `other` box: personal data, kept in `auth.db` beside the user and deleted with them, never in an event — *needs legal review*, `surveys.md` §6).
 

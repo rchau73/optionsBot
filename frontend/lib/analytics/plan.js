@@ -57,6 +57,9 @@ export const PROPERTIES = {
   hardest_to_find: enumOf(...FOUR_ANSWERS),
   // The assistant panel's opener (#408).
   entry: enumOf("menu", "why"),
+  // The overview's switches (#404).
+  unit: enumOf("coin", "usd"),
+  layer: enumOf("sma", "sma21", "swings", "flip", "strikes"),
 };
 
 /** §2: event → the properties it may carry (each optional). */
@@ -86,6 +89,8 @@ export const EVENTS = {
   assistant_open: ["entry"],
   assistant_ask: ["entry"],
   assistant_flag: [],
+  overview_unit_toggle: ["unit"],
+  overview_layer_toggle: ["layer"],
 };
 
 // The browser's random per-session id (lib/track.js): 32 hex characters.

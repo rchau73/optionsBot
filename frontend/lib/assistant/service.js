@@ -114,6 +114,21 @@ function outcomeOf(reply, verdict) {
  * answer, citations, outcome, ai_generated, notice }, 502 when the model
  * failed, 500 when the log could not be written (nothing is shown unlogged).
  */
+/**
+ * A citation as the passage id it can only mean: listed as is (an id or a
+ * source), else the one listed id — or, failing that, the one source — that
+ * ends with it after a ":": a model may drop the id's first part
+ * ("closed:delta_exit/1" for "explain:closed:delta_exit/1", #412). Anything else stays, for the guard
+ * to reject.
+ */
+export function resolveCitation(c, passages) {
+  if (passages.some((p) => p.id === c || p.source === c)) return c;
+  const ids = passages.filter((p) => p.id.endsWith(`:${c}`)).map((p) => p.id);
+  if (ids.length === 1) return ids[0];
+  const sources = [...new Set(passages.filter((p) => p.source?.endsWith(`:${c}`)).map((p) => p.source))];
+  return ids.length === 0 && sources.length === 1 ? sources[0] : c;
+}
+
 export async function answerQuestion({ question, bot = null, journal = [], user, model, index, file, nowMs = Date.now() }) {
   const hits = index.search(question, HELP_PASSAGES);
   const passages = [...hits.map((h) => h.passage), ...journal];
@@ -149,6 +164,7 @@ export async function answerQuestion({ question, bot = null, journal = [], user,
       entry.verdict = [err.message];
     }
     if (reply) {
+      reply.citations = reply.citations.map((c) => resolveCitation(c, passages));
       const verdict = check(reply, passages);
       entry.model_answer = reply.text;
       entry.citations = reply.citations;
