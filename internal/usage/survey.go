@@ -24,17 +24,21 @@ const NoSurveyAnswers = "no survey answers yet"
 const OwnerLine = "Each top reason needs an owner: file it as an E13 story."
 
 // Codes each survey asks (surveys.md §4); an answer with another code is
-// counted under "other" and in Miscoded.
+// counted under "other" and in Miscoded. NPS asks one list by score (#446):
+// what works for 9–10, what to improve for 0–8.
 var (
-	npsCodes  = []string{"value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"}
-	exitCodes = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
+	npsWhatWorks = []string{"steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "other"}
+	npsToImprove = []string{"value_unclear", "losses", "too_complex", "price", "trust", "hard_to_find", "missing_feature", "other"}
+	exitCodes    = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
 )
 
 // Survey is Q8: why people stay or leave, as counts of coded answers.
 type Survey struct {
 	Surveys       []SurveyFunnel `json:"surveys"`         // nps, answers, exit
 	NPS           NPS            `json:"nps"`             // survey_answered{nps} with a score
-	Why           map[string]int `json:"why"`             // NPS reason_code
+	Why           map[string]int `json:"why"`             // NPS reason_code: why_promoters + why_others, kept for old readers
+	WhyPromoters  map[string]int `json:"why_promoters"`   // NPS 9–10: what we do best (#446)
+	WhyOthers     map[string]int `json:"why_others"`      // NPS 0–8: what to improve first (#446)
 	CameFor       map[string]int `json:"came_for"`        // answers survey
 	HardestToFind map[string]int `json:"hardest_to_find"` // answers survey
 	ExitReasons   map[string]int `json:"exit_reasons"`    // exit reason_code
@@ -52,7 +56,9 @@ type SurveyFunnel struct {
 }
 
 // NPS is the score's bands and, from NPSMinAnswers answers, the score:
-// % promoters (9–10) − % detractors (0–6).
+// % promoters (9–10) − % detractors (0–6). Each person counts once, by their
+// latest answer in the window (surveys.md §1: the same person may answer
+// every month), and so does their why.
 type NPS struct {
 	Answers    int      `json:"answers"`
 	Promoters  int      `json:"promoters"`
@@ -73,6 +79,8 @@ func buildSurvey(week []Event) *Survey {
 	ids := Properties["survey_id"].Values
 	s := &Survey{
 		Why:           map[string]int{},
+		WhyPromoters:  map[string]int{},
+		WhyOthers:     map[string]int{},
 		CameFor:       map[string]int{},
 		HardestToFind: map[string]int{},
 		ExitReasons:   map[string]int{},
@@ -82,6 +90,7 @@ func buildSurvey(week []Event) *Survey {
 		funnels[id] = &SurveyFunnel{ID: id}
 	}
 	seen := false
+	latestNPS := map[string]Event{} // user → their latest NPS answer in the window
 	for _, e := range week {
 		id, _ := e.Props["survey_id"].(string)
 		f := funnels[id]
@@ -95,7 +104,11 @@ func buildSurvey(week []Event) *Survey {
 			f.Dismissed++
 		case "survey_answered":
 			f.Answered++
-			s.answer(id, e.Props)
+			if id != "nps" {
+				s.answer(id, e.Props)
+			} else if last, ok := latestNPS[e.UserID]; !ok || !e.TS.Before(last.TS) {
+				latestNPS[e.UserID] = e
+			}
 		default:
 			continue
 		}
@@ -103,6 +116,9 @@ func buildSurvey(week []Event) *Survey {
 	}
 	if !seen {
 		return nil
+	}
+	for _, e := range latestNPS {
+		s.answer("nps", e.Props)
 	}
 	for _, id := range ids {
 		f := funnels[id]
@@ -123,19 +139,28 @@ func buildSurvey(week []Event) *Survey {
 func (s *Survey) answer(id string, p map[string]any) {
 	switch id {
 	case "nps":
+		promoter := false
 		if sc, ok := p["score"].(string); ok {
 			n, _ := strconv.Atoi(sc) // the allow-list holds "0" … "10" only
 			s.NPS.Answers++
 			switch {
 			case n >= 9:
 				s.NPS.Promoters++
+				promoter = true
 			case n >= 7:
 				s.NPS.Passives++
 			default:
 				s.NPS.Detractors++
 			}
 		}
-		s.code(s.Why, npsCodes, p["reason_code"])
+		// Each band was asked its own list (#446); a code of the other list counts under other.
+		band, asked := s.WhyOthers, npsToImprove
+		if promoter {
+			band, asked = s.WhyPromoters, npsWhatWorks
+		}
+		if c := s.code(band, asked, p["reason_code"]); c != "" {
+			s.Why[c]++
+		}
 	case "exit":
 		s.code(s.ExitReasons, exitCodes, p["reason_code"])
 	case "answers":
@@ -149,17 +174,19 @@ func (s *Survey) answer(id string, p map[string]any) {
 }
 
 // code counts a reason code the survey asks; another code is counted under
-// "other" and in Miscoded, never guessed. No code: nothing counted.
-func (s *Survey) code(m map[string]int, asked []string, v any) {
+// "other" and in Miscoded, never guessed. → the code counted; "" (nothing
+// counted) when there is none.
+func (s *Survey) code(m map[string]int, asked []string, v any) string {
 	c, ok := v.(string)
 	if !ok {
-		return
+		return ""
 	}
 	if !slices.Contains(asked, c) {
 		s.Miscoded++
 		c = "other"
 	}
 	m[c]++
+	return c
 }
 
 // topCodes is the n most frequent codes, most first, ties by code.

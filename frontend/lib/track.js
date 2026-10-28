@@ -50,6 +50,14 @@ export function track(event, props = {}, nowMs = Date.now()) {
   }
 }
 
+/**
+ * The browser session's id for a survey answer (POST /api/survey, #446), as
+ * an event would carry it; null without the person's yes.
+ */
+export function currentSessionId(nowMs = Date.now()) {
+  return state.consent === true ? sessionId(nowMs) : null;
+}
+
 /** Forgets consent and session (tests, sign-out). */
 export function resetTracking() {
   state.consent = null;

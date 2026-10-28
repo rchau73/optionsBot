@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
 import { rebalanceBot } from "@/lib/api";
+import { useBlockingDialog } from "@/lib/dialogs";
 import { formatPct } from "@/lib/format";
 
 /**
@@ -39,6 +40,7 @@ const ACTION_TONE = { top_up: "good", downsize: "bad", held: "warn", kept: "mute
 export function RebalanceModal({ row, onClose }) {
   const [state, setState] = useState({ phase: "preview" }); // preview | previewed | running | done | error
   const busy = state.phase === "preview" || state.phase === "running";
+  useBlockingDialog(); // no NPS card while it is open (#446)
 
   // The preview runs once on open; its result is dropped if the dialog closes first.
   useEffect(() => {

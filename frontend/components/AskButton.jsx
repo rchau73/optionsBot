@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useAssistant } from "./AssistantProvider";
 import { OFF_TEXT } from "@/lib/assistantPanel";
 import { botParam } from "@/lib/menu";
+import { NPS_ASK_HINT, NPS_ASK_LABEL } from "@/lib/analytics/nps";
 
 /**
  * The assistant's floating button (#408, #419): a chat bubble fixed at the
@@ -16,12 +17,14 @@ export default function AskButton() {
   const assistant = useAssistant();
   if (!assistant) return null;
   const off = assistant.enabled === false;
+  // The monthly NPS (#446): a static "1" and a one-line hint while it is due — no motion.
+  const nps = assistant.npsDue === true && !assistant.open;
   const pageBot = () => botParam(new URLSearchParams(window.location.search).get("bot"));
   return (
     <button
       type="button"
-      aria-label="Ask"
-      title={off ? OFF_TEXT : "Ask the assistant about this page, the strategy or a trade"}
+      aria-label={nps ? NPS_ASK_LABEL : "Ask"}
+      title={off ? OFF_TEXT : nps ? NPS_ASK_HINT : "Ask the assistant about this page, the strategy or a trade"}
       aria-expanded={assistant.open}
       onClick={(e) => (assistant.open ? assistant.close() : assistant.openPanel({ entry: "menu", from: e.currentTarget, bot: pageBot() }))}
       className={clsx(
@@ -35,6 +38,16 @@ export default function AskButton() {
       <span aria-hidden="true" className="hidden sm:inline">
         Ask
       </span>
+      {nps ? (
+        <>
+          <span data-testid="nps-badge" aria-hidden="true" className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-warn bg-panel px-1 text-xs font-bold text-warn">
+            1
+          </span>
+          <span aria-hidden="true" className="absolute bottom-full right-0 mb-2 whitespace-nowrap rounded border border-line bg-panel px-2 py-1 text-xs font-normal text-muted">
+            {NPS_ASK_HINT}
+          </span>
+        </>
+      ) : null}
     </button>
   );
 }

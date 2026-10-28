@@ -125,6 +125,37 @@ def drop_text(d, live):
     return f"{name}: {cur or 0:.0f}, mean of the base weeks {base or 0:.1f} ({change})"
 
 
+# surveys.md §4: the NPS reason codes by the band asked (#446). Only these
+# names are copied, so no other key of the report can reach the comment.
+NPS_WHAT_WORKS = ("steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "other")
+NPS_TO_IMPROVE = ("value_unclear", "losses", "too_complex", "price", "trust", "hard_to_find", "missing_feature", "other")
+
+
+def code_list(tally, allowed, live):
+    """'code n, …' most first (ties by code), the fixed codes only; live: % of the band."""
+    counts = [(c, num((tally or {}).get(c)) or 0) for c in allowed]
+    counts = sorted(((c, n) for c, n in counts if n > 0), key=lambda cn: (-cn[1], cn[0]))
+    if not counts:
+        return "none"
+    total = sum(n for _, n in counts)
+    return ", ".join(f"{c} {pct(share(n, total)) if live else n}" for c, n in counts)
+
+
+def nps_line(env, live, report):
+    """The env's NPS line (#446): answers, response rate, what works and what to improve, apart; None without an NPS event."""
+    survey = report.get("survey")
+    if not isinstance(survey, dict):
+        return None
+    funnel = next((f for f in survey.get("surveys") or [] if isinstance(f, dict) and f.get("survey_id") == "nps"), {})
+    if not (num(funnel.get("shown")) or num(funnel.get("answered"))):
+        return None
+    answers = num((survey.get("nps") or {}).get("answers")) or 0
+    head = f"response {pct(num(funnel.get('response_pct')))}" if live else \
+        f"{answers} answers, response {pct(num(funnel.get('response_pct')))}"
+    return (f"- {env}: {head}; what we do best (9–10): {code_list(survey.get('why_promoters'), NPS_WHAT_WORKS, live)}; "
+            f"what to improve first (0–8): {code_list(survey.get('why_others'), NPS_TO_IMPROVE, live)}")
+
+
 def env_reports(week, envs_dir, state_dir, envs):
     """[(env, live, report, drops)] for every env with events in the week."""
     out = []
@@ -145,9 +176,12 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
            "Counts and percentages only: no user or session id.", "",
            "| env | active users | vs last week | week-1 retention (latest cohort) | first answers found | help used | help answers (helped) | drops | report |",
            "|---|---|---|---|---|---|---|---|---|"]
-    live_envs, drop_lines, notes = [], [], []
+    live_envs, drop_lines, notes, nps = [], [], [], []
     for env, live, report, drops in rows:
         f = figures(report, drops)
+        line = nps_line(env, live, report)
+        if line:
+            nps.append(line)
         label = env + (" (live)" if live else "")
         if live:
             live_envs.append(env)
@@ -173,6 +207,8 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
             if missing:
                 notes.append(f"- {env}: no events in {', '.join(missing)} — left out of the base, never counted as zero")
         out.append("| " + " | ".join([label] + cells + [n_drops, f"`{env}/data/monitor/reports/{week}.md`"]) + " |")
+    if nps:
+        out += ["", "**NPS** (each person's latest answer; the two lists counted apart):", ""] + nps
     if drop_lines:
         out += ["", "**Engagement drops** (one issue in Triage for the week):", ""] + drop_lines
     if notes:
