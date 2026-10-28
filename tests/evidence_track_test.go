@@ -50,6 +50,7 @@ func trackWeekly(t *testing.T, pts []history.Point, week string, equity float64)
 }
 
 func TestTrackRecord_SeveralWeeks(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	w41, w43 := trackWeekly(t, pts, "2026-W41", 1), trackWeekly(t, pts, "2026-W43", 1.2)
 	tr := evidence.BuildTrackRecord(evidence.TrackInputs{Env: "stable", Bot: "btc", Account: "testnet",
@@ -112,6 +113,7 @@ func TestTrackRecord_SeveralWeeks(t *testing.T) {
 }
 
 func TestTrackRecord_HolesListedNotFilled(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints(9, 14)
 	tr := evidence.BuildTrackRecord(evidence.TrackInputs{Bot: "btc", Points: pts,
 		Weekly: []evidence.Report{trackWeekly(t, pts, "2026-W41", 1)}})
@@ -132,6 +134,7 @@ func TestTrackRecord_HolesListedNotFilled(t *testing.T) {
 }
 
 func TestTrackRecord_UnknownEquity(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	tr := evidence.BuildTrackRecord(evidence.TrackInputs{Bot: "btc", Points: pts,
 		Weekly: []evidence.Report{trackWeekly(t, pts, "2026-W41", 0), trackWeekly(t, pts, "2026-W43", 0)}})
@@ -156,6 +159,7 @@ func TestTrackRecord_UnknownEquity(t *testing.T) {
 }
 
 func TestTrackRecord_NoHistory(t *testing.T) {
+	t.Parallel()
 	tr := evidence.BuildTrackRecord(evidence.TrackInputs{Bot: "btc"})
 	if tr.Known || len(tr.Weeks) != 0 || tr.ROM.Known {
 		t.Fatalf("%+v", tr)
@@ -167,6 +171,7 @@ func TestTrackRecord_NoHistory(t *testing.T) {
 }
 
 func TestTrackRecord_LosingStreak(t *testing.T) {
+	t.Parallel()
 	// Five weeks: lost, lost, not reported, lost, won.
 	var pts []history.Point
 	start := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC) // Monday of W40
@@ -225,6 +230,7 @@ func trackClone(t *testing.T, pts []history.Point, weeks ...string) string {
 }
 
 func TestTrackRecord_SameInputsSameReport(t *testing.T) {
+	t.Parallel()
 	root := trackClone(t, trackPoints(9), "2026-W41", "2026-W43")
 	run := func() []byte {
 		in := evidence.LoadTrack("stable", "btc", root, os.Stderr)
@@ -252,6 +258,7 @@ func TestTrackRecord_SameInputsSameReport(t *testing.T) {
 }
 
 func TestTrend_ThreeWeeklyReportsBecomeOneTable(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	root := trackClone(t, pts, "2026-W43", "2026-W41", "2026-W42")
 	in := evidence.LoadTrack("stable", "btc", root, os.Stderr)
@@ -282,6 +289,7 @@ func TestTrend_ThreeWeeklyReportsBecomeOneTable(t *testing.T) {
 }
 
 func TestTrend_MissingWeekReportedNotFilled(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	tr := evidence.BuildTrend("stable", "btc", "src", []evidence.Report{trackWeekly(t, pts, "2026-W41", 1), trackWeekly(t, pts, "2026-W43", 1)}, nil)
 	if len(tr.Weeks) != 3 {
@@ -298,6 +306,7 @@ func TestTrend_MissingWeekReportedNotFilled(t *testing.T) {
 }
 
 func TestTrend_FieldAbsentInOlderReport(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	root := trackClone(t, pts, "2026-W41", "2026-W42")
 	// W41 written before #278: no return_on_margin key.
@@ -341,6 +350,7 @@ func TestTrend_FieldAbsentInOlderReport(t *testing.T) {
 }
 
 func TestTrend_PercentagesOnly(t *testing.T) {
+	t.Parallel()
 	pts := trackPoints()
 	root := trackClone(t, pts, "2026-W41", "2026-W42")
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("DERIBIT_ENV=live\n"), 0o600); err != nil {

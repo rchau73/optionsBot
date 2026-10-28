@@ -186,9 +186,9 @@ check() { # name, command...
 ok=1
 check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
 check "go vet ./..." go vet ./... || ok=0
-# 30 min, not Go's default 10: on a loaded Mac the race suite ran past 10 min
-# and two cards (#247, #299) stopped as "a person is needed" with green CI.
-check "go test -race ./tests/..." go test -race -count=1 -timeout 30m ./tests/... || ok=0
+# The suite as CI runs it (scripts/go_tests.sh, #429): the core under -race,
+# the report tests without it; 30 min each (#247, #299: a loaded Mac).
+check "go tests (core -race, reports)" bash scripts/go_tests.sh all || ok=0
 if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
   check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
   check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0

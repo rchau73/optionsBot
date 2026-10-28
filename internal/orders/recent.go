@@ -69,6 +69,13 @@ func (r *recentRing) restore(events []RecentEvent, counts map[string]int, seq ui
 	r.seq = seq
 }
 
+// lastSeq is the sequence number of the latest event.
+func (r *recentRing) lastSeq() uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.seq
+}
+
 func (r *recentRing) put(e RecentEvent) {
 	if cap(r.buf) == 0 || e.Event == EventPnL {
 		return

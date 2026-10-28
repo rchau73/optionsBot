@@ -196,13 +196,17 @@ describe("Scenario: reports through POST /api/assistant", () => {
     expect(m.checkRequest).not.toHaveBeenCalled();
   });
 
-  /** Mocks the btc bot: its journal events and its P&L history, from a golden case's passages. */
+  /** Mocks the btc bot: its journal (/api/journal items) and its P&L history, from a golden case's passages. */
   function botFrom(q, points) {
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
     const events = q.request.passages
       .filter((p) => p.source === "journal:btc")
       .map((p) => ({ seq: Number(p.id.split("/")[1]), event: p.title.split(": ")[1].split(" at ")[0], at: p.title.split(" at ")[1], plain: p.text }));
-    return jest.spyOn(global, "fetch").mockImplementation(async (url) => (url.includes("/api/pnl/history") ? Response.json({ points }) : Response.json({ events })));
+    // The journal is read through /api/journal (#417) and kept 60 s per bot: each case starts from its own.
+    globalThis[Symbol.for("optionsbot.monitor.assistant")]?.journals?.clear();
+    return jest.spyOn(global, "fetch").mockImplementation(async (url) =>
+      url.includes("/api/pnl/history") ? Response.json({ points }) : Response.json({ items: events }),
+    );
   }
 
   test("Given a report whose figures agree with the journal, then the reply shows the check and no bug draft", async () => {

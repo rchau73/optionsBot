@@ -50,6 +50,7 @@ func runRecordingStrategy(t *testing.T) (*strategyFixture, *recordedPnL) {
 
 // Scenario: a history line records the balance.
 func TestEquityBridge_AHistoryLineRecordsTheBalance(t *testing.T) {
+	t.Parallel()
 	_, rec := runRecordingStrategy(t)
 	eventually(t, 3*time.Second, "point with a known margin", func() bool {
 		m := rec.lastMargin()
@@ -77,6 +78,7 @@ func TestEquityBridge_AHistoryLineRecordsTheBalance(t *testing.T) {
 // Under cross collateral the policy reads Deribit's USD totals; the equity
 // recorded is the account-wide USD equity, in the same unit.
 func TestEquityBridge_CrossCollateralEquityIsUSD(t *testing.T) {
+	t.Parallel()
 	sum := orders.AccountSummary{Currency: "BTC", Equity: 1.2, MarginBalance: 1.1, CrossCollateralEnabled: true,
 		TotalMarginBalanceUSD: 150000, TotalEquityUSD: 152000, TotalInitialMarginUSD: 30000}
 	u := sum.MarginUsage()
@@ -95,6 +97,7 @@ func TestEquityBridge_CrossCollateralEquityIsUSD(t *testing.T) {
 
 // Scenario: margin unknown — the balance and equity are absent, not zero.
 func TestEquityBridge_MarginUnknown(t *testing.T) {
+	t.Parallel()
 	f, rec := runRecordingStrategy(t)
 	eventually(t, 3*time.Second, "point with a known margin", func() bool {
 		m := rec.lastMargin()
@@ -135,6 +138,7 @@ func TestEquityBridge_MarginUnknown(t *testing.T) {
 // Scenario: old history still loads — history, perf and evidence read it,
 // and the bridge says no equity was recorded.
 func TestEquityBridge_OldHistoryStillLoads(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "pnl_history.jsonl")
 	old := `{"t":"2026-10-12T12:00:00Z","realised":0.001,"unrealised":0,"total":0.001,"spot":100000,"realised_usd":100,"total_usd":100,"im_pct":10,"im_limit_pct":20,"mm_pct":5,"entries_allowed":true}
 {"t":"2026-10-13T12:00:00Z","realised":0.002,"unrealised":0,"total":0.002,"spot":100000,"realised_usd":200,"total_usd":200}
@@ -172,6 +176,7 @@ func TestEquityBridge_OldHistoryStillLoads(t *testing.T) {
 // Scenario: a transfer shows as residual — equity fell by more than the
 // bot's net P&L explains.
 func TestEquityBridge_ATransferShowsAsResidual(t *testing.T) {
+	t.Parallel()
 	in := evInputs(t, nil)
 	in.Points = []history.Point{
 		equityPoint(-time.Hour, 0, 100000, 9, "BTC"), // before the week: ignored
@@ -206,6 +211,7 @@ func TestEquityBridge_ATransferShowsAsResidual(t *testing.T) {
 // Scenario: the bot explains everything — the residual is zero, in coin
 // and in USD (each step of the coin P&L valued at its own point's spot).
 func TestEquityBridge_TheBotExplainsEverything(t *testing.T) {
+	t.Parallel()
 	coin := evidence.BuildBridge([]history.Point{
 		equityPoint(0, 0, 100000, 2, "BTC"),
 		equityPoint(time.Hour, 0.0625, 100000, 2.0625, "BTC"),
@@ -227,6 +233,7 @@ func TestEquityBridge_TheBotExplainsEverything(t *testing.T) {
 // Fewer than two points with equity, or a unit that changed: not known,
 // with the reason.
 func TestEquityBridge_NotKnownSaysWhy(t *testing.T) {
+	t.Parallel()
 	one := evidence.BuildBridge([]history.Point{equityPoint(0, 0, 100000, 2, "BTC")}, evWeek.From, evWeek.To, "h")
 	if one.Known || !strings.Contains(one.Note, "only one") {
 		t.Errorf("one point = %+v", one)

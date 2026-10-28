@@ -9,8 +9,41 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Lint, test & coverage
+  # Which jobs a change needs (#429): a pull request that only touches the
+  # frontend skips the Go jobs — except the frontend files the Go tests read
+  # (content/, README.md, the analytics and assistant twins). A push to main
+  # always runs everything.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.diff.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          go=true
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only "$BASE...$HEAD")
+            echo "$files"
+            if [ -n "$files" ] && ! echo "$files" | grep -qvE '^frontend/' &&
+               ! echo "$files" | grep -qE '^frontend/(content/|README\.md$|lib/analytics/|lib/assistant/)'; then
+              go=false
+            fi
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "Go jobs: $go"
+
+  go-lint:
+    name: Go lint & scripts
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,21 +75,75 @@ jobs:
       - name: Product scripts (unit economics)
         run: python3 -m unittest discover -s scripts/product -p 'test_*.py'
 
-      - name: Tests (race detector, coverage)
-        # -timeout 30m: the race + coverage run passed Go's default 10 min on the
-        # runner on 2026-10-27 (PR #390), with no test stuck.
-        run: go test ./tests/... -race -count=1 -timeout 30m -coverpkg=./internal/... -coverprofile=coverage.out
+  # The suite in two groups run in parallel (scripts/go_tests.sh, #429): the
+  # core under the race detector, the single-goroutine report and research
+  # tests without it (the nightly flaky hunt runs everything with -race).
+  go-tests:
+    name: "Go tests: ${{ matrix.group }}"
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, reports]
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Coverage summary
-        run: |
-          total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
-          echo "Total coverage: $total"
-          echo "### Coverage: $total" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.3"
+          cache: true
 
-      - name: Coverage floor
-        run: bash scripts/check_cover.sh --profile coverage.out
+      - name: Tests (${{ matrix.group }}, coverage)
+        run: bash scripts/go_tests.sh ${{ matrix.group }} coverage-${{ matrix.group }}.out
 
       - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.group }}
+          path: coverage-${{ matrix.group }}.out
+
+  # The required check: the Go jobs passed and the merged coverage holds its
+  # floor; a frontend-only pull request passes it without them.
+  test:
+    name: Lint, test & coverage
+    needs: [changes, go-lint, go-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Go jobs
+        env:
+          GO: ${{ needs.changes.outputs.go }}
+          CHANGES: ${{ needs.changes.result }}
+          LINT: ${{ needs.go-lint.result }}
+          TESTS: ${{ needs.go-tests.result }}
+        run: |
+          echo "changes $CHANGES · go $GO · lint $LINT · tests $TESTS"
+          [ "$CHANGES" = "success" ] || exit 1
+          if [ "$GO" != "true" ]; then
+            echo "### Frontend-only change: Go jobs skipped" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [ "$LINT" = "success" ] && [ "$TESTS" = "success" ]
+
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.go == 'true'
+
+      - uses: actions/download-artifact@v4
+        if: needs.changes.outputs.go == 'true'
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+
+      - name: Coverage summary
+        if: needs.changes.outputs.go == 'true'
+        run: |
+          bash scripts/go_tests.sh merge coverage.out coverage-core.out coverage-reports.out
+          bash scripts/check_cover.sh --profile coverage.out | tee cover.txt
+          echo "### $(tail -1 cover.txt)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: needs.changes.outputs.go == 'true'
         with:
           name: coverage
           path: coverage.out

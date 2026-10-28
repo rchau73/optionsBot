@@ -933,5 +933,12 @@
     "risk_income": "It is the income already earned on a leg; the take-profit closes a leg once enough of it is kept.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Premium kept", "% kept"]
+  },
+  "request draft": {
+    "short": "A bug report or wish the assistant writes for you to check and send, never sent on its own.",
+    "long": "When you report a problem or ask for a change, the assistant first checks it. A request is drafted only when it says what happened, where, and shows the data behind it. Evidence lists that data: a number, a journal entry or a P&L point. Steps say how to see the problem again. You can edit the draft, then send it to a private queue.",
+    "risk_income": "None: a request changes nothing in the bot or the account.",
+    "source": "frontend/README.md#assistant-191-e10",
+    "labels": ["Evidence", "Steps"]
   }
 }

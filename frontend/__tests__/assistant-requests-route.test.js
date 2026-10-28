@@ -71,6 +71,8 @@ describe("Scenario: Given Send, then one line lands in requests.jsonl and My req
       .filter((l) => l.includes('"id":"req-03"'))
       .map((l) => JSON.parse(l))[0];
     process.env.BOT_APIS = "btc=http://bot-btc:8081";
+    // The journal is read through /api/journal (#417) and kept 60 s per bot.
+    globalThis[Symbol.for("optionsbot.monitor.assistant")]?.journals?.clear();
     jest.spyOn(global, "fetch").mockImplementation(async (url) =>
       url.includes("/api/pnl/history")
         ? Response.json({
@@ -81,7 +83,7 @@ describe("Scenario: Given Send, then one line lands in requests.jsonl and My req
             ],
           })
         : Response.json({
-            events: [
+            items: [
               { seq: 97, event: "skipped", at: "2026-10-27T09:12:00Z", plain: "No new strangle: the slot's expiry is held by another slot." },
               { seq: 98, event: "skipped", at: "2026-10-27T18:40:00Z", plain: "No new strangle: the slot's expiry is held by another slot." },
             ],
