@@ -1,15 +1,17 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import MenuBar, { MenuNav } from "@/components/MenuBar";
-import { botParam, detailsRedirect, menuItems, showMenu } from "@/lib/menu";
+import { botParam, detailsRedirect, menuGroups, menuItems, showMenu } from "@/lib/menu";
 import { usePathname, useSearchParams } from "next/navigation";
 import { fetchMonitorConfig } from "@/lib/api";
 
-// The menu bar on every signed-in page (#385).
+// The menu bar on every signed-in page (#385): Overview · Details (pro) ·
+// Operational ▾ · Help ▾ (#450).
 
 jest.mock("next/navigation", () => ({ usePathname: jest.fn(), useSearchParams: jest.fn() }));
 jest.mock("@/lib/api", () => ({ fetchMonitorConfig: jest.fn() }));
 
-const LABELS = ["Overview", "Income", "Worst case", "Positions", "How it works", "Activity", "Account", "Details (pro)"];
+const BAR = ["Overview", "Details (pro)", "Operational ▾", "Help ▾"];
+const GROUP = { "Operational ▾": ["Positions", "Income", "Worst case", "Activity", "Account"], "Help ▾": ["How it works"] };
 
 const at = (pathname, query = "") => {
   usePathname.mockReturnValue(pathname);
@@ -21,24 +23,33 @@ beforeEach(() => {
   fetchMonitorConfig.mockResolvedValue({ names: ["btc", "eth"], pollMs: 1000 });
 });
 
-describe("Scenario: every view is one click from any page", () => {
+describe("Scenario: every view is at most two clicks from any page", () => {
+  const bar = (nav) => [...nav.querySelector("ul").children].slice(0, -1).map((li) => li.firstElementChild.textContent);
   test.each([
-    ["/", "bot=btc", "Overview"],
-    ["/income", "bot=eth", "Income"],
-    ["/worst-case", "bot=eth", "Worst case"],
-    ["/positions", "bot=eth", "Positions"],
-    ["/how-it-works", "bot=eth", "How it works"],
-    ["/activity", "bot=eth", "Activity"],
-    ["/account", "bot=eth", "Account"],
-    ["/details", "bot=eth", "Details (pro)"],
-  ])("on %s?%s the menu shows every view and marks %s", (pathname, query, current) => {
+    ["/", "bot=btc", "Overview", null],
+    ["/details", "bot=eth", "Details (pro)", null],
+    ["/positions", "bot=eth", "Positions", "Operational ▾"],
+    ["/income", "bot=eth", "Income", "Operational ▾"],
+    ["/worst-case", "bot=eth", "Worst case", "Operational ▾"],
+    ["/activity", "bot=eth", "Activity", "Operational ▾"],
+    ["/account", "bot=eth", "Account", "Operational ▾"],
+    ["/how-it-works", "bot=eth", "How it works", "Help ▾"],
+  ])("on %s?%s the bar is Overview · Details (pro) · Operational ▾ · Help ▾ and marks %s", (pathname, query, current, group) => {
     at(pathname, query);
     render(<MenuBar />);
     const nav = screen.getByRole("navigation", { name: "Main" });
-    const links = within(nav).getAllByRole("link");
-    expect(links.map((l) => l.textContent)).toEqual(LABELS);
-    expect(links.filter((l) => l.getAttribute("aria-current") === "page").map((l) => l.textContent)).toEqual([current]);
-    expect(within(nav).getByRole("link", { name: current })).toHaveClass("rounded-full", "bg-slate-700");
+    expect(bar(nav)).toEqual(BAR);
+    if (!group) {
+      expect(within(nav).getByRole("link", { name: current })).toHaveAttribute("aria-current", "page");
+      expect(within(nav).getByRole("link", { name: current })).toHaveClass("rounded-full", "bg-slate-700");
+      return;
+    }
+    const button = within(nav).getByRole("button", { name: group });
+    expect(button).toHaveClass("bg-slate-700");
+    fireEvent.click(button);
+    const menu = within(nav).getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(GROUP[group]);
+    expect(within(menu).getByRole("menuitem", { name: current })).toHaveAttribute("aria-current", "page");
   });
 
   test("the chosen bot is kept from page to page", () => {
@@ -46,19 +57,36 @@ describe("Scenario: every view is one click from any page", () => {
     render(<MenuBar />);
     const href = (name) => screen.getByRole("link", { name }).getAttribute("href");
     expect(href("Overview")).toBe("/?bot=eth");
-    expect(href("Worst case")).toBe("/worst-case?bot=eth");
-    expect(href("Positions")).toBe("/positions?bot=eth");
-    expect(href("How it works")).toBe("/how-it-works?bot=eth");
-    expect(href("Activity")).toBe("/activity?bot=eth");
-    expect(href("Account")).toBe("/account?bot=eth");
     expect(href("Details (pro)")).toBe("/details?bot=eth");
+    fireEvent.click(screen.getByRole("button", { name: "Operational ▾" }));
+    const item = (name) => screen.getByRole("menuitem", { name }).getAttribute("href");
+    expect(item("Positions")).toBe("/positions?bot=eth");
+    expect(item("Worst case")).toBe("/worst-case?bot=eth");
+    expect(item("Activity")).toBe("/activity?bot=eth");
+    expect(item("Account")).toBe("/account?bot=eth");
     expect(fetchMonitorConfig).not.toHaveBeenCalled();
+  });
+
+  test("a dropdown closes on Escape, on a click outside and after choosing a page", () => {
+    at("/", "bot=btc");
+    render(<MenuBar />);
+    const open = () => fireEvent.click(screen.getByRole("button", { name: "Help ▾" }));
+    open();
+    expect(screen.getByRole("button", { name: "Help ▾" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    open();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "How it works" }));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   test("without ?bot= the links take the first bot", async () => {
     at("/");
     render(<MenuBar />);
-    await waitFor(() => expect(screen.getByRole("link", { name: "Income" })).toHaveAttribute("href", "/income?bot=btc"));
+    await waitFor(() => expect(screen.getByRole("link", { name: "Details (pro)" })).toHaveAttribute("href", "/details?bot=btc"));
   });
 
   test("an admin page shows the menu with no view marked", () => {
@@ -117,6 +145,9 @@ describe("Scenario: phone", () => {
     expect(nav.querySelector("ul")).toHaveClass("flex-wrap");
     expect(nav.querySelector("ul")).not.toHaveClass("overflow-x-auto");
     for (const l of within(nav).getAllByRole("link")) expect(l).toHaveClass("min-h-11");
+    for (const b of within(nav).getAllByRole("button")) expect(b).toHaveClass("min-h-11");
+    fireEvent.click(within(nav).getByRole("button", { name: "Operational ▾" }));
+    for (const i of within(nav).getAllByRole("menuitem")) expect(i).toHaveClass("min-h-11");
   });
 });
 
@@ -124,14 +155,22 @@ describe("lib/menu", () => {
   test("menuItems without a bot has no ?bot=", () => {
     expect(menuItems("/", {}).map((i) => i.href)).toEqual([
       "/",
+      "/details",
+      "/positions",
       "/income",
       "/worst-case",
-      "/positions",
-      "/how-it-works",
       "/activity",
       "/account",
-      "/details",
+      "/how-it-works",
     ]);
+  });
+
+  test("menuGroups: two pages, then Operational and Help with their pages", () => {
+    const g = menuGroups("/income", {});
+    expect(g.map((e) => e.key)).toEqual(["overview", "details", "operational", "help"]);
+    expect(g[2].items.map((i) => i.key)).toEqual(["positions", "income", "worst-case", "activity", "account"]);
+    expect(g[3].items.map((i) => i.key)).toEqual(["how-it-works"]);
+    expect(g.filter((e) => e.current).map((e) => e.key)).toEqual(["operational"]);
   });
 
   // #405 Scenario: Details (pro) is its own page; the old link redirects there.

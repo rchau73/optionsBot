@@ -3,15 +3,16 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import UserMenu from "./UserMenu";
+import { useDismiss } from "./useDismiss";
 import { fetchMonitorConfig } from "@/lib/api";
-import { botParam, menuItems, showMenu } from "@/lib/menu";
+import { botParam, menuGroups, showMenu } from "@/lib/menu";
 
 /**
- * The menu bar on every signed-in page (#385): Overview · Income · Worst case
- * · Positions · How it works · Activity · Account · Details (pro), then the
- * signed-in person's menu ("bob ▾": Users and Audit for admins, Change
+ * The menu bar on every signed-in page (#385, #450): Overview · Details (pro)
+ * · Operational ▾ (Positions, Income, Worst case, Activity, Account) · Help ▾
+ * (How it works), then the signed-in person's menu ("bob ▾": Users and Audit for admins, Change
  * password, Sign out; #394). The bot is the page's ?bot=, else the first
  * configured bot, and every link keeps it. Not shown on sign-in or the
  * reset-link page. person: { username, role } from the layout (the access
@@ -41,23 +42,23 @@ function useFirstBot(wanted) {
   return first;
 }
 
+const PILL = "inline-flex min-h-11 items-center rounded-full px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
+const pill = (current) => clsx(PILL, current ? "bg-slate-700 font-semibold text-white" : "text-muted hover:text-white");
+
 /** Pure render of the menu, for tests. */
 export function MenuNav({ pathname, bot = null, person = null }) {
   return (
     <nav aria-label="Main" className="border-b border-line bg-panel px-2 py-1 sm:px-4">
       <ul className="flex flex-wrap items-center gap-1">
-        {menuItems(pathname, { bot }).map((item) => (
-          <li key={item.key}>
-            <Link
-              href={item.href}
-              aria-current={item.current ? "page" : undefined}
-              className={clsx(
-                "inline-flex min-h-11 items-center rounded-full px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet",
-                item.current ? "bg-slate-700 font-semibold text-white" : "text-muted hover:text-white",
-              )}
-            >
-              {item.label}
-            </Link>
+        {menuGroups(pathname, { bot }).map((entry) => (
+          <li key={entry.key}>
+            {entry.items ? (
+              <MenuGroup group={entry} />
+            ) : (
+              <Link href={entry.href} aria-current={entry.current ? "page" : undefined} className={pill(entry.current)}>
+                {entry.label}
+              </Link>
+            )}
           </li>
         ))}
         <li className="ml-auto">
@@ -65,5 +66,39 @@ export function MenuNav({ pathname, bot = null, person = null }) {
         </li>
       </ul>
     </nav>
+  );
+}
+
+/** A dropdown of the bar ("Operational ▾"), filled when one of its pages is the current one (#450). */
+function MenuGroup({ group }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, close);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} className={pill(group.current)}>
+        {group.label} ▾
+      </button>
+      {open ? (
+        <div role="menu" aria-label={group.label} className="absolute left-0 z-40 mt-1 w-44 rounded border border-line bg-panel py-1 text-sm shadow-xl">
+          {group.items.map((item) => (
+            <Link
+              key={item.key}
+              role="menuitem"
+              href={item.href}
+              aria-current={item.current ? "page" : undefined}
+              onClick={close}
+              className={clsx(
+                "flex min-h-11 w-full items-center px-3 hover:bg-line/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet",
+                item.current ? "font-semibold text-white" : "text-muted",
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

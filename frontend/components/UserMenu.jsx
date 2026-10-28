@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePassword";
 import SignOut from "./SignOut";
+import { useDismiss } from "./useDismiss";
 
 const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
 
@@ -19,17 +20,7 @@ export default function UserMenu({ role = null, username = null }) {
   const ref = useRef(null);
 
   // A click outside or Escape closes the menu.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onClick = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onClick);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClick);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(ref, open, useCallback(() => setOpen(false), []));
 
   return (
     <div ref={ref} className="relative text-sm">

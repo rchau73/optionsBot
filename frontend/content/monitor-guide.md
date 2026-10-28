@@ -1,6 +1,6 @@
 # Monitor guide
 
-How to read each page of the monitor. It is written for the person who owns the account, not for developers. Every page has one section below, with the same name as its item in the menu bar.
+How to read each page of the monitor. It is written for the person who owns the account, not for developers. Every page has one section below, with the same name as its item in the menu bar. The menu bar shows Overview and Details (pro) directly. Positions, Income, Worst case, Activity and Account are under **Operational**, and How it works is under **Help**.
 
 Three rules hold on every page. Amounts are in the bot's coin first (BTC for the BTC bot, ETH for the ETH bot) and in US dollars second, as a smaller "about" figure. Different coins are never added together. A figure the monitor does not have says "unknown" or "not yet" and gives the reason; it never shows a zero in its place.
 

@@ -1,6 +1,7 @@
 // The menu bar on every signed-in page (#385, E3 prototype screens 4 and 7):
-// one link per view, the current one marked, the chosen bot kept from page to
-// page through ?bot=; the signed-in person's menu ends it (#394).
+// Overview · Details (pro) · Operational ▾ · Help ▾ (#450), the current page
+// marked, the chosen bot kept from page to page through ?bot=; the signed-in
+// person's menu ends it (#394).
 
 /** Pages without the menu: signed out (sign-in, set a new password with a reset link). */
 const NO_MENU = ["/login", "/reset"];
@@ -26,20 +27,42 @@ export function detailsRedirect({ bot, view } = {}) {
 }
 
 /**
- * The menu's items for the page at pathname, each { key, label, href,
- * current }. bot: the chosen bot (from ?bot=, else the first bot), carried by
- * every link; null leaves the links without it.
+ * Every page of the menu in menu order, each { key, label, href, current,
+ * group } (group: the dropdown it sits in, null on the bar itself). bot: the
+ * chosen bot (from ?bot=, else the first bot), carried by every link; null
+ * leaves the links without it.
  */
 export function menuItems(pathname, { bot = null } = {}) {
   const q = bot ? `?bot=${encodeURIComponent(bot)}` : "";
+  const item = ({ key, label, path, group = null }) => ({ key, label, href: `${path}${q}`, current: pathname === path, group });
   return [
-    { key: "overview", label: "Overview", href: `/${q}`, current: pathname === "/" },
-    { key: "income", label: "Income", href: `/income${q}`, current: pathname === "/income" },
-    { key: "worst-case", label: "Worst case", href: `/worst-case${q}`, current: pathname === "/worst-case" },
-    { key: "positions", label: "Positions", href: `/positions${q}`, current: pathname === "/positions" },
-    { key: "how-it-works", label: "How it works", href: `/how-it-works${q}`, current: pathname === "/how-it-works" },
-    { key: "activity", label: "Activity", href: `/activity${q}`, current: pathname === "/activity" },
-    { key: "account", label: "Account", href: `/account${q}`, current: pathname === "/account" },
-    { key: "details", label: "Details (pro)", href: `/details${q}`, current: pathname === "/details" },
-  ];
+    { key: "overview", label: "Overview", path: "/" },
+    { key: "details", label: "Details (pro)", path: "/details" },
+    { key: "positions", label: "Positions", path: "/positions", group: "operational" },
+    { key: "income", label: "Income", path: "/income", group: "operational" },
+    { key: "worst-case", label: "Worst case", path: "/worst-case", group: "operational" },
+    { key: "activity", label: "Activity", path: "/activity", group: "operational" },
+    { key: "account", label: "Account", path: "/account", group: "operational" },
+    { key: "how-it-works", label: "How it works", path: "/how-it-works", group: "help" },
+  ].map(item);
+}
+
+/** The dropdowns of the menu bar, in order (#450): group key → label. Not pages, so not in the monitor guide's page list. */
+const GROUPS = [
+  ["operational", "Operational"],
+  ["help", "Help"],
+];
+
+/**
+ * The menu bar's entries in order: a page { key, label, href, current } or a
+ * dropdown { key, label, current, items } (current: one of its pages is).
+ */
+export function menuGroups(pathname, { bot = null } = {}) {
+  const items = menuItems(pathname, { bot });
+  const entries = items.filter((i) => !i.group);
+  for (const [key, label] of GROUPS) {
+    const children = items.filter((i) => i.group === key);
+    entries.push({ key, label, current: children.some((c) => c.current), items: children });
+  }
+  return entries;
 }
