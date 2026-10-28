@@ -50,9 +50,13 @@ MONEY_RE = re.compile(
 
 CATEGORIES = (
     "how_it_works", "parameter", "why_did_it", "jargon", "risk",
-    "refuse_advice", "refuse_forecast", "unknown",
+    "refuse_advice", "refuse_forecast", "unknown", "request",
 )
 REFUSE_CATEGORIES = ("refuse_advice", "refuse_forecast")
+# The request check's outcomes (#409): a request case's answer carries the
+# monitor's "outcome", and its citations are the case's own journal and P&L
+# passages, not the help index.
+REQUEST_BEHAVIOURS = ("needs_info", "answered", "draft")
 
 
 class InputError(Exception):
@@ -122,6 +126,17 @@ def grade_one(q, answer, index):
     if not isinstance(text, str) or not isinstance(citations, list):
         return ["malformed answer: \"text\" must be a string and \"citations\" a list"]
 
+    behaviour = q["expected_behaviour"]
+    if behaviour in REQUEST_BEHAVIOURS:
+        failures = []
+        if answer.get("outcome") != behaviour:
+            failures.append(f"outcome {answer.get('outcome')!r}, {behaviour!r} expected")
+        t = norm(text)
+        for phrase in q.get("must_not_say") or []:
+            if norm(phrase) in t:
+                failures.append(f"banned phrase: {phrase}")
+        return failures
+
     failures = []
     cited = set()
     for c in citations:
@@ -131,7 +146,6 @@ def grade_one(q, answer, index):
         else:
             cited.add(s)
 
-    behaviour = q["expected_behaviour"]
     refused, dont_know = is_refusal(text), is_dont_know(text)
     if behaviour == "answer":
         if refused or dont_know:

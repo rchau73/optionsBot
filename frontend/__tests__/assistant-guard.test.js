@@ -96,6 +96,8 @@ test("the golden set: correct answers pass, must_not_say phrases are rejected", 
     let a = { text: `From the help: ${q.must_say?.join(", ")}.`, citations: q.expected_sources };
     if (q.expected_behaviour === "refuse") a = { text: REFUSAL, citations: [] };
     if (q.expected_behaviour === "dont_know") a = { text: DONT_KNOW, citations: [] };
+    // A request case is checked against its own passages (assistant-request.test.js, #409).
+    if (q.category === "request") a = valid;
     const v = check(a, passages);
     if (!v.ok) failures.push(`${q.id}: correct answer rejected: ${v.details}`);
     const base = q.expected_behaviour === "answer" ? a : valid;

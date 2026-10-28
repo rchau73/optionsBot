@@ -2,7 +2,7 @@ import { authDbPath, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { assistantLogPath } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
-import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal } from "@/lib/assistant/server";
+import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal, botPnl } from "@/lib/assistant/server";
 import { answerQuestion, mergePassages, validQuestion } from "@/lib/assistant/service";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,12 @@ export async function GET(request) {
  * #408) also the facts the journal recorded about that event
  * (GET /api/explain). The answer must cite them, else it is replaced by
  * "I don't know" (no citation) or the fallback reply (advice, forecast, a
- * number from nowhere). Every question is logged in data/monitor/assistant.jsonl.
+ * number from nowhere). A question that reads as a bug report or a wish runs
+ * the request check instead (#409, lib/assistant/request.js; with "bot" the
+ * bot's last day of P&L history is a source too): needs_info with the
+ * checklist, answered, or a draft the person may send with
+ * POST /api/assistant/requests — nothing is queued here.
+ * Every question is logged in data/monitor/assistant.jsonl.
  * Off (503) until ANTHROPIC_API_KEY is in the monitor's .env; a person may
  * ask QUESTIONS_PER_HOUR an hour (429 with Retry-After). Every answer carries
  * `remaining`, the questions left this hour.
@@ -96,6 +101,7 @@ export async function POST(request) {
     question: valid.question,
     bot,
     journal,
+    reportPassages: async () => (bot !== null ? botPnl(bot) : []),
     user,
     model,
     index: assistantIndex(),

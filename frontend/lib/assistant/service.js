@@ -7,7 +7,9 @@
 import { REASON_NO_CITATION, check, isCanonical } from "./guard";
 import { appendLine, newAnswerId } from "./log";
 import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
+import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyChecklist, looksLikeReport } from "./request";
 import { noAnswer } from "./search";
+import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
 
 export const MAX_QUESTION = 500;
 // Passages of the help sent with a question: enough for an answer, few enough to keep the call small.
@@ -22,6 +24,9 @@ export const OUTCOME_REFUSED = "refused";
 export const OUTCOME_NO_CITATION = "no_citation"; // replaced by "I don't know"
 export const OUTCOME_REJECTED = "rejected"; // replaced by the fallback reply
 export const OUTCOME_MODEL_ERROR = "model_error";
+// The request check's outcomes (#409); its "answered" is OUTCOME_ANSWERED with a checklist.
+export const OUTCOME_NEEDS_INFO = "needs_info";
+export const OUTCOME_DRAFT = "draft";
 
 /** The question of a request body, or an error naming what is wrong. */
 export function validQuestion(body) {
@@ -89,6 +94,42 @@ export function explainPassages(bot, explanation) {
   return [own, ...journalPassages(bot, explanation.related)];
 }
 
+// P&L history points sent with a report about a bot (#409).
+export const PNL_POINTS = 24;
+
+const sig = (v) => (Number.isFinite(v) ? Number(v.toPrecision(6)) : null);
+
+/**
+ * A bot's P&L history (/api/pnl/history points, oldest first) as citable
+ * passages for the request check (#409): id "pnl:<bot>/<time>", the
+ * recorded totals in words. At most `max`: the two points around the
+ * largest step of the total (a spike), then points evenly spaced, oldest first.
+ */
+export function pnlPassages(bot, points, max = PNL_POINTS) {
+  const list = (points ?? []).filter((p) => p && typeof p.t === "string" && Number.isFinite(p.total));
+  if (!list.length) return [];
+  const keep = new Set();
+  let jump = 0;
+  let size = -1;
+  for (let i = 1; i < list.length; i++) {
+    const d = Math.abs(list[i].total - list[i - 1].total);
+    if (d > size) [jump, size] = [i, d];
+  }
+  if (jump > 0) keep.add(jump - 1).add(jump);
+  const step = Math.max(1, Math.ceil(list.length / Math.max(1, max - keep.size)));
+  for (let i = list.length - 1; i >= 0 && keep.size < max; i -= step) keep.add(i);
+  return [...keep]
+    .sort((a, b) => a - b)
+    .map((i) => {
+      const p = list[i];
+      const parts = [`total ${sig(p.total)}`, `realised ${sig(p.realised)}`, `unrealised ${sig(p.unrealised)}`];
+      if (Number.isFinite(p.total_usd)) parts.push(`total USD ${Math.round(p.total_usd * 100) / 100}`);
+      if (Number.isFinite(p.spot)) parts.push(`spot ${sig(p.spot)}`);
+      const at = `${p.t.slice(0, 10)} ${p.t.slice(11, 16)} UTC`;
+      return { id: `pnl:${bot}/${p.t}`, source: `pnl:${bot}`, title: `${bot} P&L history at ${p.t}`, text: `P&L recorded on ${at}: ${parts.join(", ")}.` };
+    });
+}
+
 /** The passages of both lists, each id once: the first list's copy wins. */
 export function mergePassages(first, second) {
   const ids = new Set(first.map((p) => p.id));
@@ -108,13 +149,6 @@ function outcomeOf(reply, verdict) {
 }
 
 /**
- * Answers one question. model: { model, ask({question, passages}) → {text,
- * citations} }; index: a HelpIndex; journal: passages from journalPassages;
- * file: the review log. → { status, body } for the route: 200 with { id,
- * answer, citations, outcome, ai_generated, notice }, 502 when the model
- * failed, 500 when the log could not be written (nothing is shown unlogged).
- */
-/**
  * A citation as the passage id it can only mean: listed as is (an id or a
  * source), else the one listed id — or, failing that, the one source — that
  * ends with it after a ":": a model may drop the id's first part
@@ -129,9 +163,65 @@ export function resolveCitation(c, passages) {
   return ids.length === 0 && sources.length === 1 ? sources[0] : c;
 }
 
-export async function answerQuestion({ question, bot = null, journal = [], user, model, index, file, nowMs = Date.now() }) {
+/**
+ * Fills the log entry from a request check's verdict (#409): resolves its
+ * citations, then request.js decides the outcome. Not a report → the verdict's
+ * answer as any other; answered → its answer through the guard, with the
+ * checklist (and an enhancement draft when one may be offered); needs_info →
+ * the checklist; draft → the card, citing its evidence. The draft is logged
+ * with the answer (every AI output is reviewable), never queued here: only the
+ * person's Send (POST /api/assistant/requests) puts it in the private queue.
+ */
+function applyRequestCheck(entry, verdict, passages) {
+  const resolve = (c) => resolveCitation(c, passages);
+  const v = {
+    ...verdict,
+    citations: verdict.citations.map(resolve),
+    explained_by: verdict.explained_by.map(resolve),
+    evidence: verdict.evidence.map((e) => ({ ...e, citation: e.citation ? resolve(e.citation) : "" })),
+  };
+  const logged = { ...v };
+  delete logged.stop;
+  entry.model_answer = JSON.stringify(logged);
+  const r = checkRequest(v, passages);
+
+  if (r.outcome === REQUEST_NONE || r.outcome === REQUEST_ANSWERED) {
+    const cites = [...new Set([...v.citations, ...r.explained_by])];
+    const g = check({ text: v.text, citations: cites }, passages);
+    entry.citations = cites;
+    entry.verdict = [...g.details, ...r.details];
+    [entry.outcome, entry.answer] = outcomeOf({ text: v.text }, g);
+    if (r.outcome === REQUEST_ANSWERED && entry.outcome === OUTCOME_ANSWERED) entry.request = { checklist: r.checklist, draft: r.draft };
+    return;
+  }
+  entry.verdict = r.details;
+  entry.request = { checklist: r.checklist, draft: r.draft };
+  if (r.outcome === REQUEST_DRAFT) {
+    entry.outcome = OUTCOME_DRAFT;
+    entry.answer = DRAFT_TEXT;
+    entry.citations = [...new Set(r.draft.evidence.map((e) => e.citation))];
+  } else {
+    entry.outcome = OUTCOME_NEEDS_INFO;
+    entry.answer = NEEDS_INFO_TEXT;
+  }
+}
+
+/**
+ * Answers one question. model: { model, ask({question, passages}) → {text,
+ * citations, report}, checkRequest?({question, passages}) → a verdict };
+ * index: a HelpIndex; journal: passages from journalPassages; reportPassages:
+ * async () → more passages for a report (the bot's P&L history, #409); file:
+ * the review log. A question that reads as a report (looksLikeReport, or the
+ * model's report flag on its answer) runs the request check instead of the
+ * plain answer. → { status, body } for the route: 200 with { id, answer,
+ * citations, outcome, checklist?, draft?, ai_generated, notice }, 502 when
+ * the model failed, 500 when the log could not be written (nothing is shown unlogged).
+ */
+export async function answerQuestion({ question, bot = null, journal = [], reportPassages = async () => [], user, model, index, file, nowMs = Date.now() }) {
   const hits = index.search(question, HELP_PASSAGES);
-  const passages = [...hits.map((h) => h.passage), ...journal];
+  let passages = [...hits.map((h) => h.passage), ...journal];
+  const canCheck = typeof model.checkRequest === "function";
+  let report = canCheck && looksLikeReport(question);
   const entry = {
     kind: "answer",
     id: newAnswerId(),
@@ -151,19 +241,38 @@ export async function answerQuestion({ question, bot = null, journal = [], user,
   };
 
   let reply = null;
+  let verdict = null;
   if (noAnswer(hits) && journal.length === 0) {
-    // Nothing to answer from: no model call, the contract's reply.
+    // Nothing to answer from: no model call. A report gets the checklist
+    // (nothing to check it against), any other question the contract's reply.
     entry.model = null;
-    entry.outcome = OUTCOME_DONT_KNOW;
-    entry.answer = DONT_KNOW;
+    if (report) {
+      entry.outcome = OUTCOME_NEEDS_INFO;
+      entry.answer = NEEDS_INFO_TEXT;
+      entry.request = { checklist: emptyChecklist(), draft: null };
+    } else {
+      entry.outcome = OUTCOME_DONT_KNOW;
+      entry.answer = DONT_KNOW;
+    }
   } else {
     try {
-      reply = await model.ask({ question, passages });
+      if (!report) {
+        reply = await model.ask({ question, passages });
+        // The model's intent flag: a report the words did not show.
+        if (reply.report && canCheck) [report, reply] = [true, null];
+      }
+      if (report) {
+        passages = mergePassages(passages, await reportPassages());
+        entry.sources = passages.map((p) => p.id);
+        verdict = await model.checkRequest({ question, passages });
+      }
     } catch (err) {
       entry.outcome = OUTCOME_MODEL_ERROR;
       entry.verdict = [err.message];
     }
-    if (reply) {
+    if (verdict) {
+      applyRequestCheck(entry, verdict, passages);
+    } else if (reply) {
       reply.citations = reply.citations.map((c) => resolveCitation(c, passages));
       const verdict = check(reply, passages);
       entry.model_answer = reply.text;
@@ -179,13 +288,15 @@ export async function answerQuestion({ question, bot = null, journal = [], user,
   if (entry.outcome === OUTCOME_MODEL_ERROR) {
     return { status: 502, body: { id: entry.id, error: "the assistant did not answer: try again later" } };
   }
-  const shown = entry.outcome === OUTCOME_ANSWERED ? entry.citations : [];
+  const shown = entry.outcome === OUTCOME_ANSWERED || entry.outcome === OUTCOME_DRAFT ? entry.citations : [];
   const citations = [...new Set(shown)].map((c) => {
     const p = passages.find((x) => x.id === c || x.source === c);
     return { id: c, source: p.source, title: p.title };
   });
-  return {
-    status: 200,
-    body: { id: entry.id, answer: entry.answer, citations, outcome: entry.outcome, ai_generated: true, notice: AI_NOTICE },
-  };
+  const body = { id: entry.id, answer: entry.answer, citations, outcome: entry.outcome, ai_generated: true, notice: AI_NOTICE };
+  if (entry.request) {
+    body.checklist = entry.request.checklist;
+    if (entry.request.draft) body.draft = entry.request.draft;
+  }
+  return { status: 200, body };
 }

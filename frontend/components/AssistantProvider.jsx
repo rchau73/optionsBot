@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
-import { askAssistant, fetchAssistantState, flagAssistantAnswer } from "@/lib/api";
+import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
 import { track } from "@/lib/track";
 
@@ -75,6 +75,9 @@ export default function AssistantProvider({ children }) {
           text: body.answer,
           citations: body.citations ?? [],
           outcome: body.outcome,
+          // The request check (#409): its checklist, and a draft card the person may send.
+          checklist: body.checklist ?? null,
+          draft: body.draft ?? null,
           bot: about,
         });
       } else if (status === 429) {
@@ -114,9 +117,20 @@ export default function AssistantProvider({ children }) {
     track("assistant_flag", {});
   }, []);
 
+  // A draft request (#409) goes to the private queue only from here: the card's Send.
+  const sendRequest = useCallback(async (message, kind, fields) => {
+    const { id } = await sendAssistantRequest({ answerId: message.answerId, kind, fields });
+    setMessages((list) => list.map((m) => (m.id === message.id ? { ...m, sentAs: id } : m)));
+    return id;
+  }, []);
+
+  const discardDraft = useCallback((message) => {
+    setMessages((list) => list.map((m) => (m.id === message.id ? { ...m, discarded: true } : m)));
+  }, []);
+
   const value = useMemo(
-    () => ({ open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag }),
-    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag],
+    () => ({ open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft }),
+    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft],
   );
 
   return (
