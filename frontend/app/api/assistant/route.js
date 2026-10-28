@@ -2,7 +2,7 @@ import { authDbPath, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { assistantLogPath } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
-import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal, botPnl } from "@/lib/assistant/server";
+import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal, botLive, botPnl } from "@/lib/assistant/server";
 import { answerQuestion, mergePassages, validQuestion } from "@/lib/assistant/service";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,8 @@ export async function GET(request) {
  * The help assistant (#191, E10): POST /api/assistant {"question", "bot"?,
  * "seq"?} from a signed-in person (any role, re-read from the user database;
  * 401 without a session). Answers from the help index and, with "bot", that
- * bot's latest journal facts; with "seq" too (the panel's "Why?" on a trade,
+ * bot's live page data (#427: open legs, the market now) and its journal
+ * facts (the last week and its held legs' whole history); with "seq" too (the panel's "Why?" on a trade,
  * #408) also the facts the journal recorded about that event
  * (GET /api/explain). The answer must cite them, else it is replaced by
  * "I don't know" (no citation) or the fallback reply (advice, forecast, a
@@ -91,8 +92,9 @@ export async function POST(request) {
   const remaining = limiter.remaining(user.id, Date.now());
 
   let journal = [];
+  let live = [];
   if (bot !== null) {
-    journal = await botJournal(bot);
+    [journal, live] = await Promise.all([botJournal(bot), botLive(bot)]);
     if (journal === null) return Response.json({ error: "unknown bot" }, { status: 404 });
     if (seq !== null) journal = mergePassages(await botExplain(bot, seq), journal);
   }
@@ -101,6 +103,7 @@ export async function POST(request) {
     question: valid.question,
     bot,
     journal,
+    live: live ?? [],
     reportPassages: async () => (bot !== null ? botPnl(bot) : []),
     user,
     model,

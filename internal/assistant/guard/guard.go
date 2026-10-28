@@ -110,7 +110,8 @@ func Fallback(v Verdict) string {
 // replies (spacing aside), the only answers that need no citation.
 func IsCanonical(text string) bool {
 	t := strings.Join(strings.Fields(text), " ")
-	return t == DontKnow || t == Refusal || t == FallbackReply
+	// "I don't know" for the facts and the refusal for the advice (#427).
+	return t == DontKnow || t == Refusal || t == FallbackReply || t == DontKnow+" "+Refusal
 }
 
 // citedPassages resolves each citation by passage id or by source; one that

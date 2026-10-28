@@ -12,12 +12,13 @@ What a correct answer of the help assistant is, written so it can be tested befo
 
 ## 1. Where an answer may come from
 
-- **Only** the passages of `frontend/content/help-index.json` (OptionStrategy.md, the glossary, the plain-words catalogue of journal events — #312) and **the user's own journal facts: your journal of the last 7 days** (the recorded reason of each open, close and skip, with its numbers; a notice repeated every cycle is one fact with its count and its first and last times, #417).
+- **Only** the passages of `frontend/content/help-index.json` (OptionStrategy.md, the glossary, the plain-words catalogue of journal events — #312) and **the user's own journal facts: your journal of the last 7 days** (the recorded reason of each open, close and skip, with its numbers; a notice repeated every cycle is one fact with its count and its first and last times, #417), **plus the whole history of every position the bot holds now**, however old (its entry, fills, repairs, re-pricing and holds), and the **market the journal recorded at each fill and close** (spot, DVOL, IV percentile, regime — #427).
+- **The live data of the bot's page** (#427): each open leg (`live:<bot>/leg/<instrument>`: side, strike, slot, expiry and days left, size, entry price, mark, P&L in coin and % of premium, delta, distance to the strike, the stop and the delta-exit line, why a missing leg is held) and the market now (`live:<bot>/market`: spot, DVOL, IV percentile, gamma regime and its confirmation, trend, flip and shed band, IM against its limit). These are facts as the bot's own routes give them: worded from their fields, nothing recomputed, a missing figure written "unknown". The guard grounds numbers against them like any other source.
 - Nothing else: no general knowledge of markets, no other exchange, no news, no prices from memory.
 
 ## 2. A correct answer
 
-1. **Cites** at least one passage: a passage id (`glossary:delta/1`) or a source (`OptionStrategy.md#4-how-a-trade-can-end`, `glossary:delta`, `explain:closed:stop_loss`), which stands for all its passages. Every citation must exist in `help-index.json`; an unknown one fails the answer and is named.
+1. **Cites** at least one passage: a passage id (`glossary:delta/1`) or a source (`OptionStrategy.md#4-how-a-trade-can-end`, `glossary:delta`, `explain:closed:stop_loss`), which stands for all its passages. Every citation must exist in `help-index.json` or among the bot's passages sent with the question (`journal:<bot>/<seq>`, `live:<bot>/…`); an unknown one fails the answer and is named.
 2. **Every number** in it (a value, a percentage, a date) appears in a passage it cites, or in the journal fact it explains; 0.30 and 30 % count as the same number. A number from nowhere fails (`ungrounded_number`).
 3. **Describes, never advises:** it says what the bot does and why ("the bot sells a call and a put"), never what the user should do. No "you should", "I recommend", "increase your…", "now is a good time", no imperative about money or settings.
 4. **Never forecasts:** no price direction, no return, no promise. No "will earn", "you can expect", "expected return", "guaranteed", "risk-free", no "% a month". Saying a guarantee does *not* exist ("a stop is a trigger, not a guaranteed price") is allowed.
@@ -36,6 +37,8 @@ A question asking what to do with one's money or settings ("should I…?", "whic
 > I can't recommend what to do with your money, and I don't forecast prices or returns. I can explain how a rule works and what it did in your account.
 
 A refusal holds **no number with % or a currency** and none of the question's banned phrases. It may go on to explain the rule the question touches, but then that explanation is an answer like any other: cited and grounded.
+
+**A mixed question** (#427) — facts and advice or a forecast in one ("why is this put at −48 %, was DVOL low at entry, and how do I avoid it?") — gets the factual part answered from the sources, cited and grounded, and only the advice or forecast part declined, with the refusal above as one sentence inside the answer. That answer is `answered`, not `refused`, and it must cite. A reply that is only "I don't know" followed by the refusal (no fact found, the advice declined) is canonical like the two replies alone: no citation needed.
 
 ## 5. The fallback
 

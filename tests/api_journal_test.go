@@ -202,6 +202,85 @@ func TestAPI_Journal(t *testing.T) {
 	})
 }
 
+// #427: held=1 adds every older event of the instruments held now (sampleView
+// holds BTC-X-110000-C and BTC-X-90000-P), and a fill or a close carries the
+// market its line recorded.
+func TestAPI_JournalHeld(t *testing.T) {
+	now := time.Now()
+	day := 24 * time.Hour
+	put := `"instrument":"BTC-X-90000-P","option_type":"put"`
+	market := `"market":{"spot":84498.12,"dvol":37.2,"iv_percentile":15,"gex_regime":"POSITIVE/PINNING","delta":-0.16}`
+	lines := []string{
+		jline(now.Add(-40*day), orders.EventFilled, put+`,"trigger_reason":"entry","direction":"sell","qty":1,"fill_price":0.02,`+market),
+		jline(now.Add(-40*day+time.Minute), orders.EventFilled, `"instrument":"BTC-X-50000-P","option_type":"put","trigger_reason":"entry","direction":"sell","qty":1,`+market),
+		// Names the held put only in its detail: not its event.
+		jline(now.Add(-39*day), orders.EventSkipped, `"instrument":"BTC-X-80000-P","skip_reason":"no_expiry","detail":"BTC-X-90000-P holds the expiry"`),
+		jline(now.Add(-30*day), orders.EventSkipped, put+`,"skip_reason":"repair_held: put stopped out, cooldown 72h"`),
+		jline(now.Add(-29*day), orders.EventSkipped, put+`,"skip_reason":"repair_held: put stopped out, cooldown 72h"`),
+		jline(now.Add(-6*day), orders.EventFilled, put+`,"trigger_reason":"repair","direction":"sell","qty":1,"fill_price":0.03`),
+		jline(now.Add(-time.Hour), orders.EventSubmitted, put+`,"trigger_reason":"repair","direction":"sell","qty":1,"limit_price":0.03,`+market),
+	}
+	_, h := journalFixture(t, lines)
+
+	plain := getJournal(t, h, "/api/journal")
+	for _, it := range plain.Items {
+		if it.At.Before(now.Add(-7 * day)) {
+			t.Errorf("without held, an event %v old is in the window: %+v", now.Sub(it.At), it)
+		}
+	}
+	if len(plain.Held) != 0 {
+		t.Errorf("held = %v without held=1", plain.Held)
+	}
+
+	w := getJournal(t, h, "/api/journal?held=1")
+	t.Run("Scenario: a leg opened 40 days ago and still held has its entry in the answer", func(t *testing.T) {
+		if strings.Join(w.Held, ",") != "BTC-X-110000-C,BTC-X-90000-P" {
+			t.Errorf("held = %v", w.Held)
+		}
+		var entry *api.JournalItem
+		for i := range w.Items {
+			it := &w.Items[i]
+			if it.Instrument != "BTC-X-90000-P" && it.At.Before(now.Add(-7*day)) {
+				t.Errorf("an old event of an instrument not held: %+v", it)
+			}
+			if it.Reason == "entry" && it.Instrument == "BTC-X-90000-P" {
+				entry = it
+			}
+		}
+		if entry == nil {
+			t.Fatalf("the 40-day-old entry is missing: %+v", w.Items)
+		}
+		if entry.Market == nil || entry.Market.Spot != 84498.12 || entry.Market.DVOL != 37.2 || entry.Market.IVPercentile != 15 || entry.Market.GEXRegime != "POSITIVE/PINNING" {
+			t.Errorf("entry market = %+v, want the line's spot, DVOL, IV percentile and regime", entry.Market)
+		}
+		if len(w.Items) != 4 { // the entry, the holds collapsed, the repair fill, the submit
+			t.Errorf("items = %d, want 4: %+v", len(w.Items), w.Items)
+		}
+		for i := 1; i < len(w.Items); i++ {
+			if w.Items[i].Seq <= w.Items[i-1].Seq {
+				t.Errorf("items not oldest first at %d", i)
+			}
+		}
+		for _, it := range w.Items {
+			if it.Reason == "repair_held" && it.Count != 2 {
+				t.Errorf("old holds = %+v, want collapsed ×2", it)
+			}
+			if it.Event == orders.EventSubmitted && it.Market != nil {
+				t.Errorf("a submit carries a market: only fills and closes do")
+			}
+			if it.Event == orders.EventFilled && it.Reason == "repair" && it.Market != nil {
+				t.Errorf("a fill without a market line got one: %+v", it.Market)
+			}
+		}
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/journal?held=2", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("held=2 → %d, want 400", rec.Code)
+	}
+}
+
 func TestAPI_JournalBound(t *testing.T) {
 	now := time.Now()
 	var lines []string

@@ -19,7 +19,8 @@ const negations = NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
 /** True when the text is exactly one of the canonical replies (spacing aside): the only answers that need no citation. */
 export function isCanonical(text) {
   const t = String(text ?? "").trim().split(/\s+/).join(" ");
-  return t === DONT_KNOW || t === REFUSAL || t === FALLBACK_REPLY;
+  // "I don't know" for the facts and the refusal for the advice (#427).
+  return t === DONT_KNOW || t === REFUSAL || t === FALLBACK_REPLY || t === `${DONT_KNOW} ${REFUSAL}`;
 }
 
 // Dates and numbers not glued to a word before them ("SMA9" is not a number).

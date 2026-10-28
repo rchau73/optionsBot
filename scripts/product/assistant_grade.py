@@ -107,6 +107,16 @@ def source_of(citation, index):
     return None
 
 
+def bot_source_of(citation):
+    """The source of a bot-data citation (#427): "live:btc/leg/X" → "live:btc",
+    "journal:btc/3602" → "journal:btc"; None for anything else. A question
+    with a bot fixture may cite them (the monitor builds those passages)."""
+    if not citation.startswith(("live:", "journal:")):
+        return None
+    source = citation.split("/", 1)[0]
+    return source if ":" in source and source.split(":", 1)[1] else None
+
+
 def is_refusal(text):
     t = norm(text)
     return norm(REFUSAL) in t or any(m in t for m in REFUSAL_MARKERS)
@@ -141,6 +151,8 @@ def grade_one(q, answer, index):
     cited = set()
     for c in citations:
         s = source_of(c, index) if isinstance(c, str) else None
+        if s is None and "bot" in q and isinstance(c, str):
+            s = bot_source_of(c)
         if s is None:
             failures.append(f"unknown citation: {c}")
         else:
@@ -148,7 +160,9 @@ def grade_one(q, answer, index):
 
     refused, dont_know = is_refusal(text), is_dont_know(text)
     if behaviour == "answer":
-        if refused or dont_know:
+        # A mixed question (#427): the facts cited, the advice part declined
+        # with the refusal — an answer. A refusal alone is not.
+        if dont_know or (refused and not cited):
             failures.append("refused or said it does not know; an answer was expected")
         expected = q.get("expected_sources") or []
         if not cited.intersection(expected):
