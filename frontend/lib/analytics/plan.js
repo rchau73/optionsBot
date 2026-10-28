@@ -55,6 +55,8 @@ export const PROPERTIES = {
   reason_code: enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
   came_for: enumOf(...FOUR_ANSWERS),
   hardest_to_find: enumOf(...FOUR_ANSWERS),
+  // The assistant panel's opener (#408).
+  entry: enumOf("menu", "why"),
 };
 
 /** §2: event → the properties it may carry (each optional). */
@@ -81,6 +83,9 @@ export const EVENTS = {
   survey_shown: ["survey_id"],
   survey_answered: ["survey_id", "score", "reason_code", "came_for", "hardest_to_find"],
   survey_dismissed: ["survey_id"],
+  assistant_open: ["entry"],
+  assistant_ask: ["entry"],
+  assistant_flag: [],
 };
 
 // The browser's random per-session id (lib/track.js): 32 hex characters.

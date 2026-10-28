@@ -6,6 +6,7 @@ import { useActivity } from "@/hooks/useActivity";
 import { ACTIVITY_FILTERS, DAYS_PER_PAGE, buildActivity, clockOf, filterActivity, groupByDay } from "@/lib/activity";
 import { formatCoin, isNumber } from "@/lib/format";
 import { toneOf } from "@/lib/summary";
+import WhyButton from "./WhyButton";
 
 // The Activity page (#385, E3 prototype screen 4): "What the bot did, and
 // why" — the bot's journal day by day, each entry led by its plain-words
@@ -57,7 +58,7 @@ export function ActivityView({ bot, events = [], trades = [], error = null, load
             ) : (
               <>
                 {groups.slice(0, days).map((g) => (
-                  <DayGroup key={g.day} group={g} coin={coin} />
+                  <DayGroup key={g.day} group={g} coin={coin} bot={bot} />
                 ))}
                 {groups.length > days ? (
                   <button
@@ -102,20 +103,25 @@ function FilterRow({ filter, onFilter }) {
   );
 }
 
-function DayGroup({ group, coin }) {
+function DayGroup({ group, coin, bot }) {
   return (
     <section aria-label={group.title} className="rounded-lg border border-line bg-panel">
       <h2 className="border-b border-line px-4 py-2 text-sm font-semibold uppercase tracking-wide text-muted">{group.title}</h2>
       <ol className="divide-y divide-line/50">
         {group.entries.map((e) => (
-          <Entry key={e.id} entry={e} coin={coin} />
+          <Entry key={e.id} entry={e} coin={coin} bot={bot} />
         ))}
       </ol>
     </section>
   );
 }
 
-function Entry({ entry: e, coin }) {
+/** An open (filled) or close as a trade for the assistant's Why? (#408); null for other entries. */
+const tradeOf = (e, bot) =>
+  e.event === "filled" || e.event === "closed" ? { bot, seq: e.seq, kind: e.event === "filled" ? "open" : "close", instrument: e.instrument, at: e.at } : null;
+
+function Entry({ entry: e, coin, bot }) {
+  const trade = tradeOf(e, bot);
   return (
     <li className="flex gap-3 px-4 py-2" data-testid="activity-entry">
       <span className="w-12 shrink-0 pt-0.5 font-mono text-sm text-muted">{clockOf(e.at)}</span>
@@ -128,6 +134,7 @@ function Entry({ entry: e, coin }) {
           {e.amount ? <Amount amount={e.amount} coin={coin} /> : null}
         </p>
       </div>
+      {trade ? <WhyButton trade={trade} className="shrink-0 self-start" /> : null}
     </li>
   );
 }
