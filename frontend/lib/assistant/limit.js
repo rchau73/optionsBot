@@ -23,4 +23,10 @@ export class QuestionLimiter {
     this.asked.set(userId, [...times, now]);
     return 0;
   }
+
+  /** Questions the person may still ask in the hour ending at now (the panel's "n of 30 left"). */
+  remaining(userId, now) {
+    const times = (this.asked.get(userId) ?? []).filter((t) => now - t < this.windowMs);
+    return Math.max(0, this.max - times.length);
+  }
 }

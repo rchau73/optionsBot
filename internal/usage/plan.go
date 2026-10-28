@@ -61,6 +61,8 @@ var Properties = map[string]Rule{
 	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "other"),
 	"came_for":        enumOf(fourAnswers...),
 	"hardest_to_find": enumOf(fourAnswers...),
+	// The assistant panel's opener (#408).
+	"entry": enumOf("menu", "why"),
 	// The overview's switches (#404).
 	"unit":  enumOf("coin", "usd"),
 	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
@@ -95,6 +97,9 @@ var Events = map[string][]string{
 	"survey_shown":           {"survey_id"},
 	"survey_answered":        {"survey_id", "score", "reason_code", "came_for", "hardest_to_find"},
 	"survey_dismissed":       {"survey_id"},
+	"assistant_open":         {"entry"},
+	"assistant_ask":          {"entry"},
+	"assistant_flag":         {},
 	"overview_unit_toggle":   {"unit"},
 	"overview_layer_toggle":  {"layer"},
 }

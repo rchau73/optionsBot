@@ -87,7 +87,7 @@ function amountOf(event, { premium, pnl }) {
   return null;
 }
 
-function entry({ seq, at, event, plain, fallback, fields, amount }) {
+function entry({ seq, at, event, instrument, plain, fallback, fields, amount }) {
   const groups = activityGroups({ event, ...fields });
   const { headline, why } = splitPlain(plain || fallback || event);
   return {
@@ -95,6 +95,7 @@ function entry({ seq, at, event, plain, fallback, fields, amount }) {
     seq,
     at,
     event,
+    instrument: instrument ?? null, // for the assistant's "Why?" (#408)
     icon: iconOf(event, groups),
     headline,
     why,
@@ -113,6 +114,7 @@ export function activityFromEvent(ev, unit) {
     seq: ev.seq,
     at: ev.at,
     event: ev.event,
+    instrument: d.instrument,
     plain,
     fallback: plain ? null : describeEvent(unit.toLowerCase(), ev, unit)?.text,
     fields: { closeReason: d.close_reason, trigger: d.trigger_reason, change: d.change, skipReason: d.skip_reason, actor: d.actor },
@@ -129,6 +131,7 @@ export function activityFromTrade(t) {
     seq: t.seq,
     at: t.at,
     event,
+    instrument: t.instrument,
     plain: typeof t.plain === "string" && t.plain.trim() ? t.plain : null,
     fallback: `${t.kind === "open" ? "Sold" : "Bought back"} ${t.qty ?? ""} ${t.instrument ?? ""} (${t.reason ?? "unknown reason"})`,
     fields: { closeReason: t.kind === "close" ? t.reason : undefined, trigger: t.reason, actor: t.actor },

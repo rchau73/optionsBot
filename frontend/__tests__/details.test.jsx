@@ -218,6 +218,11 @@ describe("Scenario: a trade row opens its detail", () => {
     expect(detail).not.toBeVisible();
     expect(track).toHaveBeenCalledTimes(1); // closing is not counted
   });
+
+  test("each row is the anchor the assistant's journal chip links to (#408)", () => {
+    render(<TradeHistory trades={trades} />);
+    expect(document.getElementById("trade-btc-2")).toBe(screen.getByTestId("trade-btc-2"));
+  });
 });
 
 describe("lib/details", () => {

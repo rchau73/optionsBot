@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { Fragment, useMemo, useState } from "react";
 import Badge from "./Badge";
 import DotStrip from "./DotStrip";
+import WhyButton from "./WhyButton";
 import { formatDateTime, formatNumber, formatPct, formatPrice, formatUSD } from "@/lib/format";
 import { approxUSD, firstSentence, formatCoinFirst, shortLeg } from "@/lib/details";
 import { closeLabel, filterTrades, positionDelta, summarizeTrades } from "@/lib/trades";
@@ -16,7 +17,7 @@ const KINDS = [
   ["open", "Opens"],
   ["close", "Closes"],
 ];
-const COLUMNS = 12;
+const COLUMNS = 13;
 
 /** One-line state for a collapsed header. */
 export function tradeHistorySummary(trades) {
@@ -124,7 +125,7 @@ function TradeRow({ t, open, onToggle }) {
   const detailId = `trade-detail-${t.bot}-${t.seq}`;
   return (
     <Fragment>
-      <tr className="border-b border-line/50" data-testid={`trade-${t.bot}-${t.seq}`}>
+      <tr id={`trade-${t.bot}-${t.seq}`} className="scroll-mt-12 border-b border-line/50" data-testid={`trade-${t.bot}-${t.seq}`}>
         <td className="px-1 py-1">
           <button
             type="button"
@@ -165,6 +166,9 @@ function TradeRow({ t, open, onToggle }) {
         <td className="px-2 py-1 text-right tabular-nums">{t.kind === "close" ? formatPct(t.roi_pct, 0, { signed: true }) : "—"}</td>
         <td className="px-2 py-1 text-right text-xs tabular-nums text-muted">
           {formatNumber(t.spot, 0)} · {formatNumber(t.dvol, 1)}
+        </td>
+        <td className="px-1 py-1">
+          <WhyButton trade={t} compact />
         </td>
       </tr>
       <tr id={detailId} hidden={!open} className="border-b border-line/50 bg-slate-800/30">
@@ -284,6 +288,9 @@ export default function TradeHistory({ trades }) {
                 % kept
               </th>
               <th className="px-2 py-1 text-right">Spot · DVOL</th>
+              <th className="px-1 py-1">
+                <span className="sr-only">Ask the assistant</span>
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -8,7 +8,7 @@ import { configuredBots } from "@/lib/bots";
 import { QuestionLimiter } from "./limit";
 import { anthropicClient } from "./model";
 import { HelpIndex } from "./search";
-import { JOURNAL_EVENTS, journalPassages } from "./service";
+import { JOURNAL_EVENTS, explainPassages, journalPassages } from "./service";
 
 const KEY = Symbol.for("optionsbot.monitor.assistant");
 const JOURNAL_TIMEOUT_MS = 2000;
@@ -58,6 +58,28 @@ export async function botJournal(bot) {
     return journalPassages(bot, (await res.json()).events);
   } catch (err) {
     authLog("WARN", "assistant: bot journal unavailable", { component: "assistant", bot, error: err.message });
+    return [];
+  }
+}
+
+/**
+ * The facts the journal recorded about one event of a configured bot
+ * (GET /api/explain?seq=, #314) as passages — the panel's "Why?" on a trade.
+ * [] when the bot is unreachable or the event left its recent history (the
+ * question is still answered from the latest journal and the help).
+ */
+export async function botExplain(bot, seq) {
+  const target = configuredBots().find((b) => b.name === bot);
+  if (!target) return [];
+  try {
+    const res = await fetch(`${target.url}/api/explain?seq=${seq}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(JOURNAL_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    return explainPassages(bot, await res.json());
+  } catch (err) {
+    authLog("WARN", "assistant: event facts unavailable", { component: "assistant", bot, seq, error: err.message });
     return [];
   }
 }
