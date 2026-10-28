@@ -60,9 +60,13 @@ export function journalSeqOf(id) {
   return m ? Number(m[1]) : null;
 }
 
+/** The index cites two files by base name; this is where they live in the repository. */
+const DOC_PATHS = { "parameters.md": "docs/parameters.md", "monitor-guide.md": "frontend/content/monitor-guide.md" };
+
 /** A document source ("OptionStrategy.md#anchor", "docs/parameters.md#…") on the repository. */
 function docHref(source) {
-  const [file, anchor] = source.split("#");
+  const [name, anchor] = source.split("#");
+  const file = DOC_PATHS[name] ?? name;
   return `${DOCS_BASE}/${file}${anchor ? `#${anchor}` : ""}`;
 }
 

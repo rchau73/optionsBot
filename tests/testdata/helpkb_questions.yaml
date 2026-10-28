@@ -50,3 +50,18 @@ questions:
   - question: what is the weather in Lisbon tomorrow
     category: off_topic
     dont_know: true
+  - question: How do I read the Worst case page
+    category: monitor_guide
+    expect: ["monitor-guide.md#worst-case"]
+  - question: What does the amber line on the Overview mean
+    category: monitor_guide
+    expect: ["monitor-guide.md#overview"]
+  - question: What does holding alone mean on the Income page
+    category: monitor_guide
+    expect: ["monitor-guide.md#income"]
+  - question: What does repair_cooldown_hours do
+    category: monitor_guide
+    expect: ["parameters.md#repair_cooldown_hours--repair-cooldown"]
+  - question: What does max_mm_pct do
+    category: monitor_guide
+    expect: ["parameters.md#max_mm_pct--maintenance-margin-limit"]

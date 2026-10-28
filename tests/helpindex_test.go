@@ -132,6 +132,14 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 		helpkb.StrategyFile:   helpkb.BlobHash(s.Strategy),
 		helpkb.GlossaryPrefix: helpkb.BlobHash(s.Glossary),
 		helpkb.ExplainPrefix:  helpkb.BlobHash(s.Explain),
+		"parameters.md":       helpkb.BlobHash(s.Parameters),
+		"monitor-guide.md":    helpkb.BlobHash(s.Guide),
+	}
+	docAnchors := map[string]map[string]bool{"parameters.md": {}, "monitor-guide.md": {}}
+	for name, md := range map[string][]byte{"parameters.md": s.Parameters, "monitor-guide.md": s.Guide} {
+		for _, a := range helpkb.Anchors(md) {
+			docAnchors[name][a] = true
+		}
 	}
 	ids := map[string]bool{}
 	kinds := map[string]int{}
@@ -154,6 +162,10 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 		switch {
 		case strings.HasPrefix(c.Source, helpkb.StrategyFile+"#"):
 			kind, ok = helpkb.StrategyFile, anchors[c.Anchor()]
+		case strings.HasPrefix(c.Source, "parameters.md#"):
+			kind, ok = "parameters.md", docAnchors["parameters.md"][c.Anchor()]
+		case strings.HasPrefix(c.Source, "monitor-guide.md#"):
+			kind, ok = "monitor-guide.md", docAnchors["monitor-guide.md"][c.Anchor()]
 		case strings.HasPrefix(c.Source, helpkb.GlossaryPrefix):
 			_, ok = gloss[c.Anchor()]
 			kind = helpkb.GlossaryPrefix

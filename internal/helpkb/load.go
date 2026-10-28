@@ -26,6 +26,12 @@ func LoadSources(root string) (Sources, error) {
 	if s.Strategy, err = read(StrategyFile); err != nil {
 		return Sources{}, err
 	}
+	if s.Parameters, err = read(ParametersFile); err != nil {
+		return Sources{}, err
+	}
+	if s.Guide, err = read(GuideFile); err != nil {
+		return Sources{}, err
+	}
 	if s.Glossary, err = read(GlossaryFile); err != nil {
 		return Sources{}, err
 	}
