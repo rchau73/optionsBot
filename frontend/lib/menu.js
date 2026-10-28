@@ -47,6 +47,19 @@ export function menuItems(pathname, { bot = null } = {}) {
   ].map(item);
 }
 
+/**
+ * The admin pages of the person's menu (UserMenu.jsx), in order: shown to
+ * admins only, and only as links — each page's route re-checks the role.
+ * Users (#306), Audit (#308), Analytics (#445). href first: the monitor
+ * guide's test reads `{ key, label }` objects as menu-bar pages, and these
+ * are not in the guide (frontend/content/monitor-guide.md).
+ */
+export const ADMIN_PAGES = [
+  { href: "/admin/users", key: "users", label: "Users" },
+  { href: "/admin/audit", key: "audit", label: "Audit" },
+  { href: "/admin/analytics", key: "analytics", label: "Analytics" },
+];
+
 /** The dropdowns of the menu bar, in order (#450): group key → label. Not pages, so not in the monitor guide's page list. */
 const GROUPS = [
   ["operational", "Operational"],

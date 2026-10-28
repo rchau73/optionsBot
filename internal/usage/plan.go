@@ -71,8 +71,9 @@ var Properties = map[string]Rule{
 }
 
 // Screens is one value per page of the monitor's menu (frontend/lib/menu.js)
-// plus the sign-in page, in menu order (#424).
-var Screens = []string{"overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login"}
+// in menu order, plus the sign-in page (#424) and the admin Analytics page
+// (#445: whether the admin opens it on Mondays).
+var Screens = []string{"overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login", "analytics"}
 
 // AssistantAnswers is the kind of an assistant reply (#424): a cited answer,
 // "I don't know", the refusal, the safe fallback.

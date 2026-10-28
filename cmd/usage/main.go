@@ -33,32 +33,26 @@ func main() {
 	baseWeeks := flag.Int("alert-base-weeks", usage.DropBaseWeeks, "study: how many weeks before the report's are its base")
 	flag.Parse()
 
-	if err := run(*events, *week, *out); err != nil {
+	r, err := run(*events, *week, *out, rules, *baseWeeks)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "usage:", err)
 		os.Exit(1)
 	}
 	if *alert {
 		// The drop check never fails the report: an error is printed, exit 0.
-		if err := printDrops(*events, *week, rules, *baseWeeks); err != nil {
+		if err := printDrops(r.Drops); err != nil {
 			fmt.Fprintln(os.Stderr, "usage: drop check:", err)
 		}
 	}
 }
 
-// printDrops prints the week's drop check as one `DROPS {json}` line, after
-// a line per drop for a person. Counts and shares only.
-func printDrops(events, week string, rules usage.Rules, baseWeeks int) error {
-	w, err := window(week)
-	if err != nil {
-		return err
+// printDrops prints the week's drop check (the one written in the report's
+// JSON as `drops`, #445) as one `DROPS {json}` line, after a line per drop
+// for a person. Counts and shares only.
+func printDrops(a *usage.Alert) error {
+	if a == nil {
+		return fmt.Errorf("the report carries no drop check")
 	}
-	lg, err := usage.Load(events)
-	if err != nil {
-		return err
-	}
-	cur := usage.Build(lg.Events, w.From, w.To)
-	cur.Week = w.Label
-	a := usage.Drops(cur, usage.BuildWeeks(lg.Events, w.From, baseWeeks), rules)
 	for _, d := range a.Drops {
 		fmt.Println("drop:", d)
 	}
@@ -80,14 +74,14 @@ func window(week string) (evidence.Window, error) {
 	return evidence.ParseWeek(week)
 }
 
-func run(events, week, out string) error {
+func run(events, week, out string, rules usage.Rules, baseWeeks int) (usage.Report, error) {
 	w, err := window(week)
 	if err != nil {
-		return err
+		return usage.Report{}, err
 	}
-	r, paths, err := usage.Run(events, w.From, w.To, w.Label, out)
+	r, paths, err := usage.RunWith(events, w.From, w.To, w.Label, out, rules, baseWeeks)
 	if err != nil {
-		return err
+		return usage.Report{}, err
 	}
 	fmt.Printf("%s: %d events in the week, %d lines rejected\n", w.Label, r.EventsInWeek, r.Source.RejectedTotal)
 	if r.EventsInWeek == 0 {
@@ -96,5 +90,5 @@ func run(events, week, out string) error {
 	for _, p := range paths {
 		fmt.Println("wrote", p)
 	}
-	return nil
+	return r, nil
 }

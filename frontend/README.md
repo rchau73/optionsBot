@@ -90,6 +90,7 @@ People sign in at `/login` with a username and password; `proxy.js` sends every 
 | Manual close, manual rebalance (and its dry run) | ✓ | ✓ | — (403) |
 | Create, edit and delete users; reset a password or issue a reset link (Users page, `/api/admin/users`) | ✓ | — (403) | — (403) |
 | Read the audit trail (Audit page, `/api/admin/audit`) | ✓ | — (403) | — (403) |
+| Read the weekly usage report (Analytics page, `/api/admin/analytics`) | ✓ | — (403) | — (403) |
 
 `admin` satisfies `manager` satisfies `user` (`lib/auth/roles.js`). Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing). **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401). So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later. Read routes trust the token. An access token from before #171 has no `sid`: its first close answers 401, the page refreshes into a new token and retries.
 
@@ -137,6 +138,14 @@ All state-changing ones are same-origin JSON only (403 cross-origin, 415 without
 | Route | Does | Refusals |
 |---|---|---|
 | `GET /api/admin/audit?user=&action=&from=&to=&before=&limit=` | `{"off", "entries", "skipped", "next_before"}`: the lines as stored, newest first; `limit` 1–1000 (default 100); `next_before` = the cursor (a byte offset) of the next, older page, `null` at the end. Reads `AUDIT_PATH` backwards in 64 KB chunks (`lib/auth/auditread.js`), never the whole file, and stops at a full page or at lines older than `from`. A line that is not a JSON object is skipped and counted in `skipped` (per page), never a 500; a missing file is an empty list; an in-memory user database has no trail: `off: true`, which the page says | 400 unknown action, a malformed day, `from` after `to`, a bad `limit` or `before` · 403 not admin |
+
+### Analytics page (#445)
+
+`/admin/analytics?env=stable|mvp&week=YYYY-Www`, linked as **Account ▾ → Analytics** for admins only (the person menu's admin items are `ADMIN_PAGES` in `lib/menu.js`; anyone else sees "Only an admin reads the usage analytics", the route answers them 403). It shows the weekly usage report `cmd/usage` wrote (`usage.sh`, Mondays) **as written — nothing is recomputed in the browser**, so the page, the E13 post and the drop issue agree: the header (environment switch, week arrows, "counts of people and actions only"), a **small-sample** note under 10 active people (`usage.DropMinBase`), **Needs your attention** (each of the report's `drops`, flagged assistant answers with the path of #438's weekly review, never-opened screens and panels — tags DROP / FLAG / NEVER / OK carry text, never colour alone; or one "Nothing dropped" line), eight cards Q1–Q8 (two columns, one on a phone; Q8 counts "What we do best (9–10)" and "What to improve first (0–8)" apart, `why_best`/`why_improve`), and the data behind it (report file and time, accepted/rejected events, this monitor's consent counts, "this week isn't in a report yet"). States: analytics off (`ANALYTICS_SALT` unset: a setup checklist, never the value, no figure), no report yet, no report for that week, no events in the week, loading, error. The page counts itself as `screen_viewed {screen: analytics}` (`lib/analytics/screens.js`). Components: `UsageAnalytics` (fetch, header, states), `UsageCards` (attention, cards, data); pure helpers in `lib/analytics/usageView.js`, file reading in `lib/analytics/reports.js`.
+
+| Route | Does | Refusals |
+|---|---|---|
+| `GET /api/admin/analytics?env=&week=` | `{"off", "env", "envs", "current_week", "weeks", "week", "report", "file", "written_at", "consent"}`: `report` = `<USAGE_REPORTS_DIR>/<env>/<week>.json` as stored (the events file's path cut to its name), `weeks` the reported weeks oldest first, no `week` → the latest, none at all → `week`/`report` null; `consent` `{yes, no, unasked}` users for this monitor's own environment (`MONITOR_DEPLOYMENT`; the default `env`), null for the other one. `USAGE_REPORTS_DIR` defaults to `data/reports`; compose mounts each clone's `data/monitor/reports` read-only at `/app/data/reports/<env>`. `ANALYTICS_SALT` unset → `{"off": true}` only | 400 unknown env, a malformed week · 403 not admin · 404 no report for that week (same fields, `report` null) · 500 an unreadable report (logged) |
 
 ## Analytics (#193)
 
@@ -230,6 +239,7 @@ Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ig
 | `ANALYTICS_SALT` | — (off) | salt of the analytics `user_id` (≥ 16 chars), from `.env`, never in git or an event |
 | `EVENTS_PATH` | `events.jsonl` beside `AUTH_DB_PATH` | the analytics events |
 | `MONITOR_DEPLOYMENT`, `MONITOR_VERSION` | — | the environment (`stable`/`mvp`) and release tagged on each event (compose sets them) |
+| `USAGE_REPORTS_DIR` | `data/reports` | the weekly usage reports per environment (`<dir>/<env>/<week>.json`) the Analytics page reads; compose mounts them read-only |
 | `ANTHROPIC_API_KEY` | — (off) | the assistant's Claude API key, from `.env`, written by the person; never logged or sent to the browser |
 | `ASSISTANT_MODEL` | `claude-haiku-5-5` | the assistant's model (any Claude model id; Haiku chosen for cost, #412) |
 | `ASSISTANT_LOG_PATH` | `assistant.jsonl` beside `AUTH_DB_PATH` | the assistant's review log |
@@ -252,7 +262,7 @@ npm run test:phone                # viewport check (#309, #425): every menu page
 
 | Folder | Contents |
 |---|---|
-| `app/` | `layout.jsx`, `page.jsx` (composition only), `login/page.jsx`, `reset/page.jsx` (a reset link's form, public), `admin/users/page.jsx` (Users page), `admin/audit/page.jsx` (Audit page), `api/bots/…` read-only proxy routes, `api/auth/{login,refresh,logout,password,reset}`, `api/admin/users/…` and `api/admin/audit` (admins only) |
+| `app/` | `layout.jsx`, `page.jsx` (composition only), `login/page.jsx`, `reset/page.jsx` (a reset link's form, public), `admin/users/page.jsx` (Users page), `admin/audit/page.jsx` (Audit page), `admin/analytics/page.jsx` (Analytics page), `api/bots/…` read-only proxy routes, `api/auth/{login,refresh,logout,password,reset}`, `api/admin/users/…`, `api/admin/audit` and `api/admin/analytics` (admins only) |
 | `proxy.js`, `instrumentation*.js` | the session guard on every route; the start-up check (`AUTH_SECRET`, first admin) |
 | `lib/auth/` | server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `roles.js` (role order), `audit.js` (audit.jsonl), `auditread.js` (reads it backwards for the Audit page), `service.js` (login/refresh/logout, password change, reset links, the acting user, user administration), `server.js` (the shared instance, `requireRole`), `admin.js` (what every admin route checks first), `viewer.js` (who is looking, for display only) |
 | `components/` | one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor`, `DetailsPage` (+ `MicroBar`, `DotStrip`, `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`); the Users page: `UsersAdmin`, `AddUserForm`, `UserActionDialog`, `ResetLinkDialog`; `ResetPasswordForm` (`/reset`); `AuditTrail` (Audit page) |

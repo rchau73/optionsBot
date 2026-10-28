@@ -74,6 +74,50 @@ func TestUsage_SurveyNPSFromTwelveAnswers(t *testing.T) {
 	}
 }
 
+// #445: the 9–10 answers ("What do we do best?") and the 0–8 answers ("What
+// should we improve first?") are counted apart; a reason without a score
+// counts only in the overall list.
+func TestUsage_SurveyNPSReasonsCountedApartByScore(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	answer := func(i int, props map[string]any) string {
+		props["survey_id"] = "nps"
+		return usageLine(t, "survey_answered", at.Add(time.Duration(i)*time.Minute), 500+i, props)
+	}
+	r, written := surveyReport(t, []string{
+		answer(0, map[string]any{"score": "10", "reason_code": "steady_income"}),
+		answer(1, map[string]any{"score": "9", "reason_code": "clear_risk"}),
+		answer(2, map[string]any{"score": "8", "reason_code": "hard_to_find"}),
+		answer(3, map[string]any{"score": "2", "reason_code": "too_complex"}),
+		answer(4, map[string]any{"score": "9", "reason_code": "switched"}), // an exit code: other
+		answer(5, map[string]any{"reason_code": "price"}),                  // no score
+	})
+	s := r.Survey
+	wantBest := map[string]int{"steady_income": 1, "clear_risk": 1, "other": 1}
+	wantImprove := map[string]int{"hard_to_find": 1, "too_complex": 1}
+	if !sameCounts(s.WhyBest, wantBest) || !sameCounts(s.WhyImprove, wantImprove) {
+		t.Fatalf("best = %v, improve = %v", s.WhyBest, s.WhyImprove)
+	}
+	if s.Why["price"] != 1 || s.Miscoded != 1 {
+		t.Fatalf("why = %v, miscoded = %d", s.Why, s.Miscoded)
+	}
+	if !strings.Contains(written, "What we do best (9–10)") || !strings.Contains(written, "What to improve first (0–8)") ||
+		!strings.Contains(written, `"why_best"`) || !strings.Contains(written, `"why_improve"`) {
+		t.Fatalf("written:\n%s", written)
+	}
+}
+
+func sameCounts(got, want map[string]int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for k, v := range want {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 // Scenario: fewer than 10 NPS answers → "too few answers", counts only.
 func TestUsage_SurveyNPSTooFewAnswers(t *testing.T) {
 	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)

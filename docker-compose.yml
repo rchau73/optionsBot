@@ -73,6 +73,11 @@ services:
       # Users and sessions (auth.db), analytics events (events.jsonl). A named
       # volume: one per environment, as the compose project name includes OPTIONSBOT_ENV.
       - monitor-auth:/app/data/monitor
+      # The weekly usage reports cmd/usage writes in each environment's clone
+      # (usage.sh), read-only for the admin Analytics page (#445): counts only,
+      # no id. The clones are siblings (<envs>/stable, <envs>/mvp).
+      - ../stable/data/monitor/reports:/app/data/reports/stable:ro
+      - ../mvp/data/monitor/reports:/app/data/reports/mvp:ro
     ports:
       - "127.0.0.1:${MONITOR_PORT:?set MONITOR_PORT in deploy.env}:3000"
 
