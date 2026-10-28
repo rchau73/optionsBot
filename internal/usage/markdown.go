@@ -121,6 +121,14 @@ func Markdown(w io.Writer, r Report) error {
 		fmt.Fprintf(&b, "`help_resolved` answers: %d · helped: %d (%s)\n\n", h.Answers, h.Helped, fmtPct(h.HelpedPct))
 	}
 
+	if a := r.Assistant; a != nil {
+		section("Assistant", "Q5")
+		countTable(&b, "Panel opened (entry)", a.Opened)
+		countTable(&b, "Question asked (entry)", a.Asked)
+		countTable(&b, "Reply (kind)", a.Answers)
+		fmt.Fprintf(&b, "Replies: %d · answered with a citation: %s · flagged as wrong: %d\n\n", a.Replies, fmtPct(a.AnsweredPct), a.Flagged)
+	}
+
 	if mc := r.ManualClose; mc != nil {
 		section("Manual close funnel", "Q6")
 		fmt.Fprintf(&b, "| Step | Count |\n|---|---:|\n| opened | %d |\n| … allowed | %d |\n| … not allowed | %d |\n| cancelled | %d |\n| confirmed | %d |\n| … last leg | %d |\n\n",

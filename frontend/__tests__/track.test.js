@@ -14,18 +14,18 @@ const sent = () => global.fetch.mock.calls.map(([, init]) => JSON.parse(init.bod
 describe("Scenario: opt-out", () => {
   test("a person who opted out: track() sends nothing", () => {
     setAnalyticsConsent(false);
-    expect(track("screen_viewed", { screen: "monitor" })).toBe(false);
+    expect(track("screen_viewed", { screen: "overview" })).toBe(false);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test("a person not asked yet: track() sends nothing", () => {
-    expect(track("screen_viewed", { screen: "monitor" })).toBe(false);
+    expect(track("screen_viewed", { screen: "overview" })).toBe(false);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   test("opting out after saying yes stops the very next event", () => {
     setAnalyticsConsent(true);
-    track("screen_viewed", { screen: "monitor" });
+    track("screen_viewed", { screen: "overview" });
     setAnalyticsConsent(false);
     track("panel_expanded", { panel: "held" });
     expect(sent().map((b) => b.event)).toEqual(["screen_viewed"]);

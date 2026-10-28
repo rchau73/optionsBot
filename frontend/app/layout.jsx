@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import AssistantProvider from "@/components/AssistantProvider";
 import MenuBar from "@/components/MenuBar";
+import ScreenTracker from "@/components/ScreenTracker";
 import { viewer } from "@/lib/auth/viewer";
 import "./globals.css";
 
@@ -28,6 +29,8 @@ export default async function RootLayout({ children }) {
           <Suspense fallback={null}>
             <MenuBar person={person} />
           </Suspense>
+          {/* Page views for the usage report (#424), after the person's yes only; signed in only. */}
+          {me ? <ScreenTracker /> : null}
           {children}
         </AssistantRoot>
       </body>
