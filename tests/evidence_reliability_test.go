@@ -52,6 +52,7 @@ func e1Markdown(t *testing.T, r evidence.Report) string {
 
 // Scenario: A week with entries allowed and idle margin.
 func TestEvidenceE1_AWeekWithEntriesAllowedAndIdleMargin(t *testing.T) {
+	t.Parallel()
 	r := evidence.Build(e1Inputs(t))
 	e := r.E1
 	m := e.Margin
@@ -102,6 +103,7 @@ func TestEvidenceE1_AWeekWithEntriesAllowedAndIdleMargin(t *testing.T) {
 
 // Scenario: A restart that changed the book.
 func TestEvidenceE1_ARestartThatChangedTheBook(t *testing.T) {
+	t.Parallel()
 	in := e1Inputs(t)
 	at := time.Date(2026, 10, 14, 10, 0, 0, 0, time.UTC)
 	slot := &orders.SlotRef{DTE: 25, Delta: 0.16}
@@ -131,6 +133,7 @@ func TestEvidenceE1_ARestartThatChangedTheBook(t *testing.T) {
 // Scenario: Missing input — a day without a P&L history line, or an
 // unreadable journal: "not measured" with the reason, no figure invented.
 func TestEvidenceE1_MissingInput(t *testing.T) {
+	t.Parallel()
 	in := e1Inputs(t)
 	var kept = in.Points[:0:0]
 	for _, p := range in.Points {
@@ -185,6 +188,7 @@ func TestEvidenceE1_MissingInput(t *testing.T) {
 // Load reads the journal for the section and the env's lines of
 // <envs>/history/deploys.tsv; a missing deploys.tsv is noted, not fatal.
 func TestEvidenceE1_LoadReadsJournalAndDeploys(t *testing.T) {
+	t.Parallel()
 	envs := t.TempDir()
 	root := filepath.Join(envs, "stable")
 	put := func(path, body string) {

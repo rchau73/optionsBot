@@ -121,6 +121,7 @@ func readRawCSV(t *testing.T, path string) [][]string {
 // Scenario: SOL and XRP books are recorded hourly from mainnet — each
 // snapshot writes the BTC, SOL and XRP USDC books from one USDC summary.
 func TestUSDCStudy_SOLAndXRPBooksAreRecordedHourlyFromMainnet(t *testing.T) {
+	t.Parallel()
 	gw := &countingUSDC{}
 	usdc := recorder.NewUSDCBooks(gw)
 	base := t.TempDir()
@@ -224,6 +225,7 @@ func TestParseOptionName_DecimalStrike(t *testing.T) {
 // The pure rules on a hand-made book: spreads, one-sided share, the 0.16 Δ
 // strangle's OI, premium and the liquidity cap floored to the contract.
 func TestUSDCStudy_BuildBandFigures(t *testing.T) {
+	t.Parallel()
 	at := studyDay.Add(10 * time.Hour)
 	exp := studyDay.AddDate(0, 0, 30).Add(marketdata.SettlementHourUTC) // 30 DTE
 	far := studyDay.AddDate(0, 0, 70).Add(marketdata.SettlementHourUTC) // in no band
@@ -283,6 +285,7 @@ func TestUSDCStudy_BuildBandFigures(t *testing.T) {
 // snapshot). Fixture CSVs written by the real recorder, read back by
 // cmd/usdcstudy's Read.
 func TestUSDCStudy_ReportComparesSixBooksAndListsMissingDays(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	btc, eth := filepath.Join(root, "btc"), filepath.Join(root, "eth")
 	type book struct {

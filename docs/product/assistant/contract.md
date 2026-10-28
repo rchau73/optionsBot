@@ -12,7 +12,7 @@ What a correct answer of the help assistant is, written so it can be tested befo
 
 ## 1. Where an answer may come from
 
-- **Only** the passages of `frontend/content/help-index.json` (OptionStrategy.md, the glossary, the plain-words catalogue of journal events — #312) and **the user's own journal facts** (the recorded reason of each open, close and skip, with its numbers).
+- **Only** the passages of `frontend/content/help-index.json` (OptionStrategy.md, the glossary, the plain-words catalogue of journal events — #312) and **the user's own journal facts: your journal of the last 7 days** (the recorded reason of each open, close and skip, with its numbers; a notice repeated every cycle is one fact with its count and its first and last times, #417).
 - Nothing else: no general knowledge of markets, no other exchange, no news, no prices from memory.
 
 ## 2. A correct answer

@@ -163,6 +163,7 @@ func TestRecorderSnapshot_GEXMatchesTheLiveSummary(t *testing.T) {
 // Scenario: pricing from the recording — the live mid as the bot reads a
 // ticker, sells at the bot's price floor, buy-backs at the ask, Deribit fees.
 func TestMarketReplay_PricingFromTheRecording(t *testing.T) {
+	t.Parallel()
 	q := recorder.Quote{Bid: 0.010, Ask: 0.012, Mark: 0.0111}
 	if got := q.LiveMid(); math.Abs(got-0.011) > 1e-12 {
 		t.Errorf("mid = %v, want (bid+ask)/2", got)
@@ -219,6 +220,7 @@ func flatHistory(start time.Time) (closes, dvol []orders.DailyClose) {
 // Scenario: the replay runs both direction sources over the same history
 // and reports comparable summaries.
 func TestMarketReplay_RunsBothDirectionsOnTheSameHistory(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	start := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 	record(t, dir, start, 6*24, func(h int) float64 { return 100000 * (1 + 0.002*math.Sin(float64(h)/7)) })
@@ -253,6 +255,7 @@ func TestMarketReplay_RunsBothDirectionsOnTheSameHistory(t *testing.T) {
 // A fall of a quarter in two days: the exit rules fire on the recorded
 // marks and buy back at the recorded asks, at a loss.
 func TestMarketReplay_CrashTriggersExits(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	start := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 	record(t, dir, start, 6*24, func(h int) float64 {
@@ -277,6 +280,7 @@ func TestMarketReplay_CrashTriggersExits(t *testing.T) {
 // realised closes plus the change of its open book's unrealised P&L, both
 // ends marked at the recorded mids.
 func TestMarketReplay_ActualPnLFromTheJournal(t *testing.T) {
+	t.Parallel()
 	at := func(d int) time.Time { return time.Date(2026, 10, d, 12, 0, 0, 0, time.UTC) }
 	call, put := "BTC-27NOV26-120000-C", "BTC-27NOV26-80000-P"
 	quote := func(name string, bid, ask float64) recorder.Quote {
@@ -307,6 +311,7 @@ func TestMarketReplay_ActualPnLFromTheJournal(t *testing.T) {
 // Scenario: start from the book at a date — the journal's strangle holds
 // its slot (only the other slot enters), and its P&L counts from the mid.
 func TestMarketReplay_StartsFromABook(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	start := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 	record(t, dir, start, 4*24, func(int) float64 { return 100000 })
@@ -336,6 +341,7 @@ func TestMarketReplay_StartsFromABook(t *testing.T) {
 
 // Start from the journal's book: opens and partial closes before the date.
 func TestMarketReplay_BookAtFromTheJournal(t *testing.T) {
+	t.Parallel()
 	at := func(d int) time.Time { return time.Date(2026, 10, d, 12, 0, 0, 0, time.UTC) }
 	slot := &orders.SlotRef{DTE: 25, Delta: 0.16}
 	trades := []orders.Trade{

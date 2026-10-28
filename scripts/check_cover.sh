@@ -5,7 +5,7 @@
 #
 #   scripts/check_cover.sh                    run the coverage as make cover does, then check
 #   scripts/check_cover.sh --profile FILE     check an existing profile (make check and CI
-#                                             reuse the race run's, so the tests run once)
+#                                             reuse the merged profile of scripts/go_tests.sh)
 #   scripts/check_cover.sh --update [...]     rewrite the baseline to today's total — only by
 #                                             a person, or a PR that says so
 #
@@ -42,7 +42,7 @@ done
 
 if [[ -z "$profile" ]]; then
   profile="coverage.out"
-  go test ./tests/... -race -count=1 -coverpkg=./internal/... -coverprofile="$profile"
+  bash "$(dirname "${BASH_SOURCE[0]}")/go_tests.sh" all "$profile"
 fi
 [[ -s "$profile" ]] || { echo "check_cover: no coverage profile at $profile"; exit 2; }
 
