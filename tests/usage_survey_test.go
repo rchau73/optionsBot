@@ -38,12 +38,105 @@ func npsAnswers(t *testing.T, at time.Time, scores ...int) []string {
 	var lines []string
 	for i, sc := range scores {
 		ts := at.Add(time.Duration(i) * time.Minute)
+		// Each band's own list (#446): what works for 9–10, what to improve for 0–8.
+		code := "hard_to_find"
+		if sc >= 9 {
+			code = "steady_income"
+		}
 		lines = append(lines,
 			usageLine(t, "survey_shown", ts, 200+i, map[string]any{"survey_id": "nps"}),
-			usageLine(t, "survey_answered", ts.Add(time.Second), 200+i, map[string]any{"survey_id": "nps", "score": strconv.Itoa(sc), "reason_code": "steady_income"}),
+			usageLine(t, "survey_answered", ts.Add(time.Second), 200+i, map[string]any{"survey_id": "nps", "score": strconv.Itoa(sc), "reason_code": code}),
 		)
 	}
 	return lines
+}
+
+func npsAnswer(t *testing.T, ts time.Time, user, score int, code string) string {
+	return usageLine(t, "survey_answered", ts, user, map[string]any{"survey_id": "nps", "score": strconv.Itoa(score), "reason_code": code})
+}
+
+// Scenario (#446): report counts both lists — answers 10 explains_trades,
+// 9 clear_risk, 5 hard_to_find → why_best has 2 and why_improve has 1.
+func TestUsage_SurveyReportCountsBothNPSLists(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	r, written := surveyReport(t, []string{
+		npsAnswer(t, at, 501, 10, "explains_trades"),
+		npsAnswer(t, at.Add(time.Minute), 502, 9, "clear_risk"),
+		npsAnswer(t, at.Add(2*time.Minute), 503, 5, "hard_to_find"),
+	})
+	s := r.Survey
+	if sum(s.WhyBest) != 2 || s.WhyBest["explains_trades"] != 1 || s.WhyBest["clear_risk"] != 1 {
+		t.Fatalf("why_best = %v", s.WhyBest)
+	}
+	if sum(s.WhyImprove) != 1 || s.WhyImprove["hard_to_find"] != 1 {
+		t.Fatalf("why_improve = %v", s.WhyImprove)
+	}
+	// why stays their sum, for old readers.
+	if sum(s.Why) != 3 || s.Why["explains_trades"] != 1 || s.Why["clear_risk"] != 1 || s.Why["hard_to_find"] != 1 {
+		t.Fatalf("why = %v", s.Why)
+	}
+	if s.Miscoded != 0 {
+		t.Fatalf("miscoded = %d", s.Miscoded)
+	}
+	for _, want := range []string{"| What we do best (9–10) | Count |", "| explains_trades | 1 |",
+		"| What to improve first (0–8) | Count |", "| hard_to_find | 1 |"} {
+		if !strings.Contains(written, want) {
+			t.Fatalf("markdown lacks %q:\n%s", want, written)
+		}
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"why":`, `"why_best":`, `"why_improve":`} {
+		if !strings.Contains(string(b), key) {
+			t.Fatalf("json lacks %s: %s", key, b)
+		}
+	}
+}
+
+// A code from the other band's list is counted under other, never guessed.
+func TestUsage_SurveyNPSCodeOfTheOtherListCountsUnderOther(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	r, _ := surveyReport(t, []string{
+		npsAnswer(t, at, 511, 10, "hard_to_find"),                  // a to-improve code on a promoter
+		npsAnswer(t, at.Add(time.Minute), 512, 3, "steady_income"), // a what-works code on a detractor
+	})
+	s := r.Survey
+	if s.WhyBest["other"] != 1 || s.WhyImprove["other"] != 1 || s.Miscoded != 2 || s.Why["other"] != 2 {
+		t.Fatalf("promoters %v, others %v, why %v, miscoded %d", s.WhyBest, s.WhyImprove, s.Why, s.Miscoded)
+	}
+}
+
+// The score counts each person's latest answer in the window: one person
+// answering twice weighs once, by their last answer.
+func TestUsage_SurveyNPSCountsEachPersonsLatestAnswer(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	r, _ := surveyReport(t, []string{
+		npsAnswer(t, at.Add(time.Hour), 521, 10, "saves_time"), // latest, though written first
+		npsAnswer(t, at, 521, 4, "price"),
+		npsAnswer(t, at, 522, 6, "trust"),
+	})
+	s := r.Survey
+	n := s.NPS
+	if n.Answers != 2 || n.Promoters != 1 || n.Detractors != 1 {
+		t.Fatalf("nps = %+v", n)
+	}
+	if s.WhyBest["saves_time"] != 1 || s.WhyImprove["price"] != 0 || s.WhyImprove["trust"] != 1 {
+		t.Fatalf("promoters %v, others %v", s.WhyBest, s.WhyImprove)
+	}
+	// The funnel still counts every answer sent.
+	if f := s.Surveys[0]; f.ID != "nps" || f.Answered != 3 {
+		t.Fatalf("nps funnel = %+v", f)
+	}
+}
+
+func sum(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
 }
 
 // Scenario: 12 NPS events with scores 9, 10, 10, 8, 7, 6, 3, 9, 10, 9, 8, 10
@@ -63,8 +156,8 @@ func TestUsage_SurveyNPSFromTwelveAnswers(t *testing.T) {
 	if n.Score == nil || math.Abs(*n.Score-500.0/12) > 1e-9 {
 		t.Fatalf("nps score = %v, want 41.67", n.Score)
 	}
-	if s.Why["steady_income"] != 12 {
-		t.Fatalf("why = %v", s.Why)
+	if s.Why["steady_income"] != 7 || s.Why["hard_to_find"] != 5 || s.WhyBest["steady_income"] != 7 || s.WhyImprove["hard_to_find"] != 5 {
+		t.Fatalf("why = %v, promoters %v, others %v", s.Why, s.WhyBest, s.WhyImprove)
 	}
 	if f := s.Surveys[0]; f.ID != "nps" || f.Shown != 12 || f.Answered != 12 || f.ResponsePct == nil || *f.ResponsePct != 100 {
 		t.Fatalf("nps funnel = %+v", f)

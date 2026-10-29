@@ -9,8 +9,12 @@ import { PROPERTIES } from "./plan.js";
 /** The longest free text kept (surveys.md §1 and §3: ≤ 500 characters). */
 export const MAX_SURVEY_TEXT = 500;
 
-// surveys.md §4: the reason codes each survey asks.
-const NPS_REASONS = ["value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"];
+// surveys.md §4: the reason codes each survey asks. NPS asks one list by
+// score (#446): what works for 9–10, what to improve first for 0–8; both end
+// with "other".
+export const NPS_WHAT_WORKS = ["steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "other"];
+export const NPS_TO_IMPROVE = ["value_unclear", "losses", "too_complex", "price", "trust", "hard_to_find", "missing_feature", "other"];
+const NPS_REASONS = [...new Set([...NPS_TO_IMPROVE, ...NPS_WHAT_WORKS])];
 const EXIT_REASONS = ["value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"];
 
 /**
@@ -65,6 +69,13 @@ export function validateSurveyAnswer(body) {
     if (!Object.hasOwn(codes, name)) return { ok: false, error: `code ${name} is required in the ${surveyId} survey` };
   }
   if (Object.keys(codes).length === 0) return { ok: false, error: "codes: at least one answer" };
+  if (surveyId === "nps" && Object.hasOwn(codes, "reason_code")) {
+    // The list asked for that score (#446): what works for 9–10, what to improve for 0–8.
+    const promoter = Number(codes.score) >= 9;
+    if (!(promoter ? NPS_WHAT_WORKS : NPS_TO_IMPROVE).includes(codes.reason_code)) {
+      return { ok: false, error: `code reason_code: a ${promoter ? "what works" : "to improve"} code for score ${codes.score}` };
+    }
+  }
 
   let kept = null;
   if (text !== null) {

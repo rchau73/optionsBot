@@ -114,6 +114,32 @@ class Pure(unittest.TestCase):
         self.assertNotIn("starts this week", body)
         self.assertNotIn("mean of the base weeks 40", body)
 
+    def nps_survey(self):
+        return {"surveys": [{"survey_id": "nps", "shown": 4, "answered": 3, "dismissed": 1, "response_pct": 75.0}],
+                "nps": {"answers": 3}, "why": {"explains_trades": 1, "clear_risk": 1, "hard_to_find": 1},
+                "why_best": {"explains_trades": 1, "clear_risk": 1, "secret-free-text": 9},
+                "why_improve": {"hard_to_find": 1}}
+
+    def test_scenario_report_counts_both_nps_lists(self):
+        # #446: answers 10 explains_trades, 9 clear_risk, 5 hard_to_find.
+        self.put("mvp", report(survey=self.nps_survey()), drops())
+        text = self.comment()
+        self.assertIn("**NPS** (each person's latest answer; the two lists counted apart):", text)
+        self.assertIn("- mvp: 3 answers, response 75 %; what we do best (9–10): clear_risk 1, explains_trades 1; "
+                      "what to improve first (0–8): hard_to_find 1", text)
+        self.assertNotIn("secret-free-text", text)  # only the fixed codes are copied
+
+    def test_nps_live_env_shows_percentages_only(self):
+        self.put("stable", report(survey=self.nps_survey()), drops(), dotenv="DERIBIT_ENV=live\n")
+        text = self.comment()
+        self.assertIn("- stable: response 75 %; what we do best (9–10): clear_risk 50 %, explains_trades 50 %; "
+                      "what to improve first (0–8): hard_to_find 100 %", text)
+        self.assertNotIn("3 answers", text)
+
+    def test_no_nps_event_has_no_nps_block(self):
+        self.put("mvp", report(), drops())
+        self.assertNotIn("**NPS**", self.comment())
+
     def test_missing_week_is_noted(self):
         self.put("mvp", report(), drops(missing=["2026-W41"], prev_active=None))
         text = self.comment()

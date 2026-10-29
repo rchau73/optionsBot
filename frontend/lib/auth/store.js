@@ -118,8 +118,20 @@ export class AuthStore {
       ["analytics_consent", "INTEGER"],
       // Unix seconds of the last successful sign-in, NULL = never (#306, the Users page).
       ["last_sign_in_at", "INTEGER"],
+      // The monthly NPS card (#446, surveys.md §1): sign-ins counted (the
+      // sessions of the ≥ 3 rule), the day it was last shown (Unix seconds,
+      // NULL = never) and the person's "Don't ask me again" (1).
+      ["sign_in_count", "INTEGER NOT NULL DEFAULT 0"],
+      ["nps_last_shown_at", "INTEGER"],
+      ["nps_opted_out", "INTEGER NOT NULL DEFAULT 0"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
+    if (added.some(([name]) => name === "sign_in_count")) {
+      // Sign-ins before the count existed: each live session was one, and a recorded sign-in at least one.
+      this.db.run(`UPDATE users SET sign_in_count = MAX(
+        (SELECT COUNT(*) FROM refresh_tokens r WHERE r.user_id = users.id),
+        CASE WHEN last_sign_in_at IS NULL THEN 0 ELSE 1 END)`);
+    }
     // Answers whose user is gone: a deletion whose survey step failed (AuthService.deleteUser) finishes here.
     this.db.run("DELETE FROM survey_answers WHERE user_id NOT IN (SELECT id FROM users)");
     const orphans = this.db.getRowsModified();
@@ -195,9 +207,36 @@ export class AuthStore {
     return this.all("SELECT id, username, role, email, created_at, last_sign_in_at FROM users ORDER BY id");
   }
 
-  /** Records a successful sign-in. */
+  /** Records a successful sign-in (its time, and one more in the count). */
   recordSignIn(id, nowMs = Date.now()) {
-    this.write("UPDATE users SET last_sign_in_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+    this.write("UPDATE users SET last_sign_in_at = ?, sign_in_count = sign_in_count + 1 WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+  }
+
+  /**
+   * What the NPS rule reads (#446, lib/analytics/nps.js): { consent,
+   * createdAtSec, sessions, lastShownSec (null = never), optedOut }, or null
+   * for an unknown user.
+   */
+  npsState(id) {
+    const r = this.one("SELECT analytics_consent, created_at, sign_in_count, nps_last_shown_at, nps_opted_out FROM users WHERE id = ?", [id]);
+    if (!r) return null;
+    return {
+      consent: r.analytics_consent === 1 ? true : r.analytics_consent === 0 ? false : null,
+      createdAtSec: r.created_at,
+      sessions: r.sign_in_count,
+      lastShownSec: r.nps_last_shown_at ?? null,
+      optedOut: r.nps_opted_out === 1,
+    };
+  }
+
+  /** Records the day the NPS card was shown (the 30-day cap counts from it). */
+  markNpsShown(id, nowMs = Date.now()) {
+    this.write("UPDATE users SET nps_last_shown_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+  }
+
+  /** "Don't ask me again" (true) or turned back on in Account › Privacy (false). */
+  setNpsOptOut(id, optedOut, nowMs = Date.now()) {
+    this.write("UPDATE users SET nps_opted_out = ?, updated_at = ? WHERE id = ?", [optedOut ? 1 : 0, Math.floor(nowMs / 1000), id]);
   }
 
   /** The stored hash of a user, for the sign-in check only. */

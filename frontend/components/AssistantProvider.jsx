@@ -3,10 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
-import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api";
+import { askAssistant, fetchAssistantState, fetchNpsDue, flagAssistantAnswer, sendAssistantRequest, sendNpsAction, sendSurveyAnswer } from "@/lib/api";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
 import { answerOf } from "@/lib/analytics/screens";
-import { track } from "@/lib/track";
+import { blockingDialogOpen } from "@/lib/dialogs";
+import { currentSessionId, track } from "@/lib/track";
 
 // The assistant panel's state for the whole monitor (#408): one provider in
 // the root layout, so the panel stays open across page changes and the
@@ -31,6 +32,15 @@ export default function AssistantProvider({ children }) {
   const [enabled, setEnabled] = useState(null); // null = not known yet
   const [remaining, setRemaining] = useState(null);
   const opener = useRef(null);
+  // The monthly NPS card (#446): due = the Ask badge; card = what the panel shows
+  // (null | "question" | "thanks" | "opted_out"), kept while this tab lives.
+  const [npsDue, setNpsDue] = useState(false);
+  const [npsCard, setNpsCard] = useState(null);
+  const npsDueRef = useRef(false);
+  const npsCardRef = useRef(null); // read by close(), which must not change on every card step
+  useEffect(() => {
+    npsCardRef.current = npsCard;
+  }, [npsCard]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -38,6 +48,11 @@ export default function AssistantProvider({ children }) {
       if (controller.signal.aborted) return;
       setEnabled(s.enabled);
       if (s.remaining != null) setRemaining(s.remaining);
+    });
+    fetchNpsDue(controller.signal).then(({ due }) => {
+      if (controller.signal.aborted) return;
+      npsDueRef.current = due;
+      setNpsDue(due);
     });
     return () => controller.abort();
   }, []);
@@ -47,10 +62,49 @@ export default function AssistantProvider({ children }) {
     if (chosen) setBot(chosen);
     setOpen(true);
     track("assistant_open", { entry });
+    // "Shown" = the panel opened with the card in it (never the badge alone),
+    // and never while a manual close or rebalance dialog is open.
+    if (npsDueRef.current && !blockingDialogOpen()) {
+      npsDueRef.current = false;
+      setNpsDue(false);
+      setNpsCard("question");
+      track("survey_shown", { survey_id: "nps" });
+      sendNpsAction("shown").catch(() => {}); // the server keeps the date: no other device shows it for 30 days
+    }
   }, []);
+
+  // × and "Not now": shown but not answered.
+  const npsDismiss = useCallback(() => {
+    track("survey_dismissed", { survey_id: "nps" });
+    setNpsCard(null);
+  }, []);
+
+  // "Don't ask me again": NPS is off for this person until Account › Privacy turns it back on.
+  const npsOptOut = useCallback(async () => {
+    await sendNpsAction("opt_out");
+    track("survey_dismissed", { survey_id: "nps" });
+    setNpsCard("opted_out");
+  }, []);
+
+  // Send / Send the score only: the codes and the private text through POST /api/survey, which writes the codes-only event.
+  const npsAnswer = useCallback(async ({ score, reason = null, text = null }) => {
+    const sessionId = currentSessionId();
+    if (!sessionId) throw new Error("analytics is off for you");
+    const codes = { score: String(score) };
+    if (reason) codes.reason_code = reason;
+    const answer = { survey_id: "nps", session_id: sessionId, codes };
+    if (text && text.trim()) answer.text = text;
+    await sendSurveyAnswer(answer);
+    setNpsCard("thanks");
+  }, []);
+
+  const npsClose = useCallback(() => setNpsCard(null), []);
 
   const close = useCallback(() => {
     setOpen(false);
+    // Closing the panel (× or Escape) with the question unanswered dismisses it; any card goes with the panel.
+    if (npsCardRef.current === "question") track("survey_dismissed", { survey_id: "nps" });
+    setNpsCard(null);
     const el = opener.current;
     opener.current = null;
     // After the panel unmounts, so focus lands on the opener, not on the body.
@@ -133,8 +187,11 @@ export default function AssistantProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft }),
-    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft],
+    () => ({
+      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
+      npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose,
+    }),
+    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft, npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose],
   );
 
   return (

@@ -3,6 +3,7 @@
 import Header from "./Header";
 import AccountPanel from "./AccountPanel";
 import OtherPositions from "./OtherPositions";
+import PrivacySettings from "./PrivacySettings";
 import { useMonitor } from "@/hooks/useMonitor";
 import { pickAccount, riskRows, unmanagedPositions } from "@/lib/account";
 
@@ -35,6 +36,10 @@ export function AccountView({ bots, error = null, polledAt }) {
         <section aria-label="Not managed by the bot" className="rounded-lg border border-line bg-panel p-3">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Not managed by the bot (still uses margin)</h2>
           <OtherPositions data={others} />
+        </section>
+        <section aria-label="Privacy" className="rounded-lg border border-line bg-panel p-3">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Privacy</h2>
+          <PrivacySettings />
         </section>
       </main>
     </div>

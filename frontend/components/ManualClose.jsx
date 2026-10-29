@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
 import { closePositions } from "@/lib/api";
+import { useBlockingDialog } from "@/lib/dialogs";
 import { flipBand } from "@/lib/monitor";
 import { formatCoin, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
 
@@ -37,6 +38,7 @@ export function ConfirmCloseModal({ row, status, onCancel, onDone }) {
   const rs = status?.risk?.status ?? {};
   const cost = isNumber(row.ask) ? row.ask * row.qty : null;
   const sending = state.phase === "sending";
+  useBlockingDialog(); // no NPS card while it is open (#446)
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && !sending && onCancel();

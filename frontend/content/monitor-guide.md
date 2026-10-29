@@ -140,6 +140,8 @@ The account as Deribit reports it, plus the margin policy each bot applies. Figu
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand. No bot trades these, but they use margin, so they are shown.
 
+**Privacy** has your switch for the monthly question in the assistant. It is off after you choose "Don't ask me again"; turn it back on here.
+
 **When something looks wrong**:
 - "IM over limit since …" means margin used is above the limit. The bot only warns; it sells and buys nothing to correct it by itself.
 - "Frozen" means new risk waits for a limit change to be confirmed on daily closes. Exits and repairs continue.
@@ -174,6 +176,8 @@ The **Ask** button at the bottom right of every page opens a panel. You write a 
 **What it will not do**: it gives no advice and no forecasts. It says "I don't know" when the sources do not cover the question. A question about money or timing, such as "should I close this?" or "where will the price go?", is refused.
 
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it.
+
+**A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10. A score of 9 or 10 asks what we do best; 0 to 8 asks what to improve first. A comment is optional and stays private with your account. "Not now" or × closes it until next month; "Don't ask me again" turns it off (Account, Privacy turns it back on). It appears only if you said yes to usage analytics, and never in your first 14 days. The assistant works the same whether you answer or not.
 
 **Limits and flags**: each person has a number of questions an hour, shown under the box. *Flag* marks an answer for review. Questions and answers are logged for review, never the account's keys.
 

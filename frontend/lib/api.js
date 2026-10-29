@@ -4,6 +4,8 @@
 // one call without a session) or /api/admin/... (the Users, Audit and Analytics pages,
 // admins only), behind the signed-in session's cookies.
 
+import { losingWeek } from "./analytics/nps.js";
+
 let refreshing = null;
 
 /** One refresh for every caller that got a 401 at the same time → true when the session lives on. */
@@ -400,4 +402,61 @@ export async function rebalanceBot(name, dryRun) {
   }
   if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
   return body;
+}
+
+/**
+ * Whether the monthly NPS card is due for the signed-in person (#446), with
+ * the page's losing-week rule applied: { due, optedOut }. The server decides
+ * from the user's row; the page reads only the sign of each bot's last 7 days
+ * (/api/performance?range=7d, never sent or stored). Never throws: any
+ * failure is not due.
+ */
+export async function fetchNpsDue(signal) {
+  try {
+    const state = await fetchNpsState(signal);
+    if (!state) return { due: false, optedOut: null };
+    const optedOut = state.opted_out === true;
+    if (state.due !== true) return { due: false, optedOut };
+    const { names } = await fetchMonitorConfig(signal);
+    const performances = await Promise.all(
+      names.map((n) => getJSON(`/api/bots/${encodeURIComponent(n)}/performance?range=7d`, signal).catch(() => null)),
+    );
+    return { due: !losingWeek(performances), optedOut };
+  } catch {
+    return { due: false, optedOut: null };
+  }
+}
+
+/** The server's NPS view for the signed-in person (#446): { due, reason, opted_out }, or null when it cannot be read. Never throws. */
+export async function fetchNpsState(signal) {
+  try {
+    const res = await apiFetch("/api/survey/nps", { cache: "no-store", signal });
+    return res.ok ? await jsonOrNull(res) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The NPS card's state changes (#446): "shown" | "opt_out" | "opt_in" → the server's view; throws with its reason. */
+export async function sendNpsAction(action) {
+  const res = await apiFetch("/api/survey/nps", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  const body = await jsonOrNull(res);
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body;
+}
+
+/** One survey answer (#363): { survey_id, session_id, codes, text? }; throws with the server's reason. */
+export async function sendSurveyAnswer(answer) {
+  const res = await apiFetch("/api/survey", {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(answer),
+  });
+  if (!res.ok) throw new Error((await jsonOrNull(res))?.error ?? `${res.status}`);
 }

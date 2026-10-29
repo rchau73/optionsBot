@@ -24,17 +24,20 @@ const NoSurveyAnswers = "no survey answers yet"
 const OwnerLine = "Each top reason needs an owner: file it as an E13 story."
 
 // Codes each survey asks (surveys.md §4); an answer with another code is
-// counted under "other" and in Miscoded.
+// counted under "other" and in Miscoded. NPS asks one list by score (#446):
+// what works for 9–10, what to improve for 0–8.
 var (
-	npsCodes  = []string{"value_unclear", "losses", "too_complex", "price", "trust", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"}
-	exitCodes = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
+	npsWhatWorks = []string{"steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "other"}
+	npsToImprove = []string{"value_unclear", "losses", "too_complex", "price", "trust", "hard_to_find", "missing_feature", "other"}
+	npsCodes     = slices.Concat(npsWhatWorks, npsToImprove) // a reason sent without a score
+	exitCodes    = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
 )
 
 // Survey is Q8: why people stay or leave, as counts of coded answers.
 type Survey struct {
 	Surveys       []SurveyFunnel `json:"surveys"`         // nps, answers, exit
 	NPS           NPS            `json:"nps"`             // survey_answered{nps} with a score
-	Why           map[string]int `json:"why"`             // NPS reason_code, every score
+	Why           map[string]int `json:"why"`             // NPS reason_code, every score: why_best + why_improve + answers without a score
 	WhyBest       map[string]int `json:"why_best"`        // … of a 9–10 score: "What do we do best?" (surveys.md §1, 2a)
 	WhyImprove    map[string]int `json:"why_improve"`     // … of a 0–8 score: "What should we improve first?" (2b)
 	CameFor       map[string]int `json:"came_for"`        // answers survey
@@ -54,7 +57,9 @@ type SurveyFunnel struct {
 }
 
 // NPS is the score's bands and, from NPSMinAnswers answers, the score:
-// % promoters (9–10) − % detractors (0–6).
+// % promoters (9–10) − % detractors (0–6). Each person counts once, by their
+// latest answer in the window (surveys.md §1: the same person may answer
+// every month), and so does their why.
 type NPS struct {
 	Answers    int      `json:"answers"`
 	Promoters  int      `json:"promoters"`
@@ -86,6 +91,7 @@ func buildSurvey(week []Event) *Survey {
 		funnels[id] = &SurveyFunnel{ID: id}
 	}
 	seen := false
+	latestNPS := map[string]Event{} // user → their latest NPS answer in the window
 	for _, e := range week {
 		id, _ := e.Props["survey_id"].(string)
 		f := funnels[id]
@@ -99,7 +105,11 @@ func buildSurvey(week []Event) *Survey {
 			f.Dismissed++
 		case "survey_answered":
 			f.Answered++
-			s.answer(id, e.Props)
+			if id != "nps" {
+				s.answer(id, e.Props)
+			} else if last, ok := latestNPS[e.UserID]; !ok || !e.TS.Before(last.TS) {
+				latestNPS[e.UserID] = e
+			}
 		default:
 			continue
 		}
@@ -107,6 +117,9 @@ func buildSurvey(week []Event) *Survey {
 	}
 	if !seen {
 		return nil
+	}
+	for _, e := range latestNPS {
+		s.answer("nps", e.Props)
 	}
 	for _, id := range ids {
 		f := funnels[id]
@@ -127,25 +140,32 @@ func buildSurvey(week []Event) *Survey {
 func (s *Survey) answer(id string, p map[string]any) {
 	switch id {
 	case "nps":
-		var byScore map[string]int // the list the score's question showed; none without a score
+		promoter, scored := false, false
 		if sc, ok := p["score"].(string); ok {
+			scored = true
 			n, _ := strconv.Atoi(sc) // the allow-list holds "0" … "10" only
 			s.NPS.Answers++
 			switch {
 			case n >= 9:
 				s.NPS.Promoters++
+				promoter = true
 			case n >= 7:
 				s.NPS.Passives++
 			default:
 				s.NPS.Detractors++
 			}
-			byScore = s.WhyImprove
-			if n >= 9 {
-				byScore = s.WhyBest
+		}
+		// Each score was asked its own list (#446): a code of the other list counts
+		// under other. A reason without a score counts in why only, against both lists.
+		band, asked := map[string]int(nil), npsCodes
+		if scored {
+			band, asked = s.WhyImprove, npsToImprove
+			if promoter {
+				band, asked = s.WhyBest, npsWhatWorks
 			}
 		}
-		if c, counted := s.code(s.Why, npsCodes, p["reason_code"]); counted && byScore != nil {
-			byScore[c]++
+		if c, counted := s.code(s.Why, asked, p["reason_code"]); counted && band != nil {
+			band[c]++
 		}
 	case "exit":
 		s.code(s.ExitReasons, exitCodes, p["reason_code"])
