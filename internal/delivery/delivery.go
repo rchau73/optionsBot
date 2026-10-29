@@ -152,8 +152,9 @@ type Failure struct {
 type EnvWeek struct {
 	Recorded       bool     `json:"recorded"`
 	Note           string   `json:"note,omitempty"`
-	Deploys        int      `json:"deploys"` // healthy deploys (mvp) or new releases (stable)
-	PerDay         *float64 `json:"per_day"`
+	Deploys        int      `json:"deploys"`            // healthy deploys (mvp) or new releases (stable)
+	PerDay         *float64 `json:"per_day,omitempty"`  // mvp: deploys a day
+	PerWeek        *float64 `json:"per_week,omitempty"` // stable: releases a week
 	FrequencyBand  string   `json:"frequency_band,omitempty"`
 	MergeToLive    Stat     `json:"merge_to_live"`
 	CommitToLive   Stat     `json:"commit_to_live"`
@@ -620,11 +621,18 @@ func (b *builder) linkedFailure(kind, id string, caused, fixPR, issue int, detec
 	}
 }
 
+// restoreAt ends f at deploy d. A fix live before the failure was detected
+// (a regression filed after its fix PR went live) moves the failure's time
+// back to the fix's: a failure starts at the earlier of detected and fix
+// live, so its restore is never negative.
 func (b *builder) restoreAt(f *Failure, d *liveDeploy) {
 	if d == nil {
 		return
 	}
 	t := d.At
+	if t.Before(f.At) {
+		f.At = t
+	}
 	f.RestoredAt, f.RestoreHours = &t, ptr(round2(t.Sub(f.At).Hours()))
 }
 
@@ -678,8 +686,15 @@ func (b *builder) envWeek(env string, ws, we time.Time, in func(time.Time) bool)
 		}
 	}
 	if days := span1.Sub(span0).Hours() / 24; days > 0 {
-		ew.PerDay = ptr(round2(float64(ew.Deploys) / days))
-		ew.FrequencyBand = FrequencyBand(float64(ew.Deploys) / days)
+		if env == EnvStable {
+			perWeek := float64(ew.Deploys) * 7 / days
+			ew.PerWeek = ptr(round2(perWeek))
+			ew.FrequencyBand = WeeklyFrequencyBand(perWeek)
+		} else {
+			perDay := float64(ew.Deploys) / days
+			ew.PerDay = ptr(round2(perDay))
+			ew.FrequencyBand = FrequencyBand(perDay)
+		}
 	}
 	var toLive, fromCommit []float64
 	for _, m := range b.merges {

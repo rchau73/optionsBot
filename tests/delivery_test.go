@@ -19,6 +19,12 @@ import (
 
 func deliveryFixture(t *testing.T) delivery.Report {
 	t.Helper()
+	return deliveryFixtureWith(t, func(*delivery.Inputs) {})
+}
+
+// deliveryFixtureWith builds the fixture after edit changes its inputs.
+func deliveryFixtureWith(t *testing.T, edit func(*delivery.Inputs)) delivery.Report {
+	t.Helper()
 	dir := filepath.Join("testdata", "delivery")
 	in, err := delivery.Load(delivery.Files{
 		Main: filepath.Join(dir, "main.tsv"), Tags: filepath.Join(dir, "tags.tsv"),
@@ -29,6 +35,7 @@ func deliveryFixture(t *testing.T) delivery.Report {
 		t.Fatal(err)
 	}
 	in.From = time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	edit(&in)
 	return delivery.Build(in, time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC))
 }
 
@@ -162,6 +169,69 @@ func TestDelivery_FailuresAndTimeToRestore(t *testing.T) {
 	}
 }
 
+// Review of #474: a regression filed 2 h after its fix PR (#8) went live on
+// mvp starts at the fix's live time (the earlier of detected and fix live),
+// so its restore is 0 h, not −2 h, and the week's median stays ≥ 0.
+func TestDelivery_RegressionFiledAfterFixLiveRestoresInZero(t *testing.T) {
+	fixLive := dAt("2026-10-23T09:05:00Z")
+	r := deliveryFixtureWith(t, func(in *delivery.Inputs) {
+		for i := range in.Issues {
+			if in.Issues[i].Number == 100 {
+				in.Issues[i].CreatedAt = fixLive.Add(2 * time.Hour)
+			}
+		}
+	})
+	var found bool
+	for _, f := range r.Failures {
+		if f.RestoreHours != nil && *f.RestoreHours < 0 {
+			t.Errorf("%s: negative restore %v h", f.ID, *f.RestoreHours)
+		}
+		if f.ID == "regression/#100/mvp" {
+			found = true
+			if !f.At.Equal(fixLive) || !dTimeIs(f.RestoredAt, "2026-10-23T09:05:00Z") || !dNear(f.RestoreHours, 0) {
+				t.Errorf("regression/#100/mvp: at %v restored %v hours %v, want at and restored %v, 0 h", f.At, f.RestoredAt, f.RestoreHours, fixLive)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("regression/#100/mvp missing: %+v", r.Failures)
+	}
+	// W43 restores: rollback 0.92, revert 0.57, regression 0 → median 0.57.
+	if s := dWeek(t, r, "2026-W43").MVP.Restore; s.N != 3 || !dNear(s.MedianHours, 0.57) || *s.MedianHours < 0 {
+		t.Errorf("W43 restore: %+v", s)
+	}
+}
+
+// Review of #474: stable's frequency is releases per week, banded per week —
+// one release in a 7-day week is 1 a week, high; mvp keeps deploys a day.
+func TestDelivery_StableFrequencyIsReleasesPerWeek(t *testing.T) {
+	r := deliveryFixture(t)
+	// W44 so far: v0.2.0 in the 2.5 days to Wednesday 12:00 → 2.8 a week.
+	w44 := dWeek(t, r, "2026-W44")
+	if s := w44.Stable; s.PerDay != nil || !dNear(s.PerWeek, 2.8) || s.FrequencyBand != delivery.BandHigh {
+		t.Errorf("W44 stable: per day %v per week %v band %s", s.PerDay, s.PerWeek, s.FrequencyBand)
+	}
+	if m := dWeek(t, r, "2026-W43").MVP; m.PerWeek != nil || m.PerDay == nil {
+		t.Errorf("W43 mvp keeps deploys a day: %+v", m)
+	}
+	cases := []struct {
+		name    string
+		perWeek float64
+		want    string
+	}{
+		{"1 release in a 7-day week", 1 * 7 / 7.0, delivery.BandHigh},
+		{"daily", 7, delivery.BandElite},
+		{"1 in 2 weeks", 0.5, delivery.BandMedium},
+		{"1 in 5 weeks", 0.2, delivery.BandLow},
+		{"none", 0, delivery.BandLow},
+	}
+	for _, c := range cases {
+		if got := delivery.WeeklyFrequencyBand(c.perWeek); got != c.want {
+			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+	}
+}
+
 func TestDelivery_WeeklyMetrics(t *testing.T) {
 	r := deliveryFixture(t)
 	if len(r.Weeks) != 5 || r.Weeks[0].Week != "2026-W40" || r.Weeks[4].Week != "2026-W44" {
@@ -186,7 +256,7 @@ func TestDelivery_WeeklyMetrics(t *testing.T) {
 	if w43.Merged != 5 || w43.CommitToMerge.N != 5 {
 		t.Errorf("W43 merged: %+v", w43)
 	}
-	if w43.Stable.Deploys != 0 || !dNear(w43.Stable.PerDay, 0) || w43.Stable.FailureNote != "no release" {
+	if w43.Stable.Deploys != 0 || !dNear(w43.Stable.PerWeek, 0) || w43.Stable.FailureNote != "no release" {
 		t.Errorf("W43 stable: %+v", w43.Stable)
 	}
 
