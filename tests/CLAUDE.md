@@ -8,4 +8,5 @@ Notable files:
 - `restart_invariance_test.go` (#220: boots twice on one book with a held stop, a shed anchor, a shared strike and IM in the startup band, through main's restore paths
   — no order, same slots, holds kept; a new restore path belongs in it),
 - `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
+- `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
