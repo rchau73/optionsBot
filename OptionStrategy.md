@@ -252,7 +252,7 @@ These are observations from building and reviewing the system, not trading advic
 2. **Test the backtest.** The backtest once used the computer's clock instead of the simulated date and silently made zero trades. Results that look "fine" can be meaningless. Check trade counts and sanity-check against intuition.
 3. **Prefer defined risk.** An iron condor (strangle + cheaper far options bought as insurance) gives up some premium to cap the worst case. For anything beyond a study, that trade-off is usually worth it.
 4. **Size for the bad month, not the average month.** A strategy that wins 85 % of the time can still lose a year's profit in one week.
-5. **Use testnet to prove mechanics, not profits.** Testnet prices are thin and sometimes synthetic; it's great for checking that fills, rolls, stops and the kill switch behave, and useless for judging returns.
+5. **Use testnet to prove mechanics, not profits.** Testnet prices are thin and sometimes synthetic; it's great for checking that fills, rolls, stops and the kill switch behave, and useless for judging returns. What evidence exists for returns: the weekly evidence report replays each bot's week on recorded mainnet books and, in its "replay vs live" section, shows how far that replay is from what the journal shows (in coin and as a % of the live result, net of fees), with the causes the journal records. A week the recorder did not fully cover is listed as not comparable rather than estimated, and a live account shows percentages only.
 6. **Change one thing at a time and write down why.** Tune a parameter, record the reason and the date, and compare before/after. Otherwise you can't tell whether the change or the market made the difference.
 
 ## 12. Glossary
