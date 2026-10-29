@@ -152,6 +152,36 @@ Apply the same lens in reverse. When asked to review or simplify code in this re
 
 Prefer the smallest change that moves the code toward the patterns above over a big-bang rewrite, unless the user explicitly asks for one.
 
+## Quality bar: clean code, SOLID, composed UI, tests that earn their keep
+
+The author meets this before handing over, and the Reviewer enforces it (#468: PRs that change no business rule or policy merge without a person, so this review is the last human-grade check).
+
+**Backend (Go): clean code and SOLID, applied with judgement**
+- **Single responsibility.** A function does one thing at one level of abstraction. A file holds one concept. A new rule goes in its own file with its pure function (`now` passed in), not in `strategy.go`, `api.go` or `main.go`.
+- **Open/closed.** A new route, journal event or rule should extend the code without editing a shared list in many places. If every PR edits the same switch or slice, propose the seam: a registration per domain, or a table owned by the domain.
+- **Liskov and interface segregation.** Small interfaces, defined by the consumer (see the Go checklist). A fake must be able to stand in for the real type in tests and the backtest.
+- **Dependency inversion.** Strategy and services depend on `internal/exchange` interfaces, never on Deribit types. Wiring lives in `cmd/`.
+- **Clean code.** Names say intent and unit (`imPct`, `waitMin`). No magic numbers: a value is a fixed rule in `fixed.go` or a named constant. No flag arguments that switch behaviour. Errors carry context. No dead code, no commented-out code. Duplication is removed once there are three copies, not before.
+- **Don't over-apply it.** No interface with one implementation and no test fake, no layers "for later". SOLID is for change you can see coming in this repo, not for show.
+
+**Frontend (React/Next.js): components, composition, usability**
+- **Compose small components.** A page composes components, and a component composes smaller ones. Data fetching lives in a hook or a server component; presentation stays pure and receives props. Split a component past about 150 lines, or when it does two jobs.
+- **Reuse before you add.** Use the existing primitives (`StatTile`, `Card`, `Counts`, `MarginBar`, the dialogs, `useDismiss`) before writing a new one. A pattern repeated three times becomes a component.
+- **Every state is designed:** loading, empty, error, stale and partial, each with plain words from the copy guidelines. Never a silent 0.
+- **Usability and accessibility:** semantic HTML, labelled controls, keyboard paths and visible focus, targets of at least 44 px on touch, colour never the only signal, works at 360 px and at 200 % zoom. A new page updates the menu, the glossary (every label), the responsive audit and the analytics screen list.
+
+**Tests: complete for the ticket, lean for the suite**
+- **Acceptance:** each Gherkin scenario of the ticket has a test that fails without the change. Name the test after the scenario.
+- **Negative:** bad input, missing data, a refused or timed-out call, the role that may not act, the limit at the boundary and one past it.
+- **UI and UX:** Testing Library tests for every state above, the copy that matters (the consequence in a confirmation, the risk next to an action), keyboard use and the accessible names.
+- **Stress and backtest (rule changes):** run `cmd/stress` on the standard shocks and `cmd/compare` or the replay on recorded books, before and after, and put the numbers in the PR. Keep `cmd/stress`'s defaults equal to the bot. A rule change without them is a blocking finding.
+- **Fewer cases, wider coverage:** prefer one table-driven test over many near-copies, and test properties ("the call and the put stay even for any fill sequence") over single examples where a property exists. A regression test pins the bug's exact input once, next to the table it belongs to, rather than in a new file. Delete or merge a test that adds no coverage. Shared fixtures (`frontend/test/`, `tests/testdata/`) beat per-test copies.
+- **Fast and deterministic:** no sleeps, no real network, time passed in, randomness seeded. A slow single-goroutine test goes in `REPORT_TESTS` (`scripts/go_tests.sh`). The coverage floor never drops.
+- **Before handing over, run the checks that read the whole repo**, not only the tests the change touches: the glossary, responsive-audit, empty-state, menu and help-index tests for a frontend change, `go run ./cmd/helpindex` after a help source changes, and `make check`.
+
+**CI/CD: leave the pipeline faster than you found it**
+- Note any step a change makes slower (a new suite, a heavy fixture, a test that should be in `REPORT_TESTS`) and any speed-up you see: caching, a job that a path filter could skip, parallel groups, a duplicated run. Report it as a suggestion with the minutes it saves. If it's a larger change, propose an E6 ticket.
+
 ## Agent mode (unattended, from a GitHub issue)
 
 `scripts/agents/dev_agent.sh` runs you headless on an issue a person moved to **Ready** on the project board (see `AGENTIC.md`). The task is in `.agent-task.md`: the issue, its comments and — when a PR already exists — the review feedback to address. You work in an isolated worktree on branch `agent/issue-<n>`. You can edit files, run the build, test and lint tools and commit; you cannot push, call GitHub, use the network, run docker, or merge. The script re-runs every check, pushes and opens the PR; **a person reviews and merges**, and merging deploys to testnet.
@@ -188,15 +218,18 @@ For `needs_human`, put your questions in the PR-BODY block instead.
 
 ## Review mode (unattended, a Dev agent pull request)
 
-`scripts/agents/review_agent.sh` runs you headless on a Dev agent PR that reached **In review**. `.agent-review.md` holds the ticket (its Gherkin scenarios are the contract), the PR body, earlier reviews and the diff; the worktree is checked out at the PR head. You can read code and run `go build`, `go vet`, `go test` and `git diff/log/show/blame`; you cannot edit, commit, push or call GitHub. The script posts your review and moves the card: a **blocking** finding sends it back to Ready, where the Dev agent fixes it on the same PR; no blocking finding leaves it for a person to merge. You are a second engineer, not the author: the author's "tests pass" and PR body are claims to check.
+`scripts/agents/review_agent.sh` runs you headless on a Dev agent PR that reached **In review**. `.agent-review.md` holds the ticket (its Gherkin scenarios are the contract), the PR body, earlier reviews and the diff; the worktree is checked out at the PR head. You can read code and run `go build`, `go vet`, `go test` and `git diff/log/show/blame`; you cannot edit, commit, push or call GitHub. The script posts your review and moves the card: a **blocking** finding sends it back to Ready, where the Dev agent fixes it on the same PR. With no blocking finding, the PR gate **merges the PR itself** once CI is green and it is up to date with main, **unless it changes a business rule or policy**; then a person merges it (#468). Your review is the last check before code reaches main and mvp, so hold the quality bar above. You are a second engineer, not the author: the author's "tests pass" and PR body are claims to check.
 
 How to review:
 - **Correctness first,** with the "Reviewing or refactoring existing code" list above and the trading rules in `CLAUDE.md`: every caller of a changed function (a new side effect in a shared path such as `finalizePending` reaches every caller — cancels, the kill switch, repairs), concurrency, order safety, what a restart does to in-memory state.
 - **Does it do what the ticket asks?** Each Gherkin scenario has a test that would fail without the change; the protecting scenario ("what must not change") is really protected. Missing or hollow tests are findings.
+- **The quality bar** (section above): clean code and SOLID in Go, composed components and every UI state in React, and the test levels the change needs (acceptance, negative, UI/UX, stress or backtest for a rule change). Tests should be lean: near-duplicate tests, a regression test in its own file, or a missing table are suggestions. A missing acceptance, negative or stress test is blocking.
+- **CI/CD:** a change that slows the pipeline, or a speed-up you see, is a suggestion with the minutes it saves.
+- **Policy:** decide whether the PR changes a **business rule or policy**: a trading rule or its numbers, a setting, the order path, margin, who may act (roles), what the assistant may say, legal or product texts, CI and repository rules, releases or deploys, the merge rules, or the agents' instructions. Say yes when unsure. The gate also checks a fixed path list (`scripts/agents/pr_gate.py` `POLICY_PATHS`), and either check alone keeps the PR for a person.
 - **Repo rules:** no new YAML keys (fixed values in `fixed.go`, with a `cmd/stress` flag or a stated reason why stress can't study it), journal on every decision point, docs in the same PR (`OptionStrategy.md` §9 for a rule change), pure functions take `now`.
 - **Earlier reviews:** check each earlier finding against this commit and the PR's `## Review response`. Fixed → don't repeat it. Answered with a sound reason → don't repeat it. Still open → report it again.
 - **Verify every finding before you report it.** Read the code path end to end and, where you can, run a test that shows it. Drop anything you can't back with a concrete failure — a review that sends the Dev agent after a false bug costs a round. Fewer, true findings beat many plausible ones.
-- **Severity:** `blocking` = wrong behaviour, a broken rule from `CLAUDE.md`, a missing test for an acceptance scenario, or a safety risk on an order path. `suggestion` = clarity, naming, a simpler form, a follow-up. Style alone is never blocking. Don't block on something the ticket explicitly decided.
+- **Severity:** `blocking` = wrong behaviour, a broken rule from `CLAUDE.md`, a missing test for an acceptance scenario or a negative path, a rule change without stress or backtest numbers, a UI state that isn't handled, an accessibility failure (no name, no keyboard path, colour as the only signal), or a safety risk on an order path. `suggestion` = clarity, naming, a simpler form, a follow-up. Style alone is never blocking. Don't block on something the ticket explicitly decided.
 
 End your answer with exactly this (the script reads it; `line` is a line of the file at the PR head, inside the diff when possible):
 
@@ -209,11 +242,12 @@ End your answer with exactly this (the script reads it; `line` is a line of the 
    "title": "<the defect in one line>",
    "scenario": "<concrete inputs/state → wrong outcome>",
    "fix": "<the smallest change that fixes it>"}
- ]}
+ ],
+ "policy": {"changes": "yes | no", "why": "<one line: which rule or policy it changes, or why none>"}}
 -->
 ```
 
-An empty `findings` list means the PR is ready for a person to merge.
+An empty `findings` list with `"changes": "no"` means the PR gate merges it. A missing or unclear `policy` counts as `yes`.
 
 ## Simplicity is the point, not an excuse
 

@@ -18,7 +18,7 @@ def lab(*names):
 
 
 def rv(verdict):
-    return {"body": f"review\n<!-- agent-review sha=abc123 verdict={verdict} -->"}
+    return {"body": f"review\n<!-- agent-review sha=abc123 verdict={verdict}{' policy=no' if verdict == 'clean' else ''} -->"}
 
 
 PICKUP = "🤖 **Dev agent** picked this up on branch `agent/issue-{}` — **attempt 1**."
