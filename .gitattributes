@@ -1,0 +1,6 @@
+# Generated files (#465): never edited by hand, folded in GitHub's diff view.
+# A merge conflict in one is resolved by rerunning its generator
+# (bash scripts/regen.sh --resolve), which reads this list.
+frontend/content/help-index.json linguist-generated=true
+docs/parameters.md linguist-generated=true
+tests/testdata/effective_config_*.json linguist-generated=true

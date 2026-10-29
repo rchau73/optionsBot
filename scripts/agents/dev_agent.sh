@@ -9,8 +9,16 @@
 #   3. runs Claude Code headless with the developer skill in agent mode. It
 #      may edit files, run the build/test/lint tools and commit — nothing
 #      else: no push, no gh, no network, no docker, no merge;
-#   4. the script re-runs every check itself (trust, but verify), pushes the
-#      branch and opens (or updates) the PR "Closes #n" → In review.
+#   4. the script runs the checks the change touches itself (trust, but
+#      verify; checkfail.py picks them, #472) — gofmt/vet, the scripts, the Go
+#      tests and jest files the change touches, eslint — pushes the branch and
+#      opens (or updates) the PR "Closes #n" as a draft → In review. CI runs
+#      every suite; the PR gate marks the draft ready when CI is green, and the
+#      Reviewer starts then. A failing test the change does not touch is re-run
+#      up to 3 times; passing makes it flaky (named on the PR and its issue),
+#      not the PR's fault. A real failure sends the card back to Ready once
+#      (needs-fix, the failing checks' log tails in a comment the next run
+#      reads first); the second one goes to a person (Blocked, as below).
 #      A PR that merged while the agent worked gets its new commits moved onto
 #      agent/issue-<n>-r<k> from main and a new PR "Refs #n"; one closed
 #      unmerged stops and asks (#478). "Pushed changes" is commented only once
@@ -61,7 +69,8 @@ gh issue comment "$issue" -R "$slug" --body-file "$run_dir/pickup.md" >/dev/null
 
 block() { # reason file, ledger detail (a short fixed phrase)
   run_end blocked "$2"
-  { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"; } > "$run_dir/blocked.md"
+  { echo "🤖 **Dev agent stopped — a person is needed.**"; echo; cat "$1"; echo; echo "_Move the card back to **Ready** after answering, and the agent will try again on the same branch._"
+    echo "<!-- dev:blocked -->"; } > "$run_dir/blocked.md" # resets the check-failure count (checkfail.py)
   gh issue comment "$issue" -R "$slug" --body-file "$run_dir/blocked.md" >/dev/null
   gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null
   set_status "$item" "Blocked"
@@ -84,11 +93,18 @@ fi
 base="$(git -C "$wt" rev-parse HEAD)"
 RUN_PR="$existing_pr"
 # An open PR starts from today's main: merge it in first. A conflict (another PR
-# merged first, pr_gate.sh) is left in the files for the agent to resolve.
+# merged first, pr_gate.sh) in a generated file is resolved by its generator
+# (scripts/regen.sh, #465); any other is left in the files for the agent.
 conflicts=""
 if [[ -n "$existing_pr" ]]; then
-  git -C "$wt" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" merge --no-edit -q origin/main >/dev/null 2>&1 ||
+  as_me=(-c user.name="$(git config user.name)" -c user.email="$(git config user.email)")
+  if ! git -C "$wt" "${as_me[@]}" merge --no-edit -q origin/main >/dev/null 2>&1; then
+    if (cd "$wt" && bash scripts/regen.sh --resolve) >> "$run_dir/regen.log" 2>&1; then
+      git -C "$wt" "${as_me[@]}" commit -q --no-edit
+      log "dev: #$issue merge with main: generated files regenerated"
+    fi
     conflicts="$(git -C "$wt" diff --name-only --diff-filter=U)"
+  fi
 fi
 
 # ── Task for the agent ──────────────────────────────────────────────────────
@@ -105,7 +121,17 @@ fi
 if [[ -n "$conflicts" ]]; then
   { echo; echo "# FIRST: resolve the merge with main"; echo
     echo "\`origin/main\` was merged into this branch and conflicts in:"; echo "$conflicts" | sed 's/^/- /'; echo
-    echo "Another PR merged first. Resolve each conflict keeping both changes' intent (main's behaviour stays; this issue's change applies on top), remove every conflict marker, run the checks, then \`git add\` the files and \`git commit --no-edit\`. Say in the PR body how each conflict was resolved."; } >> "$run_dir/task.md"
+    echo "Another PR merged first. Resolve each conflict keeping both changes' intent (main's behaviour stays; this issue's change applies on top), remove every conflict marker, run the checks, then \`git add\` the files and \`git commit --no-edit\`. Say in the PR body how each conflict was resolved."
+    echo "Never edit a generated file by hand (\`.gitattributes\` \`linguist-generated\`: the help index, \`docs/parameters.md\`, the effective-config goldens): once the other files are resolved and added, run \`bash scripts/regen.sh --resolve\` before the commit. In a sorted list (the glossary, \`golden.jsonl\`, the analytics plan, the responsive audit) keep both entries, each in its alphabetical place."; } >> "$run_dir/task.md"
+fi
+# The last check failure on this card (this script's or CI's, #472), when no
+# pass came after it: read first, as review feedback is.
+CHECKFAIL="$AGENT_REPO_DIR/scripts/agents/checkfail.py"
+python3 "$CHECKFAIL" pending "$run_dir/history.json" > "$run_dir/pending-fix.md" || : > "$run_dir/pending-fix.md"
+if grep -q . "$run_dir/pending-fix.md"; then
+  { echo; echo "# FIRST: fix the failing checks"; echo
+    echo "The checks failed on this card's last run (the Dev agent script's own, or CI on the PR). Fix them on this branch first and rerun those checks, then go on with anything else in this file. The failure:"; echo
+    sed 's/^/> /' "$run_dir/pending-fix.md"; } >> "$run_dir/task.md"
 fi
 cp "$run_dir/task.md" "$wt/.agent-task.md"
 echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"
@@ -115,10 +141,11 @@ PROMPT="Use the developer skill in its \"Agent mode\" and implement the GitHub i
 Implement it with tests and commit your work (git add + git commit).
 Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group', npx jest <file>,
 python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
-every suite once after you finish and sends a failure back to you.
+the tests your change touches after you finish and CI runs every suite; a failure comes back to you.
 You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
 allowed, so a line mixing in another command is refused whole. You may run python3 and go run (scripts you write
 in the worktree, the cmd/* generators), the repo's scripts (bash scripts/<name>.sh), shellcheck and make check;
+to delete or rename a tracked file use git rm or git mv (plain rm is refused);
 set GOMAXPROCS with go test -cpu=N, not an env prefix; keep helper scripts under scripts/
 with a test, or delete them before you commit. Do not push, merge, deploy or call GitHub.
 When the issue is a bug and you found the merged PR that caused it, put a line 'Caused by #<PR number>' in the
@@ -136,6 +163,7 @@ allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(python3:*)" "Bash(bash scripts/:*)" "Bash(shellcheck:*)" "Bash(make check:*)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
+  "Bash(git rm:*)" "Bash(git mv:*)" # tracked files only, every one shown in the PR diff (#466 could not drop a file it had split, #515)
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"
   "Bash(cd:*)" ) # cd: a "cd <dir> && go test …" line was refused whole (#257, 2026-10-27); the other part is still checked
 denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(gh:*)" "Bash(curl:*)"
@@ -244,23 +272,89 @@ checks="$run_dir/checks.md"
 check() { # name, command...
   local name="$1"; shift
   if (cd "$wt" && "$@") > "$run_dir/check.log" 2>&1; then echo "- [x] $name" >> "$checks"
-  else echo "- [ ] **$name — FAILED**" >> "$checks"; { echo '```'; tail -40 "$run_dir/check.log"; echo '```'; } >> "$checks"; return 1; fi
+  else echo "- [ ] **$name — FAILED**" >> "$checks"; python3 "$CHECKFAIL" tails "$run_dir/check.log" >> "$checks"; return 1; fi
 }
+# retry_untouched <log> — 0 when every test that failed in <log> is one the
+# change does not touch and passed on one of up to 3 re-runs (#472): each goes
+# to flaky.txt (named on the PR and its flaky issue once the PR exists).
+retry_untouched() {
+  local kind name i passed
+  python3 "$CHECKFAIL" retry "$wt" "$run_dir/files.txt" "$1" > "$run_dir/retry.txt" || return 1
+  while read -r kind name; do
+    passed=0
+    for i in 1 2 3; do
+      log "dev: $name failed, untouched by the change: re-run $i of 3"
+      if [[ "$kind" == "go" ]]; then
+        (cd "$wt" && go test ./tests/ -race -count=1 -run "^${name}\$") >> "$run_dir/retry.log" 2>&1 < /dev/null && { passed=1; break; }
+      else
+        (cd "$wt/frontend" && npx jest --ci "$name") >> "$run_dir/retry.log" 2>&1 < /dev/null && { passed=1; break; }
+      fi
+    done
+    [[ $passed -eq 1 ]] || return 1
+    echo "$kind $name" >> "$run_dir/flaky.txt"
+  done < "$run_dir/retry.txt"
+}
+test_check() { # name, command... — check(), with untouched failures re-run
+  local name="$1"; shift
+  if (cd "$wt" && "$@") > "$run_dir/check.log" 2>&1; then echo "- [x] $name" >> "$checks"; return 0; fi
+  cp "$run_dir/check.log" "$run_dir/check-failed.log"
+  if retry_untouched "$run_dir/check-failed.log"; then
+    echo "- [x] $name — flaky, passed on a re-run: $(cut -d' ' -f2 "$run_dir/retry.txt" | paste -sd, -)" >> "$checks"; return 0
+  fi
+  echo "- [ ] **$name — FAILED**" >> "$checks"; python3 "$CHECKFAIL" tails "$run_dir/check-failed.log" >> "$checks"; return 1
+}
+# go_touched — the Go tests the change touches (checkfail.py go-tests), split
+# as CI splits them (scripts/go_tests.sh): the core under -race, the reports without.
+go_touched() {
+  local plan="$run_dir/go-tests.txt" core reports
+  python3 "$CHECKFAIL" go-tests "$wt" "$run_dir/files.txt" "$(bash "$wt/scripts/go_tests.sh" regex)" > "$plan"
+  if grep -qx all "$plan"; then
+    test_check "go tests: all (go.mod/go.sum changed)" bash scripts/go_tests.sh all; return
+  fi
+  core="$(sed -n 's/^core //p' "$plan")"; reports="$(sed -n 's/^reports //p' "$plan")"
+  if [[ -z "$core$reports" ]]; then echo "- [x] go tests: none touched by the change" >> "$checks"; return 0; fi
+  local rc=0
+  [[ -z "$core" ]] || test_check "go tests the change touches (core, -race)" \
+    go test ./tests/ -race -count=1 -timeout 30m -run "$core" || rc=1
+  [[ -z "$reports" ]] || test_check "go tests the change touches (reports)" \
+    go test ./tests/ -count=1 -timeout 30m -run "$reports" || rc=1
+  return $rc
+}
+# The checks the change touches (#472): CI runs every suite on the PR, so the
+# Mac no longer runs them twice (2.5–30 min a run). checkfail.py suites picks
+# them by what each suite builds or reads; next build runs in CI only.
 verify() { # sets ok
   log "dev: verifying $branch"
-  : > "$checks"
+  : > "$checks"; : > "$run_dir/flaky.txt"
   ok=1
-  check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
-  check "go vet ./..." go vet ./... || ok=0
-  # The suite as CI runs it (scripts/go_tests.sh, #429): the core under -race,
-  # the report tests without it; 30 min each (#247, #299: a loaded Mac).
-  check "go tests (core -race, reports)" bash scripts/go_tests.sh all || ok=0
-  if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
+  git -C "$wt" diff --name-only "origin/main"...HEAD > "$run_dir/files.txt"
+  python3 "$CHECKFAIL" suites "$run_dir/files.txt" > "$run_dir/suites.txt"
+  need() { grep -qx "$1=true" "$run_dir/suites.txt"; }
+  if need go_lint; then
+    check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
+    check "go vet ./..." go vet ./... || ok=0
+  fi
+  if need scripts; then
+    check "shell scripts (bash -n, shellcheck)" bash scripts/check_shell.sh || ok=0
+    check "script tests (agents, docs, product)" bash -c 'for d in agents docs product; do python3 -m unittest discover -s "scripts/$d" -p "test_*.py" || exit 1; done' || ok=0
+  fi
+  if need go || need docs; then go_touched || ok=0; fi
+  if need frontend; then
     check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
     check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0
-    check "frontend: jest" bash -c 'cd frontend && npx jest' || ok=0
-    check "frontend: next build" bash -c 'cd frontend && npx next build' || ok=0
+    local jest_files=() f
+    while IFS= read -r f; do [[ -n "$f" ]] && jest_files+=("$f"); done < <(python3 "$CHECKFAIL" jest-files "$run_dir/files.txt")
+    if [[ ${#jest_files[@]} -eq 0 || "${jest_files[0]}" == "all" ]]; then
+      test_check "frontend: jest" bash -c 'cd frontend && npx jest --ci' || ok=0
+    else
+      # --passWithNoTests: a change no test imports (a page, globals.css) has no related
+      # test, and jest would exit 1 on it; CI still runs every jest test.
+      # shellcheck disable=SC2016 # $@ expands in the inner bash: the changed files
+      test_check "frontend: jest (the tests related to the changed files)" \
+        bash -c 'cd frontend && npx jest --ci --passWithNoTests --findRelatedTests "$@"' _ "${jest_files[@]}" || ok=0
+    fi
   fi
+  echo "- CI runs every suite on the PR (and \`next build\`); the PR gate marks it ready for review when CI is green." >> "$checks"
 }
 rescue_if_merged || true
 verify
@@ -303,22 +397,21 @@ fi
     echo "Closes #$issue"; echo
   fi
   cat "$run_dir/pr-body.md"; echo
-  echo "## Checks re-run by the Dev agent script"; cat "$checks"; echo
+  echo "## Checks the Dev agent script ran (the ones the change touches)"; cat "$checks"; echo
   echo "_Opened by the **Dev agent** (developer skill, agent mode) for #$issue. It cannot merge or deploy: a person reviews and merges; merging deploys to **testnet** and the SME agent verifies the fix in its next review. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
   echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 } > "$run_dir/pr.md"
 title="$(gh issue view "$issue" -R "$slug" --json title -q .title)"
-draft=(); [[ $ok -eq 1 ]] || draft=(--draft)
 if [[ -n "$existing_pr" ]]; then
   gh pr edit "$existing_pr" -R "$slug" --body-file "$run_dir/pr.md" >/dev/null
-  # A PR opened as a draft on failing checks becomes reviewable once they pass.
-  [[ $ok -eq 1 ]] && gh pr ready "$existing_pr" -R "$slug" >/dev/null 2>&1 || true
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
   gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
+  # Always a draft (#472): CI runs every suite, and the PR gate marks it
+  # ready once CI is green on its head; only then does the Reviewer start.
   pr_title="$title (#$issue)"
   [[ -n "$merged_pr" ]] && pr_title="$title (#$issue, review fixes for #$merged_pr)"
-  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$pr_title" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
+  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$pr_title" --label agent:dev --draft --body-file "$run_dir/pr.md")"
 fi
 log "dev: PR $pr_url"
 RUN_PR="${pr_url##*/}"
@@ -337,14 +430,28 @@ if [[ -n "$caused" && ",$labels," != *",regression,"* ]]; then # $labels: the is
     log "dev: #$issue labelled regression, caused by #$caused" || log "dev: could not label #$issue regression"
 fi
 
+# Untouched tests that failed and then passed on a re-run: flaky, not this PR's (#472).
+while read -r _ name; do
+  [[ -n "$name" ]] && note_flaky "$name" "$RUN_PR" "the Dev agent's checks" && log "dev: $name flaky (passed on a re-run)"
+done < "$run_dir/flaky.txt"
+
 if [[ $ok -eq 1 ]]; then
   if [[ -n "$existing_pr" ]]; then run_end pr_updated "checks passed"; else run_end pr_opened "checks passed"; fi
   set_status "$item" "In review"
-  gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human --remove-label needs-rebase >/dev/null 2>&1 || true
-  gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — all checks passed. Ready for review." >/dev/null
-  notify "Dev agent: PR ready for #$issue" "$title"
+  gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human --remove-label needs-rebase --remove-label needs-fix >/dev/null 2>&1 || true
+  gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent opened $pr_url — the checks the change touches passed. CI runs every suite; the PR gate marks it ready for review once CI is green.
+<!-- dev:check-pass -->" >/dev/null
+  notify "Dev agent: PR opened for #$issue" "$title"
 else
-  { echo "The implementation is in $pr_url (draft), but the checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
-  block "$run_dir/reason.md" "checks failed: draft PR"
+  # The first failure goes back to the agent (#472), the second to a person.
+  { echo "🤖 **Dev agent** — the implementation is in $pr_url (draft), but these checks failed:"; echo; cat "$checks"; } > "$run_dir/reason.md"
+  if [[ "$(check_failed "$issue" "$item" "$run_dir/reason.md" dev "${pushed:0:7}")" == "needs-fix" ]]; then
+    run_end sent_back "checks failed: back to Ready with needs-fix"
+    notify "Dev agent: checks failed on #$issue" "back to Ready (needs-fix)"
+    log "dev: #$issue checks failed → Ready (needs-fix)"
+  else
+    { echo "The checks failed again (the second failure on this card):"; echo; cat "$run_dir/reason.md"; } > "$run_dir/reason2.md"
+    block "$run_dir/reason2.md" "checks failed twice: draft PR"
+  fi
 fi
 git_locked worktree remove --force "$wt" 2>/dev/null || true

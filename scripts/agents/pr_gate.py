@@ -7,6 +7,10 @@ for review"). Pure rules here; pr_gate.sh reads GitHub and acts.
         → one line: ACTION reason
     pr_gate.py equiv <compare.json>   → the base sha when every commit after it
         is a clean "update with main" merge GitHub made; nothing otherwise
+    pr_gate.py green <pr.json>        → exit 0 when the PR is ready (not a
+        draft) and CI is green on its head: the Reviewer starts only then (#472)
+    pr_gate.py ci-green <pr.json>     → exit 0 when CI is green, draft or not
+        (pr_gate.sh: a re-run of untouched tests passed → they are flaky)
 
 pr.json: gh pr view --json number,state,isDraft,labels,headRefOid,mergeable,
 mergeStateStatus,statusCheckRollup. markers.txt: the Reviewer's markers on the
@@ -20,6 +24,13 @@ card status: the ticket's board column ("In progress" = a Dev agent holds it).
 Actions:
   conflict  — conflicts with main: the card goes back to Ready (needs-rebase)
               and the Dev agent merges main and resolves.
+  ci_red    — CI failed on the head of a PR whose card is In review (#472):
+              pr_gate.sh re-runs it when only tests the PR does not touch
+              failed (checkfail.py ci-plan), else sends the card back to Ready
+              with the failed job's log (needs-fix; the second time a person).
+  undraft   — a draft whose card is In review and whose CI is green: the Dev
+              agent opens every PR as a draft and hands the full suite to CI
+              (#472); the gate marks it ready, and the Reviewer starts.
   update    — behind main without conflict: the script updates the branch.
   ready     — reviewed clean on the current head, CI green, GitHub CLEAN, no
               open dependency: label ready-to-merge. A person merges it when it
@@ -40,6 +51,7 @@ import sys
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
 from pm_board import checks_refusal  # noqa: E402
+from checkfail import failed_checks  # noqa: E402
 
 
 # Paths whose change is a business rule or policy: a person merges (#468).
@@ -99,15 +111,24 @@ def equiv(compare):
 
 def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card=""):
     labels = {l["name"] for l in pr.get("labels", [])}
-    if pr.get("state") != "OPEN" or pr.get("isDraft"):
-        return "wait", "not an open, ready pull request"
+    if pr.get("state") != "OPEN":
+        return "wait", "not an open pull request"
     if card == "In progress":
         # A Dev agent holds the card and may push to the PR any minute: never
         # hand it to a person, merge it or send it back (#478: PR #474 merged
         # while the agent fixed its review findings, and the fixes were stranded).
         return "wait", "a Dev agent is working on it"
+    if pr.get("isDraft") and card != "In review":
+        # A draft elsewhere (Blocked, Ready) waits for a person or the agent.
+        return "wait", "not an open, ready pull request"
     if pr.get("mergeable") == "CONFLICTING" or pr.get("mergeStateStatus") == "DIRTY":
         return "conflict", "conflicts with main"
+    failed = failed_checks(pr.get("statusCheckRollup"))
+    if failed and card == "In review" and "agent:needs-human" not in labels:
+        return "ci_red", "CI check " + ", ".join(name for _, name in failed) + " failed"
+    if pr.get("isDraft"):
+        why = checks_refusal(pr.get("statusCheckRollup"))
+        return ("wait", f"a draft until CI is green: {why}") if why else ("undraft", "CI green on the draft")
     if open_deps:
         return "wait", "its ticket waits for " + ", ".join(f"#{n}" for n in open_deps)
     if pr.get("mergeStateStatus") == "BEHIND":
@@ -145,11 +166,21 @@ def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False
     return "merge", "reviewed clean, CI green, up to date with main, no policy change"
 
 
+def green(pr):
+    """The Reviewer may start: a ready PR whose CI is green on its head (#472:
+    it reviewed commits that then failed CI)."""
+    return pr.get("state") == "OPEN" and not pr.get("isDraft") and not checks_refusal(pr.get("statusCheckRollup"))
+
+
 def lines(path):
     return [l.strip() for l in open(path) if l.strip()]
 
 
 def main(argv):
+    if argv[1] in ("green", "ci-green"):
+        pr = json.load(open(argv[2]))
+        ok = green(pr) if argv[1] == "green" else not checks_refusal(pr.get("statusCheckRollup"))
+        sys.exit(0 if ok else 1)
     if argv[1] == "equiv":
         sha = equiv(json.load(open(argv[2])))
         if sha:

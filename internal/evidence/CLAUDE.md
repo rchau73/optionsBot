@@ -16,7 +16,11 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - every section names its source and missing days are listed, never filled;
   - the E1 reliability section (`reliability.go`, #361) adds `history.Utilisation` against the 60 % target, `idlemargin.Attribute`'s idle time by cause and `deployeffect.Analyze`'s startups (journal + `<envs>/history/deploys.tsv`), counts/hours/lots only;
   - the recorded-history coverage section (`coverage.go`, #362) runs `internal/coverage` over the week per dataset (`Inputs.Recorded`, read by `Load`; absent folder → `not recorded`),
-    labels the replay and gap `partial` under `ReplayFullCoveragePct` (90) of market hours and lists gaps over `LongGapHours` (3) in `coverage.long_gaps`, which `evidence.sh` posts and notifies.
+    labels the replay and gap `partial` under `ReplayFullCoveragePct` (90) of market hours and lists gaps over `LongGapHours` (3) in `coverage.long_gaps`, which `evidence.sh` posts and notifies;
+  - the "replay vs live" section (`replayvslive.go`, #488, `Report.RVL`) puts the Replay and Gap figures side by side (result in coin, USD and % of equity, fees, filled legs, worst day; gap in coin and % of the live result), no second replay;
+    - not comparable — missing hours listed, no gap — under 90 % market coverage, a market gap over 3 h, coverage not measured or no replay;
+    - causes only from the journal (frozen slot-hours, startup rebalance orders, closes with an `Actor`);
+    - `Inputs.Account` (`DeribitAccount(root)`, set by `cmd/evidence`) = `live` drops every amount from its Markdown and JSON (% only).
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,

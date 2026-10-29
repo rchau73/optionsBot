@@ -83,6 +83,6 @@ Nothing is added to `golden.jsonl` automatically.
 2. a golden-set case (copy the candidate into `golden.jsonl` and fill in its category, behaviour and sources);
 3. a recorded "answer was right", with the reason.
 
-**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (AGENTIC.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.
+**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (docs/agents/usage.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.
 
 **Needs legal review** (L11/L12 in `docs/product/legal-brief.md`): the review files hold question text, which is personal data. Until counsel answers on retention, they stay local, gitignored and in the 14-day backup only. Nothing of them goes to GitHub.

@@ -212,7 +212,7 @@ Scripts, shot lists and captions for the monitor's how-to videos, one task each,
 - **Screen:** the income page (exists: `/income?bot=<name>`, `components/IncomePage.jsx`).
 - **Terms:** `income over months`, `worst month`, `worst week`, `holding alone`, `exchange fees`, `buy back`, `premium`
 - **Risk sentence:** Nothing in this video changes trading. Past months say nothing about the next one, and a month can end in a loss.
-- **Source:** `frontend/README.md#income-page`
+- **Source:** `frontend/docs/menu-and-pages.md#income-page`
 
 ### Shots
 

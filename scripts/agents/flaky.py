@@ -12,6 +12,9 @@ suites; this reads their results and writes the issues to file.
         yet. issues.json: gh issue list --state all --json
         number,title,state,closedAt. env: dotenv files whose secret values are
         redacted from the failure output (deploy_issue.py's rule).
+    flaky.py title <name>                 → the issue title for a flaky test
+    flaky.py find <name> <issues.json>    → the issue that already names it, if any
+        (lib.sh note_flaky: a test a PR's checks retried and saw pass, #472)
 
 A test is flaky when it both passed and failed tonight; one that failed every
 run is not (CI catches it): it is logged, nothing is filed. An issue names a
@@ -253,6 +256,15 @@ def main(argv):
                 f.write(b)
         for line in lines:
             print(line)
+        return 0
+    if cmd == "title" and len(argv) == 3:
+        print(title(argv[2]))
+        return 0
+    if cmd == "find" and len(argv) == 4:
+        with open(argv[3], encoding="utf-8") as f:
+            n = find(argv[2], json.load(f), dt.datetime.now(dt.timezone.utc))
+        if n is not None:
+            print(n)
         return 0
     print(__doc__, file=sys.stderr)
     return 2

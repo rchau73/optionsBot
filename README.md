@@ -420,6 +420,10 @@ Sections, each naming its source:
   Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`.
   Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
 - **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
+- **Replay vs live** (#488) — the Replay and Gap figures side by side, both net of fees: the result in coin, in USD (at the replay's last recorded spot) and in % of the starting equity, the fees, the trades (filled legs, opens and closes) and the worst day (live: each day marked from the book nearest its start to the one nearest its end); then the gap in coin and as a % of the live result.
+  The week is **not comparable** — its missing market hours and gaps listed, no gap computed — when the books cover under 90 % of its hours, have a gap over 3 h, the coverage was not measured or the replay did not run.
+  Likely causes are listed only when the journal shows them: entries frozen (slot-hours), rebalance orders sent by a startup in its first 30 min, closes a person asked for from the monitor; never guessed.
+  When the environment's `.env` says `DERIBIT_ENV=live`, the section shows percentages only, in the Markdown and the `.json`.
 - **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips).
   The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
 - **Return on margin (north star)** (#278, the PRD's engine-phase north star) — net P&L in coin, net of fees, ÷ the mean initial margin used, in %, with its 30-day rate (× 30 ÷ the days the net covers — first line to last, downtime included, like the replay's whole window; not a forecast) and the measured hours.
@@ -437,7 +441,7 @@ Sections, each naming its source:
   A journal or history that cannot be read makes the part say `not measured` and why; without `deploys.tsv` the startups come from the journal alone (commits unnamed, a restart into a flat book not counted), which the section says.
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account.
-Details: AGENTIC.md "Weekly evidence report".
+Details: docs/agents/evidence.md "Weekly evidence report".
 
 ### Track record and trend
 
@@ -508,7 +512,7 @@ The thresholds are fixed in code; `-alert-count-pct`, `-alert-funnel-pts`, `-ale
 go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, mean of the base weeks 40.0 (-50 %)" and DROPS {…}
 ```
 
-**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
+**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — docs/agents/usage.md "Weekly usage report".
 
 **Assistant quality review** (#438): `cmd/usage` stays counts-only.
 The question text the assistant could not answer, or that people flagged, is reviewed separately from the monitor's private review log:
@@ -611,7 +615,7 @@ CI installs shellcheck and requires it; `make check` skips that step with a mess
 | backtest | 81 % | historical-date regression, writers, sweep, walk-forward |
 
 Regression tests for critical fixes were mutation-checked: they fail when the fix is reverted.
-CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary and the coverage floor, `govulncheck` and a Docker build on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary and the coverage floor, `govulncheck` and a Docker build on every push to `main` and nightly; a pull request runs only the jobs its files need (`scripts/agents/checkfail.py suites`, #472).
 
 ## Project layout
 

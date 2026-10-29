@@ -12,8 +12,9 @@ make check                     # gofmt + go vet + shell scripts + race tests + c
 scripts/check_cover.sh --update   # coverage floor (#330): fails when ./internal/... falls > 0.2 pt under scripts/cover_baseline.txt (lists the packages that fell vs cover_baseline_packages.txt); --update raises it — only by a person or a PR that says so
 bash scripts/check_shell.sh    # bash -n + shellcheck -x --severity=warning on scripts/**/*.sh and .githooks/* (shellcheck skipped if not installed; CI requires it); every disable needs "disable=SCxxxx # why"
 make test                      # scripts/go_tests.sh all: core tests under -race, then the report/research tests (single goroutine) without it (#429)
-scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parallel jobs, merges their coverage profiles and skips them for frontend-only PRs; a new slow single-goroutine test goes in REPORT_TESTS
+scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parallel jobs, merges their coverage profiles and on a PR runs only the jobs its files need (`scripts/agents/checkfail.py suites`, #472); a new slow single-goroutine test goes in REPORT_TESTS
 make cover                     # coverage across ./internal/... (tests live in ./tests)
+bash scripts/regen.sh [--resolve]   # rewrite the generated files (.gitattributes linguist-generated); --resolve settles a merge conflict in them (#465) — never by hand
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
 scripts/promote.sh v0.3.0      # stable → a release: a new tag goes on the newest mvp deploy (deploys.tsv, never a rollback line) 3 days old (`--commit <sha>` = another build that ran in mvp); no open sme:not-fixed; rollback = an older tag; refuses inside stable's clone (#360)
@@ -33,6 +34,7 @@ go test ./tests/... -run TestStrategy_ -v          # one group
 The research tools' commands (`cmd/stress`, `cmd/evidence`, `cmd/compare`, `cmd/dora`, …) are in the folder files of the index below.
 
 All tests live in `tests/` (package `tests`), not next to the source.
+Lists every PR adds to are kept in alphabetical order, a test failing otherwise (#465): `glossary.json` keys, `golden.jsonl` ids, the analytics plan (`plan.js`, `plan.go`, `event-plan.md`), the responsive audit's panels.
 Notable files: `tests/CLAUDE.md`.
 
 ## Environment & config

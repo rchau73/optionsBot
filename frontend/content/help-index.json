@@ -6,357 +6,350 @@
       "source": "OptionStrategy.md#the-strategy-explained",
       "title": "The strategy, explained",
       "text": "How this bot makes (and loses) money, in plain language. No code knowledge needed. For the technical side, see the README.\n\n> ## ⚠️ Disclaimer\n>\n> **This is a study project, not investment advice and not a professional trading tool.**\n>\n> optionsBot is a personal exercise in Go concurrency and software design that happens to run against a real crypto-derivatives exchange (Deribit). Every number in this document is **illustrative**: rounded, simplified and not a forecast.\n>\n> - **Selling options can lose many times the premium collected.** A single violent move can erase months of small gains.\n> - **Crypto markets are extremely volatile**, trade 24/7 and can gap through any stop-loss.\n> - **Past or backtested results do not predict future results.** The backtests in this repository run on synthetic data.\n> - The bot runs on **Deribit testnet (play money) by default**. Running it with real money is entirely your own decision and risk.\n>\n> Nothing here is a recommendation to buy or sell anything.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#contents/1",
       "source": "OptionStrategy.md#contents",
       "title": "Contents",
       "text": "1. The idea in one paragraph\n2. Options in five minutes\n3. What the bot does, step by step\n4. How a trade can end\n5. Worked examples: wins\n6. Worked examples: losses\n7. Edge cases the bot handles\n8. Risk controls\n9. Market regimes and what the bot does\n10. The parameters, in plain words\n11. Lessons and recommendations from this study\n12. Glossary",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#1-the-idea-in-one-paragraph/1",
       "source": "OptionStrategy.md#1-the-idea-in-one-paragraph",
       "title": "1. The idea in one paragraph",
       "text": "The bot acts like an **insurance seller**. It sells options that pay off only if Bitcoin (or Ether) makes a big move up *or* down within the next few weeks. Buyers pay a fee (the **premium**) up front. Most of the time the big move doesn't come, the options expire worthless or are bought back cheaply, and the bot keeps most of the premium. Sometimes the big move does come, and then the bot must pay out, often much more than it collected. The whole craft is in choosing *how far away* to sell, *when to take profits*, *when to cut losses* and *when to stand aside*.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#2-options-in-five-minutes/1",
       "source": "OptionStrategy.md#2-options-in-five-minutes",
       "title": "2. Options in five minutes",
       "text": "| Term | Plain meaning |\n|---|---|\n| **Call option** | the right to *buy* BTC at a fixed price (the **strike**) on a date. It gains value when BTC rises above the strike. |\n| **Put option** | the right to *sell* BTC at the strike. It gains value when BTC falls below the strike. |\n| **Premium** | the price of the option. The **seller** receives it and takes on the obligation. |\n| **Expiry / DTE** | the date the option ends; *DTE* = days to expiry. |\n| **Strangle** | selling one call *above* today's price and one put *below* it, same expiry. The seller profits if BTC stays between the two strikes. |\n| **Delta (Δ)** | roughly, the market's estimate of the chance the option ends up \"in the money\". A 0.16-delta option is ≈16 % likely to pay out, so ≈84 % likely to expire worthless. |\n| **Theta (Θ)** | time decay: how much value the option loses per day. Sellers *earn* theta. It speeds up in the last weeks. |\n| **Gamma (Γ)** | how fast delta changes when the price moves. Sellers are *short gamma*: losses accelerate in big moves, especially close to expiry. |\n| **Implied volatility (IV)** | how big a move the market is pricing in. Higher IV means higher premiums, and usually more risk. |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#2-options-in-five-minutes/2",
       "source": "OptionStrategy.md#2-options-in-five-minutes",
       "title": "2. Options in five minutes",
       "text": "**Why sell options at all?** Historically, the volatility priced into options has tended to be *higher* than the volatility that actually follows (the \"volatility risk premium\"). Option buyers overpay for protection on average, and a disciplined seller collects that difference. \"On average\" hides the problem: the losing periods are rare but large.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#the-payoff-of-a-short-strangle-at-expiry/1",
       "source": "OptionStrategy.md#the-payoff-of-a-short-strangle-at-expiry",
       "title": "2. Options in five minutes › The payoff of a short strangle at expiry",
       "text": "*Illustrative: BTC at $100,000. Sell 0.1 BTC of the 88k put and 0.1 BTC of the 115k call for a total of about $270. Any expiry price between 88k and 115k keeps the full $270. The break-evens are about $85,300 and $117,700. Beyond them, the loss grows by $100 for every $1,000 BTC moves. There is no cap.*",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#3-what-the-bot-does-step-by-step/1",
       "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
       "title": "3. What the bot does, step by step",
       "text": "1. **Wakes up and checks the facts.** On every start it asks Deribit what positions actually exist and rebuilds its own records from that. The exchange is always the source of truth.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#3-what-the-bot-does-step-by-step/2",
       "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
       "title": "3. What the bot does, step by step",
       "text": "2. **Fills its \"slots\".** The configuration lists slots such as *\"a strangle about 25 days out at 0.16 delta\"* and *\"one 50 days out at 0.16 delta\"* (BTC: 25 and 50 days; ETH: 30 and 50 — two slots since 2026-10-11: in the stress test two slots beat three, mostly because the third, 60-day slot found no listed expiry in its window much of the time and held the least-earning margin). For each empty slot it:\n   - picks the listed expiry closest to the target number of days (never one that is already due to be rolled);\n   - picks the call and put strikes together: both near the target delta (e.g. ≈0.16 on each side, within 0.03), choosing the pair whose deltas cancel best, so the strangle starts as close to delta-neutral as the listed strikes allow;\n   - checks each option is worth at least the minimum premium, so it doesn't take tail risk for crumbs;\n   - sizes the position so the account stays inside its margin limit, asking Deribit itself what the margin would be after the trade (section 8);\n   - places **limit** sell orders and follows them until they fill. If the market moves away it re-prices a few times; if they still don't fill it cancels and tries again later.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#3-what-the-bot-does-step-by-step/3",
       "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
       "title": "3. What the bot does, step by step",
       "text": "3. **Watches every position, every cycle** (every ~40 seconds with the shipped config) and applies the exit rules in order of urgency (section 4).\n4. **Reads market structure.** It estimates how option dealers are positioned (*gamma exposure*, GEX). When dealers are likely to *amplify* moves (negative gamma) and the trend is clearly down, it stops selling puts and closes existing ones, because that's the side under threat. Calls get the same treatment in a confirmed up-trend.\n5. **Even legs.** A strangle is only roughly direction-neutral when both legs have the same size. If they don't — one leg filled only partly, or an order filled twice — the bot buys back the extra on the larger side right away (it reduces risk, so it does this even while new entries are frozen).",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#3-what-the-bot-does-step-by-step/4",
       "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
       "title": "3. What the bot does, step by step",
       "text": "6. **Repairs.** If a strangle has lost one leg (rolled, or only one leg filled), it re-sells the missing leg at the same expiry and size, unless the market regime says that side is dangerous. A leg lost to a **stop-loss** is different: the market just moved hard against it, and selling it again at once sells into the same move. It waits until the market is calm again — no regime change pending, dealers not amplifying moves, and at least 3 days since the stop. In a two-week stress simulation (BTC −25 % and +31 %) this kept about 0.05–0.07 BTC that the immediate re-sale lost.\n7. **Keeps a decision diary.** Every order, fill, close and skipped opportunity is written down together with the market at that moment: BTC price, the volatility index (DVOL), whether the option was in or out of the money and by how much, how much open interest sat at that strike, and the dealer-positioning regime. Every minute it also writes the profit and loss of each slot, realised and open. This is what lets you judge, afterwards, which settings earn money and under which conditions.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#3-what-the-bot-does-step-by-step/5",
       "source": "OptionStrategy.md#3-what-the-bot-does-step-by-step",
       "title": "3. What the bot does, step by step",
       "text": "8. **Reports, never hedges.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file. A human decides whether to act on it.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#4-how-a-trade-can-end/1",
       "source": "OptionStrategy.md#4-how-a-trade-can-end",
       "title": "4. How a trade can end",
       "text": "The rules are checked in this order. The first one that applies wins.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#4-how-a-trade-can-end/2",
       "source": "OptionStrategy.md#4-how-a-trade-can-end",
       "title": "4. How a trade can end",
       "text": "| Priority | Rule | Trigger (shipped config) | What the bot does |\n|---|---|---|---|\n| 1 | **Stop-loss** | the leg's loss reaches **2× the premium** received for it | buys it back **at market**, immediately, ahead of all other traffic; if the book is empty (ask more than 20 % above mid) it waits up to 5 minutes for the spread, re-checking each cycle |\n| 2 | **Time roll** | **15 days** or fewer left | buys the leg back; once both legs are gone the slot reopens further out |\n| 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; repair re-sells a fresh leg at the target delta, same expiry |\n| 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; repair re-sells a fresh leg |\n| — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one and a half normal days' move (1.5σ) below the gamma flip, on two snapshots in a row | closes the threatened side at market; it is sold again only once the price is back above the flip it was shed at (plus 1.5σ), or dealer gamma has been non-negative for a day |\n| — | **Kill switch** | operator signal | cancels everything, buys back everything at market, then stops trading |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#4-how-a-trade-can-end/3",
       "source": "OptionStrategy.md#4-how-a-trade-can-end",
       "title": "4. How a trade can end",
       "text": "How each exit buys back (#239):\n\n| Exit | First | Then |\n|---|---|---|\n| Stop-loss, MM cut, kill switch | market | — |\n| Delta exit, GEX shed, leg balancing, rebalance downsize | as today: delta exit and balancing an immediate-or-cancel limit at the ask, the others at market | retried next cycle |\n| **Take-profit, delta drift, time roll** | a buy limit **resting at the mid** (rounded down a tick) for one fill window (90 s, the entries' window) | whatever is left: an immediate-or-cancel limit at the ask of that moment, retried next cycle |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#4-how-a-trade-can-end/4",
       "source": "OptionStrategy.md#4-how-a-trade-can-end",
       "title": "4. How a trade can end",
       "text": "The three non-urgent exits are not a race, so they first try to save about half the spread. Without a two-sided quote (no bid) or with no tick of room under the ask, they cross at the ask at once. While the order rests, the leg keeps every other exit: a stop-loss, a delta exit, the MM cut, a GEX shed, a manual close or the kill switch cancels the resting order, books what it filled, and runs at once on what is left. If the rule no longer applies when the window ends (the price came back), nothing is bought at the ask. The journal marks the close's `exit_step` (`mid` or `ask`) and its detail gives the price and the bid / mid / ask at the trigger. Stop-losses do not wait for a good price.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#5-worked-examples-wins/1",
       "source": "OptionStrategy.md#5-worked-examples-wins",
       "title": "5. Worked examples: wins",
       "text": "All examples: BTC starts at **$100,000**, size **0.1 BTC per leg**. On Deribit, BTC options are priced in BTC; dollar figures use the BTC price at the time and are rounded.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#win-a-calm-market-take-profit/1",
       "source": "OptionStrategy.md#win-a-calm-market-take-profit",
       "title": "5. Worked examples: wins › Win A: calm market, take-profit",
       "text": "- **Day 0:** sell the 45-day 115k call at 0.012 BTC and the 88k put at 0.015 BTC. Premium = (0.012 + 0.015) × 0.1 = **0.0027 BTC ≈ $270**.\n- **Day 18:** BTC drifts to $102,000; time decay has done its work. Call worth 0.007 (42 % captured, not yet), put 0.007. The put has captured (0.015 − 0.007) / 0.015 = 53 % ≥ 50 %, so the **take-profit fires**. It's bought back for 0.0007 BTC and books **+0.0008 BTC ≈ +$82**.\n- The bot then **re-sells a fresh put** at ≈0.16 delta on the same expiry, collecting new premium. The call keeps decaying until its own rule fires.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#win-b-time-roll/1",
       "source": "OptionStrategy.md#win-b-time-roll",
       "title": "5. Worked examples: wins › Win B: time roll",
       "text": "- **Day 30** (15 days left): BTC at $97,000. Call 0.002, put 0.006. The **time roll** closes both legs, costing (0.002 + 0.006) × 0.1 = 0.0008 BTC. Net on the strangle: 0.0027 − 0.0008 = **+0.0019 BTC ≈ +$185**.\n- The slot is free again, so a new 45-day strangle is opened at today's prices. The bot never holds into the final, most dangerous weeks.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#win-c-the-far-leg-goes-quiet/1",
       "source": "OptionStrategy.md#win-c-the-far-leg-goes-quiet",
       "title": "5. Worked examples: wins › Win C: the far leg goes quiet",
       "text": "- BTC rallies to $108,000. The put drifts far out of the money; its delta falls to 0.07. **Delta drift** closes it for almost nothing and re-sells a new put at 0.16 delta, closer to today's price, collecting fresh premium. The book stays balanced instead of becoming a lone short call.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#6-worked-examples-losses/1",
       "source": "OptionStrategy.md#6-worked-examples-losses",
       "title": "6. Worked examples: losses",
       "text": "6. Worked examples: losses",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#loss-a-sharp-drop-stop-loss/1",
       "source": "OptionStrategy.md#loss-a-sharp-drop-stop-loss",
       "title": "6. Worked examples: losses › Loss A: sharp drop, stop-loss",
       "text": "- **Day 0:** same strangle (put 88k sold at 0.015 BTC).\n- **Day 6:** BTC falls 18 % to $82,000 and IV jumps. The put is now worth 0.045 BTC: **3× what was received**, a loss of 2× the premium.\n- **Stop-loss fires:** buy back 0.1 put at market ≈ 0.045 → loss on the put = (0.045 − 0.015) × 0.1 = **−0.0030 BTC ≈ −$246**. The call has collapsed to ~0.002 (83 % captured), so its take-profit closes it for **+0.0010 BTC**.\n- **Net ≈ −0.0020 BTC ≈ −$164.** That one move erased the profit of about two calm cycles.\n- *Crypto twist:* the account's collateral is BTC, so the 18 % drop *also* shrank the account's dollar value. A short put on an inverse (BTC-settled) option loses twice in a crash.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#loss-b-gap-through-the-stop/1",
       "source": "OptionStrategy.md#loss-b-gap-through-the-stop",
       "title": "6. Worked examples: losses › Loss B: gap through the stop",
       "text": "- A weekend headline sends BTC from $95,000 to $78,000 in an hour. By the time the stop-loss order fills, the put is at 0.06 instead of 0.045.\n- Loss on the put = (0.06 − 0.015) × 0.1 = **−0.0045 BTC**, which is 3× the premium, not 2×. **Stop-loss levels are triggers, not guaranteed prices.**",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#loss-c-whipsaw/1",
       "source": "OptionStrategy.md#loss-c-whipsaw",
       "title": "6. Worked examples: losses › Loss C: whipsaw",
       "text": "- In a choppy range BTC drops, the regime turns negative, and puts are closed at a loss. Then BTC rebounds, puts are re-sold lower, and BTC drops again.\n- Each step is small, but together they bleed. This is why regime changes use a hysteresis band and require a *confirmed* trend before acting.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#loss-d-the-slow-grind/1",
       "source": "OptionStrategy.md#loss-d-the-slow-grind",
       "title": "6. Worked examples: losses › Loss D: the slow grind",
       "text": "- BTC trends steadily up 30 % over two months. The call side keeps getting stopped or rolled at a loss, and re-sold closer to the price each time.\n- No single loss is large, but the strategy has \"sold the rally\" again and again. Short strangles do best in ranges and worst in persistent trends.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#7-edge-cases-the-bot-handles/1",
       "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
       "title": "7. Edge cases the bot handles",
       "text": "| Situation | What happens |\n|---|---|\n| **Only one leg fills** before the entry times out | the filled leg is kept and tracked (it is a real short on the exchange) and the other is cancelled; repair later sells the missing leg |\n| **Partial fill** (e.g. 0.1 of 0.3 BTC) | the bot records exactly what filled, never the amount it asked for |\n| **A close only partly fills** (thin market) | the remainder stays tracked, with its stop-loss, and the rule fires again next cycle |\n| **A roll's price-capped buy doesn't fill** | nothing is reopened; the position stays protected and it retries |\n| **Internet / exchange drops** | in-flight requests fail fast; the bot reconnects and re-subscribes; if it cannot, it shuts down so the supervisor restarts it, and on start it rebuilds positions from the exchange |\n| **Restart with orders resting** | it cancels this currency's stale orders and reloads the positions |\n| **Exchange overloaded** | non-urgent traffic pauses (circuit breaker); stop-losses and the kill switch still go through |\n| **Order rejected for a too-low price** | it retries once at the exchange's stated minimum |\n| **No bid on testnet** | it prices from the ask / mark price instead of zero |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#7-edge-cases-the-bot-handles/2",
       "source": "OptionStrategy.md#7-edge-cases-the-bot-handles",
       "title": "7. Edge cases the bot handles",
       "text": "| Situation | What happens |\n|---|---|\n| **API key lacks permission** | trading pauses for a minute at a time instead of spamming errors |\n| **Kill switch** | resting orders are cancelled first, every position is bought back at market (retrying partial fills), then the bot idles. It does not exit, because Docker would restart it straight back into trading |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#8-risk-controls/1",
       "source": "OptionStrategy.md#8-risk-controls",
       "title": "8. Risk controls",
       "text": "- **Margin limit that follows the market:** the share of the account used as initial margin depends on volatility. When DVOL is high (rich premium, fear already priced in) up to 50 % is allowed; in the middle, 35 %; when it is low (cheap premium, often the calm before a big move), 20 %. When dealer positioning amplifies moves (negative gamma), 20 % applies whatever DVOL says. Every number is Deribit's own margin calculation, including a simulation of each new trade before it is placed.\n- **No knee-jerk reactions:** a change of volatility band or gamma regime must hold for two daily closes before the bot resizes anything. Until then it simply stops opening new positions; if the change reverts (a one-day spike), it carries on as before.\n- **Distance to liquidation:** if maintenance margin reaches 35 % of the account's margin balance (Deribit liquidates at 100 %), positions are bought back at once, whatever else is going on.\n- **Stop-loss on every leg:** 2× premium by default, executed at market with top priority; while the book is empty (ask more than 20 % above mid, a flash wick) it waits up to 5 minutes for the spread to normalise, re-checking each cycle.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#8-risk-controls/2",
       "source": "OptionStrategy.md#8-risk-controls",
       "title": "8. Risk controls",
       "text": "- **Time exit:** nothing is held into the last ~15 days, when gamma risk is highest.\n- **Regime filter:** sheds the threatened side when dealer positioning amplifies moves.\n- **Premium floor:** refuses to sell options too cheap to justify their risk.\n- **Validation:** nonsensical settings (deltas ≥ 0.5, slots inside the roll window, margin limits outside 0–100 %, no stop-loss) stop the bot at startup.\n- **Testnet by default; live only on explicit opt-in.**\n- **What is *not* covered:** the strangle has no long \"wings\", and the bot does not hedge automatically, so in a gap the loss is not capped. Covered alternatives, such as iron condors and delta hedging with perpetual futures, are the natural next research step.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/1",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "Every rule that opens, closes or holds a position, by market state. **This table is kept up to date with every rule change**; if the code and the table disagree, the code is wrong or the table is late, and either is a bug.\n\n**The states** (more than one can apply at once; the strictest cell wins):",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/2",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **Normal:** the confirmed volatility band and gamma regime are unchanged, and the regime is not negative.\n- **Change pending (freeze):** the DVOL band or the gamma regime changed but has not yet held for 2 daily closes (`iv_band_confirm_days`), **and confirming it would lower the margin limit**. New risk is frozen until it is confirmed, or until it reverts. A change that cannot lower the limit only shows as pending, because the current, stricter limit applies until it confirms: a DVOL band rise, a DVOL band change under a confirmed negative regime (the limit is pinned to the lowest band anyway), or the regime turning positive. The regime turning **negative** always freezes, even when the limit stays: it is a danger signal on its own (2026-10-15: ETH sat frozen for three days, flat, on a DVOL change that could not lift its pinned 20 % limit; 2026-10-16: ETH frozen about 8 h of 12 while the live regime flapped to positive, a change that could only lift it — #105).",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/3",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **Confirmed negative regime:** the gamma regime has been negative for 2 daily closes. The margin limit drops to the lowest band (20 %), and in a trend the side the price runs toward is not sold: no new puts in a down-trend, no new calls in an up-trend (dealers short gamma push the price further the way it is going). With no trend both sides are sold. When the trend turns toward a side, every entry, repair or top-up still working on that side is cancelled at once (`regime_side`; what filled before the cancel is kept). The SMA trend reads the price against SMA9 with a band of 0.10 daily σ (DVOL ÷ √365, about 0.2–0.3 % of the price) around it: the price changes side of SMA9 only once it is past the band, so spot sitting on SMA9 no longer flips the trend every 40-second cycle (#243: on 2026-10-20 ETH logged 31 trend changes, and a put repair sent in a one-cycle blip filled 100 lots in a bear trend). Measured on a week of minute snapshots, the band cut the trend changes 83–92 % and still followed every lasting change within 8–12 minutes.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/4",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **GEX shedding a side:** a live 60-second signal. The regime is negative, spot is more than 1 daily σ (DVOL ÷ √365) below the gamma flip, and there is a trend: puts are shed in a down-trend, calls in an up-trend. The close itself waits for the signal to hold on 2 snapshots in a row.\n- **MM limit:** maintenance margin is at or above 35 % of the margin balance (`max_mm_pct`).",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/5",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **Direction (trend vs bias):** \"the trend\" above is the SMA trend of daily closes (`gex_direction: sma`, what the bots trade on). The bot also computes the GEX **bias** — spot more than 1.5σ above the flip in a negative regime is \"bias up\", more than 1.5σ below is \"bias down\", otherwise neutral — and records both, with what each would shed, so they can be compared on live data. With `gex_direction: bias` the bias replaces the trend in every rule of this table, a rally through the flip sheds calls, and a shed leg is re-sold 24 h after the shed once the bias has left its side. The bias counts only when it points the same way against the live flip and against the median flip of the last hour: in the hours before a daily expiry the flip can jump far from spot for a few minutes, and on 2026-10-12 and 10-14 such a jump read as a rally and shed every BTC call while the price stood still. That hour is kept in memory, so after a restart the bias sheds nothing until it has a full hour of flips behind it (journaled `bias_warmup`; new sales of the side it points to still wait): on 2026-10-14 a jump ten minutes after a restart filled the short window by itself and shed BTC's calls.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/6",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "A real move is shed up to an hour late; stop-losses and delta exits protect the legs meanwhile. Stress-tested on 2026-10-12 the bias shed 3–5× as often and returned 16–139 % less than the trend; BTC trades on it as a live trial since 2026-10-12, ETH stays on the trend as the control.\n- **No fresh GEX data:** the first minute after a start (before the first GEX snapshot), or the last snapshot is more than 5 minutes old. The regime and trend are unknown, so the bot cannot tell which side is safe to sell.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/7",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **New strangle in an empty slot** (entry) | ✅ sized to the DVOL band's IM limit | ⛔ and a working entry is cancelled | ✅ at the lowest IM limit (20 %); in a trend the threatened side is not sold and the other leg opens alone (`regime_side`); a working entry of that side is cancelled | the shed side is not sold; the other leg opens alone | ⛔ and a working entry is cancelled |\n| **Top-up toward the IM limit** (`rebalance_upsize`) | ✅ when the confirmed limit changes, at startup and on retry (15 min; from the 3rd rebalance pass in a row whose top-ups all timed out with nothing filled 30, then 60 min; top-ups the bot cancels itself don't count, a held top-up retries at 15 min) | ⛔ and a working top-up is cancelled | ✅ up to the lowest IM limit (20 %), both sides or none: in a trend it is held (`regime_side`) and retried every 15 min; a working top-up is cancelled when the trend turns | the shed side is not sold | ⛔ and a working top-up is cancelled |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/8",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **Order size vs the market** (entries and top-ups) | each leg's order is at most 10 % of its strike's mainnet open interest, both legs at the smaller size (`liquidity_cap`, journaled with the open interest used for every capped order); a strike whose 10 % is under one lot gets no order and the slot stays empty or short. Repairs, exits, stops and the MM cut are not capped | same, when new risk may be sold | same | same | same |\n| **Downsize to the IM limit** (`rebalance_downsize`) | ✅ when the confirmed limit falls below the IM in use | ⛔ waits for confirmation | ✅ | ✅ | the MM cut acts instead |\n| **First start of a brand-new bot** (no regime history) | ✅ the live gamma regime is taken as confirmed (`regime_seeded`): the bot trades at once under that market state's rules, instead of freezing for 2 daily closes. Restarts keep the confirmation | — | ✅ at once if the live regime is negative | same as Normal | same as Normal |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/9",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **Slots rebuilt at a restart** | each strangle goes back to the slot the journal says opened it; without a record, never to a slot whose window it is beyond (DTE > target + 10) and never one expiry in two slots. A slot with no strangle of its own stays vacant (the `reconciled` lines say why) and enters only an expiry in its window, else waits (`no_expiry`) | same | same | same | same |\n| **Rebalance right after a restart** | ⛔ while IM is within ±1.5 pp of the limit (`rebalance_in_band`: a deploy does not trade on market drift); outside it, top-up or downsize as above. A later confirmed limit change is met exactly | ⛔ waits for confirmation | same as Normal | same as Normal | the MM cut acts at once, band or not |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/10",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **IM over the limit with no limit change** (a transfer out, a price move: IM > limit + 1.5 pp) | 🔔 alert only, no trade: journaled once `im_over_limit` (IM, limit, margin balance now and at the last rebalance) and shown in the monitor beside the Rebalance button until IM is back at or under the limit (`im_over_limit_cleared`). A person decides with the Rebalance dry run; entries and top-ups have no headroom meanwhile | same alert | same alert | same alert | same alert; the MM cut acts at once as always |\n| **Approved margin unused** (entries allowed, IM under 60 % of the limit for 6 h with no data gap over 15 min) | 🔔 alert only, no trade: journaled once `im_under_use` (IM, limit, share of the limit used, minutes and the cause: the empty slot's last skip reason, or a top-up waiting, a slot sized down by the liquidity cap, every slot full) until IM is back at 60 % of the limit or more (`im_under_use_cleared`). The bot does not act on it: no rule is relaxed, nothing is sold | — (entries not allowed: no alert, an open one ends) | same alert | same alert | — |\n| **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/11",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **Delta exit** (\\|Δ\\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |\n| **Rolls** (take-profit, delta drift, DTE) | ✅ · rest at the mid for 90 s, then the rest at the ask; any urgent exit cancels the resting order first | ✅ | ✅ | ✅ | ✅ |\n| **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots | ✅ |\n| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`; a working repair of that side is cancelled when the trend turns) | ⛔ for the shed side | ⛔ |\n| **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |\n| **Top-up while a slot's leg is held after a stop-loss or manual close** | ⛔ that slot's top-up waits until the repair may run (`repair_held`: top-up held); a strangle missing a leg is never topped up, repair completes it | same | same | same | same |\n| **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1.5σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/12",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "| What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |\n|---|---|---|---|---|---|\n| **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |\n| **Entry and top-up at the same time** | one at a time: an entry waits while a top-up works (`entry_wait_topup`), a due top-up pass waits while an entry works (`rebalance_wait_entry`) — each sizes against the book without the other's orders | same | same | same | same |\n| **While a stop waits for the spread** | no entries, top-ups or repairs until it fires or is dropped | same | same | same | same |\n| **Without fresh GEX data** (startup, stale snapshot) | no entries (`gex_wait`), top-ups or repairs; exits, balancing and the MM cut run | same | same | same | same |\n| **MM cut** (reduce every short at market) | — | — | — | — | ✅ |\n| **Churn breaker** (slot paused after 3 buy-back/re-sell round trips in 60 min) | ✅ | ✅ | ✅ | ✅ | ✅ |\n| **Manual close from the monitor** (you, at market) | ⛔ (button gray) | ⛔ | ✅ only the side the trend threatens (the one the bot no longer sells); then held like a stop-loss | ⛔ unless that side is also regime-blocked | ⛔ |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/13",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "Notes:\n\n- **Stops and rolls are not blocked by any state.** Whatever the state, a leg that hits its stop, its delta exit or a roll rule is closed; only *re-selling* waits.\n- **The one wait: an empty book.** When a stop triggers but the option's ask is more than 20 % above its mid, market makers have pulled their quotes, as in a flash wick, and a market buy would pay a panic price. The stop waits and is re-checked every cycle: once the spread is normal it fires if it still applies, or the leg is kept if the price came back under the stop. It never waits more than 5 minutes (`stop_spread_max_wait_minutes`), then it buys at market. The MM cut never waits.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/14",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **Top-ups back off on a book that does not trade.** A top-up that times out short is retried after 15 minutes. When 3 top-ups in a row filled nothing, nobody is trading at our price, so the wait doubles: 30 minutes, then 60 at most (2026-10-14 BTC: the same top-up was re-sent 6 times in 1.5 h, 12 orders, zero fills). A top-up that sold both its call and its put, or a confirmed limit change, starts again from 15 minutes. A top-up where only one side sold (usually the put; the other side is then sold by repair at the bid) counts as not filled, so it does not reset the wait (#98: 4 of 6 filled top-ups from 2026-10-22 to 10-28 sold the put only). Stops, exits and the MM cut never wait on it.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/15",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **New risk is sized one step at a time.** Deribit's margin counts working orders, but the simulator the bot sizes with sees only positions. On 2026-10-15 a BTC entry and a top-up were sized in the same minutes, each ignoring the other: IM reached 25.7 % of a 20 % limit and the next pass bought the excess back, paying spread and fees twice. Now an entry waits for a working top-up and a top-up pass for a working entry — at most one order timeout (~2 min). Stops, exits, repairs and the MM cut never wait on it.\n- **No order bigger than the market.** Margin alone said how much to sell, so on a large account an order could exceed a strike's whole market: on 2026-10-15 ETH offered 1,454 contracts of a call whose mainnet open interest was 164, filled 152 and sat one-legged at 1.9 % of a 20 % margin limit. Now each new leg is at most 10 % of its strike's mainnet open interest. A slot the cap leaves short of its share stays short: the rest is not re-sent (#103).\n- **\"Held\" legs leave the strangle one-sided.** For example, a strangle whose put was stopped out keeps its call until the put can be re-sold.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/16",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **The freeze stops new risk, not the structure.** A rolled leg is still re-sold during a freeze, because it restores a position the bot already held. A stopped leg is not.\n- **Why not stop selling altogether in a negative regime?** Negative regimes are when premium is richest. In the stress test (19 paths, net of fees, vs holding), blocking every entry and top-up cost ETH 21–27 % of the result; blocking only the threatened side was +0.4–1.8 % on ETH and +20–24 % on BTC (2026-10-09).\n- **Kill switch:** it cancels every order, books whatever a working entry had already filled, then buys back every short the *exchange* reports (not only those in the bot's book) and checks the account is flat.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does/17",
       "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
       "title": "9. Market regimes and what the bot does",
       "text": "- **Restarts:** a side closed by a stop-loss, delta exit, manual close or MM cut stays held across a restart: the bot rebuilds those holds from its journal at startup, with the original time, so the 72 h cooldown keeps running. A side shed by GEX is rebuilt the same way, with the flip and buffer it was shed at, so its repair waits as it would have (before 2026-10-14 a restart forgot it: a deploy 20 minutes after a shed re-sold BTC's put a day early). The freeze and regime conditions are rebuilt from the daily closes.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#10-the-parameters-in-plain-words/1",
       "source": "OptionStrategy.md#10-the-parameters-in-plain-words",
       "title": "10. The parameters, in plain words",
       "text": "| Setting | Shipped value | Plain meaning | Turn it up → | Turn it down → |\n|---|---|---|---|---|\n| Slots (`dte_delta_matrix`) | BTC 25 d and 50 d, ETH 30 d and 50 d, all at 0.16 | which strangles to keep open | more positions | fewer positions |\n| Entry delta | 0.16 | how far from the price to sell | closer: more premium, more risk | further: less premium, safer |\n| `rollout_dte` | 15 days | when to stop holding | exits earlier, less gamma risk | holds longer, more decay, more risk |\n| `roi_take_profit` | 50 % | how much profit is \"enough\" | holds longer for more | banks sooner, re-sells more often |\n| `stop_loss_multiplier` | 2× | how much loss to tolerate | fewer stop-outs, bigger losses | more stop-outs, smaller losses |\n| `delta_exit_threshold` | 0.30 | how far a move may go against a side before it is closed early (and paused like a stop) | fewer early exits, more 2× stops | more early exits, smaller losses each |\n| `max_leg_size_multiple` | 2× | biggest new position vs a normal one | bigger positions when margin allows | smaller, steadier positions |\n| `repair_cooldown_hours` | 72 h | how long a stopped-out side stays empty | longer pause after a loss | re-enters sooner |",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#10-the-parameters-in-plain-words/2",
       "source": "OptionStrategy.md#10-the-parameters-in-plain-words",
       "title": "10. The parameters, in plain words",
       "text": "| Setting | Shipped value | Plain meaning | Turn it up → | Turn it down → |\n|---|---|---|---|---|\n| `delta_drift_threshold` | 0.10 | when a far leg is \"dead\" | refreshes legs sooner | lets legs drift further |\n| `iv_margin_bands` | 50 / 35 / 20 % by DVOL band | how much of the account is at work, by market calm | larger positions | smaller positions |\n| `max_mm_pct` | 35 % | safety distance from liquidation | closer to liquidation | earlier forced reductions |\n| `min_premium` | 0.001 BTC / ETH | minimum price worth selling, in the coin | fewer, richer trades | more, cheaper trades |\n\nOnly these settings are in the config files. The rest — how long a new regime must last before resizing (2 daily closes), how orders are worked, the GEX confirmation counts and timers, the stop's empty-book wait, the churn breaker, expiry choice — are fixed in code since 2026-10-14 (README \"Configuration\" lists them), so there are fewer dials to manage; each is still re-tested in the stress tool before it changes.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study/1",
       "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
       "title": "11. Lessons and recommendations from this study",
-      "text": "These are observations from building and reviewing the system, not trading advice.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "text": "These are observations from building and reviewing the system, not trading advice.\n\n1. **The exit plumbing matters as much as the entry idea.** The code review behind this version found several ways a \"good\" strategy could quietly turn dangerous: duplicate positions after rolls, legs dropped from tracking after partial fills, a kill switch that restarted itself into the market. Every one of them was in order handling, not in the trading idea.\n2. **Test the backtest.** The backtest once used the computer's clock instead of the simulated date and silently made zero trades. Results that look \"fine\" can be meaningless. Check trade counts and sanity-check against intuition.\n3. **Prefer defined risk.** An iron condor (strangle + cheaper far options bought as insurance) gives up some premium to cap the worst case. For anything beyond a study, that trade-off is usually worth it.\n4. **Size for the bad month, not the average month.** A strategy that wins 85 % of the time can still lose a year's profit in one week.",
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study/2",
       "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
       "title": "11. Lessons and recommendations from this study",
-      "text": "1. **The exit plumbing matters as much as the entry idea.** The code review behind this version found several ways a \"good\" strategy could quietly turn dangerous: duplicate positions after rolls, legs dropped from tracking after partial fills, a kill switch that restarted itself into the market. Every one of them was in order handling, not in the trading idea.\n2. **Test the backtest.** The backtest once used the computer's clock instead of the simulated date and silently made zero trades. Results that look \"fine\" can be meaningless. Check trade counts and sanity-check against intuition.\n3. **Prefer defined risk.** An iron condor (strangle + cheaper far options bought as insurance) gives up some premium to cap the worst case. For anything beyond a study, that trade-off is usually worth it.\n4. **Size for the bad month, not the average month.** A strategy that wins 85 % of the time can still lose a year's profit in one week.\n5. **Use testnet to prove mechanics, not profits.** Testnet prices are thin and sometimes synthetic; it's great for checking that fills, rolls, stops and the kill switch behave, and useless for judging returns.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
-    },
-    {
-      "id": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study/3",
-      "source": "OptionStrategy.md#11-lessons-and-recommendations-from-this-study",
-      "title": "11. Lessons and recommendations from this study",
-      "text": "6. **Change one thing at a time and write down why.** Tune a parameter, record the reason and the date, and compare before/after. Otherwise you can't tell whether the change or the market made the difference.",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "text": "5. **Use testnet to prove mechanics, not profits.** Testnet prices are thin and sometimes synthetic; it's great for checking that fills, rolls, stops and the kill switch behave, and useless for judging returns. What evidence exists for returns: the weekly evidence report replays each bot's week on recorded mainnet books and, in its \"replay vs live\" section, shows how far that replay is from what the journal shows (in coin and as a % of the live result, net of fees), with the causes the journal records. A week the recorder did not fully cover is listed as not comparable rather than estimated, and a live account shows percentages only.\n6. **Change one thing at a time and write down why.** Tune a parameter, record the reason and the date, and compare before/after. Otherwise you can't tell whether the change or the market made the difference.",
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "OptionStrategy.md#12-glossary/1",
       "source": "OptionStrategy.md#12-glossary",
       "title": "12. Glossary",
       "text": "| Term | Meaning |\n|---|---|\n| **ATM / OTM / ITM** | at / out of / in the money: strike at, away from, or past the current price |\n| **Break-even** | the price at expiry where the trade neither gains nor loses |\n| **DVOL** | Deribit's 30-day implied-volatility index for BTC/ETH |\n| **IV percentile** | where today's DVOL sits versus the past year (0 = lowest, 100 = highest) |\n| **GEX / gamma flip** | estimated dealer gamma exposure; the price where it changes sign. Below the flip, dealer hedging tends to amplify moves |\n| **Inverse option** | an option priced and settled in the coin (BTC), not in dollars |\n| **Portfolio Margin** | the exchange's margin model that nets risk across all positions |\n| **Perpetual** | a futures contract without expiry, often used to hedge delta |\n| **Iron condor** | a strangle plus cheaper, further-out options bought to cap the maximum loss |\n\n<sub>Educational study of an automated trading system — not investment advice. Options trading can lose more than the premium collected; crypto markets are highly volatile.</sub>",
-      "blob": "165e25d5cbe0d44c9192c9f961659ce1c7fa482b"
+      "blob": "cd84f949cd8aeed95131c7afd18a61bf6167c060"
     },
     {
       "id": "parameters.md#tunable-parameters/1",
@@ -755,1071 +748,1071 @@
       "source": "glossary:action funnel",
       "title": "action funnel",
       "text": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.\n\nAnalytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.\n\nA confirmed step sends real orders to a bot; the card only counts them.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:actions/1",
       "source": "glossary:actions",
       "title": "actions",
       "text": "What an admin can do to a person: reset the password, send a reset link, sign them out everywhere, or delete them.\n\nUsers page (admins only). Reset password sets a new one and signs the person out on every browser. Reset link makes a link, valid once for 30 minutes, with which the person chooses their own new password. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.\n\nNone on trading: none of these changes a position or an order.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:active people/1",
       "source": "glossary:active people",
       "title": "active people",
       "text": "How many different people used the monitor in a period. Each person counts once, however often they came.\n\nAnalytics page (admins only). The weekly usage report counts each person once per period, shown for this week, the last 30 days and by role. It keeps a scrambled code per person, never a name or email, and shows counts only. Only people who agreed to analytics are counted.\n\nA count of people, not of money: it says nothing about how the bots trade.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:age/1",
       "source": "glossary:age",
       "title": "age",
       "text": "How long an order has been working.\n\nThe time since the order was placed. The bot re-prices it as it ages and cancels it at the fill timeout.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:asset/1",
       "source": "glossary:asset",
       "title": "asset",
       "text": "A coin held in the account (e.g. BTC, ETH, USDC).\n\nThe account can hold several coins. Each one counts toward the margin balance at its value.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:available/1",
       "source": "glossary:available",
       "title": "available",
       "text": "Money free to back new positions or orders.\n\nAvailable is the margin balance minus the initial margin already in use.\n\nLess available means less room for new positions.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:avg loss/1",
       "source": "glossary:avg loss",
       "title": "avg loss",
       "text": "The average loss of the closes that lost money.\n\nThe mean result, after fees, of losing closes, in dollars. For option sellers it is often several times the average win.\n\nA large average loss can erase many small wins.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:avg win/1",
       "source": "glossary:avg win",
       "title": "avg win",
       "text": "The average profit of the closes that made money.\n\nThe mean result, after fees, of winning closes, in dollars.\n\nCompare it with the average loss.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest/1",
       "source": "glossary:backtest",
       "title": "backtest",
       "text": "Settings for the backtest, which replays past prices; they do not affect live trading.\n\nThe backtest runs the bot's rules on past data to study them. These settings only say how its simulated fills and costs work. Past results do not predict future ones.\n\nNone on the live account.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest.commission_per_contract/1",
       "source": "glossary:backtest.commission_per_contract",
       "title": "backtest.commission_per_contract",
       "text": "Backtest setting: the exchange fee rate per contract, as a fraction of the coin price (0.0003 = 0.03 %).\n\nBacktest setting: each simulated fill pays this fraction of the coin price per contract, capped at 12.5 % of the option price, like Deribit's fee.\n\nNone on the live account; higher fees lower backtest results.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest.fill_model/1",
       "source": "glossary:backtest.fill_model",
       "title": "backtest.fill_model",
       "text": "Backtest setting: the fill model to simulate (mid, bid_ask or slippage); the backtest does not read it today.\n\nBacktest setting kept in the files for a choice of fill model. Today the backtest fills market orders at the middle price moved by slippage_pct, and limit orders at their limit price, whatever this says.\n\nNone on the live account.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest.limit_fill_rule/1",
       "source": "glossary:backtest.limit_fill_rule",
       "title": "backtest.limit_fill_rule",
       "text": "Backtest setting: when a simulated limit order fills (next_tick).\n\nBacktest setting: next_tick fills a limit order on the next price record that reaches its price.\n\nNone on the live account.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest.margin_call_liquidation/1",
       "source": "glossary:backtest.margin_call_liquidation",
       "title": "backtest.margin_call_liquidation",
       "text": "Backtest setting: meant to close every simulated position when margin runs out; the backtest does not read it today.\n\nBacktest setting kept in the files. It is meant to make the simulation close all positions when the account would be liquidated. The current backtest does not use it.\n\nNone on the live account.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:backtest.slippage_pct/1",
       "source": "glossary:backtest.slippage_pct",
       "title": "backtest.slippage_pct",
       "text": "Backtest setting: how much worse than the middle price a simulated market order fills, as a fraction.\n\nBacktest setting: a simulated market buy fills this fraction above the middle price, a sale this fraction below it. 0.001 is 0.1 %.\n\nNone on the live account; more slippage gives more cautious backtest results.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:balance/1",
       "source": "glossary:balance",
       "title": "balance",
       "text": "How much of a coin the account holds, before open positions are valued.\n\nThe balance is the coin held in the account. Equity adds the value of open positions to it.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:balance legs/1",
       "source": "glossary:balance legs",
       "title": "balance legs",
       "text": "Buying back the extra size of the larger leg so the call and put match.\n\nA strangle is balanced only when its call and put are the same size. If one leg is larger, for example after a partial fill, the bot buys back the difference on the larger side. It does this even during a freeze, because it lowers risk.\n\nIt removes one-sided risk and the income of the extra size.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:bias/1",
       "source": "glossary:bias",
       "title": "bias",
       "text": "The direction read from spot against the gamma flip: up, down or neutral.\n\nThe bias is another way to read direction. In a negative regime, spot more than the buffer above the gamma flip is 'bias up', more than the buffer below is 'bias down', otherwise neutral. The bot records both bias and trend and uses the one its settings name (gex_direction).\n\nUnder the bias, a rally through the flip sheds calls; it has shed more often than the trend in tests.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:bid / ask/1",
       "source": "glossary:bid / ask",
       "title": "bid / ask",
       "text": "The best price a buyer offers (bid) and the best price a seller asks (ask).\n\nThe bid is the highest price someone will pay now; the ask is the lowest price someone will sell for. The gap between them is the spread. The bot sells near the ask and, for most exits, buys back between the two or at the ask.\n\nA wide spread costs more on every trade, which lowers net income.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:bot/1",
       "source": "glossary:bot",
       "title": "bot",
       "text": "One running copy of the strategy, trading one coin (BTC or ETH).\n\nEach bot trades one coin on its own Deribit account and reports to the monitor. 'Bots online' counts the bots that answered recently.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:buy back/1",
       "source": "glossary:buy back",
       "title": "buy back",
       "text": "Buying an option the bot sold, to close it.\n\nTo end a sold option before expiry, the bot buys the same option back. The difference between the premium received and the buy-back price, after fees, is the result.\n\nThe cheaper the buy-back, the more of the premium is kept.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:call/1",
       "source": "glossary:call",
       "title": "call",
       "text": "An option that pays its buyer when the coin rises above the strike price.\n\nA call option gives its buyer the right to buy the coin at the strike price. It gains value when the coin rises above the strike. The bot sells calls: it keeps the premium if the coin stays below the strike, and loses when the coin rises far above it.\n\nA sold call earns its premium in a flat or falling market and loses money in a strong rise.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:cancelled/1",
       "source": "glossary:cancelled",
       "title": "cancelled",
       "text": "An order taken off the exchange before it filled, in whole or in part.\n\nThe bot cancels orders that did not fill in time, and orders a freeze or a shed makes unwanted. Whatever filled before the cancel is kept and tracked.\n\nNone for the unfilled part.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:change failure rate/1",
       "source": "glossary:change failure rate",
       "title": "change failure rate",
       "text": "The share of deploys that failed: rolled back, a deploy-failed issue, a revert or a bug a PR caused.\n\nAnalytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers: failed deploys of all attempts in the week. Each failure counts once. NO FAILURE means nothing failed and there are too few deploys for a band yet.\n\nA failed deploy on mvp is caught on the test account; on stable it reaches production, so both are shown apart.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:churn pause/1",
       "source": "glossary:churn pause",
       "title": "churn pause",
       "text": "A slot that buys back and re-sells 3 times within 60 minutes is paused for an hour.\n\nIf a slot keeps buying back and selling again, something is wrong and every round trip pays fees and the spread. After 3 round trips in 60 minutes, the slot stops opening, repairing and resizing for an hour. Exits still run.\n\nIt stops fees and spread from eating the income in a loop.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:close/1",
       "source": "glossary:close",
       "title": "close",
       "text": "Buying back a sold option, which ends that leg's position.\n\nThe bot closes a leg by buying it back. The reason is shown with the numbers that fired it: take-profit, roll, stop-loss, delta exit, shed, manual close and others. Realized P&L is booked at each close, after fees.\n\nA close turns open P&L into realized P&L and ends that leg's risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:created/1",
       "source": "glossary:created",
       "title": "created",
       "text": "When the person was added to the monitor.\n\nUsers page (admins only). The date and time the person's account was created, by an admin or, for the first admin, at the monitor's first start.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:daily swing/1",
       "source": "glossary:daily swing",
       "title": "daily swing",
       "text": "How far the coin typically moves in one day, from DVOL: DVOL ÷ √365.\n\nDVOL is the market's expected yearly swing of the coin. Divided by √365 it gives a typical day's swing, one daily standard deviation. With DVOL 50 that is about 2.6 %. The worst-case page shows days of 2 and 3 typical swings each way.\n\nBigger swings cost a short-option book money in either direction; quiet days pay it a little.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:delta/1",
       "source": "glossary:delta",
       "title": "delta",
       "text": "Roughly the chance an option ends up paying out, from 0 to 1.\n\nDelta shows how much an option's price moves when the coin moves by 1. It is also a rough guess of the chance the option pays out at expiry. A 0.16-delta option pays out about 16 times in 100. When the price moves toward a strike, that leg's delta grows.\n\nSelling at a higher delta brings more premium and a higher chance of a loss.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:delta drift/1",
       "source": "glossary:delta drift",
       "title": "delta drift",
       "text": "Buying back a leg whose delta fell below 0.10: far from the price, little premium left.\n\nWhen the price moves away from a leg, its delta falls and little premium is left to earn. Below 0.10 the bot buys it back and repairs it at once with a fresh leg near the target delta, on the same expiry.\n\nIt replaces a leg that earns almost nothing with one that earns more, and adds that new leg's risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:delta exit/1",
       "source": "glossary:delta exit",
       "title": "delta exit",
       "text": "Closing a leg early when its delta reaches 0.30: the move against it is real.\n\nWhen the price moves toward a sold strike, that leg's delta grows. At 0.30 the bot buys the leg back before it reaches the 2 times stop-loss. Afterwards the side is held like after a stop-loss.\n\nIt takes smaller losses earlier, and more of them, instead of fewer larger stop-losses.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:delta_drift_threshold/1",
       "source": "glossary:delta_drift_threshold",
       "title": "delta_drift_threshold",
       "text": "Setting: buy back a leg whose delta falls below this (0.10 shipped) and sell a fresh one.\n\nSetting: when a leg's delta falls below this, it is far from the price with little premium left. The bot buys it back and sells a new leg at the target delta. It must be at most 75 % of every entry delta.\n\nUp: refreshes legs sooner, more trades and fees. Down: lets legs drift further and earn less.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:delta_exit_threshold/1",
       "source": "glossary:delta_exit_threshold",
       "title": "delta_exit_threshold",
       "text": "Setting: close a leg early when its delta reaches this (0.30 shipped).\n\nSetting: the delta exit. A leg whose delta reaches this is bought back before the stop-loss, then held like a stop. It must be above every entry delta.\n\nUp: fewer early exits, more full stop-losses. Down: more early exits, smaller losses each.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:deployment frequency/1",
       "source": "glossary:deployment frequency",
       "title": "deployment frequency",
       "text": "How often a new build goes live: healthy mvp deploys a day, or new releases on stable a week.\n\nAnalytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp it counts each healthy deploy of main; on stable each new release, a tag promoted for the first time. A rolled-back deploy does not count. The chip is the DORA band: elite, high, medium or low.\n\nIt measures how the team ships changes to the bots, not how the bots trade.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:detail/1",
       "source": "glossary:detail",
       "title": "detail",
       "text": "Every other field of the audit line, as stored: for example the positions closed and the bot's answer.\n\nAudit page (admins only). The rest of the line, key=value, unchanged: a close's position ids and status, a rebalance's dry run, a role change's from and to, an IP. Never a password, hash or token: the trail holds none.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:dte/1",
       "source": "glossary:dte",
       "title": "dte",
       "text": "Days to expiry: how many whole days an option has left.\n\nDTE counts the full days until the option's expiry date, rounded down. The bot opens positions about 25 to 50 days out and closes them when 15 days or fewer are left. The same count is used for opening and for closing.\n\nMore days left means more premium and more time for a big move; fewer days left means faster decay and sharper swings.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:dte_delta_matrix/1",
       "source": "glossary:dte_delta_matrix",
       "title": "dte_delta_matrix",
       "text": "Setting: the slots, each a target number of days and a target delta.\n\nSetting: the list of slots. Each line names a target number of days to expiry and one or more deltas; each pair is one strangle slot. BTC ships with 25 and 50 days, ETH with 30 and 50, all at 0.16 delta.\n\nMore slots mean more positions (more income and more risk); the margin limit is split between them.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:dte_delta_matrix.deltas/1",
       "source": "glossary:dte_delta_matrix.deltas",
       "title": "dte_delta_matrix.deltas",
       "text": "Setting: the delta at which a slot sells its call and put (0.16 shipped).\n\nSetting: the target delta for the slot's strikes. 0.16 means each leg has roughly a 16 % chance of paying out at expiry. Each delta listed is its own slot.\n\nHigher: strikes closer to the price, more premium, more risk. Lower: further away, less premium, safer.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:dte_delta_matrix.dte/1",
       "source": "glossary:dte_delta_matrix.dte",
       "title": "dte_delta_matrix.dte",
       "text": "Setting: how many days to expiry a slot aims for.\n\nSetting: the slot's target days to expiry. The bot picks the listed expiry nearest to it that no other slot holds.\n\nLonger: more premium per trade and longer exposure. Shorter: faster decay and sharper swings.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:dvol/1",
       "source": "glossary:dvol",
       "title": "dvol",
       "text": "Deribit's index of the 30-day move the market expects for BTC or ETH.\n\nDVOL is a volatility index published by Deribit, the exchange. It shows how big a move option prices expect over the next 30 days, as a yearly percentage. The bot uses it to set its margin limit and to size the buffer around the gamma flip.\n\nA high DVOL means rich premiums and a market that expects large moves.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:email/1",
       "source": "glossary:email",
       "title": "email",
       "text": "A person's email address, optional, for the admin's records; the monitor sends no email.\n\nUsers page (admins only). An optional contact address an admin may record when adding a person. The monitor never sends email and never puts it in an analytics event.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:entry/1",
       "source": "glossary:entry",
       "title": "entry",
       "text": "Selling a new strangle into an empty slot; also the price it was sold at.\n\nAn entry opens a strangle in an empty slot. The bot picks the expiry and strikes, checks each leg is worth at least the minimum premium, sizes it within the margin limit and places limit sell orders. In the positions table, 'Entry' is the price each leg was sold at.\n\nEach entry adds premium income and the risk of a big move.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:equity/1",
       "source": "glossary:equity",
       "title": "equity",
       "text": "What the account is worth now: balance plus the value of open positions.\n\nEquity is the account's value if everything were closed at current prices. 'All collateral' adds every coin, in dollars.\n\nIt rises with income and falls with losses.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:exchange fees/1",
       "source": "glossary:exchange fees",
       "title": "exchange fees",
       "text": "What Deribit charged to open and to buy back the options closed that month.\n\nEach close carries its share of the fee paid to open the option and the fee paid to buy it back. The income page shows them as a cost; the result is already net of them.\n\nFees lower the income of every trade, winning or losing.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:expiry/1",
       "source": "glossary:expiry",
       "title": "expiry",
       "text": "The date an option ends.\n\nEvery option has an expiry date. After it, the option is either worth nothing or settled for its value. The bot does not hold options until expiry: it buys them back when 15 days or fewer are left, because the risk of sudden losses grows near the end.\n\nOptions with more time left pay more premium but stay exposed to price moves for longer.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:fill timeout/1",
       "source": "glossary:fill timeout",
       "title": "fill timeout",
       "text": "When an unfilled order is cancelled; the filled part is kept.\n\nEach sell order has a time limit. When it ends, the bot cancels the rest, reads back what filled and keeps it. A strangle with only one leg filled is completed later by a repair.\n\nNone by itself: it ends the wait for a fill.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:filled/1",
       "source": "glossary:filled",
       "title": "filled",
       "text": "The part of an order that traded; for a sale, the part that opened a position.\n\nAn order can fill in full, in part, or not at all. The bot always records exactly what filled, never the amount it asked for. 'Opened' in the feed is a sale that filled.\n\nEach filled sale adds premium income and risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:first answers/1",
       "source": "glossary:first answers",
       "title": "first answers",
       "text": "The share of new people who saw the four main answers (holding, income, worst case, last action) in their first visit.\n\nAnalytics page (admins only). A new person's first visit counts when it reaches the four answers the Overview gives: what is held, what it earned, the worst case and the last action. The card shows how many did and their share of all first visits that week.\n\nA low share means new people miss the risk figures, not that the bots did anything.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:flip buffer/1",
       "source": "glossary:flip buffer",
       "title": "flip buffer",
       "text": "The distance from the gamma flip that counts as a real move: 1.5 normal days of price change.\n\nThe buffer is a margin around the gamma flip so that small moves do not trigger a shed. It is 1.5 times a normal day's move, taken from DVOL. A side is shed only when spot is more than this buffer beyond the flip, and sold again only when spot is back past the flip plus the buffer.\n\nA wider buffer means fewer sheds and more exposure in a real move; a narrower one sheds more often.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:freeze/1",
       "source": "glossary:freeze",
       "title": "freeze",
       "text": "A pause on new positions while a change of volatility band or regime waits for confirmation.\n\nWhen the volatility band or the gamma regime changes in a way that could lower the margin limit, the bot stops opening new positions until the change has held for 2 daily closes. Exits, rolls and repairs of rolled legs go on. If the change goes away, the freeze ends.\n\nDuring a freeze no new income is added, and no new risk is taken.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gamma/1",
       "source": "glossary:gamma",
       "title": "gamma",
       "text": "How fast delta changes when the price moves.\n\nGamma measures how quickly an option's delta changes when the coin moves. Sellers of options are 'short gamma': their losses speed up in big moves, more so close to expiry. That is one reason the bot closes positions with 15 days or fewer left.\n\nHigh gamma means a loss can grow fast; it is highest near expiry.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gamma flip/1",
       "source": "glossary:gamma flip",
       "title": "gamma flip",
       "text": "The price where dealer gamma changes from positive to negative.\n\nThe gamma flip is the coin price at which the dealers' gamma exposure (GEX) changes sign. Below the flip, dealer hedging tends to make moves bigger. The bot compares spot with the flip, plus a buffer, to decide whether to shed a leg and when to sell it again.\n\nSpot well below the flip in a negative regime is the warning that sheds a side.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gamma regime/1",
       "source": "glossary:gamma regime",
       "title": "gamma regime",
       "text": "Whether dealer hedging is calming the market (positive) or making moves bigger (negative).\n\nThe regime is the sign of the dealers' gamma exposure (GEX). Positive: dealer hedging tends to slow the price down. Negative: it tends to push the price further the way it is going. A change must hold for 2 daily closes before the bot treats it as confirmed.\n\nA confirmed negative regime lowers the margin limit and stops sales on the side the price runs toward.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gamma_flip_buffer_sd/1",
       "source": "glossary:gamma_flip_buffer_sd",
       "title": "gamma_flip_buffer_sd",
       "text": "Setting: how many normal days' moves beyond the gamma flip trigger a shed (1.5 shipped).\n\nSetting: the flip buffer, in normal daily moves taken from DVOL. A side is shed only when spot is this far beyond the gamma flip in a negative regime, and sold again once it is back past the flip plus this buffer.\n\nUp: fewer sheds, more exposure in a real move. Down: sheds more often, gives up more income.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gex/1",
       "source": "glossary:gex",
       "title": "gex",
       "text": "Gamma exposure: an estimate of how option dealers' hedging pushes the price.\n\nGEX estimates the gamma held by option dealers, the firms on the other side of most trades. To stay neutral they buy and sell the coin as the price moves. When their gamma is negative they buy into rises and sell into falls, which makes moves bigger. The bot reads GEX every minute from Deribit's main market.\n\nNegative GEX warns that moves may grow larger; the bot sells less and sheds the threatened side.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gex anchor/1",
       "source": "glossary:gex anchor",
       "title": "gex anchor",
       "text": "The gamma flip and buffer saved at a shed; the shed side waits until spot is back above them.\n\nWhen a side is shed, the bot saves the gamma flip and buffer of that moment. The side is sold again only when spot is above that saved flip plus its buffer on 2 snapshots, or after the regime has been non-negative for 24 hours. A later jump of the live flip does not count.\n\nIt keeps the bot from selling the same side back into a move that is still going.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gex wait/1",
       "source": "glossary:gex wait",
       "title": "gex wait",
       "text": "No new positions until a fresh GEX reading arrives (after a start, or when it is over 5 minutes old).\n\nWithout a fresh GEX reading, the bot cannot tell the regime or which side is safe to sell. So it opens nothing, tops up nothing and repairs nothing until one arrives. Exits, leg balancing and the MM limit still run.\n\nIt delays income briefly to avoid selling the wrong side.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:gex_direction/1",
       "source": "glossary:gex_direction",
       "title": "gex_direction",
       "text": "Setting: what decides the threatened side in a negative regime: sma (the trend) or bias (spot vs flip).\n\nSetting: sma uses the SMA trend; bias uses spot against the gamma flip plus the buffer. Both are recorded so they can be compared. In tests the bias shed more often and returned less than the trend.\n\nIt changes which side is shed and how often, so it changes both losses avoided and income given up.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:greeks/1",
       "source": "glossary:greeks",
       "title": "greeks",
       "text": "Delta, gamma, theta and vega: four numbers that describe how an option's price reacts.\n\nThe greeks describe an option's sensitivity: delta to the coin's price, gamma to changes in delta, theta to time, vega to implied volatility. The trade history shows them at the moment of each trade. A position's delta is the option's delta times the size, negative for a sold option.\n\nThey show where a position can lose: price (delta, gamma), time (theta) and fear (vega).",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:group by/1",
       "source": "glossary:group by",
       "title": "group by",
       "text": "Shows open positions grouped by strategy, slot, expiry or type, with totals.\n\nGrouping puts related legs together and adds up their P&L and greeks in the group header.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:held/1",
       "source": "glossary:held",
       "title": "held",
       "text": "How many days a position was open before it closed.\n\nThe time from the sale of a leg to its buy-back, in days.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:help used/1",
       "source": "glossary:help used",
       "title": "help used",
       "text": "How often people opened a tip or played a video, and how many assistant answers they marked as helpful.\n\nAnalytics page (admins only). Tips opened and videos played are counts for the week. Helped is the share of the assistant's answers that people marked as helpful, with the counts beside it.\n\nA tip or answer explains the bot; none of them is advice to trade.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:hold rule/1",
       "source": "glossary:hold rule",
       "title": "hold rule",
       "text": "The rule that keeps the bot from selling a missing leg again right now.\n\nFor every one-sided strangle the monitor names the rule holding its repair: a stop hold, the regime side, a GEX anchor or shed, the MM limit, a waiting stop, no fresh GEX, a working order, an unknown order, a churn pause or the roll window.\n\nWhile a rule holds, the strangle earns from one leg only.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:holding alone/1",
       "source": "glossary:holding alone",
       "title": "holding alone",
       "text": "What the same account would have done by just holding the coin that month.\n\nCounted in the coin, holding neither gains nor loses, so every coin the bot earns is extra. In dollars it is the coin's price change over the month times the account's balance at the month's start, from the bot's recorded history.\n\nIt shows how much of a dollar result is the coin's own move, not the strategy.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:im/1",
       "source": "glossary:im",
       "title": "im",
       "text": "Initial margin: what the exchange holds to cover open positions, as an amount or a % of the margin balance.\n\nInitial margin (IM) is the amount the exchange sets aside for open positions and orders. The monitor shows it in dollars and as a percentage of the margin balance. 'Proj.' is the figure without the nearest expiry. The bot sizes new positions so IM stays under its limit.\n\nMore IM in use means bigger positions: more income and more risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:im limit/1",
       "source": "glossary:im limit",
       "title": "im limit",
       "text": "The most initial margin the bot may use, as a % of the margin balance: 20, 35 or 50 %.\n\nThe bot picks its IM limit from the volatility band: 50 % when DVOL is high against the past year, 35 % in the middle, 20 % when it is low. In a confirmed negative regime the limit is 20 %. The monitor says which reason sets the limit now.\n\nA higher limit allows bigger positions, so more income and bigger possible losses.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:im over limit/1",
       "source": "glossary:im over limit",
       "title": "im over limit",
       "text": "IM is above the limit without a limit change, for example after a withdrawal. Alert only.\n\nWhen initial margin rises above the limit by more than 1.5 points and no rebalance is due, for example after a withdrawal or a price move, the bot raises an alert. It does not trade. A person decides, with a rebalance preview, whether to resize. The alert clears when IM is back under the limit.\n\nWhile it lasts, the book carries more risk than the limit allows and no new positions are opened.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:implied volatility/1",
       "source": "glossary:implied volatility",
       "title": "implied volatility",
       "text": "How big a move the market expects, read from option prices.\n\nImplied volatility (IV) is the size of the price move that option prices suggest the market expects. When IV is high, options cost more, so a seller receives more premium. High IV usually comes with fear and larger moves.\n\nHigher implied volatility means richer premiums and, usually, more risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:income over months/1",
       "source": "glossary:income over months",
       "title": "income over months",
       "text": "The realised result of the months shown, after fees, and the average of the months with a close.\n\nThe total adds every month's result in the table. The average divides it by the months that had at least one close, and the line under it counts the months up and down. The % compares the total with the account's balance at the start.\n\nOne good average can hide a bad month: read it with the worst month and worst week.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:instrument/1",
       "source": "glossary:instrument",
       "title": "instrument",
       "text": "The exact option traded, named by coin, expiry, strike and type, e.g. BTC-27NOV26-90000-P.\n\nThe instrument name reads: coin, expiry date, strike price, then C for a call or P for a put. Each row of the monitor is one instrument.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:iv percentile/1",
       "source": "glossary:iv percentile",
       "title": "iv percentile",
       "text": "Where today's DVOL sits compared with the past year, from 0 (lowest) to 100 (highest).\n\nThe IV percentile ranks today's DVOL against the past year. 0 means it is the lowest of the year, 100 the highest. The bot uses this rank to choose how much of the account may be used as margin.\n\nA high percentile allows a higher margin limit (more positions); a low one keeps positions small.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:iv_margin_bands/1",
       "source": "glossary:iv_margin_bands",
       "title": "iv_margin_bands",
       "text": "Setting: the IM limit for each volatility band: 50 %, 35 % or 20 % of the margin balance.\n\nSetting: a list of bands. Each says: when the IV percentile is at least this, initial margin may reach this % of the margin balance. A confirmed negative regime uses the lowest band.\n\nHigher limits mean bigger positions: more income and bigger losses in a bad move.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:iv_margin_bands.max_im_pct/1",
       "source": "glossary:iv_margin_bands.max_im_pct",
       "title": "iv_margin_bands.max_im_pct",
       "text": "Setting: the IM limit of a band, in % of the margin balance.\n\nSetting: the most initial margin the bot may use while this band applies.\n\nUp: larger positions. Down: smaller positions.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:iv_margin_bands.min_iv_pct/1",
       "source": "glossary:iv_margin_bands.min_iv_pct",
       "title": "iv_margin_bands.min_iv_pct",
       "text": "Setting: the lowest IV percentile at which a band applies.\n\nSetting: a band applies when the IV percentile is at or above this number (and below the next band's).\n\nLower thresholds reach the higher limits more often.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:kill switch/1",
       "source": "glossary:kill switch",
       "title": "kill switch",
       "text": "The emergency stop: cancel every order, buy back every position at market, stop trading.\n\nThe kill switch is an operator signal. The bot cancels all orders, books what had filled, buys back every position the exchange reports at market and checks the account is flat. Then it stays idle until a person restarts it.\n\nIt ends all risk and all income at once, at market prices.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:last sign-in/1",
       "source": "glossary:last sign-in",
       "title": "last sign-in",
       "text": "When the person last signed in with their password; never if they have not yet.\n\nUsers page (admins only). The time of the person's last successful sign-in. A browser that stays signed in refreshes its session without a new sign-in, so this can be older than their last visit.\n\nNone: an old or missing sign-in helps spot accounts nobody uses, which an admin may delete.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:lead time/1",
       "source": "glossary:lead time",
       "title": "lead time",
       "text": "How long a merged change takes to go live: the median time from a PR's merge to the first deploy that carries it.\n\nAnalytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp a change usually goes live minutes after its merge. On stable it waits for the 3-day soak on mvp and a release, so days. Below three PRs the chip says NOT YET.\n\nA longer wait on stable is deliberate: a change runs on the test account for days before it reaches production.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:leg/1",
       "source": "glossary:leg",
       "title": "leg",
       "text": "One option inside a strangle: its call or its put.\n\nA strangle has two legs, a call and a put. Each leg is managed on its own: it can be bought back, stopped out or re-sold without touching the other. A strangle with only one leg is one-sided, and the bot tries to sell the missing leg again later.\n\nTwo legs of the same size balance each other; a single leg leaves the position exposed to one direction.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:limit price/1",
       "source": "glossary:limit price",
       "title": "limit price",
       "text": "The price set on an order: it fills at that price or better, or not at all.\n\nA limit order names its price. A sell limit fills only at that price or higher. The bot uses limit orders for entries and repairs so it never sells for less than it chose.\n\nA higher limit means more premium if it fills, and a smaller chance it fills.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:liquidity cap/1",
       "source": "glossary:liquidity cap",
       "title": "liquidity cap",
       "text": "The most a new sell order may be: a small share of each strike's open interest on Deribit's main exchange.\n\nEach entry or top-up order is capped at 10 % of each sold strike's open interest on Deribit's main exchange, and both legs get the smaller size. A strike too thin for one lot gets no order, and the slot stays short. Repairs, exits and stops are not capped.\n\nIt keeps orders to a size the market can take, at the cost of income when a slot stays short of its share.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:manual close/1",
       "source": "glossary:manual close",
       "title": "manual close",
       "text": "A person buys a leg back at market from the monitor, allowed only on the side the bot no longer sells.\n\nThe Close button buys a leg back at market. It works only while a confirmed negative regime blocks that leg's side. A confirmation window shows the cost and what follows. Afterwards the side is held like after a stop-loss.\n\nIt removes that leg's risk and income, and pays the asking price and a fee.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:margin/1",
       "source": "glossary:margin",
       "title": "margin",
       "text": "Money the exchange sets aside from the account to cover the risk of open positions.\n\nSold options can lose more than the premium, so the exchange holds part of the account as margin. Initial margin (IM) is what is needed to open positions. Maintenance margin (MM) is the floor: if it reaches 100 % of the margin balance, the exchange closes positions by force.\n\nMore margin in use means more positions, more income and more risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:margin balance/1",
       "source": "glossary:margin balance",
       "title": "margin balance",
       "text": "The money in the account that counts toward margin.\n\nThe margin balance is the account's value that the exchange counts against margin needs. The bot's limits are percentages of it: the IM limit and the MM limit. A deposit raises it and a withdrawal lowers it.\n\nA larger margin balance lets the bot hold larger positions within the same percentage limits.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:mark/1",
       "source": "glossary:mark",
       "title": "mark",
       "text": "The price used to value an open leg: the middle of the live bid and ask.\n\nThe mark is the price at which the bot values a leg, from the exchange's live quote. Without a live quote it keeps the last known mark and says so. Unrealized P&L and the stop-loss use the mark.\n\nA rising mark on a sold option is a growing loss.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:max_leg_size_multiple/1",
       "source": "glossary:max_leg_size_multiple",
       "title": "max_leg_size_multiple",
       "text": "Setting: a new leg is at most this many times its slot's normal size (2 shipped).\n\nSetting: the normal size is the slot's margin share divided by one strangle's own margin. Margin that nets positions can make a leg look almost free; this cap stops that from inflating sizes.\n\nUp: bigger positions when margin allows. Down: smaller, steadier positions.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:max_mm_pct/1",
       "source": "glossary:max_mm_pct",
       "title": "max_mm_pct",
       "text": "Setting: the MM limit. At this % of the margin balance the bot buys positions back (35 shipped).\n\nSetting: when maintenance margin reaches this % of the margin balance, the bot buys back positions at market and opens nothing until it is back under. Deribit liquidates at 100 %.\n\nUp: closer to liquidation before acting. Down: earlier forced reductions.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:min_premium/1",
       "source": "glossary:min_premium",
       "title": "min_premium",
       "text": "Setting: the smallest premium per leg worth selling, in the coin (0.001 shipped).\n\nSetting: a leg is sold only if its premium, at the lowest price the bot may lower to, is at least this. 0 accepts any premium.\n\nUp: fewer, richer trades. Down: more trades for smaller premiums, with the same tail risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:missing leg/1",
       "source": "glossary:missing leg",
       "title": "missing leg",
       "text": "The leg a one-sided strangle lacks, and the rule keeping the bot from selling it again.\n\nWhen a leg is closed, its strangle keeps only the other leg. The bot sells the missing leg again (a repair) when it is safe. The monitor shows each missing leg and the rule that holds it now, such as a cooldown after a stop-loss.\n\nWhile a leg is missing the position earns less and leans to one side.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:mm/1",
       "source": "glossary:mm",
       "title": "mm",
       "text": "Maintenance margin: the floor. At 100 % of the margin balance the exchange closes positions by force.\n\nMaintenance margin (MM) is the least the account must keep to hold its positions. If MM reaches 100 % of the margin balance, the exchange liquidates, meaning it closes positions at market. The bot cuts positions itself long before that, at 35 %.\n\nMM is the distance to liquidation: the higher it is, the closer a forced close.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:mm limit/1",
       "source": "glossary:mm limit",
       "title": "mm limit",
       "text": "If maintenance margin reaches 35 % of the margin balance, the bot buys positions back at once.\n\nThe MM limit is the bot's own safety line, far from the exchange's 100 %. When maintenance margin reaches it, the bot buys back positions at market right away and blocks new sales and repairs until margin is back under it.\n\nIt trades some income and fees for a wide distance from a forced liquidation.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:moneyness/1",
       "source": "glossary:moneyness",
       "title": "moneyness",
       "text": "Whether a strike is at, away from, or past today's price (ATM, OTM, ITM).\n\nMoneyness compares a strike with the current price. OTM (out of the money) means the option would pay nothing today. ATM (at the money) means the strike is about at the price. ITM (in the money) means the option would pay something today. The bot sells OTM options.\n\nA sold option moving from OTM toward ITM is losing money.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:month/1",
       "source": "glossary:month",
       "title": "month",
       "text": "A calendar month in UTC.\n\nIncome is summed per month in UTC; a month without closes says so.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:nps/1",
       "source": "glossary:nps",
       "title": "nps",
       "text": "Net Promoter Score: the share of people who would recommend the monitor (9–10) minus the share who would not (0–6).\n\nAnalytics page (admins only). Once a month the assistant asks how likely a person is to recommend the monitor, from 0 to 10. Promoters answer 9–10, passives 7–8 and detractors 0–6. The score runs from −100 to +100 and is shown only once enough people have answered.\n\nIt measures how people feel about the monitor, not how the bots trade.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:option/1",
       "source": "glossary:option",
       "title": "option",
       "text": "A contract that gives its buyer the right to buy or sell a coin at a set price until a set date.\n\nAn option is a contract. The buyer pays a price, the premium, up front. In return the buyer may buy (a call) or sell (a put) the coin at the strike price until the expiry date. The seller keeps the premium and must pay out if the price moves past the strike.\n\nSelling options brings income now (the premium) in exchange for a possible payout later that can be much larger.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:order sent/1",
       "source": "glossary:order sent",
       "title": "order sent",
       "text": "An order the bot placed on the exchange.\n\nEach order the bot places is counted and written to its journal with the market at that moment. One entry can need several orders, because unfilled orders are cancelled and tried again.\n\nNone by itself: only the filled part becomes a position.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:p&l/1",
       "source": "glossary:p&l",
       "title": "p&l",
       "text": "Profit and loss, after Deribit's fees, in US dollars or in the coin.\n\nP&L is the profit or loss of positions, net of the exchange's fees. Realized P&L comes from closed legs; unrealized P&L is the open legs valued at the current mark. Total P&L adds both. Dollar figures use the coin's price at that moment.\n\nIt is the result of the income earned and the losses paid so far.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:p&l %/1",
       "source": "glossary:p&l %",
       "title": "p&l %",
       "text": "Unrealized P&L as a % of the premium received: +50 % is half the premium earned.\n\nP&L % compares a leg's open result with its premium. +50 % means half the premium is profit, 0 % is break-even, −100 % means the loss equals the premium. The stop-loss fires near −200 % with the 2 times setting.\n\nIt shows how close a leg is to its take-profit (+50 %) or its stop-loss (about −200 %).",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:person/1",
       "source": "glossary:person",
       "title": "person",
       "text": "Who did it: the username of the person who signed in, changed a user or acted on a bot.\n\nAudit page (admins only). The username stored on the audit line. For a failed sign-in it is the name that was typed. Lines written by the monitor itself or the admin command line say system or cli.\n\nNone: it answers who closed a leg or rebalanced, without shell access.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:position/1",
       "source": "glossary:position",
       "title": "position",
       "text": "An option the account holds now, sold or bought.\n\nA position is an open option on the account. The bot's positions are the legs of its strangles. The account can also hold positions the bot does not manage; they still use margin.\n\nEvery open position carries its own risk and income.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:premium/1",
       "source": "glossary:premium",
       "title": "premium",
       "text": "The price of an option. The seller receives it up front.\n\nThe premium is what the buyer pays for an option and what the seller receives. The bot is a seller, so the premium is its income. It keeps all of it if the option ends worthless, and part of it if it buys the option back for less.\n\nA higher premium means more income per trade, but it is usually paid for more risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:premium kept/1",
       "source": "glossary:premium kept",
       "title": "premium kept",
       "text": "The share of a leg's premium the bot would keep if it bought the leg back now.\n\nPremium kept compares the price the leg was sold at with its price now. If a leg was sold for 0.0100 and now costs 0.0060, 40 % of the premium is kept. It turns negative when the option costs more than it was sold for: that leg is at a loss.\n\nIt is the income already earned on a leg; the take-profit closes a leg once enough of it is kept.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:price/1",
       "source": "glossary:price",
       "title": "price",
       "text": "The price an option traded at, in the coin (e.g. 0.0125 BTC).\n\nDeribit prices these options in the coin itself, not in dollars. The monitor converts to dollars at the coin's price where it says USD.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:put/1",
       "source": "glossary:put",
       "title": "put",
       "text": "An option that pays its buyer when the coin falls below the strike price.\n\nA put option gives its buyer the right to sell the coin at the strike price. It gains value when the coin falls below the strike. The bot sells puts: it keeps the premium if the coin stays above the strike, and loses when the coin falls far below it.\n\nA sold put earns its premium in a flat or rising market and loses money in a sharp fall.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:quantity/1",
       "source": "glossary:quantity",
       "title": "quantity",
       "text": "The size of a position or order, in coins of the underlying (e.g. 0.1 BTC).\n\nOption sizes on Deribit are counted in coins of the underlying asset. A 0.1 BTC option covers a move of 0.1 BTC. The bot sizes each slot from the margin limit.\n\nBigger size means more premium and a bigger loss in a bad move.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:re-priced/1",
       "source": "glossary:re-priced",
       "title": "re-priced",
       "text": "A working order whose price the bot changed so it fills.\n\nWhen a sell order does not fill, the bot lowers its price in steps: first the asking price, then the middle price, then a floor. Each change is journaled.\n\nA lower price fills sooner and brings a little less premium.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:realized p&l/1",
       "source": "glossary:realized p&l",
       "title": "realized p&l",
       "text": "Profit or loss already locked in by closed legs, after fees.\n\nRealized P&L is booked when a leg is bought back: the premium received minus the buy-back price, its share of the opening fees and the closing fee. It does not change after the close.\n\nIt is income (or loss) already earned; no more risk is attached to it.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:reason/1",
       "source": "glossary:reason",
       "title": "reason",
       "text": "Why the bot opened or closed a position, with the rule's numbers.\n\nEvery trade carries its reason, for example 'take-profit' or 'stop-loss', and the numbers that fired the rule. The same reasons group results in the history.\n\nNone by itself: it explains the trade.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:rebalance/1",
       "source": "glossary:rebalance",
       "title": "rebalance",
       "text": "Resizing the positions toward the current margin limit: selling more (top-up) or buying back (downsize).\n\nWhen the confirmed margin limit changes, at startup, or on a person's request, the bot resizes each slot toward its share of the limit. It sells more when there is room and buys back when the book is too large. A person can preview a rebalance before running it.\n\nA top-up adds income and risk; a downsize removes both and pays fees and the spread.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:reconcile/1",
       "source": "glossary:reconcile",
       "title": "reconcile",
       "text": "Loading the exchange's real positions into the bot's book, at startup or when they differ.\n\nThe exchange is the source of truth. At each start the bot reads every position the exchange holds and rebuilds its book from it. During trading, a difference that lasts 2 checks is taken into the book. 'Loaded' in the feed is such a step.\n\nNone by itself: it makes sure every real position is managed.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:regime side/1",
       "source": "glossary:regime side",
       "title": "regime side",
       "text": "The side the bot does not sell in a confirmed negative regime: puts in a bear trend, calls in a bull trend.\n\nWhen the negative regime is confirmed, the side the price is running toward is not sold. New strangles open only the other leg, and repairs or top-ups of that side wait. With no trend, both sides are sold.\n\nIt keeps the bot out of the side most at risk, and keeps the income of the other side.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:release train/1",
       "source": "glossary:release train",
       "title": "release train",
       "text": "The last 8 days of deploys: a mark for each stable release and a tick for each mvp deploy.\n\nAnalytics page, Delivery (DORA) topic (admins only). Opening a PR in What went live puts a dot on each lane. A filled dot is where it went live; a hollow dot at the right edge means it is still waiting there.\n\nIt shows when builds changed, which helps to match a change in the bots' behaviour to a deploy.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:repair/1",
       "source": "glossary:repair",
       "title": "repair",
       "text": "Selling a strangle's missing leg again, at the same expiry and size.\n\nWhen a strangle has lost one leg, the bot sells that leg again on the same expiry, near the original delta, with the same size. After a take-profit or a drift roll it repairs at once. After a stop-loss or a delta exit it waits 72 hours and for a calm market.\n\nA repair restores the premium income and the balance of the strangle.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:repair_cooldown_hours/1",
       "source": "glossary:repair_cooldown_hours",
       "title": "repair_cooldown_hours",
       "text": "Setting: hours a stopped-out side stays empty before it may be sold again (72 shipped).\n\nSetting: after a stop-loss, delta exit, manual close or MM cut, that side waits this many hours, and a calm market, before a repair.\n\nUp: longer pause after a loss, less income meanwhile. Down: re-enters sooner, possibly into the same move.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:request draft/1",
       "source": "glossary:request draft",
       "title": "request draft",
       "text": "A bug report or wish the assistant writes for you to check and send, never sent on its own.\n\nWhen you report a problem or ask for a change, the assistant first checks it. A request is drafted only when it says what happened, where, and shows the data behind it. Evidence lists that data: a number, a journal entry or a P&L point. Steps say how to see the problem again. You can edit the draft, then send it to a private queue.\n\nNone: a request changes nothing in the bot or the account.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:reserved/1",
       "source": "glossary:reserved",
       "title": "reserved",
       "text": "Coin set aside for open spot orders.\n\nMoney held back by orders to buy or sell the coin itself, not options.\n\nNone for the bot.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:retention/1",
       "source": "glossary:retention",
       "title": "retention",
       "text": "Of the people who first came in a given week, the share who came back in each of the next four weeks.\n\nAnalytics page (admins only). Each row is a group of people whose first visit fell in the same week: the first week. The columns show the share of that group seen again one, two, three and four weeks later. A dash marks a week that has not ended yet.\n\nIt measures whether the monitor is useful enough to come back to, not trading results.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:roi_take_profit/1",
       "source": "glossary:roi_take_profit",
       "title": "roi_take_profit",
       "text": "Setting: buy a leg back once this share of its premium is earned (0.50 = 50 % shipped).\n\nSetting: the take-profit. When a leg has earned this share of its premium, the bot buys it back and sells a fresh one.\n\nUp: holds longer for more, stays exposed longer. Down: banks sooner and trades more often.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:role/1",
       "source": "glossary:role",
       "title": "role",
       "text": "What a person may do on the monitor: user sees it, manager also closes and rebalances, admin also manages people.\n\nUsers page (admins only). Every person has one of three roles. A user sees the monitor. A manager may also close a leg by hand and rebalance. An admin may also add people, change roles, reset passwords and delete people. The server checks the role on every action. Changing it signs the person out everywhere.\n\nA manager can send orders to the bots: give that role only to people who should.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:rollout_dte/1",
       "source": "glossary:rollout_dte",
       "title": "rollout_dte",
       "text": "Setting: buy a strangle back when this many days or fewer are left (15 shipped).\n\nSetting: the time roll. When an expiry has this many days or fewer left, its legs are bought back and the slot reopens further out. Every slot's target must be above it.\n\nUp: exits earlier, less late-expiry risk, less decay earned. Down: holds longer, more decay and more risk.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:shed/1",
       "source": "glossary:shed",
       "title": "shed",
       "text": "Closing the threatened side of every strangle when the market may move hard that way.\n\nA shed buys back the side under threat: in a negative regime, with spot more than the buffer below the gamma flip and a trend, puts in a bear trend and calls in a bull trend. The signal must hold on 2 snapshots in a row. The side is sold again only once the price recovers.\n\nA shed limits losses in a strong move but gives up that side's income until the price recovers.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:side/1",
       "source": "glossary:side",
       "title": "side",
       "text": "SELL means a sold option (premium received); BUY means a bought one (premium paid).\n\nThe bot's strangles are sold: SELL. A bought option, BUY, pays a premium, for example as insurance on a sold one. Positions the bot does not manage can be either side.\n\nA sold option earns premium with open-ended risk; a bought one costs premium with a capped loss.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:skipped/1",
       "source": "glossary:skipped",
       "title": "skipped",
       "text": "A chance to open or resize that the bot let pass, with its reason.\n\nWhen a rule says no, the bot writes down what it did not do and why, for example a premium too small, a freeze, or no fresh GEX reading. These lines show why a slot stayed empty.\n\nA skip adds neither risk nor income.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:slot/1",
       "source": "glossary:slot",
       "title": "slot",
       "text": "A place the bot keeps for one strangle, set by a number of days and a delta.\n\nThe settings list slots such as 'a strangle about 25 days out at 0.16 delta'. Each slot holds one strangle at a time and gets an equal share of the margin limit. When a slot is empty, the bot opens a new strangle in it.\n\nMore slots spread the money over more positions; fewer slots put more in each one.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:sma trend/1",
       "source": "glossary:sma trend",
       "title": "sma trend",
       "text": "The price trend (bull, bear or neutral) read from the 9-day and 21-day moving averages.\n\nA moving average (SMA) is the average closing price of the last days. The bot compares the 9-day and 21-day averages and recent highs and lows to call the trend bull, bear or neutral. In a negative regime, the trend says which side is threatened.\n\nThe trend decides which side the bot stops selling in a negative regime: puts in a bear trend, calls in a bull trend.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:soak/1",
       "source": "glossary:soak",
       "title": "soak",
       "text": "The 3 days a build runs on mvp, the test account, before it may be released to stable.\n\nAnalytics page, Delivery (DORA) topic (admins only). A release goes on the newest mvp deploy that is at least 3 days old. Until then a PR's stable column says when its soak ends, then that it waits for the next release.\n\nThe soak lets a change prove itself on the test account before it reaches production capital.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:spot/1",
       "source": "glossary:spot",
       "title": "spot",
       "text": "Today's price of the coin.\n\nSpot is the current market price of BTC or ETH. Every other number on the monitor is measured against it: how far a strike is, how far the gamma flip is, and the value of positions in US dollars.\n\nSpot moving toward a strike raises the risk of that leg.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:stop hold/1",
       "source": "glossary:stop hold",
       "title": "stop hold",
       "text": "After a stop-loss, delta exit or manual close, that side is not sold again for 72 hours.\n\nA leg closed by a stop-loss, a delta exit, a manual close or the MM limit is held. It is sold again only after 72 hours, with no freeze and no confirmed negative regime. The hold survives restarts. 'Cooldown until' shows when the 72 hours end.\n\nIt avoids selling into the same move that caused the loss, at the cost of income while the side is empty.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:stop waiting/1",
       "source": "glossary:stop waiting",
       "title": "stop waiting",
       "text": "A stop-loss waiting up to 5 minutes because the order book is nearly empty.\n\nWhen a stop-loss triggers but the asking price is more than 20 % above the middle price, sellers have left the order book, as in a flash crash. The bot waits and checks each cycle. It buys back once prices are normal, or at market after 5 minutes. Meanwhile no new positions are opened.\n\nIt avoids paying a panic price for a buy-back, and adds up to 5 minutes of exposure.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:stop-loss/1",
       "source": "glossary:stop-loss",
       "title": "stop-loss",
       "text": "Buying a leg back at market when its loss reaches 2 times the premium received.\n\nThe stop-loss is the first exit rule. When a leg's loss reaches the set multiple of its premium (2 times), the bot buys it back at market, ahead of everything else. 'Stop @' is the option price at which that happens. If the order book is empty it waits up to 5 minutes.\n\nIt caps the loss on most moves; a sudden gap can still go past it.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:stop_loss_multiplier/1",
       "source": "glossary:stop_loss_multiplier",
       "title": "stop_loss_multiplier",
       "text": "Setting: buy a leg back at market when its loss reaches this many times its premium (2 shipped).\n\nSetting: the stop-loss. A leg is bought back at market when its loss reaches this multiple of the premium received for it.\n\nUp: fewer stop-outs, bigger losses each. Down: more stop-outs, smaller losses each.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:strangle/1",
       "source": "glossary:strangle",
       "title": "strangle",
       "text": "One call sold above today's price and one put sold below it, with the same expiry.\n\nA short strangle sells a call above the current price and a put below it, both ending on the same date. The seller keeps the premium if the coin stays between the two strikes. A big move either way causes a loss, and that loss has no cap.\n\nIt earns the premium of both options in a calm market and loses in a big move in either direction.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:strategy/1",
       "source": "glossary:strategy",
       "title": "strategy",
       "text": "The set of rules a bot trades by; here, short strangles.\n\nThe strategy names the trading plan, for example short strangles. The monitor can filter and group by it.\n\nNone by itself.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:strategy_id/1",
       "source": "glossary:strategy_id",
       "title": "strategy_id",
       "text": "Setting: the strategy's name in the bot's journal and order labels.\n\nA name for the strategy, written on every journal line and order label so trades can be traced. It does not change how the bot trades.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:strike/1",
       "source": "glossary:strike",
       "title": "strike",
       "text": "The fixed price written in an option contract.\n\nThe strike is the price at which the option's buyer may buy (call) or sell (put) the coin. For the bot, a strike far from today's price is safer but pays a smaller premium. A strike close to today's price pays more and is more likely to be reached.\n\nStrikes closer to the price bring more income and more risk; strikes further away bring less of both.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:take-profit/1",
       "source": "glossary:take-profit",
       "title": "take-profit",
       "text": "Buying a leg back once 50 % of its premium has been earned.\n\nWhen a leg's buy-back price has fallen to half of what it was sold for, the bot buys it back and keeps the gain. It first rests an order at the middle price, then crosses to the asking price. The missing leg is then sold again at once.\n\nIt banks part of the premium early instead of holding for all of it.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:target / bot/1",
       "source": "glossary:target / bot",
       "title": "target / bot",
       "text": "What the action was done to: the person whose account changed, or the bot that was asked to close or rebalance.\n\nAudit page (admins only). For a user change it is the person changed. For a manual close or rebalance it is the bot. Empty for sign-ins and sign-outs.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:theta/1",
       "source": "glossary:theta",
       "title": "theta",
       "text": "Time decay: how much value an option loses each day.\n\nTheta is the amount an option's price drops each day if nothing else changes. An option seller earns this decay. It speeds up in the last weeks before expiry.\n\nTheta is the seller's daily income from time passing; it does not protect against a big price move.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:time/1",
       "source": "glossary:time",
       "title": "time",
       "text": "When something happened, in São Paulo time (BRT).\n\nThe time of a trade or event. The bot records times in UTC; the monitor shows them in São Paulo time, marked BRT.\n\nNone.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:time roll/1",
       "source": "glossary:time roll",
       "title": "time roll",
       "text": "Buying a strangle back when 15 days or fewer are left before expiry.\n\nLosses can grow fastest in the last weeks before expiry. When 15 days or fewer are left, the bot buys the strangle's legs back. Once both are gone, the slot opens a new strangle further out.\n\nIt gives up the last weeks of decay to avoid the sharpest swings.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:time to restore/1",
       "source": "glossary:time to restore",
       "title": "time to restore",
       "text": "How long a failure lasted: from the failed deploy to the healthy deploy or fix that ended it, median.\n\nAnalytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. A rollback usually restores within minutes; a bug lasts until its fix goes live. NO FAILURE means there was nothing to restore that week.\n\nWhile a failure lasts the bot may run an older or a faulty build: a short time to restore limits that.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:underlying/1",
       "source": "glossary:underlying",
       "title": "underlying",
       "text": "The coin this bot trades options on: BTC or ETH.\n\nSetting: the coin whose options the bot sells. Each bot trades one coin, on its own account. Prices, premiums and the minimum premium are in this coin.\n\nEach coin has its own volatility: ETH usually moves more than BTC.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:unknown order/1",
       "source": "glossary:unknown order",
       "title": "unknown order",
       "text": "An order that may or may not have reached the exchange; the bot cancels it before acting again.\n\nIf the connection drops while an order is sent, the bot cannot know whether the exchange took it. It cancels the order by its label every cycle until that succeeds, and blocks that slot meanwhile. Any position that turns up is then taken into the book.\n\nIt prevents a double position; the slot earns nothing new while it waits.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:unrealized p&l/1",
       "source": "glossary:unrealized p&l",
       "title": "unrealized p&l",
       "text": "Profit or loss of open legs if they were bought back now at the mark, after opening fees.\n\nUnrealized P&L is the premium received minus what it would cost to buy the open legs back at the current mark, minus the fees paid to open. It changes with every price move until the leg is closed.\n\nIt can still change a lot: a profit on paper is not yet income.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:usd/1",
       "source": "glossary:usd",
       "title": "usd",
       "text": "US dollars, at the coin's price at that moment.\n\nThe bot earns in the coin. Dollar figures convert at the coin's price at each close, or today's price for open positions.\n\nNone by itself; the coin's own price changes dollar figures.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:username/1",
       "source": "glossary:username",
       "title": "username",
       "text": "The name a person signs in to the monitor with: 3 to 64 of a-z, 0-9, dot, underscore or hyphen.\n\nUsers page (admins only). The name a person types to sign in. It is not case-sensitive and two people cannot share one. An admin chooses it when adding the person.\n\nNone: it only identifies who signed in and who acted, in the audit trail.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:vega/1",
       "source": "glossary:vega",
       "title": "vega",
       "text": "How much an option's price changes when implied volatility changes by 1 point.\n\nVega measures how sensitive an option's price is to implied volatility, the size of move the market expects. When fear rises, implied volatility rises and sold options cost more to buy back, even if the price has not moved.\n\nA seller loses on paper when implied volatility rises and gains when it falls.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:what went live/1",
       "source": "glossary:what went live",
       "title": "what went live",
       "text": "Every merged pull request, with its merge time and when it went live on mvp and on stable.\n\nAnalytics page, Delivery (DORA) topic (admins only). One row per merged PR, newest first. PR is its number, Epic the product area it belongs to. Merged is when it joined main. The two live columns say when the first deploy that carried it went live. Delivery result is ROLLED BACK, ON STABLE, LIVE ON MVP or NOT LIVE.\n\nIt lists changes to the bots' code; a row says nothing about the bots' results.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:win / loss size/1",
       "source": "glossary:win / loss size",
       "title": "win / loss size",
       "text": "Average win divided by average loss.\n\nBelow 1 means a typical loss is bigger than a typical win, which is normal for option selling. Read it together with the win rate.\n\nA lower ratio needs a higher win rate to break even.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:win rate/1",
       "source": "glossary:win rate",
       "title": "win rate",
       "text": "The share of closes that made money.\n\nWin rate counts closes with a positive result after fees. A high win rate is normal for option selling and does not tell you the size of the losses: compare it with the average win and loss.\n\nA high win rate can sit beside rare large losses.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:withdrawable/1",
       "source": "glossary:withdrawable",
       "title": "withdrawable",
       "text": "How much can be taken out of the account now.\n\nThe amount the exchange would let you withdraw without breaking margin needs.\n\nWithdrawing lowers the margin balance, which can push IM over the limit.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:working order/1",
       "source": "glossary:working order",
       "title": "working order",
       "text": "An order on the exchange that has not filled yet.\n\nThe bot sells with limit orders, which wait on the exchange until a buyer accepts the price. While an order works, the bot lowers its price a few times. After the fill timeout it cancels the rest and keeps whatever filled.\n\nA working order adds risk only as it fills.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:worst case/1",
       "source": "glossary:worst case",
       "title": "worst case",
       "text": "A model of what one very bad day would cost the open positions: a fall or rise of 3 typical daily swings.\n\nThe bot reprices each open leg with Black–Scholes on its own implied volatility after one day, with the coin 3 daily standard deviations lower and higher (from DVOL). The tile shows the worse side in the coin, in dollars and as a % of the account. It is a model, not a quote.\n\nReal days can move more than 3 swings, so a loss can be larger than this figure.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:worst month/1",
       "source": "glossary:worst month",
       "title": "worst month",
       "text": "The month with the lowest realised result, after fees.\n\nAmong the months with at least one close, the one that earned least or lost most. Under it, the coin's recorded price move that month, when the bot's history has it.\n\nIt shows the size of a bad month, which an average hides.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "glossary:worst week/1",
       "source": "glossary:worst week",
       "title": "worst week",
       "text": "The lowest change of the bot's total P&L over any 7 days, with its dates.\n\nTaken from the bot's P&L history, open positions included, in the coin and as a % of the account's balance at the start. Days without history are listed, never filled in.\n\nIt is the drop an investor would have lived through in one week.",
-      "blob": "62b4879b88dafe732edd8d3945ee3be8023049ed"
+      "blob": "712b958446d7c50f7012631dcd513a46d1fb253f"
     },
     {
       "id": "explain:cancelled:gamma_close/1",

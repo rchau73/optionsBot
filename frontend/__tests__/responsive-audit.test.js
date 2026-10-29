@@ -6,11 +6,13 @@
 // and keep its contrast ratios true to the design tokens in app/globals.css.
 import fs from "node:fs";
 import path from "node:path";
+import { outOfOrder } from "@/test/order";
 
 const FRONTEND = path.join(__dirname, "..");
 const read = (...p) => fs.readFileSync(path.join(FRONTEND, ...p), "utf8");
 const AUDIT = read("docs", "responsive-audit.md");
 const README = read("README.md");
+const PAGES = read("docs", "menu-and-pages.md");
 
 /** The rows of the first markdown table under the heading `## <title>`, as arrays of trimmed cells. */
 function tableUnder(markdown, title) {
@@ -117,9 +119,14 @@ function wrongRows(rows, columns) {
 
 // --- the scenarios -----------------------------------------------------------
 
-/** The areas of README "What you see", by their name before any "(…)". */
-function readmeAreas() {
-  return tableUnder(README, "What you see").map((row) => row[0].replace(/\s*\(.*$/, ""));
+/** The areas of docs/menu-and-pages.md "What you see" (one `###` heading each), by their name before any "(…)". */
+function pageAreas() {
+  const start = PAGES.indexOf("\n## What you see\n");
+  if (start < 0) throw new Error('no "## What you see" section');
+  const section = PAGES.slice(start + 1).split(/\n## /)[0];
+  const areas = [...section.matchAll(/^### (.+)$/gm)].map((m) => m[1].replace(/\s*\(.*$/, ""));
+  // "Income page" is a page section of the same level, not an area row.
+  return areas.filter((a) => a !== "Income page" && a !== "Every page");
 }
 
 describe("responsive audit (#207)", () => {
@@ -127,13 +134,22 @@ describe("responsive audit (#207)", () => {
 
   // Scenario: every panel is covered
   test("every panel is covered: a row for each README area and both dialogs at 360, 390 and 768 px", () => {
-    const areas = [...readmeAreas(), "Close dialog", "Rebalance dialog"];
+    const areas = [...pageAreas(), "Close dialog", "Rebalance dialog"];
     expect(areas).toEqual(expect.arrayContaining(["Header", "Open positions", "Working orders", "P&L chart"]));
     const missing = areas.filter((area) => {
       const row = panels.find((r) => plain(r[0]).toLowerCase().startsWith(area.toLowerCase()));
       return !row || [2, 3, 4].some((i) => !row[i] || row[i] === "—");
     });
     expect(missing).toEqual([]);
+  });
+
+  // #465: rows in alphabetical order of the panel's name (case aside), so two
+  // PRs that each add a panel do not collide at the end of the table.
+  test("the panels are in alphabetical order", () => {
+    const name = (row) => plain(row[0]).toLowerCase();
+    expect(panels.length).toBeGreaterThan(20);
+    expect(outOfOrder(panels.map(name))).toBeNull();
+    expect(outOfOrder([...panels.map(name), "account page (again)"])).toMatch(/^"account page \(again\)" comes after/);
   });
 
   test("every panel is covered: each component file is named in the audit", () => {

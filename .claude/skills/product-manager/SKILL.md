@@ -101,7 +101,7 @@ Users must see their problem being solved in the first session. Not just told ab
 - Bring problems, evidence and success criteria, and leave the solution open enough for engineers to improve it. Involve them in discovery: engineers in customer calls make better products.
 - A PRD (`references/templates.md`) is short and decisive: problem, evidence, goals and non-goals, users and scenarios, requirements by priority, success metrics and instrumentation, risks and open questions, rollout and kill criteria.
 - Agree on scope in slices. Every slice can be shipped and measured.
-- Keep decisions written down (decision log with date, options, choice and reason) so nobody re-litigates them.
+- Keep decisions written down (one file per decision in `docs/product/decisions/`: date, options, choice and reason) so nobody re-litigates them.
 - Push forward: follow up on blockers daily, decide quickly with the information you have, and escalate early. Never pressure a team into cutting quality or safety corners, which in fintech become incidents.
 
 ## In this repository
@@ -142,7 +142,7 @@ Anything about regulation, contracts, disclaimers, privacy, marketing claims or 
 ## Working with the designer
 
 The **ux-designer** skill designs the screens, flows and prototypes. You bring the product side: segment, job-to-be-done, the value the user must feel in the first session, the metric the design must move, the constraints (risk disclosures, regulation, the data the API really has).
-- You **drive the decisions** that follow from the approved PRD and the go-to-market MVP without waiting for a person: which flow ships first, what is in the MVP and what is cut, which variant to test. Record each one in the PRD's decision log with its reason.
+- You **drive the decisions** that follow from the approved PRD and the go-to-market MVP without waiting for a person: which flow ships first, what is in the MVP and what is cut, which variant to test. Record each one as a new file in `docs/product/decisions/` with its reason (#464).
 - Design reviews: judge every design against the job, the activation metric and the honesty rules (losses as visible as gains, no promised returns). Reject the median design when a bolder one serves the user better.
 - Design decisions go in the epic's issue or the PRD, never only in chat.
 
@@ -212,7 +212,7 @@ SUMMARY: <one line: epics planned, stories proposed>
 Run by `scripts/agents/pm_answer.sh` each tick, when a person has answered an `agent:pm` ticket (on the ticket, or on its open PRD pull request) after your last comment. You work in a worktree on branch `pm/issue-<n>`. You may edit **only `docs/product/`** and commit. The script checks the diff and the epic markers, pushes, and opens or updates the PRD pull request (`Closes #n`). Your merge-free rule holds: the person's merge approves.
 
 Read `.agent-task.md`: the ticket, every comment (oldest first), and your open PR's feedback. The person's newest message is the one to act on. A later message corrects an earlier one (for example "on correction, …"). Then:
-- **The answer changes the PRD** → edit `docs/product/PRD.md` (`references/prd.md`): vision, segments, scope, roadmap, epics with markers (`status`, `rule_areas`, `ui`), and the decision log with the date and "product owner on #n". New epics start `approved` only when the person approved them on the ticket, otherwise `parked`. Keep sensitive material out (see above). Run `python3 scripts/agents/pm_board.py epics docs/product/PRD.md /dev/null` to check the markers, then commit. On an open PR, revise the same branch.
+- **The answer changes the PRD** → edit `docs/product/PRD.md` (`references/prd.md`): vision, segments, scope, roadmap, epics with markers (`status`, `rule_areas`, `ui`), and record each decision as a new file in `docs/product/decisions/` (`YYYY-MM-DD-<slug>.md`: date, decision, options, reason, decided by "product owner on #n", epic), never as a row in the PRD (#464: one shared table made every two PRD PRs conflict). New epics start `approved` only when the person approved them on the ticket, otherwise `parked`. Keep sensitive material out (see above). Run `python3 scripts/agents/pm_board.py epics docs/product/PRD.md /dev/null` to check the markers, then commit. On an open PR, revise the same branch.
 - **No PRD change is needed** (an acknowledgement, a question for you) → answer it.
 - **You need the person** (a contradiction, a gate such as legal review) → ask: what to decide, the options and your recommendation.
 

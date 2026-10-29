@@ -251,6 +251,53 @@ add_to_board() {
   echo "$id"
 }
 
+# check_failed <issue> <item id> <body file> <dev|ci> [sha] — a check failure
+# on a card (#472; rules in checkfail.py): the first since a person was last
+# asked goes back to the Dev agent — a comment with the failing checks and
+# their log tails (marked, so the next Dev run reads it first), needs-fix,
+# Ready. Prints "needs-fix", or "needs-human" (nothing done: the caller hands
+# the card to a person, as before).
+check_failed() {
+  local issue="$1" item="$2" body="$3" source="$4" sha="${5:-}" slug hist n step
+  local cf="$AGENT_REPO_DIR/scripts/agents/checkfail.py"
+  slug="$(repo_slug)"; hist="$AGENT_STATE_DIR/check-failed-$$.json"
+  gh issue view "$issue" -R "$slug" --json comments > "$hist" < /dev/null || echo '{"comments": []}' > "$hist"
+  n="$(python3 "$cf" count "$hist")"; rm -f "$hist"
+  step="$(python3 "$cf" next "$n")"
+  if [[ "$step" == "needs-fix" ]]; then
+    { cat "$body"; echo
+      echo "_Back to **Ready** with \`needs-fix\`: the Dev agent reads this first, fixes it on the same PR and reruns the checks. A second failure goes to a person (#472)._"
+      python3 "$cf" marker $((n + 1)) "$source" "$sha"; } > "$body.marked"
+    gh issue comment "$issue" -R "$slug" --body-file "$body.marked" >/dev/null < /dev/null || true
+    gh issue edit "$issue" -R "$slug" --add-label needs-fix >/dev/null < /dev/null || true
+    [[ -z "$item" ]] || set_status "$item" "Ready" < /dev/null || true
+  fi
+  echo "$step"
+}
+
+# note_flaky <test name> <pr> <where> — a test the PR does not touch failed and
+# then passed on a re-run (#472): named on the PR and on its flaky-test issue
+# (the nightly hunt's, flaky.py), filed in Triage when none names it yet.
+note_flaky() {
+  local name="$1" pr="$2" where="$3" slug list n url line fp="$AGENT_REPO_DIR/scripts/agents/flaky.py"
+  slug="$(repo_slug)"; list="$AGENT_STATE_DIR/flaky-issues-$$.json"
+  gh issue list -R "$slug" --state all -L 300 --search "Flaky test in:title" \
+    --json number,title,state,closedAt > "$list" < /dev/null || echo '[]' > "$list"
+  n="$(python3 "$fp" find "$name" "$list")"; rm -f "$list"
+  line="🧪 \`$name\` failed in $where on #$pr, a test that PR does not touch, and passed on a re-run (#472)."
+  if [[ -n "$n" ]]; then
+    gh issue comment "$n" -R "$slug" --body "$line" >/dev/null < /dev/null || true
+  elif url="$(gh issue create -R "$slug" --label bug --title "$(python3 "$fp" title "$name")" \
+      --body "$line Make it pass every run (or fix the race it found).
+
+Filed by the PR checks' retry of untouched tests (scripts/agents/checkfail.py).
+<!-- flaky-test: $name -->" < /dev/null)"; then
+    n="${url##*/}"
+    add_to_board "$url" "Triage" >/dev/null < /dev/null || true
+  fi
+  gh pr comment "$pr" -R "$slug" --body "🤖 \`$name\` failed in $where and passed on a re-run. This PR does not touch it, so it is recorded as **flaky**${n:+ on #$n} and the PR is not held for it (#472)." >/dev/null < /dev/null || true
+}
+
 # monitor_curl <token> <curl args...> — curl with the monitor's service token,
 # sent as a header read from stdin so it never shows in the process list.
 monitor_curl() {

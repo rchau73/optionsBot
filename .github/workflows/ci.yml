@@ -4,20 +4,31 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "30 2 * * *" # nightly: every job on main, the vulnerability scan included (#472)
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  # Which jobs a change needs (#429): a pull request that only touches the
-  # frontend skips the Go jobs — except the frontend files the Go tests read
-  # (content/, README.md, the analytics and assistant twins). A push to main
-  # always runs everything.
+  # Which jobs a pull request needs (#429, #472): scripts/agents/checkfail.py
+  # suites picks them by what each one builds or reads — a doc runs a suite
+  # only when one of its tests opens it (test_checkfail.py keeps that list
+  # honest), any .md runs the doc-wide line checks (a CLAUDE.md only those), Docker only on code, the
+  # vulnerability scan only on go.mod/go.sum/package-lock.json. A push to
+  # main, the nightly run and a manual run always run everything.
   changes:
     name: Changes
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.diff.outputs.go }}
+      go_lint: ${{ steps.diff.outputs.go_lint }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+      docs: ${{ steps.diff.outputs.docs }}
+      scripts: ${{ steps.diff.outputs.scripts }}
+      docker: ${{ steps.diff.outputs.docker }}
+      vuln: ${{ steps.diff.outputs.vuln }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,22 +39,18 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
-          go=true
           if [ "$EVENT" = "pull_request" ]; then
-            files=$(git diff --name-only "$BASE...$HEAD")
-            echo "$files"
-            if [ -n "$files" ] && ! echo "$files" | grep -qvE '^frontend/' &&
-               ! echo "$files" | grep -qE '^frontend/(content/|README\.md$|lib/analytics/|lib/assistant/)'; then
-              go=false
-            fi
+            git diff --name-only "$BASE...$HEAD" > files.txt
+            cat files.txt
+            python3 scripts/agents/checkfail.py suites files.txt | tee -a "$GITHUB_OUTPUT"
+          else
+            for s in go go_lint frontend docs scripts docker vuln; do echo "$s=true"; done | tee -a "$GITHUB_OUTPUT"
           fi
-          echo "go=$go" >> "$GITHUB_OUTPUT"
-          echo "Go jobs: $go"
 
   go-lint:
-    name: Go lint & scripts
+    name: Go lint
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go_lint == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +69,20 @@ jobs:
 
       - name: go vet
         run: go vet ./...
+
+  # Split from Go lint (#472): a scripts-only change needs no go vet.
+  scripts:
+    name: Scripts
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5 # test_backup.py builds cmd/backupcheck
+        with:
+          go-version: "1.27.3"
+          cache: true
 
       - name: Shell scripts (bash -n, shellcheck)
         run: |
@@ -106,31 +127,46 @@ jobs:
           name: coverage-${{ matrix.group }}
           path: coverage-${{ matrix.group }}.out
 
-  # The required check: the Go jobs passed and the merged coverage holds its
-  # floor; a frontend-only pull request passes it without them.
+  # The required check: every job the change needs passed, and the merged
+  # coverage holds its floor; a job the change does not need is skipped. A
+  # docs-only change runs the doc-wide line checks here.
   test:
     name: Lint, test & coverage
-    needs: [changes, go-lint, go-tests]
+    needs: [changes, go-lint, scripts, go-tests]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Go jobs
+      - name: Jobs the change needs
         env:
-          GO: ${{ needs.changes.outputs.go }}
           CHANGES: ${{ needs.changes.result }}
+          GO: ${{ needs.changes.outputs.go }}
+          GO_LINT: ${{ needs.changes.outputs.go_lint }}
+          SCRIPTS: ${{ needs.changes.outputs.scripts }}
           LINT: ${{ needs.go-lint.result }}
+          SCRIPTS_RESULT: ${{ needs.scripts.result }}
           TESTS: ${{ needs.go-tests.result }}
         run: |
-          echo "changes $CHANGES · go $GO · lint $LINT · tests $TESTS"
+          echo "changes $CHANGES · go $GO ($TESTS) · go lint $GO_LINT ($LINT) · scripts $SCRIPTS ($SCRIPTS_RESULT)"
           [ "$CHANGES" = "success" ] || exit 1
-          if [ "$GO" != "true" ]; then
-            echo "### Frontend-only change: Go jobs skipped" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          [ "$LINT" = "success" ] && [ "$TESTS" = "success" ]
+          ok=0
+          [ "$GO" != "true" ] || [ "$TESTS" = "success" ] || ok=1
+          [ "$GO_LINT" != "true" ] || [ "$LINT" = "success" ] || ok=1
+          [ "$SCRIPTS" != "true" ] || [ "$SCRIPTS_RESULT" = "success" ] || ok=1
+          [ "$GO" = "true" ] || echo "### Go tests skipped: the change touches nothing they build or read" >> "$GITHUB_STEP_SUMMARY"
+          exit $ok
 
       - uses: actions/checkout@v4
-        if: needs.changes.outputs.go == 'true'
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.docs == 'true'
+
+      - uses: actions/setup-go@v5
+        if: needs.changes.outputs.go != 'true' && needs.changes.outputs.docs == 'true'
+        with:
+          go-version: "1.27.3"
+          cache: true
+
+      - name: Doc checks (a docs-only change; checkfail.py DOC_TESTS_RUN)
+        if: needs.changes.outputs.go != 'true' && needs.changes.outputs.docs == 'true'
+        run: go test ./tests/ -count=1 -run '^(TestClaudeDocs|TestDocs_)'
 
       - uses: actions/download-artifact@v4
         if: needs.changes.outputs.go == 'true'
@@ -153,6 +189,8 @@ jobs:
 
   frontend:
     name: Frontend lint, test & build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' # skipped counts as passed for the required check
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -182,6 +220,8 @@ jobs:
 
   vulncheck:
     name: Vulnerability scan
+    needs: changes
+    if: needs.changes.outputs.vuln == 'true' # dependency files; every push to main and nightly
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,6 +232,8 @@ jobs:
 
   docker:
     name: Docker build
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' # Dockerfile, go.*, cmd/, internal/, frontend code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -27,38 +27,38 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 
 | Event | Trigger | Properties | Answers |
 |---|---|---|---|
-| `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
-| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
-| `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
-| `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
-| `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
-| `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
+| `assistant_answered` | the panel shows the monitor's reply to a question (status 200; a limit, an error or the assistant being off is no reply) — its kind only, never the question, the answer or their ids (#424) | `answer` | Q5 |
+| `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
+| `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
+| `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
+| `data_stale_shown` | the page shows a stale or failed-poll badge | `source` | Q7 |
 | `details_section_jump` | a link of the Details (pro) page's section bar is followed (#405) | `section` | Q3 |
 | `details_trade_expand` | a trade row of Details (pro) is opened to its detail row (#405) | — | Q3 |
-| `tip_opened` | a contextual tip (E11) is shown for longer than 1 s | `tip_id`, `screen` | Q5 |
-| `video_played` | a how-to video starts | `video_id` | Q5 |
-| `video_completed` | a how-to video reaches 90 % | `video_id`, `watched_ms` | Q5 |
-| `help_resolved` | the person answers "did this help?" under a tip or video | `tip_id`, `video_id`, `helped` | Q5 |
+| `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
+| `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
 | `first_answers_seen` | in the first session, the KPI strip, the open positions, the worst-case figure and the last trade's reason have all been on screen | `elapsed_ms` | Q4 |
-| `manual_close_opened` | the manual-close dialog opens for a leg | `side`, `allowed` | Q6 |
+| `help_resolved` | the person answers "did this help?" under a tip or video | `tip_id`, `video_id`, `helped` | Q5 |
 | `manual_close_cancelled` | the dialog is dismissed without sending | `side` | Q6 |
 | `manual_close_confirmed` | the person confirms the close | `side`, `last_leg` | Q6 |
+| `manual_close_opened` | the manual-close dialog opens for a leg | `side`, `allowed` | Q6 |
 | `manual_close_result` | the close request returns | `side`, `outcome` | Q6, Q7 |
-| `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
+| `notification_followed` | the person follows an item of the bell (opens the question, My requests, the public issue, or Why?); its kind only, never its text (#447: the share of Needs you items acted on within 7 days) | `kind` | Q3, Q5 |
+| `notifications_opened` | the bell's list opens: its dropdown, or the `/notifications` page on a phone (#447) | — | Q3 |
+| `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
+| `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
+| `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
+| `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
 | `rebalance_confirmed` | the person confirms the real rebalance | `outcome` | Q6, Q7 |
-| `data_stale_shown` | the page shows a stale or failed-poll badge | `source` | Q7 |
+| `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
+| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
+| `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
 | `signed_out` | sign-out, or the session expired and the page went to `/login` | `reason` | Q2, Q7 |
-| `survey_shown` | an in-product survey card or the exit question is shown (`surveys.md`: frequency caps, never in the first 14 days) | `survey_id` | Q8 |
 | `survey_answered` | the person sends a survey: NPS with at least a score, the four-answers card or the exit reason; free text never travels here | `survey_id`, `score`, `reason_code`, `came_for`, `hardest_to_find` | Q4, Q8 |
 | `survey_dismissed` | the card is closed or the exit question skipped (one click) without an answer | `survey_id` | Q8 |
-| `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
-| `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
-| `assistant_answered` | the panel shows the monitor's reply to a question (status 200; a limit, an error or the assistant being off is no reply) — its kind only, never the question, the answer or their ids (#424) | `answer` | Q5 |
-| `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
-| `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
-| `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
-| `notifications_opened` | the bell's list opens: its dropdown, or the `/notifications` page on a phone (#447) | — | Q3 |
-| `notification_followed` | the person follows an item of the bell (opens the question, My requests, the public issue, or Why?); its kind only, never its text (#447: the share of Needs you items acted on within 7 days) | `kind` | Q3, Q5 |
+| `survey_shown` | an in-product survey card or the exit question is shown (`surveys.md`: frequency caps, never in the first 14 days) | `survey_id` | Q8 |
+| `tip_opened` | a contextual tip (E11) is shown for longer than 1 s | `tip_id`, `screen` | Q5 |
+| `video_completed` | a how-to video reaches 90 % | `video_id`, `watched_ms` | Q5 |
+| `video_played` | a how-to video starts | `video_id` | Q5 |
 
 What is deliberately **not** an event: each poll of the bot API, mouse movement, scrolling, keystrokes, text typed anywhere (the sign-in form included), hovering over numbers, and anything the bot itself does (that is the journal's job, not analytics).
 
@@ -82,36 +82,36 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 
 | Property | Type | Allowed values |
 |---|---|---|
-| `entry_screen` | enum | `monitor`, `login` |
-| `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login`, `analytics` (one per page of the menu, #424; the admin Analytics page, #445) |
-| `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
-| `panel` | enum | `account`, `positions`, `held`, `others`, `trades`, `activity`, `pnl`, `pnl_coin`, `orders` (the `monitor.panel.*` keys) |
-| `open_ms` | duration | milliseconds, capped at 1 h |
-| `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
-| `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
-| `section` | enum | `positions`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
-| `tip_id` | catalogue id | `tip.` + a key of `frontend/content/glossary.json` in letters and `_` (e.g. `tip.gamma_flip`, `tip.stop_loss`); an id not in the glossary is refused (#300); never generated from data |
-| `video_id` | catalogue id | a key of `frontend/content/videos.json` (e.g. `video.read_summary`); an id not in it is refused (#300) |
-| `watched_ms` | duration | milliseconds, capped at 10 min |
-| `helped` | bool | `true`, `false` |
-| `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
-| `side` | enum | `call`, `put` |
 | `allowed` | bool | whether the rule allowed the close when the dialog opened |
-| `last_leg` | bool | whether the leg was its strangle's last (the slot is re-entered) |
-| `outcome` | enum | `ok`, `refused`, `error`, `timeout` |
-| `source` | enum | `bot_api`, `account`, `pnl_history` |
-| `reason` | enum | `user`, `expired`, `refresh_failed` |
-| `survey_id` | enum | `nps`, `answers`, `exit` |
-| `score` | enum | `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10` (strings: the NPS score) |
-| `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `clear_risk`, `explains_trades`, `trust_numbers`, `helpful_answers`, `hard_to_find`, `missing_feature`, `other` (`surveys.md` §4) |
-| `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
-| `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
-| `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
 | `answer` | enum | `answered`, `dont_know`, `refused`, `fallback` (the kind of the assistant's reply: a cited answer, "I don't know", the refusal, the safe fallback) |
-| `unit` | enum | `coin`, `usd` (the unit picked) |
-| `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
-| `topic` | enum | `usage`, `delivery` (the admin Analytics page's topic, #473; only with `screen` `analytics`) |
+| `came_for` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` (E3's four answers) |
+| `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
+| `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
+| `entry_screen` | enum | `monitor`, `login` |
+| `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
+| `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
+| `helped` | bool | `true`, `false` |
 | `kind` | enum | `survey`, `request_needs_info`, `bot_event`, `request_status`, `whats_new` (the kind of the bell's item followed, `frontend/lib/notifications.js`) |
+| `last_leg` | bool | whether the leg was its strangle's last (the slot is re-entered) |
+| `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
+| `level` | enum | `strategy`, `slot`, `structure`, `leg`, `orders` |
+| `open_ms` | duration | milliseconds, capped at 1 h |
+| `outcome` | enum | `ok`, `refused`, `error`, `timeout` |
+| `panel` | enum | `account`, `positions`, `held`, `others`, `trades`, `activity`, `pnl`, `pnl_coin`, `orders` (the `monitor.panel.*` keys) |
+| `reason` | enum | `user`, `expired`, `refresh_failed` |
+| `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `clear_risk`, `explains_trades`, `trust_numbers`, `helpful_answers`, `hard_to_find`, `missing_feature`, `other` (`surveys.md` §4) |
+| `score` | enum | `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10` (strings: the NPS score) |
+| `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login`, `analytics` (one per page of the menu, #424; the admin Analytics page, #445) |
+| `section` | enum | `positions`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
+| `side` | enum | `call`, `put` |
+| `source` | enum | `bot_api`, `account`, `pnl_history` |
+| `survey_id` | enum | `nps`, `answers`, `exit` |
+| `tip_id` | catalogue id | `tip.` + a key of `frontend/content/glossary.json` in letters and `_` (e.g. `tip.gamma_flip`, `tip.stop_loss`); an id not in the glossary is refused (#300); never generated from data |
+| `topic` | enum | `usage`, `delivery` (the admin Analytics page's topic, #473; only with `screen` `analytics`) |
+| `unit` | enum | `coin`, `usd` (the unit picked) |
+| `video_id` | catalogue id | a key of `frontend/content/videos.json` (e.g. `video.read_summary`); an id not in it is refused (#300) |
+| `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
+| `watched_ms` | duration | milliseconds, capped at 10 min |
 
 Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage), a survey's free text (the NPS "anything else" and the exit `other` box: personal data, kept in `auth.db` beside the user and deleted with them, never in an event — *needs legal review*, `surveys.md` §6).
 
@@ -136,10 +136,11 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 
 - `tests/event_plan_test.go` reads the tables above and fails when an event uses a property not in §4, when a property's name or type could carry an amount, a size, a price or a secret, or when an event answers no question of §1.
 - A new event or property is added here first, in the same PR that instruments it, and must pass that test.
+- The §2 and §4 tables, and their copies in `frontend/lib/analytics/plan.js` and `internal/usage/plan.go`, are in alphabetical order (#465): a new row goes in its place, not at the end, so two PRs do not collide.
 
 ## 7. Engagement-drop alert ("are users stopping?")
 
-`cmd/usage -alert` (#341, #252) compares each week with the 3 weeks before it. `scripts/agents/usage.sh` runs it every Monday and files one `[E13] Engagement drop: <metrics> <week>` issue in Triage when a key number falls (AGENTIC.md "Weekly usage report"). The alert rules are fixed in `internal/usage/drops.go`:
+`cmd/usage -alert` (#341, #252) compares each week with the 3 weeks before it. `scripts/agents/usage.sh` runs it every Monday and files one `[E13] Engagement drop: <metrics> <week>` issue in Triage when a key number falls (docs/agents/usage.md "Weekly usage report"). The alert rules are fixed in `internal/usage/drops.go`:
 
 | Metric | From | Drop when |
 |---|---|---|
