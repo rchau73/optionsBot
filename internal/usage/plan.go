@@ -70,6 +70,8 @@ var Properties = map[string]Rule{
 	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
 	// The admin Analytics page's topic (#473).
 	"topic": enumOf("usage", "delivery"),
+	// The kind of the bell's item followed (#447), never its text.
+	"kind": enumOf("survey", "request_needs_info", "bot_event", "request_status", "whats_new"),
 }
 
 // Screens is one value per page of the monitor's menu (frontend/lib/menu.js)
@@ -116,6 +118,8 @@ var Events = map[string][]string{
 	"assistant_flag":         {},
 	"overview_unit_toggle":   {"unit"},
 	"overview_layer_toggle":  {"layer"},
+	"notifications_opened":   {},
+	"notification_followed":  {"kind"},
 }
 
 // The envelope's own rules (§3 and collector.js).

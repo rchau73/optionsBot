@@ -35,7 +35,7 @@ import sys
 
 FIELDS = ("ts", "agent", "run_id", "issue", "pr", "event", "outcome", "detail", "log", "commit")
 AGENTS = ("sme", "pm", "pm_answer", "dev", "review", "pr_gate", "deploy", "flaky", "backup", "usage", "requests",
-          "assistant_review", "dora")
+          "assistant_review", "dora", "release")
 EVENTS = ("start", "end")
 DETAIL_MAX = 200
 ABANDONED = "abandoned"
@@ -45,7 +45,7 @@ ABANDONED = "abandoned"
 # 5 min health check each; the flaky hunt stops itself at 30 min.
 TIME_LIMIT_MIN = {"dev": 120, "review": 60, "pm": 30, "pm_answer": 30, "sme": 60, "pr_gate": 20,
                   "deploy": 30, "flaky": 45, "backup": 30, "usage": 20, "requests": 30,
-                  "assistant_review": 20, "dora": 20}
+                  "assistant_review": 20, "dora": 20, "release": 20}  # release: promote.sh builds stable, 5 min health check
 RUN_PID = re.compile(r"^[a-z_]+-\d{8}T\d{6}Z-(\d+)-\d+$")  # lib.sh run_begin: <agent>-<time>-<pid>-<n>
 
 

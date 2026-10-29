@@ -28,7 +28,11 @@
 #     numbers on the E6 epic once (#470), else exits at once;
 #   - requests.sh, which judges the assistant's private request queue with one
 #     PM agent run and files the accepted ones as redacted issues (#410), else
-#     exits at once.
+#     exits at once;
+#   - release.sh, only after a healthy deploy step: the weekly release of the
+#     newest mvp build soaked 3 days (first tick of a Monday UTC), or a
+#     `release:hotfix` bug fix live 1 h on mvp (#471; AUTO_RELEASE=0 in
+#     agents.env turns it off), else exits at once.
 # After a usage or rate limit no new Claude run starts for 30 min, then one at a
 # time for an hour (lib.sh parallel_max); the budget in <envs>/agents.env
 # (pause, agent hours, Claude runs per day, parallelism, models: limit_lib.sh)
@@ -45,7 +49,8 @@ source "$dir/../env_lib.sh"
 LIMIT_FILE="$logs/limit_hit"
 # shellcheck source=limit_lib.sh
 source "$dir/limit_lib.sh" # loads agents.env: the parallelism below comes from it
-"$dir/deploy.sh" || echo "deploy step failed (exit $?)"
+deploy_ok=1
+"$dir/deploy.sh" || { echo "deploy step failed (exit $?)"; deploy_ok=0; }
 "$dir/pr_gate.sh" || echo "pr gate step failed (exit $?)"
 
 start() { # script, instances
@@ -83,4 +88,6 @@ start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-m
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
 start requests.sh 1 # exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget)
+# Only after a healthy deploy step (#471): weekly, or a hotfix live 1 h on mvp.
+if [[ $deploy_ok -eq 1 ]]; then start release.sh 1; else echo "release step skipped: the deploy step failed"; fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

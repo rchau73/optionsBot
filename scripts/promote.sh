@@ -1,39 +1,76 @@
 #!/usr/bin/env bash
-# promote.sh — move the stable environment to a release. A person runs it.
+# promote.sh — move the stable environment to a release. A person runs it, or
+# the weekly release (scripts/agents/release.sh, #471) from the mvp clone.
 #
 #   scripts/promote.sh v0.3.0            promote; a new tag goes on the newest mvp build
 #                                        that has soaked PROMOTE_SOAK_DAYS (#360)
 #   scripts/promote.sh v0.3.0 --commit <sha>   a new tag on a named commit that ran in mvp
+#   scripts/promote.sh v0.3.0 --commit <sha> --escalate "<reason>"
+#                                        admin escalation (#471): no soak; the reason is audited
 #   scripts/promote.sh v0.2.0            rollback: a tag stable already ran skips the soak
 #   scripts/promote.sh v0.1.0 --first    the very first promotion (no stable history yet)
 #   add --yes to skip the confirmation
+#   release.sh adds --weekly, or --hotfix "<PR>" with --commit (soak PROMOTE_HOTFIX_HOURS, 1)
 #
 # A new release must have run in mvp for PROMOTE_SOAK_DAYS (3) — the tagged
 # commit or a later one, per <envs>/history/deploys.tsv — and no open
 # issue may carry sme:not-fixed (the SME agent found a merged fix that did not
-# work). Then stable checks out the tag, rebuilds, and every bot's decision loop
-# must report again; if not, stable goes back to its previous release.
+# work); a hotfix or an escalation shortens only the soak. Then stable checks
+# out the tag, rebuilds, and every bot's decision loop must report again; if
+# not, stable goes back to its previous release. A healthy release is a
+# `stable … release <tag> <trigger> <who> <why>` line in deploys.tsv (trigger
+# manual | weekly | hotfix | escalation; who = PROMOTE_BY, else the git user).
 # Testnet only: a live stable is promoted by hand. Run it from the development
-# checkout, never from an environment's clone.
+# checkout (or the mvp clone, which runs main), never from stable's clone.
 set -euo pipefail
 # shellcheck source=env_lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/env_lib.sh"
-why="$(env_not_in_clone)" || { echo "promote: $why" >&2; exit 1; }
+why="$(env_not_in_clone mvp)" || { echo "promote: $why" >&2; exit 1; }
 
 tag="${1:-}"; shift || true
-first=0; yes=0; pick=""
+first=0; yes=0; pick=""; trigger=manual; reason=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --first) first=1 ;;
     --yes) yes=1 ;;
     --commit) [[ -n "${2:-}" ]] || { echo "--commit needs a commit" >&2; exit 1; }; pick="$2"; shift ;;
+    --weekly)
+      [[ "$trigger" == "manual" ]] || { echo "only one of --weekly, --hotfix, --escalate" >&2; exit 1; }
+      trigger=weekly ;;
+    --hotfix | --escalate)
+      [[ "$trigger" == "manual" ]] || { echo "only one of --weekly, --hotfix, --escalate" >&2; exit 1; }
+      [[ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" && "${2:-}" != --* ]] ||
+        { echo "$1 needs a reason (it is audited)" >&2; exit 1; }
+      trigger="${1#--}"; [[ "$trigger" != "escalate" ]] || trigger=escalation
+      reason="$2"; shift ;;
     *) echo "unknown option $1" >&2; exit 1 ;;
   esac
   shift
 done
-[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: promote.sh vMAJOR.MINOR.PATCH [--commit <sha>] [--first] [--yes]" >&2; exit 1; }
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "usage: promote.sh vMAJOR.MINOR.PATCH [--commit <sha>] [--escalate <reason>] [--first] [--yes]" >&2; exit 1; }
 [[ -z "$pick" || $first -eq 0 ]] || { echo "--commit and --first do not go together" >&2; exit 1; }
+[[ "$trigger" == "manual" || $first -eq 0 ]] || { echo "--first is a person's manual promotion" >&2; exit 1; }
+if [[ "$trigger" == "hotfix" || "$trigger" == "escalation" ]] && [[ -z "$pick" ]]; then
+  echo "--${trigger/escalation/escalate} needs --commit <sha>: a commit that ran in mvp" >&2; exit 1
+fi
 SOAK_DAYS="${PROMOTE_SOAK_DAYS:-3}"
+# The soak this promotion needs, in hours: a hotfix waits PROMOTE_HOTFIX_HOURS
+# (1) on mvp, an escalation none.
+case "$trigger" in
+  hotfix) soak_hours="${PROMOTE_HOTFIX_HOURS:-1}" ;;
+  escalation) soak_hours=0 ;;
+  *) soak_hours="$(python3 -c 'import sys; print(float(sys.argv[1]) * 24)' "$SOAK_DAYS")" ;;
+esac
+# audit <text> → one deploys.tsv field: tabs and newlines become spaces.
+audit() { printf '%s' "$*" | tr '\t\n\r' '   ' | sed -e 's/^ *//' -e 's/ *$//'; }
+who="${PROMOTE_BY:-}"
+if [[ -z "$who" ]]; then
+  case "$trigger" in
+    weekly | hotfix) who="agent:release" ;;
+    *) who="$(git config user.name 2>/dev/null || true)"; who="${who:-$(id -un)}" ;;
+  esac
+fi
+who="$(audit "$who")"; reason="$(audit "$reason")"
 stable="$(env_dir stable)"
 promotions="$ENV_HISTORY/promotions.tsv"; deploys="$ENV_HISTORY/deploys.tsv"
 die() { echo "promote: $*" >&2; exit 1; }
@@ -118,15 +155,18 @@ else
     if git -C "$stable" merge-base --is-ancestor "$commit" "$c" 2>/dev/null; then since="$at"; break; fi
   done < <(cat "$deploys" 2>/dev/null || true)
   [[ -n "$since" ]] || die "$tag (${commit:0:7}) never ran in mvp"
-  python3 - "$since" "$SOAK_DAYS" <<'PY' || exit 1
+  python3 - "$since" "$soak_hours" "$trigger" "$SOAK_DAYS" <<'PY' || exit 1
 import datetime as d, sys
 since = d.datetime.strptime(sys.argv[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=d.timezone.utc)
-ready = since + d.timedelta(days=float(sys.argv[2]))
+hours, trigger, days = float(sys.argv[2]), sys.argv[3], sys.argv[4]
+ready = since + d.timedelta(hours=hours)
 now = d.datetime.now(d.timezone.utc)
+soak = f"{hours:g}-hour hotfix soak" if trigger == "hotfix" else f"{days}-day soak"
 if now < ready:
-    print(f"promote: in mvp since {since:%Y-%m-%d %H:%M} UTC; the {sys.argv[2]}-day soak ends {ready:%Y-%m-%d %H:%M} UTC", file=sys.stderr)
+    print(f"promote: in mvp since {since:%Y-%m-%d %H:%M} UTC; the {soak} ends {ready:%Y-%m-%d %H:%M} UTC", file=sys.stderr)
     sys.exit(1)
-print(f"soak ok: in mvp since {since:%Y-%m-%d %H:%M} UTC ({(now - since).total_seconds() / 86400:.1f} days)")
+ok = "escalation: soak skipped" if trigger == "escalation" else f"{soak} ok"
+print(f"{ok}: in mvp since {since:%Y-%m-%d %H:%M} UTC ({(now - since).total_seconds() / 86400:.1f} days)")
 PY
   slug="$(git -C "$stable" remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
   open_nf="$(gh issue list -R "$slug" --label sme:not-fixed --state open --json number,title -q '.[] | "#\(.number) \(.title)"')" ||
@@ -136,6 +176,7 @@ $open_nf"
 fi
 
 echo "stable: ${prev:-none} → $tag (${commit:0:7}$([[ $new_tag -eq 1 ]] && echo ", new tag"))"
+echo "trigger: $trigger by $who${reason:+ — $reason}"
 # `|| true`: head closes the pipe after 20 lines, git log then dies of SIGPIPE
 # (141) and pipefail + set -e ended the script silently before the prompt
 # (2026-10-26, v0.1.0 → v0.2.0 is 99 merges).
@@ -156,11 +197,12 @@ fi
 url="$(env_monitor_url stable)"
 run() { git -C "$stable" checkout -q --detach "$1" && env_compose stable up -d --build && wait_healthy "$url" "${PROMOTE_HEALTH_TIMEOUT_SEC:-300}" "$(env_monitor_token stable)"; }
 # Each outcome is also a `stable` line in deploys.tsv (#470: cmd/dora's
-# releases and failures): `release <tag>` when healthy, `rollback <prev>` when
-# a failed promotion went back. Readers of the mvp soak skip these lines.
+# releases and failures): `release <tag> <trigger> <who> <why>` when healthy
+# (#471: the audit of how it was triggered), `rollback <prev>` when a failed
+# promotion went back. Readers of the mvp soak skip these lines.
 if run "$tag"; then
   env_record promotions.tsv "$tag" "$commit"
-  env_record deploys.tsv stable "$commit" release "$tag"
+  env_record deploys.tsv stable "$commit" release "$tag" "$trigger" "$who" "${reason:--}"
   echo "stable is on $tag and healthy: $url"
   exit 0
 fi
