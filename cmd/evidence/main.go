@@ -99,6 +99,7 @@ func run(env, root, booksRoot, bots, week, from, to string, equity float64, stre
 	for _, bot := range names {
 		bot = strings.ToLower(strings.TrimSpace(bot))
 		in := evidence.Load(env, bot, evidence.BotPaths(root, booksRoot, bot), w, equity, os.Stderr)
+		in.Account = evidence.DeribitAccount(root) // live → the replay vs live section shows % only (#488)
 		evidence.RunStress(&in, stressCmd)
 		md, js := evidence.OutPaths(root, w.Label, bot)
 		if err := evidence.Write(evidence.Build(in), md, js); err != nil {

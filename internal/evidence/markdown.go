@@ -113,6 +113,8 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		p("- not modelled by the replay: %s\n\n", strings.Join(g.Unmodelled, "; "))
 	}
 
+	writeReplayVsLive(p, r.RVL, u)
+
 	st := r.Stress
 	p("## Stress\n\nSource: %s", st.Source)
 	if st.BookAt != nil {

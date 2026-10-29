@@ -38,6 +38,7 @@ var Unmodelled = []string{
 // missing input: its section says so.
 type Inputs struct {
 	Env, Bot string
+	Account  string // the env's DERIBIT_ENV: live | testnet ("" = testnet); live shows % only (#488)
 	Window   Window
 	Cfg      *config.Config // the bot's settings (replay)
 	Config   string         // its path
@@ -80,24 +81,25 @@ type Inputs struct {
 // Report is the weekly evidence of one bot. Amounts are coin unless named
 // USD; it stays in data/ (gitignored).
 type Report struct {
-	Env       string      `json:"env"`
-	Bot       string      `json:"bot"`
-	Week      string      `json:"week"`
-	From      time.Time   `json:"from"`
-	To        time.Time   `json:"to"` // exclusive
-	Live      Live        `json:"live"`
-	Bridge    Bridge      `json:"bridge"`
-	Replay    Replay      `json:"replay"`
-	Gap       Gap         `json:"gap"`
-	Stress    Stress      `json:"stress"`
-	Hold      Hold        `json:"hold"`
-	Util      Util        `json:"utilisation"`
-	ROM       ROM         `json:"return_on_margin"`
-	Missing   Missing     `json:"missing"`
-	E1        Reliability `json:"e1_reliability"`
-	Coverage  Coverage    `json:"coverage"`
-	Equity    float64     `json:"equity"` // coin, at the start (0 = unknown)
-	EquitySrc string      `json:"equity_source"`
+	Env       string       `json:"env"`
+	Bot       string       `json:"bot"`
+	Week      string       `json:"week"`
+	From      time.Time    `json:"from"`
+	To        time.Time    `json:"to"` // exclusive
+	Live      Live         `json:"live"`
+	Bridge    Bridge       `json:"bridge"`
+	Replay    Replay       `json:"replay"`
+	Gap       Gap          `json:"gap"`
+	Stress    Stress       `json:"stress"`
+	Hold      Hold         `json:"hold"`
+	Util      Util         `json:"utilisation"`
+	ROM       ROM          `json:"return_on_margin"`
+	Missing   Missing      `json:"missing"`
+	E1        Reliability  `json:"e1_reliability"`
+	Coverage  Coverage     `json:"coverage"`
+	RVL       ReplayVsLive `json:"replay_vs_live"`
+	Equity    float64      `json:"equity"` // coin, at the start (0 = unknown)
+	EquitySrc string       `json:"equity_source"`
 }
 
 // Live is what the bot did: the journal's closes in the window (realised,
@@ -234,13 +236,15 @@ func Build(in Inputs) Report {
 		GEXDays:     missingDays(w, gexTimes(in.GEX)),
 	}
 	r.Coverage = buildCoverage(in.Recorded, w)
-	r.Replay, r.Gap = buildReplay(in)
+	var days []replay.Day
+	r.Replay, r.Gap, days = buildReplay(in)
 	if note := r.Coverage.partialNote(); note != "" && r.Replay.Ran {
 		r.Replay.Partial, r.Gap.Partial = note, note
 	}
 	r.Stress = buildStress(in)
 	r.ROM = buildROM(in, r.Replay)
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
+	r.RVL = buildReplayVsLive(in, r, days)
 	return r
 }
 
@@ -281,7 +285,8 @@ func buildHold(in Inputs, s perf.Summary) Hold {
 		StrategyKnown: s.HoldKnown && s.EquityKnown, ReturnUSDPct: s.ReturnUSDPct, ExcessReturnPct: s.ExcessReturnPct}
 }
 
-func buildReplay(in Inputs) (Replay, Gap) {
+// buildReplay also returns the replay's days (the replay vs live section's worst day).
+func buildReplay(in Inputs) (Replay, Gap, []replay.Day) {
 	w := in.Window
 	rp := Replay{Source: in.Market, ConfigPath: in.Config, BooksRead: len(in.Snaps)}
 	gap := Gap{Source: in.Journal + " marked at " + in.Market + " mids", Unmodelled: Unmodelled}
@@ -303,7 +308,7 @@ func buildReplay(in Inputs) (Replay, Gap) {
 	}
 	if rp.Note != "" {
 		gap.Unmodelled = nil
-		return rp, gap
+		return rp, gap, nil
 	}
 	book := replay.BookAt(in.Trades, w.From)
 	res, err := replay.Run(in.Snaps, replay.Settings{Cfg: in.Cfg, From: w.From, To: w.Last(), Equity: in.Equity,
@@ -311,7 +316,7 @@ func buildReplay(in Inputs) (Replay, Gap) {
 	if err != nil {
 		rp.Note = err.Error()
 		gap.Unmodelled = nil
-		return rp, gap
+		return rp, gap, nil
 	}
 	rp.Ran, rp.StartLegs = true, len(book)
 	rp.Start, rp.End, rp.Snapshots, rp.GEXMinutes = res.Start, res.End, res.Snapshots, res.GEXMinutes
@@ -331,7 +336,7 @@ func buildReplay(in Inputs) (Replay, Gap) {
 	gap.Live = replay.ActualPnL(in.Trades, window, res.Start, res.End)
 	gap.Replay = res.Net
 	gap.Gap = res.Net - gap.Live.Net
-	return rp, gap
+	return rp, gap, res.Days
 }
 
 // buildROM is the return on margin, live and replayed (#278). The replay's
