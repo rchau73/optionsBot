@@ -531,6 +531,9 @@ EPIC_LABEL = re.compile(r"^E\d+$")
 # may be built up to BLOCKER_PARALLEL at once within one epic, because they
 # were planned to touch different files. When no open card carries the label,
 # the one-card-per-epic rule below applies to everything again.
+# While any open card carries the label, ONLY blocker cards are picked
+# (product owner 2026-10-29: "ensure no other cards are picked up beside the
+# blocker ones"): every other card waits, whatever its priority or epic.
 BLOCKER_LABEL = "blocker"
 BLOCKER_PARALLEL = 3
 
@@ -541,7 +544,9 @@ def ready_order(cards, busy_numbers):
     being built): cards of one epic touch the same files, and building two at
     once made the second PR conflict and cost a fix-up run (#320/#322).
     Exception: a `blocker` card skips only when a non-blocker card of its epic
-    is being built, or BLOCKER_PARALLEL blocker cards of that epic already are."""
+    is being built, or BLOCKER_PARALLEL blocker cards of that epic already are.
+    While any open card (any status) carries `blocker`, only blocker cards are
+    returned."""
     by_num = {c["number"]: c for c in cards}
     epics = lambda c: {l for l in c.get("labels", []) if EPIC_LABEL.match(l)}
     busy_epics, busy_blockers = set(), {}
@@ -552,9 +557,12 @@ def ready_order(cards, busy_numbers):
                 busy_blockers[e] = busy_blockers.get(e, 0) + 1
             else:
                 busy_epics.add(e)
+    blockers_open = any(BLOCKER_LABEL in c.get("labels", []) and c.get("state") == "OPEN" for c in cards)
     out = []
     for c in cards:
         if c["status"] != "Ready" or c["state"] != "OPEN" or "epic" in c["labels"] or "agent:pm" in c["labels"]:
+            continue
+        if blockers_open and BLOCKER_LABEL not in c["labels"]:
             continue
         mine = epics(c)
         if busy_epics & mine:

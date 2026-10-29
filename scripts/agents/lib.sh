@@ -211,6 +211,16 @@ open_issues_among() {
   return 1
 }
 
+# open_dev_pr <issue> → "PR BRANCH HEAD LABELS" of the issue's open pull
+# request (the newest): on agent/issue-<n>, or on agent/issue-<n>-r<k>, where
+# dev_agent.sh moves review fixes when the first PR merged meanwhile (#478).
+# Empty when there is none.
+open_dev_pr() {
+  gh pr list -R "$(repo_slug)" --state open --limit 200 --json number,headRefName,headRefOid,labels \
+    -q '[.[] | select(.headRefName | test("^agent/issue-'"$1"'(-r[0-9]+)?$"))] | .[0] // empty
+      | "\(.number) \(.headRefName) \(.headRefOid) \([.labels[].name] | join(","))"'
+}
+
 # set_priority <item id> <P0|P1|P2|P3>
 set_priority() {
   load_project_cache || return 1

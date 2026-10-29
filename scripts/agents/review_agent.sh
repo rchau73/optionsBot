@@ -46,12 +46,11 @@ agent_reviews() {
 mutex review-pick || exit 0
 max="$(parallel_max "${REVIEW_PARALLEL:-1}")"
 if [[ "$(claims_alive review)" -ge "$max" ]]; then unmutex review-pick; log "review: $max instance(s) already running"; exit 0; fi
-item="" issue="" pr="" head=""
+item="" issue="" pr="" head="" pr_branch=""
 while read -r it num; do
   [[ -n "$it" ]] || continue
-  p="" h="" labels=""
-  read -r p h labels < <(gh pr list -R "$slug" --head "agent/issue-$num" --state open \
-    --json number,headRefOid,labels -q '.[0] // empty | "\(.number) \(.headRefOid) \([.labels[].name] | join(","))"' < /dev/null || true) || true
+  p="" b="" h="" labels=""
+  read -r p b h labels < <(open_dev_pr "$num" < /dev/null || true) || true # agent/issue-<n>[-r<k>] (#478)
   [[ -n "${p:-}" && "${labels:-}" == *agent:dev* ]] || continue
   claim_alive review "$p" && continue
   # A head is reviewed once — an incomplete review (a changed file unread,
@@ -65,7 +64,7 @@ while read -r it num; do
   if [[ -n "$last" && "$last_verdict" != "incomplete" ]] && gh api "repos/$slug/compare/$last...$h" < /dev/null 2>/dev/null |
       python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" equiv /dev/stdin | grep -q .; then continue; fi
   claim review "$p" || continue
-  item="$it"; issue="$num"; pr="$p"; head="$h"; break
+  item="$it"; issue="$num"; pr="$p"; pr_branch="$b"; head="$h"; break
 done < <(items_in_status "In review")
 unmutex review-pick
 [[ -n "$pr" ]] || { log "review: nothing to review"; exit 0; }
@@ -80,7 +79,7 @@ RUN_COMMIT="${head:0:7}" # the end line names the commit reviewed
 log "review: PR #$pr (issue #$issue) at ${head:0:7}, round $round"
 
 # ── Worktree at the PR head ─────────────────────────────────────────────────
-git_locked fetch -q origin main "agent/issue-$issue"
+git_locked fetch -q origin main "$pr_branch"
 wt="$AGENT_WORK_DIR/review-pr-$pr"
 [[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 git_locked worktree add -q --detach "$wt" "$head"
