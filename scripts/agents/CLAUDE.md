@@ -52,8 +52,18 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)
       and moves every closed issue's card to Done (each tick too, for issues closed by hand: the board's "Item closed" workflow is off);
-  - stable moves only by a person's `scripts/promote.sh` (3-day soak, no open `sme:not-fixed`
-    — the SME agent adds it when it reopens a not-fixed issue and verifies fixes on mvp's data, `data/sme/<date>/mvp/`).
+  - stable moves only by `scripts/promote.sh` (3-day soak, no open `sme:not-fixed`
+    — the SME agent adds it when it reopens a not-fixed issue and verifies fixes on mvp's data, `data/sme/<date>/mvp/`),
+    run by a person or by the automatic release below.
+- Automatic release (#471, AGENTIC.md "Automatic release"):
+  - `release.sh` (from the tick, only after a healthy deploy step; rules in pure `release.py`, no Claude) runs `promote.sh <next patch> --commit <sha> --yes` from the mvp clone:
+    - weekly: the first tick of an ISO week (`data/agents/release/<week>.done`) releases the newest healthy mvp deploy ≥ 3 days old that stable does not contain;
+      nothing to release → a one-line note on the E6 epic saying why;
+    - hotfix (any tick): a merged PR labelled, or closing an issue labelled, `bug` + `release:hotfix`, once its first mvp deploy has been live 1 h (`--hotfix "#PR"`);
+    - an open `sme:not-fixed` blocks both; a commit whose promotion failed is not retried (`failed-<sha>`); every release notifies and comments on E6;
+    - `RELEASE_DRY_RUN=1` decides and prints only; `AUTO_RELEASE=0` in `agents.env` turns it off; ledger agent `release`.
+  - a person (an admin) escalates: `promote.sh <tag> --commit <sha> --escalate "<reason>"` skips the soak — still a commit that ran in mvp, still no `sme:not-fixed`;
+  - every healthy release is a `stable … release <tag> <trigger> <who> <why>` line in `deploys.tsv` (trigger `manual | weekly | hotfix | escalation`, who = `PROMOTE_BY` else the git user, `agent:release` for the agent).
 - Run ledger (#206, AGENTIC.md "Run ledger"):
   - every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-hunt, usage-report and backup run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
@@ -89,7 +99,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
 - Daily delivery report (#470, AGENTIC.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);
-  - `promote.sh` appends `stable … release <tag>` / `stable … rollback <tag>` lines to `deploys.tsv` (mvp readers skip them);
+  - `promote.sh` appends `stable … release <tag> <trigger> <who> <why>` / `stable … rollback <tag>` lines to `deploys.tsv` (mvp readers skip them; `internal/delivery` ignores the fields after the tag);
   - the `regression` label + a "Caused by #N" line (Dev: in its PR body, `dev_agent.sh` labels the issue; SME: a finding's `caused_by`) feed its change failure rate;
   - ledger agent `dora`.
 - Nightly backup (#328, AGENTIC.md "Nightly backup"):
@@ -119,4 +129,4 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     no new Claude run for 30 min, then one at a time for an hour (`parallel_max`);
   - each tick, outside a pause, `requeue.sh` (rules in `requeue.py`) puts back in Ready the Blocked cards whose Dev stop was a limit and nobody answered (#237).
 - Setup: `setup_github.sh`; schedule: `install.sh`.
-- Agents never deploy live or trade; they merge only policy-free work: the PR gate merges Dev agent PRs reviewed clean, CI green, up to date and policy-free (#468), and the PM merges its own policy-free PRD PRs.
+- Agents never deploy live or trade (release.sh promotes a testnet stable only: `promote.sh` refuses a live one); they merge only policy-free work: the PR gate merges Dev agent PRs reviewed clean, CI green, up to date and policy-free (#468), and the PM merges its own policy-free PRD PRs.

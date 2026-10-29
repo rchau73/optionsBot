@@ -113,7 +113,7 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 - **Least privilege:** the agent that looks at trading data cannot change code, and the agent that changes code cannot see the network or GitHub.
 - **Trust, but verify:** the Dev agent's "tests pass" is not taken at its word. The script re-runs every check, and a failing PR is opened as a draft and blocked. Then a separate Reviewer agent reads the change with no stake in it, and must back each finding with a concrete failure: an unverified first pass on PR #91 had 3 false findings out of 10.
 - **Bounded review loop:** the Reviewer sends a PR back at most twice (`REVIEW_MAX_ROUNDS`), reviews each commit once, and a failed review hands the PR to the human instead of retrying. Its review is a comment, not an approval: the agents use the human's GitHub login, which can't approve its own PR, so the board column carries the decision and merging stays with the human.
-- **Testnet only, mvp only:** automatic deploys go to mvp and refuse to run if its bots are live. Stable moves only by a person's `promote.sh`; live deploys stay manual.
+- **Testnet only, mvp only:** automatic deploys go to mvp and refuse to run if its bots are live. Stable moves only by `promote.sh` — a person's, or the weekly or hotfix release on a testnet stable (["Automatic release"](#automatic-release)); live deploys stay manual.
 - **A broken main never leaves mvp down** (#204): when a deploy fails its compose step or health check, `deploy.sh` puts the mvp clone back on the last commit that passed, rebuilds and health-checks it, and records a `rollback` line in `deploys.tsv`. It also files one `bug` issue in Triage, `[E6] mvp deploy failed: <sha> (<subject>)`, with the failed step and the last 80 log lines, secrets redacted (`deploy_issue.py`). The PM triages that issue like any bug, so a fix is on its way. A rollback that is unhealthy too is notified loudly and stops there, with no retry loop. Details: [operations](docs/operations.md#agents-sme-review-pm-dev-agent-mvp-deploy).
 - **Environments share nothing:** each has its own clone, Deribit subaccount, monitor port and data; `envctl.sh` refuses to start one whose Deribit account or port another uses (two bots on one account cancel each other's orders at startup and adopt each other's positions).
 - **Data exposure:** this repo is public. On testnet, issues carry full evidence, because the money is fake. If a bot runs live, the SME agent is told to leave balances, sizes and P&L out of issues; the full report stays local (`data/sme/`, gitignored).
@@ -255,6 +255,18 @@ Do we deliver faster without breaking more (#470, epic E6)? Once a UTC day, [`do
 - **Skipped, never counted:** a malformed `deploys.tsv` line, a merge with no PR number, a deploy, release or tag on a commit not on `main`, a regression that names no merged PR — each listed as a problem in `dora.json` and on `cmd/dora`'s stderr.
 
 Tests: `tests/delivery_test.go` on the fixture history in `tests/testdata/delivery/`.
+
+## Automatic release
+
+Every release since v0.1.0 has been the newest mvp build that soaked 3 days, so the agents make it (#471, epic E6, product owner 2026-10-28); the soak, the `sme:not-fixed` check and the rollback stay in [`promote.sh`](scripts/promote.sh). After a healthy deploy step, each tick runs [`release.sh`](scripts/agents/release.sh) (rules in pure `release.py`, no Claude), which calls `promote.sh <next patch> --commit <sha> --yes` from the mvp clone:
+
+- **Weekly:** the first tick of an ISO week (Monday UTC, `data/agents/release/<week>.done`) releases the newest healthy mvp deploy (never a `rollback` line) at least 3 days old that stable does not contain yet. Nothing to release, or a block, is a one-line note on the E6 epic saying why. Once a week either way.
+- **Hotfix** (any tick): a merged PR labelled `bug` + `release:hotfix`, or one that closes an issue with both labels, is released once the first mvp deploy containing it has been live 1 h (`PROMOTE_HOTFIX_HOURS`) — still tested on mvp. The newer of a hotfix and the weekly build goes.
+- **Escalation (admin only):** a person runs `scripts/promote.sh <tag> --commit <sha> --escalate "<reason>"`; the soak is skipped, the reason is required. (From the monitor, the audited Admin route is a later story; it will pass the admin as `PROMOTE_BY`.)
+- **Every path** refuses a commit that never ran in mvp and stops on an open `sme:not-fixed`. Each healthy release writes `stable … release <tag> <trigger> <who> <why>` to `deploys.tsv` (trigger `manual`, `weekly`, `hotfix` or `escalation`), which the delivery report reads; `release.sh` notifies and comments on E6. A failed promotion (stable went back) is not retried for that commit (`data/agents/release/failed-<sha>`).
+- **Off:** `AUTO_RELEASE=0` in `agents.env`. `RELEASE_DRY_RUN=1 scripts/agents/release.sh` prints what it would do and changes nothing. Ledger agent `release`.
+
+Tests: `scripts/agents/test_release.py` (the rules, and `release.sh` on a throwaway origin and stable clone) and `test_promote.py`.
 
 ## Weekly evidence report
 
