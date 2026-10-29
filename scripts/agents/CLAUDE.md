@@ -45,6 +45,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     and sends blocking findings back to Ready (≤ 2 fix rounds, then `agent:needs-human`; clean → `agent:reviewed`);
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),
     sends a PR that conflicts with main back to Ready with `needs-rebase` (the Dev agent always merges `origin/main` into an open PR's branch first and resolves conflicts as its first task),
+    - except a conflict only in generated files (#465): the gate merges main in a scratch worktree, reruns the generators (`scripts/regen.sh --resolve`) and pushes; the Dev agent's merge step does the same before the agent starts;
     never acts on a PR whose card is In progress (wait "a Dev agent is working on it", #478),
     and labels `ready-to-merge` (PR and card) only a PR reviewed clean on its current head, CI green, `CLEAN`, with no open dependency
     — a PR that changes a business rule or policy waits there for the person, who merges those top-down in priority order;

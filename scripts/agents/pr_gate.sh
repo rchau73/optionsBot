@@ -2,8 +2,10 @@
 # pr_gate.sh — every tick, before the agents: makes sure a person only picks up
 # Dev agent PRs that are ready (product owner, 2026-10-19). For each open
 # agent:dev PR (pr_gate.py decide):
-#   conflict → the card goes back to Ready with needs-rebase; the Dev agent
-#              merges main into the branch and resolves (dev_agent.sh);
+#   conflict → only in generated files: main merged in and the generators
+#              rerun here (scripts/regen.sh, #465), the Reviewer checks the
+#              new commit; any other: the card goes back to Ready with
+#              needs-rebase, the Dev agent merges main and resolves (dev_agent.sh);
 #   update   → behind main without conflict: gh pr update-branch, and the
 #              Reviewer checks the new commit;
 #   ready    → reviewed clean on its current commit, CI green, CLEAN, no open
@@ -45,6 +47,26 @@ gate_run() {
   run_begin pr_gate "$issue" "$pr"
   RUN_COMMIT="${head:0:7}"
   run_end "$1" "$2"
+}
+
+# merge_regenerating <branch> — a PR that conflicts with main only in generated
+# files (.gitattributes linguist-generated: the help index, docs/parameters.md,
+# the effective-config goldens) needs no agent (#465): merge main into the
+# branch in a scratch worktree, rerun the generators (scripts/regen.sh), push.
+# Any other conflict, or a failure, pushes nothing and returns 1.
+merge_regenerating() {
+  local branch="$1" wt="$tmp/merge"
+  git_locked fetch -q origin || return 1
+  git_locked worktree add -q --detach "$wt" "origin/$branch" 2>/dev/null || return 1
+  local rc=1
+  if ! git -C "$wt" merge --no-edit -q origin/main >/dev/null 2>&1 &&
+    (cd "$wt" && bash scripts/regen.sh --resolve) >> "$tmp/regen.log" 2>&1 &&
+    git -C "$wt" commit -q --no-edit &&
+    git_locked -C "$wt" push -q origin "HEAD:$branch"; then
+    rc=0
+  fi
+  git_locked worktree remove --force "$wt" 2>/dev/null || true
+  return $rc
 }
 
 merged=0
@@ -89,11 +111,17 @@ while read -r pr ref; do
   case "$action" in
     conflict)
       [[ "$(seen "$pr" "conflict:$head")" == "1" ]] && continue
+      remember "$pr" "conflict:$head"
+      if merge_regenerating "$ref"; then
+        log "pr-gate: #$pr conflicted only in generated files: merged main, regenerated, pushed"
+        gate_run branch_updated "conflict only in generated files: regenerated"
+        continue
+      fi
       item="$(item_for_issue "$issue")"
       gh issue edit "$issue" -R "$slug" --add-label needs-rebase >/dev/null < /dev/null || true
       [[ -n "$item" ]] && set_status "$item" "Ready"
       gh issue comment "$issue" -R "$slug" --body "🤖 **PR gate** — #$pr conflicts with \`main\` (another PR merged first). Back to **Ready** with \`needs-rebase\`: the Dev agent merges \`main\` into the branch, resolves the conflict keeping both changes' intent, re-runs every check, and the Reviewer checks the result before it comes back to you." >/dev/null < /dev/null
-      remember "$pr" "conflict:$head"; log "pr-gate: #$pr conflicts → #$issue Ready (needs-rebase)"
+      log "pr-gate: #$pr conflicts → #$issue Ready (needs-rebase)"
       gate_run sent_back "conflicts with main: Ready with needs-rebase" ;;
     update)
       if gh pr update-branch "$pr" -R "$slug" >/dev/null 2>&1 < /dev/null; then
