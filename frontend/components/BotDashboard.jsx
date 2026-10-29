@@ -5,6 +5,7 @@ import Badge from "./Badge";
 import BandChart from "./BandChart";
 import FirstDayPanel from "./FirstDayPanel";
 import InfoTip from "./InfoTip";
+import LastTrade from "./LastTrade";
 import MarginBar from "./MarginBar";
 import StrangleRow from "./StrangleRow";
 import { ageSeconds, formatAge, formatNumber, formatUSD, isNumber } from "@/lib/format";
@@ -16,7 +17,8 @@ import { marginLines } from "@/lib/tiles";
 // One band per bot on the overview (#404): a header (coin, spot, regime and
 // trend chips, GEX age · DVOL, the margin bar), the price chart with the
 // sold-strike corridor on the left (about 60 %) and one row-button per
-// strangle on the right; stacked on a phone, chart first. A stale bot is
+// strangle on the right; stacked on a phone, chart first; under them the last
+// trade with its one-click Why? (#489). A stale bot is
 // dimmed with its age; a bot that is down says so.
 
 export const NOTHING_HELD = "Nothing held: the bot opens a strangle when a slot is vacant and margin allows";
@@ -43,11 +45,19 @@ export function BotDashboard({ bot, onOpen }) {
         <p role="alert" className="text-base text-loss">
           {coin} bot is down: {bot.error}. Nothing is shown until it answers again.
         </p>
-      ) : (
+      ) : isFirstDay(bot) ? (
         <div className="grid gap-3 lg:grid-cols-[3fr_2fr]">
           <BandChart status={bot.status} payoff={bot.payoff} coin={coin} />
-          {isFirstDay(bot) ? <FirstDayPanel bot={bot} /> : <StrangleList bot={bot} coin={coin} onOpen={onOpen} />}
+          <FirstDayPanel bot={bot} />
         </div>
+      ) : (
+        <>
+          <div className="grid gap-3 lg:grid-cols-[3fr_2fr]">
+            <BandChart status={bot.status} payoff={bot.payoff} coin={coin} />
+            <StrangleList bot={bot} coin={coin} onOpen={onOpen} />
+          </div>
+          <LastTrade bot={bot} coin={coin} />
+        </>
       )}
     </section>
   );
