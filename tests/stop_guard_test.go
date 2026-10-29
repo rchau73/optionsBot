@@ -129,17 +129,16 @@ func TestStrategy_FreezeCancelsWorkingEntries(t *testing.T) {
 	callID, putID := f.exch.orderIDFor(f.call, 0), f.exch.orderIDFor(f.put, 0)
 	f.market.setIVHistory([]float64{90, 90, 90}, 10) // DVOL drops bands: new risk frozen
 
-	eventually(t, 2*time.Second, "both legs cancelled by the freeze", func() bool {
-		return f.exch.wasCancelled(callID) && f.exch.wasCancelled(putID)
+	// Wait on the journal, not the exchange: a leg is journaled after its
+	// cancel returns, so a wait on the cancels alone raced the second line (#503).
+	eventually(t, 2*time.Second, "both cancels journaled as risk_frozen", func() bool {
+		return f.cancelsWith(orders.TriggerRiskFrozen) >= 2
 	})
-	n := 0
-	for _, e := range f.journal.events(orders.EventCancelled) {
-		if e.trigger == orders.TriggerRiskFrozen {
-			n++
-		}
-	}
-	if n != 2 {
+	if n := f.cancelsWith(orders.TriggerRiskFrozen); n != 2 {
 		t.Errorf("both cancels journaled as risk_frozen: %d", n)
+	}
+	if !f.exch.wasCancelled(callID) || !f.exch.wasCancelled(putID) {
+		t.Error("both legs cancelled by the freeze")
 	}
 	time.Sleep(100 * time.Millisecond)
 	if s := len(f.exch.sells()); s != 2 {
