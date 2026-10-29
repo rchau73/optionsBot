@@ -30,7 +30,7 @@ jobs:
       docker: ${{ steps.diff.outputs.docker }}
       vuln: ${{ steps.diff.outputs.vuln }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: diff
@@ -53,9 +53,9 @@ jobs:
     if: needs.changes.outputs.go_lint == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3" # pinned: govulncheck GO-2026-6809 (crypto/x509, fixed in 1.27.3, 2026-10-22); bump on each stdlib advisory
           cache: true
@@ -77,9 +77,9 @@ jobs:
     if: needs.changes.outputs.scripts == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5 # test_backup.py builds cmd/backupcheck
+      - uses: actions/setup-go@v6 # test_backup.py builds cmd/backupcheck
         with:
           go-version: "1.27.3"
           cache: true
@@ -112,9 +112,9 @@ jobs:
       matrix:
         group: [core, reports]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
           cache: true
@@ -122,7 +122,7 @@ jobs:
       - name: Tests (${{ matrix.group }}, coverage)
         run: bash scripts/go_tests.sh ${{ matrix.group }} coverage-${{ matrix.group }}.out
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: coverage-${{ matrix.group }}
           path: coverage-${{ matrix.group }}.out
@@ -155,10 +155,10 @@ jobs:
           [ "$GO" = "true" ] || echo "### Go tests skipped: the change touches nothing they build or read" >> "$GITHUB_STEP_SUMMARY"
           exit $ok
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: needs.changes.outputs.go == 'true' || needs.changes.outputs.docs == 'true'
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         if: needs.changes.outputs.go != 'true' && needs.changes.outputs.docs == 'true'
         with:
           go-version: "1.27.3"
@@ -168,7 +168,7 @@ jobs:
         if: needs.changes.outputs.go != 'true' && needs.changes.outputs.docs == 'true'
         run: go test ./tests/ -count=1 -run '^(TestClaudeDocs|TestDocs_)'
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         if: needs.changes.outputs.go == 'true'
         with:
           pattern: coverage-*
@@ -181,7 +181,7 @@ jobs:
           bash scripts/check_cover.sh --profile coverage.out | tee cover.txt
           echo "### $(tail -1 cover.txt)" >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: needs.changes.outputs.go == 'true'
         with:
           name: coverage
@@ -196,8 +196,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -211,10 +211,10 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # every commit, not just the last
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -224,8 +224,8 @@ jobs:
     if: needs.changes.outputs.vuln == 'true' # dependency files; every push to main and nightly
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.27.3"
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
@@ -236,6 +236,6 @@ jobs:
     if: needs.changes.outputs.docker == 'true' # Dockerfile, go.*, cmd/, internal/, frontend code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -t optionsbot:ci .
       - run: docker build -t optionsbot-monitor:ci ./frontend
