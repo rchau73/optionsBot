@@ -1,0 +1,7 @@
+[
+  {"number": 90, "title": "[E6] mvp deploy failed: 1060000 (Feature five)", "body": "compose failed", "createdAt": "2026-10-20T10:06:00Z", "closedAt": "2026-10-20T11:10:00Z", "labels": [{"name": "bug"}]},
+  {"number": 100, "title": "Wrong stop", "body": "Seen on mvp.\nCaused by #7\n", "createdAt": "2026-10-23T08:00:00Z", "closedAt": "2026-10-23T09:10:00Z", "labels": [{"name": "bug"}, {"name": "regression"}]},
+  {"number": 101, "title": "Something broke", "body": "No cause named.", "createdAt": "2026-10-24T08:00:00Z", "closedAt": null, "labels": [{"name": "regression"}]},
+  {"number": 102, "title": "Old break", "body": "Caused by #999", "createdAt": "2026-10-24T09:00:00Z", "closedAt": null, "labels": [{"name": "regression"}]},
+  {"number": 103, "title": "Plain bug", "body": "Caused by #4", "createdAt": "2026-10-24T09:00:00Z", "closedAt": null, "labels": [{"name": "bug"}]}
+]

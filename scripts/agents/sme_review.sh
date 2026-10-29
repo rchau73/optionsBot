@@ -101,6 +101,10 @@ $OUT/mvp/ holds the same data from the MVP environment (main: merged fixes run t
 closed issues against mvp/, and against stable only once a release containing the fix is promoted).
 Environment: $ENVIRONMENT. Redact amounts in issue bodies: $REDACT.
 You may also read CLAUDE.md, OptionStrategy.md and docs/ for how the bot works.
+When a new issue is a bug that a merged pull request caused and the evidence names it (the behaviour
+started with that PR's deploy, or its change is the cause), add \"caused_by\": <PR number> to that issue
+in FINDINGS-JSON: the script labels it regression with a 'Caused by #N' line (the delivery report's
+change failure rate, #470). Leave it out when you are guessing.
 Print only the report in the exact output shape the skill defines, ending with the FINDINGS-JSON block."
 model_args=()
 [[ -n "${SME_MODEL:-}" ]] && model_args=(--model "$SME_MODEL")
@@ -146,8 +150,10 @@ if [[ "$PUBLISH" == "1" ]]; then
   while [[ $i -lt $n ]]; do
     py 'import json,sys; f=json.load(open(sys.argv[1]))["issues"][int(sys.argv[2])]
 open(sys.argv[3],"w").write(f["body"])
-print(f["fingerprint"]); print(f["severity"]); print(f["title"])' "$OUT/findings.json" "$i" "$OUT/issue-body.md" > "$OUT/issue-meta.txt"
+print(f["fingerprint"]); print(f["severity"]); print(f["title"])
+c = f.get("caused_by"); print(c if isinstance(c, int) and c > 0 else "")' "$OUT/findings.json" "$i" "$OUT/issue-body.md" > "$OUT/issue-meta.txt"
     fp="$(sed -n 1p "$OUT/issue-meta.txt")"; sev="$(sed -n 2p "$OUT/issue-meta.txt")"; title="$(sed -n 3p "$OUT/issue-meta.txt")"
+    caused="$(sed -n 4p "$OUT/issue-meta.txt")" # the PR that caused it, when the agent knows (#470)
     where="$(python3 "$ISSUES" route "$OUT/findings.json" "$i" "$OUT/open_issues.json" "$OUT/closed_issues.json")"
     num="${where#* }"
     case "$where" in
@@ -165,8 +171,11 @@ print(f["fingerprint"]); print(f["severity"]); print(f["title"])' "$OUT/findings
         gh issue comment "$num" -R "$slug" --body-file "$OUT/issue-comment.md" >/dev/null && log "duplicate guard: commented #$num instead of opening \"$title\"" &&
           commented="$commented #$num" ;;
       *)
-        { cat "$OUT/issue-body.md"; echo; echo "<!-- sme-fingerprint: $fp -->"; echo; echo "$footer"; } > "$OUT/issue-full.md"
-        url="$(gh issue create -R "$slug" --title "$title" --label agent:sme --label "severity:$sev" --body-file "$OUT/issue-full.md")"
+        # A regression names its cause on a line of its own: cmd/dora reads it (#470).
+        regression=(); [[ -n "$caused" ]] && regression=(--label regression)
+        { cat "$OUT/issue-body.md"; echo; [[ -z "$caused" ]] || { echo "Caused by #$caused"; echo; }
+          echo "<!-- sme-fingerprint: $fp -->"; echo; echo "$footer"; } > "$OUT/issue-full.md"
+        url="$(gh issue create -R "$slug" --title "$title" --label agent:sme --label "severity:$sev" ${regression[@]+"${regression[@]}"} --body-file "$OUT/issue-full.md")"
         log "opened $url ($fp)"
         opened="$opened #${url##*/}"
         add_to_board "$url" "Triage" >/dev/null || log "could not add $url to the board" ;;
