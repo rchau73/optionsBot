@@ -80,6 +80,10 @@ services:
       # no id. The clones are siblings (<envs>/stable, <envs>/mvp).
       - ../stable/data/monitor/reports:/app/data/reports/stable:ro
       - ../mvp/data/monitor/reports:/app/data/reports/mvp:ro
+      # The delivery report cmd/dora writes daily (dora.sh, #470) beside the
+      # environments' shared history, read-only for the Analytics page's
+      # Delivery (DORA) topic (#473): git and deploy times only, no account data.
+      - ../history/delivery:/app/data/delivery:ro
       # The What's new notes of this clone's checkout, read-only (#447): stable shows its release's notes.
       - ./docs/product/releases:/app/data/releases:ro
     ports:

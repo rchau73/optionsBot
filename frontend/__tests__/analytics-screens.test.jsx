@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import AssistantProvider from "@/components/AssistantProvider";
 import ScreenTracker from "@/components/ScreenTracker";
 import { MenuNav } from "@/components/MenuBar";
 import { validateEvent } from "@/lib/analytics/plan";
-import { answerOf, pagesWithoutScreen, screenOf } from "@/lib/analytics/screens";
+import { answerOf, pagesWithoutScreen, screenOf, screenViewOf } from "@/lib/analytics/screens";
 import { menuItems } from "@/lib/menu";
 import { resetTracking } from "@/lib/track";
 
@@ -88,11 +88,37 @@ describe("Scenario: a consented person opens the Income page", () => {
     expect(sentEvents()).toEqual([]);
   });
 
-  test("the admin Analytics page is counted as screen=analytics (#445)", async () => {
+  test("the admin Analytics page is counted as screen=analytics (#445), topic usage by default (#473)", async () => {
     await renderAt("/admin/analytics");
     const views = sentEvents().filter((e) => e.event === "screen_viewed");
-    expect(views.map((e) => e.props)).toEqual([{ screen: "analytics" }]);
+    expect(views.map((e) => e.props)).toEqual([{ screen: "analytics", topic: "usage" }]);
     expect(validateEvent(views[0]).ok).toBe(true);
+  });
+
+  // #473: screen_viewed {screen: analytics} also carries topic: delivery; switching topic is a new view.
+  test("the Delivery topic carries topic=delivery, and switching back to Usage sends that view", async () => {
+    useSearchParams.mockReturnValue(new URLSearchParams("topic=delivery&env=stable"));
+    const view = await renderAt("/admin/analytics");
+    useSearchParams.mockReturnValue(new URLSearchParams("env=mvp"));
+    view.rerender(
+      <AssistantProvider>
+        <ScreenTracker />
+      </AssistantProvider>,
+    );
+    await act(async () => {});
+    const views = sentEvents().filter((e) => e.event === "screen_viewed");
+    expect(views.map((e) => e.props)).toEqual([
+      { screen: "analytics", topic: "delivery" },
+      { screen: "analytics", topic: "usage" },
+    ]);
+    for (const v of views) expect(validateEvent(v).ok).toBe(true);
+    useSearchParams.mockReturnValue(new URLSearchParams());
+  });
+
+  test("topic belongs to the Analytics page only; an unknown topic is refused by the collector", () => {
+    expect(screenViewOf("/income", new URLSearchParams("topic=delivery"))).toEqual({ screen: "income" });
+    expect(screenViewOf("/admin/users", null)).toBeNull();
+    expect(validateEvent({ event: "screen_viewed", session_id: "a".repeat(32), props: { screen: "analytics", topic: "sales" } }).ok).toBe(false);
   });
 });
 

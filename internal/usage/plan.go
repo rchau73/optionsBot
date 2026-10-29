@@ -68,6 +68,8 @@ var Properties = map[string]Rule{
 	// The overview's switches (#404).
 	"unit":  enumOf("coin", "usd"),
 	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
+	// The admin Analytics page's topic (#473).
+	"topic": enumOf("usage", "delivery"),
 	// The kind of the bell's item followed (#447), never its text.
 	"kind": enumOf("survey", "request_needs_info", "bot_event", "request_status", "whats_new"),
 }
@@ -87,7 +89,7 @@ var fourAnswers = []string{"holding", "income", "worst_case", "last_action", "no
 // Events is the plan's §2: event → the properties it may carry.
 var Events = map[string][]string{
 	"session_started":        {"entry_screen", "viewport"},
-	"screen_viewed":          {"screen"},
+	"screen_viewed":          {"screen", "topic"},
 	"panel_expanded":         {"panel"},
 	"panel_collapsed":        {"panel", "open_ms"},
 	"filter_changed":         {"filter"},

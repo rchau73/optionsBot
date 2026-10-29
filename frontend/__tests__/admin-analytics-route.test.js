@@ -132,9 +132,16 @@ describe("missing and bad weeks", () => {
 
 describe("parseAnalyticsQuery and isoWeekOf", () => {
   test("env defaults to this monitor's deployment, else stable", () => {
-    expect(parseAnalyticsQuery(new URLSearchParams(""), "mvp")).toEqual({ ok: true, env: "mvp", week: null });
-    expect(parseAnalyticsQuery({}, "dev")).toEqual({ ok: true, env: "stable", week: null });
+    expect(parseAnalyticsQuery(new URLSearchParams(""), "mvp")).toEqual({ ok: true, topic: "usage", env: "mvp", week: null });
+    expect(parseAnalyticsQuery({}, "dev")).toEqual({ ok: true, topic: "usage", env: "stable", week: null });
     expect(parseAnalyticsQuery({ week: "2026-W01" }).week).toBe("2026-W01");
+  });
+
+  // #473 Scenario: an admin opens Delivery with no env → stable (production), even on the mvp monitor.
+  test("Delivery's env defaults to stable; an unknown topic is refused", () => {
+    expect(parseAnalyticsQuery(new URLSearchParams("topic=delivery"), "mvp")).toEqual({ ok: true, topic: "delivery", env: "stable", week: null });
+    expect(parseAnalyticsQuery({ topic: "delivery", env: "mvp" }, "stable").env).toBe("mvp");
+    expect(parseAnalyticsQuery({ topic: "sales" })).toEqual({ ok: false, error: "topic: one of usage, delivery" });
   });
 
   test.each([

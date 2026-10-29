@@ -19,18 +19,26 @@ export const NPS_MIN_ANSWERS = 10;
 /** Q4's target: the four answers seen within 5 minutes of the first session (E3). */
 export const FIRST_ANSWERS_TARGET_MS = 5 * 60 * 1000;
 
+/** The page's topics (#473): the weekly usage report, the delivery (DORA) report. */
+export const ANALYTICS_TOPICS = ["usage", "delivery"];
+
 /**
- * ?env=&week= of the page or its route → { ok, env, week } (week null = the
- * latest report) or { ok: false, error }. env defaults to this monitor's own
- * deployment (MONITOR_DEPLOYMENT) when it is one of REPORT_ENVS, else stable.
+ * ?topic=&env=&week= of the page or its route → { ok, topic, env, week }
+ * (week null = the latest report) or { ok: false, error }. topic defaults to
+ * usage. Usage's env defaults to this monitor's own deployment
+ * (MONITOR_DEPLOYMENT) when it is one of REPORT_ENVS, else stable; Delivery's
+ * to stable, production (#473).
  */
 export function parseAnalyticsQuery(params, ownEnv = null) {
   const get = (k) => (typeof params?.get === "function" ? params.get(k) : params?.[k]) ?? null;
-  const env = get("env") || (REPORT_ENVS.includes(ownEnv) ? ownEnv : REPORT_ENVS[0]);
+  const topic = get("topic") || ANALYTICS_TOPICS[0];
+  if (!ANALYTICS_TOPICS.includes(topic)) return { ok: false, error: `topic: one of ${ANALYTICS_TOPICS.join(", ")}` };
+  const fallback = topic === "usage" && REPORT_ENVS.includes(ownEnv) ? ownEnv : REPORT_ENVS[0];
+  const env = get("env") || fallback;
   if (!REPORT_ENVS.includes(env)) return { ok: false, error: `env: one of ${REPORT_ENVS.join(", ")}` };
   const week = get("week") || null;
   if (week !== null && !WEEK_RE.test(week)) return { ok: false, error: "week: an ISO week such as 2026-W44" };
-  return { ok: true, env, week };
+  return { ok: true, topic, env, week };
 }
 
 /** The ISO week label ("2026-W44") of a date, in UTC. */

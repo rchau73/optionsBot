@@ -173,6 +173,11 @@ export async function fetchUsageReport(env, week, signal) {
   return body;
 }
 
+/** The delivery (DORA) report (admins only, #473) → { report (null before cmd/dora's first run), file, written_at }. */
+export async function fetchDeliveryReport(signal) {
+  return getJSON("/api/admin/analytics/delivery", signal);
+}
+
 /** One page of the audit trail (admins only) → { off, entries, skipped, next_before }; `query` from lib/audit.js auditQueryString. */
 export async function fetchAudit(query, signal) {
   return getJSON(`/api/admin/audit${query ? `?${query}` : ""}`, signal);

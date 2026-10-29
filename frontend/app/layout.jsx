@@ -29,8 +29,12 @@ export default async function RootLayout({ children }) {
           <Suspense fallback={null}>
             <MenuBar person={person} />
           </Suspense>
-          {/* Page views for the usage report (#424), after the person's yes only; signed in only. */}
-          {me ? <ScreenTracker /> : null}
+          {/* Page views for the usage report (#424), after the person's yes only; signed in only. It reads ?topic= (#473). */}
+          {me ? (
+            <Suspense fallback={null}>
+              <ScreenTracker />
+            </Suspense>
+          ) : null}
           {children}
         </AssistantRoot>
       </body>

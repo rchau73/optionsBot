@@ -28,7 +28,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | Event | Trigger | Properties | Answers |
 |---|---|---|---|
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
-| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445); `login` is in the list but never sent (signed out, no consent known) | `screen` | Q1, Q2, Q3 |
+| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
 | `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
 | `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
@@ -110,6 +110,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `answer` | enum | `answered`, `dont_know`, `refused`, `fallback` (the kind of the assistant's reply: a cited answer, "I don't know", the refusal, the safe fallback) |
 | `unit` | enum | `coin`, `usd` (the unit picked) |
 | `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
+| `topic` | enum | `usage`, `delivery` (the admin Analytics page's topic, #473; only with `screen` `analytics`) |
 | `kind` | enum | `survey`, `request_needs_info`, `bot_event`, `request_status`, `whats_new` (the kind of the bell's item followed, `frontend/lib/notifications.js`) |
 
 Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage), a survey's free text (the NPS "anything else" and the exit `other` box: personal data, kept in `auth.db` beside the user and deleted with them, never in an event — *needs legal review*, `surveys.md` §6).
