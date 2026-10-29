@@ -45,6 +45,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },
+  { route: "POST /api/survey/answers", roles: SIGNED_IN, audit: "answers_survey_shown" },
   { route: "POST /api/survey/nps", roles: SIGNED_IN, audit: "nps_survey_changed" },
 ];
 

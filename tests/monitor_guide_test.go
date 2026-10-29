@@ -98,8 +98,7 @@ type guideItem struct{ key, label string }
 
 // guideAllowList: items with no guide entry, each with the reason.
 var guideAllowList = map[string]string{
-	"survey:answers": "defined in surveys.md and accepted by POST /api/survey, but not shown in the monitor yet (only nps is, #446)",
-	"survey:exit":    "defined in surveys.md and accepted by POST /api/survey, but not shown in the monitor yet (only nps is, #446)",
+	"survey:exit": "defined in surveys.md and accepted by POST /api/survey, but not shown in the monitor yet (only nps and answers are, #446, #498)",
 }
 
 var (

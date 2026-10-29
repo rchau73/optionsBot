@@ -139,6 +139,8 @@ export class AuthStore {
       ["sign_in_count", "INTEGER NOT NULL DEFAULT 0"],
       ["nps_last_shown_at", "INTEGER"],
       ["nps_opted_out", "INTEGER NOT NULL DEFAULT 0"],
+      // The four answers card (#498, surveys.md §2): the day it was last shown (Unix seconds, NULL = never).
+      ["answers_last_shown_at", "INTEGER"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
     if (added.some(([name]) => name === "sign_in_count")) {
@@ -247,6 +249,28 @@ export class AuthStore {
   /** Records the day the NPS card was shown (the 30-day cap counts from it). */
   markNpsShown(id, nowMs = Date.now()) {
     this.write("UPDATE users SET nps_last_shown_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+  }
+
+  /**
+   * What the four answers rule reads (#498, lib/analytics/answers.js):
+   * { consent, createdAtSec, sessions, lastShownSec, npsLastShownSec } (null =
+   * never shown), or null for an unknown user.
+   */
+  answersState(id) {
+    const r = this.one("SELECT analytics_consent, created_at, sign_in_count, answers_last_shown_at, nps_last_shown_at FROM users WHERE id = ?", [id]);
+    if (!r) return null;
+    return {
+      consent: r.analytics_consent === 1 ? true : r.analytics_consent === 0 ? false : null,
+      createdAtSec: r.created_at,
+      sessions: r.sign_in_count,
+      lastShownSec: r.answers_last_shown_at ?? null,
+      npsLastShownSec: r.nps_last_shown_at ?? null,
+    };
+  }
+
+  /** Records the day the four answers card was shown (its 30-day cap counts from it). */
+  markAnswersShown(id, nowMs = Date.now()) {
+    this.write("UPDATE users SET answers_last_shown_at = ? WHERE id = ?", [Math.floor(nowMs / 1000), id]);
   }
 
   /** "Don't ask me again" (true) or turned back on in Account › Privacy (false). */

@@ -146,6 +146,14 @@ const FIXTURES = {
     if (who) auth.store.setAnalyticsConsent(who.user.id, true);
     return { path: "/api/survey", body: { survey_id: "nps", session_id: SESSION, codes: { score: "9" } }, actor: who?.user.username };
   },
+  "POST /api/survey/answers": async ({ who }) => {
+    if (who) {
+      // Due: consent yes, an account 20 days old, 5 sign-ins, never shown.
+      auth.store.setAnalyticsConsent(who.user.id, true);
+      auth.store.db.run("UPDATE users SET created_at = ?, sign_in_count = 5, answers_last_shown_at = NULL WHERE id = ?", [Math.floor(Date.now() / 1000) - 20 * 86400, who.user.id]);
+    }
+    return { path: "/api/survey/answers", body: { action: "shown" }, actor: who?.user.username };
+  },
   "POST /api/survey/nps": async ({ who }) => ({ path: "/api/survey/nps", body: { action: "opt_out" }, actor: who?.user.username }),
 };
 

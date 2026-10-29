@@ -106,12 +106,17 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   The page adds two rules: no card right after a losing week (the sign of each bot's `/api/performance?range=7d`; a loss or an unreadable sign postpones; never sent or stored) and none while a manual close or rebalance dialog is open (`lib/dialogs.js`).
   While due, Ask carries a static "1" badge and a one-line hint (accessible name "Ask (one optional question waiting)"); opening the panel shows `components/NpsCard.jsx` at the top of the Ask tab and sends `survey_shown {nps}` once.
   Step 2 shows only its band's chips; Send / Send the score only go through `POST /api/survey` (the comment stays in `auth.db`); ×, Not now or closing the panel send `survey_dismissed`; "Don't ask me again" opts out, turned back on by the switch on the Account page's Privacy card (`components/PrivacySettings.jsx`).
+- **The four answers in the assistant (#498, `surveys.md` §2):** `GET /api/survey/answers` → `{"due", "reason"}`, decided on the server from the user's row (consent yes, account ≥ 14 days, ≥ 3 sign-ins, not shown in 30 days, NPS not shown in the last 7 days; `lib/analytics/answers.js`, sharing NPS's rules).
+  `POST /api/survey/answers {"action": "shown"}` (same-origin JSON) records `answers_last_shown_at` only while due, else 409; INFO log `answers survey shown`, audit `answers_survey_shown`.
+  The page shows it only when NPS is not due in that tab (NPS goes first; never both in one session) and no manual close or rebalance dialog is open; the Ask badge's accessible name is "Ask (two optional questions waiting)".
+  Opening the panel sends "shown" first and shows `components/AnswersCard.jsx` (with `survey_shown {answers}`) only on the server's yes, so a second tab shows nothing.
+  Two optional chip questions (came for, hardest to find; the same five codes, no text); Send needs one and goes through `POST /api/survey`; ×, Not now or closing the panel send `survey_dismissed {answers}`.
 - **Allow-list:** `lib/analytics/plan.js` — each event and the only properties it may carry (enums, flags, capped millisecond counts, help catalogue keys of letters and `_` only, so no number fits).
   `__tests__/events-plan.test.js` keeps it equal to the plan's tables: change the plan first.
 - **Surveys (#297):** `survey_shown`, `survey_answered` and `survey_dismissed` carry codes only — `survey_id` (`nps`, `answers`, `exit`), `score` (the strings `0`–`10`), `reason_code`, `came_for`, `hardest_to_find`.
   A survey's free text never goes into an event; it is kept in `auth.db` beside the user (`survey_answers`, `POST /api/survey` above) and deleted with them.
   Wording, triggers, frequency caps and the legal review that must come first: `docs/product/analytics/surveys.md`.
-  Only the NPS card is built (#446, above); the other surveys are not on screen yet.
+  The NPS card (#446) and the four answers card (#498) are built (above); the exit survey is not on screen yet.
 - **Collector:** `app/api/events/route.js` stores an event only for a signed-in person (re-read from the database), same-origin JSON ≤ 2 KB, whose `users.analytics_consent` is yes (403 otherwise) and when `ANALYTICS_SALT` (≥ 16 chars) is set (503 otherwise).
   An unknown event, a property not in the plan or a value outside its rule is refused whole: 400, nothing written, a WARN log naming the field, never its value. 204 when stored.
 - **Stored:** one JSON line per event in `data/monitor/events.jsonl`, beside `auth.db` (`EVENTS_PATH`; off for an in-memory database).
