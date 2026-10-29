@@ -117,7 +117,10 @@ Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestN
 python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
 every suite once after you finish and sends a failure back to you.
 You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
-allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub.
+allowed, so a line mixing in another command is refused whole. You may run python3 and go run (scripts you write
+in the worktree, the cmd/* generators), the repo's scripts (bash scripts/<name>.sh), shellcheck and make check;
+set GOMAXPROCS with go test -cpu=N, not an env prefix; keep helper scripts under scripts/
+with a test, or delete them before you commit. Do not push, merge, deploy or call GitHub.
 When the issue is a bug and you found the merged PR that caused it, put a line 'Caused by #<PR number>' in the
 PR-BODY's Plan: the script labels the issue regression (the delivery report's change failure rate, #470).
 A change a person can see or do in the monitor is done only with its section in frontend/content/monitor-guide.md,
@@ -126,8 +129,11 @@ template's 'User-facing?' line in the PR body.
 End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
-  "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run ./cmd/stress:*)" "Bash(go mod tidy)"
-  "Bash(go run ./cmd/helpindex:*)" "Bash(go run ./cmd/paramdocs:*)" # the generators CLAUDE.md requires after a help source or a tuned key changes (#482: a guide change could not be finished)
+  "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run:*)" "Bash(go mod tidy)"
+  # Scripts and generators (product owner 2026-10-29, #463: doc reflows, sentence checkers, cmd/* tools):
+  # any go run, python3 and the repo's shell checks. Like go test, these run code the agent wrote; the
+  # denied list below still refuses push, gh, curl, docker and rm as commands.
+  "Bash(python3:*)" "Bash(bash scripts/:*)" "Bash(shellcheck:*)" "Bash(make check:*)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"

@@ -153,6 +153,7 @@ End your answer with the exact REVIEW block the skill defines."
 
 allowed=( "Read" "Grep" "Glob" "Skill"
   "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt -l:*)" "Bash(go run ./cmd/stress:*)"
+  "Bash(python3 -m unittest:*)" "Bash(bash scripts/check_shell.sh:*)" # #500's review could not run the agent-script tests
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git blame:*)"
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)" )
 denied=( "Edit" "Write" "NotebookEdit" "Bash(git commit:*)" "Bash(git push:*)" "Bash(git add:*)" "Bash(git remote:*)"
