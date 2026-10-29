@@ -1,6 +1,7 @@
 import glossary, { MAX_LONG, MAX_SHORT, buildIndex, findTerm, normalise } from "@/lib/glossary";
 import { configKeys, jsxLabels, mapLabels, markdownAnchors, monitorLabels, yamlKeys } from "@/test/glossarySources";
 
+import { isSourceFile } from "@/test/emptyStateChecks";
 import { longSentences, undefinedJargon } from "@/test/plainWords";
 
 const entries = Object.entries(glossary);
@@ -47,7 +48,7 @@ describe("glossary (#188)", () => {
     const anchors = {};
     for (const [term, e] of entries) {
       const [file, anchor] = e.source.split("#");
-      expect([term, ["OptionStrategy.md", "frontend/README.md"].includes(file)]).toEqual([term, true]);
+      expect([term, isSourceFile(file)]).toEqual([term, true]);
       anchors[file] ??= markdownAnchors(file);
       expect([term, anchors[file].has(anchor)]).toEqual([term, true]);
     }

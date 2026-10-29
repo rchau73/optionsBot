@@ -8,7 +8,8 @@ import { markdownAnchors } from "@/test/glossarySources";
 
 const FRONTEND = path.join(__dirname, "..");
 
-export const SOURCE_FILES = ["OptionStrategy.md", "frontend/README.md"];
+/** A source is OptionStrategy.md or one area's file under frontend/docs/ (#462). */
+export const isSourceFile = (file) => file === "OptionStrategy.md" || /^frontend\/docs\/[a-z-]+\.md$/.test(file);
 
 /** Forecast and advice words an empty state must never use. */
 export const DENY = [
@@ -105,7 +106,7 @@ export function brokenSources(catalogue, anchorsOf = markdownAnchors) {
   const cache = {};
   for (const [key, entry] of Object.entries(catalogue)) {
     const [file, anchor] = String(entry.source ?? "").split("#");
-    if (!SOURCE_FILES.includes(file) || !anchor) {
+    if (!isSourceFile(file) || !anchor) {
       out.push(`${key}: ${entry.source}`);
       continue;
     }
