@@ -123,6 +123,19 @@ class Promote(unittest.TestCase):
         self.assertEqual(self._stable_head(), self.c)
         with open(self.t("envs", "history", "promotions.tsv")) as f:
             self.assertTrue(f.read().splitlines()[-1].endswith(f"\tv0.2.0\t{self.c}"))
+        # #470: the release is also a stable line in deploys.tsv (cmd/dora).
+        with open(self.t("envs", "history", "deploys.tsv")) as f:
+            self.assertTrue(f.read().splitlines()[-1].endswith(f"\tstable\t{self.c}\trelease\tv0.2.0"))
+
+    def test_a_stable_release_line_is_never_an_mvp_soak(self):
+        # A stable line on D (4 days old) must not make D soaked: only mvp lines count.
+        self._deploys((6, self.b), (1, self.d))
+        with open(self.t("envs", "history", "deploys.tsv"), "a") as f:
+            at = (self.now - dt.timedelta(days=4)).strftime(FMT)
+            f.write(f"{at}\tstable\t{self.d}\trelease\tv0.1.9\n")
+        r = self._promote("v0.2.0")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(self._origin_tag("v0.2.0"), self.b)
 
     def test_a_rollback_line_never_counts(self):
         # C deployed 5 days ago; a rollback to B 4 days ago is newer, but never a candidate.

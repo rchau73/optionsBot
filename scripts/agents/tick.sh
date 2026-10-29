@@ -23,6 +23,9 @@
 #   - backup_data.sh, which copies every env × bot's journal and histories to
 #     <envs>/history/backups/<date>/ and checks the copy replays, on the first
 #     tick after 00:00 UTC (#328), else exits at once;
+#   - dora.sh, which writes the delivery report (DORA metrics, each PR's time
+#     live on mvp and stable) once a UTC day and posts last week's four
+#     numbers on the E6 epic once (#470), else exits at once;
 #   - requests.sh, which judges the assistant's private request queue with one
 #     PM agent run and files the accepted ones as redacted issues (#410), else
 #     exits at once.
@@ -78,5 +81,6 @@ start evidence.sh 1 # weekly: exits at once once last week's done-marker exists
 start usage.sh 1 # weekly: exits at once once last week's done-marker exists (or no events file)
 start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-marker exists
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
+start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
 start requests.sh 1 # exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget)
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

@@ -155,13 +155,18 @@ fi
 # ── Promote, with rollback on a failed health check ─────────────────────────
 url="$(env_monitor_url stable)"
 run() { git -C "$stable" checkout -q --detach "$1" && env_compose stable up -d --build && wait_healthy "$url" "${PROMOTE_HEALTH_TIMEOUT_SEC:-300}" "$(env_monitor_token stable)"; }
+# Each outcome is also a `stable` line in deploys.tsv (#470: cmd/dora's
+# releases and failures): `release <tag>` when healthy, `rollback <prev>` when
+# a failed promotion went back. Readers of the mvp soak skip these lines.
 if run "$tag"; then
   env_record promotions.tsv "$tag" "$commit"
+  env_record deploys.tsv stable "$commit" release "$tag"
   echo "stable is on $tag and healthy: $url"
   exit 0
 fi
 echo "promote: $tag failed its health check" >&2
 if [[ -n "$prev" ]] && run "$prev"; then
+  env_record deploys.tsv stable "$(git -C "$stable" rev-parse "$prev^{commit}")" rollback "$prev"
   die "rolled back to $prev (healthy). See: scripts/envctl.sh stable logs"
 fi
 die "rollback failed too: check scripts/envctl.sh stable logs"

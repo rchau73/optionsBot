@@ -108,7 +108,10 @@ Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestN
 python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
 every suite once after you finish and sends a failure back to you.
 You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
-allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub. End your answer with the exact RESULT block the skill defines."
+allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub.
+When the issue is a bug and you found the merged PR that caused it, put a line 'Caused by #<PR number>' in the
+PR-BODY's Plan: the script labels the issue regression (the delivery report's change failure rate, #470).
+End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run ./cmd/stress:*)" "Bash(go mod tidy)"
@@ -218,6 +221,16 @@ else
 fi
 log "dev: PR $pr_url"
 RUN_PR="${pr_url##*/}"
+# A bug the agent traced to an earlier PR (a "Caused by #N" line in its PR
+# body) is a regression: label the issue and name the cause on it, once, for
+# cmd/dora's change failure rate (#470).
+caused="$(grep -m1 -E '^[^[:alnum:]]*[Cc]aused by:? *#[0-9]+' "$run_dir/pr-body.md" |
+  sed -E 's/^[^[:alnum:]]*[Cc]aused by:? *#([0-9]+).*/\1/')" || caused=""
+if [[ -n "$caused" && ",$labels," != *",regression,"* ]]; then # $labels: the issue's, read before the run
+  gh issue edit "$issue" -R "$slug" --add-label regression >/dev/null 2>&1 &&
+    gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent: this bug is a regression. Caused by #$caused" >/dev/null &&
+    log "dev: #$issue labelled regression, caused by #$caused" || log "dev: could not label #$issue regression"
+fi
 
 if [[ $ok -eq 1 ]]; then
   if [[ -n "$existing_pr" ]]; then run_end pr_updated "checks passed"; else run_end pr_opened "checks passed"; fi
