@@ -137,6 +137,7 @@ The account as Deribit reports it, plus the margin policy each bot applies. Figu
 - Any pending limit change with its countdown, for example "1 of 2 daily closes".
 
 **The Rebalance button** resizes the positions towards the current limit. A dry run shows the plan and sends nothing. A real run asks for confirmation, and only a manager or an admin may run it.
+<!-- guide: route:POST /api/bots/[bot]/rebalance -->
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand. No bot trades these, but they use margin, so they are shown.
 
@@ -156,6 +157,7 @@ The numbers page for an active trader. Figures come first and graphics are small
 **The top line** counts bots online, orders sent and filled, closes and entries skipped, since a date. The **section bar** jumps to Positions, Missing legs, Trades, Working orders and Not managed. A section is amber when it needs attention.
 
 **Open positions**: one line per leg, grouped by strangle. Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks. *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
+<!-- guide: route:POST /api/bots/[bot]/close -->
 
 **Missing legs**: one row for each one-legged strangle. It shows who holds the repair (a stop, a GEX shed, the regime side), the market now and when the hold ends.
 
@@ -180,12 +182,20 @@ The **Ask** button at the bottom right of every page opens a panel. You write a 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10. A score of 9 or 10 asks what we do best; 0 to 8 asks what to improve first. A comment is optional and stays private with your account. "Not now" or × closes it until next month; "Don't ask me again" turns it off (Account, Privacy turns it back on). It appears only if you said yes to usage analytics, and never in your first 14 days. The assistant works the same whether you answer or not.
 
 **Limits and flags**: each person has a number of questions an hour, shown under the box. *Flag* marks an answer for review. Questions and answers are logged for review, never the account's keys.
+<!-- guide: route:POST /api/assistant, route:POST /api/assistant/flag -->
+
+**How to report a bug or ask for a feature**: describe it in the Ask box with what you saw, where (the page, the bot and the time) and the evidence (a number, a journal entry or the steps to see it again). When something is missing, the assistant lists what to add. When it has enough, it shows a draft request, a bug or an enhancement. Nothing is sent until you press *Send for review*; *Edit* changes any field and *Discard* drops it. A sent request goes to a private review queue, not to the public repository, and amounts, account details and personal data are removed before anything is made public. Each person may send 10 requests a day.
+
+**My requests**: the tab in the Ask panel lists the requests you sent, newest first, with their status (In review, Filed, Fixed, Not planned, Not a bug, Duplicate or Needs info) and the team's note. You see only your own.
+<!-- guide: route:POST /api/assistant/requests -->
 
 **When something looks wrong**: a dimmed Ask button means the assistant is off or not set up; hover for the reason. "Retry" appears when a request failed.
 
 Learn more: OptionStrategy.md section 12; the glossary. Features that are not menu pages (the survey, sign-in, consent, roles, environments, videos and the admin pages) are described in the sections below.
 
 ## The monthly survey
+
+<!-- guide: survey:nps, route:POST /api/survey, route:POST /api/survey/nps -->
 
 The survey is one optional question in the Ask panel: how likely you are to recommend the monitor, from 0 to 10. This is the NPS survey.
 
@@ -200,6 +210,8 @@ The survey is one optional question in the Ask panel: how likely you are to reco
 Learn more: "Analytics and your consent" and "The assistant" in this guide.
 
 ## Sign-in and password
+
+<!-- guide: screen:login, route:POST /api/auth/login, route:POST /api/auth/logout, route:POST /api/auth/refresh, route:POST /api/auth/password, route:POST /api/auth/reset -->
 
 You sign in at the sign-in page with a username and password. Every page and every part of the monitor needs a signed-in session; without one you are sent to the sign-in page. A session is kept alive while you use the monitor and ends after 14 days or when you sign out.
 
@@ -222,6 +234,8 @@ Each environment has its own people and roles.
 Learn more: "Sign-in and password" and "For admins" in this guide.
 
 ## Analytics and your consent
+
+<!-- guide: route:POST /api/consent, route:POST /api/events -->
 
 The monitor collects usage analytics only if you say yes. Your answer is stored with your account. Until you answer, or if you say no, nothing is collected.
 
@@ -249,15 +263,20 @@ Learn more: "The assistant" in this guide.
 
 These pages are for the admin role only. A manager or a user who opens one is refused.
 
-**Users**: lists the people of this environment with role, email, when created and last sign-in. An admin creates a user (a username of 3 to 64 letters, digits, dots, underscores or hyphens, and a password of at least 12 characters), changes a role, resets a password, issues a single-use reset link, or deletes a user. Every change signs that person out everywhere. There is always at least one admin, and you cannot delete yourself.
+**Users**: lists the people of this environment with role, email, when created and last sign-in. An admin creates a user (a username of 3 to 64 letters, digits, dots, underscores or hyphens, and a password of at least 12 characters), changes a role, resets a password, issues a single-use reset link, signs a person out everywhere, or deletes a user. Every change signs that person out everywhere. There is always at least one admin, and you cannot delete yourself.
+<!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
 
 **Audit**: the trail of who did what: user changes, role changes and consent changes. It is read-only.
+<!-- guide: page:/admin/audit -->
 
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.
+<!-- guide: page:/admin/analytics, screen:analytics -->
 
 Learn more: "Roles" and "Analytics and your consent" in this guide.
 
 ## Notifications
+
+<!-- guide: route:POST /api/notifications -->
 
 The **bell** in the menu bar, before your name, lists what happened to your book and your requests, and what waits for you. On a phone it opens the Notifications page.
 

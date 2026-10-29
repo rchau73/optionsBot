@@ -8,4 +8,6 @@ Notable files:
 - `restart_invariance_test.go` (#220: boots twice on one book with a held stop, a shed anchor, a shared strike and IM in the startup band, through main's restore paths
   — no order, same slots, holds kept; a new restore path belongs in it),
 - `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
+- `docs_line_length_test.go` (#463): no prose line over 400 characters in a tracked `*.md` (tables, code, link targets exempt); files that still have some are listed with a reason and a count that can only go down.
+  `scripts/docs/reflow.py write FILE` puts one sentence per line, `compare REF FILE` lists every sentence of the old file missing from the new one (empty = nothing lost).
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
