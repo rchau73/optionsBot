@@ -17,19 +17,60 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 - Every item of `/api/events` and `/api/trades` carries `plain` (#201): one sentence in everyday words — what happened, why, what follows — from the bot's catalogue (`internal/api/explain.go`; the same words as `last_action.reason`).
   A journal value the catalogue does not know yet gets a generic sentence beginning "The bot recorded a step that has no plain-words explanation yet".
   The Activity feed and the trade history lead with it (#287, "What you see"); every other field is unchanged.
-- `GET /api/status` carries, for the overview's regime chart (#394): `sma.candles` — `[{date (UTC day, YYYY-MM-DD), open, high, low, close}]`, oldest first, the last 60 completed days of the perpetual and today's live candle (its high and low follow the prices the bot pushes; the day roll commits it), from the daily history the bot already loads at startup — no new Deribit call; `[]`/null before any history; `median_flip` (the bias window's median flip under `gex_direction: bias`, 0 otherwise); `gex_as_of` (when the GEX snapshot behind `market` was computed, null before the first); with `flip_buffer_pct` and `market.gamma_flip` as before.
+- `GET /api/status` carries, for the overview's regime chart (#394):
+  - `sma.candles` is `[{date (UTC day, YYYY-MM-DD), open, high, low, close}]`, oldest first.
+    It holds the last 60 completed days of the perpetual and today's live candle.
+    The live candle's high and low follow the prices the bot pushes, and the day roll commits it.
+    It comes from the daily history the bot already loads at startup, so there is no new Deribit call.
+    It is `[]` or null before any history.
+  - `median_flip` is the bias window's median flip under `gex_direction: bias`, 0 otherwise.
+  - `gex_as_of` is when the GEX snapshot behind `market` was computed, null before the first.
+  - `flip_buffer_pct` and `market.gamma_flip` are as before.
 - `GET /api/summary` (#177; in the proxy allow-list since #246, readable by any signed-in role, shown as the investor summary) answers a holder's four questions in one call.
   Coin amounts are in `underlying` (BTC or ETH), USD at today's `spot` unless said otherwise:
   - `holding` — `strangles`, `legs`, `calls`, `puts`, `notional_coin`, `notional_usd`, `nearest_expiry` and `nearest_dte` (null with no legs), `nearest` (#320: `{expiry, put_strike, call_strike}` — the highest short put and the lowest short call on the nearest expiry, a side with no short leg null; null with no legs), `coin`.
-  - `income` — `months`: the last 6 UTC calendar months, oldest first, the current one last, each `{month: "YYYY-MM", realised_coin, realised_usd, closes}` (journal closes net of fees; USD at each close's spot; a month without closes is zeros) plus, since #319, where it came from: `premium_coin` (paid to you), `buyback_coin` (paid to buy back), `fees_coin` (exchange fees, opening share + closing fee) — costs positive, `premium − buyback − fees = realised_coin` — and `premium_usd`, `buyback_usd`, `fees_usd` at each close's spot (they add up to `realised_usd`); `spot_start`, `spot_end`, `spot_days`, `hold_usd` are null here (filled by `/api/income`); `this_month` (= the last of `months`); `unrealised_coin`, `unrealised_usd` (open book at its marks); `coin`; `basis`; `summary` null (see `/api/income`).
+  - `income`:
+    - `months` are the last 6 UTC calendar months, oldest first, the current one last.
+      Each is `{month: "YYYY-MM", realised_coin, realised_usd, closes}`.
+      The figures are journal closes net of fees, with USD at each close's spot.
+      A month without closes is zeros.
+    - Since #319 each month also says where it came from:
+      - `premium_coin` (paid to you), `buyback_coin` (paid to buy back) and `fees_coin` (exchange fees, opening share + closing fee).
+      - Costs are positive, and `premium − buyback − fees = realised_coin`.
+      - `premium_usd`, `buyback_usd` and `fees_usd` are at each close's spot, and they add up to `realised_usd`.
+    - `spot_start`, `spot_end`, `spot_days` and `hold_usd` are null here (filled by `/api/income`).
+    - `this_month` is the last of `months`.
+    - `unrealised_coin` and `unrealised_usd` are the open book at its marks.
+    - `coin` and `basis` are as named.
+    - `summary` is null (see `/api/income`).
   - `worst_case` — **a model, label it so**: `model` (the text to show), `available` (false with `reason` when spot or DVOL is missing — show "unknown", never 0), `sigmas` (3), `dvol`, `move_pct`, `coin`, and `down` / `up` each `{spot, loss_coin, loss_usd, pct_of_equity}` (positive = money lost; `pct_of_equity` null without the equity).
     Black–Scholes on each leg's current IV, one day passed, spot moved ±3 daily σ (σ = DVOL ÷ √365); `loss_coin` is the USD loss at the moved spot.
     `scenarios` (#318): the same repricing for −3, −2, 0, +2, +3 σ, worst fall first, each `{sigmas, move_pct (signed), spot, result_coin, result_usd, pct_of_equity}` — **signed results, + = gain** (the opposite sign of `loss_*`); ±3σ are exactly `down` / `up` negated, 0σ is one day of time decay (a gain for a short book); `[]` when not available.
     `pct_of_equity` is of Deribit's equity in the coin (the account summary the decision loop reads).
   - `environment` (live | testnet) and `stop_loss_multiple` (`stop_loss_multiplier`: a leg is bought back once it has lost this multiple of its premium) — for the worst-case page's badge and words.
-  - `delta_exit_threshold` and `repair_cooldown_hours` (#322: the config's delta exit and the wait after a stop, in hours) and `strangle` — the "How it works" page's live numbers: the short strangle with both legs and the nearest expiry, null when none is held (`internal/api/howitworks.go`, pure `HowItWorksOf`): `strangle_id`, `expiry`, `spot` (USD), `put` / `call` each `{instrument, strike, qty, premium_coin (paid when sold), exit_line}`, `premium_coin` (both legs: the most it can earn), `break_even_low` / `break_even_high` (the coin's price at expiry where the coin-settled strangle neither earns nor loses: qty·K ÷ (premium + qty) for the put, qty·K ÷ (qty − premium) for the call; high null when the call cannot cost the whole payment), `exit_lines` (false with `exit_lines_reason` when no IV, no threshold or at expiry — then both `exit_line` are null) and `exit_lines_model`.
-    `exit_line` is the coin's price at which the leg's Black–Scholes |Δ| (its IV, DVOL when missing, zero rate, today) reaches `delta_exit_threshold` — a model; the bot's delta exit reads Deribit's live delta.
-  - `last_action` — null before the first trade, else the journal's latest open or close: `at`, `kind` (open | close), `instrument`, `option_type`, `qty`, `rule` (the journal's reason, e.g. `stop_loss`), `reason` in plain words (e.g. "Bought back the put: it lost twice its premium (stop-loss)"), `detail` (the rule's numbers), and for a close `pnl_coin`, `pnl_usd`; `spot` (#320: the coin's index price at the action, USD; omitted when the journal has none).
+  - `delta_exit_threshold` and `repair_cooldown_hours` (#322) are the config's delta exit and the wait after a stop, in hours.
+  - `strangle` holds the "How it works" page's live numbers (`internal/api/howitworks.go`, pure `HowItWorksOf`).
+    It is the short strangle with both legs and the nearest expiry, null when none is held.
+    - `strangle_id`, `expiry` and `spot` (USD).
+    - `put` and `call`, each `{instrument, strike, qty, premium_coin (paid when sold), exit_line}`.
+    - `premium_coin` for both legs: the most it can earn.
+    - `break_even_low` and `break_even_high` are the coin's price at expiry where the coin-settled strangle neither earns nor loses.
+      The put's is qty·K ÷ (premium + qty) and the call's is qty·K ÷ (qty − premium).
+      `break_even_high` is null when the call cannot cost the whole payment.
+    - `exit_lines` is false with `exit_lines_reason` when there is no IV, no threshold or the strangle is at expiry.
+      Then both `exit_line` are null.
+    - `exit_lines_model`.
+
+    `exit_line` is the coin's price at which the leg's Black–Scholes |Δ| reaches `delta_exit_threshold`.
+    The model uses the leg's IV (DVOL when missing), a zero rate and today.
+    It is a model; the bot's delta exit reads Deribit's live delta.
+  - `last_action` is null before the first trade, else the journal's latest open or close.
+    - `at`, `kind` (open | close), `instrument`, `option_type` and `qty`.
+    - `rule` is the journal's reason, e.g. `stop_loss`.
+    - `reason` is the rule in plain words, e.g. "Bought back the put: it lost twice its premium (stop-loss)".
+    - `detail` is the rule's numbers.
+    - For a close, `pnl_coin` and `pnl_usd`.
+    - `spot` (#320) is the coin's index price at the action, in USD; it is omitted when the journal has none.
 - `GET /api/performance?range=7d|30d|all` (#232; default `30d`, any other range → 400; in the proxy allow-list, readable by any signed-in role and the read-only service token; not shown on screen yet) is `internal/perf`'s summary of the bot's P&L history (`data/pnl_history.jsonl`, every recorded point, never a Deribit call).
   `all` starts at the first recorded point.
   Coin amounts are in the bot's underlying:
@@ -44,14 +85,63 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 - `GET /api/income` (#319; in the proxy allow-list, any signed-in role; shown on the [income page](menu-and-pages.md#income-page)) is `/api/summary`'s `income` completed with the P&L history (`data/pnl_history.jsonl` over the months shown; its own route because it reads months of raw points, while the summary is polled every second):
   - each month's `spot_start`, `spot_end` (the coin's first and last recorded spot in the month), `spot_days` (days between them) and `hold_usd` — the account's equity at the month's start (Deribit's margin balance, coin) × (`spot_end` − `spot_start`): what holding the coin alone did in USD; null with `hold_reason` when the month has no spot or no balance recorded.
     In coin, holding alone is 0 by definition.
-  - `summary` — `from`, `to`, `label` (`live` | `testnet`), `source`; `total_6m` `{coin, usd}` (the realised months added); `equity` (coin at the window start, null when unknown) with `equity_note`, `return_pct` (`total_6m.coin` ÷ equity: "% more coin than holding"; null when equity is unknown); `average_month` `{coin, usd}` over the `active_months` with at least one close (null before the first close); `up_months`, `down_months`; `worst_month` `{month, coin, usd, spot_move_pct, spot_days}` (lowest realised coin; the move null when not recorded; null before the first close); `worst_week` `{known, start, end, coin, pct}` (`internal/perf`'s worst 7 days of the total, coin; `pct` of equity, null when unknown); `days`, `days_covered`, `missing_days` (listed, never filled in).
+  - `summary` holds these fields:
+    - `from`, `to`, `label` (`live` | `testnet`) and `source`.
+    - `total_6m` `{coin, usd}`: the realised months added.
+    - `equity` is coin at the window start, null when unknown, with `equity_note`.
+    - `return_pct` is `total_6m.coin` ÷ equity ("% more coin than holding"), null when equity is unknown.
+    - `average_month` `{coin, usd}` is over the `active_months` with at least one close, null before the first close.
+    - `up_months` and `down_months`.
+    - `worst_month` `{month, coin, usd, spot_move_pct, spot_days}` is the lowest realised coin.
+      The move is null when not recorded, and the whole object is null before the first close.
+    - `worst_week` `{known, start, end, coin, pct}` is `internal/perf`'s worst 7 days of the total, in coin.
+      `pct` is of equity, null when unknown.
+    - `days`, `days_covered` and `missing_days` (listed, never filled in).
 - `GET /api/strangles/payoff` (#391; in the proxy allow-list, any signed-in role; the [Positions page](menu-and-pages.md#what-you-see), the overview's strangle cards and the payoff modal) is the payoff chart of every open strangle (`internal/api/payoff.go`, pure `PayoffOf(view, now)`, from the strategy's view — never a Deribit call).
   Coin amounts in `underlying`, prices and USD at today's `spot`:
   - `as_of`, `underlying`, `spot`, `dvol`, `model` (the label to show: "Black–Scholes on each leg's IV, zero rate"), `delta_exit_threshold`, `stop_loss_multiple`, `bot_net_delta` (the bot's net delta from the view, coin, short-signed) and `bot_net_delta_usd_per_1pct` (× spot ÷ 100), and `strangles` (ordered by slot DTE, then expiry; `[]` when nothing is held).
-  - each strangle: `strangle_id`, `slot` `{dte, delta}`, `expiry`, `dte` (fractional days), `spot`; `legs` (short legs, put first): `position_id`, `instrument`, `option_type`, `strike`, `qty`, `premium_coin`, `mark` (coin per option), `iv` (fraction, 0 = unknown), `delta` (per option), `unrealised_coin`, `position_delta` (−Δ × qty, coin) and `position_delta_usd_per_1pct`, `stop_loss_mark`, `exit_line` (the price where |Δ| reaches `delta_exit_threshold` today — How it works' `ExitLinePrice`) and `stop_level` (the price where the leg's modelled mark reaches `stop_loss_mark`), each null when not computable; `missing` (`[{option_type, rule, reason}]` — the side a one-legged strangle lacks, with `held_legs`' rule and reason, "unknown: …" when none is reported).
-  - `premium_coin` (what the legs were paid: the most it can earn), `unrealised_coin` / `unrealised_usd` (the book's P&L now, net of opening fees), `earned_pct` (unrealised ÷ premium × 100; null without a premium), `net_delta_coin` / `net_delta_usd_per_1pct`, `break_even_low` / `break_even_high` (the at-expiry payoff's zeros, as How it works; null when that side is not held or cannot lose the whole premium).
-  - `today` (false with `today_reason`, "unknown: no implied volatility for <instrument>" / "no spot price" / "at expiry", when the today curve, exit lines and stop levels cannot be computed) and `points` (ascending price, 121 evenly spaced over ±3 daily σ beyond the outer break-evens, spot and strikes, plus the spot, strikes, break-evens themselves): `{price, expiry_pnl, today_pnl}` in coin — `expiry_pnl` the coin-settled payoff at expiry (premium − qty × intrinsic ÷ price, before fees), `today_pnl` the P&L if bought back now: the book's unrealised P&L moved by the model's change in each leg's value from spot (so at spot it is exactly `unrealised_coin`; null when `today` is false).
-- `GET /api/explain?seq=<event seq>` or `?trade=<trade seq>` (#314; in the proxy allow-list, any signed-in role; no page uses it yet — the assistant's grounded input for "why did the bot do that") is the facts the journal recorded about one event (`internal/api/explanation.go`, pure `BuildExplanation`, from the in-memory recent events `/api/events` serves — never a file read or a Deribit call): `event` (as in `/api/events`, with `plain`), `rule` (the trigger, close reason, skip reason word, risk change or new trend), `detail` (the rule's numbers; a skip without one gives its skip reason), `market` (`as_of`, `spot`, `dvol`, `iv_percentile`, `gex_regime`, `gamma_flip`, `flip_buffer_pct`, `trend`, `sma_trend`, `gex_bias`, the option's `delta`, `bid`, `ask`, `mid` — 0/absent = not recorded; null when the line records no market), `related` (the same instrument's or slot's events within ±30 min, oldest first, each with `plain`; `[]` for a line that names neither, e.g. a risk change) and `source: "journal"`.
+  - Each strangle has `strangle_id`, `slot` `{dte, delta}`, `expiry`, `dte` (fractional days) and `spot`.
+  - Its `legs` are the short legs, put first.
+    - `position_id`, `instrument`, `option_type`, `strike`, `qty` and `premium_coin`.
+    - `mark` is coin per option.
+    - `iv` is a fraction, 0 = unknown.
+    - `delta` is per option.
+    - `unrealised_coin`.
+    - `position_delta` is −Δ × qty, in coin, and `position_delta_usd_per_1pct` is its USD form.
+    - `stop_loss_mark`.
+    - `exit_line` is the price where |Δ| reaches `delta_exit_threshold` today (How it works' `ExitLinePrice`).
+    - `stop_level` is the price where the leg's modelled mark reaches `stop_loss_mark`.
+    - `exit_line` and `stop_level` are each null when not computable.
+  - `missing` is `[{option_type, rule, reason}]`, the side a one-legged strangle lacks.
+    It carries `held_legs`' rule and reason, or "unknown: …" when none is reported.
+  - `premium_coin` is what the legs were paid: the most it can earn.
+  - `unrealised_coin` and `unrealised_usd` are the book's P&L now, net of opening fees.
+  - `earned_pct` is unrealised ÷ premium × 100, null without a premium.
+  - `net_delta_coin` and `net_delta_usd_per_1pct`.
+  - `break_even_low` and `break_even_high` are the at-expiry payoff's zeros, as in How it works.
+    They are null when that side is not held or cannot lose the whole premium.
+  - `today` is false when the today curve, exit lines and stop levels cannot be computed.
+    Then `today_reason` says why: "unknown: no implied volatility for <instrument>", "no spot price" or "at expiry".
+  - `points` are `{price, expiry_pnl, today_pnl}` in coin, in ascending price.
+    - There are 121 evenly spaced prices over ±3 daily σ beyond the outer break-evens.
+    - The spot, the strikes and the break-evens themselves are added.
+    - `expiry_pnl` is the coin-settled payoff at expiry: premium − qty × intrinsic ÷ price, before fees.
+    - `today_pnl` is the P&L if bought back now.
+      It is the book's unrealised P&L moved by the model's change in each leg's value from spot.
+      At spot it is exactly `unrealised_coin`.
+      It is null when `today` is false.
+- `GET /api/explain?seq=<event seq>` or `?trade=<trade seq>` (#314) is the facts the journal recorded about one event.
+  It is in the proxy allow-list, for any signed-in role.
+  No page uses it yet; it is the assistant's grounded input for "why did the bot do that".
+  It is built in `internal/api/explanation.go` (pure `BuildExplanation`) from the in-memory recent events `/api/events` serves, never from a file read or a Deribit call.
+  - `event` is as in `/api/events`, with `plain`.
+  - `rule` is the trigger, close reason, skip reason word, risk change or new trend.
+  - `detail` is the rule's numbers; a skip without one gives its skip reason.
+  - `market` has `as_of`, `spot`, `dvol`, `iv_percentile`, `gex_regime`, `gamma_flip`, `flip_buffer_pct`, `trend`, `sma_trend`, `gex_bias`, and the option's `delta`, `bid`, `ask` and `mid`.
+    0 or absent means not recorded; `market` is null when the line records no market.
+  - `related` are the same instrument's or slot's events within ±30 min, oldest first, each with `plain`.
+    It is `[]` for a line that names neither, e.g. a risk change.
+  - `source` is `"journal"`.
   An event (or a trade's event) no longer in memory → 404 `{"error": "not in recent history"}`, never a reconstruction; neither or both parameters, or a non-positive integer → 400.
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).

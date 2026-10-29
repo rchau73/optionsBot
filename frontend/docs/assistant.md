@@ -9,23 +9,67 @@ It answers from the published help, the bot's live page data and the user's own 
 
 - **Sources** (`content/help-index.json`, built by `go run ./cmd/helpindex`): OptionStrategy.md, the glossary, the plain-words catalogue, `docs/parameters.md` (`parameters.md#<anchor>`) and the user-facing `content/monitor-guide.md` (`monitor-guide.md#<anchor>`, #418: one `##` section per menu page, named as its menu item).
   A new or renamed page updates the guide in the same PR; `tests/monitor_guide_test.go` fails otherwise.
-- **Flow** (`lib/assistant/service.js`): the question's best `HELP_PASSAGES` (6) passages of `content/help-index.json` (`lib/assistant/search.js`, the BM25 of `internal/helpkb`) and, with `bot`, that bot's journal facts of the last `JOURNAL_DAYS` (7) from its `/api/journal?days=7` (#417: read back from `orders.log`, no `pnl` lines, repeats collapsed by the bot; kept per bot `JOURNAL_CACHE_MS` (60 s) in the monitor's memory, so one read a minute, not one per question; a failed read is not cached) — every open, close and fill of the week, then the other facts the question matches best (the same BM25 over each one's sentence and rule word) and the decisions within 30 min of a trade sent, within `JOURNAL_PASSAGES` (60) passages and `JOURNAL_TOKENS` (~6,000) tokens (`selectJournal`); each a passage `journal:<bot>/<seq>` holding its plain-words sentence, a collapsed one as "×42, 20 Oct 08:00 → 21 Oct 14:30: <plain>", a fill or a close followed by the market its line recorded ("Market recorded at 21 Oct 14:30 UTC: spot 84,498, DVOL 37.2, IV percentile 15 %, regime POSITIVE/PINNING.", #427).
-  **The sources are the help, the live page data and the journal (7 days + the open positions' whole history)** (#427): the read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old; `selectJournal` sends the history of the held legs the question names first (`namedInstruments`: by instrument, strike — "75.000", "75,000", "75k" — or side, else every held leg): their trades oldest first, so the entry is there however old, then the week's other trades, then those legs' other events.
-  **Live page data** (`livePassages`, `botLive` in `lib/assistant/server.js`): with `bot`, the bot's `/api/status`, `/api/positions` and `/api/strangles/payoff`, read together and kept `LIVE_CACHE_MS` (10 s) per bot, become `live:<bot>/market` (spot, DVOL, IV percentile, gamma regime and its confirmation, trend, flip and shed band, IM % of margin balance and the limit) and one `live:<bot>/leg/<instrument>` per open leg (side, strike, slot, expiry and days left, qty, entry price, mark, P&L in coin and % of premium as the Positions page shows them, delta, OTM %, the stop-loss mark and its modelled spot level, the delta-exit line, why a missing leg is held) — plain text from the routes' own fields, nothing recomputed, a missing figure "unknown"; all of them are sent (a full book of 8 legs + the market stays under `LIVE_TOKENS`, 1,500; with the help and the journal a question is ≲ 10k input tokens).
+- **Flow** (`lib/assistant/service.js`): the model gets three kinds of passage.
+  - The question's best `HELP_PASSAGES` (6) passages of `content/help-index.json` (`lib/assistant/search.js`, the BM25 of `internal/helpkb`).
+  - With `bot`, that bot's journal facts of the last `JOURNAL_DAYS` (7) from its `/api/journal?days=7`.
+    - #417: the journal is read back from `orders.log`, with no `pnl` lines, and the bot collapses repeats.
+    - It is kept per bot for `JOURNAL_CACHE_MS` (60 s) in the monitor's memory, so there is one read a minute, not one per question.
+    - A failed read is not cached.
+    - It sends every open, close and fill of the week.
+    - Then it sends the other facts the question matches best (the same BM25 over each one's sentence and rule word) and the decisions within 30 min of a trade.
+    - All of it stays within `JOURNAL_PASSAGES` (60) passages and `JOURNAL_TOKENS` (~6,000) tokens (`selectJournal`).
+    - Each is a passage `journal:<bot>/<seq>` holding its plain-words sentence.
+    - A collapsed one reads "×42, 20 Oct 08:00 → 21 Oct 14:30: <plain>".
+    - A fill or a close is followed by the market its line recorded (#427): "Market recorded at 21 Oct 14:30 UTC: spot 84,498, DVOL 37.2, IV percentile 15 %, regime POSITIVE/PINNING."
+  - The live page data, below.
+
+  **The sources are the help, the live page data and the journal (7 days + the open positions' whole history)** (#427).
+  The read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old.
+  `selectJournal` sends the history of the held legs the question names first.
+  `namedInstruments` matches by instrument, by strike ("75.000", "75,000", "75k") or by side, else every held leg.
+  Their trades come oldest first, so the entry is there however old.
+  Then come the week's other trades, then those legs' other events.
+
+  **Live page data** (`livePassages`, `botLive` in `lib/assistant/server.js`): with `bot`, the bot's `/api/status`, `/api/positions` and `/api/strangles/payoff` are read together.
+  They are kept `LIVE_CACHE_MS` (10 s) per bot.
+  They become these passages:
+  - `live:<bot>/market` holds spot, DVOL, IV percentile, gamma regime and its confirmation, trend, flip and shed band, IM % of margin balance and the limit.
+  - One `live:<bot>/leg/<instrument>` per open leg holds side, strike, slot, expiry and days left, qty, entry price and mark.
+    It also holds P&L in coin and % of premium as the Positions page shows them, delta, OTM %, the stop-loss mark and its modelled spot level, the delta-exit line, and why a missing leg is held.
+
+  The text is plain, from the routes' own fields, nothing recomputed, and a missing figure reads "unknown".
+  All of them are sent.
+  A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
+  With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
   All of it goes to the model (`lib/assistant/model.js`, Claude through the Messages API, `claude-haiku-5-5` unless `ASSISTANT_MODEL`; answer as JSON `{answer, citations}`).
   When no passage matches and no journal was asked for, the reply is "I don't know" with no model call.
   Then the guard (`lib/assistant/guard.js`, the twin of `internal/assistant/guard`) checks the answer: **no citation → "I don't know"**; an unknown citation, a number in no cited passage, advice or a forecast → the fallback reply.
   A bot that does not answer leaves the help alone as the source (WARN log).
   **A mixed question** (facts and "how do I avoid it?", #427): the system prompt has the model answer the factual part with citations and decline only the advice part with the refusal sentence; a cited answer holding the refusal is `answered`, "I don't know" followed by the refusal is canonical (`dont_know`, no citation needed).
-- **Twins of the Go code:** `lib/assistant/phrases.js` copies `internal/assistant/guard/phrases.go` (`__tests__/assistant-parity.test.js` fails when they differ: change both); `__tests__/assistant-guard.test.js` runs the Go guard's cases and the golden set on the JS guard; `__tests__/assistant-search.test.js` scores the JS search on `tests/testdata/helpkb_questions.yaml` against `helpkb_baseline.json`.
+- **Twins of the Go code:**
+  - `lib/assistant/phrases.js` copies `internal/assistant/guard/phrases.go`.
+    `__tests__/assistant-parity.test.js` fails when they differ: change both.
+  - `__tests__/assistant-guard.test.js` runs the Go guard's cases and the golden set on the JS guard.
+  - `__tests__/assistant-search.test.js` scores the JS search on `tests/testdata/helpkb_questions.yaml` against `helpkb_baseline.json`.
 - **Review log:** `data/monitor/assistant.jsonl` beside `auth.db` (`ASSISTANT_LOG_PATH`; off for an in-memory database), append-only, owner-only.
   One `"kind": "answer"` line per question — `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false` — and one `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
   An answer that cannot be logged is not shown (500).
   The monitor's stdout gets one line per question with the id and outcome only.
 
-**Requests** (#409, the prototype's "Vague report", "Report that isn't a bug", "Bug with evidence" and "Enhancement" conversations): a question that reads as a report (`lib/assistant/request.js` `looksLikeReport`: "bug", "wrong", "broken", "should" — not "should I/we", the refusal's —, "can you add"…, or the model's `report` flag on a plain answer) runs the **request check** instead: with `bot`, that bot's last day of P&L history (`GET /api/pnl/history?range=1d`, at most 24 points kept — the two around the largest step first — as passages `pnl:<bot>/<time>`) joins the help and the journal, and the model returns a structured verdict (`checkRequest`: kind `bug`/`enhancement`/`none`, what, where, evidence each citing one source, steps, explained_by, title, expected or who/why/example).
-The server checks it (`checkRequest`, pure): **what**, **where**, **evidence** (an item cited from a given passage whose numbers that passage holds — the guard's `ungrounded_number`, a journal time read as "09:12" — or two reproducible steps; one ungrounded item rejects the draft) and **not explained** (no given passage in `explained_by`).
+**Requests** (#409, the prototype's "Vague report", "Report that isn't a bug", "Bug with evidence" and "Enhancement" conversations):
+A question that reads as a report runs the **request check** instead.
+It reads as a report when `lib/assistant/request.js` `looksLikeReport` finds "bug", "wrong", "broken", "should" or "can you add"…, or when the model sets its `report` flag on a plain answer.
+"should I/we" does not count, because it is the refusal's.
+With `bot`, that bot's last day of P&L history joins the help and the journal.
+It is read with `GET /api/pnl/history?range=1d`, at most 24 points are kept (the two around the largest step first), and they become passages `pnl:<bot>/<time>`.
+The model returns a structured verdict (`checkRequest`).
+It has a kind (`bug`/`enhancement`/`none`), what, where, evidence (each item citing one source), steps, explained_by, a title, and expected or who/why/example.
+The server checks it (`checkRequest`, pure).
+- **what** and **where** must be there.
+- **evidence** is an item cited from a given passage whose numbers that passage holds (the guard's `ungrounded_number`, a journal time read as "09:12"), or two reproducible steps.
+  One ungrounded item rejects the draft.
+- **not explained** means no given passage in `explained_by`.
 Outcomes: `needs_info` (the checklist, no draft), `answered` (the model's answer through the guard, with the checklist; an enhancement may still come with a draft), `draft` (the card, citing its evidence); kind `none` is answered as any other question.
 A report with nothing to check it against gets the checklist without a model call.
 The draft is logged with its answer in `assistant.jsonl` (`request: {checklist, draft}`, every AI output is reviewable) and is **never queued without the person's click**.
@@ -37,8 +81,33 @@ Filing a public issue is the next story's.
 **The panel** (#408, the E10 prototype the product owner approved on #161): `components/AssistantProvider.jsx` sits in the root layout for a signed-in person, so the panel stays open across page changes and the conversation lasts for this browser tab only (the review log keeps the rest).
 **Ask** (`components/AskButton.jsx`, #419) is a floating chat button fixed at the bottom-right of every signed-in page (a chat-bubble icon, "Ask" beside it from 640 px; rendered once by the provider, asking about the page's `?bot=`); it is dimmed with the reason as its tooltip while `GET /api/assistant` (or a question) answers 503.
 The panel (`components/AssistantPanel.jsx`, pure helpers in `lib/assistantPanel.js`) is a 400 px `complementary` region on the right from `sm`, a full-screen `dialog` with a focus trap on a phone; × or Esc closes it and focus returns to the opener.
-Header "Assistant" with the chip "AI · answers from the docs and your journal"; two tabs, Ask and **My requests** (`components/MyRequests.jsx`: id, kind, title, status — In review · Filed with a link to the public issue · Fixed · Not a bug · Duplicate · Needs info — with the reviewer's note, read when the tab opens); under a report the **request check** list (`components/RequestChecklist.jsx`, ✓/✗ per item) and, for a draft, the **draft card** (`components/RequestDraftCard.jsx`: kind chip, "Draft request · you send it", the fields, the private-queue notice, **Send for review** · **Edit** (every field editable) · **Discard**; after sending "Sent as R-0012.
-Follow it in My requests."; wording and sizes in `lib/assistantRequests.js`); the message log (`role="log"`, `aria-live="polite"`): empty → three example questions; a skeleton while thinking; each answer as written (`pre-line`) with its **source chips** — an OptionStrategy.md or other document section on the repository (new tab), a glossary term's own source section, a journal entry's trade row in Details (pro) (`#trade-<bot>-<seq>`), the plain-words catalogue on Activity — 👍, **Flag** (→ "Flagged") and a foot line ("Answered from the cited sources" / "Facts from your journal" / "Advice and forecasts are refused"); "I don't know" links How it works; a refusal offers "How does sizing work?" and "Open Worst case"; 429 → "30 questions an hour: next at HH:MM"; another failure → Retry.
+The header says "Assistant" with the chip "AI · answers from the docs and your journal".
+There are two tabs, Ask and **My requests**.
+- **My requests** (`components/MyRequests.jsx`) lists id, kind, title and status, with the reviewer's note.
+  The status is In review, Filed (with a link to the public issue), Fixed, Not a bug, Duplicate or Needs info.
+  It is read when the tab opens.
+- Under a report there is the **request check** list (`components/RequestChecklist.jsx`, ✓/✗ per item).
+- For a draft there is the **draft card** (`components/RequestDraftCard.jsx`).
+  It shows a kind chip, "Draft request · you send it", the fields and the private-queue notice.
+  The buttons are **Send for review**, **Edit** (every field editable) and **Discard**.
+  After sending it says "Sent as R-0012.
+Follow it in My requests."
+  The wording and sizes are in `lib/assistantRequests.js`.
+
+The message log is `role="log"` with `aria-live="polite"`.
+- Empty, it shows three example questions.
+- While thinking, it shows a skeleton.
+- Each answer is shown as written (`pre-line`) with its **source chips**:
+  - an OptionStrategy.md or other document section on the repository (new tab);
+  - a glossary term's own source section;
+  - a journal entry's trade row in Details (pro) (`#trade-<bot>-<seq>`);
+  - the plain-words catalogue on Activity.
+- Each answer also has 👍, **Flag** (→ "Flagged") and a foot line.
+  The foot line is "Answered from the cited sources", "Facts from your journal" or "Advice and forecasts are refused".
+- "I don't know" links How it works.
+- A refusal offers "How does sizing work?" and "Open Worst case".
+- A 429 shows "30 questions an hour: next at HH:MM".
+- Another failure shows Retry.
 The question box takes 500 characters (Enter sends, Shift+Enter a new line), under it "Answers can be wrong: check the linked source.
 Not investment advice." and "n of 30 questions left this hour".
 **Why?** (`components/WhyButton.jsx`) on each row of the Details trade log and on each open or close of the Activity page asks "Why did <BOT> <open|close> the <put|call> <instrument> on <time>?" with `bot` and the row's journal `seq`.
@@ -54,7 +123,13 @@ Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assis
 
 #### `POST /api/assistant` `{"question", "bot"?, "seq"?}`
 
-**Does:** `{"id", "answer", "citations": [{id, source, title}], "outcome", "ai_generated": true, "notice", "remaining"}` — `outcome` `answered` | `dont_know` | `refused` | `no_citation` | `rejected`, and for a report `needs_info` | `draft` with `checklist` (and `draft`, below); `citations` only for `answered` and `draft`; `notice` the AI label (avisos.md's fixed notice), to show with every answer; `remaining` the questions left this hour.
+**Does:** `{"id", "answer", "citations": [{id, source, title}], "outcome", "ai_generated": true, "notice", "remaining"}`.
+- `outcome` is `answered` | `dont_know` | `refused` | `no_citation` | `rejected`.
+  For a report it is `needs_info` | `draft`, with `checklist` (and `draft`, below).
+- `citations` are only for `answered` and `draft`.
+- `notice` is the AI label (avisos.md's fixed notice), to show with every answer.
+- `remaining` is the questions left this hour.
+
 With `seq` (a journal sequence number, the panel's Why?), the bot's `GET /api/explain?seq=` facts — the event's plain sentence, rule, detail and recorded market, and its related events — are passages too (`journal:<bot>/<seq>`); an event no longer in the bot's memory leaves the latest journal and the help (WARN log)
 
 **Refusals:** 401 no session · 403 cross-origin · 415 not JSON · 400 no question, over 500 characters, `bot` not a string, `seq` not a positive integer or without `bot` · 404 unknown bot · 413 body over 2 KB · 429 over `QUESTIONS_PER_HOUR` (30) per person, with `Retry-After` and `{"retry_after", "remaining": 0}` (in memory) · 502 the model failed (logged) · 503 no `ANTHROPIC_API_KEY`
