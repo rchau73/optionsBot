@@ -23,6 +23,11 @@ const (
 	reasonAgentFile   = "agent instructions: a policy file, reflowed in its own change (#463)"
 )
 
+// reasonMovedFromFrontendReadme: the frontend/README.md split (#462) moved these
+// sentences word for word, so they keep the README's allowance until they are
+// rewritten as shorter sentences (a follow-up; the counts can only go down).
+const reasonMovedFromFrontendReadme = "single sentences over 400 characters moved verbatim from frontend/README.md (#462); rewriting them shorter is a follow-up"
+
 var docLongLineExceptions = map[string]struct {
 	max    int
 	reason string
@@ -37,7 +42,13 @@ var docLongLineExceptions = map[string]struct {
 	".claude/skills/legal-counsel/SKILL.md":                        {7, reasonAgentFile},
 	".claude/skills/ux-designer/SKILL.md":                          {2, reasonAgentFile},
 	".claude/skills/option-bot-specialist/references/dashboard.md": {1, reasonAgentFile},
-	"frontend/README.md":                                           {50, reasonNotReflowed},
+	"frontend/README.md":                                           {4, reasonNotReflowed},
+	"frontend/docs/analytics.md":                                   {5, reasonMovedFromFrontendReadme},
+	"frontend/docs/api-routes.md":                                  {9, reasonMovedFromFrontendReadme},
+	"frontend/docs/assistant.md":                                   {8, reasonMovedFromFrontendReadme},
+	"frontend/docs/menu-and-pages.md":                              {28, reasonMovedFromFrontendReadme},
+	"frontend/docs/sign-in.md":                                     {3, reasonMovedFromFrontendReadme},
+	"frontend/docs/testing.md":                                     {1, reasonMovedFromFrontendReadme},
 	"frontend/docs/responsive-audit.md":                            {8, reasonNotReflowed},
 	"frontend/content/monitor-guide.md":                            {7, "the help index cuts this file by heading; reflowing it is a follow-up checked with go run ./cmd/helpindex (#463)"},
 	"docs/product/analytics/surveys.md":                            {11, reasonNotReflowed},
