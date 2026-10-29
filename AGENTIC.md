@@ -176,6 +176,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 
 **Token savers** (product owner, 2026-10-27):
 - **One card per epic at a time.** The Dev pick order skips any card whose epic another instance is building (`pm_board.py ready`). Cards of one epic touch the same files, and building two at once made the second PR conflict and cost a fix-up run.
+  **Exception, delivery blockers** (product owner 2026-10-29, #459): cards labelled `blocker` may be built up to 3 at once in one epic (`BLOCKER_PARALLEL`), since they were planned to touch different files. A plain card of that epic still waits while any of them builds. With no open `blocker` card, one card per epic applies to everything again. The total number of Dev agents is still `DEV_PARALLEL` in `agents.env`.
 - **Lighter model for documents.** When `DEV_MODEL` is unset, a card labelled `documentation`, or one in an epic of `DEV_LIGHT_EPICS` (default `E5,E11`), runs on `DEV_LIGHT_MODEL` (default `sonnet`). Code cards use the account default (`pm_board.py model`; both settings live in `agents.env`).
 - **The full test suite runs once.** The agent runs only the tests its change touches. The script runs every suite after it finishes and sends a failure back to the agent.
 
