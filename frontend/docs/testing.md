@@ -14,6 +14,11 @@ What it measures and why: [`docs/responsive-audit.md`](responsive-audit.md) "Mea
 Not part of `npm test` (Jest only) nor of CI yet (the browser download).
 `__tests__/phone-check.test.jsx` covers its measuring and comparing code in Jest.
 
+## The Overview's four answers
+
+**The Overview's four answers (#489).** `__tests__/overview-four-answers.test.jsx` renders the desktop Overview with a mocked `useMonitor` on four fixtures: a profitable month, a loss, nothing held and stale data.
+It fails when the page stops answering one of the four questions a newcomer asks in the first five minutes: what the bot holds, whether it makes money (net of fees, coin and USD, a loss as prominent as a gain), the worst case in money, and why it made its last trade (one click).
+
 ## Accessibility baseline
 
 **Accessibility baseline (#310).** `__tests__/a11y.test.jsx` renders every panel and dialog (and the sign-in form) with test data and runs axe-core (`jest-axe`, helper `test/a11y.js`; colour contrast is left to the browser audit — jsdom has no layout).

@@ -22,6 +22,10 @@ The first page. It answers one question: is the bot running, and how is it doing
 
 **One band per bot** shows a header with the coin, the price, the gamma regime (positive or negative), the trend (bull, bear or neutral), how old the last GEX reading is, and the margin bar. Below it, a price chart with 60 daily candles: green for up days, grey for down days. Red is kept for losses only. The shaded corridor lies between the lowest and the highest strike the bot has sold. The dashed lines are the sold strikes, SMA9 and SMA21, the swing high and low, and the gamma flip with its shed band. Each can be switched off with its button. On the right, one row for each strangle: its slot, expiry, days left, profit and loss in coin, and how much of the premium has been kept. A click opens its payoff chart.
 
+**The last trade** sits under each band: when it happened and what the bot sold or bought back. One click on *Why?* opens the reason the bot recorded in its journal when it traded. For a buy-back it also shows that trade's past result, net of fees, in coin and USD. A past result is no promise of future results. *All actions, explained* opens the Activity page.
+
+**When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero.
+
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
 - "GEX 40s ago" turns amber after five minutes. Until the GEX reading is fresh again, the bot opens nothing new.

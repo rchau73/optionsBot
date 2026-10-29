@@ -42,11 +42,16 @@ export function earnedLines(bots) {
   });
 }
 
+/** True when the summary says the bot holds no leg (#489: the open and worst-case tiles say so, not 0). */
+const holdsNothing = (bot) => bot.summary.holding?.legs === 0;
+const nothingOpenLine = (bot) => ({ ...line(bot, 0, 0), text: "nothing open", tone: "muted", none: true });
+
 /** Open now: unrealised, net of opening fees. */
 export function openLines(bots) {
   return bots.map((b) => {
     const why = summaryUnknown(b);
     if (why) return unknownLine(b, why);
+    if (holdsNothing(b)) return nothingOpenLine(b);
     const v = b.summary.income?.unrealised_coin;
     if (!isNumber(v)) return unknownLine(b, "unknown: no mark yet");
     return line(b, v, b.summary.income.unrealised_usd, { note: "not realised" });
@@ -58,6 +63,7 @@ export function worstLines(bots) {
   return bots.map((b) => {
     const why = summaryUnknown(b);
     if (why) return unknownLine(b, why);
+    if (holdsNothing(b)) return nothingOpenLine(b);
     const w = worstCaseLine(b.summary.worst_case);
     if (w.unknown) return unknownLine(b, `unknown: ${w.unknown}`);
     const pct = isNumber(w.pct) ? `${formatSignedPct(-Math.abs(w.pct))} of account` : "% of account unknown";
@@ -99,6 +105,7 @@ export function marginLines(bots) {
 export function usdFooter(lines) {
   const known = lines.filter((l) => !l.unknown && isNumber(l.usd));
   const missing = lines.filter((l) => l.unknown).map((l) => l.coin);
+  if (lines.length && lines.every((l) => l.none)) return "nothing open";
   if (!known.length) return "≈ USD unknown";
   const sum = known.reduce((a, l) => a + l.usd, 0);
   return `≈ ${formatSignedUSD(sum)} at today's prices${missing.length ? ` · without ${missing.join(", ")}` : ""}`;
