@@ -11,6 +11,10 @@
 #      else: no push, no gh, no network, no docker, no merge;
 #   4. the script re-runs every check itself (trust, but verify), pushes the
 #      branch and opens (or updates) the PR "Closes #n" → In review.
+#      A PR that merged while the agent worked gets its new commits moved onto
+#      agent/issue-<n>-r<k> from main and a new PR "Refs #n"; one closed
+#      unmerged stops and asks (#478). "Pushed changes" is commented only once
+#      the PR's head on GitHub is the pushed commit.
 #      A failure, or an agent that stops with questions, comments on the
 #      issue, labels it agent:needs-human and moves it to Blocked — except a
 #      usage limit or a run that failed at once with no answer (limit_lib.sh
@@ -36,6 +40,11 @@ claim dev "$issue" || { unmutex dev-pick; exit 0; }
 set_status "$item" "In progress"
 unmutex dev-pick
 branch="agent/issue-$issue"
+# An open PR on agent/issue-<n>-r<k> (review fixes moved after the first PR
+# merged, #478) is the one to update.
+open_pr="" open_branch=""
+read -r open_pr open_branch _ < <(open_dev_pr "$issue" || true) || true
+[[ -n "$open_branch" ]] && branch="$open_branch"
 run_dir="$AGENT_STATE_DIR/dev/issue-$issue-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$run_dir"
 exec > >(tee -a "$run_dir/run.log") 2>&1
@@ -67,7 +76,7 @@ wt="$AGENT_WORK_DIR/issue-$issue"
 [[ -d "$wt" ]] && git_locked worktree remove --force "$wt" 2>/dev/null || true
 if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
   git_locked worktree add -q -B "$branch" "$wt" "origin/$branch"
-  existing_pr="$(gh pr list -R "$slug" --head "$branch" --state open --json number -q '.[0].number' || true)"
+  existing_pr="$open_pr"
 else
   git_locked worktree add -q -B "$branch" "$wt" origin/main
   existing_pr=""
@@ -178,32 +187,112 @@ if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
 fi
 RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
 
+# ── The PR merged or closed meanwhile (#478) ────────────────────────────────
+# PR #474 merged while the agent fixed two review findings on it; the fixes
+# were pushed to its branch, "pushed changes" was commented on the merged PR
+# and they never reached main. Re-read the PR's state before pushing:
+# merged → the new commits move onto agent/issue-<n>-r<k> from origin/main
+# (rescue_commits.sh) and go to a new PR "Refs #n"; closed unmerged → stop
+# and ask. Returns 0 when the commits moved (the checks must run again).
+merged_pr=""
+rescue_if_merged() {
+  [[ -n "$existing_pr" ]] || return 1
+  local state k=1 rc=0
+  state="$(gh pr view "$existing_pr" -R "$slug" --json state -q .state)" || return 1 # unknown: push as before
+  case "$state" in
+    OPEN) return 1 ;;
+    MERGED) ;;
+    *) { echo "PR #$existing_pr was **closed without merging** while the Dev agent worked on its review feedback."
+         echo; echo "Its new commits are on the local branch \`$branch\` only (not pushed). Should they go to a new PR, or is the work dropped?"; } > "$run_dir/reason.md"
+       block "$run_dir/reason.md" "PR closed unmerged meanwhile" ;;
+  esac
+  if ! git_locked fetch -q origin; then # origin/main must hold the merge, or the merged PR's commits would move too
+    echo "PR #$existing_pr **merged** while the Dev agent worked on its review feedback, and fetching \`main\` failed, so its new commits (on the local branch \`$branch\` only) were not moved." > "$run_dir/reason.md"
+    block "$run_dir/reason.md" "PR merged meanwhile: fetch failed"
+  fi
+  while git ls-remote --exit-code --heads origin "agent/issue-$issue-r$k" >/dev/null 2>&1; do k=$((k + 1)); done
+  bash "$AGENT_REPO_DIR/scripts/agents/rescue_commits.sh" "$wt" "$base" "agent/issue-$issue-r$k" 2> "$run_dir/rescue.log" || rc=$?
+  cat "$run_dir/rescue.log"
+  if [[ $rc -eq 3 ]]; then # nothing main lacks: no new PR
+    run_end skipped "PR #$existing_pr merged meanwhile; the new commits are already in main"
+    gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent: #$existing_pr merged while it worked on the review feedback, and main already holds every change it made. Nothing to push." >/dev/null
+    set_status "$item" "Done"; git_locked worktree remove --force "$wt" 2>/dev/null || true; exit 0
+  elif [[ $rc -ne 0 ]]; then
+    { echo "PR #$existing_pr **merged** while the Dev agent worked on its review feedback, and its new commits do not apply cleanly on \`main\`:"
+      echo; sed 's/^/    /' "$run_dir/rescue.log"; echo
+      echo "They are on the local branch \`$branch\` only (not pushed). A person moves them to a new PR."; } > "$run_dir/reason.md"
+    block "$run_dir/reason.md" "PR merged meanwhile: fixes do not apply on main"
+  fi
+  merged_pr="$existing_pr"; existing_pr=""; RUN_PR=""
+  branch="agent/issue-$issue-r$k"
+  RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
+  log "dev: #$merged_pr merged meanwhile → its new commits moved to $branch"
+  return 0
+}
+
 # ── Verify independently ────────────────────────────────────────────────────
-log "dev: verifying"
 checks="$run_dir/checks.md"
-: > "$checks"
 check() { # name, command...
   local name="$1"; shift
   if (cd "$wt" && "$@") > "$run_dir/check.log" 2>&1; then echo "- [x] $name" >> "$checks"
   else echo "- [ ] **$name — FAILED**" >> "$checks"; { echo '```'; tail -40 "$run_dir/check.log"; echo '```'; } >> "$checks"; return 1; fi
 }
-ok=1
-check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
-check "go vet ./..." go vet ./... || ok=0
-# The suite as CI runs it (scripts/go_tests.sh, #429): the core under -race,
-# the report tests without it; 30 min each (#247, #299: a loaded Mac).
-check "go tests (core -race, reports)" bash scripts/go_tests.sh all || ok=0
-if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
-  check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
-  check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0
-  check "frontend: jest" bash -c 'cd frontend && npx jest' || ok=0
-  check "frontend: next build" bash -c 'cd frontend && npx next build' || ok=0
-fi
+verify() { # sets ok
+  log "dev: verifying $branch"
+  : > "$checks"
+  ok=1
+  check "gofmt" bash -c 'out="$(gofmt -l cmd internal tests)" && test -z "$out"' || ok=0
+  check "go vet ./..." go vet ./... || ok=0
+  # The suite as CI runs it (scripts/go_tests.sh, #429): the core under -race,
+  # the report tests without it; 30 min each (#247, #299: a loaded Mac).
+  check "go tests (core -race, reports)" bash scripts/go_tests.sh all || ok=0
+  if git -C "$wt" diff --name-only "origin/main"...HEAD | grep -q '^frontend/'; then
+    check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
+    check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0
+    check "frontend: jest" bash -c 'cd frontend && npx jest' || ok=0
+    check "frontend: next build" bash -c 'cd frontend && npx next build' || ok=0
+  fi
+}
+rescue_if_merged || true
+verify
+# The checks take up to an hour: the PR may have merged during them. Then the
+# commits move and the checks run again on the new base.
+if rescue_if_merged; then verify; fi
 
 # ── Pull request ────────────────────────────────────────────────────────────
+# pr_head_is <pr> <sha> — true once GitHub shows <sha> as the PR's head (it
+# can lag a push by seconds).
+pr_head_is() {
+  local i h=""
+  for i in 1 2 3 4 5 6; do
+    h="$(gh pr view "$1" -R "$slug" --json headRefOid -q .headRefOid 2>/dev/null || true)"
+    [[ "$h" == "$2" ]] && return 0
+    [[ $i -lt 6 ]] && sleep 5
+  done
+  log "dev: PR #$1 head on GitHub is ${h:0:7}, not the pushed ${2:0:7}"
+  return 1
+}
 git_locked -C "$wt" push -q -u origin "$branch"
+pushed="$(git -C "$wt" rev-parse HEAD)"
+# "Pushed changes" only when the PR's head is the pushed commit: a PR merged
+# in the seconds before the push keeps its merged head, and the commits move.
+if [[ -n "$existing_pr" ]] && ! pr_head_is "$existing_pr" "$pushed"; then
+  if rescue_if_merged; then
+    verify
+    git_locked -C "$wt" push -q -u origin "$branch"
+    pushed="$(git -C "$wt" rev-parse HEAD)"
+  else
+    echo "The Dev agent pushed \`${pushed:0:7}\` to \`$branch\`, but PR #$existing_pr's head on GitHub is not that commit. A person checks the PR before it is reviewed." > "$run_dir/reason.md"
+    block "$run_dir/reason.md" "pushed commit is not the PR head"
+  fi
+fi
 {
-  echo "Closes #$issue"; echo
+  if [[ -n "$merged_pr" ]]; then
+    echo "Refs #$issue"; echo
+    echo "_Review fixes for #$merged_pr, which merged while the Dev agent was making them (#478): its new commits, cherry-picked onto \`main\`._"; echo
+  else
+    echo "Closes #$issue"; echo
+  fi
   cat "$run_dir/pr-body.md"; echo
   echo "## Checks re-run by the Dev agent script"; cat "$checks"; echo
   echo "_Opened by the **Dev agent** (developer skill, agent mode) for #$issue. It cannot merge or deploy: a person reviews and merges; merging deploys to **testnet** and the SME agent verifies the fix in its next review. See [AGENTIC.md](https://github.com/$slug/blob/main/AGENTIC.md)._"
@@ -218,10 +307,16 @@ if [[ -n "$existing_pr" ]]; then
   pr_url="$(gh pr view "$existing_pr" -R "$slug" --json url -q .url)"
   gh pr comment "$existing_pr" -R "$slug" --body "🤖 Dev agent pushed changes for the review feedback. Checks: $([[ $ok -eq 1 ]] && echo passed || echo '**failing**')." >/dev/null
 else
-  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$title (#$issue)" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
+  pr_title="$title (#$issue)"
+  [[ -n "$merged_pr" ]] && pr_title="$title (#$issue, review fixes for #$merged_pr)"
+  pr_url="$(gh pr create -R "$slug" --base main --head "$branch" --title "$pr_title" --label agent:dev ${draft[@]+"${draft[@]}"} --body-file "$run_dir/pr.md")"
 fi
 log "dev: PR $pr_url"
 RUN_PR="${pr_url##*/}"
+if [[ -n "$merged_pr" ]]; then
+  gh pr comment "$merged_pr" -R "$slug" --body "🤖 Dev agent: this PR merged while it was fixing the review findings. The fixes are in $pr_url (on \`$branch\`, from \`main\`)." >/dev/null || true
+  gh issue comment "$issue" -R "$slug" --body "🤖 Dev agent: #$merged_pr merged while it was fixing the review findings, so the fixes never reached \`main\` on that PR. They are in a new PR on top of \`main\`: $pr_url (#478)." >/dev/null
+fi
 # A bug the agent traced to an earlier PR (a "Caused by #N" line in its PR
 # body) is a regression: label the issue and name the cause on it, once, for
 # cmd/dora's change failure rate (#470).

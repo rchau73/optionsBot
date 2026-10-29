@@ -13,7 +13,8 @@
 #   merge    → the same, policy-free and up to date with main: merged here
 #              (#468, product owner 2026-10-28), at most one per run so the
 #              next one is updated and re-tested on the new main first;
-#   wait     → the label comes off until it is ready again.
+#   wait     → the label comes off until it is ready again — always while the
+#              card is In progress: a Dev agent is working on it (#478).
 # A clean review carries over GitHub's own update-with-main merges (no
 # conflict is possible in them: pr_gate.py equiv), so updating a PR before it
 # merges costs no new review.
@@ -48,9 +49,15 @@ gate_run() {
 
 merged=0
 gh pr list -R "$slug" --label agent:dev --state open --json number,headRefName -q '.[] | "\(.number) \(.headRefName)"' > "$tmp/prs.txt"
+# Each card's column, read once: a card In progress waits (#478).
+board_cards > "$tmp/cards.txt" || : > "$tmp/cards.txt"
 while read -r pr ref; do
   [[ -n "$pr" && "$ref" == agent/issue-* ]] || continue
-  issue="${ref#agent/issue-}"
+  # agent/issue-<n>, or agent/issue-<n>-r<k>: review fixes moved to a new PR
+  # after the first merged (dev_agent.sh, #478).
+  issue="${ref#agent/issue-}"; issue="${issue%%-r*}"
+  [[ "$issue" =~ ^[0-9]+$ ]] || continue
+  card="$(awk -v n="$issue" '$2 == n { $1 = $2 = ""; sub(/^  /, ""); print; exit }' "$tmp/cards.txt")"
   gh pr view "$pr" -R "$slug" --json number,state,isDraft,labels,headRefOid,mergeable,mergeStateStatus,statusCheckRollup > "$tmp/pr.json" < /dev/null
   gh api "repos/$slug/pulls/$pr/reviews" --paginate -q '.[].body' < /dev/null |
     grep -oE "<!-- agent-review sha=[0-9a-f]* verdict=[a-z]*( policy=[a-z]*)? -->" | sed "s/<!-- agent-review //; s/ -->//" > "$tmp/markers.txt" || true
@@ -69,7 +76,7 @@ while read -r pr ref; do
     [[ "$(gh issue view "$d" -R "$slug" --json state -q .state < /dev/null)" == "OPEN" ]] && echo "$d" >> "$tmp/deps.txt"
   done
   read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt" \
-    "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}")
+    "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}" "$card")
   has_ready="$(py 'import json,sys; print(any(l["name"] == "ready-to-merge" for l in json.load(open(sys.argv[1]))["labels"]))' "$tmp/pr.json")"
   issue_ready="$(gh issue view "$issue" -R "$slug" --json labels -q '[.labels[].name] | index("ready-to-merge") != null' < /dev/null)"
   if [[ "$action" != "ready" && "$action" != "merge" ]]; then
