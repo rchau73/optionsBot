@@ -53,5 +53,37 @@
         "missing": []},
       "order_flips": ["2026-W42"]
     }
+  },
+  "neighbours": {
+    "key": "gamma_flip_buffer_sd",
+    "title": "Gamma flip buffer",
+    "unit": "daily standard deviations",
+    "proposed": 1.25,
+    "range": "0 to 3",
+    "cliff_threshold_pp": 1,
+    "stress_note": "stress is one run of the proposed value (section Stress shocks), not re-run for the neighbours",
+    "rows": [
+      {"step_pct": -20, "value": 1,
+        "backtest": {"ran": true, "return_pct": 1.62, "worst_week_pct": -0.71, "max_drawdown_pct": 1.02, "fees": 268.3, "trades": 34},
+        "replay": {"ran": true, "return_pct": 0.52, "worst_week_pct": -0.41, "max_drawdown_pct": 0.47, "fees": 0.0012, "trades": 24}},
+      {"step_pct": -10, "value": 1.1,
+        "backtest": {"ran": true, "return_pct": 1.97, "worst_week_pct": -0.79, "max_drawdown_pct": 1.08, "fees": 255.1, "trades": 33},
+        "replay": {"ran": true, "return_pct": 0.55, "worst_week_pct": -0.39, "max_drawdown_pct": 0.45, "fees": 0.0011, "trades": 23}},
+      {"step_pct": 0, "value": 1.25,
+        "backtest": {"ran": true, "return_pct": 2.11, "worst_week_pct": -0.88, "max_drawdown_pct": 1.15, "fees": 241.8, "trades": 31},
+        "replay": {"ran": true, "return_pct": 0.57, "worst_week_pct": -0.38, "max_drawdown_pct": 0.44, "fees": 0.0011, "trades": 22}},
+      {"step_pct": 10, "value": 1.4,
+        "backtest": {"ran": true, "return_pct": 1.21, "worst_week_pct": -2.05, "max_drawdown_pct": 2.27, "fees": 236.4, "trades": 29},
+        "replay": {"ran": true, "return_pct": 0.61, "worst_week_pct": -0.33, "max_drawdown_pct": 0.39, "fees": 0.001, "trades": 20}},
+      {"step_pct": 20, "value": 1.5,
+        "backtest": {"ran": true, "return_pct": 1.18, "worst_week_pct": -2.12, "max_drawdown_pct": 2.36, "fees": 228.9, "trades": 28},
+        "replay": {"ran": true, "return_pct": 0.67, "worst_week_pct": -0.25, "max_drawdown_pct": 0.34, "fees": 0.0009, "trades": 18}}
+    ],
+    "cliffs": [
+      {"source": "backtest", "figure": "worst_week_pct", "from_value": 1.25, "to_value": 1.4, "before": -0.88, "after": -2.05,
+        "detail": "backtest worst week pct moves by more than 1 pp from -0.88 % at 1.25 to -2.05 % at 1.4"},
+      {"source": "backtest", "figure": "max_drawdown_pct", "from_value": 1.25, "to_value": 1.4, "before": 1.15, "after": 2.27,
+        "detail": "backtest max drawdown pct moves by more than 1 pp from +1.15 % at 1.25 to +2.27 % at 1.4"}
+    ]
   }
 }

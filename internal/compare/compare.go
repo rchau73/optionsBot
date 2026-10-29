@@ -67,6 +67,9 @@ type Report struct {
 	Stress     Stress    `json:"stress"`
 	// Windows is the comparison per week or day (-windows); nil without it.
 	Windows *WindowReport `json:"windows,omitempty"`
+	// Neighbours is the fragility check of one proposed setting
+	// (-neighbours); nil without it.
+	Neighbours *Neighbours `json:"neighbours,omitempty"`
 }
 
 // Backtest is both configs through the daily backtest.
@@ -165,10 +168,12 @@ func Run(in Inputs) Report {
 	return r
 }
 
+const noBacktestData = "no backtest data (-csv)"
+
 func runBacktests(in Inputs) Backtest {
 	b := Backtest{Source: in.CSV, EquityUSD: BacktestEquityUSD}
 	if in.CSV == "" {
-		b.Note = "no backtest data (-csv)"
+		b.Note = noBacktestData
 		return b
 	}
 	b.Base, b.Proposed = runBacktest(in.Base, in.CSV, in.From, in.To), runBacktest(in.Proposed, in.CSV, in.From, in.To)
@@ -201,21 +206,26 @@ func runBacktest(cfg *config.Config, csv string, from, to time.Time) BacktestRun
 }
 
 func runReplays(in Inputs) Replay {
-	rp := Replay{Source: in.Market, Equity: in.Equity, EquitySource: in.EquitySource}
-	switch {
-	case in.Market == "":
-		rp.Note = "no recorded books (-replay)"
-	case !hasBook(in.Snaps, in.From, in.To):
-		rp.Note = "no recorded book between the two days (" + in.Market + ")"
-	case in.Equity <= 0:
-		rp.Note = "no starting margin balance (-equity or account.json): the replay sizes on it"
-	}
+	rp := Replay{Source: in.Market, Equity: in.Equity, EquitySource: in.EquitySource, Note: replayNote(in)}
 	if rp.Note != "" {
 		return rp
 	}
 	rp.Base, rp.Proposed = runReplay(in, in.Base), runReplay(in, in.Proposed)
 	rp.Ran = rp.Base.Error == "" || rp.Proposed.Error == ""
 	return rp
+}
+
+// replayNote says why the replay cannot run on in; "" = it can.
+func replayNote(in Inputs) string {
+	switch {
+	case in.Market == "":
+		return "no recorded books (-replay)"
+	case !hasBook(in.Snaps, in.From, in.To):
+		return "no recorded book between the two days (" + in.Market + ")"
+	case in.Equity <= 0:
+		return "no starting margin balance (-equity or account.json): the replay sizes on it"
+	}
+	return ""
 }
 
 func runReplay(in Inputs, cfg *config.Config) ReplayRun {
