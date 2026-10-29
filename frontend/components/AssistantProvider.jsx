@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
 import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api/assistant";
-import { fetchNpsDue, sendNpsAction, sendSurveyAnswer } from "@/lib/api/survey";
+import { fetchAnswersDue, fetchNpsDue, sendAnswersShown, sendNpsAction, sendSurveyAnswer } from "@/lib/api/survey";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
 import { answerOf } from "@/lib/analytics/screens";
 import { blockingDialogOpen } from "@/lib/dialogs";
@@ -43,6 +43,15 @@ export default function AssistantProvider({ children }) {
   useEffect(() => {
     npsCardRef.current = npsCard;
   }, [npsCard]);
+  // The four answers card (#498): the same badge and place, card null | "question" | "thanks".
+  // Never in a tab where NPS is due or shown: NPS goes first, and the server keeps 7 days after it.
+  const [answersDue, setAnswersDue] = useState(false);
+  const [answersCard, setAnswersCard] = useState(null);
+  const answersDueRef = useRef(false);
+  const answersCardRef = useRef(null);
+  useEffect(() => {
+    answersCardRef.current = answersCard;
+  }, [answersCard]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -51,10 +60,17 @@ export default function AssistantProvider({ children }) {
       setEnabled(s.enabled);
       if (s.remaining != null) setRemaining(s.remaining);
     });
-    fetchNpsDue(controller.signal).then(({ due }) => {
-      if (controller.signal.aborted) return;
+    const nps = fetchNpsDue(controller.signal).then(({ due }) => {
+      if (controller.signal.aborted) return due;
       npsDueRef.current = due;
       setNpsDue(due);
+      return due;
+    });
+    Promise.all([nps, fetchAnswersDue(controller.signal)]).then(([npsIsDue, answersIsDue]) => {
+      if (controller.signal.aborted) return;
+      const due = answersIsDue && !npsIsDue;
+      answersDueRef.current = due;
+      setAnswersDue(due);
     });
     return () => controller.abort();
   }, []);
@@ -73,8 +89,39 @@ export default function AssistantProvider({ children }) {
       setNpsCard("question");
       track("survey_shown", { survey_id: "nps" });
       sendNpsAction("shown").catch(() => {}); // the server keeps the date: no other device shows it for 30 days
+      // Never the four answers in the same session as NPS.
+      answersDueRef.current = false;
+      setAnswersDue(false);
+    } else if (answersDueRef.current && !blockingDialogOpen()) {
+      answersDueRef.current = false;
+      setAnswersDue(false);
+      // The server records the day only while it is due: another tab that got
+      // there first answers 409, and this tab then shows nothing.
+      sendAnswersShown().then(
+        () => {
+          setAnswersCard("question");
+          track("survey_shown", { survey_id: "answers" });
+        },
+        () => {},
+      );
     }
   }, []);
+
+  // × and "Not now": shown but not answered; not due again for 30 days.
+  const answersDismiss = useCallback(() => {
+    track("survey_dismissed", { survey_id: "answers" });
+    setAnswersCard(null);
+  }, []);
+
+  // Send: the codes answered (one or both) through POST /api/survey, which writes the codes-only event.
+  const answersAnswer = useCallback(async (codes) => {
+    const sessionId = currentSessionId();
+    if (!sessionId) throw new Error("analytics is off for you");
+    await sendSurveyAnswer({ survey_id: "answers", session_id: sessionId, codes });
+    setAnswersCard("thanks");
+  }, []);
+
+  const answersClose = useCallback(() => setAnswersCard(null), []);
 
   // × and "Not now": shown but not answered.
   const npsDismiss = useCallback(() => {
@@ -107,7 +154,9 @@ export default function AssistantProvider({ children }) {
     setOpen(false);
     // Closing the panel (× or Escape) with the question unanswered dismisses it; any card goes with the panel.
     if (npsCardRef.current === "question") track("survey_dismissed", { survey_id: "nps" });
+    if (answersCardRef.current === "question") track("survey_dismissed", { survey_id: "answers" });
     setNpsCard(null);
+    setAnswersCard(null);
     const el = opener.current;
     opener.current = null;
     // After the panel unmounts, so focus lands on the opener, not on the body.
@@ -194,8 +243,13 @@ export default function AssistantProvider({ children }) {
     () => ({
       open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
       npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest,
+      answersDue, answersCard, answersAnswer, answersDismiss, answersClose,
     }),
-    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft, npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest],
+    [
+      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
+      npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest,
+      answersDue, answersCard, answersAnswer, answersDismiss, answersClose,
+    ],
   );
 
   return (

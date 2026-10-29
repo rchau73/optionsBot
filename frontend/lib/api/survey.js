@@ -1,4 +1,4 @@
-// The person's analytics consent and surveys: the monthly NPS card and survey answers.
+// The person's analytics consent and surveys: the monthly NPS card, the four answers card and survey answers.
 
 import { losingWeek } from "../analytics/nps.js";
 import { fetchBotPerformance, fetchMonitorConfig } from "./bots.js";
@@ -53,6 +53,22 @@ export async function fetchNpsState(signal) {
 /** The NPS card's state changes (#446): "shown" | "opt_out" | "opt_in" → the server's view; throws with its reason. */
 export async function sendNpsAction(action) {
   return sendJSON("/api/survey/nps", "POST", { action });
+}
+
+/** Whether the four answers card is due for the signed-in person (#498): true only on the server's yes; any failure is not due. Never throws. */
+export async function fetchAnswersDue(signal) {
+  try {
+    const res = await apiFetch("/api/survey/answers", { cache: "no-store", signal });
+    const body = res.ok ? await jsonOrNull(res) : null;
+    return body?.due === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The four answers card was shown (#498): the server keeps the day; throws with its reason. */
+export async function sendAnswersShown() {
+  return sendJSON("/api/survey/answers", "POST", { action: "shown" });
 }
 
 /** One survey answer (#363): { survey_id, session_id, codes, text? }; throws with the server's reason. */
