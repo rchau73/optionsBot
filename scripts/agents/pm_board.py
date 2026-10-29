@@ -527,18 +527,42 @@ def new_stories(pm, epics, board=None):
 EPIC_LABEL = re.compile(r"^E\d+$")
 
 
+# Delivery blockers (product owner 2026-10-29, #459): cards labelled `blocker`
+# may be built up to BLOCKER_PARALLEL at once within one epic, because they
+# were planned to touch different files. When no open card carries the label,
+# the one-card-per-epic rule below applies to everything again.
+BLOCKER_LABEL = "blocker"
+BLOCKER_PARALLEL = 3
+
+
 def ready_order(cards, busy_numbers):
     """Ready cards in pick order (Priority, then oldest), skipping every card of
     an epic that already has a Dev run in progress (busy_numbers: the issues
     being built): cards of one epic touch the same files, and building two at
-    once made the second PR conflict and cost a fix-up run (#320/#322)."""
+    once made the second PR conflict and cost a fix-up run (#320/#322).
+    Exception: a `blocker` card skips only when a non-blocker card of its epic
+    is being built, or BLOCKER_PARALLEL blocker cards of that epic already are."""
     by_num = {c["number"]: c for c in cards}
-    busy_epics = {l for n in busy_numbers for l in by_num.get(n, {}).get("labels", []) if EPIC_LABEL.match(l)}
+    epics = lambda c: {l for l in c.get("labels", []) if EPIC_LABEL.match(l)}
+    busy_epics, busy_blockers = set(), {}
+    for n in busy_numbers:
+        c = by_num.get(n, {})
+        for e in epics(c):
+            if BLOCKER_LABEL in c.get("labels", []):
+                busy_blockers[e] = busy_blockers.get(e, 0) + 1
+            else:
+                busy_epics.add(e)
     out = []
     for c in cards:
         if c["status"] != "Ready" or c["state"] != "OPEN" or "epic" in c["labels"] or "agent:pm" in c["labels"]:
             continue
-        if busy_epics & {l for l in c["labels"] if EPIC_LABEL.match(l)}:
+        mine = epics(c)
+        if busy_epics & mine:
+            continue
+        if BLOCKER_LABEL in c["labels"]:
+            if any(busy_blockers.get(e, 0) >= BLOCKER_PARALLEL for e in mine):
+                continue
+        elif any(busy_blockers.get(e, 0) for e in mine):
             continue
         out.append(c)
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c.get("priority"), 9), c["number"])
