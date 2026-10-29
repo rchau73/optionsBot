@@ -31,6 +31,7 @@ export default function AssistantProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [enabled, setEnabled] = useState(null); // null = not known yet
   const [remaining, setRemaining] = useState(null);
+  const [tabRequest, setTabRequest] = useState(null); // { tab }: the tab the last opener asked for
   const opener = useRef(null);
   // The monthly NPS card (#446): due = the Ask badge; card = what the panel shows
   // (null | "question" | "thanks" | "opted_out"), kept while this tab lives.
@@ -57,9 +58,10 @@ export default function AssistantProvider({ children }) {
     return () => controller.abort();
   }, []);
 
-  const openPanel = useCallback(({ entry = "menu", from = null, bot: chosen = null } = {}) => {
+  const openPanel = useCallback(({ entry = "menu", from = null, bot: chosen = null, tab = null } = {}) => {
     opener.current = from ?? (typeof document !== "undefined" ? document.activeElement : null);
     if (chosen) setBot(chosen);
+    setTabRequest(tab ? { tab } : null); // a new object each time, so the open panel switches too
     setOpen(true);
     track("assistant_open", { entry });
     // "Shown" = the panel opened with the card in it (never the badge alone),
@@ -164,7 +166,8 @@ export default function AssistantProvider({ children }) {
   const askWhy = useCallback(
     (trade, from = null) => {
       openPanel({ entry: "why", from, bot: trade.bot });
-      ask(whyQuestion(trade), { bot: trade.bot, seq: trade.seq ?? null, entry: "why" });
+      // trade.question: a journal entry that is not a trade names itself (the bell's bot updates, #447).
+      ask(trade.question || whyQuestion(trade), { bot: trade.bot, seq: trade.seq ?? null, entry: "why" });
     },
     [openPanel, ask],
   );
@@ -189,9 +192,9 @@ export default function AssistantProvider({ children }) {
   const value = useMemo(
     () => ({
       open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
-      npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose,
+      npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest,
     }),
-    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft, npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose],
+    [open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft, npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest],
   );
 
   return (

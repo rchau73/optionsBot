@@ -256,3 +256,17 @@ These pages are for the admin role only. A manager or a user who opens one is re
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.
 
 Learn more: "Roles" and "Analytics and your consent" in this guide.
+
+## Notifications
+
+The **bell** in the menu bar, before your name, lists what happened to your book and your requests, and what waits for you. On a phone it opens the Notifications page.
+
+**Needs you** (counted on the bell): a short question from the team is waiting, or a request you sent needs more from you. Their buttons open the question or My requests in the assistant.
+
+**Updates** (listed, never counted): what the bot did to your book on the page's bot (a stop-loss, a delta exit, the kill switch, a sell cancelled because new risk is frozen, initial margin over the limit), each with the journal's plain sentence and *Why?*; the status of your requests (accepted as a public issue, declined with its reason, shipped); and one What's new note per release. Fills and skips are never notifications.
+
+**Reading**: an unread item has a dot and bold text. Following an item marks it read; "Mark all read" marks the whole list. Read marks are kept with your account, so your other devices agree. Items are kept 90 days.
+
+**Settings**: the Notifications page turns each kind of update off or on. What needs you cannot be turned off; the question from the team has its own "Don't ask me again". Nothing is sent by e-mail or to your phone.
+
+**When something looks wrong**: if the bot does not answer, the list says its events could not be read and still shows the rest.

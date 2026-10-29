@@ -69,6 +69,8 @@ services:
       # Help assistant (#191, frontend/README.md "Assistant"): off while empty;
       # its review log is assistant.jsonl beside auth.db.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # The bell's What's new notes (#447, docs/product/releases/README.md), mounted below.
+      - RELEASE_NOTES_DIR=/app/data/releases
     volumes:
       # Users and sessions (auth.db), analytics events (events.jsonl). A named
       # volume: one per environment, as the compose project name includes OPTIONSBOT_ENV.
@@ -78,6 +80,8 @@ services:
       # no id. The clones are siblings (<envs>/stable, <envs>/mvp).
       - ../stable/data/monitor/reports:/app/data/reports/stable:ro
       - ../mvp/data/monitor/reports:/app/data/reports/mvp:ro
+      # The What's new notes of this clone's checkout, read-only (#447): stable shows its release's notes.
+      - ./docs/product/releases:/app/data/releases:ro
     ports:
       - "127.0.0.1:${MONITOR_PORT:?set MONITOR_PORT in deploy.env}:3000"
 

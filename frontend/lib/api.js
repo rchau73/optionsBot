@@ -460,3 +460,27 @@ export async function sendSurveyAnswer(answer) {
   });
   if (!res.ok) throw new Error((await jsonOrNull(res))?.error ?? `${res.status}`);
 }
+
+const notificationsUrl = (bot) => `/api/notifications${bot ? `?bot=${encodeURIComponent(bot)}` : ""}`;
+
+/** The signed-in person's bell for the page's bot (#447): { items, needs_you, settings, errors }; throws with the server's reason. */
+export async function fetchNotifications(bot, signal) {
+  return getJSON(notificationsUrl(bot), signal);
+}
+
+/**
+ * A change of the person's bell (#447): { action: "read", ids } |
+ * { action: "read_all" } | { action: "setting", kind, enabled } → the new
+ * view; throws with the server's reason.
+ */
+export async function sendNotificationAction(bot, body) {
+  const res = await apiFetch(notificationsUrl(bot), {
+    method: "POST",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const view = await jsonOrNull(res);
+  if (!res.ok) throw new Error(view?.error ?? `${res.status}`);
+  return view;
+}

@@ -52,8 +52,15 @@ export default function AssistantPanel({ assistant }) {
   const ref = useRef(null);
   const input = useRef(null);
   const [draft, setDraft] = useState("");
-  const [tab, setTab] = useState("ask");
+  const [tab, setTab] = useState(assistant.tabRequest?.tab ?? "ask");
   const thinking = messages.some((m) => m.role === "thinking");
+
+  // A tab asked for by the opener (the bell's "your request needs more" opens My requests, #447), also while open.
+  const [seenTabRequest, setSeenTabRequest] = useState(assistant.tabRequest);
+  if (assistant.tabRequest !== seenTabRequest) {
+    setSeenTabRequest(assistant.tabRequest);
+    if (assistant.tabRequest) setTab(assistant.tabRequest.tab);
+  }
 
   useEffect(() => {
     input.current?.focus();
