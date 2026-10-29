@@ -51,6 +51,9 @@ var (
 	linkRe    = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 	imageRe   = regexp.MustCompile(`^!\[[^\]]*\]\([^)]*\)$`)
 	listRe    = regexp.MustCompile(`^(\s*)([-*+]|\d+\.) `)
+	// A line that is only an HTML comment: the guide's `<!-- guide: … -->`
+	// markers (#483) and a generated file's notice are for maintainers.
+	commentRe = regexp.MustCompile(`^<!--.*-->$`)
 )
 
 // HeadingAnchor is GitHub's anchor of a heading: lower case, every character
@@ -205,8 +208,8 @@ func blocks(lines []string) []block {
 		switch {
 		case t == "":
 			flush()
-		case t == "---", imageRe.MatchString(t):
-			// a rule or an image: no words to cite
+		case t == "---", imageRe.MatchString(t), commentRe.MatchString(t):
+			// a rule, an image or a comment: no words to cite
 		default:
 			cur = append(cur, strings.TrimRight(linkRe.ReplaceAllString(line, "$1"), " "))
 		}
