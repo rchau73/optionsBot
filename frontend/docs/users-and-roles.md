@@ -26,6 +26,13 @@ Part of the [monitor README](../README.md). Who may do what, and the Users page 
   - user: — (403)
 
 `admin` satisfies `manager` satisfies `user` (`lib/auth/roles.js`).
+
+### The role matrix (#490)
+
+Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_CHANGING_ROUTES`): the roles that may call it (`anonymous` for sign-in, refresh and the reset link) and the audit action an allowed call writes, or why it writes none.
+`__tests__/role-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the read-only `MONITOR_API_TOKEN` and with an expired session.
+A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
+A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
 Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing).
 **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401).
 So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later.

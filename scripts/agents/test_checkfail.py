@@ -103,6 +103,8 @@ class Honest(unittest.TestCase):
     def test_the_scan_finds_the_known_reads(self):
         self.assertIn("frontend/lib/menu.js", checkfail.go_reads(REPO, "tests/monitor_guide_test.go"))
         self.assertIn("docs/product/assistant/golden.jsonl", checkfail.js_reads(REPO, "frontend/__tests__/assistant-guard.test.js"))
+        self.assertIn("internal/api", checkfail.js_reads(REPO, "frontend/__tests__/role-matrix.test.js"))
+        self.assertIn("frontend", checkfail.suites_for("internal/api/api.go"))
 
     def test_the_node_pins_run_the_go_tests(self):
         # tests/ci_workflow_test.go keeps the Dockerfile, ci.yml and package.json on one Node major (#522);

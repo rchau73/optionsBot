@@ -17,6 +17,9 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   Both take an optional `"actor": {"user", "role"}` (#171: the monitor's signed-in person; `api.ActorOf` checks only its form — username 3–64 of `a-z 0-9 . _ -`, role admin|manager|user — none → `monitor`),
   - logged as `by` and journaled as `orders.Actor` (the close's `actor` via `buyToCloseBy`, `rebalance_manual`'s `actor`, `Trade.Actor` in `/api/trades`);
   - who may act is the monitor's check (roles, re-read from its user database), never the bot's.
+  - **The role matrix** (#490): every state-changing monitor route, its allowed roles and its audit action is one table, `frontend/lib/auth/routeRoles.js` `STATE_CHANGING_ROUTES`;
+    `frontend/__tests__/role-matrix.test.js` calls each as admin, manager, user, no session, the read-only `MONITOR_API_TOKEN` and an expired session,
+    and fails on a route file, or a non-GET route registered here, that the table does not list (`bot` names the route here a monitor route forwards to).
   Never add other endpoints that change trading state without auth + confirmation + audit.
   `cmd/monitor-demo` serves it with simulated data.
   `/api/account` serves `internal/account` (cached `private/get_account_summaries` plus `private/get_positions` for each held currency, all kinds

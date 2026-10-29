@@ -207,6 +207,8 @@ The survey is one optional question in the Ask panel: how likely you are to reco
 
 **How to skip the survey**: "Not now" or × closes it until next month. "Don't ask me again" turns it off. Account, Privacy has a switch that turns it back on. The assistant works the same whether you answer or not.
 
+**Is my survey answer in the audit trail?** Only the fact that you answered, and which survey, with your username and the time. Your score, reasons and comment are not in it. Turning the survey off or back on is recorded the same way.
+
 **When it shows**: at most once every 30 days, counted from the day it was shown, answered or not. It shows only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times, and not while a bot's last 7 days is a net loss or cannot be read.
 
 **Can I open the survey myself?** No. You cannot trigger it on demand: it appears once every 30 days when you have agreed to analytics. When it is due you can still answer it in the Ask panel, or skip it.
@@ -232,6 +234,8 @@ Learn more: "Roles" in this guide.
 There are three roles. A **user** may see every page. A **manager** may do what a user does and also close a leg by hand and rebalance by hand, including the dry run. An **admin** may do what a manager does and also use the admin pages: Users, Audit and Analytics.
 
 **Who can rebalance?** Managers and admins. Closing a leg by hand is the same. A user may still see the buttons, but the monitor refuses the action and the bot receives nothing. The role is checked each time you act, so a role change takes effect at once.
+
+**Is every action checked and recorded?** Yes. Every action that changes something is checked on the server against your role, whatever the page shows: the wrong role is refused and nothing changes. An allowed action is recorded in the audit trail with your username, the action and the time.
 
 Each environment has its own people and roles.
 
@@ -270,7 +274,7 @@ These pages are for the admin role only. A manager or a user who opens one is re
 **Users**: lists the people of this environment with role, email, when created and last sign-in. An admin creates a user (a username of 3 to 64 letters, digits, dots, underscores or hyphens, and a password of at least 12 characters), changes a role, resets a password, issues a single-use reset link, signs a person out everywhere, or deletes a user. Every change signs that person out everywhere. There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
 
-**Audit**: the trail of who did what: user changes, role changes and consent changes. It is read-only.
+**Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer). It is read-only.
 <!-- guide: page:/admin/audit -->
 
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.

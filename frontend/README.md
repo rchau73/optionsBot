@@ -116,7 +116,7 @@ npm run test:phone                # viewport check (#309, #425): every menu page
 - `proxy.js`, `instrumentation*.js`
   - Contents: the session guard on every route; the start-up check (`AUTH_SECRET`, first admin)
 - `lib/auth/`
-  - Contents: server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `roles.js` (role order), `audit.js` (audit.jsonl), `auditread.js` (reads it backwards for the Audit page), `service.js` (login/refresh/logout, password change, reset links, the acting user, user administration), `server.js` (the shared instance, `requireRole`), `admin.js` (what every admin route checks first), `viewer.js` (who is looking, for display only)
+  - Contents: server-side sign-in: `store.js` (SQLite), `password.js` (argon2id), `tokens.js` (JWT, cookies), `limits.js` (lockout, per-IP), `roles.js` (role order), `routeRoles.js` (the role matrix: every state-changing route, its roles and audit action, #490), `audit.js` (audit.jsonl), `auditread.js` (reads it backwards for the Audit page), `service.js` (login/refresh/logout, password change, reset links, the acting user, user administration), `server.js` (the shared instance, `requireRole`), `admin.js` (what every admin route checks first), `viewer.js` (who is looking, for display only)
 - `components/`
   - Contents: one panel per file: `Header`, `KpiStrip`, `Filters`, `PositionsTable`, `PendingOrders`, `ActivityFeed`, `PnlChart`, `AccountPanel`, `Monitor`, `DetailsPage` (+ `MicroBar`, `DotStrip`, `Panel`, `Badge`, `StatTile`, `MarginBar`, `Details`); the Users page: `UsersAdmin`, `AddUserForm`, `UserActionDialog`, `ResetLinkDialog`; `ResetPasswordForm` (`/reset`); `AuditTrail` (Audit page)
 - `hooks/`

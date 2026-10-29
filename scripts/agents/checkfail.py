@@ -79,8 +79,8 @@ GO_READS = (
 FRONTEND_READS = (
     "OptionStrategy.md", "config_", "docs/parameters.md", "docs/product/",
     "frontend/README.md", "frontend/content/", "frontend/docs/",
-    "internal/assistant/guard/", "tests/testdata/",
-)
+    "internal/api/", "internal/assistant/guard/", "tests/testdata/",
+)  # internal/api/: role-matrix.test.js checks every bot POST route is in the monitor's role table (#490)
 # What the scripts job tests (shellcheck, the Python unit tests) and what those tests read.
 SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/", "go.mod", "go.sum",
                  "internal/", "scripts/")
@@ -364,7 +364,8 @@ HELP_SOURCES = (
 def repo_wide(changed):
     """The repo-wide checks a change needs: ["jest <test>", …, "helpindex"]."""
     out = []
-    if any("frontend" in suites_for(f) for f in changed):
+    # A Go file some frontend test reads (internal/api routes) runs that suite, but no page, label or panel.
+    if any("frontend" in suites_for(f) and not f.endswith(".go") for f in changed):
         out += [f"jest {t}" for t in REPO_WIDE_JEST]
     if any(f in HELP_SOURCES for f in changed):
         out.append("helpindex")
