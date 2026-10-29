@@ -17,4 +17,6 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
   - GEX rebuilt with `gex.Build`, fills at the recorded bid/ask/mid by the bot's price floors, margin modelled;
   - where minute GEX records exist (`-gex`, default `market_gex` beside the books; `none` = hourly) it decides at each record on the last hourly book's prices (`replay/ticks.go`), hourly where they are absent;
   - `-journal` prints the bot's actual P&L over the window to measure the gap.
+  - `-liqcaps 5,10,20` (study, #487, `replay/liqcap.go`): one replay per `liquidity_cap_oi_pct`, one table — IM as % of the limit, decisions under 60 % of it with entries allowed, entries and lots cut, worst week;
+    days with no recording are listed and the table marked indicative (`docs/studies/liquidity-cap.md`). The bot's cap stays fixed at 10.
   Not modelled there: rebalance, leg balancing, churn breaker, journal-restored holds.
