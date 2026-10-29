@@ -38,7 +38,9 @@ def git(*args, cwd=None):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
-class Promote(unittest.TestCase):
+class PromoteEnv(unittest.TestCase):
+    """A throwaway origin, stable clone and history; test_release.py reuses it."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -109,6 +111,20 @@ class Promote(unittest.TestCase):
     def _stable_head(self):
         return git("rev-parse", "HEAD", cwd=self.t("envs", "stable"))
 
+    def _deploys_hours(self, *lines):
+        """lines: (hours ago, commit) → deploys.tsv, oldest first."""
+        self._deploys(*[(h / 24, c) for h, c in lines])
+
+    def _last_deploy_line(self):
+        with open(self.t("envs", "history", "deploys.tsv")) as f:
+            return f.read().splitlines()[-1].split("\t")
+
+    def _gh_not_fixed(self, line):
+        """gh answers every call with one open sme:not-fixed issue."""
+        self._write(self.t("bin", "gh"), f"#!/bin/sh\necho '{line}'\n")
+
+
+class Promote(PromoteEnv):
     def test_promote_picks_the_newest_soaked_mvp_build(self):
         # B 6 days ago, C 3.5 days ago (newest soaked), D a day ago (not soaked).
         self._deploys((6, self.b), (3.5, self.c), (1, self.d))
@@ -123,9 +139,11 @@ class Promote(unittest.TestCase):
         self.assertEqual(self._stable_head(), self.c)
         with open(self.t("envs", "history", "promotions.tsv")) as f:
             self.assertTrue(f.read().splitlines()[-1].endswith(f"\tv0.2.0\t{self.c}"))
-        # #470: the release is also a stable line in deploys.tsv (cmd/dora).
-        with open(self.t("envs", "history", "deploys.tsv")) as f:
-            self.assertTrue(f.read().splitlines()[-1].endswith(f"\tstable\t{self.c}\trelease\tv0.2.0"))
+        # #470: the release is also a stable line in deploys.tsv (cmd/dora),
+        # #471: with its trigger, who and why.
+        line = self._last_deploy_line()
+        self.assertEqual(line[1:6] + line[7:], ["stable", self.c, "release", "v0.2.0", "manual", "-"])
+        self.assertTrue(line[6])  # who: the git user, else the login
 
     def test_a_stable_release_line_is_never_an_mvp_soak(self):
         # A stable line on D (4 days old) must not make D soaked: only mvp lines count.
@@ -205,6 +223,74 @@ class Promote(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertIn("rollback, no soak check", r.stdout)
         self.assertEqual(self._stable_head(), self.a)
+
+    # ── #471: escalation and hotfix exceptions, the audit line ──────────────
+    def test_escalation_without_a_reason_is_refused(self):
+        self._deploys((6, self.b), (1, self.d))
+        for reason in ([], [""], ["  "]):
+            r = self._promote("v0.2.1", "--commit", self.d, "--escalate", *reason)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("needs", r.stderr)
+        r = self._promote("v0.2.1", "--escalate", "urgent")  # no --commit
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--escalate needs --commit", r.stderr)
+        self.assertIsNone(self._origin_tag("v0.2.1"))
+
+    def test_escalation_of_a_commit_that_never_ran_in_mvp_is_refused(self):
+        self._deploys((6, self.b), (1, self.d))
+        r = self._promote("v0.2.1", "--commit", self.c, "--escalate", "urgent fix")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"{self.c[:7]} never ran in mvp", r.stderr)
+        self.assertIsNone(self._origin_tag("v0.2.1"))
+
+    def test_escalation_with_a_reason_skips_the_soak_and_is_audited(self):
+        self._deploys((6, self.b), (0.01, self.d))  # D: 15 minutes on mvp
+        self.env["PROMOTE_BY"] = "admin rchau"
+        r = self._promote("v0.2.1", "--commit", self.d, "--escalate", "stop-loss\tbug\non BTC")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertIn("escalation: soak skipped", r.stdout)
+        self.assertEqual(self._origin_tag("v0.2.1"), self.d)
+        self.assertEqual(self._last_deploy_line()[1:],
+                         ["stable", self.d, "release", "v0.2.1", "escalation", "admin rchau", "stop-loss bug on BTC"])
+
+    def test_an_open_sme_not_fixed_blocks_an_escalation(self):
+        self._deploys((6, self.b), (1, self.d))
+        self._gh_not_fixed("#77 the fix did not work")
+        r = self._promote("v0.2.1", "--commit", self.d, "--escalate", "urgent")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("#77 the fix did not work", r.stderr)
+        self.assertIsNone(self._origin_tag("v0.2.1"))
+
+    def test_a_hotfix_needs_one_hour_on_mvp(self):
+        self._deploys_hours((100, self.b), (0.5, self.d))
+        r = self._promote("v0.2.1", "--commit", self.d, "--hotfix", "#9")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("the 1-hour hotfix soak ends", r.stderr)
+        self.assertIsNone(self._origin_tag("v0.2.1"))
+        self._deploys_hours((100, self.b), (2, self.d))
+        r = self._promote("v0.2.1", "--commit", self.d, "--hotfix", "#9")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertIn("1-hour hotfix soak ok", r.stdout)
+        self.assertEqual(self._last_deploy_line()[1:], ["stable", self.d, "release", "v0.2.1", "hotfix", "agent:release", "#9"])
+
+    def test_one_trigger_at_a_time(self):
+        self._deploys((6, self.b), (4, self.d))
+        r = self._promote("v0.2.1", "--commit", self.d, "--weekly", "--escalate", "x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("only one of", r.stderr)
+
+    def test_the_mvp_clone_may_promote(self):
+        # release.sh runs from the mvp clone (main): its scripts are current.
+        clone = self.t("envs", "mvp")
+        git("clone", "-q", self.origin, clone)
+        self._write(os.path.join(clone, "deploy.env"), "OPTIONSBOT_ENV=mvp\nMONITOR_PORT=1\n")
+        shutil.copytree(SCRIPTS, os.path.join(clone, "scripts"), dirs_exist_ok=True)
+        self._deploys((6, self.b), (3.5, self.c))
+        self.env.pop("OPTIONSBOT_ENVS")
+        r = self._promote("v0.2.0", "--weekly", script=os.path.join(clone, "scripts", "promote.sh"))
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(self._origin_tag("v0.2.0"), self.c)
+        self.assertEqual(self._last_deploy_line()[5:7], ["weekly", "agent:release"])
 
     def test_refused_from_inside_an_environments_clone(self):
         # stable's own copy of the scripts: its clone has a deploy.env.

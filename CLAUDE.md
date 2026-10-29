@@ -16,7 +16,8 @@ scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parall
 make cover                     # coverage across ./internal/... (tests live in ./tests)
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
-scripts/promote.sh v0.3.0      # stable → a release: a new tag goes on the newest mvp deploy (deploys.tsv, never a rollback line) 3 days old (`--commit <sha>` = another build that ran in mvp); no open sme:not-fixed; rollback = an older tag; refuses inside an env clone (#360)
+scripts/promote.sh v0.3.0      # stable → a release: a new tag goes on the newest mvp deploy (deploys.tsv, never a rollback line) 3 days old (`--commit <sha>` = another build that ran in mvp); no open sme:not-fixed; rollback = an older tag; refuses inside stable's clone (#360)
+scripts/promote.sh v0.3.1 --commit <sha> --escalate "<reason>"   # admin escalation (#471): no soak, the reason audited; weekly/hotfix releases: scripts/agents/release.sh
 scripts/prune_branches.sh      # delete local branches already in main (GitHub deletes merged PR branches itself)
 make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
 
@@ -44,7 +45,7 @@ Strict separation — do not mix:
 Never reintroduce env-var overrides for logic parameters.
 
 **Two local environments, sharing nothing** (2026-10-17, #129; `docs/operations.md` "Environments"):
-- `~/dev/go/optionsBot-env/stable` (a release tag, moved only by `scripts/promote.sh`, the track record, market recorder on) and `~/dev/go/optionsBot-env/mvp` (main, auto-deployed by `deploy.sh`; the agents run from it).
+- `~/dev/go/optionsBot-env/stable` (a release tag, moved only by `scripts/promote.sh` — a person's or the weekly `release.sh`'s — the track record, market recorder on) and `~/dev/go/optionsBot-env/mvp` (main, auto-deployed by `deploy.sh`; the agents run from it).
 - Each clone has its own `.env` — **its own Deribit account**: a bot cancels every order of its currency at startup and adopts every short it finds, so two environments on one account fight
   - — and a `deploy.env` (`OPTIONSBOT_ENV`, `MONITOR_PORT` 3000/3100, `BOT_RECORD_MARKET`; mvp also `BOT_CONFIG_BTC=./config_btc.mvp.yaml` — BTC on `gex_direction: sma` while stable stays on `bias`, to compare the two, #168;
   - that file is `config_btc.yaml` with only that line different, enforced by `TestConfig_MVPBTCDiffersOnlyInDirection`: change both).
