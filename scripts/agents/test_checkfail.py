@@ -360,5 +360,16 @@ class LibHelpers(unittest.TestCase):
         self.assertIn("flaky** on #77", log)
 
 
+class DevScript(unittest.TestCase):
+    def test_related_jest_run_passes_when_no_test_relates_to_the_change(self):
+        # jest exits 1 on "No tests found" (a page or globals.css no test imports):
+        # without the flag a valid frontend change would fail the Dev script's check.
+        with open(os.path.join(HERE, "dev_agent.sh"), encoding="utf-8") as f:
+            related = [line for line in f if "--findRelatedTests" in line]
+        self.assertTrue(related)
+        for line in related:
+            self.assertIn("--passWithNoTests", line)
+
+
 if __name__ == "__main__":
     unittest.main()

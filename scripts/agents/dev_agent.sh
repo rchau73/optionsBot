@@ -345,9 +345,11 @@ verify() { # sets ok
     if [[ ${#jest_files[@]} -eq 0 || "${jest_files[0]}" == "all" ]]; then
       test_check "frontend: jest" bash -c 'cd frontend && npx jest --ci' || ok=0
     else
+      # --passWithNoTests: a change no test imports (a page, globals.css) has no related
+      # test, and jest would exit 1 on it; CI still runs every jest test.
       # shellcheck disable=SC2016 # $@ expands in the inner bash: the changed files
       test_check "frontend: jest (the tests related to the changed files)" \
-        bash -c 'cd frontend && npx jest --ci --findRelatedTests "$@"' _ "${jest_files[@]}" || ok=0
+        bash -c 'cd frontend && npx jest --ci --passWithNoTests --findRelatedTests "$@"' _ "${jest_files[@]}" || ok=0
     fi
   fi
   echo "- CI runs every suite on the PR (and \`next build\`); the PR gate marks it ready for review when CI is green." >> "$checks"
