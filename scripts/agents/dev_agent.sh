@@ -9,9 +9,11 @@
 #   3. runs Claude Code headless with the developer skill in agent mode. It
 #      may edit files, run the build/test/lint tools and commit — nothing
 #      else: no push, no gh, no network, no docker, no merge;
-#   4. the script runs the checks the change touches itself (trust, but
-#      verify; checkfail.py picks them, #472) — gofmt/vet, the scripts, the Go
-#      tests and jest files the change touches, eslint — pushes the branch and
+#   4. the script merges origin/main last (#467), runs the checks the change
+#      touches itself (trust, but verify; checkfail.py picks them, #472) —
+#      gofmt/vet, the scripts, the Go tests and jest files the change touches,
+#      eslint, and the repo-wide checks (glossary, responsive audit, empty
+#      states, menu, help index: checkfail.py repo-wide) — pushes the branch and
 #      opens (or updates) the PR "Closes #n" as a draft → In review. CI runs
 #      every suite; the PR gate marks the draft ready when CI is green, and the
 #      Reviewer starts then. A failing test the change does not touch is re-run
@@ -153,6 +155,12 @@ PR-BODY's Plan: the script labels the issue regression (the delivery report's ch
 A change a person can see or do in the monitor is done only with its section in frontend/content/monitor-guide.md,
 a golden question in docs/product/assistant/golden.jsonl and go run ./cmd/helpindex (#483); answer the PR
 template's 'User-facing?' line in the PR body.
+Before you hand over (#467), run the checks that read the whole repo, not only the tests your change touches:
+for a frontend change npx jest __tests__/glossary.test.js __tests__/responsive-audit.test.js
+__tests__/empty-states.test.js __tests__/menu.test.jsx (from frontend/), and go run ./cmd/helpindex when a
+help source changed (OptionStrategy.md, docs/parameters.md, the glossary, the monitor guide, internal/api's
+catalogue or explain). As your last step, git merge --no-edit origin/main (resolve any conflict as main's
+behaviour plus yours), then rerun the tests your change touches and those checks, and commit.
 End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
@@ -163,6 +171,7 @@ allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(python3:*)" "Bash(bash scripts/:*)" "Bash(shellcheck:*)" "Bash(make check:*)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
+  "Bash(git merge:*)" # the last step: merge origin/main (fetched by the script) and rerun the checks (#467)
   "Bash(git rm:*)" "Bash(git mv:*)" # tracked files only, every one shown in the PR diff (#466 could not drop a file it had split, #515)
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"
   "Bash(cd:*)" ) # cd: a "cd <dir> && go test …" line was refused whole (#257, 2026-10-27); the other part is still checked
@@ -221,6 +230,24 @@ fi
 if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
   echo "The agent reported done but made no commit." > "$run_dir/reason.md"
   block "$run_dir/reason.md" "done without a commit"
+fi
+
+# ── Merge main last (#467) ──────────────────────────────────────────────────
+# Other PRs merged while the agent worked: merge today's main so the checks
+# below run on what the PR will be. A conflict only in generated files is
+# regenerated (#465); any other is left to the PR gate (needs-rebase), which
+# sends the card back to the agent.
+if git_locked fetch -q origin; then
+  as_me=(-c user.name="$(git config user.name)" -c user.email="$(git config user.email)")
+  if ! git -C "$wt" "${as_me[@]}" merge --no-edit -q origin/main >/dev/null 2>&1; then
+    if (cd "$wt" && bash scripts/regen.sh --resolve) >> "$run_dir/regen.log" 2>&1 &&
+        git -C "$wt" "${as_me[@]}" commit -q --no-edit; then
+      log "dev: last merge with main: generated files regenerated"
+    else
+      git -C "$wt" merge --abort 2>/dev/null || true
+      log "dev: last merge with main conflicts; left to the PR gate"
+    fi
+  fi
 fi
 RUN_COMMIT="$(git -C "$wt" rev-parse --short HEAD)"
 
@@ -353,6 +380,20 @@ verify() { # sets ok
       test_check "frontend: jest (the tests related to the changed files)" \
         bash -c 'cd frontend && npx jest --ci --passWithNoTests --findRelatedTests "$@"' _ "${jest_files[@]}" || ok=0
     fi
+  fi
+  # The checks that read every file (#467), whatever the change imports.
+  local line wide_jest=()
+  while IFS= read -r line; do
+    case "$line" in
+      "jest "*) wide_jest+=("${line#jest }") ;;
+      helpindex) check "help index up to date (go run ./cmd/helpindex)" \
+          bash -c 'go run ./cmd/helpindex && git diff --exit-code -- frontend/content/help-index.json' || ok=0 ;;
+    esac
+  done < <(python3 "$CHECKFAIL" repo-wide "$run_dir/files.txt")
+  if [[ ${#wide_jest[@]} -gt 0 ]]; then
+    # shellcheck disable=SC2016 # $@ expands in the inner bash: the test files
+    test_check "frontend: repo-wide tests (glossary, responsive audit, empty states, menu)" \
+      bash -c 'cd frontend && npx jest --ci "$@"' _ "${wide_jest[@]}" || ok=0
   fi
   echo "- CI runs every suite on the PR (and \`next build\`); the PR gate marks it ready for review when CI is green." >> "$checks"
 }

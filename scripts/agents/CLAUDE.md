@@ -133,8 +133,10 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the Dev pick order skips a card whose epic another instance is building (`pm_board.py ready`);
     except `blocker` cards: up to 3 of one epic at once (`BLOCKER_PARALLEL`, #459), and while any is open only blocker cards are picked;
     with none open, normal picking and one per epic again;
+    in any epic, a card that names a file or field (`**Files:**` line, `files_named`) of a card being built or In progress, or depends on one, waits (#467);
   - documents/research cards (label `documentation` or `DEV_LIGHT_EPICS`) run on `DEV_LIGHT_MODEL` unless `DEV_MODEL` is set (`pm_board.py model`);
-  - the agent and the script run only the tests the change touches, CI every suite (#472).
+  - the agent and the script run only the tests the change touches, CI every suite (#472),
+    plus the checks that read every file (`checkfail.py repo-wide`: glossary, responsive audit, empty states, menu, help index; #467) after merging `origin/main` last.
 - Parallel runs:
   - `tick.sh` (every 6 min) starts them in the background, within the person's budget `<envs>/agents.env`
     (pause, agent hours, Claude runs per day, parallelism 1 each by default, models — `limit_lib.sh` `budget_reason`, AGENTIC.md "Parallel runs and limits"; 2026-10-23: the agents had used the person's whole Claude plan);

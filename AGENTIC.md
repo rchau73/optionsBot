@@ -200,6 +200,8 @@ A stop that carries the agent's questions, or that a person answered, stays with
   **Exception, delivery blockers** (product owner 2026-10-29, #459): cards labelled `blocker` may be built up to 3 at once in one epic (`BLOCKER_PARALLEL`), since they were planned to touch different files.
   **While any `blocker` card is open (any status), only blocker cards are picked:** every other card waits, whatever its priority or epic (product owner, 2026-10-29).
   With no open `blocker` card, normal picking and one card per epic apply again.
+  **No overlap across epics** (#467: #445 and #446 built one NPS field under two names in parallel): a card that names a file or field of a card being built or In progress, or depends on one, waits.
+  A card names them in a `**Files:**` line or a `## Files` section (`pm_board.py files_named`, carried by `board_json` as `files` and `deps`); sharing only a finished dependency is no overlap.
   The total number of Dev agents is still `DEV_PARALLEL` in `agents.env`.
 - **Lighter model for documents.**
   When `DEV_MODEL` is unset, a card labelled `documentation`, or one in an epic of `DEV_LIGHT_EPICS` (default `E5,E11`), runs on `DEV_LIGHT_MODEL` (default `sonnet`).
