@@ -3,7 +3,7 @@
 Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 
 ```bash
-go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 -replay data/btc/data/market -stress data/stress/btc   # two configs side by side → data/compare/<time>/report.md|json: key-by-key diff, backtest, replay, stress; `-windows week|day` adds backtest and replay per window and how often the proposal wins (#301) (README "Settings comparison")
+go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 -replay data/btc/data/market -stress data/stress/btc   # two configs side by side → data/compare/<time>/report.md|json: key-by-key diff, backtest, replay, stress; `-windows week|day` adds backtest and replay per window and how often the proposal wins (#301); `-neighbours <key>` re-runs the proposed value ±10/20 % and flags cliffs (#495) (README "Settings comparison")
 go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of a comparison (#426): one model call (ANTHROPIC_API_KEY; -fake <answer.md> sends nothing), checked by aianalysis.Check (#257) → analysis.md|json beside the report, Disclaimer first; a failing answer writes nothing and exits 1; offline, no monitor route (README "AI analysis of a comparison")
 ```
 
@@ -14,4 +14,6 @@ go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of 
   A new figure in `backtest.Summary` or `replay.Result` worth comparing needs a line in `BacktestRun`/`ReplayRun` and `markdown.go`.
   `RunWindows` (`windows.go`, #301, `-windows week|day`) re-runs `Run` per ISO week or day (stress not windowed) into `Report.Windows`;
   - pure `Windows` and `SummarizeWindows` (wins, median, spread, worst window, replay/backtest order flips; a window that did not run is listed, counted nowhere).
+  `-neighbours <key>` (`neighbours.go`, #495): pure `NeighbourValues` (±10/20 %, rounded to the catalogue's step, clipped to its range, duplicates skipped) and `FindCliffs` (`CliffPP`, its reason beside it);
+  - `RunNeighbours` loads each value through `config.Load` on a temporary copy of the proposed file (a `Validate` refusal is a skipped row), runs backtest and replay only, into `Report.Neighbours`; the analysis's grounding check reads its numbers like any other.
   Never name a Go file `*_windows.go`/`*_windows_test.go`: Go builds it on Windows only.

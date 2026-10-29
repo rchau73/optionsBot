@@ -575,6 +575,12 @@ go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -t
     -replay data/btc/data/market -stress data/stress/btc -windows week
 ```
 
+**Neighbours** (#495): `-neighbours <key>` (a key as in the Differences, e.g. `gamma_flip_buffer_sd` or `dte_delta_matrix[0].deltas[0]`) re-runs the backtest and the replay of the proposed config with only that setting at −20 %, −10 %, +10 % and +20 % of its proposed value, so a value that works only at one exact number shows.
+Each value is rounded to the catalogue's step (`config.Tunables()`) and clipped to its range; a value clipped or rounded onto one already in the table, or refused by `Validate` (e.g. a drift threshold above 75 % of the entry delta), is skipped with the reason.
+The report gains a **Neighbours** section (`neighbours` in the JSON): per source the return %, worst week %, max drawdown % and fees of each value, then the cliffs — a worst week or drawdown that moves by more than `compare.CliffPP` (1 pp of equity) between adjacent values, or a return that flips sign.
+The stress is not re-run for the neighbours; a key that is not a number setting is refused before anything runs.
+Nothing is applied: a change still takes effect only after a manager confirms it.
+
 ## AI analysis of a comparison
 
 `cmd/analyze` (#426, epic E9) turns one comparison's `report.json` into a plain-words analysis and writes `analysis.md` and `analysis.json` beside it.

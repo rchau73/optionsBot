@@ -6,6 +6,7 @@ Status: **offline only** (#257, epic E9). No analysis is shown to any user, no e
 
 One JSON document: the `report.json` of `cmd/compare` (#186, `internal/compare.Report`) — the settings that differ (`diffs`), the backtest, the replay and the stress for the current (`base`) and the proposed settings (net return, worst week, max drawdown, fees, trade counts, sheds and stops), plus:
 
+- with `-neighbours` (#495), `neighbours`: one setting's values around the proposed one, their figures and the `cliffs` — numbers like any other, so the analysis may cite them and nothing else;
 - the catalogue entry of each changed key (`config.Tunables()`, #255) when available, else the key names;
 - the run's data coverage: an optional top-level `"coverage": {"missing_days": ["2026-10-14", …]}` (days with no recorded data, listed, never filled).
 
