@@ -49,3 +49,76 @@ class Decide(unittest.TestCase):
     def test_needs_human_and_draft_wait(self):
         self.assertEqual(pr_gate.decide(pr(labels=[{"name": "agent:needs-human"}]), CLEAN, [])[0], "wait")
         self.assertEqual(pr_gate.decide(pr(isDraft=True), CLEAN, [])[0], "wait")
+
+
+CLEAN_FREE = ["sha=abc verdict=clean policy=no"]
+
+
+def auto(p=None, markers=CLEAN_FREE, files=("frontend/components/X.jsx",), behind=0, on=True, equiv=()):
+    return pr_gate.decide(p or pr(), markers, [], equiv, list(files), behind, on)
+
+
+class AutoMerge(unittest.TestCase):
+    """#468: ready PRs merge on their own unless they change a business rule or policy."""
+
+    def test_policy_free_up_to_date_merges(self):
+        self.assertEqual(auto(), ("merge", "reviewed clean, CI green, up to date with main, no policy change"))
+
+    def test_a_policy_path_leaves_it_to_a_person_and_names_why(self):
+        a, why = auto(files=("internal/strategy/open.go", "internal/risk/x.go", "internal/strategy/close.go"))
+        self.assertEqual(a, "ready")
+        self.assertIn("it touches trading rules; it touches margin policy", why)
+        self.assertEqual(why.count("trading rules"), 1)
+
+    def test_every_policy_area_is_caught(self):
+        for path in ["config_btc.yaml", "OptionStrategy.md", "internal/orders/journal.go", "cmd/bot/main.go",
+                     "docs/product/PRD.md", ".github/workflows/ci.yml", ".claude/skills/developer/SKILL.md",
+                     "scripts/agents/pr_gate.sh", "scripts/promote.sh", "frontend/lib/auth/store.js"]:
+            self.assertEqual(auto(files=[path])[0], "ready", path)
+
+    def test_near_misses_are_not_policy(self):
+        for path in ["internal/strategyx.go", "frontend/lib/authz.js", "docs/productivity.md", "scripts/agents/pr_gatekeeper_notes.md"]:
+            # "scripts/agents/pr_gate." is a filename prefix: pr_gatekeeper does not match it.
+            self.assertEqual(auto(files=[path])[0], "merge", path)
+
+    def test_the_reviewer_saying_yes_or_nothing_leaves_it_to_a_person(self):
+        a, why = auto(markers=["sha=abc verdict=clean policy=yes"])
+        self.assertEqual((a, why.endswith("the Reviewer marked it a policy change")), ("ready", True))
+        a, why = auto(markers=CLEAN)  # an older review, before the declaration existed
+        self.assertEqual((a, why.endswith("did not say whether it changes a policy")), ("ready", True))
+
+    def test_auto_off_never_merges(self):
+        self.assertEqual(auto(on=False)[0], "ready")
+
+    def test_behind_main_is_updated_before_it_merges(self):
+        self.assertEqual(auto(behind=3), ("update", "behind main by 3: updated before it merges"))
+
+    def test_a_policy_pr_behind_main_is_not_updated_for_merging(self):
+        self.assertEqual(auto(files=["internal/strategy/open.go"], behind=3)[0], "ready")
+
+    def test_a_review_carries_over_an_update_merge(self):
+        moved = pr(headRefOid="new")
+        self.assertEqual(auto(moved)[0], "wait")
+        self.assertEqual(auto(moved, equiv=["abc"])[0], "merge")
+
+    def test_blocking_or_ci_still_stop_a_merge(self):
+        self.assertEqual(auto(markers=["sha=abc verdict=blocking policy=no"])[0], "wait")
+        red = [{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}]
+        self.assertEqual(auto(pr(statusCheckRollup=red))[0], "wait")
+        self.assertEqual(auto(pr(labels=[{"name": "agent:needs-human"}]))[0], "wait")
+
+
+def commit(parents=2, committer="GitHub", subject="Merge branch 'main' into agent/issue-1"):
+    return {"parents": [{}] * parents, "commit": {"committer": {"name": committer}, "message": subject + "\n\nbody"}}
+
+
+class Equiv(unittest.TestCase):
+    def test_only_github_update_merges_carry_the_review(self):
+        cmp = {"base_commit": {"sha": "abc"}, "commits": [commit(), commit()]}
+        self.assertEqual(pr_gate.equiv(cmp), "abc")
+
+    def test_anything_else_does_not(self):
+        for c in [commit(parents=1, subject="Fix review"), commit(committer="Roberto Chau"),
+                  commit(subject="Merge remote-tracking branch 'origin/main'")]:
+            self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": [commit(), c]}))
+        self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": []}))

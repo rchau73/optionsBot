@@ -27,12 +27,12 @@ require_tools claude gh git go python3 || exit 1
 
 slug="$(repo_slug)"
 max_rounds="${REVIEW_MAX_ROUNDS:-2}"
-marker="agent-review" # <!-- agent-review sha=<head> verdict=<blocking|clean> -->
+marker="agent-review" # <!-- agent-review sha=<head> verdict=<blocking|clean> policy=<yes|no> -->
 
 # agent_reviews <pr> → the bodies' markers, one per line: "sha=… verdict=…".
 agent_reviews() {
   gh api "repos/$slug/pulls/$1/reviews" --paginate -q '.[].body' |
-    grep -o "<!-- $marker sha=[0-9a-f]* verdict=[a-z]* -->" | sed "s/<!-- $marker //; s/ -->//" || true
+    grep -oE "<!-- $marker sha=[0-9a-f]* verdict=[a-z]*( policy=[a-z]*)? -->" | sed "s/<!-- $marker //; s/ -->//" || true
 }
 
 # Pick the first In review card whose agent:dev PR head has not been reviewed
@@ -49,6 +49,11 @@ while read -r it num; do
   [[ -n "${p:-}" && "${labels:-}" == *agent:dev* ]] || continue
   claim_alive review "$p" && continue
   agent_reviews "$p" < /dev/null | grep -q "^sha=$h " && continue
+  # A head that only adds GitHub's update-with-main merges to the last review
+  # keeps that review (pr_gate.py equiv, #468): nothing new to read.
+  last="$(agent_reviews "$p" < /dev/null | tail -1 | sed -n 's/^sha=\([0-9a-f]*\) .*/\1/p')"
+  if [[ -n "$last" ]] && gh api "repos/$slug/compare/$last...$h" < /dev/null 2>/dev/null |
+      python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" equiv /dev/stdin | grep -q .; then continue; fi
   claim review "$p" || continue
   item="$it"; issue="$num"; pr="$p"; head="$h"; break
 done < <(items_in_status "In review")
@@ -77,7 +82,8 @@ trap '_rc=$?; git_locked worktree remove --force "$wt" 2>/dev/null || true; _on_
 # head: a PR branch may predate them, and a PR must not rewrite its reviewer.
 {
   echo "# Reviewer instructions (developer skill, Review mode — from main)"; echo
-  awk '/^## Review mode/{on=1; next} on && /^## /{exit} on' "$AGENT_REPO_DIR/.claude/skills/developer/SKILL.md"
+  # Review mode plus the quality bar it enforces (#468).
+  awk '/^## (Quality bar|Review mode)/{on=1; print; next} on && /^## /{on=0} on' "$AGENT_REPO_DIR/.claude/skills/developer/SKILL.md"
   echo
   gh issue view "$issue" -R "$slug" --json number,title,body \
     -q '"# Ticket #\(.number): \(.title)\n\n\(.body)\n"'
@@ -172,7 +178,9 @@ case "$next" in
   clean)
     gh pr edit "$pr" -R "$slug" --add-label agent:reviewed >/dev/null
     gh issue edit "$issue" -R "$slug" --remove-label agent:needs-human >/dev/null 2>&1 || true
-    gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent: no blocking findings on #$pr. Ready for a person to merge." >/dev/null
+    policy="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["policy"]["changes"])' "$run_dir/review.json")"
+    if [[ "$policy" == "no" ]]; then gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent: no blocking findings on #$pr and no policy change. The PR gate merges it once CI is green and it is up to date with main." >/dev/null
+    else gh issue comment "$issue" -R "$slug" --body "🤖 Reviewer agent: no blocking findings on #$pr. It changes a business rule or policy, so a person merges it." >/dev/null; fi
     notify "PR #$pr reviewed: ready to merge" "issue #$issue"
     log "review: PR #$pr clean"
     run_end reviewed_clean "no blocking finding" ;;
