@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -84,6 +85,46 @@ func TestCIWorkflow_JobsRunByTheSuitesCheckfailPicks(t *testing.T) {
 			t.Errorf("job %s is gated on %q, which the changes job does not output", id, m[1])
 		}
 	}
+}
+
+// The monitor's Node.js major is pinned in three places that move together
+// (#522): the Docker image it runs in, CI's frontend job and package.json's
+// engines. minFrontendNode is the oldest supported LTS (Node 20 reached end of
+// life on 2026-04-30).
+const minFrontendNode = 24
+
+func TestCIWorkflow_FrontendNodeVersionPinnedTogether(t *testing.T) {
+	read := func(parts ...string) string {
+		b, err := os.ReadFile(filepath.Join(append([]string{".."}, parts...)...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	majors := map[string][]string{
+		"frontend/Dockerfile FROM": regexpAll(`(?m)^FROM node:(\d+)`, read("frontend", "Dockerfile")),
+		"ci.yml node-version":      regexpAll(`(?m)^\s*node-version:\s*['"]?(\d+)`, read(".github", "workflows", "ci.yml")),
+		"package.json engines":     regexpAll(`"node":\s*">=(\d+)`, read("frontend", "package.json")),
+	}
+	want := strconv.Itoa(minFrontendNode)
+	for where, got := range majors {
+		if len(got) == 0 {
+			t.Errorf("%s: no Node version found", where)
+		}
+		for _, v := range got {
+			if v != want {
+				t.Errorf("%s pins Node %s, want %s: the Dockerfile, ci.yml and package.json move together", where, v, want)
+			}
+		}
+	}
+}
+
+func regexpAll(pattern, s string) []string {
+	var out []string
+	for _, m := range regexp.MustCompile(pattern).FindAllStringSubmatch(s, -1) {
+		out = append(out, m[1])
+	}
+	return out
 }
 
 func TestCIWorkflow_RequiredCheckAndNightlyRun(t *testing.T) {
