@@ -221,7 +221,8 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 |---|---|
 | its card is **In progress** | wait, "a Dev agent is working on it", before every other rule: no update, no send-back, never `ready-to-merge` or merged (#478) |
 | behind `main`, no conflict | the script updates the branch (`gh pr update-branch`). A clean review carries over GitHub's own update merges (`pr_gate.py equiv`: only 2-parent "Merge branch 'main' into …" commits by GitHub after the reviewed one), so the Reviewer reads only commits with new code |
-| conflicts with `main` | the card goes back to **Ready** with `needs-rebase`; the Dev agent merges `main` into the branch, resolves keeping both changes' intent, re-runs every check and pushes; the Reviewer checks it again |
+| conflicts with `main` only in generated files (`.gitattributes` `linguist-generated`, #465) | the gate merges `main` into the branch itself, reruns the generators (`scripts/regen.sh --resolve`) and pushes; the Reviewer checks the new commit |
+| conflicts with `main` | the card goes back to **Ready** with `needs-rebase`; the Dev agent merges `main` into the branch (a conflict in a generated file is regenerated, never edited), resolves keeping both changes' intent, re-runs every check and pushes; the Reviewer checks it again |
 | its ticket waits for an open issue | not ready |
 | its review on the current commit is `incomplete` (a changed file unread, #476) | wait, "not fully reviewed": not reviewed at all, whatever else it says |
 | reviewed clean on its **current** commit, CI green, GitHub `CLEAN`, and it **changes a business rule or policy** (a path in `POLICY_PATHS`, or the Reviewer's `policy=yes`; a review without the declaration counts as yes), or `PR_AUTO_MERGE=0` | label **`ready-to-merge`** on the PR and its card, one notification naming why it is yours |

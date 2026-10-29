@@ -6,6 +6,7 @@
 // and keep its contrast ratios true to the design tokens in app/globals.css.
 import fs from "node:fs";
 import path from "node:path";
+import { outOfOrder } from "@/test/order";
 
 const FRONTEND = path.join(__dirname, "..");
 const read = (...p) => fs.readFileSync(path.join(FRONTEND, ...p), "utf8");
@@ -134,6 +135,15 @@ describe("responsive audit (#207)", () => {
       return !row || [2, 3, 4].some((i) => !row[i] || row[i] === "—");
     });
     expect(missing).toEqual([]);
+  });
+
+  // #465: rows in alphabetical order of the panel's name (case aside), so two
+  // PRs that each add a panel do not collide at the end of the table.
+  test("the panels are in alphabetical order", () => {
+    const name = (row) => plain(row[0]).toLowerCase();
+    expect(panels.length).toBeGreaterThan(20);
+    expect(outOfOrder(panels.map(name))).toBeNull();
+    expect(outOfOrder([...panels.map(name), "account page (again)"])).toMatch(/^"account page \(again\)" comes after/);
   });
 
   test("every panel is covered: each component file is named in the audit", () => {

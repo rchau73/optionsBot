@@ -84,11 +84,18 @@ fi
 base="$(git -C "$wt" rev-parse HEAD)"
 RUN_PR="$existing_pr"
 # An open PR starts from today's main: merge it in first. A conflict (another PR
-# merged first, pr_gate.sh) is left in the files for the agent to resolve.
+# merged first, pr_gate.sh) in a generated file is resolved by its generator
+# (scripts/regen.sh, #465); any other is left in the files for the agent.
 conflicts=""
 if [[ -n "$existing_pr" ]]; then
-  git -C "$wt" -c user.name="$(git config user.name)" -c user.email="$(git config user.email)" merge --no-edit -q origin/main >/dev/null 2>&1 ||
+  as_me=(-c user.name="$(git config user.name)" -c user.email="$(git config user.email)")
+  if ! git -C "$wt" "${as_me[@]}" merge --no-edit -q origin/main >/dev/null 2>&1; then
+    if (cd "$wt" && bash scripts/regen.sh --resolve) >> "$run_dir/regen.log" 2>&1; then
+      git -C "$wt" "${as_me[@]}" commit -q --no-edit
+      log "dev: #$issue merge with main: generated files regenerated"
+    fi
     conflicts="$(git -C "$wt" diff --name-only --diff-filter=U)"
+  fi
 fi
 
 # ── Task for the agent ──────────────────────────────────────────────────────
@@ -105,7 +112,8 @@ fi
 if [[ -n "$conflicts" ]]; then
   { echo; echo "# FIRST: resolve the merge with main"; echo
     echo "\`origin/main\` was merged into this branch and conflicts in:"; echo "$conflicts" | sed 's/^/- /'; echo
-    echo "Another PR merged first. Resolve each conflict keeping both changes' intent (main's behaviour stays; this issue's change applies on top), remove every conflict marker, run the checks, then \`git add\` the files and \`git commit --no-edit\`. Say in the PR body how each conflict was resolved."; } >> "$run_dir/task.md"
+    echo "Another PR merged first. Resolve each conflict keeping both changes' intent (main's behaviour stays; this issue's change applies on top), remove every conflict marker, run the checks, then \`git add\` the files and \`git commit --no-edit\`. Say in the PR body how each conflict was resolved."
+    echo "Never edit a generated file by hand (\`.gitattributes\` \`linguist-generated\`: the help index, \`docs/parameters.md\`, the effective-config goldens): once the other files are resolved and added, run \`bash scripts/regen.sh --resolve\` before the commit. In a sorted list (the glossary, \`golden.jsonl\`, the analytics plan, the responsive audit) keep both entries, each in its alphabetical place."; } >> "$run_dir/task.md"
 fi
 cp "$run_dir/task.md" "$wt/.agent-task.md"
 echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"

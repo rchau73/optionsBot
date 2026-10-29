@@ -35,43 +35,46 @@ var boolRule = Rule{Type: "bool"}
 // Properties is the plan's §4 allow-list, the same as the collector's
 // frontend/lib/analytics/plan.js (tests/usage_test.go checks both against the
 // plan's tables).
+// Properties and Events are kept in alphabetical order (#465), so two PRs that
+// each add one land on different lines (tests/sorted_lists_test.go).
 var Properties = map[string]Rule{
-	"entry_screen": enumOf("monitor", "login"),
-	"screen":       enumOf(Screens...),
-	"viewport":     enumOf("phone", "tablet", "desktop"),
-	"panel":        enumOf("account", "held", "others", "trades"),
-	"open_ms":      duration(hourMs),
-	"filter":       enumOf("bot", "strategy", "type", "moneyness", "group_by"),
-	"level":        enumOf("strategy", "slot", "structure", "leg", "orders"),
-	"section":      enumOf("positions", "held", "trades", "orders", "others"),
-	"tip_id":       catalogue("tip"),
-	"video_id":     catalogue("video"),
-	"watched_ms":   duration(10 * 60 * 1000),
-	"helped":       boolRule,
-	"elapsed_ms":   duration(hourMs),
-	"side":         enumOf("call", "put"),
-	"allowed":      boolRule,
-	"last_leg":     boolRule,
-	"outcome":      enumOf("ok", "refused", "error", "timeout"),
-	"source":       enumOf("bot_api", "account", "pnl_history"),
-	"reason":       enumOf("user", "expired", "refresh_failed"),
-	// The in-product surveys (docs/product/analytics/surveys.md, #297).
-	"survey_id":       enumOf("nps", "answers", "exit"),
-	"score":           enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
-	"reason_code":     enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"),
-	"came_for":        enumOf(fourAnswers...),
-	"hardest_to_find": enumOf(fourAnswers...),
-	// The assistant panel's opener (#408).
-	"entry": enumOf("menu", "why"),
+	"allowed": boolRule,
 	// The kind of the assistant's reply, never its text (#424).
-	"answer": enumOf(AssistantAnswers...),
-	// The overview's switches (#404).
-	"unit":  enumOf("coin", "usd"),
-	"layer": enumOf("sma", "sma21", "swings", "flip", "strikes"),
-	// The admin Analytics page's topic (#473).
-	"topic": enumOf("usage", "delivery"),
+	"answer":     enumOf(AssistantAnswers...),
+	"came_for":   enumOf(fourAnswers...),
+	"elapsed_ms": duration(hourMs),
+	// The assistant panel's opener (#408).
+	"entry":           enumOf("menu", "why"),
+	"entry_screen":    enumOf("monitor", "login"),
+	"filter":          enumOf("bot", "strategy", "type", "moneyness", "group_by"),
+	"hardest_to_find": enumOf(fourAnswers...),
+	"helped":          boolRule,
 	// The kind of the bell's item followed (#447), never its text.
-	"kind": enumOf("survey", "request_needs_info", "bot_event", "request_status", "whats_new"),
+	"kind":     enumOf("survey", "request_needs_info", "bot_event", "request_status", "whats_new"),
+	"last_leg": boolRule,
+	// The overview's switches (#404): layer and unit.
+	"layer":       enumOf("sma", "sma21", "swings", "flip", "strikes"),
+	"level":       enumOf("strategy", "slot", "structure", "leg", "orders"),
+	"open_ms":     duration(hourMs),
+	"outcome":     enumOf("ok", "refused", "error", "timeout"),
+	"panel":       enumOf("account", "held", "others", "trades"),
+	"reason":      enumOf("user", "expired", "refresh_failed"),
+	"reason_code": enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"),
+	"score":       enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
+	"screen":      enumOf(Screens...),
+	"section":     enumOf("positions", "held", "trades", "orders", "others"),
+	"side":        enumOf("call", "put"),
+	"source":      enumOf("bot_api", "account", "pnl_history"),
+	// The in-product surveys (docs/product/analytics/surveys.md, #297; also
+	// score, reason_code, came_for, hardest_to_find).
+	"survey_id": enumOf("nps", "answers", "exit"),
+	"tip_id":    catalogue("tip"),
+	// The admin Analytics page's topic (#473).
+	"topic":      enumOf("usage", "delivery"),
+	"unit":       enumOf("coin", "usd"),
+	"video_id":   catalogue("video"),
+	"viewport":   enumOf("phone", "tablet", "desktop"),
+	"watched_ms": duration(10 * 60 * 1000),
 }
 
 // Screens is one value per page of the monitor's menu (frontend/lib/menu.js)
@@ -88,38 +91,38 @@ var fourAnswers = []string{"holding", "income", "worst_case", "last_action", "no
 
 // Events is the plan's §2: event → the properties it may carry.
 var Events = map[string][]string{
-	"session_started":        {"entry_screen", "viewport"},
-	"screen_viewed":          {"screen", "topic"},
-	"panel_expanded":         {"panel"},
-	"panel_collapsed":        {"panel", "open_ms"},
-	"filter_changed":         {"filter"},
-	"drill_opened":           {"level"},
+	"assistant_answered":     {"answer"},
+	"assistant_ask":          {"entry"},
+	"assistant_flag":         {},
+	"assistant_open":         {"entry"},
+	"data_stale_shown":       {"source"},
 	"details_section_jump":   {"section"},
 	"details_trade_expand":   {},
-	"tip_opened":             {"tip_id", "screen"},
-	"video_played":           {"video_id"},
-	"video_completed":        {"video_id", "watched_ms"},
-	"help_resolved":          {"tip_id", "video_id", "helped"},
+	"drill_opened":           {"level"},
+	"filter_changed":         {"filter"},
 	"first_answers_seen":     {"elapsed_ms"},
-	"manual_close_opened":    {"side", "allowed"},
+	"help_resolved":          {"tip_id", "video_id", "helped"},
 	"manual_close_cancelled": {"side"},
 	"manual_close_confirmed": {"side", "last_leg"},
+	"manual_close_opened":    {"side", "allowed"},
 	"manual_close_result":    {"side", "outcome"},
-	"rebalance_previewed":    {"outcome"},
+	"notification_followed":  {"kind"},
+	"notifications_opened":   {},
+	"overview_layer_toggle":  {"layer"},
+	"overview_unit_toggle":   {"unit"},
+	"panel_collapsed":        {"panel", "open_ms"},
+	"panel_expanded":         {"panel"},
 	"rebalance_confirmed":    {"outcome"},
-	"data_stale_shown":       {"source"},
+	"rebalance_previewed":    {"outcome"},
+	"screen_viewed":          {"screen", "topic"},
+	"session_started":        {"entry_screen", "viewport"},
 	"signed_out":             {"reason"},
-	"survey_shown":           {"survey_id"},
 	"survey_answered":        {"survey_id", "score", "reason_code", "came_for", "hardest_to_find"},
 	"survey_dismissed":       {"survey_id"},
-	"assistant_open":         {"entry"},
-	"assistant_ask":          {"entry"},
-	"assistant_answered":     {"answer"},
-	"assistant_flag":         {},
-	"overview_unit_toggle":   {"unit"},
-	"overview_layer_toggle":  {"layer"},
-	"notifications_opened":   {},
-	"notification_followed":  {"kind"},
+	"survey_shown":           {"survey_id"},
+	"tip_opened":             {"tip_id", "screen"},
+	"video_completed":        {"video_id", "watched_ms"},
+	"video_played":           {"video_id"},
 }
 
 // The envelope's own rules (§3 and collector.js).
