@@ -37,10 +37,14 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the Dev agents (`dev_agent.sh`, up to `DEV_PARALLEL` 1 at once, developer skill in Agent mode) each implement the top free Ready card
     (Priority, then oldest; never an epic, an `agent:pm` ticket, a card another instance holds, or one that must wait — `pm_board.py wait`)
     in a worktree with edit/test/commit permissions only, the script re-runs all checks and opens the PR (`agent:dev`) or moves the card to Blocked with questions;
+    - a PR that merged while it fixed review findings (#478, PR #474): the new commits move to `agent/issue-<n>-r<k>` from main (`rescue_commits.sh`, tested on a throwaway clone in `test_rescue.py`)
+      and a new PR `Refs #n`, linked on the issue; closed unmerged → Blocked with a question; "pushed changes" only once the PR head on GitHub is the pushed commit;
+    - `lib.sh open_dev_pr` finds an issue's open PR on either branch form (Dev, Reviewer; the gate strips `-r<k>`);
   - the Reviewer agents (`review_agent.sh`, up to `REVIEW_PARALLEL` 1, developer skill in Review mode, read-only) reviews each new PR commit, verifies every finding, posts one comment review
     and sends blocking findings back to Ready (≤ 2 fix rounds, then `agent:needs-human`; clean → `agent:reviewed`);
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),
     sends a PR that conflicts with main back to Ready with `needs-rebase` (the Dev agent always merges `origin/main` into an open PR's branch first and resolves conflicts as its first task),
+    never acts on a PR whose card is In progress (wait "a Dev agent is working on it", #478),
     and labels `ready-to-merge` (PR and card) only a PR reviewed clean on its current head, CI green, `CLEAN`, with no open dependency
     — a PR that changes a business rule or policy waits there for the person, who merges those top-down in priority order;
     - policy = a path in `pr_gate.py` `POLICY_PATHS`, or the Reviewer's `policy=yes` (none declared = yes);

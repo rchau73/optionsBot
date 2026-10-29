@@ -1,6 +1,9 @@
 """Tests of pr_gate.py: python3 -m unittest discover -s scripts/agents -p 'test_*.py'"""
+import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -109,6 +112,27 @@ class AutoMerge(unittest.TestCase):
             self.assertEqual(a, "wait", markers)
             self.assertIn("not fully reviewed", why)
         self.assertEqual(auto(pr(headRefOid="new"), markers=["sha=abc verdict=incomplete policy=no"], equiv=["abc"])[0], "wait")
+
+    def test_a_card_in_progress_waits_for_the_dev_agent(self):
+        # #478: a PR merged while the Dev agent fixed its review findings. In
+        # progress stops every action — merge, ready, update and conflict alike.
+        for p, behind in ((pr(), 0), (pr(), 3), (pr(mergeable="CONFLICTING", mergeStateStatus="DIRTY"), 0)):
+            got = pr_gate.decide(p, CLEAN_FREE, [], (), ["frontend/x.jsx"], behind, True, "In progress")
+            self.assertEqual(got, ("wait", "a Dev agent is working on it"))
+        for card in ("In review", "", "Ready"):
+            self.assertEqual(pr_gate.decide(pr(), CLEAN_FREE, [], (), ["frontend/x.jsx"], 0, True, card)[0], "merge", card)
+
+    def test_main_reads_the_card_status(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = {}
+            for name, text in {"pr": json.dumps(pr()), "markers": CLEAN_FREE[0], "deps": "", "equiv": "", "files": "frontend/x.jsx"}.items():
+                paths[name] = os.path.join(d, name)
+                open(paths[name], "w").write(text)
+            args = [sys.executable, os.path.join(os.path.dirname(__file__), "pr_gate.py"), "decide",
+                    paths["pr"], paths["markers"], paths["deps"], paths["equiv"], paths["files"], "0", "1"]
+            run = lambda *extra: subprocess.run(args + list(extra), capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(run("In progress"), "wait a Dev agent is working on it")
+            self.assertTrue(run().startswith("merge"))
 
     def test_blocking_or_ci_still_stop_a_merge(self):
         self.assertEqual(auto(markers=["sha=abc verdict=blocking policy=no"])[0], "wait")

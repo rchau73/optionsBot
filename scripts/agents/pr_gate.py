@@ -3,7 +3,7 @@
 may pick it up (product owner, 2026-10-19: "I'd rather pick only ready tickets
 for review"). Pure rules here; pr_gate.sh reads GitHub and acts.
 
-    pr_gate.py decide <pr.json> <markers.txt> <open_deps.txt> [<equiv.txt> <files.txt> <behind> <auto>]
+    pr_gate.py decide <pr.json> <markers.txt> <open_deps.txt> [<equiv.txt> <files.txt> <behind> <auto> [<card status>]]
         → one line: ACTION reason
     pr_gate.py equiv <compare.json>   → the base sha when every commit after it
         is a clean "update with main" merge GitHub made; nothing otherwise
@@ -15,6 +15,7 @@ incomplete = a changed file left unread, #476: waits as not reviewed). open_deps
 issue numbers the PR's ticket still waits for, one per line. equiv.txt: shas
 whose review counts for the head (`equiv`). files.txt: the PR's changed paths.
 behind: commits of main the head lacks. auto: 1 = merge policy-free PRs.
+card status: the ticket's board column ("In progress" = a Dev agent holds it).
 
 Actions:
   conflict  — conflicts with main: the card goes back to Ready (needs-rebase)
@@ -28,7 +29,8 @@ Actions:
               (product owner, 2026-10-28, #468: "I no longer need to approve
               PRs, unless they change business rules/policies").
   wait      — anything else (reason given): not ready, no action but the
-              label comes off.
+              label comes off. A card In progress always waits, before any
+              other rule: a Dev agent is working on it (#478).
 
 Standard library only.
 """
@@ -95,10 +97,15 @@ def equiv(compare):
     return compare.get("base_commit", {}).get("sha") or compare.get("merge_base_commit", {}).get("sha")
 
 
-def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False):
+def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card=""):
     labels = {l["name"] for l in pr.get("labels", [])}
     if pr.get("state") != "OPEN" or pr.get("isDraft"):
         return "wait", "not an open, ready pull request"
+    if card == "In progress":
+        # A Dev agent holds the card and may push to the PR any minute: never
+        # hand it to a person, merge it or send it back (#478: PR #474 merged
+        # while the agent fixed its review findings, and the fixes were stranded).
+        return "wait", "a Dev agent is working on it"
     if pr.get("mergeable") == "CONFLICTING" or pr.get("mergeStateStatus") == "DIRTY":
         return "conflict", "conflicts with main"
     if open_deps:
@@ -152,10 +159,11 @@ def main(argv):
         raise SystemExit(f"unknown command {argv[1]}")
     pr = json.load(open(argv[2]))
     deps = [int(l) for l in lines(argv[4])]
-    extra = argv[5:9]
+    extra = argv[5:10]
     equiv_shas, files = (lines(extra[0]), lines(extra[1])) if extra else ((), ())
     behind, auto = (int(extra[2] or 0), extra[3] == "1") if extra else (0, False)
-    action, why = decide(pr, lines(argv[3]), deps, equiv_shas, files, behind, auto)
+    card = extra[4] if len(extra) > 4 else ""
+    action, why = decide(pr, lines(argv[3]), deps, equiv_shas, files, behind, auto, card)
     print(action, why)
 
 
