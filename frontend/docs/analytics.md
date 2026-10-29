@@ -5,7 +5,17 @@ Part of the [monitor README](../README.md). The Analytics page (usage and delive
 ## Analytics page (#445)
 
 `/admin/analytics?env=stable|mvp&week=YYYY-Www`, linked as **Account ▾ → Analytics** for admins only (the person menu's admin items are `ADMIN_PAGES` in `lib/menu.js`; anyone else sees "Only an admin reads the analytics", the route answers them 403; two topic tabs, **Usage** and **Delivery (DORA)**, below).
-It shows the weekly usage report `cmd/usage` wrote (`usage.sh`, Mondays) **as written — nothing is recomputed in the browser**, so the page, the E13 post and the drop issue agree: the header (environment switch, week arrows, "counts of people and actions only"), a **small-sample** note under 10 active people (`usage.DropMinBase`), **Needs your attention** (each of the report's `drops`, flagged assistant answers with the path of #438's weekly review, never-opened screens and panels — tags DROP / FLAG / NEVER / OK carry text, never colour alone; or one "Nothing dropped" line), eight cards Q1–Q8 (two columns, one on a phone; Q8 counts "What we do best (9–10)" and "What to improve first (0–8)" apart, `why_best`/`why_improve`), and the data behind it (report file and time, accepted/rejected events, this monitor's consent counts, "this week isn't in a report yet").
+It shows the weekly usage report `cmd/usage` wrote (`usage.sh`, Mondays) **as written — nothing is recomputed in the browser**.
+So the page, the E13 post and the drop issue agree.
+The page has these parts:
+- The header: the environment switch, the week arrows and "counts of people and actions only".
+- A **small-sample** note under 10 active people (`usage.DropMinBase`).
+- **Needs your attention**: each of the report's `drops`, flagged assistant answers with the path of #438's weekly review, and never-opened screens and panels.
+  The tags DROP / FLAG / NEVER / OK carry text, never colour alone.
+  With nothing to show it is one "Nothing dropped" line.
+- Eight cards Q1–Q8, in two columns (one on a phone).
+  Q8 counts "What we do best (9–10)" and "What to improve first (0–8)" apart (`why_best`/`why_improve`).
+- The data behind it: report file and time, accepted/rejected events, this monitor's consent counts, and "this week isn't in a report yet".
 States: analytics off (`ANALYTICS_SALT` unset: a setup checklist, never the value, no figure), no report yet, no report for that week, no events in the week, loading, error.
 The page counts itself as `screen_viewed {screen: analytics}` (`lib/analytics/screens.js`).
 Components: `UsageAnalytics` (fetch, header, states), `UsageCards` (attention, cards, data); pure helpers in `lib/analytics/usageView.js`, file reading in `lib/analytics/reports.js`.
@@ -14,7 +24,12 @@ Components: `UsageAnalytics` (fetch, header, states), `UsageCards` (attention, c
 
 #### `GET /api/admin/analytics?env=&week=`
 
-**Does:** `{"off", "env", "envs", "current_week", "weeks", "week", "report", "file", "written_at", "consent"}`: `report` = `<USAGE_REPORTS_DIR>/<env>/<week>.json` as stored (the events file's path cut to its name), `weeks` the reported weeks oldest first, no `week` → the latest, none at all → `week`/`report` null; `consent` `{yes, no, unasked}` users for this monitor's own environment (`MONITOR_DEPLOYMENT`; the default `env`), null for the other one.
+**Does:** `{"off", "env", "envs", "current_week", "weeks", "week", "report", "file", "written_at", "consent"}`.
+- `report` = `<USAGE_REPORTS_DIR>/<env>/<week>.json` as stored (the events file's path cut to its name).
+- `weeks` are the reported weeks, oldest first.
+- No `week` → the latest; none at all → `week` and `report` null.
+- `consent` is `{yes, no, unasked}` users for this monitor's own environment (`MONITOR_DEPLOYMENT`; the default `env`), null for the other one.
+
 `USAGE_REPORTS_DIR` defaults to `data/reports`; compose mounts each clone's `data/monitor/reports` read-only at `/app/data/reports/<env>`.
 `ANALYTICS_SALT` unset → `{"off": true}` only
 
@@ -33,7 +48,12 @@ Times are UTC, as the report's.
 - **Release train** (`components/ReleaseTrain.jsx`): the last 8 days, a stable lane (a mark per release, `releases`) and an mvp lane (a tick per healthy deploy, `mvp_deploys`).
   The opened PR has a dot on each: filled where it went live, hollow at the right edge while it waits; one line says where it went live.
   The card scrolls sideways inside itself on a phone.
-- **What went live** (`components/DeliveryTable.jsx`): every merged PR, newest first — PR, title, epic, merged, live on mvp ("29 Oct 00:49 · +4 min"), live on stable ("28 Oct 11:43 (v0.3.0)", or "waiting · soak ends …" for 3 days after its mvp deploy, then "waiting · soak over, waits for the next release") and a result chip: **ROLLED BACK** (a revert of the PR, or an mvp rollback / failed deploy of its merge commit), **ON STABLE**, **LIVE ON MVP**, **NOT LIVE**.
+- **What went live** (`components/DeliveryTable.jsx`): every merged PR, newest first.
+  The columns are PR, title, epic, merged, live on mvp, live on stable and a result chip.
+  Live on mvp reads like "29 Oct 00:49 · +4 min".
+  Live on stable reads like "28 Oct 11:43 (v0.3.0)".
+  For 3 days after its mvp deploy it reads "waiting · soak ends …", then "waiting · soak over, waits for the next release".
+  The result chip is **ROLLED BACK** (a revert of the PR, or an mvp rollback / failed deploy of its merge commit), **ON STABLE**, **LIVE ON MVP** or **NOT LIVE**.
   Filters All / On mvp only / On stable, a search by PR, epic or date, sortable columns under a sticky header.
   Opening a row (`components/PrTimeline.jsx`) shows commit → merge → mvp → stable as one bar with a legend, the failures it caused, a link to the PR, a link to the Activity page with the window from 1 h before to 24 h after live on mvp (named in the link: the Activity page does not filter by time yet), and "the P&L chart with this PR marked: later" (#475).
 - **States:** no `dora.json` yet (what will appear, and that `dora.sh` makes it with no setup; no figure), first days of recording (NOT YET chips, "n/r" bars), a failed deploy (ROLLED BACK, counted once in the failure tile, its time to restore), loading, error.
@@ -59,7 +79,10 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   Events outside the plan are dropped in the page too.
   The session id is random (32 hex), new after 30 min without an event.
   The consent can be set through `/api/consent` (below); the consent notice that asks it waits for E13's prototype.
-- **Page views** (#424): `components/ScreenTracker.jsx`, in the root layout for a signed-in person, reads the person's stored answer once (`GET /api/consent`, `fetchConsent` in `lib/api/survey.js`: anything but a boolean is null), hands it to `setAnalyticsConsent`, then sends one `screen_viewed` per page shown — `screen` is the menu item's key with `_` for `-` (`lib/analytics/screens.js` `screenOf`: `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`; a page outside the menu, such as admin, sends none).
+- **Page views** (#424): `components/ScreenTracker.jsx`, in the root layout for a signed-in person, reads the person's stored answer once (`GET /api/consent`, `fetchConsent` in `lib/api/survey.js`: anything but a boolean is null), hands it to `setAnalyticsConsent`, then sends one `screen_viewed` per page shown.
+  `screen` is the menu item's key with `_` for `-` (`lib/analytics/screens.js` `screenOf`).
+  The values are `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account` and `details`.
+  A page outside the menu, such as admin, sends none.
   A yes is the only answer that sends; until the read returns nothing is sent.
   `__tests__/analytics-screens.test.jsx` fails, naming the page, when a page of `lib/menu.js` has no `screen` value in the plan (`pagesWithoutScreen`): a new page needs its value in `docs/product/analytics/event-plan.md` §4, `lib/analytics/plan.js` and `internal/usage/plan.go`.
 - **Consent (#363):** the person's own answer, on their row in `auth.db` (`users.analytics_consent`; null = never answered).
@@ -91,7 +114,10 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   Only the NPS card is built (#446, above); the other surveys are not on screen yet.
 - **Collector:** `app/api/events/route.js` stores an event only for a signed-in person (re-read from the database), same-origin JSON ≤ 2 KB, whose `users.analytics_consent` is yes (403 otherwise) and when `ANALYTICS_SALT` (≥ 16 chars) is set (503 otherwise).
   An unknown event, a property not in the plan or a value outside its rule is refused whole: 400, nothing written, a WARN log naming the field, never its value. 204 when stored.
-- **Stored:** one JSON line per event in `data/monitor/events.jsonl` beside `auth.db` (`EVENTS_PATH`; off for an in-memory database), append-only, owner-only: `event`, `ts` (UTC, to the second), `user_id` (HMAC-SHA256 of the user's row id with `ANALYTICS_SALT`, 16 hex), `session_id`, `role`, `environment` (`stable`|`mvp`, from `MONITOR_DEPLOYMENT`), `app_version` (`MONITOR_VERSION`) and the event's properties.
+- **Stored:** one JSON line per event in `data/monitor/events.jsonl`, beside `auth.db` (`EVENTS_PATH`; off for an in-memory database).
+  The file is append-only and owner-only.
+  Each line has `event`, `ts` (UTC, to the second) and `user_id` (HMAC-SHA256 of the user's row id with `ANALYTICS_SALT`, 16 hex).
+  It also has `session_id`, `role`, `environment` (`stable`|`mvp`, from `MONITOR_DEPLOYMENT`), `app_version` (`MONITOR_VERSION`) and the event's properties.
   Never the username, email, IP, user agent or URL.
   Not read by the bot.
 - **Retention (#296):** `lib/analytics/retention.js` keeps raw events `EVENT_RETENTION_DAYS` (395, 13 months; needs legal review, change it there only).

@@ -42,7 +42,15 @@ Their access token, being a stateless JWT, still reads the monitor for up to 15 
 
 ### Reset link
 
-For a person who forgot their password, no e-mail needed (#307): an admin's **Reset link** on the Users page → `POST /api/admin/users/<id>/reset-link` → `{"url", "expires_at"}`, shown **once** with a copy button; the admin hands it over by any safe channel. 32 random bytes, only their SHA-256 stored (`reset_tokens` in `auth.db`: `token_hash`, `user_id`, `expires_at`, `created_by` = the admin, `created_at`, `used_at`), valid **30 min**, **single use**; a new link voids the person's older ones; deleting the person deletes their links; not for your own account (409).
+For a person who forgot their password, no e-mail is needed (#307).
+An admin's **Reset link** on the Users page calls `POST /api/admin/users/<id>/reset-link` and gets `{"url", "expires_at"}`.
+The link is shown **once** with a copy button, and the admin hands it over by any safe channel.
+The token is 32 random bytes, and only its SHA-256 is stored.
+It lives in `reset_tokens` in `auth.db`: `token_hash`, `user_id`, `expires_at`, `created_by` (the admin), `created_at`, `used_at`.
+It is valid **30 min** and **single use**.
+A new link voids the person's older ones.
+Deleting the person deletes their links.
+It is not available for your own account (409).
 The person opens `/reset?token=…` (public; `<meta name="referrer" content="no-referrer">`; the token is dropped from the address bar), types the new password twice and sends `POST /api/auth/reset` `{"token", "next"}` (public, same-origin JSON, under the per-IP sign-in limit: 429 with `Retry-After`).
 `next` follows the 12-character rule (400 with the reason, the link stays usable); an unknown, used, expired or replaced link gets the one 400 `link expired or already used` and nothing changes.
 Success sets the password, marks the link used and ends **every** session of the person — they then sign in at `/login`; lockout is untouched.
@@ -65,11 +73,35 @@ Never a page, a close or a rebalance
 
 ### Logs
 
-one JSON line per sign-in, failure (reason, `locked`), lockout, rate limit, sign-out, first admin, user change (`user created`, `role changed`, `password reset` with `event: password_reset`, `reset link issued` (with `expires_at`), `signed out everywhere`, `user deleted`, each with `by`), reset by link (`password reset by link`, `event: password_reset`, `via: link`, the person, `by` = the admin who issued it, IP; a refused link is a WARN `reset by link refused` with the IP only), password change (`password changed`, `event: password_changed`, or `password change failed`) and refused action, with username and IP — never a password, hash, token or `AUTH_SECRET`
+One JSON line for each of these, with username and IP:
+- a sign-in, a failure (reason, `locked`), a lockout, a rate limit, a sign-out and the first admin;
+- a user change: `user created`, `role changed`, `password reset` (with `event: password_reset`), `reset link issued` (with `expires_at`), `signed out everywhere` and `user deleted`, each with `by`;
+- a reset by link: `password reset by link`, with `event: password_reset`, `via: link`, the person, `by` (the admin who issued it) and the IP;
+- a refused link: a WARN `reset by link refused` with the IP only;
+- a password change: `password changed` (with `event: password_changed`) or `password change failed`;
+- a refused action.
+
+Never a password, hash, token or `AUTH_SECRET`
 
 ### Audit
 
-`data/monitor/audit.jsonl` beside the user database (`AUDIT_PATH`; off for an in-memory database), append-only, owner-only: one JSON line `{time, action, username, role, …}` per `signed_in`, `sign_in_failed` (reason), `locked`, `signed_out`, `password_changed`, `password_change_failed` (reason `password` or `locked`), `user_created` (`to` = the role), `role_changed`, `password_reset` (an admin set another person's password, #306), `reset_link_issued` (with `expires_at`, #307), `user_deleted`, `signed_out_everywhere` (each with `target`; `username` and `role` are the admin's), `password_reset_by_link` (`username` and `role` are the person's, `by` the admin who issued the link, `ip`), the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics"), `survey_answers_deleted` / `survey_answers_delete_failed` (counts only, never an answer), `analytics_consent_changed` (`consent` true or false), `survey_answered` (`survey_id` only, never the codes or text, #490), `nps_survey_changed` (`change`: shown, opt_out or opt_in, #490) and `manual_close` / `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
+`data/monitor/audit.jsonl` sits beside the user database (`AUDIT_PATH`; off for an in-memory database).
+It is append-only and owner-only.
+Each line is JSON, `{time, action, username, role, …}`, one per action:
+- `signed_in`, `sign_in_failed` (reason), `locked` and `signed_out`;
+- `password_changed` and `password_change_failed` (reason `password` or `locked`);
+- `user_created` (`to` = the role) and `role_changed`;
+- `password_reset` (an admin set another person's password, #306);
+- `reset_link_issued` (with `expires_at`, #307);
+- `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
+- `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
+- the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
+- `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);
+- `analytics_consent_changed` (`consent` true or false);
+- `survey_answered` (`survey_id` only, never the codes or text, #490);
+- `nps_survey_changed` (`change`: shown, opt_out or opt_in, #490);
+- `manual_close` and `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
+
 Never a password, hash or token (nor a reset link).
 Admins read it on the Audit page (below)
 
