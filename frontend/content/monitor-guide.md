@@ -225,7 +225,10 @@ The four answers questions are two optional questions in the Ask panel: what you
 
 **How to skip the four answers questions**: "Not now" or × closes the card. Closing the Ask panel without answering skips it too. It is not asked again for 30 days.
 
-**When the four answers questions show**: at most once every 30 days, counted from the day they were shown, answered or not. They show only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times. They never show in the same session as the monthly survey, nor within 7 days after it. Once shown on one device or tab, they do not show on another.
+**When the four answers questions show**: at most once every 30 days, counted from the day they were shown, answered or not.
+They show only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times.
+They never show in the same session as the monthly survey, nor within 7 days after it.
+Once shown on one device or tab, they do not show on another.
 
 Learn more: "The monthly survey" and "Analytics and your consent" in this guide.
 
