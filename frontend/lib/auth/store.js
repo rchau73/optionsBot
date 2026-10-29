@@ -263,6 +263,14 @@ export class AuthStore {
     return v === 1 ? true : v === 0 ? false : null;
   }
 
+  /** How many users answered yes, no or were never asked (the Analytics page, #445): counts only. */
+  consentCounts() {
+    const row = this.one(
+      "SELECT SUM(analytics_consent = 1) AS yes, SUM(analytics_consent = 0) AS no, SUM(analytics_consent IS NULL) AS unasked FROM users",
+    );
+    return { yes: row?.yes ?? 0, no: row?.no ?? 0, unasked: row?.unasked ?? 0 };
+  }
+
   /** Records the user's analytics answer (true / false) or clears it (null). */
   setAnalyticsConsent(id, consent, nowMs = Date.now()) {
     const v = consent === true ? 1 : consent === false ? 0 : null;

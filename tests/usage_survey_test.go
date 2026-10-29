@@ -56,7 +56,7 @@ func npsAnswer(t *testing.T, ts time.Time, user, score int, code string) string 
 }
 
 // Scenario (#446): report counts both lists — answers 10 explains_trades,
-// 9 clear_risk, 5 hard_to_find → why_promoters has 2 and why_others has 1.
+// 9 clear_risk, 5 hard_to_find → why_best has 2 and why_improve has 1.
 func TestUsage_SurveyReportCountsBothNPSLists(t *testing.T) {
 	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
 	r, written := surveyReport(t, []string{
@@ -65,11 +65,11 @@ func TestUsage_SurveyReportCountsBothNPSLists(t *testing.T) {
 		npsAnswer(t, at.Add(2*time.Minute), 503, 5, "hard_to_find"),
 	})
 	s := r.Survey
-	if sum(s.WhyPromoters) != 2 || s.WhyPromoters["explains_trades"] != 1 || s.WhyPromoters["clear_risk"] != 1 {
-		t.Fatalf("why_promoters = %v", s.WhyPromoters)
+	if sum(s.WhyBest) != 2 || s.WhyBest["explains_trades"] != 1 || s.WhyBest["clear_risk"] != 1 {
+		t.Fatalf("why_best = %v", s.WhyBest)
 	}
-	if sum(s.WhyOthers) != 1 || s.WhyOthers["hard_to_find"] != 1 {
-		t.Fatalf("why_others = %v", s.WhyOthers)
+	if sum(s.WhyImprove) != 1 || s.WhyImprove["hard_to_find"] != 1 {
+		t.Fatalf("why_improve = %v", s.WhyImprove)
 	}
 	// why stays their sum, for old readers.
 	if sum(s.Why) != 3 || s.Why["explains_trades"] != 1 || s.Why["clear_risk"] != 1 || s.Why["hard_to_find"] != 1 {
@@ -78,8 +78,8 @@ func TestUsage_SurveyReportCountsBothNPSLists(t *testing.T) {
 	if s.Miscoded != 0 {
 		t.Fatalf("miscoded = %d", s.Miscoded)
 	}
-	for _, want := range []string{"| NPS what we do best (9–10, why_promoters) | Count |", "| explains_trades | 1 |",
-		"| NPS what to improve first (0–8, why_others) | Count |", "| hard_to_find | 1 |"} {
+	for _, want := range []string{"| What we do best (9–10) | Count |", "| explains_trades | 1 |",
+		"| What to improve first (0–8) | Count |", "| hard_to_find | 1 |"} {
 		if !strings.Contains(written, want) {
 			t.Fatalf("markdown lacks %q:\n%s", want, written)
 		}
@@ -88,7 +88,7 @@ func TestUsage_SurveyReportCountsBothNPSLists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"why":`, `"why_promoters":`, `"why_others":`} {
+	for _, key := range []string{`"why":`, `"why_best":`, `"why_improve":`} {
 		if !strings.Contains(string(b), key) {
 			t.Fatalf("json lacks %s: %s", key, b)
 		}
@@ -103,8 +103,8 @@ func TestUsage_SurveyNPSCodeOfTheOtherListCountsUnderOther(t *testing.T) {
 		npsAnswer(t, at.Add(time.Minute), 512, 3, "steady_income"), // a what-works code on a detractor
 	})
 	s := r.Survey
-	if s.WhyPromoters["other"] != 1 || s.WhyOthers["other"] != 1 || s.Miscoded != 2 || s.Why["other"] != 2 {
-		t.Fatalf("promoters %v, others %v, why %v, miscoded %d", s.WhyPromoters, s.WhyOthers, s.Why, s.Miscoded)
+	if s.WhyBest["other"] != 1 || s.WhyImprove["other"] != 1 || s.Miscoded != 2 || s.Why["other"] != 2 {
+		t.Fatalf("promoters %v, others %v, why %v, miscoded %d", s.WhyBest, s.WhyImprove, s.Why, s.Miscoded)
 	}
 }
 
@@ -122,8 +122,8 @@ func TestUsage_SurveyNPSCountsEachPersonsLatestAnswer(t *testing.T) {
 	if n.Answers != 2 || n.Promoters != 1 || n.Detractors != 1 {
 		t.Fatalf("nps = %+v", n)
 	}
-	if s.WhyPromoters["saves_time"] != 1 || s.WhyOthers["price"] != 0 || s.WhyOthers["trust"] != 1 {
-		t.Fatalf("promoters %v, others %v", s.WhyPromoters, s.WhyOthers)
+	if s.WhyBest["saves_time"] != 1 || s.WhyImprove["price"] != 0 || s.WhyImprove["trust"] != 1 {
+		t.Fatalf("promoters %v, others %v", s.WhyBest, s.WhyImprove)
 	}
 	// The funnel still counts every answer sent.
 	if f := s.Surveys[0]; f.ID != "nps" || f.Answered != 3 {
@@ -156,8 +156,8 @@ func TestUsage_SurveyNPSFromTwelveAnswers(t *testing.T) {
 	if n.Score == nil || math.Abs(*n.Score-500.0/12) > 1e-9 {
 		t.Fatalf("nps score = %v, want 41.67", n.Score)
 	}
-	if s.Why["steady_income"] != 7 || s.Why["hard_to_find"] != 5 || s.WhyPromoters["steady_income"] != 7 || s.WhyOthers["hard_to_find"] != 5 {
-		t.Fatalf("why = %v, promoters %v, others %v", s.Why, s.WhyPromoters, s.WhyOthers)
+	if s.Why["steady_income"] != 7 || s.Why["hard_to_find"] != 5 || s.WhyBest["steady_income"] != 7 || s.WhyImprove["hard_to_find"] != 5 {
+		t.Fatalf("why = %v, promoters %v, others %v", s.Why, s.WhyBest, s.WhyImprove)
 	}
 	if f := s.Surveys[0]; f.ID != "nps" || f.Shown != 12 || f.Answered != 12 || f.ResponsePct == nil || *f.ResponsePct != 100 {
 		t.Fatalf("nps funnel = %+v", f)
@@ -165,6 +165,50 @@ func TestUsage_SurveyNPSFromTwelveAnswers(t *testing.T) {
 	if !strings.Contains(written, "Why they stay or leave") || !strings.Contains(written, "NPS: 42 ") {
 		t.Fatalf("markdown lacks the NPS line:\n%s", written)
 	}
+}
+
+// #445: the 9–10 answers ("What do we do best?") and the 0–8 answers ("What
+// should we improve first?") are counted apart; a reason without a score
+// counts only in the overall list.
+func TestUsage_SurveyNPSReasonsCountedApartByScore(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	answer := func(i int, props map[string]any) string {
+		props["survey_id"] = "nps"
+		return usageLine(t, "survey_answered", at.Add(time.Duration(i)*time.Minute), 500+i, props)
+	}
+	r, written := surveyReport(t, []string{
+		answer(0, map[string]any{"score": "10", "reason_code": "steady_income"}),
+		answer(1, map[string]any{"score": "9", "reason_code": "clear_risk"}),
+		answer(2, map[string]any{"score": "8", "reason_code": "hard_to_find"}),
+		answer(3, map[string]any{"score": "2", "reason_code": "too_complex"}),
+		answer(4, map[string]any{"score": "9", "reason_code": "switched"}), // an exit code: other
+		answer(5, map[string]any{"reason_code": "price"}),                  // no score
+	})
+	s := r.Survey
+	wantBest := map[string]int{"steady_income": 1, "clear_risk": 1, "other": 1}
+	wantImprove := map[string]int{"hard_to_find": 1, "too_complex": 1}
+	if !sameCounts(s.WhyBest, wantBest) || !sameCounts(s.WhyImprove, wantImprove) {
+		t.Fatalf("best = %v, improve = %v", s.WhyBest, s.WhyImprove)
+	}
+	if s.Why["price"] != 1 || s.Miscoded != 1 {
+		t.Fatalf("why = %v, miscoded = %d", s.Why, s.Miscoded)
+	}
+	if !strings.Contains(written, "What we do best (9–10)") || !strings.Contains(written, "What to improve first (0–8)") ||
+		!strings.Contains(written, `"why_best"`) || !strings.Contains(written, `"why_improve"`) {
+		t.Fatalf("written:\n%s", written)
+	}
+}
+
+func sameCounts(got, want map[string]int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for k, v := range want {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 // Scenario: fewer than 10 NPS answers → "too few answers", counts only.

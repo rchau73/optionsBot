@@ -87,6 +87,13 @@ describe("Scenario: a consented person opens the Income page", () => {
     await renderAt("/admin/users");
     expect(sentEvents()).toEqual([]);
   });
+
+  test("the admin Analytics page is counted as screen=analytics (#445)", async () => {
+    await renderAt("/admin/analytics");
+    const views = sentEvents().filter((e) => e.event === "screen_viewed");
+    expect(views.map((e) => e.props)).toEqual([{ screen: "analytics" }]);
+    expect(validateEvent(views[0]).ok).toBe(true);
+  });
 });
 
 describe("Scenario: a person who has not consented", () => {
@@ -156,6 +163,7 @@ describe("Scenario: a page in menu.js with no screen value in the event plan", (
     ["/details", "details"],
     ["/login", null],
     ["/admin/users", null],
+    ["/admin/analytics", "analytics"],
   ])("%s is the screen %s", (pathname, want) => {
     expect(screenOf(pathname)).toBe(want);
   });

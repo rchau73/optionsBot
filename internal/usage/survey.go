@@ -29,6 +29,7 @@ const OwnerLine = "Each top reason needs an owner: file it as an E13 story."
 var (
 	npsWhatWorks = []string{"steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "other"}
 	npsToImprove = []string{"value_unclear", "losses", "too_complex", "price", "trust", "hard_to_find", "missing_feature", "other"}
+	npsCodes     = slices.Concat(npsWhatWorks, npsToImprove) // a reason sent without a score
 	exitCodes    = []string{"value_unclear", "losses", "too_complex", "price", "trust", "switched", "other"}
 )
 
@@ -36,9 +37,9 @@ var (
 type Survey struct {
 	Surveys       []SurveyFunnel `json:"surveys"`         // nps, answers, exit
 	NPS           NPS            `json:"nps"`             // survey_answered{nps} with a score
-	Why           map[string]int `json:"why"`             // NPS reason_code: why_promoters + why_others, kept for old readers
-	WhyPromoters  map[string]int `json:"why_promoters"`   // NPS 9–10: what we do best (#446)
-	WhyOthers     map[string]int `json:"why_others"`      // NPS 0–8: what to improve first (#446)
+	Why           map[string]int `json:"why"`             // NPS reason_code, every score: why_best + why_improve + answers without a score
+	WhyBest       map[string]int `json:"why_best"`        // … of a 9–10 score: "What do we do best?" (surveys.md §1, 2a)
+	WhyImprove    map[string]int `json:"why_improve"`     // … of a 0–8 score: "What should we improve first?" (2b)
 	CameFor       map[string]int `json:"came_for"`        // answers survey
 	HardestToFind map[string]int `json:"hardest_to_find"` // answers survey
 	ExitReasons   map[string]int `json:"exit_reasons"`    // exit reason_code
@@ -79,8 +80,8 @@ func buildSurvey(week []Event) *Survey {
 	ids := Properties["survey_id"].Values
 	s := &Survey{
 		Why:           map[string]int{},
-		WhyPromoters:  map[string]int{},
-		WhyOthers:     map[string]int{},
+		WhyBest:       map[string]int{},
+		WhyImprove:    map[string]int{},
 		CameFor:       map[string]int{},
 		HardestToFind: map[string]int{},
 		ExitReasons:   map[string]int{},
@@ -139,8 +140,9 @@ func buildSurvey(week []Event) *Survey {
 func (s *Survey) answer(id string, p map[string]any) {
 	switch id {
 	case "nps":
-		promoter := false
+		promoter, scored := false, false
 		if sc, ok := p["score"].(string); ok {
+			scored = true
 			n, _ := strconv.Atoi(sc) // the allow-list holds "0" … "10" only
 			s.NPS.Answers++
 			switch {
@@ -153,13 +155,17 @@ func (s *Survey) answer(id string, p map[string]any) {
 				s.NPS.Detractors++
 			}
 		}
-		// Each band was asked its own list (#446); a code of the other list counts under other.
-		band, asked := s.WhyOthers, npsToImprove
-		if promoter {
-			band, asked = s.WhyPromoters, npsWhatWorks
+		// Each score was asked its own list (#446): a code of the other list counts
+		// under other. A reason without a score counts in why only, against both lists.
+		band, asked := map[string]int(nil), npsCodes
+		if scored {
+			band, asked = s.WhyImprove, npsToImprove
+			if promoter {
+				band, asked = s.WhyBest, npsWhatWorks
+			}
 		}
-		if c := s.code(band, asked, p["reason_code"]); c != "" {
-			s.Why[c]++
+		if c, counted := s.code(s.Why, asked, p["reason_code"]); counted && band != nil {
+			band[c]++
 		}
 	case "exit":
 		s.code(s.ExitReasons, exitCodes, p["reason_code"])
@@ -174,19 +180,19 @@ func (s *Survey) answer(id string, p map[string]any) {
 }
 
 // code counts a reason code the survey asks; another code is counted under
-// "other" and in Miscoded, never guessed. → the code counted; "" (nothing
-// counted) when there is none.
-func (s *Survey) code(m map[string]int, asked []string, v any) string {
+// "other" and in Miscoded, never guessed. No code: nothing counted. Returns
+// the code counted and whether one was.
+func (s *Survey) code(m map[string]int, asked []string, v any) (string, bool) {
 	c, ok := v.(string)
 	if !ok {
-		return ""
+		return "", false
 	}
 	if !slices.Contains(asked, c) {
 		s.Miscoded++
 		c = "other"
 	}
 	m[c]++
-	return c
+	return c, true
 }
 
 // topCodes is the n most frequent codes, most first, ties by code.

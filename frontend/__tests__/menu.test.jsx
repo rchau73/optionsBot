@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import MenuBar, { MenuNav } from "@/components/MenuBar";
-import { botParam, detailsRedirect, menuGroups, menuItems, showMenu } from "@/lib/menu";
+import { ADMIN_PAGES, botParam, detailsRedirect, menuGroups, menuItems, showMenu } from "@/lib/menu";
 import { usePathname, useSearchParams } from "next/navigation";
 import { fetchMonitorConfig } from "@/lib/api";
 
@@ -118,12 +118,22 @@ describe("Scenario: the person menu lives in the menu bar", () => {
     expect(items()).toEqual(["Change password", "Sign out"]);
   });
 
-  test("for an admin it also holds Users and Audit", () => {
+  test("for an admin it also holds Users, Audit and Analytics (#445)", () => {
     at("/", "bot=btc");
     render(<MenuBar person={{ username: "ana", role: "admin" }} />);
     open("ana ▾");
-    expect(items()).toEqual(["Users", "Audit", "Change password", "Sign out"]);
+    expect(items()).toEqual(["Users", "Audit", "Analytics", "Change password", "Sign out"]);
     expect(screen.getByRole("menuitem", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+    expect(screen.getByRole("menuitem", { name: "Analytics" })).toHaveAttribute("href", "/admin/analytics");
+  });
+
+  // #445 Scenario: not an admin — the menu has no Analytics item.
+  test.each(["manager", "user"])("a %s's menu has no Analytics item", (role) => {
+    at("/", "bot=btc");
+    render(<MenuBar person={{ username: "bob", role }} />);
+    open("bob ▾");
+    expect(items()).not.toContain("Analytics");
+    expect(items()).toEqual(["Change password", "Sign out"]);
   });
 
   test("an unreadable session still offers the menu, as Account ▾", () => {
@@ -210,7 +220,12 @@ describe("lib/menu", () => {
     "/reset": "signed out (a reset link): no menu",
     "/admin/users": "admins only, from the person's menu (the menu bar's last item)",
     "/admin/audit": "admins only, from the person's menu (the menu bar's last item)",
+    "/admin/analytics": "admins only, from the person's menu (the menu bar's last item)",
   };
+
+  test("every admin page of the person's menu is on the allow-list", () => {
+    for (const p of ADMIN_PAGES) expect(NOT_IN_MENU[p.href]).toMatch(/^admins only/);
+  });
 
   test("every page is in the menu or on the allow-list with its reason", () => {
     const fs = jest.requireActual("node:fs");

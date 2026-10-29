@@ -152,8 +152,8 @@ def nps_line(env, live, report):
     answers = num((survey.get("nps") or {}).get("answers")) or 0
     head = f"response {pct(num(funnel.get('response_pct')))}" if live else \
         f"{answers} answers, response {pct(num(funnel.get('response_pct')))}"
-    return (f"- {env}: {head}; what we do best (9–10): {code_list(survey.get('why_promoters'), NPS_WHAT_WORKS, live)}; "
-            f"what to improve first (0–8): {code_list(survey.get('why_others'), NPS_TO_IMPROVE, live)}")
+    return (f"- {env}: {head}; what we do best (9–10): {code_list(survey.get('why_best'), NPS_WHAT_WORKS, live)}; "
+            f"what to improve first (0–8): {code_list(survey.get('why_improve'), NPS_TO_IMPROVE, live)}")
 
 
 def env_reports(week, envs_dir, state_dir, envs):

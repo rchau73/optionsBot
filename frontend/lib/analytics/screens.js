@@ -14,8 +14,12 @@ export function pagesWithoutScreen(items = menuItems("/"), screens = PROPERTIES.
   return items.filter((i) => !screens.includes(screenOfKey(i.key))).map((i) => i.label);
 }
 
-/** The `screen` of the menu page at pathname, or null for a page outside the menu (admin, sign-in). */
+/** Pages outside the menu that are counted too: the admin Analytics page (#445: does the admin open it on Mondays?). */
+const OTHER_SCREENS = { "/admin/analytics": "analytics" };
+
+/** The `screen` of the page at pathname: a menu page or one of OTHER_SCREENS; null for any other page (Users, Audit, sign-in). */
 export function screenOf(pathname) {
+  if (Object.hasOwn(OTHER_SCREENS, pathname)) return OTHER_SCREENS[pathname];
   const item = menuItems(pathname).find((i) => i.current);
   return item ? screenOfKey(item.key) : null;
 }

@@ -117,8 +117,8 @@ class Pure(unittest.TestCase):
     def nps_survey(self):
         return {"surveys": [{"survey_id": "nps", "shown": 4, "answered": 3, "dismissed": 1, "response_pct": 75.0}],
                 "nps": {"answers": 3}, "why": {"explains_trades": 1, "clear_risk": 1, "hard_to_find": 1},
-                "why_promoters": {"explains_trades": 1, "clear_risk": 1, "secret-free-text": 9},
-                "why_others": {"hard_to_find": 1}}
+                "why_best": {"explains_trades": 1, "clear_risk": 1, "secret-free-text": 9},
+                "why_improve": {"hard_to_find": 1}}
 
     def test_scenario_report_counts_both_nps_lists(self):
         # #446: answers 10 explains_trades, 9 clear_risk, 5 hard_to_find.

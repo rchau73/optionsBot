@@ -5,13 +5,15 @@ import { useCallback, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePassword";
 import SignOut from "./SignOut";
 import { useDismiss } from "./useDismiss";
+import { ADMIN_PAGES } from "@/lib/menu";
 
 const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
 
 /**
  * The signed-in person's menu, the menu bar's last item (#394), labelled with
- * their name ("bob ▾"; "Account ▾" when the name cannot be read): Users and
- * Audit (admins only, #306, #308 — links only, the routes enforce the role),
+ * their name ("bob ▾"; "Account ▾" when the name cannot be read): Users,
+ * Audit and Analytics (admins only, #306, #308, #445 — links only, the routes
+ * enforce the role),
  * change your password, sign out of this browser.
  */
 export default function UserMenu({ role = null, username = null }) {
@@ -35,16 +37,13 @@ export default function UserMenu({ role = null, username = null }) {
       </button>
       {open ? (
         <div role="menu" className="absolute right-0 z-40 mt-1 w-44 rounded border border-line bg-panel py-1 shadow-xl">
-          {role === "admin" ? (
-            <>
-              <Link role="menuitem" href="/admin/users" className={ITEM}>
-                Users
-              </Link>
-              <Link role="menuitem" href="/admin/audit" className={ITEM}>
-                Audit
-              </Link>
-            </>
-          ) : null}
+          {role === "admin"
+            ? ADMIN_PAGES.map((p) => (
+                <Link key={p.key} role="menuitem" href={p.href} className={ITEM}>
+                  {p.label}
+                </Link>
+              ))
+            : null}
           <button
             type="button"
             role="menuitem"
