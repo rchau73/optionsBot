@@ -30,6 +30,7 @@ export const AUDIT_ACTIONS = [
   "survey_answers_delete_failed",
   "survey_answered",
   "nps_survey_changed",
+  "answers_survey_shown",
 ];
 
 /** Lines a page lists unless `limit` says otherwise, and the most it may say. */

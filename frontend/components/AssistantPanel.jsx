@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import MyRequests from "./MyRequests";
+import AnswersCard from "./AnswersCard";
 import NpsCard from "./NpsCard";
 import RequestChecklist from "./RequestChecklist";
 import RequestDraftCard from "./RequestDraftCard";
@@ -126,7 +127,12 @@ export default function AssistantPanel({ assistant }) {
         ))}
       </div>
 
-      {tab === "ask" ? <NpsCard assistant={assistant} /> : null}
+      {tab === "ask" ? (
+        <>
+          <NpsCard assistant={assistant} />
+          <AnswersCard assistant={assistant} />
+        </>
+      ) : null}
 
       {tab === "requests" ? (
         <div role="tabpanel" aria-label="My requests" className="flex-1 overflow-y-auto px-3 py-3">

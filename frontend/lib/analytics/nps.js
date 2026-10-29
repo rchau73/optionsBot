@@ -22,10 +22,27 @@ export const NPS_EVERY_DAYS = 30;
 export function npsNotDueReason({ consent, createdAtSec, sessions, lastShownSec, optedOut }, nowMs) {
   if (consent !== true) return "no_consent";
   if (optedOut) return "opted_out";
+  const reason = surveyNotEligibleReason({ consent, createdAtSec, sessions }, nowMs);
+  if (reason) return reason;
+  if (shownWithin(lastShownSec, NPS_EVERY_DAYS, nowMs)) return "shown_recently";
+  return null;
+}
+
+/**
+ * The rules every card of the team shares (surveys.md §1 and §2): consent
+ * yes, an account at least 14 days old and at least 3 sign-ins. → why the
+ * person may not be asked, or null. The four answers card (answers.js) uses it too.
+ */
+export function surveyNotEligibleReason({ consent, createdAtSec, sessions }, nowMs) {
+  if (consent !== true) return "no_consent";
   if (!Number.isFinite(createdAtSec) || nowMs - createdAtSec * 1000 < NPS_MIN_ACCOUNT_DAYS * DAY_MS) return "account_too_new";
   if (!(sessions >= NPS_MIN_SESSIONS)) return "too_few_sessions";
-  if (lastShownSec != null && nowMs - lastShownSec * 1000 < NPS_EVERY_DAYS * DAY_MS) return "shown_recently";
   return null;
+}
+
+/** True when a card shown at shownSec (Unix seconds; null = never) was shown less than `days` days ago. */
+export function shownWithin(shownSec, days, nowMs) {
+  return shownSec != null && nowMs - shownSec * 1000 < days * DAY_MS;
 }
 
 /**

@@ -5,6 +5,7 @@ import { useAssistant } from "./AssistantProvider";
 import { OFF_TEXT } from "@/lib/assistantPanel";
 import { botParam } from "@/lib/menu";
 import { NPS_ASK_HINT, NPS_ASK_LABEL } from "@/lib/analytics/nps";
+import { ANSWERS_ASK_HINT, ANSWERS_ASK_LABEL } from "@/lib/analytics/answers";
 
 /**
  * The assistant's floating button (#408, #419): a chat bubble fixed at the
@@ -18,13 +19,16 @@ export default function AskButton() {
   if (!assistant) return null;
   const off = assistant.enabled === false;
   // The monthly NPS (#446): a static "1" and a one-line hint while it is due — no motion.
+  // The four answers card (#498) shows the same badge with its own words; never both at once.
   const nps = assistant.npsDue === true && !assistant.open;
+  const answers = !nps && assistant.answersDue === true && !assistant.open;
+  const hint = nps ? NPS_ASK_HINT : answers ? ANSWERS_ASK_HINT : null;
   const pageBot = () => botParam(new URLSearchParams(window.location.search).get("bot"));
   return (
     <button
       type="button"
-      aria-label={nps ? NPS_ASK_LABEL : "Ask"}
-      title={off ? OFF_TEXT : nps ? NPS_ASK_HINT : "Ask the assistant about this page, the strategy or a trade"}
+      aria-label={nps ? NPS_ASK_LABEL : answers ? ANSWERS_ASK_LABEL : "Ask"}
+      title={off ? OFF_TEXT : (hint ?? "Ask the assistant about this page, the strategy or a trade")}
       aria-expanded={assistant.open}
       onClick={(e) => (assistant.open ? assistant.close() : assistant.openPanel({ entry: "menu", from: e.currentTarget, bot: pageBot() }))}
       className={clsx(
@@ -38,13 +42,13 @@ export default function AskButton() {
       <span aria-hidden="true" className="hidden sm:inline">
         Ask
       </span>
-      {nps ? (
+      {hint ? (
         <>
-          <span data-testid="nps-badge" aria-hidden="true" className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-warn bg-panel px-1 text-xs font-bold text-warn">
+          <span data-testid={nps ? "nps-badge" : "answers-badge"} aria-hidden="true" className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-warn bg-panel px-1 text-xs font-bold text-warn">
             1
           </span>
           <span aria-hidden="true" className="absolute bottom-full right-0 mb-2 whitespace-nowrap rounded border border-line bg-panel px-2 py-1 text-xs font-normal text-muted">
-            {NPS_ASK_HINT}
+            {hint}
           </span>
         </>
       ) : null}

@@ -215,6 +215,23 @@ The survey is one optional question in the Ask panel: how likely you are to reco
 
 Learn more: "Analytics and your consent" and "The assistant" in this guide.
 
+## The four answers questions
+
+<!-- guide: survey:answers, route:POST /api/survey/answers -->
+
+The four answers questions are two optional questions in the Ask panel: what you came to check today, and what was hardest to find. Each offers the same five choices: what it holds, making or losing, the worst case, why the last trade, or none of these.
+
+**How to answer the four answers questions**: when they are due, a "1" shows on the Ask button. Open Ask and the questions are the first card. Pick one choice for either question, or for both, and press Send. You can leave one blank. There is no text box, and the answer never includes amounts.
+
+**How to skip the four answers questions**: "Not now" or × closes the card. Closing the Ask panel without answering skips it too. It is not asked again for 30 days.
+
+**When the four answers questions show**: at most once every 30 days, counted from the day they were shown, answered or not.
+They show only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times.
+They never show in the same session as the monthly survey, nor within 7 days after it.
+Once shown on one device or tab, they do not show on another.
+
+Learn more: "The monthly survey" and "Analytics and your consent" in this guide.
+
 ## Sign-in and password
 
 <!-- guide: screen:login, route:POST /api/auth/login, route:POST /api/auth/logout, route:POST /api/auth/refresh, route:POST /api/auth/password, route:POST /api/auth/reset -->
