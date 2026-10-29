@@ -28,7 +28,7 @@ var Outcomes = []string{OutcomeAnswered, OutcomeDontKnow, OutcomeRefused, Outcom
 
 // GuardReasons are the answer guard's rejection reasons
 // (internal/assistant/guard); a verdict line reads "<reason>: <detail>".
-var GuardReasons = []string{"no_citation", "unknown_citation", "ungrounded_number", "advice", "forecast"}
+var GuardReasons = []string{"no_citation", "unknown_citation", "ungrounded_number", "advice", "forecast", "points_to_document"}
 
 // GapCoverage is the share of a question's weight a passage must hold to be
 // "close" to it: half of what the assistant needs to answer from it

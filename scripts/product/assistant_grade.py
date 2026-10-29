@@ -32,7 +32,7 @@ INDEX = os.path.join(ROOT, "frontend", "content", "help-index.json")
 # (tests/assistant_guard_test.go keeps them equal).
 DONT_KNOW = "I don't know: the published help and your journal do not answer that."
 REFUSAL = "I can't recommend what to do with your money, and I don't forecast prices or returns. I can explain how a rule works and what it did in your account."
-FALLBACK = "I can't answer that. The help explains how the bot works and why it acted: see the guide, OptionStrategy.md."
+FALLBACK = "I couldn't confirm an answer from the bot's records and the help, so I won't guess."
 
 # A refusal in other words still counts as one; the canonical reply is preferred.
 REFUSAL_MARKERS = (

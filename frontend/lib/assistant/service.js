@@ -5,15 +5,17 @@
 // open, close and fill with the market it recorded, plus the other facts most
 // relevant to the question, within a budget) go to the model; its answer passes the guard before anyone sees it,
 // and the question, the sources, the model's text and what was shown are
-// logged for review. An answer with no citation becomes "I don't know"; any
-// other rejected answer becomes the fallback reply.
-import { REASON_NO_CITATION, check, isCanonical } from "./guard";
+// logged for review. An answer with no citation becomes "I don't know"; an
+// answer rejected for a number or a citation from nowhere, or for sending the
+// person to a document, is asked once more with what failed (#534); any other
+// rejected answer, or a second rejection, becomes the fallback reply.
+import { REASON_NO_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, check, isCanonical } from "./guard";
 import { appendLine, newAnswerId } from "./log";
 import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
 import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyChecklist, looksLikeReport } from "./request";
 import { HelpIndex, noAnswer } from "./search";
 import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
-import { formatCoin, formatPct, formatPrice } from "@/lib/format";
+import { formatCoin, formatDateTime, formatPct, formatPrice } from "@/lib/format";
 
 export const MAX_QUESTION = 500;
 // Passages of the help sent with a question: enough for an answer, few enough to keep the call small.
@@ -99,11 +101,13 @@ export function journalPassages(bot, items, held = []) {
       const said = e.count > 1 ? `×${e.count}, ${shortTime(e.first)} → ${shortTime(e.last)}: ${e.plain}` : e.plain;
       const market = recordedMarket(e);
       const instrument = typeof e.instrument === "string" ? e.instrument : "";
+      // The instrument by name (#534): an answer naming it is grounded in the passage it cites.
+      const text = [said, instrument ? `Instrument ${instrument}.` : "", market].filter(Boolean).join(" ");
       return {
         id: `journal:${bot}/${e.seq}`,
         source: `journal:${bot}`,
         title: `${bot} journal: ${e.event} at ${e.at}`,
-        text: market ? `${said} ${market}` : said,
+        text,
         trade: TRADE_EVENTS.has(e.event),
         reason: typeof e.reason === "string" ? e.reason : "",
         instrument,
@@ -333,11 +337,31 @@ function marketWords(m) {
   return parts.map(([k, v]) => `${k} ${v}`).join(", ");
 }
 
+/** "2026-10-29 20:47:54" (UTC, to the second) for an ISO time; "" when it is not one. */
+function utcSecond(iso) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return "";
+  const s = d.toISOString();
+  return `${s.slice(0, 10)} ${s.slice(11, 19)}`;
+}
+
+/**
+ * When an event happened, as the monitor shows it ("2026-10-29 17:47:54 BRT",
+ * formatDateTime — the time a Why? question writes, whyQuestion) and in UTC
+ * to the second; "" without a time.
+ */
+function eventTime(iso) {
+  const utc = utcSecond(iso);
+  return utc ? `Time: ${formatDateTime(iso)} (${utc} UTC).` : "";
+}
+
 /**
  * The facts of one journal event (/api/explain, #314) as citable passages:
- * the event itself — its plain sentence, rule, detail and recorded market —
- * then its related events, each with the same "journal:<bot>/<seq>" id as
- * journalPassages, all pinned. [] for no explanation.
+ * the event itself — its plain sentence, its instrument and time (#534: the
+ * facts the Why? question writes, so an answer repeating them is grounded in
+ * the passage it cites), rule, detail and recorded market — then its related
+ * events, each with the same "journal:<bot>/<seq>" id as journalPassages, all
+ * pinned. [] for no explanation.
  */
 export function explainPassages(bot, explanation) {
   const e = explanation?.event;
@@ -345,6 +369,8 @@ export function explainPassages(bot, explanation) {
   const market = marketWords(explanation.market);
   const text = [
     e.plain,
+    typeof e.instrument === "string" && e.instrument ? `Instrument ${e.instrument}.` : "",
+    eventTime(e.at),
     explanation.rule ? `Rule: ${explanation.rule}.` : "",
     explanation.detail ? `Detail: ${explanation.detail}.` : "",
     market ? `Market then: ${market}.` : "",
@@ -424,6 +450,36 @@ function outcomeOf(reply, verdict) {
   return [OUTCOME_REJECTED, FALLBACK_REPLY];
 }
 
+// The rejections worth one more try (#534): a slip the model can fix from the
+// same sources. Advice and forecasts are never retried, nor an answer citing nothing.
+const RETRIED = [REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, REASON_POINTS_TO_DOCUMENT];
+
+/** The findings of one reason in a verdict's details ("ungrounded_number: 27" → "27"). */
+const findings = (verdict, reason) => verdict.details.filter((d) => d.startsWith(`${reason}: `)).map((d) => d.slice(reason.length + 2));
+const isAre = (list) => (list.length > 1 ? "aren't" : "isn't");
+
+/**
+ * What to tell the model when its answer is asked once more (#534), or null
+ * when the verdict is not retried: passed, or any reason outside RETRIED.
+ */
+export function retryFeedback(verdict) {
+  if (verdict.ok || verdict.reasons.some((r) => !RETRIED.includes(r))) return null;
+  const said = [];
+  const numbers = findings(verdict, REASON_UNGROUNDED_NUMBER);
+  if (numbers.length) said.push(`${numbers.join(", ")} ${isAre(numbers)} in the sources you cited: cite the source that has them, or leave them out.`);
+  const unknown = findings(verdict, REASON_UNKNOWN_CITATION);
+  if (unknown.length) said.push(`${unknown.join(", ")} ${isAre(unknown)} among the listed sources: cite only the ids in square brackets.`);
+  const pointers = findings(verdict, REASON_POINTS_TO_DOCUMENT);
+  if (pointers.length) said.push(`Don't send the person to a document, guide or section ("${pointers.join('", "')}"): say what the source says, in your own words.`);
+  return said.join(" ");
+}
+
+/** A model reply with its citations resolved, and the guard's verdict on it. */
+function judged(reply, passages) {
+  const r = { ...reply, citations: reply.citations.map((c) => resolveCitation(c, passages)) };
+  return { reply: r, verdict: check(r, passages) };
+}
+
 /**
  * A citation as the passage id it can only mean: listed as is (an id or a
  * source), else the one listed id — or, failing that, the one source — that
@@ -489,14 +545,28 @@ function applyRequestCheck(entry, verdict, passages) {
  * plus its held legs' whole history (selectJournal picks what this question
  * sends, #417, #427); live: the bot's page data from livePassages, all sent
  * (#427); reportPassages:
- * async () → more passages for a report (the bot's P&L history, #409); file:
- * the review log. A question that reads as a report (looksLikeReport, or the
+ * async () → more passages for a report (the bot's P&L history, #409);
+ * takeRetry: () → true when the person's budget allows the one more try of a
+ * rejected answer (#534; retryFeedback says which are retried); file: the
+ * review log, where a retried answer's first try is `first_answer`. A question that reads as a report (looksLikeReport, or the
  * model's report flag on its answer) runs the request check instead of the
  * plain answer. → { status, body } for the route: 200 with { id, answer,
  * citations, outcome, checklist?, draft?, ai_generated, notice }, 502 when
  * the model failed, 500 when the log could not be written (nothing is shown unlogged).
  */
-export async function answerQuestion({ question, bot = null, journal = [], live = [], reportPassages = async () => [], user, model, index, file, nowMs = Date.now() }) {
+export async function answerQuestion({
+  question,
+  bot = null,
+  journal = [],
+  live = [],
+  reportPassages = async () => [],
+  takeRetry = () => true,
+  user,
+  model,
+  index,
+  file,
+  nowMs = Date.now(),
+}) {
   const hits = index.search(question, HELP_PASSAGES);
   const facts = selectJournal(question, journal);
   let passages = [...hits.map((h) => h.passage), ...live, ...facts];
@@ -553,12 +623,22 @@ export async function answerQuestion({ question, bot = null, journal = [], live 
     if (verdict) {
       applyRequestCheck(entry, verdict, passages);
     } else if (reply) {
-      reply.citations = reply.citations.map((c) => resolveCitation(c, passages));
-      const verdict = check(reply, passages);
-      entry.model_answer = reply.text;
-      entry.citations = reply.citations;
-      entry.verdict = verdict.details;
-      [entry.outcome, entry.answer] = outcomeOf(reply, verdict);
+      let { reply: shown, verdict: v } = judged(reply, passages);
+      const feedback = retryFeedback(v);
+      // One more try (#534), counted in the person's budget: the first answer is logged with it.
+      if (feedback && takeRetry()) {
+        entry.first_answer = { model_answer: shown.text, citations: shown.citations, verdict: v.details };
+        try {
+          ({ reply: shown, verdict: v } = judged(await model.ask({ question, passages, retry: { text: shown.text, citations: shown.citations, feedback } }), passages));
+        } catch (err) {
+          // The retry failed: the first answer's verdict stands (the fallback), the error logged.
+          entry.retry_error = err.message;
+        }
+      }
+      entry.model_answer = shown.text;
+      entry.citations = shown.citations;
+      entry.verdict = v.details;
+      [entry.outcome, entry.answer] = outcomeOf(shown, v);
     }
   }
 

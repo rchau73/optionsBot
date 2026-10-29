@@ -31,6 +31,7 @@ test.each([
   ["forecastPhrases", "FORECAST_PATTERNS"],
   ["negations", "NEGATION_PATTERNS"],
   ["adviceNegations", "ADVICE_NEGATION_PATTERNS"],
+  ["documentPointers", "DOCUMENT_POINTER_PATTERNS"],
 ])("%s equals %s", (goName, jsName) => {
   expect(phrases[jsName]).toEqual(goPatterns(goName));
 });

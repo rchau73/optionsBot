@@ -8,7 +8,7 @@ What a correct answer of the help assistant is, written so it can be tested befo
 |---|---|
 | `docs/product/assistant/golden.jsonl` | the question set: ~70 questions with the sources that answer them, the facts a correct answer says, the phrases it must never say, and whether it must refuse or say "I don't know" (`README.md` in this folder) |
 | `scripts/product/assistant_grade.py` | grades a JSONL file of answers from anywhere against the set, with a score per category |
-| `internal/assistant/guard` | the check every answer must pass before it could be shown: citation, grounded numbers, no advice, no forecast; a rejected answer is replaced by the fallback reply |
+| `internal/assistant/guard` | the check every answer must pass before it could be shown: citation, grounded numbers, no advice, no forecast, no pointing to a document; a rejected answer is replaced by the fallback reply (§5) |
 
 ## 1. Where an answer may come from
 
@@ -23,6 +23,9 @@ What a correct answer of the help assistant is, written so it can be tested befo
 3. **Describes, never advises:** it says what the bot does and why ("the bot sells a call and a put"), never what the user should do. No "you should", "I recommend", "increase your…", "now is a good time", no imperative about money or settings.
 4. **Never forecasts:** no price direction, no return, no promise. No "will earn", "you can expect", "expected return", "guaranteed", "risk-free", no "% a month". Saying a guarantee does *not* exist ("a stop is a trigger, not a guaranteed price") is allowed.
 5. **States no return figure** of its own; a figure from the user's journal is quoted as recorded, labelled as past.
+6. **Answers, never points elsewhere** (product owner, 2026-10-29, #534; `docs/product/decisions/2026-10-29-assistant-never-points-to-documents.md`): the assistant reads the passages and says what they say in its own words.
+   No answer, canned or written by the model, tells the person to see, read, open or check a document, guide or section ("see the guide", "read OptionStrategy.md", "check section 9"); such an answer fails (`points_to_document`).
+   The source chips under an answer and the AI notice's "check the cited source" are the transparency notes (L12, PRD §11), not the answer pointing elsewhere.
 
 ## 3. "I don't know"
 
@@ -42,9 +45,13 @@ A refusal holds **no number with % or a currency** and none of the question's ba
 
 ## 5. The fallback
 
-An answer the guard rejects is never shown; this reply is shown instead:
+An answer the guard rejects is never shown.
+One rejected for a number or a citation from nowhere, or for pointing to a document (`ungrounded_number`, `unknown_citation`, `points_to_document`, and no other reason), is asked once more, the model told what failed ("27, 75000 aren't in the sources you cited: cite the source that has them, or leave them out"); the new answer is checked the same way (#534).
+Advice and forecasts are never retried.
+The retry counts toward the person's questions per hour and is skipped when none is left; the log keeps both answers (`first_answer`).
+When the answer is still rejected, this reply is shown instead; it names no document, guide or section:
 
-> I can't answer that. The help explains how the bot works and why it acted: see the guide, OptionStrategy.md.
+> I couldn't confirm an answer from the bot's records and the help, so I won't guess.
 
 ## 6. The guard's rules (`internal/assistant/guard`)
 
@@ -57,6 +64,7 @@ An answer the guard rejects is never shown; this reply is shown instead:
 | `ungrounded_number` | a number, percentage or date in none of the cited passages |
 | `advice` | recommendation or imperative phrasing aimed at the user |
 | `forecast` | forward-looking price or return phrasing, or a promise |
+| `points_to_document` | sending the person to a document, guide or section instead of answering ("see the guide", "read OptionStrategy.md", "check section 9", "you can find it in the glossary") |
 
 The phrase lists live in one file, `internal/assistant/guard/phrases.go`, with the three replies: counsel's L11 answer changes a list or a reply, not the design. `tests/assistant_guard_test.go` keeps the replies here, in the guard and in the grader equal.
 

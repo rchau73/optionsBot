@@ -44,7 +44,10 @@ It answers from the published help, the bot's live page data and the user's own 
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
   All of it goes to the model (`lib/assistant/model.js`, Claude through the Messages API, `claude-haiku-5-5` unless `ASSISTANT_MODEL`; answer as JSON `{answer, citations}`).
   When no passage matches and no journal was asked for, the reply is "I don't know" with no model call.
-  Then the guard (`lib/assistant/guard.js`, the twin of `internal/assistant/guard`) checks the answer: **no citation → "I don't know"**; an unknown citation, a number in no cited passage, advice or a forecast → the fallback reply.
+  Then the guard (`lib/assistant/guard.js`, the twin of `internal/assistant/guard`) checks the answer: **no citation → "I don't know"**; an unknown citation, a number in no cited passage, advice, a forecast or a pointer to a document ("see the guide", `points_to_document`) → the fallback reply, which names no document (#534).
+  **One more try** (#534, `retryFeedback` in `lib/assistant/service.js`): an answer rejected only for an unknown citation, a number in no cited passage or a pointer to a document is asked once more, the model told what failed ("27, 75000 aren't in the sources you cited…"), and the new answer is checked the same way; advice and forecasts are never retried.
+  The retry is a question of the person's hour (`limit.js`), skipped when none is left.
+  **A Why?'s passage** (`explainPassages`) holds the event's instrument and its time as the monitor shows it (`formatDateTime`, the time `whyQuestion` writes) and in UTC to the second, so an answer repeating the question's facts is grounded; journal passages name their instrument too.
   A bot that does not answer leaves the help alone as the source (WARN log).
   **A mixed question** (facts and "how do I avoid it?", #427): the system prompt has the model answer the factual part with citations and decline only the advice part with the refusal sentence; a cited answer holding the refusal is `answered`, "I don't know" followed by the refusal is canonical (`dont_know`, no citation needed).
 - **Twins of the Go code:**
@@ -53,7 +56,7 @@ It answers from the published help, the bot's live page data and the user's own 
   - `__tests__/assistant-guard.test.js` runs the Go guard's cases and the golden set on the JS guard.
   - `__tests__/assistant-search.test.js` scores the JS search on `tests/testdata/helpkb_questions.yaml` against `helpkb_baseline.json`.
 - **Review log:** `data/monitor/assistant.jsonl` beside `auth.db` (`ASSISTANT_LOG_PATH`; off for an in-memory database), append-only, owner-only.
-  One `"kind": "answer"` line per question — `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false` — and one `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
+  One `"kind": "answer"` line per question — `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false`, and for a retried answer `first_answer` (`model_answer`, `citations`, `verdict` of the first try) and `retry_error` when the retry call failed — and one `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
   An answer that cannot be logged is not shown (500).
   The monitor's stdout gets one line per question with the id and outcome only.
 

@@ -277,7 +277,7 @@ def issue(week, envs_dir, state_dir, issues, now, envs=("stable", "mvp")):
 
 ASSISTANT_HEADER = "🤖 **Assistant quality review**"
 ASSISTANT_KINDS = ("answered", "dont_know", "refused", "no_citation", "rejected", "model_error", "needs_info", "draft", "other")
-GUARD_REASONS = ("no_citation", "unknown_citation", "ungrounded_number", "advice", "forecast")
+GUARD_REASONS = ("no_citation", "unknown_citation", "ungrounded_number", "advice", "forecast", "points_to_document")
 
 
 def assistant_summary(envs_dir, env, week):

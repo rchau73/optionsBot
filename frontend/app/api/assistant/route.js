@@ -89,8 +89,6 @@ export async function POST(request) {
       { status: 429, headers: { "Retry-After": String(wait), ...NO_STORE } },
     );
   }
-  const remaining = limiter.remaining(user.id, Date.now());
-
   let journal = [];
   let live = [];
   if (bot !== null) {
@@ -105,6 +103,8 @@ export async function POST(request) {
     journal,
     live: live ?? [],
     reportPassages: async () => (bot !== null ? botPnl(bot) : []),
+    // The one more try of a rejected answer is a model call too (#534): it counts, and is skipped when the hour's budget is spent.
+    takeRetry: () => limiter.take(user.id, Date.now()) === 0,
     user,
     model,
     index: assistantIndex(),
@@ -120,5 +120,6 @@ export async function POST(request) {
     outcome: out.outcome ?? null,
     status,
   });
+  const remaining = limiter.remaining(user.id, Date.now());
   return Response.json({ ...out, remaining }, { status, headers: NO_STORE });
 }
