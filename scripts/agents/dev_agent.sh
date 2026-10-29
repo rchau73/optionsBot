@@ -145,6 +145,7 @@ the tests your change touches after you finish and CI runs every suite; a failur
 You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
 allowed, so a line mixing in another command is refused whole. You may run python3 and go run (scripts you write
 in the worktree, the cmd/* generators), the repo's scripts (bash scripts/<name>.sh), shellcheck and make check;
+to delete or rename a tracked file use git rm or git mv (plain rm is refused);
 set GOMAXPROCS with go test -cpu=N, not an env prefix; keep helper scripts under scripts/
 with a test, or delete them before you commit. Do not push, merge, deploy or call GitHub.
 When the issue is a bug and you found the merged PR that caused it, put a line 'Caused by #<PR number>' in the
@@ -162,6 +163,7 @@ allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(python3:*)" "Bash(bash scripts/:*)" "Bash(shellcheck:*)" "Bash(make check:*)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
+  "Bash(git rm:*)" "Bash(git mv:*)" # tracked files only, every one shown in the PR diff (#466 could not drop a file it had split, #515)
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"
   "Bash(cd:*)" ) # cd: a "cd <dir> && go test …" line was refused whole (#257, 2026-10-27); the other part is still checked
 denied=( "Bash(git push:*)" "Bash(git remote:*)" "Bash(git reset:*)" "Bash(git checkout:*)" "Bash(gh:*)" "Bash(curl:*)"
