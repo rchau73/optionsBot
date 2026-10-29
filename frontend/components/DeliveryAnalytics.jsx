@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import DeliveryTable from "./DeliveryTable";
 import DeliveryTiles from "./DeliveryTiles";
 import ReleaseTrain from "./ReleaseTrain";
-import { fetchDeliveryReport } from "@/lib/api";
+import { fetchDeliveryReport } from "@/lib/api/admin";
 import { DELIVERY_ENVS, ENV_LABELS, deliveryHref, weeklySummary } from "@/lib/analytics/deliveryView";
 import { formatDateTime } from "@/lib/format";
 

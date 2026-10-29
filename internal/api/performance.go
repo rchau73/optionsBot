@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/http"
 	"strings"
 	"time"
 
@@ -160,29 +159,3 @@ func BuildPerformance(points []history.Point, from, to time.Time, rangeName, env
 }
 
 func ptr(v float64) *float64 { return &v }
-
-// performance serves /api/performance?range=7d|30d|all (default 30d).
-func (s *Server) performance(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("range")
-	if name == "" {
-		name = "30d"
-	}
-	span, ok := PerformanceRanges[name]
-	if !ok {
-		writeError(w, http.StatusBadRequest, "range must be one of 7d, 30d, all")
-		return
-	}
-	to := time.Now().UTC()
-	from := to.Add(-span)
-	points := []history.Point{}
-	if src, ok := s.history.(PointSource); ok {
-		points = src.Points(from, to)
-	}
-	if name == "all" {
-		from = to
-		if len(points) > 0 {
-			from = points[0].T.UTC()
-		}
-	}
-	writeJSON(w, BuildPerformance(points, from, to, name, s.strategy.View().Environment))
-}

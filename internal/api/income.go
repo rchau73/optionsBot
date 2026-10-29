@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/http"
 	"time"
 
 	"optionsbot/internal/history"
@@ -197,21 +196,4 @@ func windowOf(points []history.Point, from, to time.Time) []history.Point {
 		}
 	}
 	return in
-}
-
-// income serves GET /api/income.
-func (s *Server) income(w http.ResponseWriter, _ *http.Request) {
-	now := time.Now().UTC()
-	var trades []orders.Trade
-	if ts, ok := s.events.(TradeSource); ok {
-		trades = ts.Trades(0, 0)
-	}
-	v := s.strategy.View()
-	inc := incomeOfView(v, trades, now)
-	var points []history.Point
-	if src, ok := s.history.(PointSource); ok && len(inc.Months) > 0 {
-		from, _ := time.Parse("2006-01", inc.Months[0].Month)
-		points = src.Points(from, now)
-	}
-	writeJSON(w, IncomeWithHistory(inc, points, now, v.Environment))
 }

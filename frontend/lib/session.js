@@ -1,5 +1,5 @@
 // Browser side of the sign-in page (the monitor's other calls go through
-// lib/api.js apiFetch, which refreshes the session by itself).
+// lib/api/http.js apiFetch, which refreshes the session by itself).
 
 /** Signs in; resolves to { username, role }, throws with the server's message. */
 export async function signIn(username, password) {

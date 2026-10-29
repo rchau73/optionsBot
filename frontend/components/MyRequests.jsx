@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { fetchAssistantRequests } from "@/lib/api";
+import { fetchAssistantRequests } from "@/lib/api/assistant";
 import { KIND_LABELS, statusLabel } from "@/lib/assistantRequests";
 import { formatDateTime } from "@/lib/format";
 

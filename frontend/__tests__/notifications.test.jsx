@@ -1,13 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import NotificationBell from "@/components/NotificationBell";
 import NotificationsPage from "@/components/NotificationsPage";
-import { fetchNotifications, navigation, sendNotificationAction } from "@/lib/api";
+import { navigation } from "@/lib/api/http";
+import { fetchNotifications, sendNotificationAction } from "@/lib/api/notifications";
 import { track } from "@/lib/track";
 import { badgeText, bellLabel, botEventItem, buildNotifications, requestItem, surveyItem } from "@/lib/notifications";
 
 // #447: the notification bell in the menu bar and the /notifications page.
 
-jest.mock("@/lib/api", () => ({ fetchNotifications: jest.fn(), sendNotificationAction: jest.fn(), navigation: { assign: jest.fn() } }));
+jest.mock("@/lib/api/notifications", () => ({ fetchNotifications: jest.fn(), sendNotificationAction: jest.fn() }));
+jest.mock("@/lib/api/http", () => ({ navigation: { assign: jest.fn() } }));
 jest.mock("@/lib/track", () => ({ track: jest.fn() }));
 const assistant = { openPanel: jest.fn(), askWhy: jest.fn() };
 jest.mock("@/components/AssistantProvider", () => ({ useAssistant: () => assistant }));

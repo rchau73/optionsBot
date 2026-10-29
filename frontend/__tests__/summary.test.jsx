@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import InvestorSummary, { BotSummary } from "@/components/InvestorSummary";
-import { fetchBotState } from "@/lib/api";
+import { fetchBotState } from "@/lib/api/bots";
 import { ALLOWED_ENDPOINTS } from "@/lib/bots";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, monthLabel, worstCaseRows } from "@/lib/summary";
 

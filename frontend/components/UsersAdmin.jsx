@@ -6,7 +6,7 @@ import Badge from "./Badge";
 import Panel from "./Panel";
 import ResetLinkDialog from "./ResetLinkDialog";
 import UserActionDialog from "./UserActionDialog";
-import { fetchUsers } from "@/lib/api";
+import { fetchUsers } from "@/lib/api/users";
 import { formatDateTime } from "@/lib/format";
 import { ROLES } from "@/lib/users";
 

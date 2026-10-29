@@ -2,6 +2,8 @@
 
 Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 
+- **Routes per domain** (#466): `api.go` holds the server, its options and one `s.routes<Domain>(mux)` call per domain; each domain's routes and thin handlers live in `routes_<domain>.go` (status, book, trades, summary, journal, actions), the pure builders in their own files.
+  A new route goes in its domain's file (`TestAPI_RoutesRegisteredPerDomain`); never name a file with a GOOS/GOARCH suffix such as `_windows.go`.
 - **`internal/api`** — read-only monitor API (`BOT_API_ADDR`): `/api/status|positions|orders|pnl|events`, built from `Strategy.View()`
   - (`held_legs`: each missing leg and what holds its repair — `holds.go`, `repairGate` is the one gate chain repair and the view share;
   - `flip_buffer_pct` is the live shed buffer, `GammaMonitor.FlipBuffer`, so the monitor's flip ±1σ band is the one the shed uses;

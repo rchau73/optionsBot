@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBotIncome } from "@/lib/api";
+import { fetchBotIncome } from "@/lib/api/bots";
 
 const REFRESH_MS = 60_000; // months move slowly; the history gains a line a minute
 

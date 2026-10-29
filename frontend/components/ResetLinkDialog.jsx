@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { issueResetLink } from "@/lib/api";
+import { issueResetLink } from "@/lib/api/users";
 import { formatDateTime } from "@/lib/format";
 import { confirmText } from "@/lib/users";
 

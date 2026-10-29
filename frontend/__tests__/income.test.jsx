@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import IncomePage, { IncomeView } from "@/components/IncomePage";
 import { BotSummary } from "@/components/InvestorSummary";
-import { fetchBotIncome } from "@/lib/api";
+import { fetchBotIncome } from "@/lib/api/bots";
 import { ALLOWED_ENDPOINTS } from "@/lib/bots";
 import { formatAmount, incomeTableRows, returnLine, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
 

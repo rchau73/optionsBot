@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { apiFetch, fetchBotState, navigation } from "@/lib/api";
+import { fetchBotState } from "@/lib/api/bots";
+import { apiFetch, navigation } from "@/lib/api/http";
 import { loginNext } from "@/lib/session";
 import LoginForm from "@/components/LoginForm";
 

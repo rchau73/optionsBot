@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchPnlHistory } from "@/lib/api";
+import { fetchPnlHistory } from "@/lib/api/bots";
 import { coinHistory, combineHistories } from "@/lib/monitor";
 
 const REFRESH_MS = 10_000; // history buckets are at least seconds wide; no need to poll faster

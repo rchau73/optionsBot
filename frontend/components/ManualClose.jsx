@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
-import { closePositions } from "@/lib/api";
+import { closePositions } from "@/lib/api/actions";
 import { useBlockingDialog } from "@/lib/dialogs";
 import { flipBand } from "@/lib/monitor";
 import { formatCoin, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";

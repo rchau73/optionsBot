@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import NotificationList from "./NotificationList";
 import { useNotifications } from "@/hooks/useNotifications";
-import { navigation } from "@/lib/api";
+import { navigation } from "@/lib/api/http";
 import { badgeText, bellLabel } from "@/lib/notifications";
 import { track } from "@/lib/track";
 

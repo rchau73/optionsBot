@@ -2,9 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -161,47 +159,4 @@ func relatedTo(event orders.RecentEvent, l factsLine, window []orders.RecentEven
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
-}
-
-// explain serves GET /api/explain?seq=<event seq> or ?trade=<trade seq>.
-// 400 without exactly one of them; 404 when the event (or trade) is not in
-// memory.
-func (s *Server) explain(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	seqQ, tradeQ := q.Get("seq"), q.Get("trade")
-	if (seqQ == "") == (tradeQ == "") {
-		writeError(w, http.StatusBadRequest, "give exactly one of seq or trade")
-		return
-	}
-	raw := seqQ
-	if tradeQ != "" {
-		raw = tradeQ
-	}
-	seq, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil || seq == 0 {
-		writeError(w, http.StatusBadRequest, "seq and trade must be positive integers")
-		return
-	}
-	if tradeQ != "" && !s.hasTrade(seq) {
-		writeError(w, http.StatusNotFound, NotInRecentHistory)
-		return
-	}
-	window := s.events.Recent(0, 0)
-	for _, e := range window {
-		if e.Seq == seq {
-			writeJSON(w, BuildExplanation(e, window))
-			return
-		}
-	}
-	writeError(w, http.StatusNotFound, NotInRecentHistory)
-}
-
-// hasTrade says whether the journal's trades in memory hold one with seq.
-func (s *Server) hasTrade(seq uint64) bool {
-	ts, ok := s.events.(TradeSource)
-	if !ok {
-		return false
-	}
-	t := ts.Trades(seq-1, 1)
-	return len(t) == 1 && t[0].Seq == seq
 }

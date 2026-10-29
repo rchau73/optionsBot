@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBotSummary, fetchMonitorConfig } from "@/lib/api";
+import { fetchBotSummary, fetchMonitorConfig } from "@/lib/api/bots";
 
 /** The worst-case page polls no faster than this: the model moves with prices, not every second. */
 export const SUMMARY_MIN_POLL_MS = 5000;

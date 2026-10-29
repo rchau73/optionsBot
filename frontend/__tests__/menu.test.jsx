@@ -2,17 +2,15 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import MenuBar, { MenuNav } from "@/components/MenuBar";
 import { ADMIN_PAGES, botParam, detailsRedirect, menuGroups, menuItems, showMenu } from "@/lib/menu";
 import { usePathname, useSearchParams } from "next/navigation";
-import { fetchMonitorConfig } from "@/lib/api";
+import { fetchMonitorConfig } from "@/lib/api/bots";
 
 // The menu bar on every signed-in page (#385): Overview · Details (pro) ·
 // Operational ▾ · Help ▾ (#450).
 
 jest.mock("next/navigation", () => ({ usePathname: jest.fn(), useSearchParams: jest.fn() }));
-jest.mock("@/lib/api", () => ({
-  fetchMonitorConfig: jest.fn(),
-  // The bell (#447): left loading here; __tests__/notifications.test.jsx covers it.
-  fetchNotifications: jest.fn(() => new Promise(() => {})),
-}));
+jest.mock("@/lib/api/bots", () => ({ fetchMonitorConfig: jest.fn() }));
+// The bell (#447): left loading here; __tests__/notifications.test.jsx covers it.
+jest.mock("@/lib/api/notifications", () => ({ fetchNotifications: jest.fn(() => new Promise(() => {})) }));
 
 const BAR = ["Overview", "Details (pro)", "Operational ▾", "Help ▾"];
 const GROUP = { "Operational ▾": ["Positions", "Income", "Worst case", "Activity", "Account"], "Help ▾": ["How it works"] };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { fetchBotEvents, fetchBotState, fetchBotTrades, fetchMonitorConfig } from "@/lib/api";
+import { fetchBotEvents, fetchBotState, fetchBotTrades, fetchMonitorConfig } from "@/lib/api/bots";
 import { mergeTrades } from "@/lib/trades";
 import { STALE_AFTER_SEC, describeEvent, mergeFeed, summarise, totalsByBot } from "@/lib/monitor";
 

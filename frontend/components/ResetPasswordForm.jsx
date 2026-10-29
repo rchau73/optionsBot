@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { resetWithLink } from "@/lib/api";
+import { resetWithLink } from "@/lib/api/auth";
 import { MIN_PASSWORD, passwordFormProblem } from "@/lib/users";
 
 const INPUT =

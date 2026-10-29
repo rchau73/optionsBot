@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { fetchNotifications, sendNotificationAction } from "@/lib/api";
+import { fetchNotifications, sendNotificationAction } from "@/lib/api/notifications";
 
 const REFRESH_MS = 60_000; // nothing here is urgent: no "act now", no push
 

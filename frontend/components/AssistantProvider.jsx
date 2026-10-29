@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
-import { askAssistant, fetchAssistantState, fetchNpsDue, flagAssistantAnswer, sendAssistantRequest, sendNpsAction, sendSurveyAnswer } from "@/lib/api";
+import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api/assistant";
+import { fetchNpsDue, sendNpsAction, sendSurveyAnswer } from "@/lib/api/survey";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
 import { answerOf } from "@/lib/analytics/screens";
 import { blockingDialogOpen } from "@/lib/dialogs";
