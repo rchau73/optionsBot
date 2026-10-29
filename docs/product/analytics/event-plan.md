@@ -28,7 +28,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | Event | Trigger | Properties | Answers |
 |---|---|---|---|
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
-| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424); `login` is in the list but never sent (signed out, no consent known) | `screen` | Q1, Q2, Q3 |
+| `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445); `login` is in the list but never sent (signed out, no consent known) | `screen` | Q1, Q2, Q3 |
 | `panel_expanded` | a collapsible panel is opened | `panel` | Q3, Q4 |
 | `panel_collapsed` | a collapsible panel is closed | `panel`, `open_ms` | Q3 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
@@ -81,7 +81,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | Property | Type | Allowed values |
 |---|---|---|
 | `entry_screen` | enum | `monitor`, `login` |
-| `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login` (one per page of the menu, #424) |
+| `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login`, `analytics` (one per page of the menu, #424; the admin Analytics page, #445) |
 | `viewport` | enum | `phone` (< 640 px), `tablet` (< 1024 px), `desktop` |
 | `panel` | enum | `account`, `positions`, `held`, `others`, `trades`, `activity`, `pnl`, `pnl_coin`, `orders` (the `monitor.panel.*` keys) |
 | `open_ms` | duration | milliseconds, capped at 1 h |

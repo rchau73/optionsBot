@@ -34,7 +34,9 @@ var (
 type Survey struct {
 	Surveys       []SurveyFunnel `json:"surveys"`         // nps, answers, exit
 	NPS           NPS            `json:"nps"`             // survey_answered{nps} with a score
-	Why           map[string]int `json:"why"`             // NPS reason_code
+	Why           map[string]int `json:"why"`             // NPS reason_code, every score
+	WhyBest       map[string]int `json:"why_best"`        // … of a 9–10 score: "What do we do best?" (surveys.md §1, 2a)
+	WhyImprove    map[string]int `json:"why_improve"`     // … of a 0–8 score: "What should we improve first?" (2b)
 	CameFor       map[string]int `json:"came_for"`        // answers survey
 	HardestToFind map[string]int `json:"hardest_to_find"` // answers survey
 	ExitReasons   map[string]int `json:"exit_reasons"`    // exit reason_code
@@ -73,6 +75,8 @@ func buildSurvey(week []Event) *Survey {
 	ids := Properties["survey_id"].Values
 	s := &Survey{
 		Why:           map[string]int{},
+		WhyBest:       map[string]int{},
+		WhyImprove:    map[string]int{},
 		CameFor:       map[string]int{},
 		HardestToFind: map[string]int{},
 		ExitReasons:   map[string]int{},
@@ -123,6 +127,7 @@ func buildSurvey(week []Event) *Survey {
 func (s *Survey) answer(id string, p map[string]any) {
 	switch id {
 	case "nps":
+		var byScore map[string]int // the list the score's question showed; none without a score
 		if sc, ok := p["score"].(string); ok {
 			n, _ := strconv.Atoi(sc) // the allow-list holds "0" … "10" only
 			s.NPS.Answers++
@@ -134,8 +139,14 @@ func (s *Survey) answer(id string, p map[string]any) {
 			default:
 				s.NPS.Detractors++
 			}
+			byScore = s.WhyImprove
+			if n >= 9 {
+				byScore = s.WhyBest
+			}
 		}
-		s.code(s.Why, npsCodes, p["reason_code"])
+		if c, counted := s.code(s.Why, npsCodes, p["reason_code"]); counted && byScore != nil {
+			byScore[c]++
+		}
 	case "exit":
 		s.code(s.ExitReasons, exitCodes, p["reason_code"])
 	case "answers":
@@ -149,17 +160,19 @@ func (s *Survey) answer(id string, p map[string]any) {
 }
 
 // code counts a reason code the survey asks; another code is counted under
-// "other" and in Miscoded, never guessed. No code: nothing counted.
-func (s *Survey) code(m map[string]int, asked []string, v any) {
+// "other" and in Miscoded, never guessed. No code: nothing counted. Returns
+// the code counted and whether one was.
+func (s *Survey) code(m map[string]int, asked []string, v any) (string, bool) {
 	c, ok := v.(string)
 	if !ok {
-		return
+		return "", false
 	}
 	if !slices.Contains(asked, c) {
 		s.Miscoded++
 		c = "other"
 	}
 	m[c]++
+	return c, true
 }
 
 // topCodes is the n most frequent codes, most first, ties by code.

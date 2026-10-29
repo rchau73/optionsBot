@@ -31,8 +31,8 @@ export const TIP_IDS = new Set(Object.keys(glossary).map(tipIdOf));
 /** §4: property → its rule. */
 export const PROPERTIES = {
   entry_screen: enumOf("monitor", "login"),
-  // One per page of the menu (lib/menu.js, lib/analytics/screens.js, #424).
-  screen: enumOf("overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login"),
+  // One per page of the menu (lib/menu.js, lib/analytics/screens.js, #424), the sign-in page and the admin Analytics page (#445).
+  screen: enumOf("overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login", "analytics"),
   viewport: enumOf("phone", "tablet", "desktop"),
   panel: enumOf("account", "positions", "held", "others", "trades", "activity", "pnl", "pnl_coin", "orders"),
   open_ms: duration(HOUR_MS),

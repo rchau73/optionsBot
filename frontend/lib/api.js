@@ -1,7 +1,7 @@
 // The only module that talks to the backend. Everything goes through the
 // Next.js proxy at /api/bots/... (read-only, except closePositions and
 // rebalanceBot), /api/auth/... (signOut, changePassword, resetWithLink — the
-// one call without a session) or /api/admin/... (the Users and Audit pages,
+// one call without a session) or /api/admin/... (the Users, Audit and Analytics pages,
 // admins only), behind the signed-in session's cookies.
 
 let refreshing = null;
@@ -149,6 +149,26 @@ export async function resetWithLink(token, next) {
     /* body was not JSON */
   }
   if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+}
+
+/**
+ * The weekly usage report of an environment (admins only, #445) → the
+ * route's body; a week without a report answers 404 with the same fields, so
+ * that body is returned with `missing: true` instead of an error.
+ */
+export async function fetchUsageReport(env, week, signal) {
+  const q = new URLSearchParams({ env });
+  if (week) q.set("week", week);
+  const res = await apiFetch(`/api/admin/analytics?${q}`, { cache: "no-store", signal });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    /* body was not JSON */
+  }
+  if (res.status === 404 && Array.isArray(body?.weeks)) return { ...body, missing: true };
+  if (!res.ok) throw new Error(body?.error ?? `${res.status}`);
+  return body;
 }
 
 /** One page of the audit trail (admins only) → { off, entries, skipped, next_before }; `query` from lib/audit.js auditQueryString. */

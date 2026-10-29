@@ -39,6 +39,11 @@ type Report struct {
 	Rebalance    *Rebalance    `json:"rebalance,omitempty"`     // Q6
 	Trust        *Trust        `json:"trust,omitempty"`         // Q7
 	Survey       *Survey       `json:"survey,omitempty"`        // Q8; absent when the window has no survey event
+
+	// Drops is the week's engagement-drop check against the weeks before it
+	// (Drops, #341), written with the report so the monitor's Analytics page
+	// (#445), the E13 post and the drop issue read the same result.
+	Drops *Alert `json:"drops,omitempty"`
 }
 
 // Source is the events file and the span its accepted lines cover.

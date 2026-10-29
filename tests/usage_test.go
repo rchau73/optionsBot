@@ -431,6 +431,32 @@ func TestUsage_SixWeekFixtureMatchesHandComputedValues(t *testing.T) {
 	}
 }
 
+// #445: the written report carries the same drop check as `drops`, so the
+// monitor's Analytics page reads it instead of recomputing it.
+func TestUsage_ReportJSONCarriesTheWeeksDrops(t *testing.T) {
+	path := writeUsageEvents(t, sixWeekFixture(t))
+	w := usageWeek(t, "2026-W43")
+	dir := t.TempDir()
+	r, _, err := usage.Run(path, w.From, w.To, w.Label, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "2026-W43.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written usage.Report
+	if err := json.Unmarshal(b, &written); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range []*usage.Alert{r.Drops, written.Drops} {
+		if got == nil || got.Week != "2026-W43" || len(got.Drops) != 2 ||
+			got.Drops[0].Metric != usage.MetricActive || got.Drops[1].Metric != usage.MetricManualClose {
+			t.Fatalf("drops = %+v", got)
+		}
+	}
+}
+
 // usageReport is a report with only the figures the drop check reads.
 func usageReport(week string, active int, opened, confirmed int) usage.Report {
 	from, _ := evidence.ParseWeek(week)

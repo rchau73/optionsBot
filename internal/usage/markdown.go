@@ -173,6 +173,8 @@ func surveyMarkdown(b *strings.Builder, s *Survey) {
 	fmt.Fprintf(b, "NPS answers: %d · promoters (9–10): %d · passives (7–8): %d · detractors (0–6): %d · NPS: %s (given from %d answers)\n\n",
 		n.Answers, n.Promoters, n.Passives, n.Detractors, score, NPSMinAnswers)
 	countTable(b, "NPS why (reason_code)", s.Why)
+	countTable(b, "What we do best (9–10)", s.WhyBest)
+	countTable(b, "What to improve first (0–8)", s.WhyImprove)
 	countTable(b, "Came for", s.CameFor)
 	countTable(b, "Hardest to find", s.HardestToFind)
 	if len(s.TopExit) == 0 {

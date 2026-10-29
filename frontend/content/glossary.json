@@ -940,5 +940,47 @@
     "risk_income": "None: a request changes nothing in the bot or the account.",
     "source": "frontend/README.md#assistant-191-e10",
     "labels": ["Evidence", "Steps"]
+  },
+  "active people": {
+    "short": "How many different people used the monitor in a period. Each person counts once, however often they came.",
+    "long": "Analytics page (admins only). The weekly usage report counts each person once per period, shown for this week, the last 30 days and by role. It keeps a scrambled code per person, never a name or email, and shows counts only. Only people who agreed to analytics are counted.",
+    "risk_income": "A count of people, not of money: it says nothing about how the bots trade.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["People", "This week", "Last 30 days", "Value", "Count"]
+  },
+  "retention": {
+    "short": "Of the people who first came in a given week, the share who came back in each of the next four weeks.",
+    "long": "Analytics page (admins only). Each row is a group of people whose first visit fell in the same week: the first week. The columns show the share of that group seen again one, two, three and four weeks later. A dash marks a week that has not ended yet.",
+    "risk_income": "It measures whether the monitor is useful enough to come back to, not trading results.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["First week"]
+  },
+  "first answers": {
+    "short": "The share of new people who saw the four main answers (holding, income, worst case, last action) in their first visit.",
+    "long": "Analytics page (admins only). A new person's first visit counts when it reaches the four answers the Overview gives: what is held, what it earned, the worst case and the last action. The card shows how many did and their share of all first visits that week.",
+    "risk_income": "A low share means new people miss the risk figures, not that the bots did anything.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["Found in the first session", "Share"]
+  },
+  "help used": {
+    "short": "How often people opened a tip or played a video, and how many assistant answers they marked as helpful.",
+    "long": "Analytics page (admins only). Tips opened and videos played are counts for the week. Helped is the share of the assistant's answers that people marked as helpful, with the counts beside it.",
+    "risk_income": "A tip or answer explains the bot; none of them is advice to trade.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["Tips opened", "Videos played", "Helped"]
+  },
+  "action funnel": {
+    "short": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.",
+    "long": "Analytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.",
+    "risk_income": "A confirmed step sends real orders to a bot; the card only counts them.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["Step"]
+  },
+  "nps": {
+    "short": "Net Promoter Score: the share of people who would recommend the monitor (9–10) minus the share who would not (0–6).",
+    "long": "Analytics page (admins only). Once a month the assistant asks how likely a person is to recommend the monitor, from 0 to 10. Promoters answer 9–10, passives 7–8 and detractors 0–6. The score runs from −100 to +100 and is shown only once enough people have answered.",
+    "risk_income": "It measures how people feel about the monitor, not how the bots trade.",
+    "source": "frontend/README.md#analytics-page-445",
+    "labels": ["NPS", "Promoters · passives · detractors"]
   }
 }
