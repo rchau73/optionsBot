@@ -8,7 +8,11 @@ import { fetchMonitorConfig } from "@/lib/api";
 // Operational ▾ · Help ▾ (#450).
 
 jest.mock("next/navigation", () => ({ usePathname: jest.fn(), useSearchParams: jest.fn() }));
-jest.mock("@/lib/api", () => ({ fetchMonitorConfig: jest.fn() }));
+jest.mock("@/lib/api", () => ({
+  fetchMonitorConfig: jest.fn(),
+  // The bell (#447): left loading here; __tests__/notifications.test.jsx covers it.
+  fetchNotifications: jest.fn(() => new Promise(() => {})),
+}));
 
 const BAR = ["Overview", "Details (pro)", "Operational ▾", "Help ▾"];
 const GROUP = { "Operational ▾": ["Positions", "Income", "Worst case", "Activity", "Account"], "Help ▾": ["How it works"] };
@@ -24,7 +28,8 @@ beforeEach(() => {
 });
 
 describe("Scenario: every view is at most two clicks from any page", () => {
-  const bar = (nav) => [...nav.querySelector("ul").children].slice(0, -1).map((li) => li.firstElementChild.textContent);
+  // The last two items are the bell (#447) and the person's menu.
+  const bar = (nav) => [...nav.querySelector("ul").children].slice(0, -2).map((li) => li.firstElementChild.textContent);
   test.each([
     ["/", "bot=btc", "Overview", null],
     ["/details", "bot=eth", "Details (pro)", null],
@@ -221,6 +226,7 @@ describe("lib/menu", () => {
     "/admin/users": "admins only, from the person's menu (the menu bar's last item)",
     "/admin/audit": "admins only, from the person's menu (the menu bar's last item)",
     "/admin/analytics": "admins only, from the person's menu (the menu bar's last item)",
+    "/notifications": "the bell's list as a page (#447): the bell before the person's menu opens it on a phone, its dropdown links it",
   };
 
   test("every admin page of the person's menu is on the allow-list", () => {

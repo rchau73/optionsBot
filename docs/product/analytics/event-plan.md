@@ -57,6 +57,8 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
 | `overview_unit_toggle` | the overview's P&L chart switches between Coin and USD (#404) | `unit` | Q3 |
 | `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
+| `notifications_opened` | the bell's list opens: its dropdown, or the `/notifications` page on a phone (#447) | — | Q3 |
+| `notification_followed` | the person follows an item of the bell (opens the question, My requests, the public issue, or Why?); its kind only, never its text (#447: the share of Needs you items acted on within 7 days) | `kind` | Q3, Q5 |
 
 What is deliberately **not** an event: each poll of the bot API, mouse movement, scrolling, keystrokes, text typed anywhere (the sign-in form included), hovering over numbers, and anything the bot itself does (that is the journal's job, not analytics).
 
@@ -108,6 +110,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `answer` | enum | `answered`, `dont_know`, `refused`, `fallback` (the kind of the assistant's reply: a cited answer, "I don't know", the refusal, the safe fallback) |
 | `unit` | enum | `coin`, `usd` (the unit picked) |
 | `layer` | enum | `sma`, `sma21`, `swings`, `flip`, `strikes` (the layer toggled) |
+| `kind` | enum | `survey`, `request_needs_info`, `bot_event`, `request_status`, `whats_new` (the kind of the bell's item followed, `frontend/lib/notifications.js`) |
 
 Rejected properties and why: instrument name (it carries the strike, a price), quantity, premium, P&L, margin figures, equity, the bot's currency balances, error messages (free text that can echo a number or a token), filter values (a strategy id is fine but a search box later would not be), the leg's delta or DTE (position detail, not usage), a survey's free text (the NPS "anything else" and the exit `other` box: personal data, kept in `auth.db` beside the user and deleted with them, never in an event — *needs legal review*, `surveys.md` §6).
 
