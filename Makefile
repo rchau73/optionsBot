@@ -29,6 +29,7 @@ check:
 	@test -z "$$(gofmt -l cmd internal tests)" || (echo "gofmt needed:"; gofmt -l cmd internal tests; exit 1)
 	go vet ./...
 	bash scripts/check_shell.sh
+	python3 -m unittest discover -s scripts/docs -p 'test_*.py'
 	bash scripts/go_tests.sh all $(COVER_OUT)
 	bash scripts/check_cover.sh --profile $(COVER_OUT)
 

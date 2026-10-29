@@ -72,6 +72,9 @@ jobs:
       - name: Agent scripts (PM board rules)
         run: python3 -m unittest discover -s scripts/agents -p 'test_*.py'
 
+      - name: Docs scripts (one sentence per line, reflow tool)
+        run: python3 -m unittest discover -s scripts/docs -p 'test_*.py'
+
       - name: Product scripts (unit economics)
         run: python3 -m unittest discover -s scripts/product -p 'test_*.py'
 
