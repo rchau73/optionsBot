@@ -13,7 +13,7 @@ func SummaryMarkdown(w Week) string {
 	fmt.Fprintf(&s, "**Delivery (DORA), week %s** (%s – %s UTC)\n\n", w.Week,
 		w.From.Format("2006-01-02"), w.To.AddDate(0, 0, -1).Format("2006-01-02"))
 	s.WriteString("| | mvp | stable |\n|---|---|---|\n")
-	fmt.Fprintf(&s, "| Deployment frequency | %s | %s |\n", frequencyCell(w.MVP, "deploys", "a day"), frequencyCell(w.Stable, "releases", "a day"))
+	fmt.Fprintf(&s, "| Deployment frequency | %s | %s |\n", frequencyCell(w.MVP, "deploys", "a day"), frequencyCell(w.Stable, "releases", "a week"))
 	fmt.Fprintf(&s, "| Lead time, merge → live (median / p90) | %s | %s |\n", envStat(w.MVP, w.MVP.MergeToLive), envStat(w.Stable, w.Stable.MergeToLive))
 	fmt.Fprintf(&s, "| Lead time, first commit → live (median / p90) | %s | %s |\n", envStat(w.MVP, w.MVP.CommitToLive), envStat(w.Stable, w.Stable.CommitToLive))
 	fmt.Fprintf(&s, "| Change failure rate | %s | %s |\n", failureCell(w.MVP), failureCell(w.Stable))
@@ -74,10 +74,14 @@ func frequencyCell(e EnvWeek, what, per string) string {
 	if !e.Recorded {
 		return e.Note
 	}
-	if e.PerDay == nil {
+	rate := e.PerDay
+	if rate == nil {
+		rate = e.PerWeek
+	}
+	if rate == nil {
 		return fmt.Sprintf("%d %s", e.Deploys, what)
 	}
-	return fmt.Sprintf("%d %s (%.2f %s) · %s", e.Deploys, what, *e.PerDay, per, e.FrequencyBand)
+	return fmt.Sprintf("%d %s (%.2f %s) · %s", e.Deploys, what, *rate, per, e.FrequencyBand)
 }
 
 func envStat(e EnvWeek, st Stat) string {
