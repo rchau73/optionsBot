@@ -29,7 +29,7 @@ Give each participant a code, **P1 to P5**. Use only the code in every note. Nam
 
 ## 3. Setup (moderator, 15 minutes before the first session)
 
-You need Go, Node.js 20+ and a terminal, from the repository root.
+You need Go, Node.js 24+ and a terminal, from the repository root.
 
 ```bash
 # Terminal 1 — the demo bot API: simulated BTC strategy, no exchange connection

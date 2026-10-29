@@ -104,6 +104,12 @@ class Honest(unittest.TestCase):
         self.assertIn("frontend/lib/menu.js", checkfail.go_reads(REPO, "tests/monitor_guide_test.go"))
         self.assertIn("docs/product/assistant/golden.jsonl", checkfail.js_reads(REPO, "frontend/__tests__/assistant-guard.test.js"))
 
+    def test_the_node_pins_run_the_go_tests(self):
+        # tests/ci_workflow_test.go keeps the Dockerfile, ci.yml and package.json on one Node major (#522);
+        # its package.json read is a local helper the scan does not follow.
+        for p in ("frontend/Dockerfile", "frontend/package.json", ".github/workflows/ci.yml"):
+            self.assertIn("go", checkfail.suites_for(p), p)
+
 
 class Touched(unittest.TestCase):
     def setUp(self):
