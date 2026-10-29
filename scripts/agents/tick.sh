@@ -37,6 +37,9 @@
 # time for an hour (lib.sh parallel_max); the budget in <envs>/agents.env
 # (pause, agent hours, Claude runs per day, parallelism, models: limit_lib.sh)
 # holds every Claude run, so deploys and the PR gate keep running alone.
+# The PR gate runs before the Reviewers start, so a Dev draft whose CI turned
+# green is marked ready and reviewed on the same tick, and a red one goes back
+# to Ready before the Dev agents pick (#472).
 # install.sh sets AbandonProcessGroup so
 # launchd leaves the background agents running when this script exits.
 set -uo pipefail

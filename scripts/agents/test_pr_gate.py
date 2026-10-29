@@ -141,6 +141,55 @@ class AutoMerge(unittest.TestCase):
         self.assertEqual(auto(pr(labels=[{"name": "agent:needs-human"}]))[0], "wait")
 
 
+RED = [{"__typename": "CheckRun", "name": "Go tests: core", "status": "COMPLETED", "conclusion": "FAILURE",
+        "detailsUrl": "https://github.com/o/r/actions/runs/7/job/1"}]
+RUNNING = [{"__typename": "CheckRun", "name": "ci", "status": "IN_PROGRESS"}]
+
+
+def gate(p, card="In review", markers=CLEAN_FREE):
+    return pr_gate.decide(p, markers, [], (), ["frontend/x.jsx"], 0, True, card)
+
+
+class CIFirst(unittest.TestCase):
+    """#472: the Dev agent opens drafts and CI runs the full suite."""
+
+    def test_a_failing_suite_never_reaches_ready_to_merge_or_merge(self):
+        # Given red CI on an In review PR's head, then it goes back (ci_red),
+        # reviewed clean or not, draft or not.
+        for p in (pr(statusCheckRollup=RED), pr(statusCheckRollup=RED, isDraft=True)):
+            for markers in (CLEAN_FREE, ["sha=abc verdict=clean policy=yes"], []):
+                a, why = gate(p, markers=markers)
+                self.assertEqual(a, "ci_red", (p, markers))
+                self.assertIn("Go tests: core", why)
+
+    def test_red_ci_elsewhere_only_waits(self):
+        for card in ("Ready", "Blocked", "In progress", ""):
+            self.assertEqual(gate(pr(statusCheckRollup=RED), card)[0], "wait", card)
+        self.assertEqual(gate(pr(statusCheckRollup=RED, labels=[{"name": "agent:needs-human"}]))[0], "wait")
+
+    def test_a_green_draft_is_marked_ready_a_running_one_waits(self):
+        self.assertEqual(gate(pr(isDraft=True)), ("undraft", "CI green on the draft"))
+        a, why = gate(pr(isDraft=True, statusCheckRollup=RUNNING))
+        self.assertEqual(a, "wait")
+        self.assertIn("still running", why)
+
+    def test_a_draft_off_the_review_column_is_left_alone(self):
+        for card in ("Blocked", "Ready", ""):
+            self.assertEqual(gate(pr(isDraft=True, mergeable="CONFLICTING"), card)[0], "wait", card)
+
+    def test_the_reviewer_starts_on_a_green_ready_head_only(self):
+        self.assertTrue(pr_gate.green(pr()))
+        for p in (pr(isDraft=True), pr(statusCheckRollup=RED), pr(statusCheckRollup=RUNNING), pr(statusCheckRollup=[]),
+                  pr(state="MERGED")):
+            self.assertFalse(pr_gate.green(p), p)
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(pr(isDraft=True), f)
+        self.addCleanup(os.unlink, f.name)
+        cli = lambda cmd: subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "pr_gate.py"), cmd, f.name]).returncode
+        self.assertEqual(cli("green"), 1)     # a draft: not for the Reviewer yet
+        self.assertEqual(cli("ci-green"), 0)  # but its CI is green
+
+
 def commit(parents=2, committer="GitHub", subject="Merge branch 'main' into agent/issue-1"):
     return {"parents": [{}] * parents, "commit": {"committer": {"name": committer}, "message": subject + "\n\nbody"}}
 

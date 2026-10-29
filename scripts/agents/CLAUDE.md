@@ -36,7 +36,13 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - tests: `python3 -m unittest discover -s scripts/agents -p 'test_*.py'`;
   - the Dev agents (`dev_agent.sh`, up to `DEV_PARALLEL` 1 at once, developer skill in Agent mode) each implement the top free Ready card
     (Priority, then oldest; never an epic, an `agent:pm` ticket, a card another instance holds, or one that must wait — `pm_board.py wait`)
-    in a worktree with edit/test/commit permissions only, the script re-runs all checks and opens the PR (`agent:dev`) or moves the card to Blocked with questions;
+    in a worktree with edit/test/commit permissions only, the script runs the checks the change touches and opens the PR (`agent:dev`, always a draft) or moves the card to Blocked with questions;
+    - CI runs every suite (#472, AGENTIC.md "Check failures go back to the Dev agent"; pure rules in `checkfail.py`, `test_checkfail.py`):
+      the gate marks the draft ready once CI is green, the Reviewer starts only on a ready PR with a green head (`pr_gate.py green`);
+    - a check failure (the script's, or CI red on an In review head) → Ready with `needs-fix` and the failing log tails, read first by the next run; the second → Blocked, `agent:needs-human`
+      (count: `<!-- dev:check-fail n=… -->` on the issue since the last `<!-- dev:blocked -->`; `lib.sh check_failed`);
+    - a failing test the change does not touch is re-run (script: that test ×3; gate: the failed jobs, 3 times a head); a pass makes it flaky (`lib.sh note_flaky`: the PR and its flaky issue);
+    - `checkfail.py suites` (CI's path filter and the script's) runs a suite on code it builds or a doc its tests open; any `.md` runs the doc-wide line checks, a CLAUDE.md only those;
     - a user-visible change is done only with its monitor-guide section, a golden question and `go run ./cmd/helpindex`; the Reviewer blocks one without them (#483, both prompts);
     - a PR that merged while it fixed review findings (#478, PR #474): the new commits move to `agent/issue-<n>-r<k>` from main (`rescue_commits.sh`, tested on a throwaway clone in `test_rescue.py`)
       and a new PR `Refs #n`, linked on the issue; closed unmerged → Blocked with a question; "pushed changes" only once the PR head on GitHub is the pushed commit;
@@ -128,7 +134,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     except `blocker` cards: up to 3 of one epic at once (`BLOCKER_PARALLEL`, #459), and while any is open only blocker cards are picked;
     with none open, normal picking and one per epic again;
   - documents/research cards (label `documentation` or `DEV_LIGHT_EPICS`) run on `DEV_LIGHT_MODEL` unless `DEV_MODEL` is set (`pm_board.py model`);
-  - the agent runs only the tests its change touches, the script every suite once.
+  - the agent and the script run only the tests the change touches, CI every suite (#472).
 - Parallel runs:
   - `tick.sh` (every 6 min) starts them in the background, within the person's budget `<envs>/agents.env`
     (pause, agent hours, Claude runs per day, parallelism 1 each by default, models — `limit_lib.sh` `budget_reason`, AGENTIC.md "The budget"; 2026-10-23: the agents had used the person's whole Claude plan);

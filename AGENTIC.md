@@ -111,7 +111,8 @@ The agents' permissions are enforced by Claude Code, not by prompting: `--permis
 
 - **Human gates at the decisions that matter:** every strategy policy in the product plan (merging a PRD change that touches one), the prototype (`prototype:approved`), every ticket the PRD does not cover (Triage → Ready), and what ships when it changes a policy (merge). The PR gate merges only Dev agent PRs reviewed clean, CI green, up to date with `main`, and policy-free by both the Reviewer's declaration and `pr_gate.py` `POLICY_PATHS` (#468; `PR_AUTO_MERGE=0` in `agents.env` turns it off). The PM agent's script merges only its own PRD pull requests with no strategy policy change, `docs/product/` only, CI green. A ruleset on `main` requires a pull request with green CI and blocks force pushes and branch deletion.
 - **Least privilege:** the agent that looks at trading data cannot change code, and the agent that changes code cannot see the network or GitHub.
-- **Trust, but verify:** the Dev agent's "tests pass" is not taken at its word. The script re-runs every check, and a failing PR is opened as a draft and blocked. Then a separate Reviewer agent reads the change with no stake in it, and must back each finding with a concrete failure: an unverified first pass on PR #91 had 3 false findings out of 10.
+- **Trust, but verify:** the Dev agent's "tests pass" is not taken at its word. The script runs the checks the change touches itself, and CI runs every suite on the PR, which stays a draft until CI is green ([Check failures](#check-failures-go-back-to-the-dev-agent)).
+  Then a separate Reviewer agent reads the change with no stake in it, and must back each finding with a concrete failure: an unverified first pass on PR #91 had 3 false findings out of 10.
 - **Bounded review loop:** the Reviewer sends a PR back at most twice (`REVIEW_MAX_ROUNDS`), reviews each commit once, and a failed review hands the PR to the human instead of retrying. Its review is a comment, not an approval: the agents use the human's GitHub login, which can't approve its own PR, so the board column carries the decision and merging stays with the human.
 - **Testnet only, mvp only:** automatic deploys go to mvp and refuse to run if its bots are live. Stable moves only by `promote.sh` — a person's, or the weekly or hotfix release on a testnet stable (["Automatic release"](#automatic-release)); live deploys stay manual.
 - **A broken main never leaves mvp down** (#204): when a deploy fails its compose step or health check, `deploy.sh` puts the mvp clone back on the last commit that passed, rebuilds and health-checks it, and records a `rollback` line in `deploys.tsv`. It also files one `bug` issue in Triage, `[E6] mvp deploy failed: <sha> (<subject>)`, with the failed step and the last 80 log lines, secrets redacted (`deploy_issue.py`). The PM triages that issue like any bug, so a fix is on its way. A rollback that is unhealthy too is notified loudly and stops there, with no retry loop. Details: [operations](docs/operations.md#agents-sme-review-pm-dev-agent-mvp-deploy).
@@ -178,7 +179,7 @@ Runs on the Mac that runs the bots, logged in to Claude Code and `gh`, **from th
 - **One card per epic at a time.** The Dev pick order skips any card whose epic another instance is building (`pm_board.py ready`). Cards of one epic touch the same files, and building two at once made the second PR conflict and cost a fix-up run.
   **Exception, delivery blockers** (product owner 2026-10-29, #459): cards labelled `blocker` may be built up to 3 at once in one epic (`BLOCKER_PARALLEL`), since they were planned to touch different files. **While any `blocker` card is open (any status), only blocker cards are picked:** every other card waits, whatever its priority or epic (product owner, 2026-10-29). With no open `blocker` card, normal picking and one card per epic apply again. The total number of Dev agents is still `DEV_PARALLEL` in `agents.env`.
 - **Lighter model for documents.** When `DEV_MODEL` is unset, a card labelled `documentation`, or one in an epic of `DEV_LIGHT_EPICS` (default `E5,E11`), runs on `DEV_LIGHT_MODEL` (default `sonnet`). Code cards use the account default (`pm_board.py model`; both settings live in `agents.env`).
-- **The full test suite runs once.** The agent runs only the tests its change touches. The script runs every suite after it finishes and sends a failure back to the agent.
+- **The full test suite runs once, in CI** (#472). The agent runs only the tests its change touches, and so does the script (`checkfail.py`): 2.5–30 min of Mac time saved per run. CI runs every suite on the PR; a failure goes back to the agent ([Check failures](#check-failures-go-back-to-the-dev-agent)).
 
 ## Run ledger
 
@@ -191,7 +192,7 @@ With up to 3 Dev and 3 Reviewer runs in parallel, the logs under `data/agents/<a
 - **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code). Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave. The ledger never stops an agent: a line it cannot write is logged and skipped.
 - **Every exit ends the run:** the `EXIT` trap writes `failed` (detail `exit <code>`) for a run that dies under `set -e`, and `done` for one that exits 0 without an outcome. Only a hard kill leaves a run open: `runs.py --open` lists those (and the runs still going), and the sweep below closes them.
 - **The sweep** (#291): each tick, before any new run starts, [`sweep_runs.sh`](scripts/agents/sweep_runs.sh) runs `runs.py --sweep` under the `agent-runs` mutex. An open run whose pid (the one in its `run_id`, `<agent>-<time>-<pid>-<n>`) no longer exists gets an `end` line, outcome `abandoned`, detail `process gone`, built by the same `make_line` as `run_end`. A claim holds that same pid, so a dead run's claim is free too, and a live pid is a live run, claimed or not. A live run past its agent's time limit (`TIME_LIMIT_MIN` in `runs.py`: dev 120 min, review 60, sme 60, pm and pm_answer 30, deploy 30, backup 30, flaky 45, usage 20, requests 30, pr_gate 20; tune them from the weekly metrics' p90) is reported **once** — a marker `data/agents/runs/flagged/<run_id>` and a notification naming the agent, the card and the log. **Nothing is ever killed.** A sweep failure is logged (`data/agents/tick-sweep.log`) and the tick goes on.
-- **Outcomes:** Dev `pr_opened`, `pr_updated`, `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `incomplete`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `branch_updated`, `ready_to_merge`, `ready_removed`, `merged`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`; backup `backed_up`, `failed`; assistant requests `filed`, `judged`, `none`, `skipped_limit`, `failed`; any agent `abandoned` (the sweep: its process was gone).
+- **Outcomes:** Dev `pr_opened`, `pr_updated`, `sent_back` (its checks failed: Ready with `needs-fix`, #472), `blocked`, `skipped_limit`; Reviewer `reviewed_clean`, `changes_requested`, `incomplete`, `failed`, `skipped_limit`; PM `triaged`, `stories_filed`, `failed`, `skipped_limit`; PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`; SME `reported`, `failed`, `skipped_limit`; PR gate `sent_back`, `marked_ready` (a green draft), `ci_rerun` (untouched tests failed), `branch_updated`, `ready_to_merge`, `ready_removed`, `merged`, `failed`; deploy `deployed`, `rolled_back`, `skipped`, `failed`; flaky-test hunt `filed`, `none`, `timed_out`, `failed`; usage report `posted`, `skipped`; backup `backed_up`, `failed`; assistant requests `filed`, `judged`, `none`, `skipped_limit`, `failed`; any agent `abandoned` (the sweep: its process was gone).
 - **Only work is a run:** a tick where an agent finds nothing to do writes nothing. The PM agent is a run when it asks Claude (triage or planning), the PR gate once per PR it changed, the deploy once per new commit it tries.
 - **Paths and ids only:** no secrets, no amounts, no prompt text; the detail is a short fixed phrase (≤ 200 characters).
 
@@ -220,6 +221,9 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 | PR state | What happens |
 |---|---|
 | its card is **In progress** | wait, "a Dev agent is working on it", before every other rule: no update, no send-back, never `ready-to-merge` or merged (#478) |
+| a draft whose card is not **In review** (Blocked, Ready) | wait: a person or the Dev agent has it |
+| CI **red** on the head, card **In review** (#472) | only tests the PR does not touch failed → the failed jobs are re-run (3 times a head at most; green afterwards → each named **flaky** on the PR and its flaky-test issue). Anything else → back to **Ready** with `needs-fix` and the failed jobs' log tails, once per head; the card's second check failure → **Blocked**, `agent:needs-human`. Never `ready-to-merge` or merged |
+| a **draft** In review, CI green | marked ready (`gh pr ready`): the Reviewer starts on it now |
 | behind `main`, no conflict | the script updates the branch (`gh pr update-branch`). A clean review carries over GitHub's own update merges (`pr_gate.py equiv`: only 2-parent "Merge branch 'main' into …" commits by GitHub after the reviewed one), so the Reviewer reads only commits with new code |
 | conflicts with `main` only in generated files (`.gitattributes` `linguist-generated`, #465) | the gate merges `main` into the branch itself, reruns the generators (`scripts/regen.sh --resolve`) and pushes; the Reviewer checks the new commit |
 | conflicts with `main` | the card goes back to **Ready** with `needs-rebase`; the Dev agent merges `main` into the branch (a conflict in a generated file is regenerated, never edited), resolves keeping both changes' intent, re-runs every check and pushes; the Reviewer checks it again |
@@ -233,6 +237,34 @@ Product owner, 2026-10-19: "In case of PR conflicts, Dev and PM should align in 
 **Your queue is the `ready-to-merge` label:** only PRs that change a policy (In review shows those cards first, by priority). Merge them top-down: whatever then conflicts is rebased by the agents before it comes back to you.
 
 **Policy paths** (`POLICY_PATHS`): trading rules (`internal/strategy/`), margin policy (`internal/risk/`), settings (`internal/config/`, `config_*`, the effective-config goldens), `OptionStrategy.md`, the order path (`internal/orders/`, `internal/gateway/`, `internal/exchange/`, `cmd/bot/`), the assistant's guard, roles (`frontend/lib/auth/`), `docs/product/`, `docs/legal/`, `.github/`, `.githooks/`, `.claude/skills/`, releases (`scripts/promote.sh`), the coverage floor, the merge rules (`pr_gate.*`), deploys and the agents' budget. The Reviewer's own judgement covers what a path can't, such as a POST route.
+
+## Check failures go back to the Dev agent
+
+Product owner, 2026-10-28/29 (#472): "Evaluate always possible CI/CD improvement to speed up SDLC", and failed checks must go back to the Dev agent, not wait for a person.
+#484, #496, #500 and #509 sat in Blocked on 28–29 Oct.
+Rules in [`checkfail.py`](scripts/agents/checkfail.py), tested in `test_checkfail.py`.
+
+- **CI runs every suite, the Mac only what the change touches.**
+  `dev_agent.sh` runs gofmt/vet, the scripts' checks, the Go tests and jest files the change touches and eslint; `next build` and the rest run in CI.
+  Every PR opens as a **draft**; the PR gate marks it ready once CI is green, and only then does the Reviewer start (`pr_gate.py green`: never a commit that then fails CI).
+- **Suites by what they read** (`checkfail.py suites`, also CI's path filter): a suite runs when a changed file is code it builds, or a doc one of its tests opens.
+  Any `.md` runs the two doc-wide line checks (`TestClaudeDocs`, `TestDocs_`); a `CLAUDE.md` only those; an image or diagram source nothing.
+  Docker runs only on `Dockerfile`, `go.*`, `cmd/`, `internal/` or frontend code; the vulnerability scan only on `go.mod`, `go.sum` or `package-lock.json`.
+  Go lint (gofmt, vet) runs only on Go files, and the scripts' checks have their own job.
+  A push to `main`, the nightly run (02:30 UTC) and a manual run run every job.
+  `test_checkfail.py` scans `tests/*.go` and the frontend tests for the paths they open and fails when one would not trigger its suite, so a new test that reads a doc cannot be skipped silently.
+- **A check failure goes back once.**
+  The first failure on a card (the script's, or CI's on an In review PR's head) sends it to **Ready** with `needs-fix` and a comment holding the failing checks and each failing test's own output (its last 40 lines).
+  The next Dev run reads that comment first and fixes it on the same PR.
+  The second failure goes to a person (Blocked, `agent:needs-human`).
+  The count lives on the issue (`<!-- dev:check-fail n=… -->`) and restarts after a person was asked (`<!-- dev:blocked -->`).
+- **A failure in a test the change does not touch is retried, not blamed.**
+  Touched = the test's file, a path it opens, a package it imports (transitively) or a helper of `tests/` it names changed.
+  An untouched failing test is re-run: the script re-runs that test up to 3 times, the gate the failed CI jobs up to 3 times a head.
+  Passing makes it **flaky**: named on the PR and on its `[E6] Flaky test: <name>` issue (`lib.sh note_flaky`, filed in Triage or commented), and the PR goes on.
+  A touched test is never retried.
+- **Go test cache:** `actions/setup-go` already caches the build cache keyed on `go.sum`.
+  Test results stay uncached (`-count=1`): many tests run bash, python or `go run`, whose file reads Go's test cache does not see, so a cached pass could hide a broken script.
 
 ## Agent metrics
 

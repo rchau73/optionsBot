@@ -124,6 +124,17 @@ class Find(unittest.TestCase):
                   {"number": 9, "title": "[E6] Flaky test: TestFlaky/sub", "state": "OPEN"}]
         self.assertIsNone(flaky.find("TestFlaky", issues, NOW))
 
+    def test_cli_title_and_find_for_a_retried_pr_test(self):
+        # lib.sh note_flaky (#472): update the issue that names it, else file one.
+        cli = lambda *a: subprocess.run([sys.executable, os.path.join(SCRIPTS, "agents", "flaky.py"), *a],
+                                        capture_output=True, text=True, check=True).stdout.strip()
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump([{"number": 5, "title": "[E6] Flaky test: TestFlaky", "state": "OPEN"}], f)
+        self.addCleanup(os.unlink, f.name)
+        self.assertEqual(cli("title", "TestFlaky"), "[E6] Flaky test: TestFlaky")
+        self.assertEqual(cli("find", "TestFlaky", f.name), "5")
+        self.assertEqual(cli("find", "TestOther", f.name), "")
+
 
 class Plan(unittest.TestCase):
     def setUp(self):

@@ -3,7 +3,8 @@
 #
 #   1. takes the oldest In review card whose agent:dev PR has no review of its
 #      current head commit (a new push is reviewed again, a commit never twice
-#      — except once more after an incomplete review);
+#      — except once more after an incomplete review), once that head is a
+#      ready PR with CI green (#472: never a commit that then fails CI);
 #   2. writes the diff one file per changed path (.agent-review/diff/, with
 #      an index), checks the PR head out in a detached worktree and runs Claude Code
 #      headless with the developer skill in "Review mode". It may read code and
@@ -63,9 +64,14 @@ while read -r it num; do
   last_verdict="${last#* }"; last="${last%% *}"
   if [[ -n "$last" && "$last_verdict" != "incomplete" ]] && gh api "repos/$slug/compare/$last...$h" < /dev/null 2>/dev/null |
       python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" equiv /dev/stdin | grep -q .; then continue; fi
+  # A green head only (#472): a ready PR (the gate marks the Dev agent's draft
+  # ready once CI passes) whose CI is green — never a commit that then fails.
+  gh pr view "$p" -R "$slug" --json state,isDraft,statusCheckRollup > "$AGENT_STATE_DIR/review-pick-$$.json" < /dev/null || continue
+  python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" green "$AGENT_STATE_DIR/review-pick-$$.json" || continue
   claim review "$p" || continue
   item="$it"; issue="$num"; pr="$p"; pr_branch="$b"; head="$h"; break
 done < <(items_in_status "In review")
+rm -f "$AGENT_STATE_DIR/review-pick-$$.json"
 unmutex review-pick
 [[ -n "$pr" ]] || { log "review: nothing to review"; exit 0; }
 
