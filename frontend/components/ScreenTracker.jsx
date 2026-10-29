@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { fetchConsent } from "@/lib/api";
+import { fetchConsent } from "@/lib/api/survey";
 import { screenViewOf } from "@/lib/analytics/screens";
 import { setAnalyticsConsent, track } from "@/lib/track";
 

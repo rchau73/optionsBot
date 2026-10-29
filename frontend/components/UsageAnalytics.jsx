@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { useEffect, useState } from "react";
 import Panel from "./Panel";
 import { Attention, DataBehind, QuestionCards } from "./UsageCards";
-import { fetchUsageReport } from "@/lib/api";
+import { fetchUsageReport } from "@/lib/api/admin";
 import { REPORT_ENVS, SMALL_SAMPLE, analyticsHref, isSmallSample, neighbourWeeks } from "@/lib/analytics/usageView";
 
 const TARGET =

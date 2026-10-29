@@ -4,7 +4,7 @@ import Monitor from "@/components/Monitor";
 import PayoffCard from "@/components/PayoffCard";
 import { PositionsScreen } from "@/components/PositionsPage";
 import { useMonitor } from "@/hooks/useMonitor";
-import { fetchBotState } from "@/lib/api";
+import { fetchBotState } from "@/lib/api/bots";
 import { ALLOWED_ENDPOINTS } from "@/lib/bots";
 import { cardTitle, chartGeometry, chartLines, deltaLine, earnedLine, missingLine, nowLabel, textAlternative, todayZones } from "@/lib/payoff";
 

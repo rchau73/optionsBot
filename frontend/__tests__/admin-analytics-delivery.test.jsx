@@ -1,13 +1,13 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import DeliveryAnalytics, { DeliveryView, WILL_APPEAR } from "@/components/DeliveryAnalytics";
 import AnalyticsTopics from "@/components/AnalyticsTopics";
-import { fetchDeliveryReport } from "@/lib/api";
+import { fetchDeliveryReport } from "@/lib/api/admin";
 import { deliveryTiles, durationText, filterRows, headline, prRows, sortRows, stableText, utcText, weeklySummary } from "@/lib/analytics/deliveryView";
 import { W43_SUMMARY, doraReport } from "@/test/doraReport";
 
 // #473: the Analytics page's Delivery (DORA) topic, on mock dora.json (test/doraReport.js).
 
-jest.mock("@/lib/api", () => ({ fetchDeliveryReport: jest.fn() }));
+jest.mock("@/lib/api/admin",() => ({ fetchDeliveryReport: jest.fn() }));
 
 const answer = (report = doraReport()) => ({ report, file: report ? "dora.json" : null, written_at: report ? "2026-10-29T06:00:05Z" : null });
 const view = (env = "stable", data = answer(), error = null) => render(<DeliveryView env={env} data={data} error={error} />);

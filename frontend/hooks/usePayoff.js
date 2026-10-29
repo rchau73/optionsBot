@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBotPayoff, fetchMonitorConfig } from "@/lib/api";
+import { fetchBotPayoff, fetchMonitorConfig } from "@/lib/api/bots";
 
 /** The Positions page polls no faster than this: the curves move with prices, not every second. */
 export const PAYOFF_MIN_POLL_MS = 5000;

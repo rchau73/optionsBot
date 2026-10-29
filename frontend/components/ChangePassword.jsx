@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { changePassword } from "@/lib/api";
+import { changePassword } from "@/lib/api/auth";
 
 /** The sign-in rule (lib/auth/password.js MIN_PASSWORD_LENGTH; that file is server-only). */
 export const MIN_LENGTH = 12;

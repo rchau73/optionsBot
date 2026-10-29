@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Panel from "./Panel";
-import { fetchAudit } from "@/lib/api";
+import { fetchAudit } from "@/lib/api/admin";
 import { AUDIT_ACTIONS, auditDetail, auditQueryString } from "@/lib/audit";
 import { formatDateTime } from "@/lib/format";
 

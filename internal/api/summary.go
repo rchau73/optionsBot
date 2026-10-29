@@ -2,7 +2,6 @@ package api
 
 import (
 	"math"
-	"net/http"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -168,15 +167,6 @@ type LastAction struct {
 	// Spot is the coin's index price at the action (USD), for "the coin's
 	// move since" on the phone overview (#320); omitted when not journaled.
 	Spot *float64 `json:"spot,omitempty"`
-}
-
-// summary serves GET /api/summary.
-func (s *Server) summary(w http.ResponseWriter, _ *http.Request) {
-	var trades []orders.Trade
-	if ts, ok := s.events.(TradeSource); ok {
-		trades = ts.Trades(0, 0)
-	}
-	writeJSON(w, BuildSummary(s.strategy.View(), trades, time.Now()))
 }
 
 // BuildSummary is the pure core of /api/summary.

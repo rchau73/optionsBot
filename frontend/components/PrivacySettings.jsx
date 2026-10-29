@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { fetchNpsState, sendNpsAction } from "@/lib/api";
+import { fetchNpsState, sendNpsAction } from "@/lib/api/survey";
 
 /**
  * Account › Privacy (#446): the person's own switch for the monthly NPS

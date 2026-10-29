@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import NotificationBell from "./NotificationBell";
 import UserMenu from "./UserMenu";
 import { useDismiss } from "./useDismiss";
-import { fetchMonitorConfig } from "@/lib/api";
+import { fetchMonitorConfig } from "@/lib/api/bots";
 import { botParam, menuGroups, showMenu } from "@/lib/menu";
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createUser } from "@/lib/api";
+import { createUser } from "@/lib/api/users";
 import { MIN_PASSWORD, newUserProblem, ROLES } from "@/lib/users";
 
 const INPUT =

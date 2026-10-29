@@ -122,7 +122,9 @@ npm run test:phone                # viewport check (#309, #425): every menu page
 - `hooks/`
   - Contents: `useMonitor` — polling, incremental events, staleness, session history
 - `lib/`
-  - Contents: `api.js` (the only fetching module), `monitor.js` (pure grouping/summaries/event text), `users.js` (Users page form checks and confirmation words), `audit.js` (the audit actions, the Audit page's query rules and detail column), `format.js` (units), `bots.js` (server config)
+  - `api/`: the only fetching modules, one file per domain (#466) — `bots.js`, `actions.js`, `auth.js`, `users.js`, `admin.js`, `assistant.js`, `survey.js`, `notifications.js` — over the shared fetch and errors of `api/http.js`.
+    Callers import the domain file; there is no barrel.
+  - Contents: `monitor.js` (pure grouping/summaries/event text), `users.js` (Users page form checks and confirmation words), `audit.js` (the audit actions, the Audit page's query rules and detail column), `format.js` (units), `bots.js` (server config)
 - `content/`
   - Contents: `glossary.json` — the plain-words tips (below); `videos.json` — the how-to video catalogue (#300): `video.<task>` → title, task, `seconds` (30–90), `captions` path (may not exist while `status` is `planned`), screen, storyboard (`docs/product/education/video-storyboards.md`); the analytics collector accepts a `video_id` only if it is a key here and a `tip_id` only if it is `tip.` + a glossary key (lower case, other characters as `_`); `confirm-notes.json` — the risk notes before a confirmation (below); `empty-states.json` — what an empty, loading, stale or failing panel says (below); `help-index.json` — generated, never hand-edited: the E10 assistant's only corpus, OptionStrategy.md, this glossary and the bot's plain-words catalogue as cited passages (`go run ./cmd/helpindex` after a change to any of them, #312)
 - `__tests__/`, `test/`

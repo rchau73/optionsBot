@@ -28,7 +28,7 @@ A password change, a role change or a deletion ends every session of that user
 
 ### Silent refresh
 
-`lib/api.js` `apiFetch`: the monitor's own 401 (header `x-monitor-session: required`) → one refresh shared by every waiting request → one retry; when that fails the page goes to `/login` and comes back afterwards.
+`lib/api/http.js` `apiFetch`: the monitor's own 401 (header `x-monitor-session: required`) → one refresh shared by every waiting request → one retry; when that fails the page goes to `/login` and comes back afterwards.
 A bot's 401 passed through a proxy route is shown as an error, never a sign-out
 
 ### Password change

@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { changeUserRole, deleteUser, resetUserPassword, signOutUser } from "@/lib/api";
+import { changeUserRole, deleteUser, resetUserPassword, signOutUser } from "@/lib/api/users";
 import { confirmText, MIN_PASSWORD, passwordFormProblem } from "@/lib/users";
 
 const INPUT =

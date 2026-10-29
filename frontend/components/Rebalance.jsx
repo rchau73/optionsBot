@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Badge from "./Badge";
-import { rebalanceBot } from "@/lib/api";
+import { rebalanceBot } from "@/lib/api/actions";
 import { useBlockingDialog } from "@/lib/dialogs";
 import { formatPct } from "@/lib/format";
 

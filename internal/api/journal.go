@@ -3,13 +3,9 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"regexp"
 	"sort"
-	"strconv"
 	"time"
 
 	"optionsbot/internal/orders"
@@ -257,55 +253,4 @@ func heldInstruments(v strategy.View) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func (s *Server) journal(w http.ResponseWriter, r *http.Request) {
-	days := defaultJournalDays
-	if q := r.URL.Query().Get("days"); q != "" {
-		n, err := strconv.Atoi(q)
-		if err != nil || n < 1 || n > maxJournalDays {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("days must be 1 to %d", maxJournalDays))
-			return
-		}
-		days = n
-	}
-	withHeld := false
-	switch r.URL.Query().Get("held") {
-	case "", "0":
-	case "1":
-		withHeld = true
-	default:
-		writeError(w, http.StatusBadRequest, "held must be 0 or 1")
-		return
-	}
-	src, ok := s.events.(JournalSource)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "journal not available")
-		return
-	}
-	now := time.Now()
-	from := now.Add(-time.Duration(days) * 24 * time.Hour)
-	items, events, truncated, err := ReadJournal(src, from)
-	var held []string
-	if err == nil && withHeld {
-		held = heldInstruments(s.strategy.View())
-		var older []JournalItem
-		var n int
-		var cut bool
-		older, n, cut, err = ReadHeldJournal(src, held, from)
-		items, events, truncated = append(older, items...), events+n, truncated || cut
-	}
-	if err != nil {
-		code := http.StatusInternalServerError
-		if errors.Is(err, orders.ErrNoJournalFile) {
-			code = http.StatusServiceUnavailable
-		}
-		slog.Warn("monitor API: journal read failed", "days", days, "held", withHeld, "err", err)
-		writeError(w, code, "journal not available")
-		return
-	}
-	if truncated {
-		slog.Warn("monitor API: journal answer truncated", "days", days, "held", len(held), "items", len(items), "max", MaxJournalItems)
-	}
-	writeJSON(w, JournalWindow{AsOf: now, Days: days, From: from, Events: events, Items: items, Truncated: truncated, Held: held})
 }

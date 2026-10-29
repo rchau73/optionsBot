@@ -1,12 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import UsageAnalytics, { AnalyticsView, COUNTS_ONLY, SETUP_STEPS } from "@/components/UsageAnalytics";
-import { fetchUsageReport } from "@/lib/api";
+import { fetchUsageReport } from "@/lib/api/admin";
 import { attentionItems, dropText } from "@/lib/analytics/usageView";
 import { usageReport } from "@/test/usageReport";
 
 // #445: the admin Analytics page's states, on mock report JSON (no real events).
 
-jest.mock("@/lib/api", () => ({ fetchUsageReport: jest.fn() }));
+jest.mock("@/lib/api/admin",() => ({ fetchUsageReport: jest.fn() }));
 
 const answer = (week = "2026-W44", over = {}) => ({
   off: false,

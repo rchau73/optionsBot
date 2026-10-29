@@ -2,7 +2,6 @@ package api
 
 import (
 	"math"
-	"net/http"
 	"sort"
 	"time"
 
@@ -115,11 +114,6 @@ type PayoffPoint struct {
 	Price     float64  `json:"price"`
 	ExpiryPnL float64  `json:"expiry_pnl"`
 	TodayPnL  *float64 `json:"today_pnl"`
-}
-
-// payoff serves GET /api/strangles/payoff.
-func (s *Server) payoff(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, PayoffOf(s.strategy.View(), time.Now()))
 }
 
 // PayoffOf is the pure core of /api/strangles/payoff.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchBotEvents, fetchBotTrades } from "@/lib/api";
+import { fetchBotEvents, fetchBotTrades } from "@/lib/api/bots";
 import { mergeTrades } from "@/lib/trades";
 
 const REFRESH_MS = 30_000; // a holder's page: the bot acts every few minutes at most
