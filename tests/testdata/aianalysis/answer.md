@@ -15,7 +15,10 @@ In the crash shock the proposal ends at -5.6 % against -4.8 %; in the rally shoc
 The backtest and the replay disagree on the sign: the backtest has the proposal ahead, the replay behind.
 Week 2026-W42 is an order flip, and the worst week of both settings is 2026-W43.
 Over the weeks the proposal won 1 of 2 in the backtest and 0 of 2 in the replay.
+Around the proposed buffer of 1.25, the backtest has a cliff between 1.25 and 1.4: the worst week goes from -0.88 % to -2.05 % and the max drawdown from 1.15 % to 2.27 %, each past the 1 pp threshold.
+On the low side the backtest is smooth, and the replay shows no cliff across the neighbours from 1 to 1.5.
 
 ## What to test next
 Run the replay with daily windows over the same span to see which days carry the gap.
 Run the comparison on another two weeks of recorded books.
+Run the neighbours of the other changed setting as well.

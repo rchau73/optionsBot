@@ -121,6 +121,9 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	if r.Windows != nil {
 		writeWindows(b, *r.Windows, u)
 	}
+	if r.Neighbours != nil {
+		writeNeighbours(b, *r.Neighbours, u)
+	}
 	_, err := io.WriteString(w, b.String())
 	return err
 }
@@ -176,6 +179,60 @@ func writeWindows(b *strings.Builder, wr WindowReport, u string) {
 	} else {
 		p("Order flips between replay and backtest: none.\n\n")
 	}
+}
+
+// writeNeighbours writes the "Neighbours" section: one table per source
+// (a skipped value shows why), then the cliffs.
+func writeNeighbours(b *strings.Builder, nb Neighbours, u string) {
+	p := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
+	unit := ""
+	if nb.Unit != "" {
+		unit = " " + nb.Unit
+	}
+	p("## Neighbours of `%s` (fragility)\n\n", nb.Key)
+	p("%s: the proposed config re-run with only this setting moved −20 %%, −10 %%, +10 %% and +20 %% of %s%s (the catalogue's range: %s). ",
+		nb.Title, fmtValue(nb.Proposed), unit, nb.Range)
+	p("Backtested and replayed, not a promise: the replay does not model %s; %s. ", strings.Join(evidence.Unmodelled, ", "), nb.StressNote)
+	p("A cliff is a worst week or max drawdown that moves by more than %g pp of equity between adjacent values, or a return that flips sign. ", nb.CliffThresholdPP)
+	p("Nothing is applied: a change takes effect only after a manager confirms it.\n\n")
+	sources := []struct {
+		name, fees, format string
+		of                 func(NeighbourRow) NeighbourFigures
+	}{
+		{"Backtest", "USD", "%.2f", func(r NeighbourRow) NeighbourFigures { return r.Backtest }},
+		{"Replay", u, "%.4f", func(r NeighbourRow) NeighbourFigures { return r.Replay }},
+	}
+	for _, s := range sources {
+		p("### %s\n\n", s.name)
+		p("| Step | Value | Return %% | Worst week %% | Max drawdown %% | Fees (%s) | Trades | Note |\n", s.fees)
+		p("|---|---|---|---|---|---|---|---|\n")
+		for _, r := range nb.Rows {
+			step := fmt.Sprintf("%+g %%", r.StepPct)
+			if r.StepPct == 0 {
+				step = "proposed"
+			}
+			f := s.of(r)
+			switch {
+			case r.Skipped != "":
+				p("| %s | %s | | | | | | skipped: %s |\n", step, fmtValue(r.Value), r.Skipped)
+			case !f.Ran:
+				p("| %s | %s | | | | | | not run: %s |\n", step, fmtValue(r.Value), f.Note)
+			default:
+				p("| %s | %s | %+.2f | %+.2f | %.2f | %s | %d | %s |\n", step, fmtValue(r.Value), f.ReturnPct, f.WorstWeekPct,
+					f.MaxDrawdownPct, fmt.Sprintf(s.format, f.Fees), f.Trades, r.Note)
+			}
+		}
+		p("\n")
+	}
+	if len(nb.Cliffs) == 0 {
+		p("Cliffs: none between the values that ran.\n\n")
+		return
+	}
+	p("**Cliffs** (the result changes sharply between neighbours):\n\n")
+	for _, c := range nb.Cliffs {
+		p("- ⚠ %s.\n", c.Detail)
+	}
+	p("\n")
 }
 
 // table writes "| Figure | Base | Proposed | Change |" rows; the header is

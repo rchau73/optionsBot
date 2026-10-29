@@ -4,7 +4,9 @@
 // settings that differ listed key by key first. It reads files only (no
 // Deribit call, no order) and writes <out>/<UTC time>/report.md and .json.
 // -windows week|day also compares the backtest and the replay window by
-// window (#301). See README "Settings comparison".
+// window (#301). -neighbours <key> re-runs the proposed config with that
+// setting moved ±10 % and ±20 % and flags cliffs between neighbours (#495).
+// See README "Settings comparison".
 //
 //	go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
 //	    -replay data/btc/data/market -stress data/stress/btc
@@ -34,16 +36,17 @@ func main() {
 	stressCmd := flag.String("stress-cmd", "go run ./cmd/stress", "command that runs cmd/stress, from the repository (none = skip the stress)")
 	out := flag.String("out", "data/compare", "reports folder: <out>/<UTC time>/report.md|json")
 	windows := flag.String("windows", "", "also compare per window: week (ISO weeks, UTC) or day (empty = the whole span only)")
+	neighbours := flag.String("neighbours", "", "also re-run the proposed config with this setting (a key as in the Differences, e.g. gamma_flip_buffer_sd) at −20, −10, +10 and +20 % and flag cliffs (empty = skip)")
 	flag.Parse()
 
 	paths := compare.Paths{Base: *base, Proposed: *proposed, CSV: *csv, Market: *market, GEX: *gexDir, Stress: *stress}
-	if err := run(paths, *from, *to, *equity, *stressCmd, *out, *windows); err != nil {
+	if err := run(paths, *from, *to, *equity, *stressCmd, *out, *windows, *neighbours); err != nil {
 		fmt.Fprintln(os.Stderr, "compare:", err)
 		os.Exit(1)
 	}
 }
 
-func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out, windows string) error {
+func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out, windows, neighbours string) error {
 	if p.Base == "" || p.Proposed == "" {
 		return fmt.Errorf("-base and -proposed are both needed")
 	}
@@ -70,11 +73,21 @@ func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out,
 	if err != nil {
 		return err
 	}
+	var plan compare.Neighbours
+	if neighbours != "" {
+		if plan, err = compare.PlanNeighbours(in.Proposed, neighbours); err != nil {
+			return fmt.Errorf("-%w", err)
+		}
+	}
 	compare.RunStress(&in, stressCmd)
 	r := compare.Run(in)
 	if unit != "" {
 		wr := compare.RunWindows(in, unit)
 		r.Windows = &wr
+	}
+	if neighbours != "" {
+		nb := compare.RunNeighbours(in, r, plan)
+		r.Neighbours = &nb
 	}
 	md, js, err := compare.Write(r, compare.OutDir(out, time.Now()))
 	if err != nil {

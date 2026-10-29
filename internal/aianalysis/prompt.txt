@@ -13,6 +13,6 @@ The differing settings, in the words of their catalogue entries when given.
 ## Where the proposal is better or worse
 Per tool, with the numbers of both settings; with "windows", how often each setting won.
 ## Where it is fragile
-A tool or window where the sign flips (the worst window, the windows in "order_flips"), few trades, missing days, and every setting in "stress.not_modelled" by name (the stress cannot show its effect).
+A tool or window where the sign flips (the worst window, the windows in "order_flips"), few trades, missing days, and every setting in "stress.not_modelled" by name (the stress cannot show its effect). With "neighbours": every cliff in "neighbours.cliffs" with its two values and its figures as given, or that the neighbours show no cliff; a skipped neighbour with its reason.
 ## What to test next
 Another tool or window to run. Never "apply it".
