@@ -547,14 +547,14 @@
     "short": "When something happened, in São Paulo time (BRT).",
     "long": "The time of a trade or event. The bot records times in UTC; the monitor shows them in São Paulo time, marked BRT.",
     "risk_income": "None.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Time"]
   },
   "held": {
     "short": "How many days a position was open before it closed.",
     "long": "The time from the sale of a leg to its buy-back, in days.",
     "risk_income": "None by itself.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Held"]
   },
   "position": {
@@ -568,7 +568,7 @@
     "short": "One running copy of the strategy, trading one coin (BTC or ETH).",
     "long": "Each bot trades one coin on its own Deribit account and reports to the monitor. 'Bots online' counts the bots that answered recently.",
     "risk_income": "None by itself.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Bot", "Bots online"]
   },
   "strategy": {
@@ -582,112 +582,112 @@
     "short": "Shows open positions grouped by strategy, slot, expiry or type, with totals.",
     "long": "Grouping puts related legs together and adds up their P&L and greeks in the group header.",
     "risk_income": "None by itself.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Group by"]
   },
   "asset": {
     "short": "A coin held in the account (e.g. BTC, ETH, USDC).",
     "long": "The account can hold several coins. Each one counts toward the margin balance at its value.",
     "risk_income": "None by itself.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Asset"]
   },
   "balance": {
     "short": "How much of a coin the account holds, before open positions are valued.",
     "long": "The balance is the coin held in the account. Equity adds the value of open positions to it.",
     "risk_income": "None by itself.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Balance"]
   },
   "equity": {
     "short": "What the account is worth now: balance plus the value of open positions.",
     "long": "Equity is the account's value if everything were closed at current prices. 'All collateral' adds every coin, in dollars.",
     "risk_income": "It rises with income and falls with losses.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Equity", "Equity (all collateral)", "Of the account"]
   },
   "daily swing": {
     "short": "How far the coin typically moves in one day, from DVOL: DVOL ÷ √365.",
     "long": "DVOL is the market's expected yearly swing of the coin. Divided by √365 it gives a typical day's swing, one daily standard deviation. With DVOL 50 that is about 2.6 %. The worst-case page shows days of 2 and 3 typical swings each way.",
     "risk_income": "Bigger swings cost a short-option book money in either direction; quiet days pay it a little.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["How big"]
   },
   "available": {
     "short": "Money free to back new positions or orders.",
     "long": "Available is the margin balance minus the initial margin already in use.",
     "risk_income": "Less available means less room for new positions.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Available"]
   },
   "withdrawable": {
     "short": "How much can be taken out of the account now.",
     "long": "The amount the exchange would let you withdraw without breaking margin needs.",
     "risk_income": "Withdrawing lowers the margin balance, which can push IM over the limit.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Withdrawable"]
   },
   "reserved": {
     "short": "Coin set aside for open spot orders.",
     "long": "Money held back by orders to buy or sell the coin itself, not options.",
     "risk_income": "None for the bot.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Reserved"]
   },
   "usd": {
     "short": "US dollars, at the coin's price at that moment.",
     "long": "The bot earns in the coin. Dollar figures convert at the coin's price at each close, or today's price for open positions.",
     "risk_income": "None by itself; the coin's own price changes dollar figures.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["USD"]
   },
   "month": {
     "short": "A calendar month in UTC.",
     "long": "Income is summed per month in UTC; a month without closes says so.",
     "risk_income": "None.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Month"]
   },
   "exchange fees": {
     "short": "What Deribit charged to open and to buy back the options closed that month.",
     "long": "Each close carries its share of the fee paid to open the option and the fee paid to buy it back. The income page shows them as a cost; the result is already net of them.",
     "risk_income": "Fees lower the income of every trade, winning or losing.",
-    "source": "frontend/README.md#income-page",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["Exchange fees"]
   },
   "holding alone": {
     "short": "What the same account would have done by just holding the coin that month.",
     "long": "Counted in the coin, holding neither gains nor loses, so every coin the bot earns is extra. In dollars it is the coin's price change over the month times the account's balance at the month's start, from the bot's recorded history.",
     "risk_income": "It shows how much of a dollar result is the coin's own move, not the strategy.",
-    "source": "frontend/README.md#income-page",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["Holding alone"]
   },
   "income over months": {
     "short": "The realised result of the months shown, after fees, and the average of the months with a close.",
     "long": "The total adds every month's result in the table. The average divides it by the months that had at least one close, and the line under it counts the months up and down. The % compares the total with the account's balance at the start.",
     "risk_income": "One good average can hide a bad month: read it with the worst month and worst week.",
-    "source": "frontend/README.md#income-page",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["Last 6 months, after fees", "Average month"]
   },
   "worst month": {
     "short": "The month with the lowest realised result, after fees.",
     "long": "Among the months with at least one close, the one that earned least or lost most. Under it, the coin's recorded price move that month, when the bot's history has it.",
     "risk_income": "It shows the size of a bad month, which an average hides.",
-    "source": "frontend/README.md#income-page",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["Worst month"]
   },
   "worst week": {
     "short": "The lowest change of the bot's total P&L over any 7 days, with its dates.",
     "long": "Taken from the bot's P&L history, open positions included, in the coin and as a % of the account's balance at the start. Days without history are listed, never filled in.",
     "risk_income": "It is the drop an investor would have lived through in one week.",
-    "source": "frontend/README.md#income-page",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["Worst week"]
   },
   "worst case": {
     "short": "A model of what one very bad day would cost the open positions: a fall or rise of 3 typical daily swings.",
     "long": "The bot reprices each open leg with Black–Scholes on its own implied volatility after one day, with the coin 3 daily standard deviations lower and higher (from DVOL). The tile shows the worse side in the coin, in dollars and as a % of the account. It is a model, not a quote.",
     "risk_income": "Real days can move more than 3 swings, so a loss can be larger than this figure.",
-    "source": "frontend/README.md#what-you-see",
+    "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Worst case"]
   },
   "win rate": {
@@ -872,60 +872,60 @@
     "short": "The name a person signs in to the monitor with: 3 to 64 of a-z, 0-9, dot, underscore or hyphen.",
     "long": "Users page (admins only). The name a person types to sign in. It is not case-sensitive and two people cannot share one. An admin chooses it when adding the person.",
     "risk_income": "None: it only identifies who signed in and who acted, in the audit trail.",
-    "source": "frontend/README.md#users-page-306",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Username"]
   },
   "role": {
     "short": "What a person may do on the monitor: user sees it, manager also closes and rebalances, admin also manages people.",
     "long": "Users page (admins only). Every person has one of three roles. A user sees the monitor. A manager may also close a leg by hand and rebalance. An admin may also add people, change roles, reset passwords and delete people. The server checks the role on every action. Changing it signs the person out everywhere.",
     "risk_income": "A manager can send orders to the bots: give that role only to people who should.",
-    "source": "frontend/README.md#users-page-306",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Role"]
   },
   "email": {
     "short": "A person's email address, optional, for the admin's records; the monitor sends no email.",
     "long": "Users page (admins only). An optional contact address an admin may record when adding a person. The monitor never sends email and never puts it in an analytics event.",
     "risk_income": "None.",
-    "source": "frontend/README.md#users-page-306",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Email"]
   },
   "created": {
     "short": "When the person was added to the monitor.",
     "long": "Users page (admins only). The date and time the person's account was created, by an admin or, for the first admin, at the monitor's first start.",
     "risk_income": "None.",
-    "source": "frontend/README.md#users-page-306",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Created"]
   },
   "last sign-in": {
     "short": "When the person last signed in with their password; never if they have not yet.",
     "long": "Users page (admins only). The time of the person's last successful sign-in. A browser that stays signed in refreshes its session without a new sign-in, so this can be older than their last visit.",
     "risk_income": "None: an old or missing sign-in helps spot accounts nobody uses, which an admin may delete.",
-    "source": "frontend/README.md#users-page-306"
+    "source": "frontend/docs/users-and-roles.md#users-page-306"
   },
   "actions": {
     "short": "What an admin can do to a person: reset the password, send a reset link, sign them out everywhere, or delete them.",
     "long": "Users page (admins only). Reset password sets a new one and signs the person out on every browser. Reset link makes a link, valid once for 30 minutes, with which the person chooses their own new password. Sign out everywhere ends every session. Delete removes the person and their analytics events. Each asks for a confirmation first. You cannot delete or reset yourself here.",
     "risk_income": "None on trading: none of these changes a position or an order.",
-    "source": "frontend/README.md#users-page-306",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Actions"]
   },
   "person": {
     "short": "Who did it: the username of the person who signed in, changed a user or acted on a bot.",
     "long": "Audit page (admins only). The username stored on the audit line. For a failed sign-in it is the name that was typed. Lines written by the monitor itself or the admin command line say system or cli.",
     "risk_income": "None: it answers who closed a leg or rebalanced, without shell access.",
-    "source": "frontend/README.md#audit-page-308-249"
+    "source": "frontend/docs/audit.md#audit-page-308-249"
   },
   "target / bot": {
     "short": "What the action was done to: the person whose account changed, or the bot that was asked to close or rebalance.",
     "long": "Audit page (admins only). For a user change it is the person changed. For a manual close or rebalance it is the bot. Empty for sign-ins and sign-outs.",
     "risk_income": "None.",
-    "source": "frontend/README.md#audit-page-308-249"
+    "source": "frontend/docs/audit.md#audit-page-308-249"
   },
   "detail": {
     "short": "Every other field of the audit line, as stored: for example the positions closed and the bot's answer.",
     "long": "Audit page (admins only). The rest of the line, key=value, unchanged: a close's position ids and status, a rebalance's dry run, a role change's from and to, an IP. Never a password, hash or token: the trail holds none.",
     "risk_income": "None.",
-    "source": "frontend/README.md#audit-page-308-249"
+    "source": "frontend/docs/audit.md#audit-page-308-249"
   },
   "premium kept": {
     "short": "The share of a leg's premium the bot would keep if it bought the leg back now.",
@@ -938,92 +938,92 @@
     "short": "A bug report or wish the assistant writes for you to check and send, never sent on its own.",
     "long": "When you report a problem or ask for a change, the assistant first checks it. A request is drafted only when it says what happened, where, and shows the data behind it. Evidence lists that data: a number, a journal entry or a P&L point. Steps say how to see the problem again. You can edit the draft, then send it to a private queue.",
     "risk_income": "None: a request changes nothing in the bot or the account.",
-    "source": "frontend/README.md#assistant-191-e10",
+    "source": "frontend/docs/assistant.md#assistant-191-e10",
     "labels": ["Evidence", "Steps"]
   },
   "active people": {
     "short": "How many different people used the monitor in a period. Each person counts once, however often they came.",
     "long": "Analytics page (admins only). The weekly usage report counts each person once per period, shown for this week, the last 30 days and by role. It keeps a scrambled code per person, never a name or email, and shows counts only. Only people who agreed to analytics are counted.",
     "risk_income": "A count of people, not of money: it says nothing about how the bots trade.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["People", "This week", "Last 30 days", "Value", "Count"]
   },
   "retention": {
     "short": "Of the people who first came in a given week, the share who came back in each of the next four weeks.",
     "long": "Analytics page (admins only). Each row is a group of people whose first visit fell in the same week: the first week. The columns show the share of that group seen again one, two, three and four weeks later. A dash marks a week that has not ended yet.",
     "risk_income": "It measures whether the monitor is useful enough to come back to, not trading results.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["First week"]
   },
   "first answers": {
     "short": "The share of new people who saw the four main answers (holding, income, worst case, last action) in their first visit.",
     "long": "Analytics page (admins only). A new person's first visit counts when it reaches the four answers the Overview gives: what is held, what it earned, the worst case and the last action. The card shows how many did and their share of all first visits that week.",
     "risk_income": "A low share means new people miss the risk figures, not that the bots did anything.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["Found in the first session", "Share"]
   },
   "help used": {
     "short": "How often people opened a tip or played a video, and how many assistant answers they marked as helpful.",
     "long": "Analytics page (admins only). Tips opened and videos played are counts for the week. Helped is the share of the assistant's answers that people marked as helpful, with the counts beside it.",
     "risk_income": "A tip or answer explains the bot; none of them is advice to trade.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["Tips opened", "Videos played", "Helped"]
   },
   "action funnel": {
     "short": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.",
     "long": "Analytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.",
     "risk_income": "A confirmed step sends real orders to a bot; the card only counts them.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["Step"]
   },
   "nps": {
     "short": "Net Promoter Score: the share of people who would recommend the monitor (9–10) minus the share who would not (0–6).",
     "long": "Analytics page (admins only). Once a month the assistant asks how likely a person is to recommend the monitor, from 0 to 10. Promoters answer 9–10, passives 7–8 and detractors 0–6. The score runs from −100 to +100 and is shown only once enough people have answered.",
     "risk_income": "It measures how people feel about the monitor, not how the bots trade.",
-    "source": "frontend/README.md#analytics-page-445",
+    "source": "frontend/docs/analytics.md#analytics-page-445",
     "labels": ["NPS", "Promoters · passives · detractors"]
   },
   "deployment frequency": {
     "short": "How often a new build goes live: healthy mvp deploys a day, or new releases on stable a week.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp it counts each healthy deploy of main; on stable each new release, a tag promoted for the first time. A rolled-back deploy does not count. The chip is the DORA band: elite, high, medium or low.",
     "risk_income": "It measures how the team ships changes to the bots, not how the bots trade.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "lead time": {
     "short": "How long a merged change takes to go live: the median time from a PR's merge to the first deploy that carries it.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp a change usually goes live minutes after its merge. On stable it waits for the 3-day soak on mvp and a release, so days. Below three PRs the chip says NOT YET.",
     "risk_income": "A longer wait on stable is deliberate: a change runs on the test account for days before it reaches production.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "change failure rate": {
     "short": "The share of deploys that failed: rolled back, a deploy-failed issue, a revert or a bug a PR caused.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers: failed deploys of all attempts in the week. Each failure counts once. NO FAILURE means nothing failed and there are too few deploys for a band yet.",
     "risk_income": "A failed deploy on mvp is caught on the test account; on stable it reaches production, so both are shown apart.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "time to restore": {
     "short": "How long a failure lasted: from the failed deploy to the healthy deploy or fix that ended it, median.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. A rollback usually restores within minutes; a bug lasts until its fix goes live. NO FAILURE means there was nothing to restore that week.",
     "risk_income": "While a failure lasts the bot may run an older or a faulty build: a short time to restore limits that.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "release train": {
     "short": "The last 8 days of deploys: a mark for each stable release and a tick for each mvp deploy.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). Opening a PR in What went live puts a dot on each lane. A filled dot is where it went live; a hollow dot at the right edge means it is still waiting there.",
     "risk_income": "It shows when builds changed, which helps to match a change in the bots' behaviour to a deploy.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "soak": {
     "short": "The 3 days a build runs on mvp, the test account, before it may be released to stable.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). A release goes on the newest mvp deploy that is at least 3 days old. Until then a PR's stable column says when its soak ends, then that it waits for the next release.",
     "risk_income": "The soak lets a change prove itself on the test account before it reaches production capital.",
-    "source": "frontend/README.md#delivery-dora-topic-473"
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473"
   },
   "what went live": {
     "short": "Every merged pull request, with its merge time and when it went live on mvp and on stable.",
     "long": "Analytics page, Delivery (DORA) topic (admins only). One row per merged PR, newest first. PR is its number, Epic the product area it belongs to. Merged is when it joined main. The two live columns say when the first deploy that carried it went live. Delivery result is ROLLED BACK, ON STABLE, LIVE ON MVP or NOT LIVE.",
     "risk_income": "It lists changes to the bots' code; a row says nothing about the bots' results.",
-    "source": "frontend/README.md#delivery-dora-topic-473",
+    "source": "frontend/docs/analytics.md#delivery-dora-topic-473",
     "labels": ["PR", "Title", "Epic", "Merged", "Live on mvp", "Live on stable", "Delivery result"]
   }
 }

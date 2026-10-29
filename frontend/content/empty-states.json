@@ -4,7 +4,7 @@
     "loading": "Connecting to the bots. Each chip shows its spot, DVOL and data age after the first answer.",
     "stale": "No update from this bot in the last seconds. The figures shown are the last ones received; the monitor keeps asking.",
     "error": "The bot is not answering (OFFLINE). Nothing on this page updates for it until it answers again.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.gex": {
     "empty": "GEX not computed yet. The bot builds it every 60 s from mainnet open interest; new entries and repairs wait until then.",
@@ -18,14 +18,14 @@
     "loading": "Loading the summary: what the bot holds, its monthly income, the worst case now and its last action.",
     "stale": "The bot stopped answering. The summary shown is from its last answer and is not refreshed.",
     "error": "Summary unavailable: the bot did not answer. No numbers are shown rather than old or partial ones.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.kpi": {
     "empty": "No counts yet. Orders, closes and P&L are counted from the first decision the bot journals.",
     "loading": "Loading the counts from each bot's journal. They are restored when a bot restarts.",
     "stale": "At least one bot is not updating. Its counts are the last ones received.",
     "error": "The counts could not be read. Missing figures show as a dash, never as 0.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.account": {
     "empty": "No account data yet. Deribit's equity and margin appear here after the bot's first account poll.",
@@ -46,14 +46,14 @@
     "loading": "Loading the missing legs and the rule holding each repair.",
     "stale": "The bot stopped updating. The holds shown are the last ones it reported.",
     "error": "Missing legs could not be read. The bot's repair rules keep running without this view.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.others": {
     "empty": "No position outside the bots. Any other position on the account appears here, since it uses margin.",
     "loading": "Loading the account's other positions from Deribit.",
     "stale": "The list is older than the bot's account poll. It shows the last positions Deribit reported.",
     "error": "Other positions unavailable: the list could not be read. This is not the same as none.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.trades": {
     "empty": "No trade yet. Opens and closes appear here from the first fill, with realised P&L from the first close.",
@@ -67,27 +67,27 @@
     "loading": "Loading the bots' recent events from their journals.",
     "stale": "A bot stopped updating. The feed resumes from where it stopped once the bot answers.",
     "error": "Events could not be read. The bot keeps journaling them; they appear here once it answers.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.pnl": {
     "empty": "No P&L history yet. The bot writes a point each report interval; the first point starts this chart.",
     "loading": "Loading the stored P&L history for the selected range.",
     "stale": "No new P&L point lately. The chart ends at the last point a bot reported.",
     "error": "P&L history could not be read. Missing time is left blank, never filled in.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.pnl_coin": {
     "empty": "No P&L history in coin yet. Each bot's chart starts at its first stored point.",
     "loading": "Loading each bot's P&L in its own coin.",
     "stale": "No new point lately. Each chart ends at the last point its bot reported.",
     "error": "P&L in coin could not be read for this bot. Missing time is left blank, never filled in.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   },
   "monitor.panel.orders": {
     "empty": "No working order. Entry and repair orders show here while they rest on Deribit, until filled or cancelled.",
     "loading": "Loading the orders the bots have resting on Deribit.",
     "stale": "A bot stopped updating. Its working orders are the last ones it reported.",
     "error": "Working orders could not be read. Unfilled orders are still cancelled by the bot after the fill timeout.",
-    "source": "frontend/README.md#what-you-see"
+    "source": "frontend/docs/menu-and-pages.md#what-you-see"
   }
 }

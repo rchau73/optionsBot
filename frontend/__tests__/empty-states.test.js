@@ -7,7 +7,7 @@ const fullEntry = {
   loading: "Loading.",
   stale: "Old data.",
   error: "Could not read.",
-  source: "frontend/README.md#what-you-see",
+  source: "frontend/docs/menu-and-pages.md#what-you-see",
 };
 
 describe("empty states (#298)", () => {
@@ -77,13 +77,15 @@ describe("empty states (#298)", () => {
   test("broken source: an anchor not in the document, or another document, fails naming the entry", () => {
     const bad = {
       "monitor.ok": fullEntry,
-      "monitor.gone": { ...fullEntry, source: "frontend/README.md#no-such-heading" },
+      "monitor.gone": { ...fullEntry, source: "frontend/docs/menu-and-pages.md#no-such-heading" },
       "monitor.elsewhere": { ...fullEntry, source: "README.md#what-you-see" },
+      "monitor.readme": { ...fullEntry, source: "frontend/README.md#what-you-see" },
       "monitor.none": { ...fullEntry, source: undefined },
     };
     expect(brokenSources(bad)).toEqual([
-      "monitor.gone: frontend/README.md#no-such-heading",
+      "monitor.gone: frontend/docs/menu-and-pages.md#no-such-heading",
       "monitor.elsewhere: README.md#what-you-see",
+      "monitor.readme: frontend/README.md#what-you-see",
       "monitor.none: undefined",
     ]);
   });
