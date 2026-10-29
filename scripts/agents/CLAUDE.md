@@ -37,6 +37,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the Dev agents (`dev_agent.sh`, up to `DEV_PARALLEL` 1 at once, developer skill in Agent mode) each implement the top free Ready card
     (Priority, then oldest; never an epic, an `agent:pm` ticket, a card another instance holds, or one that must wait — `pm_board.py wait`)
     in a worktree with edit/test/commit permissions only, the script re-runs all checks and opens the PR (`agent:dev`) or moves the card to Blocked with questions;
+    - a user-visible change is done only with its monitor-guide section, a golden question and `go run ./cmd/helpindex`; the Reviewer blocks one without them (#483, both prompts);
     - a PR that merged while it fixed review findings (#478, PR #474): the new commits move to `agent/issue-<n>-r<k>` from main (`rescue_commits.sh`, tested on a throwaway clone in `test_rescue.py`)
       and a new PR `Refs #n`, linked on the issue; closed unmerged → Blocked with a question; "pushed changes" only once the PR head on GitHub is the pushed commit;
     - `lib.sh open_dev_pr` finds an issue's open PR on either branch form (Dev, Reviewer; the gate strips `-r<k>`);

@@ -51,8 +51,9 @@ export function menuItems(pathname, { bot = null } = {}) {
  * The admin pages of the person's menu (UserMenu.jsx), in order: shown to
  * admins only, and only as links — each page's route re-checks the role.
  * Users (#306), Audit (#308), Analytics (#445). href first: the monitor
- * guide's test reads `{ key, label }` objects as menu-bar pages, and these
- * are not in the guide (frontend/content/monitor-guide.md).
+ * guide's test reads `{ key, label }` objects as menu-bar pages (a ## section
+ * each), and these as admin pages (a `<!-- guide: page:<href> -->` marker in
+ * frontend/content/monitor-guide.md, #483).
  */
 export const ADMIN_PAGES = [
   { href: "/admin/users", key: "users", label: "Users" },

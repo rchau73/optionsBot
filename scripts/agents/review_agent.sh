@@ -147,6 +147,8 @@ file you leave unread makes the review incomplete, never clean. Fill \"checked\"
 entry per file of the index, as .agent-review.md says.
 The worktree is checked out at the PR head; the developer skill's checklists and CLAUDE.md apply.
 Verify every finding against the code before you report it. Do not edit files, commit, push or call GitHub.
+A change a person can see or do in the monitor without its section in frontend/content/monitor-guide.md or without
+a golden question in docs/product/assistant/golden.jsonl is a blocking finding (#483).
 End your answer with the exact REVIEW block the skill defines."
 
 allowed=( "Read" "Grep" "Glob" "Skill"

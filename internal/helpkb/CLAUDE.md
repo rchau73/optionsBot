@@ -6,7 +6,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - OptionStrategy.md (split on headings, anchors as GitHub makes them), `docs/parameters.md` (the settings reference, source `parameters.md#<anchor>`)
     and `frontend/content/monitor-guide.md` (the user-facing Monitor guide, one section per menu page, source `monitor-guide.md#<anchor>`, #418),
   - every `frontend/content/glossary.json` term and every sentence of `api.Catalogue()` (`internal/api/catalogue.go`: the plain-words catalogue rendered through `ExplainEvent`/`ExplainTrade`, keys `<event>:<value>`)
-  - as passages ≤ `MaxChunkChars` (1,200; a long table split between rows with its header, a list between items)
+  - as passages ≤ `MaxChunkChars` (1,200; a long table split between rows with its header, a list between items; a line that is only an HTML comment, such as the guide's `<!-- guide: … -->` markers, is dropped)
     with `id` (source/ordinal), `source` (`OptionStrategy.md#<anchor>` | `glossary:<term>` | `explain:<key>`), `title`, `text` and the source file's git blob hash → `frontend/content/help-index.json`.
   `tests/helpindex_test.go` fails until `go run ./cmd/helpindex` is re-run after any of the three sources changes,
   and runs the glossary's no-return-promises regex over every passage (a promise word that denies one is allowed by its exact phrase, `negatedPromises`).
