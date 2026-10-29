@@ -37,6 +37,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the Dev agents (`dev_agent.sh`, up to `DEV_PARALLEL` 1 at once, developer skill in Agent mode) each implement the top free Ready card
     (Priority, then oldest; never an epic, an `agent:pm` ticket, a card another instance holds, or one that must wait — `pm_board.py wait`)
     in a worktree with edit/test/commit permissions only, the script re-runs all checks and opens the PR (`agent:dev`) or moves the card to Blocked with questions;
+    - a user-visible change is done only with its monitor-guide section, a golden question and `go run ./cmd/helpindex`; the Reviewer blocks one without them (#483, both prompts);
   - the Reviewer agents (`review_agent.sh`, up to `REVIEW_PARALLEL` 1, developer skill in Review mode, read-only) reviews each new PR commit, verifies every finding, posts one comment review
     and sends blocking findings back to Ready (≤ 2 fix rounds, then `agent:needs-human`; clean → `agent:reviewed`);
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),

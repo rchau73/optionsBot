@@ -111,6 +111,9 @@ You are already in the worktree: run each command directly (no cd prefix); only 
 allowed, so a line mixing in another command is refused whole. Do not push, merge, deploy or call GitHub.
 When the issue is a bug and you found the merged PR that caused it, put a line 'Caused by #<PR number>' in the
 PR-BODY's Plan: the script labels the issue regression (the delivery report's change failure rate, #470).
+A change a person can see or do in the monitor is done only with its section in frontend/content/monitor-guide.md,
+a golden question in docs/product/assistant/golden.jsonl and go run ./cmd/helpindex (#483); answer the PR
+template's 'User-facing?' line in the PR body.
 End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
