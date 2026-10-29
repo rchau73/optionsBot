@@ -11,4 +11,7 @@ Notable files:
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
 - `docs_line_length_test.go` (#463): no prose line over 400 characters in a tracked `*.md` (tables, code, link targets exempt); files that still have some are listed with a reason and a count that can only go down.
   `scripts/docs/reflow.py write FILE` puts one sentence per line, `compare REF FILE` lists every sentence of the old file missing from the new one (empty = nothing lost).
+- `agentic_docs_test.go` (#461): `AGENTIC.md` is the overview and `docs/agents/*.md` one file per agent;
+  every link and quoted section reference to them resolves, the overview indexes every agent file, no prose line over 400 characters in them
+  (the one-off "nothing lost" check was retired after it merged).
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).

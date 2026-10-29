@@ -1,10 +1,10 @@
 # scripts/agents
 
-Folder notes for `CLAUDE.md`: the agentic workflow (`AGENTIC.md` is the full description).
+Folder notes for `CLAUDE.md`: the agentic workflow (`AGENTIC.md` is the overview, one file per agent in `docs/agents/`).
 
 ```bash
 go run ./cmd/usage -events data/monitor/events.jsonl -week 2026-W43   # monitor usage and cohort report from the analytics events (#295): active users, retention, panels, first answers, help, funnels, trust — counts only, no user/session id → data/monitor/reports/<week>.md|json (the JSON carries the week's drop check as `drops` and the NPS reasons by score, `why_best`/`why_improve`, for the monitor's admin Analytics page, #445); `-alert` also prints that check (a `DROPS {json}` line, #341) (README "Usage report")
-go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.json -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -promotions ~/dev/go/optionsBot-env/history/promotions.tsv -out ~/dev/go/optionsBot-env/history/delivery   # delivery report (#470, pure internal/delivery, files only — dora.sh dumps git/gh daily): DORA metrics per ISO week × mvp/stable with bands ("too few samples" under 3; "not recorded" before deploys.tsv began, never 0) and every PR's merge, mvp-live and stable-live time and release → dora.json + <week>.md; failures = rollback lines, "[E6] mvp deploy failed" issues, Revert PRs, `regression` bugs with "Caused by #N"; malformed/off-main lines reported, never counted (AGENTIC.md "Delivery report (DORA)")
+go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.json -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -promotions ~/dev/go/optionsBot-env/history/promotions.tsv -out ~/dev/go/optionsBot-env/history/delivery   # delivery report (#470, pure internal/delivery, files only — dora.sh dumps git/gh daily): DORA metrics per ISO week × mvp/stable with bands ("too few samples" under 3; "not recorded" before deploys.tsv began, never 0) and every PR's merge, mvp-live and stable-live time and release → dora.json + <week>.md; failures = rollback lines, "[E6] mvp deploy failed" issues, Revert PRs, `regression` bugs with "Caused by #N"; malformed/off-main lines reported, never counted (docs/agents/dora.md "Delivery report (DORA)")
 ```
 
 - **Agentic workflow** (`AGENTIC.md`, `scripts/agents/`):
@@ -37,7 +37,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the Dev agents (`dev_agent.sh`, up to `DEV_PARALLEL` 1 at once, developer skill in Agent mode) each implement the top free Ready card
     (Priority, then oldest; never an epic, an `agent:pm` ticket, a card another instance holds, or one that must wait — `pm_board.py wait`)
     in a worktree with edit/test/commit permissions only, the script runs the checks the change touches and opens the PR (`agent:dev`, always a draft) or moves the card to Blocked with questions;
-    - CI runs every suite (#472, AGENTIC.md "Check failures go back to the Dev agent"; pure rules in `checkfail.py`, `test_checkfail.py`):
+    - CI runs every suite (#472, docs/agents/dev.md "Check failures go back to the Dev agent"; pure rules in `checkfail.py`, `test_checkfail.py`):
       the gate marks the draft ready once CI is green, the Reviewer starts only on a ready PR with a green head (`pr_gate.py green`);
     - a check failure (the script's, or CI red on an In review head) → Ready with `needs-fix` and the failing log tails, read first by the next run; the second → Blocked, `agent:needs-human`
       (count: `<!-- dev:check-fail n=… -->` on the issue since the last `<!-- dev:blocked -->`; `lib.sh check_failed`);
@@ -67,7 +67,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - stable moves only by `scripts/promote.sh` (3-day soak, no open `sme:not-fixed`
     — the SME agent adds it when it reopens a not-fixed issue and verifies fixes on mvp's data, `data/sme/<date>/mvp/`),
     run by a person or by the automatic release below.
-- Automatic release (#471, AGENTIC.md "Automatic release"):
+- Automatic release (#471, docs/agents/release.md "Automatic release"):
   - `release.sh` (from the tick, only after a healthy deploy step; rules in pure `release.py`, no Claude) runs `promote.sh <next patch> --commit <sha> --yes` from the mvp clone:
     - weekly: the first tick of an ISO week (`data/agents/release/<week>.done`) releases the newest healthy mvp deploy ≥ 3 days old that stable does not contain;
       nothing to release → a one-line note on the E6 epic saying why;
@@ -76,50 +76,50 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - `RELEASE_DRY_RUN=1` decides and prints only; `AUTO_RELEASE=0` in `agents.env` turns it off; ledger agent `release`.
   - a person (an admin) escalates: `promote.sh <tag> --commit <sha> --escalate "<reason>"` skips the soak — still a commit that ran in mvp, still no `sme:not-fixed`;
   - every healthy release is a `stable … release <tag> <trigger> <who> <why>` line in `deploys.tsv` (trigger `manual | weekly | hotfix | escalation`, who = `PROMOTE_BY` else the git user, `agent:release` for the agent).
-- Run ledger (#206, AGENTIC.md "Run ledger"):
+- Run ledger (#206, docs/agents/run-ledger.md "Run ledger"):
   - every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-hunt, usage-report and backup run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `runs.py --issue N | --agent | --date | --open` queries it;
   - each tick `sweep_runs.sh` (`runs.py --sweep`, #291) closes open runs whose pid is gone as `abandoned` and notifies once of a live run past its agent's `TIME_LIMIT_MIN` (never kills).
-- Stuck cards (#329, AGENTIC.md "Stuck cards"):
+- Stuck cards (#329, docs/agents/stuck-cards.md "Stuck cards"):
   - `stuck.sh` (tick, at most every 6 h; pure `stuck.py`) comments once on a card In progress > 6 h or In review > 24 h with no open run and no waiting label
     — a pause, budget or recent limit is listed as the reason instead; moves nothing.
-- Weekly agent metrics (#180, AGENTIC.md "Agent metrics"):
+- Weekly agent metrics (#180, docs/agents/metrics.md "Agent metrics"):
   - `metrics.sh` (from the tick, first tick of a Monday UTC) → `data/agents/metrics/<week>.md` and a comment on the E6 epic;
   - pure `metrics.py` reads stages from the agents' comment markers (a changed comment wording needs its marker there too),
     plus the Runs table from the ledger (#290), what a person overruled (#292) and the stuck cards.
-- Weekly evidence (#244, AGENTIC.md "Weekly evidence report"):
+- Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;
   - it also runs the direction trial's scorecard (`cmd/evidence -compare-direction`, #440: last week plus every week since 2026-W43 without one)
     and adds a "Direction trial" block (% and counts: replay net/drawdown/sheds, live sheds, live − replay, the brief's counters), naming the first week with a GEX shed on the comment's first line;
   - `agent:needs-human` decision tickets (first shed, early stop, review due — each kind once ever, by title) go to Triage, never a config change.
-- Nightly flaky-test hunt (#248, AGENTIC.md "Nightly flaky-test hunt"):
+- Nightly flaky-test hunt (#248, docs/agents/flaky.md "Nightly flaky-test hunt"):
   - `flaky.sh` (from the tick, first tick of a UTC night from 03:00, `data/agents/flaky/<date>.done`, no Claude)
     runs `go test ./tests/... -race -count=5 -json` and `npm test -- --ci` ×3 on a clean `origin/main` worktree within 30 min (a time-out files nothing)
     and files one `bug` `[E6] Flaky test: <name>` in Triage per test that both passed and failed
     (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged).
-- Weekly usage report (#340, #341, #252, AGENTIC.md "Weekly usage report"):
+- Weekly usage report (#340, #341, #252, docs/agents/usage.md "Weekly usage report"):
   - `usage.sh` (from the tick, first tick of a Monday UTC, `data/agents/usage/<week>.done`, no Claude) runs `cmd/usage -alert` in each env with a non-empty `data/monitor/events.jsonl`
     (none with events in the week → nothing posted, no marker, re-looked at hourly),
   - files one `bug` `[E13] Engagement drop: <metrics> <week>` in Triage when pure `usage.Drops`
     (`internal/usage/drops.go`: active users or help used ≥ 30 % under the 3 weeks' mean, a funnel ≥ 20 points under, a base under 10 = too few to judge, a week without events left out)
     finds one (dedup by week as `flaky.py`),
   - and posts `usage_week.py`'s summary on the E13 epic — named figures only, so no user, session or amount field; percentages only for a live env.
-- Daily delivery report (#470, AGENTIC.md "Delivery report (DORA)"):
+- Daily delivery report (#470, docs/agents/dora.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);
   - `promote.sh` appends `stable … release <tag> <trigger> <who> <why>` / `stable … rollback <tag>` lines to `deploys.tsv` (mvp readers skip them; `internal/delivery` ignores the fields after the tag);
   - the `regression` label + a "Caused by #N" line (Dev: in its PR body, `dev_agent.sh` labels the issue; SME: a finding's `caused_by`) feed its change failure rate;
   - ledger agent `dora`.
-- Nightly backup (#328, AGENTIC.md "Nightly backup"):
+- Nightly backup (#328, docs/agents/backup.md "Nightly backup"):
   - `backup_data.sh` (from the tick, first tick after 00:00 UTC, `data/agents/backup/<date>.done`, retried once) copies each env × bot's `orders.log`, P&L/regime/direction histories and `data/archive/`
     and each env's monitor request queue (`data/monitor/requests*.jsonl` → `<date>/<env>/monitor/`, #409) (named files only, never `.env`) to `<envs>/history/backups/<date>/<env>/<bot>/`, keeps 14 days,
     and checks each copy with `cmd/backupcheck` (`internal/backup.Check`: `orders.ReplayFile` decodes it, no fewer events than the previous good copy's `check.json`);
   - a failure notifies, keeps `<date>.failed` and prunes nothing; ledger agent `backup`.
-- Assistant requests (#410, AGENTIC.md "Assistant requests"):
+- Assistant requests (#410, docs/agents/requests.md "Assistant requests"):
   - `requests.sh` (each tick; exits at once unless a request in some env's `data/monitor/requests.jsonl` has no status line, or a filed one is open
     — that sweep at most hourly; rules in pure `requests.py`, files only)
   - marks a filed request `fixed`/`not_planned` when its issue closes, `filed` when an issue already carries its `<!-- assistant-request: <env>/R-NNNN -->` marker (never filed twice),
@@ -129,7 +129,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     accept → a `bug`/`enhancement` issue `[E?] …` in Triage, redacted again, with the request id and "From the in-product assistant";
   - every verdict appends `{id, status, note, issue, issue_url, ts}` to that env's `requests_status.jsonl` (My requests; `not_planned` added to `STATUSES`);
   - no valid verdict → retried, 3 runs at most (`requests_attempts.json`); ledger agent `requests`.
-- Token savers (2026-10-27, AGENTIC.md):
+- Token savers (2026-10-27, AGENTIC.md "Parallel runs and limits"):
   - the Dev pick order skips a card whose epic another instance is building (`pm_board.py ready`);
     except `blocker` cards: up to 3 of one epic at once (`BLOCKER_PARALLEL`, #459), and while any is open only blocker cards are picked;
     with none open, normal picking and one per epic again;
@@ -137,7 +137,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - the agent and the script run only the tests the change touches, CI every suite (#472).
 - Parallel runs:
   - `tick.sh` (every 6 min) starts them in the background, within the person's budget `<envs>/agents.env`
-    (pause, agent hours, Claude runs per day, parallelism 1 each by default, models — `limit_lib.sh` `budget_reason`, AGENTIC.md "The budget"; 2026-10-23: the agents had used the person's whole Claude plan);
+    (pause, agent hours, Claude runs per day, parallelism 1 each by default, models — `limit_lib.sh` `budget_reason`, AGENTIC.md "Parallel runs and limits"; 2026-10-23: the agents had used the person's whole Claude plan);
   - each claims its card (`lib.sh claim`, pid-held), git in the shared clone goes through `git_locked`;
   - after a usage/rate limit (`note_limit`, `LIMIT_PATTERN` in `limit_lib.sh`; `note_stop` also counts a run that fails in under 60 s with no answer block, so a limit never labels a card `agent:needs-human`)
     no new Claude run for 30 min, then one at a time for an hour (`parallel_max`);

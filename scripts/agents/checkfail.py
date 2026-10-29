@@ -63,7 +63,7 @@ AGGREGATOR = "Lint, test & coverage"  # ci.yml's required check: fails when a jo
 # outside frontend/ always run the Go tests.
 GO_READS = (
     ".claude/skills/", "AGENTIC.md", "OptionStrategy.md", "README.md",
-    "docs/account-isolation.md", "docs/ai-analysis.md", "docs/architecture.md",
+    "docs/account-isolation.md", "docs/agents/", "docs/ai-analysis.md", "docs/architecture.md",
     "docs/direction-trial.md", "docs/exchange-adapter.md", "docs/exchanges/", "docs/legal/",
     "docs/operations.md", "docs/parameters.md", "docs/product/", "docs/usability/",
     "frontend/README.md", "frontend/app/api/", "frontend/content/", "frontend/docs/",

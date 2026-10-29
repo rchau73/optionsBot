@@ -441,7 +441,7 @@ Sections, each naming its source:
   A journal or history that cannot be read makes the part say `not measured` and why; without `deploys.tsv` the startups come from the journal alone (commits unnamed, a restart into a flat book not counted), which the section says.
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account.
-Details: AGENTIC.md "Weekly evidence report".
+Details: docs/agents/evidence.md "Weekly evidence report".
 
 ### Track record and trend
 
@@ -512,7 +512,7 @@ The thresholds are fixed in code; `-alert-count-pct`, `-alert-funnel-pts`, `-ale
 go run ./cmd/usage -week 2026-W43 -alert   # … then "drop: active_users: 20, mean of the base weeks 40.0 (-50 %)" and DROPS {…}
 ```
 
-**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — AGENTIC.md "Weekly usage report".
+**Every Monday by itself** (#340): `scripts/agents/usage.sh`, from the agents' tick, runs it with `-alert` in each environment that has an events file, files one `[E13] Engagement drop: <metrics> <week>` issue in Triage on a drop and posts a summary (counts and percentages, percentages only for a live account) on the E13 epic — docs/agents/usage.md "Weekly usage report".
 
 **Assistant quality review** (#438): `cmd/usage` stays counts-only.
 The question text the assistant could not answer, or that people flagged, is reviewed separately from the monitor's private review log:

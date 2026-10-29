@@ -140,7 +140,7 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 
 ## 7. Engagement-drop alert ("are users stopping?")
 
-`cmd/usage -alert` (#341, #252) compares each week with the 3 weeks before it. `scripts/agents/usage.sh` runs it every Monday and files one `[E13] Engagement drop: <metrics> <week>` issue in Triage when a key number falls (AGENTIC.md "Weekly usage report"). The alert rules are fixed in `internal/usage/drops.go`:
+`cmd/usage -alert` (#341, #252) compares each week with the 3 weeks before it. `scripts/agents/usage.sh` runs it every Monday and files one `[E13] Engagement drop: <metrics> <week>` issue in Triage when a key number falls (docs/agents/usage.md "Weekly usage report"). The alert rules are fixed in `internal/usage/drops.go`:
 
 | Metric | From | Drop when |
 |---|---|---|
