@@ -32,10 +32,9 @@ var docLongLineExceptions = map[string]struct {
 	max    int
 	reason string
 }{
-	"README.md":            {19, reasonOneSentence},
-	"docs/operations.md":   {8, reasonOneSentence},
-	"docs/architecture.md": {5, reasonOneSentence},
-	"AGENTIC.md":           {40, reasonAgentFile},
+	"README.md":                                                    {19, reasonOneSentence},
+	"docs/operations.md":                                           {8, reasonOneSentence},
+	"docs/architecture.md":                                         {5, reasonOneSentence},
 	".claude/skills/product-manager/SKILL.md":                      {17, reasonAgentFile},
 	".claude/skills/developer/SKILL.md":                            {15, reasonAgentFile},
 	".claude/skills/option-bot-specialist/SKILL.md":                {8, reasonAgentFile},

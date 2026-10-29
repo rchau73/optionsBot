@@ -75,7 +75,7 @@ scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the
 scripts/promote.sh v0.3.2 --commit 9c58ea6 --escalate "stop-loss bug on BTC"   # admin escalation: no soak, the reason is audited
 ```
 
-**Automatic release** (#471, [AGENTIC.md](../AGENTIC.md#automatic-release)): the agents' `release.sh` runs `promote.sh` from the mvp clone with the next patch version — weekly (first tick of a Monday UTC) on the build the first command above would pick, and early for a merged `bug` + `release:hotfix` fix once it has been live 1 h on mvp.
+**Automatic release** (#471, [docs/agents/release.md](agents/release.md#automatic-release)): the agents' `release.sh` runs `promote.sh` from the mvp clone with the next patch version — weekly (first tick of a Monday UTC) on the build the first command above would pick, and early for a merged `bug` + `release:hotfix` fix once it has been live 1 h on mvp.
 Nothing to release → a one-line note on the E6 epic.
 `AUTO_RELEASE=0` in `agents.env` stops it; a person can still promote by hand.
 An escalation (`--escalate "<reason>"`, with `--commit`) skips only the soak: the commit must have run in mvp and no `sme:not-fixed` may be open.
@@ -90,7 +90,7 @@ An existing tag (a rollback, or one made by hand) is used as it is.
 
 A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work).
 Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes.
-**If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable); since #470 each promotion also appends a `stable` line to `deploys.tsv` — `<time> stable <commit> release <tag> <trigger> <who> <why>` when healthy (#471: trigger `manual`, `weekly`, `hotfix` or `escalation`), `<time> stable <commit> rollback <prev tag>` when a failed promotion went back — for the delivery report (`cmd/dora`, [AGENTIC.md](../AGENTIC.md#delivery-report-dora)).
+**If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable); since #470 each promotion also appends a `stable` line to `deploys.tsv` — `<time> stable <commit> release <tag> <trigger> <who> <why>` when healthy (#471: trigger `manual`, `weekly`, `hotfix` or `escalation`), `<time> stable <commit> rollback <prev tag>` when a failed promotion went back — for the delivery report (`cmd/dora`, [docs/agents/dora.md](agents/dora.md#delivery-report-dora)).
 The mvp soak reads `mvp` lines only.
 Promotion is testnet-only: a live stable is promoted by hand.
 
@@ -141,7 +141,7 @@ go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mv
 
 It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them.
 The amounts stay in `data/` — never paste them into an issue of the public repository.
-Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; AGENTIC.md "Weekly evidence report").
+Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; docs/agents/evidence.md "Weekly evidence report").
 The commands above remain for a re-run by hand.
 
 `restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted.

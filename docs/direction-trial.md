@@ -54,6 +54,6 @@ Stop the trial early and file the decision ticket at once if, over any 3 consecu
 
 ## What happens at the review
 
-1. The scorecard of each week of the span is already there: `scripts/agents/evidence.sh` runs it every Monday for the week before (and back-fills the weeks since 2026-W43), posts its counters on the E2 epic and files the `agent:needs-human` ticket for the first GEX shed, the kill rule and the review (#440, AGENTIC.md "Weekly evidence report"). By hand: `-compare-direction -week`.
+1. The scorecard of each week of the span is already there: `scripts/agents/evidence.sh` runs it every Monday for the week before (and back-fills the weeks since 2026-W43), posts its counters on the E2 epic and files the `agent:needs-human` ticket for the first GEX shed, the kill rule and the review (#440, docs/agents/evidence.md "Weekly evidence report"). By hand: `-compare-direction -week`.
 2. Fill the outcome above from the decisive rows, with d, noise and each week listed.
 3. File one ticket marked `agent:needs-human` with the outcome and its numbers. The product owner decides whether to keep `bias` on stable, move it to `sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges. It is never made by an agent.
