@@ -192,6 +192,20 @@ describe("the request", () => {
     expect(body).toMatchObject({ remaining: 0, retry_after: Number(res.headers.get("retry-after")) });
   });
 
+  // #534: the one more try of a rejected answer is a model call, counted in the hour's budget.
+  test("a retried answer counts twice; with one question left it is not retried", async () => {
+    const m = fakeModel({ text: "The stop-loss fires at 7× the premium.", citations: [SRC] });
+    setAssistantModel(m);
+    const body = await (await askQ({ question: "what is a stop-loss" })).json();
+    expect(body).toMatchObject({ outcome: "rejected", answer: FALLBACK_REPLY, remaining: QUESTIONS_PER_HOUR - 2 });
+    expect(m.ask).toHaveBeenCalledTimes(2);
+    for (let i = 2; i < QUESTIONS_PER_HOUR - 1; i++) await askQ({ question: "zxqv wplm" });
+    m.ask.mockClear();
+    const last = await (await askQ({ question: "what is a stop-loss" })).json();
+    expect(last).toMatchObject({ outcome: "rejected", remaining: 0 });
+    expect(m.ask).toHaveBeenCalledTimes(1);
+  });
+
   test("GET answers 503 while the assistant is off and 401 without a session", async () => {
     setAssistantModel(null);
     const res = await state();
@@ -223,7 +237,8 @@ describe("the request", () => {
     expect(body.citations).toEqual([{ id: "journal:btc/7", source: "journal:btc", title: "btc journal: closed at 2026-10-01T10:00:00Z" }]);
     const own = why.calls[0].passages.find((p) => p.id === "journal:btc/7");
     expect(own.text).toBe(
-      "The bot bought back the put: its stop-loss fired at 2× the premium. Rule: stop_loss. Detail: mark 0.024 ≥ 2.0 × premium 0.012. " +
+      "The bot bought back the put: its stop-loss fired at 2× the premium. " +
+        "Time: 2026-10-01 07:00:00 BRT (2026-10-01 10:00:00 UTC). Rule: stop_loss. Detail: mark 0.024 ≥ 2.0 × premium 0.012. " +
         "Market then: spot 61000, DVOL 55.2, GEX regime negative.",
     );
     expect(logged()[0].sources).toEqual(expect.arrayContaining(["journal:btc/7", "journal:btc/6"]));

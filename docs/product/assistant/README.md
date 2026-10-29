@@ -49,6 +49,9 @@ Minimum counts: 15 `how_it_works`, 10 `parameter` (one per tuned setting of CLAU
 | `ungrounded_number` | a number, percentage or date that is in none of the cited passages (0.30 = 30 %) |
 | `advice` | "you should", "I recommend", "increase your…", "good time to sell", an imperative opening a sentence |
 | `forecast` | "will earn", "you can expect", "expected return", "will go up", "guaranteed" (not "not guaranteed"), "% a month" |
+| `points_to_document` | "see the guide", "read OptionStrategy.md", "check section 9", "you can find it in the glossary": the assistant answers, never sends the person to a document (#534) |
+
+A plain answer rejected only for `ungrounded_number`, `unknown_citation` or `points_to_document` is asked once more, with what failed; the fallback is shown only when the second answer is rejected too (contract §5).
 
 The phrase lists and the three canonical replies are in `internal/assistant/guard/phrases.go`. Counsel's answer to L11 changes those lists, not the design. Not wired to anything yet.
 
@@ -63,7 +66,7 @@ go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   
 **Metrics** (questions asked Monday 00:00 UTC to the next Monday):
 
 - answers by kind (`answered`, `dont_know`, `refused`, `no_citation`, `rejected` = the fallback reply, `model_error`, `needs_info`, `draft`, `other`), and the share `answered`;
-- the guard reasons the answers hit (`no_citation`, `unknown_citation`, `ungrounded_number`, `advice`, `forecast`), each answer once per reason;
+- the guard reasons the answers hit (`no_citation`, `unknown_citation`, `ungrounded_number`, `advice`, `forecast`, `points_to_document`), each answer once per reason;
 - the share flagged, and the flag rate of each kind. A flag placed later still counts for its answer's week. A flag placed this week on an older answer puts that answer in this week's review list (`late`);
 - unreadable log lines, counted and skipped.
 

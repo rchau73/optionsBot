@@ -8,6 +8,7 @@ import {
   REASON_ADVICE,
   REASON_FORECAST,
   REASON_NO_CITATION,
+  REASON_POINTS_TO_DOCUMENT,
   REASON_UNGROUNDED_NUMBER,
   REASON_UNKNOWN_CITATION,
   check,
@@ -71,10 +72,24 @@ test.each([
   ["forecast: promise", "Selling strangles is risk-free.", [srcIdea], REASON_FORECAST],
   ["not a forecast: a denied guarantee", "Stop-loss levels are triggers, not guaranteed prices.", [srcLossB], ""],
   ["not a forecast: the bot will buy back", "The bot will buy back the leg at market.", [srcIdea], ""],
+  // #534: the assistant answers, never sends the person to a document.
+  ["points to a document: see the guide", "The bot sells a call and a put: see the guide, OptionStrategy.md.", [srcIdea], REASON_POINTS_TO_DOCUMENT],
+  ["points to a document: read a file", "Read OptionStrategy.md for the details.", [srcIdea], REASON_POINTS_TO_DOCUMENT],
+  ["points to a document: check a section", "The bot sells a call and a put. Check section 9.", [srcIdea], REASON_POINTS_TO_DOCUMENT],
+  ["points to a document: you can find", "You can find more in the glossary.", [srcIdea], REASON_POINTS_TO_DOCUMENT],
+  ["not a pointer: the bot checks the help's rule", "The bot checks the spread before a stop-loss.", [srcIdea], ""],
+  ["not a pointer: the help explains", "The help explains that the bot sells a call and a put.", [srcIdea], ""],
 ])("%s", (_name, text, citations, reason) => {
   const v = verdict(text, ...citations);
   if (reason === "") expect(v.details).toEqual([]);
   else expect(v.reasons).toContain(reason);
+});
+
+test("Scenario (#534): no canned reply names a document; \"see the guide, OptionStrategy.md\" is points_to_document", () => {
+  for (const reply of [DONT_KNOW, REFUSAL, FALLBACK_REPLY]) expect(reply).not.toMatch(/see |read |guide|\.md|section|document/i);
+  const v = verdict("see the guide, OptionStrategy.md", srcIdea);
+  expect(v.reasons).toContain(REASON_POINTS_TO_DOCUMENT);
+  expect(v.details).toContain("points_to_document: see the guide");
 });
 
 test("an unknown citation is named", () => {

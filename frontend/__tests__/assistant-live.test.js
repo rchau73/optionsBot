@@ -103,7 +103,7 @@ describe("journal passages carry the market at each fill", () => {
   test("the 21 Oct repair fill: spot, DVOL, IV percentile and regime from its line", () => {
     expect(byId(journal(), "journal:btc/3602")).toMatchObject({
       text:
-        "Sold the option again to complete its strangle (repair) " +
+        "Sold the option again to complete its strangle (repair) Instrument BTC-27NOV26-75000-P. " +
         "Market recorded at 21 Oct 14:30 UTC: spot 84,498, DVOL 37.2, IV percentile 15 %, regime POSITIVE/PINNING.",
       trade: true,
       held: true,

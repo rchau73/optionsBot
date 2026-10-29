@@ -13,9 +13,8 @@ export const REFUSAL =
   "I can't recommend what to do with your money, and I don't forecast prices or returns. " +
   "I can explain how a rule works and what it did in your account.";
 
-/** Replaces an answer the guard rejected. */
-export const FALLBACK_REPLY =
-  "I can't answer that. The help explains how the bot works and why it acted: see the guide, OptionStrategy.md.";
+/** Replaces an answer the guard rejected (twice, #534); it names no document. */
+export const FALLBACK_REPLY = "I couldn't confirm an answer from the bot's records and the help, so I won't guess.";
 
 /**
  * Shown with every answer (L12, PRD §11): the English of avisos.md's fixed
@@ -60,6 +59,12 @@ export const FORECAST_PATTERNS = [
   String.raw`\balways (profit|win|earn|makes? money)\b`,
   String.raw`\bsafe income\b`,
   String.raw`%\s*(a|per|each) (day|week|month|year)\b`,
+];
+
+/** Sending the person to a document, guide or section instead of answering (#534: the assistant reads the help and answers). */
+export const DOCUMENT_POINTER_PATTERNS = [
+  String.raw`(?:^|[.!?:;,(]\s*|\n\s*|\band\s+)(?:please\s+)?(see|read|check|open|consult|refer to|look at|visit|go to)\s+(?:[\w'’-]+\s+){0,3}?(?:(guide|document|documentation|docs|section|chapter|glossary|manual|help|faq|[\w-]+\.md)\b|§)`,
+  String.raw`\byou (can|could|may|might|will)(?: also)? (find|see|read|check|open|consult|look at|look up)\s+(?:[\w'’-]+\s+){0,3}?(?:(guide|document|documentation|docs|section|chapter|glossary|manual|help|faq|[\w-]+\.md)\b|§)`,
 ];
 
 /** Denials of a promise ("not a guaranteed price"), blanked before the forecast patterns run. */

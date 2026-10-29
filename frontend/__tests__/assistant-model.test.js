@@ -27,6 +27,21 @@ test("the request: sources with their ids, the question, a JSON answer", () => {
   expect(req.output_config.format.schema.required).toEqual(["answer", "citations", "report"]);
 });
 
+test("the prompt (#534): answer from the sources in plain words, never send the person to a document", () => {
+  expect(SYSTEM_PROMPT).toMatch(/answer in your own plain words/i);
+  expect(SYSTEM_PROMPT).toMatch(/never tell the person to read, see, open or check a document, guide/i);
+});
+
+test("a retry (#534): the rejected answer as the model's turn, then what failed", () => {
+  const retry = { text: "It closed at 72,000.", citations: ["glossary:delta/1"], feedback: "72,000 isn't in the sources you cited." };
+  const req = buildRequest({ question: "what is delta?", passages, retry });
+  expect(req.messages).toHaveLength(3);
+  expect(req.messages[1]).toEqual({ role: "assistant", content: JSON.stringify({ answer: retry.text, citations: retry.citations, report: false }) });
+  expect(req.messages[2].role).toBe("user");
+  expect(req.messages[2].content).toContain(retry.feedback);
+  expect(buildRequest({ question: "what is delta?", passages }).messages).toHaveLength(1);
+});
+
 test("the request check (#409): its own prompt and the verdict schema", () => {
   const req = buildRequest({ question: "the chart is wrong", passages, requestCheck: true });
   expect(req.system).toBe(REQUEST_SYSTEM_PROMPT);

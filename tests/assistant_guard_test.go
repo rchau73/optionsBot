@@ -70,6 +70,25 @@ func TestAssistantGuard_AdviceAndForecastsAreRejected(t *testing.T) {
 	}
 }
 
+// Scenario (#534): no canned reply names a document, and a model answer
+// "see the guide, OptionStrategy.md" is rejected as points_to_document.
+func TestAssistantGuard_NeverPointsToADocument(t *testing.T) {
+	for _, reply := range []string{guard.DontKnow, guard.Refusal, guard.FallbackReply} {
+		for _, word := range []string{"see ", "read ", "guide", ".md", "section", "document"} {
+			if strings.Contains(strings.ToLower(reply), word) {
+				t.Errorf("canned reply %q names %q", reply, word)
+			}
+		}
+	}
+	v := checkAnswer(t, "see the guide, OptionStrategy.md", srcIdea)
+	if v.OK || !slices.Contains(v.Reasons, guard.ReasonPointsToDocument) {
+		t.Fatalf("verdict %+v, want points_to_document", v)
+	}
+	if !slices.Contains(v.Details, "points_to_document: see the guide") {
+		t.Errorf("details %v do not name the pointer", v.Details)
+	}
+}
+
 // Scenario: describing the strategy is not advice.
 func TestAssistantGuard_DescribingTheStrategyIsNotAdvice(t *testing.T) {
 	if v := checkAnswer(t, "The bot sells a call and a put.", srcIdea); !v.OK {
@@ -114,6 +133,13 @@ func TestAssistantGuard_Rules(t *testing.T) {
 		{"forecast: promise", "Selling strangles is risk-free.", []string{srcIdea}, guard.ReasonForecast},
 		{"not a forecast: a denied guarantee", "Stop-loss levels are triggers, not guaranteed prices.", []string{srcLossB}, ""},
 		{"not a forecast: the bot will buy back", "The bot will buy back the leg at market.", []string{srcIdea}, ""},
+		// #534: the assistant answers, never sends the person to a document.
+		{"points to a document: see the guide", "The bot sells a call and a put: see the guide, OptionStrategy.md.", []string{srcIdea}, guard.ReasonPointsToDocument},
+		{"points to a document: read a file", "Read OptionStrategy.md for the details.", []string{srcIdea}, guard.ReasonPointsToDocument},
+		{"points to a document: check a section", "The bot sells a call and a put. Check section 9.", []string{srcIdea}, guard.ReasonPointsToDocument},
+		{"points to a document: you can find", "You can find more in the glossary.", []string{srcIdea}, guard.ReasonPointsToDocument},
+		{"not a pointer: the bot checks the help's rule", "The bot checks the spread before a stop-loss.", []string{srcIdea}, ""},
+		{"not a pointer: the help explains", "The help explains that the bot sells a call and a put.", []string{srcIdea}, ""},
 	}
 	for _, c := range cases {
 		v := checkAnswer(t, c.text, c.citations...)

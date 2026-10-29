@@ -180,8 +180,10 @@ The **Ask** button at the bottom right of every page opens a panel. You write a 
 **How to read an answer**: each answer lists its sources as chips. A chip opens the document section, the glossary term or the trade in Details (pro). Check the source: answers can be wrong. The line under the answer says whether it came from the help, from your journal, or was refused.
 
 **What it will not do**: it gives no advice and no forecasts. It says "I don't know" when the sources do not cover the question. A question about money or timing, such as "should I close this?" or "where will the price go?", is refused.
+It answers in its own words and never just sends you to read a document.
+When it cannot back an answer with the bot's records and the help, it says it couldn't confirm an answer and won't guess.
 
-**Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it.
+**Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10. A score of 9 or 10 asks what we do best; 0 to 8 asks what to improve first. A comment is optional and stays private with your account. "Not now" or × closes it until next month; "Don't ask me again" turns it off (Account, Privacy turns it back on). It appears only if you said yes to usage analytics, and never in your first 14 days. The assistant works the same whether you answer or not.
 

@@ -168,9 +168,10 @@ func TestAssistantReview_GuardReasonsCounted(t *testing.T) {
 	w := arWeek(t)
 	log := arAnswer(t, "r1", w.From, "rejected", "q", "verdict", []string{"ungrounded_number: 45 %", "ungrounded_number: 3", "advice: you should"}) +
 		arAnswer(t, "r2", w.From, "no_citation", "q", "verdict", []string{"no_citation: none"}) +
-		arAnswer(t, "r3", w.From, "draft", "q", "verdict", []string{"evidence_missing: x"})
+		arAnswer(t, "r3", w.From, "draft", "q", "verdict", []string{"evidence_missing: x"}) +
+		arAnswer(t, "r4", w.From, "rejected", "q", "verdict", []string{"points_to_document: see the guide"})
 	r := arBuild(t, log, nil)
-	want := map[string]int{"no_citation": 1, "unknown_citation": 0, "ungrounded_number": 1, "advice": 1, "forecast": 0}
+	want := map[string]int{"no_citation": 1, "unknown_citation": 0, "ungrounded_number": 1, "advice": 1, "forecast": 0, "points_to_document": 1}
 	if len(r.Reasons) != len(want) {
 		t.Fatalf("reasons %+v", r.Reasons)
 	}

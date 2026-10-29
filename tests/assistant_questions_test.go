@@ -56,7 +56,10 @@ type goldenBot struct {
 	Positions json.RawMessage `json:"positions"`
 	Payoff    json.RawMessage `json:"payoff"`
 	Journal   json.RawMessage `json:"journal"`
-	Answer    struct {
+	// Explain is /api/explain's answer for a Why? on one trade (#534): the
+	// monitor's __tests__/assistant-why.test.js builds its passages.
+	Explain json.RawMessage `json:"explain,omitempty"`
+	Answer  struct {
 		Text      string   `json:"text"`
 		Citations []string `json:"citations"`
 	} `json:"answer"`

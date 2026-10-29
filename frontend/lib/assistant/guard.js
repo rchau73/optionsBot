@@ -1,19 +1,22 @@
 // The answer guard (#191): the JavaScript twin of internal/assistant/guard
 // (#260), so the monitor checks every model answer before it is shown. An
 // answer must cite a passage it was given, every number in it must come from
-// what it cites, and it must not advise or forecast. Pure: no model, no
+// what it cites, and it must not advise, forecast or send the person to a
+// document (#534). Pure: no model, no
 // network. __tests__/assistant-guard.test.js runs the Go tests' cases on it.
-import { ADVICE_NEGATION_PATTERNS, ADVICE_PATTERNS, DONT_KNOW, FALLBACK_REPLY, FORECAST_PATTERNS, NEGATION_PATTERNS, REFUSAL } from "./phrases";
+import { ADVICE_NEGATION_PATTERNS, ADVICE_PATTERNS, DOCUMENT_POINTER_PATTERNS, DONT_KNOW, FALLBACK_REPLY, FORECAST_PATTERNS, NEGATION_PATTERNS, REFUSAL } from "./phrases";
 
 export const REASON_NO_CITATION = "no_citation";
 export const REASON_UNKNOWN_CITATION = "unknown_citation";
 export const REASON_UNGROUNDED_NUMBER = "ungrounded_number";
 export const REASON_ADVICE = "advice";
 export const REASON_FORECAST = "forecast";
+export const REASON_POINTS_TO_DOCUMENT = "points_to_document";
 
 const advice = ADVICE_PATTERNS.map((p) => new RegExp(p, "i"));
 const adviceNegations = ADVICE_NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
 const forecasts = FORECAST_PATTERNS.map((p) => new RegExp(p, "i"));
+const documentPointers = DOCUMENT_POINTER_PATTERNS.map((p) => new RegExp(p, "i"));
 const negations = NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
 
 /** True when the text is exactly one of the canonical replies (spacing aside): the only answers that need no citation. */
@@ -98,6 +101,10 @@ export function check(answer, passages) {
   for (const re of forecasts) {
     const m = unnegated.match(re);
     if (m) add(REASON_FORECAST, m[0].trim());
+  }
+  for (const re of documentPointers) {
+    const m = text.match(re);
+    if (m) add(REASON_POINTS_TO_DOCUMENT, m[0].replace(/^[\s.!?:;,(]+|[\s.!?:;,(]+$/g, ""));
   }
 
   return { ok: reasons.length === 0, reasons, details };

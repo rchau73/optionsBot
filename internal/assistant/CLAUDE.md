@@ -20,8 +20,10 @@ go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   
   - runs its JavaScript twin `guard.js` (with `search.js`, the twin of `helpkb.Search`)
     — `frontend/__tests__/assistant-*.test.js` keep phrases, guard cases, golden set and search baseline equal to the Go side, so a change here changes both:
   - `Check(Answer{Text, Citations}, passages)` rejects with `no_citation` (unless the text is exactly a canonical reply: `DontKnow`, `Refusal`, `FallbackReply`), `unknown_citation`,
-    `ungrounded_number` (a number/percentage/date in no cited passage; 0.30 = 30 %), `advice`, `forecast`;
-  - `Fallback` is the safe reply.
+    `ungrounded_number` (a number/percentage/date in no cited passage; 0.30 = 30 %), `advice`, `forecast`,
+    `points_to_document` ("see the guide": the assistant answers, never points to a document, #534);
+  - `Fallback` is the safe reply, naming no document;
+    the monitor asks the model once more (with what failed) before it, for an answer rejected only for `ungrounded_number`, `unknown_citation` or `points_to_document` (`retryFeedback`).
   Phrase lists and replies live in `phrases.go` only (counsel's L11 answer changes a list).
   The answer contract is `docs/product/assistant/contract.md` (needs legal review);
   - the golden set `docs/product/assistant/golden.jsonl` (#313, #258: categories with minimum counts, expected sources, `must_say`/`must_not_say`, refuse/dont_know)

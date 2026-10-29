@@ -21,8 +21,9 @@ const (
 	// que fazer com o seu dinheiro…").
 	Refusal = "I can't recommend what to do with your money, and I don't forecast prices or returns. " +
 		"I can explain how a rule works and what it did in your account."
-	// FallbackReply replaces an answer the guard rejected.
-	FallbackReply = "I can't answer that. The help explains how the bot works and why it acted: see the guide, OptionStrategy.md."
+	// FallbackReply replaces an answer the guard rejected (twice, #534). It
+	// names no document: the assistant never sends the person to read one.
+	FallbackReply = "I couldn't confirm an answer from the bot's records and the help, so I won't guess."
 )
 
 // advicePhrases tell the user what to do: a recommendation, an imperative
@@ -68,6 +69,17 @@ var forecastPhrases = compile(
 // answer ending so was replaced by the fallback).
 var adviceNegations = compile(
 	`\b(whether|if) you (should|ought to)\b`,
+)
+
+// documentPointers send the person to a document, guide or section instead
+// of answering ("see the guide", "read OptionStrategy.md", "check section 9"):
+// the product owner's rule (2026-10-29, #534) is that the assistant reads the
+// help and answers in its own words. A verb at the start of a sentence (or
+// after a comma, a colon or "and"), or addressed to "you", then at most three
+// words before the document.
+var documentPointers = compile(
+	`(?:^|[.!?:;,(]\s*|\n\s*|\band\s+)(?:please\s+)?(see|read|check|open|consult|refer to|look at|visit|go to)\s+(?:[\w'’-]+\s+){0,3}?(?:(guide|document|documentation|docs|section|chapter|glossary|manual|help|faq|[\w-]+\.md)\b|§)`,
+	`\byou (can|could|may|might|will)(?: also)? (find|see|read|check|open|consult|look at|look up)\s+(?:[\w'’-]+\s+){0,3}?(?:(guide|document|documentation|docs|section|chapter|glossary|manual|help|faq|[\w-]+\.md)\b|§)`,
 )
 
 // negations deny a promise ("a stop is a trigger, not a guaranteed price"):

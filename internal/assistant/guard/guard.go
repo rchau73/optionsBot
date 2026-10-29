@@ -1,9 +1,10 @@
 // Package guard checks an assistant answer before it could be shown (#260,
 // E10): it must cite the help, its numbers must come from what it cites, and
-// it must not advise or forecast. Pure: no model, no network. The monitor's
-// assistant (#191) runs its JavaScript twin, frontend/lib/assistant/guard.js,
-// whose tests keep both equal (phrases, cases, golden set): change both. The
-// answer contract it enforces is docs/product/assistant/contract.md.
+// it must not advise, forecast or send the person to a document (#534). Pure:
+// no model, no network. The monitor's assistant (#191) runs its JavaScript
+// twin, frontend/lib/assistant/guard.js, whose tests keep both equal (phrases,
+// cases, golden set): change both. The answer contract it enforces is
+// docs/product/assistant/contract.md.
 package guard
 
 import (
@@ -17,11 +18,12 @@ import (
 
 // Reason codes of a rejected answer, in the order Check reports them.
 const (
-	ReasonNoCitation       = "no_citation"       // no citation, and not a canonical reply
-	ReasonUnknownCitation  = "unknown_citation"  // a citation that resolves to no passage
-	ReasonUngroundedNumber = "ungrounded_number" // a number in none of the cited passages
-	ReasonAdvice           = "advice"            // tells the user what to do
-	ReasonForecast         = "forecast"          // says what prices or returns will be
+	ReasonNoCitation       = "no_citation"        // no citation, and not a canonical reply
+	ReasonUnknownCitation  = "unknown_citation"   // a citation that resolves to no passage
+	ReasonUngroundedNumber = "ungrounded_number"  // a number in none of the cited passages
+	ReasonAdvice           = "advice"             // tells the user what to do
+	ReasonForecast         = "forecast"           // says what prices or returns will be
+	ReasonPointsToDocument = "points_to_document" // sends the person to a document instead of answering (#534)
 )
 
 // Answer is an assistant answer: its text and the passages it cites, each a
@@ -95,13 +97,18 @@ func Check(a Answer, sources []helpkb.Passage) Verdict {
 			v.add(ReasonForecast, strings.TrimSpace(m))
 		}
 	}
+	for _, re := range documentPointers {
+		if m := re.FindString(text); m != "" {
+			v.add(ReasonPointsToDocument, strings.Trim(m, " \t\n.!?:;,("))
+		}
+	}
 
 	v.OK = len(v.Reasons) == 0
 	return v
 }
 
 // Fallback is the reply shown instead of a rejected answer: whatever the
-// reason, the canonical safe reply, which points to the help.
+// reason, the canonical safe reply, which names no document (#534).
 func Fallback(v Verdict) string {
 	return FallbackReply
 }
