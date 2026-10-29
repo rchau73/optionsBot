@@ -147,7 +147,7 @@ Proof points available today: the decision journal (every action with its reason
 **Why:** customers hold their coins where they already trade; the product owner wants the integration seamless (#149).
 **Scope:** an exchange adapter boundary behind today's gateway (connection, market data, orders, positions, margin) with Deribit as the first adapter; per-customer and per-account isolation (one account's bot never touches another's orders — today two bots on one account fight); trade-only API keys, encrypted at rest, revocable, with withdrawal rights refused; a guided "connect your exchange" flow; a feasibility study per exchange (options market, margin model, simulation API, rate limits). Order handling and reconcile changes needed by a new exchange go to a person.
 **Out of scope:** onboarding third-party customers before the legal gate (§11); custody.
-**Stories (seed):** exchange adapter interface (Deribit) · per-account isolation design · exchange feasibility briefs.
+**Stories (seed):** exchange adapter interface (Deribit) · per-account isolation design · exchange feasibility briefs ([index and comparison](../exchanges/README.md)).
 
 ### E9 · Strategy-change lab with AI analysis
 <!-- epic: {"id": "E9", "status": "approved", "rank": 11, "rule_areas": [], "ui": true} -->

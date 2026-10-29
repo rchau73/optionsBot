@@ -7,7 +7,7 @@
 | [architecture.md](architecture.md) | Detailed design: packages, concurrency, invariants, limitations |
 | [operations.md](operations.md) | Running, monitoring, kill switch, troubleshooting |
 | [exchange-adapter.md](exchange-adapter.md) | Every Deribit method the bot uses, the Deribit-specific assumptions, the proposed exchange adapter interface and its migration steps (E8) |
-| [exchanges/TEMPLATE.md](exchanges/TEMPLATE.md), [exchanges/bybit.md](exchanges/bybit.md) | Exchange feasibility briefs (E8): the fixed template every candidate is judged by, and the first brief (Bybit); every line sourced or labelled `assumption` |
+| [exchanges/README.md](exchanges/README.md), [exchanges/TEMPLATE.md](exchanges/TEMPLATE.md) | Exchange feasibility briefs (E8): the index with the four-exchange comparison table, and the fixed template every candidate is judged by; briefs for [Bybit](exchanges/bybit.md), [OKX](exchanges/okx.md), [Binance](exchanges/binance.md) and [Hyperliquid](exchanges/hyperliquid.md); every line sourced or labelled `assumption` |
 | [direction-trial.md](direction-trial.md) | GEX direction trial (bias vs sma): decision rule, kill rule and review date, written before the result |
 
 ## Diagrams
