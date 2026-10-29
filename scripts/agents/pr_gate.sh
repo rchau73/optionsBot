@@ -7,10 +7,16 @@
 #   update   → behind main without conflict: gh pr update-branch, and the
 #              Reviewer checks the new commit;
 #   ready    → reviewed clean on its current commit, CI green, CLEAN, no open
-#              dependency: label ready-to-merge (the person's queue);
+#              dependency: label ready-to-merge (the person's queue) — a PR
+#              that changes a business rule or policy, or any PR with
+#              PR_AUTO_MERGE=0 (agents.env);
+#   merge    → the same, policy-free and up to date with main: merged here
+#              (#468, product owner 2026-10-28), at most one per run so the
+#              next one is updated and re-tested on the new main first;
 #   wait     → the label comes off until it is ready again.
-# Merge order follows priority: a person merges ready PRs top-down (the PM
-# orders In review), and whatever then conflicts is rebased by the Dev agent.
+# A clean review carries over GitHub's own update-with-main merges (no
+# conflict is possible in them: pr_gate.py equiv), so updating a PR before it
+# merges costs no new review.
 # No Claude call; one comment per PR commit at most.
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -40,22 +46,33 @@ gate_run() {
   run_end "$1" "$2"
 }
 
+merged=0
 gh pr list -R "$slug" --label agent:dev --state open --json number,headRefName -q '.[] | "\(.number) \(.headRefName)"' > "$tmp/prs.txt"
 while read -r pr ref; do
   [[ -n "$pr" && "$ref" == agent/issue-* ]] || continue
   issue="${ref#agent/issue-}"
   gh pr view "$pr" -R "$slug" --json number,state,isDraft,labels,headRefOid,mergeable,mergeStateStatus,statusCheckRollup > "$tmp/pr.json" < /dev/null
   gh api "repos/$slug/pulls/$pr/reviews" --paginate -q '.[].body' < /dev/null |
-    grep -o "<!-- agent-review sha=[0-9a-f]* verdict=[a-z]* -->" | sed "s/<!-- agent-review //; s/ -->//" > "$tmp/markers.txt" || true
+    grep -oE "<!-- agent-review sha=[0-9a-f]* verdict=[a-z]*( policy=[a-z]*)? -->" | sed "s/<!-- agent-review //; s/ -->//" > "$tmp/markers.txt" || true
+  head="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefOid"])' "$tmp/pr.json")"
+  # Every changed path (the files API pages past gh pr view's 100), how far
+  # behind main the head is, and the review the head inherits, if any.
+  gh api "repos/$slug/pulls/$pr/files" --paginate -q '.[].filename' > "$tmp/files.txt" < /dev/null
+  behind="$(gh api "repos/$slug/compare/main...$head" -q .behind_by < /dev/null || echo 0)"
+  : > "$tmp/equiv.txt"
+  last="$(tail -1 "$tmp/markers.txt" | sed -n 's/^sha=\([0-9a-f]*\) .*/\1/p')"
+  if [[ -n "$last" && "$last" != "$head" ]] && gh api "repos/$slug/compare/$last...$head" > "$tmp/compare.json" < /dev/null; then
+    python3 "$GATE_PY" equiv "$tmp/compare.json" > "$tmp/equiv.txt" || true
+  fi
   : > "$tmp/deps.txt"
   for d in $(gh issue view "$issue" -R "$slug" --json body -q .body < /dev/null | python3 "$BOARD_PY" deps); do
     [[ "$(gh issue view "$d" -R "$slug" --json state -q .state < /dev/null)" == "OPEN" ]] && echo "$d" >> "$tmp/deps.txt"
   done
-  read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt")
-  head="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefOid"])' "$tmp/pr.json")"
+  read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt" \
+    "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}")
   has_ready="$(py 'import json,sys; print(any(l["name"] == "ready-to-merge" for l in json.load(open(sys.argv[1]))["labels"]))' "$tmp/pr.json")"
   issue_ready="$(gh issue view "$issue" -R "$slug" --json labels -q '[.labels[].name] | index("ready-to-merge") != null' < /dev/null)"
-  if [[ "$action" != "ready" ]]; then
+  if [[ "$action" != "ready" && "$action" != "merge" ]]; then
     [[ "$has_ready" != "True" ]] || gh pr edit "$pr" -R "$slug" --remove-label ready-to-merge >/dev/null < /dev/null || true
     [[ "$issue_ready" != "true" ]] || gh issue edit "$issue" -R "$slug" --remove-label ready-to-merge >/dev/null < /dev/null || true
   elif [[ "$issue_ready" != "true" ]]; then
@@ -79,12 +96,25 @@ while read -r pr ref; do
       if [[ "$has_ready" != "True" ]]; then
         gh pr edit "$pr" -R "$slug" --add-label ready-to-merge >/dev/null < /dev/null
         if [[ "$(seen "$pr" "ready:$head")" != "1" ]]; then
-          gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — ready for you: reviewed clean on \`${head:0:7}\`, CI green, no conflict with \`main\`, nothing it depends on is open." >/dev/null < /dev/null
+          gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — ready for you to merge (\`${head:0:7}\`): $why. Nothing it depends on is open." >/dev/null < /dev/null
           notify "PR #$pr ready to merge" "issue #$issue"
           remember "$pr" "ready:$head"
         fi
         log "pr-gate: #$pr ready-to-merge"
         gate_run ready_to_merge "reviewed clean, CI green, no conflict"
+      fi ;;
+    merge)
+      if [[ "$merged" -eq 1 ]]; then log "pr-gate: #$pr merges on a later run (one merge per run)"; continue; fi
+      # --match-head-commit: a push after this decision refuses the merge.
+      if gh pr merge "$pr" -R "$slug" --merge --match-head-commit "$head" >/dev/null 2>"$tmp/merge.err" < /dev/null; then
+        merged=1
+        gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — merged \`${head:0:7}\`: $why (#468). mvp redeploys it on its next tick; stable moves only by a release." >/dev/null < /dev/null || true
+        notify "PR #$pr merged" "issue #$issue"
+        log "pr-gate: #$pr merged"
+        gate_run merged "reviewed clean, CI green, up to date, no policy change"
+      else
+        log "pr-gate: #$pr merge refused: $(head -c 200 "$tmp/merge.err")"
+        gate_run failed "merge refused: $(head -c 120 "$tmp/merge.err" | tr '\n' ' ')"
       fi ;;
     *) log "pr-gate: #$pr waits — $why"
       [[ "$has_ready" != "True" ]] || gate_run ready_removed "waits: $why" ;;

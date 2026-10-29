@@ -46,10 +46,10 @@ PICKUP = "**Dev agent** picked this up"
 BLOCKED = "Dev agent stopped"
 DEPLOYED = "🚀 Deployed to **mvp**"
 VERIFIED = re.compile(r"\*\*SME verification \([^)]*\): (\w+)\*\*")
-REVIEW = re.compile(r"<!-- agent-review sha=[0-9a-f]* verdict=([a-z]+) -->")
+REVIEW = re.compile(r"<!-- agent-review sha=[0-9a-f]* verdict=([a-z]+)(?: policy=[a-z]+)? -->")
 BRANCH = re.compile(r"^agent/issue-(\d+)$")
 WAIT_LABELS = ("agent:needs-human", "prototype:review")
-REVIEW_SHA = re.compile(r"<!-- agent-review sha=([0-9a-f]*) verdict=([a-z]+) -->")
+REVIEW_SHA = re.compile(r"<!-- agent-review sha=([0-9a-f]*) verdict=([a-z]+)(?: policy=[a-z]+)? -->")
 OUTCOME = re.compile(r"^[a-z_]+$")  # fixed outcome names only: nothing else of a ledger line is shown
 RUN_FAILED = ("failed", "abandoned")  # abandoned: the run sweep closed it, its process gone (#291)
 RUN_LIMIT = "skipped_limit"

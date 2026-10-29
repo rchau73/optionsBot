@@ -4,7 +4,9 @@
     review_post.py parse <agent.md> <review.json>
         Reads the agent's REVIEW-JSON block, keeps the findings with a known
         severity and adds the verdict: "blocking" if any finding blocks, else
-        "clean". Exits 1 when the block is missing or not valid JSON.
+        "clean", and the policy declaration ("yes" | "no"; anything else is
+        "yes", so a PR the Reviewer did not judge waits for a person, #468).
+        Exits 1 when the block is missing or not valid JSON.
 
     review_post.py body <review.json> <out.json> <slug> <head> <round> <next> <marker>
         Writes two review payloads for POST /pulls/{n}/reviews: <out.json> with
@@ -23,7 +25,8 @@ ICON = {"blocking": "🛑", "suggestion": "💡"}
 NEXT = {
     "ready": "**Next:** blocking findings → the card goes back to **Ready**; the Dev agent will address them on this PR.",
     "human": "**Next:** still blocking after {fixes} fix round(s) → a person decides (the card stays in **In review**, `agent:needs-human`).",
-    "clean": "**Next:** no blocking findings → ready for a person to merge.",
+    "clean": "**Next:** no blocking findings → the PR gate merges it once CI is green and it is up to date with main.",
+    "clean-policy": "**Next:** no blocking findings, but it changes a business rule or policy → a person merges it.",
 }
 
 
@@ -36,6 +39,9 @@ def parse(agent_md, review_json):
     findings = [f for f in review.get("findings", []) if f.get("severity") in SEVERITIES]
     review["findings"] = findings
     review["verdict"] = "blocking" if any(f["severity"] == "blocking" for f in findings) else "clean"
+    pol = review.get("policy") if isinstance(review.get("policy"), dict) else {}
+    review["policy"] = {"changes": "no" if pol.get("changes") == "no" else "yes",
+                        "why": str(pol.get("why") or "not stated").strip()}
     json.dump(review, open(review_json, "w"), indent=1)
 
 
@@ -64,7 +70,12 @@ def body(review_json, out_json, slug, head, rnd, nxt, marker):
         out += ["No blocking findings and no suggestions.", ""]
     if review.get("checked"):
         out += ["<details><summary>What the reviewer checked</summary>", "", review["checked"].strip(), "", "</details>", ""]
-    out += [NEXT[nxt].format(fixes=int(rnd) - 1), "", f"<!-- {marker} sha={head} verdict={review['verdict']} -->"]
+    pol = review.get("policy") or {"changes": "yes", "why": "not stated"}
+    out += [f"**Policy change:** {pol['changes']} — {pol['why']}", ""]
+    if nxt == "clean" and pol["changes"] != "no":
+        nxt = "clean-policy"
+    out += [NEXT[nxt].format(fixes=int(rnd) - 1), "",
+            f"<!-- {marker} sha={head} verdict={review['verdict']} policy={pol['changes']} -->"]
     text = "\n".join(out)
 
     comments = [{"path": f["file"], "line": line_of(f), "side": "RIGHT",
