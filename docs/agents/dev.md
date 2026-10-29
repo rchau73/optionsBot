@@ -24,6 +24,10 @@ Rules in [`checkfail.py`](../../scripts/agents/checkfail.py), tested in `test_ch
   The next Dev run reads that comment first and fixes it on the same PR.
   The second failure goes to a person (Blocked, `agent:needs-human`).
   The count lives on the issue (`<!-- dev:check-fail n=… -->`) and restarts after a person was asked (`<!-- dev:blocked -->`).
+- **A blocked run keeps its commits** (#517, [`branch_work.sh`](../../scripts/agents/branch_work.sh), tested in `test_branch_work.py`).
+  A run that stops for a person with commits ahead of `main` pushes its branch (no PR), so the next run on the card starts from it, not from `main`; with none it pushes nothing.
+  With an open PR it does not push: the branch is the PR's, and a half-done push would reach its review.
+  Without an open PR, the commits to deliver are every one ahead of `main`, so a run that resumes a pushed branch and adds nothing opens the PR instead of being blocked.
 - **A failure in a test the change does not touch is retried, not blamed.**
   Touched = the test's file, a path it opens, a package it imports (transitively) or a helper of `tests/` it names changed.
   An untouched failing test is re-run: the script re-runs that test up to 3 times, the gate the failed CI jobs up to 3 times a head.

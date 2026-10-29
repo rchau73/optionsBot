@@ -225,9 +225,21 @@ if [[ $rc -ne 0 || "$result" != "done" ]]; then
       tail -30 "$run_dir/agent.md" | sed 's/^/    /'; } > "$run_dir/reason.md"
     detail="the agent did not finish (exit $rc)"
   fi
+  # Commits ahead of main go to origin (no PR), so the next run on the card
+  # resumes them instead of restarting from main (#517). With an open PR the
+  # branch is the PR's: a half-done push would reach its review, so not there.
+  if [[ -z "$existing_pr" ]] && git_locked fetch -q origin && mutex git; then
+    if bash "$AGENT_REPO_DIR/scripts/agents/branch_work.sh" keep "$wt" "$branch" 2> "$run_dir/keep.log"; then
+      { echo; echo "_Its commits are pushed to \`$branch\` (no PR): the next run continues from them._"; } >> "$run_dir/reason.md"
+    fi
+    unmutex git
+    cat "$run_dir/keep.log"
+  fi
   block "$run_dir/reason.md" "$detail"
 fi
-if [[ "$(git -C "$wt" rev-list --count "$base"..HEAD)" == "0" ]]; then
+# Without an open PR, every commit ahead of main counts: a run that resumed a
+# branch a blocked run pushed, and had nothing left to add, opens the PR (#517).
+if [[ "$(bash "$AGENT_REPO_DIR/scripts/agents/branch_work.sh" count "$wt" "$base" "$existing_pr")" == "0" ]]; then
   echo "The agent reported done but made no commit." > "$run_dir/reason.md"
   block "$run_dir/reason.md" "done without a commit"
 fi
