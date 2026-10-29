@@ -42,8 +42,11 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),
     sends a PR that conflicts with main back to Ready with `needs-rebase` (the Dev agent always merges `origin/main` into an open PR's branch first and resolves conflicts as its first task),
     and labels `ready-to-merge` (PR and card) only a PR reviewed clean on its current head, CI green, `CLEAN`, with no open dependency
-    — the person merges those top-down in priority order;
-  - a human merges (ruleset: PR + green CI);
+    — a PR that changes a business rule or policy waits there for the person, who merges those top-down in priority order;
+    - policy = a path in `pr_gate.py` `POLICY_PATHS`, or the Reviewer's `policy=yes` (none declared = yes);
+    - a policy-free one, up to date with main, is merged by the gate itself, one per run (#468, product owner 2026-10-28);
+    - `PR_AUTO_MERGE=0` in `agents.env` turns it off;
+  - a human merges every policy change (ruleset: PR + green CI); a review that left a changed file unread is `incomplete`, never clean, and counts as no review (#476);
   - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
     - a failed compose or health check (#204) resets the clone to `mvp.deployed`, rebuilds and re-checks it (a `rollback` line in `deploys.tsv`; unhealthy too → loud notify, no retry),
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
@@ -116,4 +119,4 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     no new Claude run for 30 min, then one at a time for an hour (`parallel_max`);
   - each tick, outside a pause, `requeue.sh` (rules in `requeue.py`) puts back in Ready the Blocked cards whose Dev stop was a limit and nobody answered (#237).
 - Setup: `setup_github.sh`; schedule: `install.sh`.
-- Agents never merge code, deploy live or trade (the one merge: the PM's policy-free PRD PRs).
+- Agents never deploy live or trade; they merge only policy-free work: the PR gate merges Dev agent PRs reviewed clean, CI green, up to date and policy-free (#468), and the PM merges its own policy-free PRD PRs.
