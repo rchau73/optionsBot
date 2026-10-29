@@ -665,6 +665,7 @@ func main() {
 	replayStart := flag.String("start", "empty", "with -replay: empty | journal (the journal's open book at -from)")
 	replayTrace := flag.Bool("trace", false, "with -replay: print every action as it happens")
 	replayGEX := flag.String("gex", "", "with -replay: folder of minute GEX records (data/market_gex/*.jsonl.gz, #122) — the GEX side then decides each minute on the last hourly book's prices; empty = market_gex next to the -replay folder if it has any; none = hourly only")
+	replayLiqCaps := flag.String("liqcaps", "", "STUDY, with -replay: replay once per liquidity_cap_oi_pct in this list (e.g. 5,10,20, #487) and print one table — IM as % of the limit, cycles under 60 % of it with entries allowed, entries and lots cut, worst week; the bot's cap stays 10")
 	flag.Parse()
 	if *replayDir != "" {
 		set := map[string]string{}
@@ -679,7 +680,7 @@ func main() {
 		}
 		err := runReplay(replayOpts{dir: *replayDir, from: *replayFrom, to: *replayTo, configPath: cfgPath,
 			journal: *replayJournal, start: *replayStart, inputs: *dir, gexDir: *replayGEX, equity: *replayEquity,
-			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, set: set})
+			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, liqCaps: *replayLiqCaps, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)
 			os.Exit(1)

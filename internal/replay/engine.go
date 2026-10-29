@@ -66,22 +66,28 @@ type Day struct {
 
 // Result sums up a replay.
 type Result struct {
-	Start, End         time.Time
-	Snapshots          int     // decisions (one per hourly book or minute GEX record)
-	GEXMinutes         int     // of them, decisions on a minute GEX record
-	Equity0, Equity    float64 // margin balance at the start and end (coin)
-	Net                float64 // Equity − Equity0: realised + unrealised, net of fees
-	Realised, Fees     float64
-	OpenAtEnd          int // legs still open (their P&L is in Net, at the last mid)
-	Trades             int // orders filled (each leg is one)
-	Entries, Repairs   int
-	Sheds, Stops       int
-	DeltaExits, Rolls  int // rolls: DTE rolls, take-profits and delta drifts (legs)
-	MMCuts, Unfilled   int // Unfilled: orders that found an empty side of the book and waited
-	LiquidityCapped    int // entry legs cut (or blocked) by the liquidity cap
-	MaxDrawdown        float64
-	MaxIMPct, AvgIMPct float64
-	Days               []Day
+	Start, End        time.Time
+	Snapshots         int     // decisions (one per hourly book or minute GEX record)
+	GEXMinutes        int     // of them, decisions on a minute GEX record
+	Equity0, Equity   float64 // margin balance at the start and end (coin)
+	Net               float64 // Equity − Equity0: realised + unrealised, net of fees
+	Realised, Fees    float64
+	OpenAtEnd         int // legs still open (their P&L is in Net, at the last mid)
+	Trades            int // orders filled (each leg is one)
+	Entries, Repairs  int
+	Sheds, Stops      int
+	DeltaExits, Rolls int // rolls: DTE rolls, take-profits and delta drifts (legs)
+	MMCuts, Unfilled  int // Unfilled: orders that found an empty side of the book and waited
+	LiquidityCapped   int // entry legs cut (or blocked) by the liquidity cap
+	// The liquidity-cap study (#487, liqcap.go).
+	LiquidityEntriesCut int     // entries the cap sized down or blocked
+	LiquidityLotsCut    float64 // lots the cap took off those entries, summed over their legs
+	AvgUseOfLimitPct    float64 // IM as % of the limit, averaged over the decisions
+	EntryCycles         int     // decisions with entries allowed (not frozen, no MM breach, no deferred stop, fresh GEX)
+	UnderTargetCycles   int     // of them, IM under strategy.UnderUseTargetPct % of the limit
+	MaxDrawdown         float64
+	MaxIMPct, AvgIMPct  float64
+	Days                []Day
 }
 
 type strangle struct {
@@ -205,6 +211,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	e.res.Net = e.res.Equity - e.res.Equity0
 	if e.imN > 0 {
 		e.res.AvgIMPct /= float64(e.imN)
+		e.res.AvgUseOfLimitPct /= float64(e.imN)
 	}
 	for _, s := range e.book {
 		e.res.OpenAtEnd += len(s.legs())
@@ -321,9 +328,10 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	}
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.
+	entriesAllowed := !mmBreach && !stopsDeferred && gexErr == nil && !st.Frozen
 	if !mmBreach && !stopsDeferred && gexErr == nil {
 		e.repairs(at, snap, dec, st, quotes)
-		if !st.Frozen {
+		if entriesAllowed {
 			e.entries(at, snap, dec, st, quotes, spot)
 		}
 	}
@@ -331,6 +339,17 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	u = e.usage(spot)
 	e.res.MaxIMPct = math.Max(e.res.MaxIMPct, u.IMPct())
 	e.res.AvgIMPct += u.IMPct()
+	use := 0.0
+	if st.LimitIMPct > 0 {
+		use = u.IMPct() / st.LimitIMPct * 100
+	}
+	e.res.AvgUseOfLimitPct += use
+	if entriesAllowed {
+		e.res.EntryCycles++
+		if use < strategy.UnderUseTargetPct {
+			e.res.UnderTargetCycles++
+		}
+	}
 	e.imN++
 	eq := u.MarginBalance
 	e.peak = math.Max(e.peak, eq)
@@ -633,11 +652,16 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		lots := e.size(sides, spot, st, vacant, len(slots))
 		// The liquidity cap (strategy/liquidity.go): at most a share of each
 		// sold strike's recorded open interest.
+		marginLots := lots
 		for _, sd := range sides {
 			if most := strategy.LiquidityCapQty(sd.q.OpenInterest, c.LiquidityCapOIPct, e.lot) / e.lot; most < float64(lots) {
 				lots = int(math.Floor(most + 1e-9))
 				e.res.LiquidityCapped++
 			}
+		}
+		if lots < marginLots {
+			e.res.LiquidityEntriesCut++
+			e.res.LiquidityLotsCut += float64((marginLots - max(lots, 0)) * len(sides))
 		}
 		if lots < 1 {
 			continue

@@ -62,7 +62,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 // replayOwnFlags are the replay's own flags (and the shared input folder).
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
-	"gex": true}
+	"gex": true, "liqcaps": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -82,6 +82,7 @@ func intField(f func(*config.Config) *int) func(*config.Config, string) error {
 type replayOpts struct {
 	dir, from, to, configPath, journal, start, inputs string
 	gexDir                                            string // minute GEX records; "" = market_gex beside dir, "none" = hourly
+	liqCaps                                           string // the liquidity-cap study's caps (e.g. "5,10,20"); "" = one replay
 	equity, flipWindowMin                             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
@@ -163,6 +164,9 @@ func runReplay(o replayOpts) error {
 	default:
 		return fmt.Errorf("-start %q: empty | journal", o.start)
 	}
+	if o.liqCaps != "" {
+		return runCapStudy(snaps, set, o, changed)
+	}
 	if o.trace {
 		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
 	}
@@ -215,6 +219,42 @@ func runReplay(o replayOpts) error {
 			a.Net, u, a.Realised, a.Unrealised0, a.Unrealised1, a.Opens, a.Closes, a.Unmarked, res.Net-a.Net, u)
 	}
 	return nil
+}
+
+// runCapStudy is -liqcaps (#487): one replay per cap on the same books and
+// settings, printed as one table with the recording's gaps.
+func runCapStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string) error {
+	if _, ok := o.set["liqcap"]; ok {
+		return fmt.Errorf("-liqcaps varies the cap itself: drop -liqcap")
+	}
+	caps, err := parseCaps(o.liqCaps)
+	if err != nil {
+		return err
+	}
+	rows, err := replay.CapStudy(snaps, set, caps)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Liquidity-cap study (#487), %s, direction %s, start %s", set.Cfg.Underlying, set.Cfg.GEXDirection, o.start)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Print(". Entries only: the replay has no rebalance top-ups.\n\n")
+	fmt.Print(replay.CapStudyMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To)))
+	return nil
+}
+
+// parseCaps reads "5,10,20": each a percentage of open interest, 0 = off.
+func parseCaps(v string) ([]float64, error) {
+	var caps []float64
+	for _, f := range strings.Split(v, ",") {
+		c, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
+		if err != nil || c < 0 || c > 100 {
+			return nil, fmt.Errorf("-liqcaps %q: want percentages from 0 to 100, comma-separated", v)
+		}
+		caps = append(caps, c)
+	}
+	return caps, nil
 }
 
 // readMarketJSON reads market.json (replay.ReadMarketJSON); a missing file
