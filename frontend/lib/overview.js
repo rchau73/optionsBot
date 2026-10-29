@@ -251,6 +251,27 @@ export function ordersSummary(bots) {
   return n ? `${n} working` : "none";
 }
 
+/**
+ * The band's last-trade line (#489): { unknown } without the summary, { none }
+ * before the first trade, else { when, what, reason, detail, pnlCoin, pnlUSD }
+ * from the summary's last_action — the reason is the journal's own sentence.
+ */
+export function lastTradeLine(bot) {
+  const s = bot?.summary;
+  if (!s) return { unknown: bot?.summaryError || bot?.error || "not loaded yet" };
+  const a = s.last_action;
+  if (!a) return { none: true };
+  const close = a.kind === "close";
+  return {
+    when: a.at,
+    what: `${close ? "bought back" : "sold"} ${isNumber(a.qty) ? formatNumber(a.qty, 2) : "?"} × ${a.instrument || "a leg"}`,
+    reason: a.reason || a.rule || "no reason recorded",
+    detail: a.detail || null,
+    pnlCoin: close && isNumber(a.pnl_coin) ? a.pnl_coin : null,
+    pnlUSD: close && isNumber(a.pnl_usd) ? a.pnl_usd : null,
+  };
+}
+
 /** The coin's move since a price, in %, signed; null when either is unknown. */
 export function moveSince(then, now) {
   if (!isNumber(then) || !isNumber(now) || then <= 0) return null;
