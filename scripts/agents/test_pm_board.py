@@ -582,6 +582,45 @@ class TestDevTokenSavers(unittest.TestCase):
         b = [card(470, "In progress", labels=["E6"], priority="P1"), card(471, "Ready", labels=["E6"], priority="P1")]
         self.assertEqual(pm_board.ready_order(b, [470]), [])
 
+    def test_two_cards_naming_the_same_file_are_never_in_progress_together(self):
+        """#467: #445 and #446 (two epics) built one NPS field in parallel and conflicted."""
+        nps = lambda n, st, e, files: dict(card(n, st, labels=[e], priority="P2"),
+                                           body=f"Story.\n\n**Files:** {files}\n\nMore.")
+        b = [nps(445, "In progress", "E13", "`internal/usage/report.go`, `why_best`"),
+             nps(446, "Ready", "E10", "`frontend/app/admin/analytics/page.jsx`, `why_best`"),
+             nps(447, "Ready", "E2", "`internal/evidence/report.go`")]
+        # Same field across epics: 446 waits while 445 is built (claimed, or only In progress).
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [445])], [447])
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [])], [447])
+        # Once 445 leaves In progress, 446 is free.
+        b[0] = dict(b[0], status="In review")
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [])], [446, 447])
+
+    def test_a_card_that_depends_on_a_card_being_built_waits(self):
+        b = [card(461, "In progress", labels=["E6"], priority="P1"),
+             dict(card(467, "Ready", labels=["E9"], priority="P1"), body="Part of #459. Depends on #461"),
+             dict(card(468, "Ready", labels=["E8"], priority="P1"), body="Depends on #400")]
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [461])], [468])
+
+    def test_sharing_only_a_finished_dependency_is_no_overlap(self):
+        """Two stories built on the same done card (#459's, all "Depends on #461") may run together."""
+        blk = lambda n, st: dict(card(n, st, labels=["E6", "blocker"], priority="P1"), body="Depends on #461")
+        b = [blk(466, "In progress"), blk(467, "Ready")]
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [466])], [467])
+
+    def test_board_json_files_and_deps_fields_win_over_the_body(self):
+        b = [dict(card(1, "In progress", labels=["E1"]), files=["a.go"], deps=[]),
+             dict(card(2, "Ready", labels=["E2"]), files=["a.go"], deps=[], body="Files: b.go"),
+             dict(card(3, "Ready", labels=["E3"]), files=[], deps=[1])]
+        self.assertEqual(pm_board.ready_order(b, [1]), [])
+
+    def test_files_named(self):
+        self.assertEqual(pm_board.files_named("**Files:** `a/b.go`, `why_best`\n\nFiles are fun"), {"a/b.go", "why_best"})
+        self.assertEqual(pm_board.files_named("## Files\n- `x.js`\n- `y.js`\n## Tests\n- `z.js`"), {"x.js", "y.js"})
+        self.assertEqual(pm_board.files_named("Files: a.go, frontend/b.js"), {"a.go", "frontend/b.js"})
+        self.assertEqual(pm_board.files_named("No section here. `a.go`"), set())
+        self.assertEqual(pm_board.files_named(None), set())
+
     def test_cards_without_an_epic_never_wait(self):
         b = [card(1, "In progress", priority="P2"), card(2, "Ready", priority="P2")]
         self.assertEqual([c["number"] for c in pm_board.ready_order(b, [1])], [2])

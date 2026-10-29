@@ -129,7 +129,10 @@ item_for_issue() {
 
 # board_json → JSON list of this repo's issues on the board: item, id (node),
 # number, title, state, status, priority, labels, updatedAt, parent (epic
-# issue number or null). Read from the issues' side, like board_cards.
+# issue number or null), files (the files and fields its body names) and deps
+# (the issues it depends on) — pm_board.py ready's overlap rule (#467); not the
+# body itself, which the PM agent would read in board.json. Read from the
+# issues' side, like board_cards.
 board_json() {
   local slug num
   slug="$(repo_slug)"
@@ -138,7 +141,7 @@ board_json() {
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes { id number title state updatedAt labels(first: 20) { nodes { name } } parent { number }
+      nodes { id number title body state updatedAt labels(first: 20) { nodes { name } } parent { number }
         projectItems(first: 10) { nodes { id project { number }
           status: fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
           priority: fieldValueByName(name: "Priority") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } }
@@ -146,6 +149,7 @@ query($owner: String!, $name: String!) {
   }
 }' -f owner="${slug%/*}" -f name="${slug#*/}" |
     py 'import json,sys; num = int(sys.argv[1]); out = []
+sys.path.insert(0, sys.argv[2]); from pm_board import depends_on, files_named
 for i in json.load(sys.stdin)["data"]["repository"]["issues"]["nodes"]:
     for it in i["projectItems"]["nodes"]:
         if it["project"]["number"] == num:
@@ -153,8 +157,9 @@ for i in json.load(sys.stdin)["data"]["repository"]["issues"]["nodes"]:
                 "state": i["state"], "status": (it.get("status") or {}).get("name") or "-",
                 "priority": (it.get("priority") or {}).get("name"),
                 "labels": [l["name"] for l in i["labels"]["nodes"]], "updatedAt": i["updatedAt"],
-                "parent": (i.get("parent") or {}).get("number")})
-json.dump(out, sys.stdout)' "$num"
+                "parent": (i.get("parent") or {}).get("number"),
+                "files": sorted(files_named(i.get("body"))), "deps": depends_on(i.get("body"))})
+json.dump(out, sys.stdout)' "$num" "$AGENT_REPO_DIR/scripts/agents"
 }
 
 # ready_next [claim kind] → "ITEM_ID ISSUE_NUMBER" of the Ready card to build

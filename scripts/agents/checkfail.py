@@ -13,6 +13,10 @@ CI's `changes` job, dev_agent.sh and pr_gate.sh call it.
           tests the change touches, split as scripts/go_tests.sh splits them.
     checkfail.py jest-files <files.txt>
         → "all", or the frontend/-relative files for jest --findRelatedTests.
+    checkfail.py repo-wide <files.txt>
+        → the checks that read every file, for the Dev agent to run before it
+          hands over (#467): "jest <frontend test>" lines for a frontend
+          change, "helpindex" when a help-index source changed.
     checkfail.py retry <repo> <files.txt> <log>
         → the failing tests the change does not touch, one "go|jest <name>"
           a line; exit 1 when none may be retried (a touched test failed, or
@@ -336,6 +340,37 @@ def jest_files(changed):
     return out
 
 
+# The frontend tests that read every page, label or panel (#467): #445's agent
+# ran only the tests its change imported and missed the glossary and the
+# responsive audit. A frontend change runs them all before it is handed over.
+REPO_WIDE_JEST = (
+    "__tests__/empty-states.test.js",
+    "__tests__/glossary.test.js",
+    "__tests__/menu.test.jsx",
+    "__tests__/responsive-audit.test.js",
+)
+# The help index's sources (internal/helpkb LoadSources): a change to one needs
+# `go run ./cmd/helpindex`.
+HELP_SOURCES = (
+    "OptionStrategy.md",
+    "docs/parameters.md",
+    "frontend/content/glossary.json",
+    "frontend/content/monitor-guide.md",
+    "internal/api/catalogue.go",
+    "internal/api/explain.go",
+)
+
+
+def repo_wide(changed):
+    """The repo-wide checks a change needs: ["jest <test>", …, "helpindex"]."""
+    out = []
+    if any("frontend" in suites_for(f) for f in changed):
+        out += [f"jest {t}" for t in REPO_WIDE_JEST]
+    if any(f in HELP_SOURCES for f in changed):
+        out.append("helpindex")
+    return out
+
+
 def run_regex(names):
     return "^(" + "|".join(names) + ")$" if names else ""
 
@@ -522,6 +557,9 @@ def main(argv):
     elif cmd == "jest-files":
         got = jest_files(_lines(argv[2]))
         print("all" if got == "all" else "\n".join(got))
+    elif cmd == "repo-wide":
+        for line in repo_wide(_lines(argv[2])):
+            print(line)
     elif cmd == "retry":
         got = retry_list(argv[2], _lines(argv[3]), _text(argv[4]))
         if got is None:

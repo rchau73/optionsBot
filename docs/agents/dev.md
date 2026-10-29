@@ -8,6 +8,10 @@ Rules in [`checkfail.py`](../../scripts/agents/checkfail.py), tested in `test_ch
 
 - **CI runs every suite, the Mac only what the change touches.**
   `dev_agent.sh` runs gofmt/vet, the scripts' checks, the Go tests and jest files the change touches and eslint; `next build` and the rest run in CI.
+  It also runs the checks that read every file (#467, `checkfail.py repo-wide`: #445's agent missed the glossary and responsive-audit tests):
+  for a frontend change the glossary, responsive-audit, empty-states and menu tests, and `go run ./cmd/helpindex` (the index must not change) when a help source changed.
+  The agent runs them before it hands over, and merges `origin/main` as its last step and reruns its tests;
+  the script merges `origin/main` again before its checks (a conflict only in generated files is regenerated; any other is left to the PR gate's `needs-rebase`).
   Every PR opens as a **draft**; the PR gate marks it ready once CI is green, and only then does the Reviewer start (`pr_gate.py green`: never a commit that then fails CI).
 - **Suites by what they read** (`checkfail.py suites`, also CI's path filter): a suite runs when a changed file is code it builds, or a doc one of its tests opens.
   Any `.md` runs the two doc-wide line checks (`TestClaudeDocs`, `TestDocs_`); a `CLAUDE.md` only those; an image or diagram source nothing.

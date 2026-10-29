@@ -299,6 +299,7 @@ case "$1 $2" in
   "issue list") cat "$FAKE/issues.json" 2>/dev/null || echo "[]" ;;
   "issue create") echo "https://github.com/o/r/issues/77" ;;
   "issue comment"|"issue edit"|"pr comment") ;;
+  "api graphql") cat "$FAKE/graphql.json" ;;
   *) exit 1 ;;
 esac
 """
@@ -330,6 +331,19 @@ class LibHelpers(unittest.TestCase):
     def history(self, *bodies):
         write(self.tmp, "history.json", json.dumps(history(*bodies)))
 
+    def test_board_json_carries_each_cards_files_and_deps_not_its_body(self):
+        """#467: pm_board.py ready's overlap rule reads them; the PM agent's board.json stays small."""
+        issue = {"id": "N1", "number": 446, "title": "NPS reasons", "state": "OPEN", "updatedAt": "2026-10-28T10:00:00Z",
+                 "body": "Story.\n\n**Files:** `internal/usage/report.go`, `why_best`\n\nDepends on #445",
+                 "labels": {"nodes": [{"name": "E10"}]}, "parent": None,
+                 "projectItems": {"nodes": [{"id": "I1", "project": {"number": 5}, "status": {"name": "Ready"}, "priority": None}]}}
+        write(self.tmp, "graphql.json", json.dumps({"data": {"repository": {"issues": {"nodes": [issue]}}}}))
+        got = json.loads(self.bash('project_info() { echo "5 P"; }; board_json'))
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["files"], ["internal/usage/report.go", "why_best"])
+        self.assertEqual(got[0]["deps"], [445])
+        self.assertNotIn("body", got[0])
+
     def test_first_check_failure_goes_back_to_ready_with_needs_fix_and_the_log_tail(self):
         self.history("🤖 Dev agent picked this up")
         self.assertEqual(self.bash(f'check_failed 5 "" "{self.tmp}/body.md" ci abc1234'), "needs-fix")
@@ -358,6 +372,37 @@ class LibHelpers(unittest.TestCase):
         log = self.gh_log()
         self.assertIn("gh issue create -R o/r --label bug --title [E6] Flaky test: TestNew", log)
         self.assertIn("flaky** on #77", log)
+
+
+class RepoWide(unittest.TestCase):
+    """#467: a frontend change runs the checks that read every file before handing over."""
+
+    def test_a_frontend_change_lists_the_repo_wide_checks(self):
+        got = checkfail.repo_wide(["frontend/components/Kpi.jsx"])
+        self.assertEqual(got, ["jest __tests__/empty-states.test.js", "jest __tests__/glossary.test.js",
+                               "jest __tests__/menu.test.jsx", "jest __tests__/responsive-audit.test.js"])
+        for t in checkfail.REPO_WIDE_JEST:
+            self.assertTrue(os.path.exists(os.path.join(REPO, "frontend", t)), t)
+
+    def test_a_help_source_needs_the_help_index(self):
+        self.assertEqual(checkfail.repo_wide(["internal/api/explain.go"]), ["helpindex"])
+        for f in checkfail.HELP_SOURCES:
+            self.assertIn("helpindex", checkfail.repo_wide([f]), f)
+            self.assertTrue(os.path.exists(os.path.join(REPO, f)), f)
+
+    def test_a_backend_change_needs_none(self):
+        self.assertEqual(checkfail.repo_wide(["internal/strategy/entry.go", "scripts/agents/lib.sh"]), [])
+
+    def test_the_agent_prompt_lists_the_checks_and_the_last_merge(self):
+        with open(os.path.join(HERE, "dev_agent.sh"), encoding="utf-8") as f:
+            src = f.read()
+        prompt = src[src.index('PROMPT="'):src.index('End your answer with the exact RESULT')]
+        for t in checkfail.REPO_WIDE_JEST:
+            self.assertIn(t, prompt)
+        self.assertIn("go run ./cmd/helpindex", prompt)
+        self.assertIn("git merge --no-edit origin/main", prompt)
+        self.assertIn('"Bash(git merge:*)"', src)
+        self.assertIn('"$CHECKFAIL" repo-wide', src)  # and the script runs them itself
 
 
 class DevScript(unittest.TestCase):

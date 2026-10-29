@@ -538,6 +538,35 @@ BLOCKER_LABEL = "blocker"
 BLOCKER_PARALLEL = 3
 
 
+# Overlap across epics (#467): #445 and #446 built one NPS field under two names
+# in parallel and conflicted. A card's "Files" line or section names the files
+# and fields it changes; "Depends on #N" names the work it builds on.
+# "**Files:** a, b", "Files: a", "- Files: a" or a "## Files" heading.
+FILES_LINE = re.compile(r"^\s*(?:#+\s*files\s*:?\s*()$|[-*\s]*[*_]*files[*_]*\s*:\s*[*_]*\s*(.*)$)", re.I)
+SECTION_END = re.compile(r"^\s*(?:#+\s|\*\*[^*]+\*\*\s*$)")
+TICKED = re.compile(r"`([^`\n]+)`")
+
+
+def files_named(body):
+    """The files and fields a card's body says it changes: the `ticked` names
+    (else the comma-separated words) of its "Files" line or section, up to a
+    blank line or the next heading."""
+    out, lines = set(), (body or "").splitlines()
+    for i, line in enumerate(lines):
+        m = FILES_LINE.match(line)
+        if not m:
+            continue
+        part = [m.group(1) or m.group(2) or ""]
+        for nxt in lines[i + 1:]:
+            if not nxt.strip() or SECTION_END.match(nxt) or FILES_LINE.match(nxt):
+                break
+            part.append(nxt)
+        text = "\n".join(part)
+        names = TICKED.findall(text) or [w.strip(" *-") for w in re.split(r"[,\n]", text)]
+        out |= {n.strip() for n in names if n.strip()}
+    return out
+
+
 def ready_order(cards, busy_numbers):
     """Ready cards in pick order (Priority, then oldest), skipping every card of
     an epic that already has a Dev run in progress (busy_numbers: the issues
@@ -546,8 +575,18 @@ def ready_order(cards, busy_numbers):
     Exception: a `blocker` card skips only when a non-blocker card of its epic
     is being built, or BLOCKER_PARALLEL blocker cards of that epic already are.
     While any open card (any status) carries `blocker`, only blocker cards are
-    returned."""
+    returned.
+    Any epic (#467): a card that names a file or field (files_named) of a card
+    being built or In progress, or depends on one, waits. A card's "files" and
+    "deps" fields (board_json) are used, else its "body"."""
     by_num = {c["number"]: c for c in cards}
+    files = lambda c: set(c["files"]) if "files" in c else files_named(c.get("body"))
+    deps = lambda c: set(c["deps"]) if "deps" in c else set(depends_on(c.get("body")))
+    held_files, held_numbers = set(), set()
+    for c in cards:
+        if c["number"] in busy_numbers or (c["status"] == "In progress" and c["state"] == "OPEN"):
+            held_files |= files(c)
+            held_numbers.add(c["number"])
     epics = lambda c: {l for l in c.get("labels", []) if EPIC_LABEL.match(l)}
     busy_epics, busy_blockers = set(), {}
     for n in busy_numbers:
@@ -571,6 +610,8 @@ def ready_order(cards, busy_numbers):
             if any(busy_blockers.get(e, 0) >= BLOCKER_PARALLEL for e in mine):
                 continue
         elif any(busy_blockers.get(e, 0) for e in mine):
+            continue
+        if files(c) & held_files or deps(c) & held_numbers:
             continue
         out.append(c)
     rank = lambda c: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(c.get("priority"), 9), c["number"])
