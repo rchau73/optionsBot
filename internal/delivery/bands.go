@@ -31,6 +31,21 @@ func FrequencyBand(perDay float64) string {
 	return BandLow
 }
 
+// WeeklyFrequencyBand bands releases per week with FrequencyBand's
+// thresholds: elite ≥ 7 a week (daily), high ≥ 1 a week, medium ≥ 1 a month,
+// else low. Compared per week, so exactly 1 a week is high.
+func WeeklyFrequencyBand(perWeek float64) string {
+	switch {
+	case perWeek >= 7:
+		return BandElite
+	case perWeek >= 1:
+		return BandHigh
+	case perWeek >= 7.0/30:
+		return BandMedium
+	}
+	return BandLow
+}
+
 // LeadTimeBand bands a median lead time: elite < 1 day, high < 1 week,
 // medium < 1 month (30 days), else low.
 func LeadTimeBand(hours float64) string {
