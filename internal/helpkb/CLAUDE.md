@@ -12,4 +12,5 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   and runs the glossary's no-return-promises regex over every passage (a promise word that denies one is allowed by its exact phrase, `negatedPromises`).
   Pure BM25 `Search` and `NoAnswer` (the best passage holds under `DefaultNoAnswer` of the question's IDF weight → "I don't know");
   - `tests/helpkb_test.go` scores `tests/testdata/helpkb_questions.yaml` and fails when hit@3 falls under `helpkb_baseline.json` (`-args -update-help` rewrites the index and the baseline).
+  A paragraph or list item written one sentence per line is rejoined with spaces (`joinSoftBreaks`, #463), so reflowing a source does not change its passages.
   No model, no network; nothing in the bot uses it.

@@ -208,17 +208,4 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 
 ## 12. Decision log
 
-| Date | Decision | Options | Reason | Decided by |
-|---|---|---|---|---|
-| 2026-10-17 | The PRD is approved by merging its pull request; epics carry the trading-rule areas the PM agent may send to Ready | label per epic; merge | one auditable gate, already used for code | human |
-| 2026-10-17 | Prototypes are private claude.ai Artifacts, approved by the `prototype:approved` label on the epic | Next.js route; Artifact | fast to iterate, no code to maintain | human |
-| 2026-10-17 | Product material that is sensitive stays in gitignored `data/product/` | all public; all private; split | the repo is public | human |
-| 2026-10-18 | Primary persona: the long-term cycle holder seeking recurring monthly income | income holder; only the owner | confirmed target | product owner on #149 |
-| 2026-10-18 | optionsBot is a product, not a study; the repo stays public and the PRD stays shareable, sensitive material in `data/product/` | product; study | commercial goal | product owner on #149 |
-| 2026-10-18 | Agents may investigate, backtest, A/B test, record data, fix bugs and change UI/UX alone; core trading policies change only with the product owner's approval; E1's delegated areas are kept | keep; widen; narrow | solid foundation fast, core risk with a person | product owner on #149 |
-| 2026-10-18 | Roles admin / manager / user; the platform never handles deposits, transfers or withdrawals — those stay on the customer's exchange | — | the platform only places orders | product owner on #149 |
-| 2026-10-18 | New epics E7–E13 (accounts and roles, multi-exchange, strategy-change lab, AI assistant, education, responsive web, analytics) | all; some | requested by the product owner | product owner on #149 |
-| 2026-10-18 | Pricing: the PM proposes in E5 (fair, low churn, no profit share); the product owner decides | — | monetization is a product decision with legal limits | product owner on #149 |
-| 2026-10-20 | E9 roles: a manager's change applies to one account they manage (1A); managers are the customer's side, the subscriber or their adviser, n:n with accounts, never platform-wide; admins are staff and don't change established accounts (2B) | 1A/1B, 2A/2B | the customer owns their account's settings; advisers manage several customers | product owner on #185 |
-| 2026-10-27 | E10: the assistant drafts bug/enhancement requests that pass its evidence filter; the person sends them; they go to a private queue the PM agent triages into redacted public issues | file to GitHub directly; private queue | the repository is public; requests must carry data or examples | product owner in chat, recorded on #161 |
-| 2026-10-28 | E13: NPS once a month (was every 90 days), optional, inside the assistant panel with a badge on Ask; an in-app notification centre (bell) for what needs the person and for updates | NPS every 90 days as a page card; monthly in the assistant · no notifications; a bell | the person answers where they already talk to the product; the app needs one place to tell people what happened and what waits for them | product owner in chat, recorded on #164 |
+One file per decision in [`decisions/`](decisions/), named `YYYY-MM-DD-<slug>.md`, so two PRD pull requests that each add a decision do not conflict. Each file holds the date, the decision, the options, the reason, who decided and the epic. A new decision is a new file, never a row here. `tests/prd_decisions_test.go` checks the folder.

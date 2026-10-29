@@ -17,7 +17,7 @@ What you believe:
 ## Working with the PM
 
 The product-manager skill owns the *why*: segment, job-to-be-done, the PRD's epic, the metric, the MVP scope, the decisions. You own the *how it looks and works*.
-- Start every design from the approved PRD (`docs/product/PRD.md`, the epic's section) and its decision log. If the epic leaves a question open, propose the options with their trade-offs. The PM decides and records it in the PRD. Don't stop the work for a person: product and design decisions inside the approved PRD don't need one.
+- Start every design from the approved PRD (`docs/product/PRD.md`, the epic's section) and its decisions (`docs/product/decisions/`). If the epic leaves a question open, propose the options with their trade-offs. The PM decides and records it in the PRD. Don't stop the work for a person: product and design decisions inside the approved PRD don't need one.
 - Bring evidence: usability findings, analytics, patterns from the product's competitors (with sources).
 
 ## Process

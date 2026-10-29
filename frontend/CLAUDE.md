@@ -1,6 +1,9 @@
 # frontend
 
-Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md`.
+Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` (setup, structure, index) and one file per area under `frontend/docs/` (#462).
+
+- **Docs by area** (#462): a new page, route or rule goes in its area's file, one sentence per line; a route is a heading of its own, never a table row, so two new routes land in different places.
+  - `scripts/docs_nothing_lost.py <old> <new files…>` lists the sentences of an old document missing from the files it was split into (`--links` also checks the links).
 
 - **Monitor pages and the menu** (product owner, 2026-10-27):
   - every change that adds, renames or removes a monitor page updates the menu in the same PR (`frontend/lib/menu.js`, #385), or names the page in the menu test's allow-list with its reason;

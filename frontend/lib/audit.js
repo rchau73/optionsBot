@@ -3,7 +3,7 @@
 // lines themselves are written by lib/auth/service.js, lib/analytics/* and the
 // close / rebalance routes; this file only reads their shape.
 
-/** Every action written to audit.jsonl (frontend/README.md "Sign-in", Audit row). */
+/** Every action written to audit.jsonl (frontend/docs/sign-in.md, the Audit part). */
 export const AUDIT_ACTIONS = [
   "signed_in",
   "sign_in_failed",

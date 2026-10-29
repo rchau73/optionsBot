@@ -19,7 +19,7 @@ Version <n> · <date> · owner: PM · status: approved on merge
 ## 9. Epics               (one ### section per epic, format below)
 ## 10. Design             (principles, the flows and prototypes, links to approved prototypes)
 ## 11. Risks, compliance and open questions   (anything that needs legal review)
-## 12. Decision log       (date · decision · options · reason · decided by)
+## 12. Decision log       (a link to docs/product/decisions/: one file per decision — date · decision · options · reason · decided by · epic, #464)
 ```
 
 ## Epic format
