@@ -14,4 +14,6 @@ Notable files:
 - `agentic_docs_test.go` (#461): `AGENTIC.md` is the overview and `docs/agents/*.md` one file per agent;
   every link and quoted section reference to them resolves, the overview indexes every agent file, no prose line over 400 characters in them
   (the one-off "nothing lost" check was retired after it merged).
+- `tips_coverage_test.go` (#492): every `config.Tunables()` key has a tip in `docs/product/education/tips.json` and every glossary term has `short` + `risk_income`;
+  no sentence over 25 words, no jargon word without a glossary entry, no promised return; a new tunable needs its tip in the same PR.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
