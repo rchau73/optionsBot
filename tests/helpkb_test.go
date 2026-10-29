@@ -57,6 +57,19 @@ func TestHelpKB_PassageIsCitable(t *testing.T) {
 	}
 }
 
+// One sentence per line (#463) must not change a passage: a paragraph, a list
+// item and a quote written a sentence per line give the text of the same
+// content on one line; a table row and a quote's paragraph break stay.
+func TestHelpKB_SentencePerLineGivesTheSamePassage(t *testing.T) {
+	oneLine := "# D\n\nFirst. Second.\n\n- Item one. More.\n- Item two.\n\n> Quote. More.\n>\n> - Bullet. Tail.\n> - Next.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+	perLine := "# D\n\nFirst.\nSecond.\n\n- Item one.\n  More.\n- Item two.\n\n> Quote.\n> More.\n>\n> - Bullet.\n>   Tail.\n> - Next.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+	want := helpkb.Parse("d.md", []byte(oneLine))
+	got := helpkb.Parse("d.md", []byte(perLine))
+	if len(got) != len(want) || got[0].Text != want[0].Text {
+		t.Errorf("passages differ:\n got %q\nwant %q", got, want)
+	}
+}
+
 // Parse: headings in a code fence are text, repeated headings get GitHub's
 // "-1" suffix, a long table is split between rows with its header repeated,
 // a long list between items, links keep their text and rules and images go.

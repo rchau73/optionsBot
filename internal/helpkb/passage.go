@@ -200,6 +200,9 @@ func blocks(lines []string) []block {
 		case listRe.MatchString(cur[0]):
 			kind = list
 		}
+		if kind != table {
+			cur = joinSoftBreaks(cur)
+		}
 		out = append(out, block{kind: kind, lines: cur})
 		cur = nil
 	}
@@ -215,6 +218,36 @@ func blocks(lines []string) []block {
 		}
 	}
 	flush()
+	return out
+}
+
+// softContinuation matches the quote marker a continuation line repeats.
+var softContinuation = regexp.MustCompile(`^\s*>+\s?`)
+
+// joinSoftBreaks rejoins a paragraph or list item written one sentence per
+// line (#463): Markdown renders the line break as a space, so the passage is
+// the same text as when the source kept the whole paragraph on one line.
+// List markers (nested items too) still start a line; a quote's repeated ">"
+// is dropped.
+func joinSoftBreaks(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if len(out) == 0 || listRe.MatchString(l) {
+			out = append(out, l)
+			continue
+		}
+		prev := len(out) - 1
+		if strings.HasPrefix(strings.TrimSpace(out[prev]), ">") && strings.HasPrefix(strings.TrimSpace(l), ">") {
+			body := softContinuation.ReplaceAllString(l, "")
+			// a bare ">" is a paragraph break inside the quote, and so is the line after it
+			if strings.TrimSpace(body) == "" || strings.TrimSpace(out[prev]) == ">" || listRe.MatchString(body) {
+				out = append(out, l)
+				continue
+			}
+			l = body
+		}
+		out[prev] += " " + strings.TrimSpace(l)
+	}
 	return out
 }
 
