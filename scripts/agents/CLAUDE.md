@@ -123,7 +123,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - no valid verdict → retried, 3 runs at most (`requests_attempts.json`); ledger agent `requests`.
 - Token savers (2026-10-27, AGENTIC.md):
   - the Dev pick order skips a card whose epic another instance is building (`pm_board.py ready`);
-    except `blocker` cards: up to 3 of one epic at once (`BLOCKER_PARALLEL`, #459); with none open, one per epic again;
+    except `blocker` cards: up to 3 of one epic at once (`BLOCKER_PARALLEL`, #459), and while any is open only blocker cards are picked;
+    with none open, normal picking and one per epic again;
   - documents/research cards (label `documentation` or `DEV_LIGHT_EPICS`) run on `DEV_LIGHT_MODEL` unless `DEV_MODEL` is set (`pm_board.py model`);
   - the agent runs only the tests its change touches, the script every suite once.
 - Parallel runs:
