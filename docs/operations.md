@@ -1,8 +1,10 @@
 # Operations guide
 
-How to run, watch and stop the bot. For architecture and design see the [main README](../README.md); for the trading logic in plain language see [OptionStrategy.md](../OptionStrategy.md).
+How to run, watch and stop the bot.
+For architecture and design see the [main README](../README.md); for the trading logic in plain language see [OptionStrategy.md](../OptionStrategy.md).
 
-> Testnet is the default. Live trading only happens with `DERIBIT_ENV=live` in `.env` — an explicit opt-in.
+> Testnet is the default.
+> Live trading only happens with `DERIBIT_ENV=live` in `.env` — an explicit opt-in.
 
 ## Contents
 - [Run locally](#run-locally)
@@ -25,7 +27,8 @@ make build                    # → ./bot
 
 ## Environments: stable and mvp
 
-Two local environments run side by side and **share nothing at runtime**. Your development checkout runs neither.
+Two local environments run side by side and **share nothing at runtime**.
+Your development checkout runs neither.
 
 | | **stable** (pseudo-production) | **mvp** (staging) |
 |---|---|---|
@@ -40,9 +43,13 @@ Two local environments run side by side and **share nothing at runtime**. Your d
 
 The environments folder is `optionsBot-env` beside your checkout (`~/dev/go/optionsBot` → `~/dev/go/optionsBot-env`), holding `stable/`, `mvp/`, `history/` (deploys and promotions) and `agent-worktrees/`; set `OPTIONSBOT_ENVS` to put it elsewhere.
 
-**Run `scripts/envctl.sh` and `scripts/promote.sh` from your development checkout** (`~/dev/go/optionsBot`), on an up-to-date `main`. Each environment's clone keeps the scripts of the code it runs: stable's are its release tag's, which may predate today's layout or checks. Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `main`.
+**Run `scripts/envctl.sh` and `scripts/promote.sh` from your development checkout** (`~/dev/go/optionsBot`), on an up-to-date `main`.
+Each environment's clone keeps the scripts of the code it runs: stable's are its release tag's, which may predate today's layout or checks.
+Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `main`.
 
-**Why separate accounts:** at startup a bot cancels every order of its currency on the account, and every cycle it adopts any short position it finds there. Two environments on one account would cancel each other's orders and manage each other's positions. `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
+**Why separate accounts:** at startup a bot cancels every order of its currency on the account, and every cycle it adopts any short position it finds there.
+Two environments on one account would cancel each other's orders and manage each other's positions.
+`envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 
 ```bash
 scripts/envctl.sh mvp init              # clone into ~/dev/go/optionsBot-env/mvp + write deploy.env; then add its .env
@@ -54,7 +61,10 @@ scripts/envctl.sh stable stop bot-eth   # any scripts/envctl.sh stable command, 
 scripts/envctl.sh stable down
 ```
 
-Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml`. That file is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there. `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**). A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
+Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml`.
+That file is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there.
+`envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**).
+A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
 
 ### Releasing to stable
 
@@ -65,13 +75,27 @@ scripts/promote.sh v0.2.0          # rollback: a tag stable ran before skips the
 scripts/promote.sh v0.3.2 --commit 9c58ea6 --escalate "stop-loss bug on BTC"   # admin escalation: no soak, the reason is audited
 ```
 
-**Automatic release** (#471, [AGENTIC.md](../AGENTIC.md#automatic-release)): the agents' `release.sh` runs `promote.sh` from the mvp clone with the next patch version — weekly (first tick of a Monday UTC) on the build the first command above would pick, and early for a merged `bug` + `release:hotfix` fix once it has been live 1 h on mvp. Nothing to release → a one-line note on the E6 epic. `AUTO_RELEASE=0` in `agents.env` stops it; a person can still promote by hand. An escalation (`--escalate "<reason>"`, with `--commit`) skips only the soak: the commit must have run in mvp and no `sme:not-fixed` may be open.
+**Automatic release** (#471, [AGENTIC.md](../AGENTIC.md#automatic-release)): the agents' `release.sh` runs `promote.sh` from the mvp clone with the next patch version — weekly (first tick of a Monday UTC) on the build the first command above would pick, and early for a merged `bug` + `release:hotfix` fix once it has been live 1 h on mvp.
+Nothing to release → a one-line note on the E6 epic.
+`AUTO_RELEASE=0` in `agents.env` stops it; a person can still promote by hand.
+An escalation (`--escalate "<reason>"`, with `--commit`) skips only the soak: the commit must have run in mvp and no `sme:not-fixed` may be open.
 
-**What a new tag goes on** (#360): the newest `mvp` deploy line of `deploys.tsv` (never a `rollback` line) that is at least `PROMOTE_SOAK_DAYS` old — not the build mvp runs now, which a merge replaces several times a day and so never soaks. Every later deploy contains it (mvp runs `main`), so the soak gate below passes by construction and still checks it. The confirmation shows the commit, since when it has been in mvp and for how many days, and the commits since stable's release. When every mvp deploy is newer than the soak, it refuses and says when the oldest will have soaked. `--commit <sha>` names another build: it must appear on an mvp line of `deploys.tsv`, and the same checks apply. An existing tag (a rollback, or one made by hand) is used as it is. `promote.sh` and `envctl.sh … init` refuse to run from inside an environment's clone (a folder with a `deploy.env`) — except that `promote.sh` runs from the mvp clone, which is on `main` (the automatic release).
+**What a new tag goes on** (#360): the newest `mvp` deploy line of `deploys.tsv` (never a `rollback` line) that is at least `PROMOTE_SOAK_DAYS` old — not the build mvp runs now, which a merge replaces several times a day and so never soaks.
+Every later deploy contains it (mvp runs `main`), so the soak gate below passes by construction and still checks it.
+The confirmation shows the commit, since when it has been in mvp and for how many days, and the commits since stable's release.
+When every mvp deploy is newer than the soak, it refuses and says when the oldest will have soaked.
+`--commit <sha>` names another build: it must appear on an mvp line of `deploys.tsv`, and the same checks apply.
+An existing tag (a rollback, or one made by hand) is used as it is.
+`promote.sh` and `envctl.sh … init` refuse to run from inside an environment's clone (a folder with a `deploy.env`) — except that `promote.sh` runs from the mvp clone, which is on `main` (the automatic release).
 
-A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work). Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes. **If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable); since #470 each promotion also appends a `stable` line to `deploys.tsv` — `<time> stable <commit> release <tag> <trigger> <who> <why>` when healthy (#471: trigger `manual`, `weekly`, `hotfix` or `escalation`), `<time> stable <commit> rollback <prev tag>` when a failed promotion went back — for the delivery report (`cmd/dora`, [AGENTIC.md](../AGENTIC.md#delivery-report-dora)). The mvp soak reads `mvp` lines only. Promotion is testnet-only: a live stable is promoted by hand.
+A new release is promoted only when the tagged commit (or a later one) has run in mvp for **3 days** (`PROMOTE_SOAK_DAYS`), and no open issue carries `sme:not-fixed` (the SME agent found that a merged fix did not work).
+Then stable checks out the tag and rebuilds, and every bot's decision loop must report again within 5 minutes.
+**If not, stable goes back to its previous release.** History: `~/dev/go/optionsBot-env/history/deploys.tsv` (mvp) and `promotions.tsv` (stable); since #470 each promotion also appends a `stable` line to `deploys.tsv` — `<time> stable <commit> release <tag> <trigger> <who> <why>` when healthy (#471: trigger `manual`, `weekly`, `hotfix` or `escalation`), `<time> stable <commit> rollback <prev tag>` when a failed promotion went back — for the delivery report (`cmd/dora`, [AGENTIC.md](../AGENTIC.md#delivery-report-dora)).
+The mvp soak reads `mvp` lines only.
+Promotion is testnet-only: a live stable is promoted by hand.
 
-**Soak check: deploy effect** (#219, E1's "no restart changes the book"). Before promoting, run the report over the soak window for each mvp bot (from the dev checkout, on the mvp clone's files):
+**Soak check: deploy effect** (#219, E1's "no restart changes the book").
+Before promoting, run the report over the soak window for each mvp bot (from the dev checkout, on the mvp clone's files):
 
 ```bash
 M=~/dev/go/optionsBot-env/mvp
@@ -79,11 +103,15 @@ go run ./cmd/deployeffect -journal $M/data/btc/orders.log -config $M/config_btc.
 go run ./cmd/deployeffect -journal $M/data/eth/orders.log -config $M/config_eth.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3
 ```
 
-It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger). The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting. The full rules are in `internal/deployeffect` (package comment). The weekly evidence report's **E1 reliability** section (#361, README "Evidence report") runs the same classification on every bot's week, with the startups' times, commits and restart-made lots, so the count is there each Monday without running the tool.
+It lists every startup (its startup `reconciled` lines; a deploy into a flat book from `deploys.tsv`, which also names the commit) with the orders the journal shows in its first 30 minutes by trigger, in counts and lots only, and classifies it: **neutral** (no order, or only entries into slots vacant at the restart), **expected** (an exit rule already due on the leg's mark at the restart, a rebalance after a confirmed limit change or a person's request, a repair of a leg not held, the MM cut, a manual close or the kill switch) or **restart-made** (a rebalance with no confirmed limit change, leg balancing, `close_long`, a repair of a leg still held by its cooldown, an exit or shed of a position held at the restart that was not due, any unknown trigger).
+The target is 0 restart-made; each restart-made order is printed with its reason — read it before promoting.
+The full rules are in `internal/deployeffect` (package comment).
+The weekly evidence report's **E1 reliability** section (#361, README "Evidence report") runs the same classification on every bot's week, with the startups' times, commits and restart-made lots, so the count is there each Monday without running the tool.
 
 ### Inside an environment
 
-`docker-compose.yml` defines one service per underlying (`bot-btc`, `bot-eth`) plus the monitor. Each bot mounts its own config as `/app/config.yaml` and **runs inside its own host folder** of the clone (`data/btc/`, `data/eth/`, mounted at `/app/run`), so everything it keeps persists across rebuilds and the two never share a file:
+`docker-compose.yml` defines one service per underlying (`bot-btc`, `bot-eth`) plus the monitor.
+Each bot mounts its own config as `/app/config.yaml` and **runs inside its own host folder** of the clone (`data/btc/`, `data/eth/`, mounted at `/app/run`), so everything it keeps persists across rebuilds and the two never share a file:
 
 ```
 data/btc/
@@ -102,7 +130,8 @@ data/evidence/<week>/ weekly evidence reports, btc.md/.json and eth.md/.json (cm
 
 How much of that recorded history exists, and where restarts left gaps: `go run ./cmd/datacoverage -dir data/btc` (days, missing hours and gaps per dataset, and the days a replay can only decide hourly; README "Recorded-history coverage").
 
-**Weekly evidence report** (#176, README "Evidence report"). After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
+**Weekly evidence report** (#176, README "Evidence report").
+After a week ends (Monday UTC), capture each bot's book and run the report for the environment, from the repository checkout:
 
 ```bash
 MONITOR_URL=http://127.0.0.1:3000 scripts/stress_inputs.sh btc ~/dev/go/optionsBot-env/stable/data/stress/btc   # and eth
@@ -110,19 +139,30 @@ go run ./cmd/evidence -env stable                     # the last complete week, 
 go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mvp records no books: replay on stable's
 ```
 
-It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them. The amounts stay in `data/` — never paste them into an issue of the public repository. Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; AGENTIC.md "Weekly evidence report"). The commands above remain for a re-run by hand.
+It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them.
+The amounts stay in `data/` — never paste them into an issue of the public repository.
+Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; AGENTIC.md "Weekly evidence report").
+The commands above remain for a re-run by hand.
 
-`restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted. The bot reconciles its positions with Deribit on every start, so a restart is always safe. Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink). Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
+`restart: unless-stopped` revives a crashed container, and the bot's decision-loop watchdog exits a stuck process so it is restarted.
+The bot reconciles its positions with Deribit on every start, so a restart is always safe.
+Research tools in the dev checkout read stable's recorded books through `data/btc` → `~/dev/go/optionsBot-env/stable/data/btc` (a symlink).
+Running a bot by hand (`./bot`, above) needs a Deribit account no environment uses.
 
 Why each environment needs its own Deribit account, and what a bot does to an account it shares: [account-isolation.md](account-isolation.md).
 
 ## Live monitor
 
-Each environment also starts its **monitor** (stable <http://localhost:3000>, mvp <http://localhost:3100>, this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second. It is read-only. The P&L chart's longer ranges (1h to all) read each bot's P&L history (`data/<underlying>/data/pnl_history.jsonl`), which survives restarts and rebuilds; delete it to start the history over. Details and local/demo runs: [frontend/README.md](../frontend/README.md).
+Each environment also starts its **monitor** (stable <http://localhost:3000>, mvp <http://localhost:3100>, this machine only): open positions per strategy and slot with strikes, DTE and Greeks, working orders, a live activity feed with reasons and market context, and P&L — refreshed every second.
+It is read-only.
+The P&L chart's longer ranges (1h to all) read each bot's P&L history (`data/<underlying>/data/pnl_history.jsonl`), which survives restarts and rebuilds; delete it to start the history over.
+Details and local/demo runs: [frontend/README.md](../frontend/README.md).
 
 ### Margin utilisation
 
-How much of the approved margin a bot actually uses (#174). Each P&L history line also carries the margin the policy saw that cycle: `im_pct` and `mm_pct` (Deribit's, % of margin balance), `im_limit_pct` (the policy's IM limit) and `entries_allowed` — false while new risk is frozen, MM is at its limit, GEX is not ready, a stop-loss waits for the spread, or the margin read failed. Lines written before this change have none of these fields; they still load and are left out of the measure.
+How much of the approved margin a bot actually uses (#174).
+Each P&L history line also carries the margin the policy saw that cycle: `im_pct` and `mm_pct` (Deribit's, % of margin balance), `im_limit_pct` (the policy's IM limit) and `entries_allowed` — false while new risk is frozen, MM is at its limit, GEX is not ready, a stop-loss waits for the spread, or the margin read failed.
+Lines written before this change have none of these fields; they still load and are left out of the measure.
 
 `/api/status` reports `utilisation_7d` and `utilisation_30d`:
 
@@ -130,15 +170,19 @@ How much of the approved margin a bot actually uses (#174). Each P&L history lin
 curl -s localhost:8081/api/status | jq '.utilisation_7d, .utilisation_30d'
 ```
 
-- `mean_pct` — the time-weighted mean of IM ÷ IM limit, in %, over the time entries were allowed (null if they never were). E1's target is ≥ 60 %; a bot at 10 % of a 20 % limit shows 50.
-- `allowed_share` — the share (0–1) of the measured time entries were allowed. A low `mean_pct` with a high `allowed_share` is idle capital; a low `allowed_share` means the policy kept the bot out.
-- `allowed_hours`, `measured_hours` — the time behind the two figures. Each line stands for the time until the next one, at most 15 minutes, so the hours a bot was down are not counted.
+- `mean_pct` — the time-weighted mean of IM ÷ IM limit, in %, over the time entries were allowed (null if they never were).
+  E1's target is ≥ 60 %; a bot at 10 % of a 20 % limit shows 50.
+- `allowed_share` — the share (0–1) of the measured time entries were allowed.
+  A low `mean_pct` with a high `allowed_share` is idle capital; a low `allowed_share` means the policy kept the bot out.
+- `allowed_hours`, `measured_hours` — the time behind the two figures.
+  Each line stands for the time until the next one, at most 15 minutes, so the hours a bot was down are not counted.
 
 Every week the evidence report's **E1 reliability** section (#361, README "Evidence report") states the week's `mean_pct` against the 60 % target and splits the slots' idle time by cause (`internal/idlemargin`, as `cmd/idlemargin`).
 
 ### Sign-in (each environment)
 
-The monitor requires a signed-in session for every page and API route (#170). Each environment has **its own users** (a `monitor-auth` Docker volume, `auth.db`) and its own secrets, in its clone's `.env` (names in `.env.example`; never in git — the pre-commit hook refuses any `*SECRET*`/`*TOKEN*`/`*PASSWORD*` value of `.env`):
+The monitor requires a signed-in session for every page and API route (#170).
+Each environment has **its own users** (a `monitor-auth` Docker volume, `auth.db`) and its own secrets, in its clone's `.env` (names in `.env.example`; never in git — the pre-commit hook refuses any `*SECRET*`/`*TOKEN*`/`*PASSWORD*` value of `.env`):
 
 ```bash
 # in ~/dev/go/optionsBot-env/<stable|mvp>/.env — different values per environment
@@ -149,23 +193,48 @@ ADMIN_EMAIL=<optional>
 MONITOR_API_TOKEN=<openssl rand -hex 32>    # read-only token for the deploy health check and the agents
 ```
 
-Then `scripts/envctl.sh <env> up`, open the monitor and sign in. The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it). **Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`). Five failed sign-ins lock a username for 15 minutes; the lock is kept in the environment's `auth.db`, so restarting the monitor does not clear it (#213). Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
+Then `scripts/envctl.sh <env> up`, open the monitor and sign in.
+The first start logs `created the first admin`; after you have signed in, remove `ADMIN_PASSWORD` from `.env` (an existing user is never changed by it).
+**Set both secrets in an environment before it runs this release**: without `AUTH_SECRET` its monitor does not start, and without `MONITOR_API_TOKEN` the deploy health check (`deploy.sh`), `promote.sh`, the SME agent and `scripts/stress_inputs.sh` get 401 (they read it with `env_monitor_token`).
+Five failed sign-ins lock a username for 15 minutes; the lock is kept in the environment's `auth.db`, so restarting the monitor does not clear it (#213).
+Sign-in events (who, from which IP, failures, lockouts) are JSON lines in `scripts/envctl.sh <env> logs monitor`.
 
-**Roles and audit (#171).** Only a `manager` or an `admin` may close a leg or rebalance (dry run included); a `user` only watches — the monitor answers 403 and the bot receives nothing. The monitor re-reads the person from `auth.db` on each of those requests, so a role change, a deletion or a sign-out everywhere takes effect at once (each of them also ends every session of that user). Each close and rebalance reaches the bot with `"actor": {"user", "role"}` (with `BOT_ADMIN_TOKEN` only): the bot's `manual close` / `manual rebalance requested` log lines carry `by`, its journal's `closed` line (`manual_close`) and `risk_limit` `rebalance_manual` line carry `actor` and say "by bob (manager)" in `detail`. A request without an actor (e.g. the `curl` below) is recorded as `monitor`. Who did what on the monitor itself — sign-ins, failed sign-ins, lockouts, user changes, close and rebalance requests — is in the `monitor-auth` volume's `audit.jsonl` (`docker compose exec monitor tail data/monitor/audit.jsonl`), one JSON line each; never a password or token.
+**Roles and audit (#171).** Only a `manager` or an `admin` may close a leg or rebalance (dry run included); a `user` only watches — the monitor answers 403 and the bot receives nothing.
+The monitor re-reads the person from `auth.db` on each of those requests, so a role change, a deletion or a sign-out everywhere takes effect at once (each of them also ends every session of that user).
+Each close and rebalance reaches the bot with `"actor": {"user", "role"}` (with `BOT_ADMIN_TOKEN` only): the bot's `manual close` / `manual rebalance requested` log lines carry `by`, its journal's `closed` line (`manual_close`) and `risk_limit` `rebalance_manual` line carry `actor` and say "by bob (manager)" in `detail`.
+A request without an actor (e.g. the `curl` below) is recorded as `monitor`.
+Who did what on the monitor itself — sign-ins, failed sign-ins, lockouts, user changes, close and rebalance requests — is in the `monitor-auth` volume's `audit.jsonl` (`docker compose exec monitor tail data/monitor/audit.jsonl`), one JSON line each; never a password or token.
 
 ## Watch the logs
 
-**Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole). Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`. The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin. About 0.5 MB a day per coin. `--reset-history` does not touch it. Log lines: `market snapshot recorded` / `market snapshot not recorded`.
+**Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole).
+Columns: `date` (snapshot time, RFC 3339 UTC), `instrument, underlying, underlying_price` (the expiry's forward), `strike, expiry, option_type, bid, ask, mid, mark` (coin), `delta, gamma, theta, vega` (Black–Scholes from the mark IV), `iv, open_interest, dvol_index`.
+The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testnet, because testnet books are thin.
+About 0.5 MB a day per coin.
+`--reset-history` does not touch it.
+Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 
-The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot. It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it. The log lines carry `dir`.
+The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot.
+It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it.
+The log lines carry `dir`.
 
-**SOL and XRP books** (#356, for the SOL/XRP decision #117). The BTC bot of the environment with `BOT_RECORD_MARKET` on (stable) also writes the `SOL_USDC-…` and `XRP_USDC-…` options to `data/btc/data/market_usdc_sol/` and `market_usdc_xrp/`, same columns and hour, from the **same** USDC book summary (`recorder.USDCBooks`: fetched once per snapshot and split by underlying, so no extra Deribit call), through the mainnet public gateway. They have no DVOL index: `dvol_index` is empty. XRP strikes are fractional (`2d5` = 2.5, parsed by `marketdata.ParseOptionName`). Coverage: `cmd/datacoverage` lists both datasets. The liquidity report: `go run ./cmd/usdcstudy -dir data/btc,data/eth -from … -to …` → `data/usdcstudy/<time>/report.md|json` (README "USDC-settled study").
+**SOL and XRP books** (#356, for the SOL/XRP decision #117).
+The BTC bot of the environment with `BOT_RECORD_MARKET` on (stable) also writes the `SOL_USDC-…` and `XRP_USDC-…` options to `data/btc/data/market_usdc_sol/` and `market_usdc_xrp/`, same columns and hour, from the **same** USDC book summary (`recorder.USDCBooks`: fetched once per snapshot and split by underlying, so no extra Deribit call), through the mainnet public gateway.
+They have no DVOL index: `dvol_index` is empty.
+XRP strikes are fractional (`2d5` = 2.5, parsed by `marketdata.ParseOptionName`).
+Coverage: `cmd/datacoverage` lists both datasets.
+The liquidity report: `go run ./cmd/usdcstudy -dir data/btc,data/eth -from … -to …` → `data/usdcstudy/<time>/report.md|json` (README "USDC-settled study").
 
-**GEX every minute** (#122). Each GEX snapshot the bot computes (one a minute) is also written as one JSON line to `data/<coin>/data/market_gex/YYYY-MM-DD.jsonl.gz` (gzip member per line; `zcat` reads it): `computed_at, spot, regime, flip, flip_found, median_flip` (the bias's window median, `StableBiasDir`), `gex_sum` (Σ weighted signed GEX), `dvol, flip_buffer_pct`. No Deribit call, a few hundred KB a day, never read by trading, not touched by `--reset-history`; recorded whenever the market history is. `cmd/stress -replay` reads it to decide the GEX side at the bot's pace. Log lines: `gex recorder started` / `gex snapshot not recorded`.
+**GEX every minute** (#122).
+Each GEX snapshot the bot computes (one a minute) is also written as one JSON line to `data/<coin>/data/market_gex/YYYY-MM-DD.jsonl.gz` (gzip member per line; `zcat` reads it): `computed_at, spot, regime, flip, flip_found, median_flip` (the bias's window median, `StableBiasDir`), `gex_sum` (Σ weighted signed GEX), `dvol, flip_buffer_pct`.
+No Deribit call, a few hundred KB a day, never read by trading, not touched by `--reset-history`; recorded whenever the market history is.
+`cmd/stress -replay` reads it to decide the GEX side at the bot's pace.
+Log lines: `gex recorder started` / `gex snapshot not recorded`.
 
 **Activity feed.** The bot keeps its last 500 decisions in memory for the monitor (`/api/events`); periodic `pnl` lines are counted but not kept there, so they never push decisions out — the feed shows the latest orders, fills, closes, skips, margin changes and SMA trend changes (`trend_changed`, journaled once per change with the reason and the levels, whichever `gex_direction` the bot uses) however long ago they happened, also right after a restart.
 
-**History across restarts.** Each bot replays its journal (`orders.log`) at startup, so realized P&L, close and order counts, the activity feed and the trade history continue where they stopped (`history restored from the journal` in the log gives the totals). To start a fresh history — e.g. after changing the strategy — archive it; nothing is deleted:
+**History across restarts.** Each bot replays its journal (`orders.log`) at startup, so realized P&L, close and order counts, the activity feed and the trade history continue where they stopped (`history restored from the journal` in the log gives the totals).
+To start a fresh history — e.g. after changing the strategy — archive it; nothing is deleted:
 
 ```bash
 scripts/envctl.sh stable stop bot-btc
@@ -175,7 +244,14 @@ scripts/envctl.sh stable start bot-btc
 
 The journal and `data/pnl_history.jsonl` move to `data/btc/data/archive/<UTC time>/`; move them back to restore that history.
 
-`bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `scripts/envctl.sh stable logs` shows one stream; the files themselves are in `data/<underlying>/`. Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks. Closes also carry `detail`: the rule that fired, with its numbers — e.g. `stop-loss: loss 2.31× the premium ≥ 2.00×`, `delta exit: |Δ| 0.312 ≥ 0.30`, `take-profit: 55% of the premium earned ≥ 50%`, `time roll: 15 days to expiry ≤ 15`, `leg balance: call … 262 vs put … 162 — buying back the 100 excess … (not a stop)`, `GEX shed: …`, `MM limit: …`, `downsize: …` — and the option's greeks at that moment (`delta`, `gamma`, `theta`, `vega`, per contract as Deribit quotes them). Fills carry `fee` (what Deribit charged, coin, from the order's trades) and, for entries, repairs and top-ups, how much of the order filled: `qty` of `target_qty`, `fill_pct` = qty ÷ target_qty × 100; a cancelled sell carries `filled_qty` of its `qty` (absent = nothing filled) — together they measure how much of each target size the book absorbed. Closes carry `fees` (the opening share + the closing fee) and a **net** `pnl` = premium − buy-back − fees. Every P&L the bot books, journals, serves or charts is net; closes journaled before 2026-10-06 are gross. Sells carry a `trigger_reason` saying why they were sent: `entry` (a vacant slot), `repair` (re-selling the missing leg of a one-legged strangle) or `rebalance_upsize` (a complement bringing a slot up to the IM limit), and `close_long` for a long found on a traded instrument (sold at the bid; the strategy only holds shorts). A `churn_paused` skip means the churn breaker paused a slot; ERROR lines `buy back capped`, `long position on a traded instrument` and `churn breaker` mean the book and the exchange disagreed — check `position drift` lines around them.
+`bot.log` (structured `slog` JSON) and `orders.log` (the decision journal) are both mirrored to stdout, so `scripts/envctl.sh stable logs` shows one stream; the files themselves are in `data/<underlying>/`.
+Each `orders.log` line has an `event` (`submitted`, `amended`, `cancelled`, `filled`, `closed`, `reconciled`, `skipped`, `pnl`), the `strategy_id` and `slot`, a `market` object with the conditions at that moment and a `portfolio` object with the book's Greeks.
+Closes also carry `detail`: the rule that fired, with its numbers — e.g. `stop-loss: loss 2.31× the premium ≥ 2.00×`, `delta exit: |Δ| 0.312 ≥ 0.30`, `take-profit: 55% of the premium earned ≥ 50%`, `time roll: 15 days to expiry ≤ 15`, `leg balance: call … 262 vs put … 162 — buying back the 100 excess … (not a stop)`, `GEX shed: …`, `MM limit: …`, `downsize: …` — and the option's greeks at that moment (`delta`, `gamma`, `theta`, `vega`, per contract as Deribit quotes them).
+Fills carry `fee` (what Deribit charged, coin, from the order's trades) and, for entries, repairs and top-ups, how much of the order filled: `qty` of `target_qty`, `fill_pct` = qty ÷ target_qty × 100; a cancelled sell carries `filled_qty` of its `qty` (absent = nothing filled) — together they measure how much of each target size the book absorbed.
+Closes carry `fees` (the opening share + the closing fee) and a **net** `pnl` = premium − buy-back − fees.
+Every P&L the bot books, journals, serves or charts is net; closes journaled before 2026-10-06 are gross.
+Sells carry a `trigger_reason` saying why they were sent: `entry` (a vacant slot), `repair` (re-selling the missing leg of a one-legged strangle) or `rebalance_upsize` (a complement bringing a slot up to the IM limit), and `close_long` for a long found on a traded instrument (sold at the bid; the strategy only holds shorts).
+A `churn_paused` skip means the churn breaker paused a slot; ERROR lines `buy back capped`, `long position on a traded instrument` and `churn breaker` mean the book and the exchange disagreed — check `position drift` lines around them.
 
 ```bash
 scripts/envctl.sh stable logs -f bot-btc                                    # everything, one underlying
@@ -204,7 +280,9 @@ Useful events to know: `strangle filled and active`, `rollout triggered`, `stop 
 
 ### Setting changes
 
-Every start journals one `config_loaded` line (#256) with the fingerprint of the effective strategy settings and what changed since the previous start, so results can be read per settings version. `first: true` marks the first such line of a journal, `unchanged: true` a restart with the same settings; `/api/status` shows `config.fingerprint` and `config.since` (when they last changed). The meaning, range and policy of each setting are in [parameters.md](parameters.md).
+Every start journals one `config_loaded` line (#256) with the fingerprint of the effective strategy settings and what changed since the previous start, so results can be read per settings version.
+`first: true` marks the first such line of a journal, `unchanged: true` a restart with the same settings; `/api/status` shows `config.fingerprint` and `config.since` (when they last changed).
+The meaning, range and policy of each setting are in [parameters.md](parameters.md).
 
 ```bash
 # Every settings change, with its date, release and keys (from → to)
@@ -215,7 +293,8 @@ grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
 
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
-The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`). How it works, permissions and guardrails: [AGENTIC.md](../AGENTIC.md).
+The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`).
+How it works, permissions and guardrails: [AGENTIC.md](../AGENTIC.md).
 
 ```bash
 gh auth refresh -s project              # once
@@ -225,13 +304,32 @@ launchctl kickstart gui/$(id -u)/com.optionsbot.sme-review   # run a review now
 scripts/agents/install.sh --uninstall
 ```
 
-Run them on the machine that runs the bots, logged in to Claude Code and `gh`. Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`. The agents run from the **mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
+Run them on the machine that runs the bots, logged in to Claude Code and `gh`.
+Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and launchd logs: `data/agents/`.
+The agents run from the **mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
 
-**A failed mvp deploy rolls back** (#204). When `docker compose up --build` or the health check fails for a new commit, `deploy.sh` resets the mvp clone (still on `main`) to the last commit that passed (`history/mvp.deployed`), rebuilds it and health-checks it again. A healthy rollback is recorded in `deploys.tsv` as `<time> mvp <commit> rollback` (a commit that had already run, so the soak clock `promote.sh` reads does not move) and notified as "Deploy FAILED, rolled back to …". If the rollback is unhealthy too, the script notifies "ROLLBACK FAILED" and stops; nothing retries it, so look at `scripts/envctl.sh mvp logs`. Either way the bad commit stays in `history/mvp.failed` and is not retried until main moves. The script also files one `bug` issue in Triage, titled `[E6] mvp deploy failed: <sha> (<subject>)`, with the failed step, the rollback outcome, the commit range and the last 80 log lines. Secret values from mvp's `.env` (the `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*`/`*PASSWORD*` variables the pre-commit hook guards) and bearer tokens are redacted (`scripts/agents/deploy_issue.py`). The issue is deduplicated by the sha in its title. If GitHub is unreachable, filing is retried on the next tick. The PM triages it like any bug, and the next merge redeploys.
+**A failed mvp deploy rolls back** (#204).
+When `docker compose up --build` or the health check fails for a new commit, `deploy.sh` resets the mvp clone (still on `main`) to the last commit that passed (`history/mvp.deployed`), rebuilds it and health-checks it again.
+A healthy rollback is recorded in `deploys.tsv` as `<time> mvp <commit> rollback` (a commit that had already run, so the soak clock `promote.sh` reads does not move) and notified as "Deploy FAILED, rolled back to …".
+If the rollback is unhealthy too, the script notifies "ROLLBACK FAILED" and stops; nothing retries it, so look at `scripts/envctl.sh mvp logs`.
+Either way the bad commit stays in `history/mvp.failed` and is not retried until main moves.
+The script also files one `bug` issue in Triage, titled `[E6] mvp deploy failed: <sha> (<subject>)`, with the failed step, the rollback outcome, the commit range and the last 80 log lines.
+Secret values from mvp's `.env` (the `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*`/`*PASSWORD*` variables the pre-commit hook guards) and bearer tokens are redacted (`scripts/agents/deploy_issue.py`).
+The issue is deduplicated by the sha in its title.
+If GitHub is unreachable, filing is retried on the next tick.
+The PM triages it like any bug, and the next merge redeploys.
 
 ### Nightly backup and restore
 
-**Backup** (#328). The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them). Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/`: the request queue (`requests.jsonl`, `requests_status.jsonl`, #409) and the assistant's review log, `assistant.jsonl` (#438). Each line of that log must parse (`go run ./cmd/backupcheck -lines <copy>`), so a damaged copy fails the backup. No `.env` or secret is copied. Each copy passes a restore check, `go run ./cmd/backupcheck`: the journal must replay with `orders.ReplayFile` and hold no fewer events than the night before (each copy keeps its result in `check.json`). The newest 14 days are kept. A failed check notifies on the Mac, keeps the copy as `<date>.failed`, leaves every earlier backup in place, and is retried once on a later tick; why it failed is in `data/agents/backup/<date>.log` and the run ledger (`python3 scripts/agents/runs.py --agent backup`). To run it again today, remove `data/agents/backup/<date>.done` and `<date>.attempts` and wait for the next tick, or run the script by hand.
+**Backup** (#328).
+The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them).
+Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/`: the request queue (`requests.jsonl`, `requests_status.jsonl`, #409) and the assistant's review log, `assistant.jsonl` (#438).
+Each line of that log must parse (`go run ./cmd/backupcheck -lines <copy>`), so a damaged copy fails the backup.
+No `.env` or secret is copied.
+Each copy passes a restore check, `go run ./cmd/backupcheck`: the journal must replay with `orders.ReplayFile` and hold no fewer events than the night before (each copy keeps its result in `check.json`).
+The newest 14 days are kept.
+A failed check notifies on the Mac, keeps the copy as `<date>.failed`, leaves every earlier backup in place, and is retried once on a later tick; why it failed is in `data/agents/backup/<date>.log` and the run ledger (`python3 scripts/agents/runs.py --agent backup`).
+To run it again today, remove `data/agents/backup/<date>.done` and `<date>.attempts` and wait for the next tick, or run the script by hand.
 
 **Restore** a bot from a backup (the bot must be stopped: it appends to its journal and rewrites nothing else):
 
@@ -258,15 +356,20 @@ docker kill -s USR1 <container>     # Docker
 kill -USR1 <pid>                    # local process
 ```
 
-What happens: resting orders for the underlying are cancelled, whatever a working entry filled before the cancel is booked, the book is matched to the exchange's short positions, every position is bought back at market (partial fills retried), anything still open is logged as an `ERROR` for manual handling, and the bot then **stays idle** — it does not exit, so Docker's restart policy cannot put it straight back into the market. To resume trading, restart the container deliberately (`scripts/envctl.sh stable restart bot-btc`).
+What happens: resting orders for the underlying are cancelled, whatever a working entry filled before the cancel is booked, the book is matched to the exchange's short positions, every position is bought back at market (partial fills retried), anything still open is logged as an `ERROR` for manual handling, and the bot then **stays idle** — it does not exit, so Docker's restart policy cannot put it straight back into the market.
+To resume trading, restart the container deliberately (`scripts/envctl.sh stable restart bot-btc`).
 
 ## BTC and ETH side by side
 
-Both services share one Deribit account (same `.env`) but each process has its own rate limiter, unaware of the other. At normal load this is fine; if both roll many legs at once, combined requests can approach the account limit. Watch `rate_limit_metrics` and any `too_many_requests` errors; if they appear, **increase** `eval_interval_ms` or stagger restarts. Startup clean-up cancels only the bot's own currency (`private/cancel_all_by_currency`), so restarting one never touches the other's orders.
+Both services share one Deribit account (same `.env`) but each process has its own rate limiter, unaware of the other.
+At normal load this is fine; if both roll many legs at once, combined requests can approach the account limit.
+Watch `rate_limit_metrics` and any `too_many_requests` errors; if they appear, **increase** `eval_interval_ms` or stagger restarts.
+Startup clean-up cancels only the bot's own currency (`private/cancel_all_by_currency`), so restarting one never touches the other's orders.
 
 ## macOS sleep caveat
 
-Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i`, disable sleep, or — most reliable — run on a small always-on VPS.
+Docker Desktop suspends containers while the Mac sleeps.
+Use `caffeinate -i`, disable sleep, or — most reliable — run on a small always-on VPS.
 
 ## Troubleshooting
 
@@ -287,25 +390,37 @@ Docker Desktop suspends containers while the Mac sleeps. Use `caffeinate -i`, di
 
 Two log lines mean the bot corrected itself; both are `ERROR` so they stand out:
 
-- `order submit outcome unknown` — an order went out as the connection dropped. The bot cancels it by its label (`unconfirmed order resolved` when done) and sends nothing else for that slot or instrument meanwhile.
-- `position drift` — the exchange's position differs from the bot's book (an unknown order filled before it could be cancelled, a manual trade, a close whose reply was lost). The bot adopts the exchange's size (journaled as `reconciled`), so the position is managed by the stop-loss and rolls.
+- `order submit outcome unknown` — an order went out as the connection dropped.
+  The bot cancels it by its label (`unconfirmed order resolved` when done) and sends nothing else for that slot or instrument meanwhile.
+- `position drift` — the exchange's position differs from the bot's book (an unknown order filled before it could be cancelled, a manual trade, a close whose reply was lost).
+  The bot adopts the exchange's size (journaled as `reconciled`), so the position is managed by the stop-loss and rolls.
 
-They mostly appear after network outages. On a laptop, prevent sleep while the bots run (`caffeinate -s`, or disable sleep on power): on 2026-10-04 both connections dropped six times overnight.
+They mostly appear after network outages.
+On a laptop, prevent sleep while the bots run (`caffeinate -s`, or disable sleep on power): on 2026-10-04 both connections dropped six times overnight.
 
 ## Margin policy
 
-The bot sizes and limits itself on Deribit's own margin figures (see *Margin policy and sizing* in [architecture.md](architecture.md)). What to know when running it:
+The bot sizes and limits itself on Deribit's own margin figures (see *Margin policy and sizing* in [architecture.md](architecture.md)).
+What to know when running it:
 
-- **Files.** `data/regime_history.jsonl` keeps the gamma regime at each daily close (Deribit has no history of it). Like `data/pnl_history.jsonl`, keep `data/` on a persistent volume; deleting it restarts the regime confirmation.
-- **First days after deploying.** With no recorded regime closes yet, new entries are **frozen** until the regime has been confirmed (2 daily closes by default). Exits, rolls and repairs run normally. The monitor shows the countdown.
+- **Files.** `data/regime_history.jsonl` keeps the gamma regime at each daily close (Deribit has no history of it).
+  Like `data/pnl_history.jsonl`, keep `data/` on a persistent volume; deleting it restarts the regime confirmation.
+- **First days after deploying.** With no recorded regime closes yet, new entries are **frozen** until the regime has been confirmed (2 daily closes by default).
+  Exits, rolls and repairs run normally.
+  The monitor shows the countdown.
 - **Journal.** Every policy change is a `risk_limit` line in `orders.log` (`change`: `frozen`, `unfrozen`, `limit_changed`, `rebalance`, `rebalance_retry`, `mm_breach`) with IM/MM %, limits, DVOL, IV percentile and regime.
 - **Reading a skip.** `risk_frozen` = a band/regime change awaits confirmation; `margin_limit` = no headroom, or no size fits after simulation; `margin_unknown` = Deribit margin data unavailable (fail safe); `repair_held` = a stopped-out leg waits for a calm market (the reason says which condition: frozen, negative gamma, or cooldown until a time).
 - **Rate limit.** `private/simulate_portfolio` is limited by Deribit to one call per second; the executor spaces calls, so sizing every slot takes a few seconds of the decision cycle.
-- **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands). The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.
+- **Two bots, one account.** Under cross collateral both bots measure the same account-wide IM and MM, each against its own limit (BTC and ETH DVOL can sit in different bands).
+  The more permissive limit is effectively the account's ceiling for new entries; the MM limit protects the whole account.
 
 ### Manual rebalance (after a deposit or withdrawal)
 
-The bot resizes its book by itself only when the confirmed IM limit changes, or at startup. A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then; new entries size on the new balance at once (it is read from Deribit every cycle), and the MM limit still cuts at any time. The bot never moves funds and journals no transfer: the change shows in `/api/account` and, since #277, in the weekly evidence report's equity bridge (each P&L history line records the margin balance and equity; the residual the bot's P&L does not explain is listed as transfers, unmanaged positions, funding, rounding) — still note a hand transfer where the P&L is reviewed, so the residual has a name (2026-10-17 ETH: −127 ETH moved by hand, #124). To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation. Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
+The bot resizes its book by itself only when the confirmed IM limit changes, or at startup.
+A deposit or withdrawal moves the margin balance, not the limit, so existing strangles keep their old size until then; new entries size on the new balance at once (it is read from Deribit every cycle), and the MM limit still cuts at any time.
+The bot never moves funds and journals no transfer: the change shows in `/api/account` and, since #277, in the weekly evidence report's equity bridge (each P&L history line records the margin balance and equity; the residual the bot's P&L does not explain is listed as transfers, unmanaged positions, funding, rounding) — still note a hand transfer where the P&L is reviewed, so the residual has a name (2026-10-17 ETH: −127 ETH moved by hand, #124).
+To resize now without a restart, use the **Rebalance** button in the monitor's *Margin policy per bot* table: it first shows a dry run (what it would sell or buy back, nothing sent), then runs on confirmation.
+Under Docker Compose only the monitor's port is published, so use the button; a bot run locally (`BOT_API_ADDR`, `:8081` by default) can also be called directly:
 
 ```bash
 # preview: same margin simulations, no orders, nothing journaled
@@ -314,12 +429,27 @@ curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/
 curl -X POST -H "Authorization: Bearer $BOT_ADMIN_TOKEN" "http://localhost:8081/api/rebalance"
 ```
 
-**When to look:** if IM rises more than 1.5 pp (`rebalance_startup_band_pct`) over the bot's IM limit with no rebalance due — a transfer out, or a price move — the bot journals one `risk_limit` `im_over_limit` line and a WARN (`IM over the limit with no rebalance due`) with IM, the limit, the margin balance now and at the last rebalance or confirmed limit change (`margin_balance`, `ref_margin_balance`), and shows a badge beside the button ("IM over limit since … — review with a dry run"; `risk.im_over_limit` and `risk.im_over_limit_since` in `/api/status`). It sends no order (#166). The episode ends, journaled `im_over_limit_cleared`, once IM is back at or under the limit; a new crossing starts a new one. The episode is kept in memory: a restart in the middle of one journals it once more.
+**When to look:** if IM rises more than 1.5 pp (`rebalance_startup_band_pct`) over the bot's IM limit with no rebalance due — a transfer out, or a price move — the bot journals one `risk_limit` `im_over_limit` line and a WARN (`IM over the limit with no rebalance due`) with IM, the limit, the margin balance now and at the last rebalance or confirmed limit change (`margin_balance`, `ref_margin_balance`), and shows a badge beside the button ("IM over limit since … — review with a dry run"; `risk.im_over_limit` and `risk.im_over_limit_since` in `/api/status`).
+It sends no order (#166).
+The episode ends, journaled `im_over_limit_cleared`, once IM is back at or under the limit; a new crossing starts a new one.
+The episode is kept in memory: a restart in the middle of one journals it once more.
 
-It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement or an entry is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it. It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders. A real pass is journaled as `risk_limit` `rebalance_manual`.
+It applies the same gates as the automatic rebalance — **409** with the reason when new risk is frozen, margin data is missing, the MM limit is reached, GEX is stale or a complement or an entry is still working; **429** (`Retry-After`) within 5 minutes of the last real pass (30 s between dry runs); **504** if the decision loop did not take it.
+It keeps every hold (stops, hand closes, regime side) and at least one lot per strangle, and never cancels working orders.
+A real pass is journaled as `risk_limit` `rebalance_manual`.
 
-**Unused approved margin** (#369, the other direction): when entries have been allowed and IM has stayed under 60 % of the limit for 6 h (`IMUnderUseWindowMinutes`, fixed; a gap of more than 15 min between readings restarts the window), the bot journals one `risk_limit` `im_under_use` line and a WARN (`approved margin unused with entries allowed`) with IM, the limit, the share used (`utilisation_pct`), the minutes and the `cause`, and sets `risk.im_under_use` / `risk.im_under_use_since` (when the under-use began) in `/api/status`. The cause uses `cmd/idlemargin`'s vocabulary: an empty slot's last skip reason (`no_free_expiry`, `liquidity_cap`, `regime_side`, `repair_held`, …) or `no_skip_logged`; with every slot taken, `rebalance_waiting` (a short top-up waits for its retry), `sized_small_liquidity_cap` or `all_full`. It sends no order and relaxes no rule. **What to do:** read the cause; for a slot cause, check that slot's skips in the monitor's events; for `all_full` the slots' normal size is what holds IM low (the Rebalance dry run shows any top-up due); run `go run ./cmd/idlemargin` over the episode for the hours by cause. A change of rule to act on it is a separate proposal with a replay or stress comparison. The episode ends with `im_under_use_cleared` (and a WARN) when IM is back at 60 % of the limit or more, or when entries stop being allowed (frozen, MM, GEX stale, a stop waiting); missing margin data pauses it. In memory: a restart starts a fresh window, so an episode is journaled once more 6 h after it.
+**Unused approved margin** (#369, the other direction): when entries have been allowed and IM has stayed under 60 % of the limit for 6 h (`IMUnderUseWindowMinutes`, fixed; a gap of more than 15 min between readings restarts the window), the bot journals one `risk_limit` `im_under_use` line and a WARN (`approved margin unused with entries allowed`) with IM, the limit, the share used (`utilisation_pct`), the minutes and the `cause`, and sets `risk.im_under_use` / `risk.im_under_use_since` (when the under-use began) in `/api/status`.
+The cause uses `cmd/idlemargin`'s vocabulary: an empty slot's last skip reason (`no_free_expiry`, `liquidity_cap`, `regime_side`, `repair_held`, …) or `no_skip_logged`; with every slot taken, `rebalance_waiting` (a short top-up waits for its retry), `sized_small_liquidity_cap` or `all_full`.
+It sends no order and relaxes no rule.
+**What to do:** read the cause; for a slot cause, check that slot's skips in the monitor's events; for `all_full` the slots' normal size is what holds IM low (the Rebalance dry run shows any top-up due); run `go run ./cmd/idlemargin` over the episode for the hours by cause.
+A change of rule to act on it is a separate proposal with a replay or stress comparison.
+The episode ends with `im_under_use_cleared` (and a WARN) when IM is back at 60 % of the limit or more, or when entries stop being allowed (frozen, MM, GEX stale, a stop waiting); missing margin data pauses it.
+In memory: a restart starts a fresh window, so an episode is journaled once more 6 h after it.
 
 ## Two connections on testnet
 
-On testnet the bot keeps **two** WebSocket connections: `gateway=trading` (testnet, authenticated: orders, positions, margin, tickers) and `gateway=mainnet-public` (mainnet, never authenticated: the book summary for GEX and open interest). Logs carry the `gateway` field; the public one starts with `connected (public data only, not authenticated)`. Each has its own rate limiter. If either gives up reconnecting the bot exits non-zero so the supervisor restarts it. `gex_snapshot` lines show `method`, `regime`, `gamma_flip` and `first_expiry` — compare them with GestaoCarteira's `runOptIndicator.sh`, which uses the same rules.
+On testnet the bot keeps **two** WebSocket connections: `gateway=trading` (testnet, authenticated: orders, positions, margin, tickers) and `gateway=mainnet-public` (mainnet, never authenticated: the book summary for GEX and open interest).
+Logs carry the `gateway` field; the public one starts with `connected (public data only, not authenticated)`.
+Each has its own rate limiter.
+If either gives up reconnecting the bot exits non-zero so the supervisor restarts it.
+`gex_snapshot` lines show `method`, `regime`, `gamma_flip` and `first_expiry` — compare them with GestaoCarteira's `runOptIndicator.sh`, which uses the same rules.
