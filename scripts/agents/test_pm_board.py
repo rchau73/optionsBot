@@ -550,6 +550,26 @@ class TestDevTokenSavers(unittest.TestCase):
         self.assertEqual([c["number"] for c in pm_board.ready_order(b, [320])], [279])
         self.assertEqual([c["number"] for c in pm_board.ready_order(b, [])], [322, 279])
 
+    def test_blocker_cards_of_one_epic_run_up_to_three_at_once(self):
+        """Product owner 2026-10-29 (#459): up to 3 `blocker` cards of one epic in progress at once."""
+        blk = lambda n, st: card(n, st, labels=["E6", "blocker"], priority="P1")
+        b = [blk(461, "In progress"), blk(462, "In progress"), blk(463, "Ready"), blk(464, "Ready"),
+             card(470, "Ready", labels=["E6"], priority="P0"), card(279, "Ready", labels=["E2"], priority="P3")]
+        # Two blockers building: a third blocker may start; E6's plain card waits; E2 is free.
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [461, 462])], [463, 464, 279])
+        # Three building: no more E6 card of either kind.
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [461, 462, 463])], [279])
+
+    def test_a_plain_card_building_holds_its_epics_blockers_too(self):
+        b = [card(470, "In progress", labels=["E6"], priority="P1"),
+             card(461, "Ready", labels=["E6", "blocker"], priority="P1"), card(279, "Ready", labels=["E2"], priority="P3")]
+        self.assertEqual([c["number"] for c in pm_board.ready_order(b, [470])], [279])
+
+    def test_without_blocker_cards_one_card_per_epic_again(self):
+        """Once the last blocker closes, the rule is one card per epic, as before."""
+        b = [card(470, "In progress", labels=["E6"], priority="P1"), card(471, "Ready", labels=["E6"], priority="P1")]
+        self.assertEqual(pm_board.ready_order(b, [470]), [])
+
     def test_cards_without_an_epic_never_wait(self):
         b = [card(1, "In progress", priority="P2"), card(2, "Ready", priority="P2")]
         self.assertEqual([c["number"] for c in pm_board.ready_order(b, [1])], [2])
