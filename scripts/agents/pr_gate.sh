@@ -15,6 +15,16 @@
 #   merge    → the same, policy-free and up to date with main: merged here
 #              (#468, product owner 2026-10-28), at most one per run so the
 #              next one is updated and re-tested on the new main first;
+#   undraft  → a draft In review with CI green: gh pr ready, so the Reviewer
+#              starts on it (#472: the Dev agent opens every PR as a draft and
+#              hands the full suite to CI);
+#   ci_red   → CI red on the head of a PR In review (#472, checkfail.py
+#              ci-plan): only tests the PR does not touch failed → the failed
+#              jobs are re-run (up to 3 times a head; a pass afterwards names
+#              each as flaky on the PR and its flaky-test issue); otherwise
+#              the card goes back to Ready with needs-fix and the failed jobs'
+#              log tails, once per head commit — the second check failure on
+#              the card goes to a person (Blocked, agent:needs-human);
 #   wait     → the label comes off until it is ready again — always while the
 #              card is In progress: a Dev agent is working on it (#478).
 # A clean review carries over GitHub's own update-with-main merges (no
@@ -40,6 +50,69 @@ remember() { py 'import json,sys
 try: s = json.load(open(sys.argv[1]))
 except FileNotFoundError: s = {}
 s[sys.argv[2]] = sys.argv[3]; json.dump(s, open(sys.argv[1], "w"), indent=1)' "$STATE" "$1" "$2"; }
+recall() { py 'import json,sys
+try: s = json.load(open(sys.argv[1]))
+except FileNotFoundError: s = {}
+print(s.get(sys.argv[2], ""))' "$STATE" "$1"; }
+CHECKFAIL="$AGENT_REPO_DIR/scripts/agents/checkfail.py"
+
+# ci_red — CI failed on the head of a PR In review (#472). State "<pr>:ci" =
+# "<head> reruns=<n> tests=<names>" while untouched tests are re-run, then
+# "<head> sent" once the card went back (once per head).
+ci_red() {
+  local key="$pr:ci" state reruns=0 plan detail run step
+  state="$(recall "$key")"
+  [[ "$state" == "$head sent" ]] && return 0
+  [[ "$state" == "$head reruns="* ]] && reruns="$(sed -n 's/.* reruns=\([0-9]*\).*/\1/p' <<< "$state")"
+  python3 "$CHECKFAIL" failed-checks "$tmp/pr.json" > "$tmp/failed.tsv"
+  cut -f2 "$tmp/failed.tsv" > "$tmp/failed-names.txt"
+  : > "$tmp/ci.log"
+  for run in $(cut -f1 "$tmp/failed.tsv" | sort -u); do
+    gh run view "$run" -R "$slug" --log-failed >> "$tmp/ci.log" 2>/dev/null < /dev/null || true
+  done
+  read -r plan detail < <(python3 "$CHECKFAIL" ci-plan "$AGENT_REPO_DIR" "$tmp/files.txt" "$reruns" "$tmp/failed-names.txt" "$tmp/ci.log")
+  if [[ "$plan" == "rerun" ]]; then
+    for run in $(cut -f1 "$tmp/failed.tsv" | sort -u); do
+      gh run rerun "$run" -R "$slug" --failed >/dev/null 2>&1 < /dev/null || log "pr-gate: #$pr could not re-run CI run $run"
+    done
+    remember "$key" "$head reruns=$((reruns + 1)) tests=$detail"
+    log "pr-gate: #$pr CI red on tests it does not touch ($detail): re-run $((reruns + 1)) of 3"
+    gate_run ci_rerun "untouched tests failed ($detail): re-run $((reruns + 1)) of 3"
+    return 0
+  fi
+  { echo "🤖 **PR gate** — CI failed on #$pr's head \`${head:0:7}\`: $detail."; echo
+    echo "Failed checks: $(paste -sd, - < "$tmp/failed-names.txt" | sed 's/,/, /g')"; echo
+    python3 "$CHECKFAIL" tails "$tmp/ci.log"; } > "$tmp/red.md"
+  item="$(item_for_issue "$issue")"
+  step="$(check_failed "$issue" "$item" "$tmp/red.md" ci "${head:0:7}")"
+  if [[ "$step" == "needs-fix" ]]; then
+    log "pr-gate: #$pr CI red → #$issue Ready (needs-fix)"
+    gate_run sent_back "CI red: Ready with needs-fix"
+  else
+    { cat "$tmp/red.md"; echo; echo "This is the card's second check failure: a person is needed. Move it back to **Ready** after a look, and the Dev agent tries again."
+      echo "<!-- dev:blocked -->"; } > "$tmp/red-human.md"
+    gh issue comment "$issue" -R "$slug" --body-file "$tmp/red-human.md" >/dev/null < /dev/null || true
+    gh issue edit "$issue" -R "$slug" --add-label agent:needs-human >/dev/null < /dev/null || true
+    [[ -n "$item" ]] && set_status "$item" "Blocked"
+    notify "PR #$pr: CI red twice" "issue #$issue needs a person"
+    log "pr-gate: #$pr CI red, second check failure → #$issue Blocked"
+    gate_run sent_back "CI red, second check failure: Blocked for a person"
+  fi
+  remember "$key" "$head sent"
+}
+
+# flaky_after_rerun — CI green on a head whose untouched tests were re-run:
+# each is flaky, named on the PR and its flaky-test issue, once (#472).
+flaky_after_rerun() {
+  local state tests t
+  state="$(recall "$pr:ci")"
+  [[ "$state" == "$head reruns="* ]] || return 0
+  python3 "$GATE_PY" ci-green "$tmp/pr.json" || return 0
+  tests="${state##* tests=}"
+  for t in ${tests//,/ }; do note_flaky "$t" "$pr" "CI (\`${head:0:7}\`)"; done
+  remember "$pr:ci" "$head flaky-noted"
+  log "pr-gate: #$pr CI green after a re-run: flaky $tests"
+}
 
 # gate_run <outcome> <detail> — one run in the ledger (lib.sh) for each PR the
 # gate changed this tick; a tick that changes nothing records nothing.
@@ -99,6 +172,7 @@ while read -r pr ref; do
   done
   read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt" \
     "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}" "$card")
+  flaky_after_rerun
   has_ready="$(py 'import json,sys; print(any(l["name"] == "ready-to-merge" for l in json.load(open(sys.argv[1]))["labels"]))' "$tmp/pr.json")"
   issue_ready="$(gh issue view "$issue" -R "$slug" --json labels -q '[.labels[].name] | index("ready-to-merge") != null' < /dev/null)"
   if [[ "$action" != "ready" && "$action" != "merge" ]]; then
@@ -123,6 +197,11 @@ while read -r pr ref; do
       gh issue comment "$issue" -R "$slug" --body "🤖 **PR gate** — #$pr conflicts with \`main\` (another PR merged first). Back to **Ready** with \`needs-rebase\`: the Dev agent merges \`main\` into the branch, resolves the conflict keeping both changes' intent, re-runs every check, and the Reviewer checks the result before it comes back to you." >/dev/null < /dev/null
       log "pr-gate: #$pr conflicts → #$issue Ready (needs-rebase)"
       gate_run sent_back "conflicts with main: Ready with needs-rebase" ;;
+    undraft)
+      if gh pr ready "$pr" -R "$slug" >/dev/null 2>&1 < /dev/null; then
+        log "pr-gate: #$pr CI green → ready for review"; gate_run marked_ready "CI green on the draft: ready for review"
+      else log "pr-gate: #$pr could not be marked ready"; gate_run failed "could not mark the draft ready"; fi ;;
+    ci_red) ci_red ;;
     update)
       if gh pr update-branch "$pr" -R "$slug" >/dev/null 2>&1 < /dev/null; then
         log "pr-gate: #$pr updated with main"; gate_run branch_updated "behind main: updated"

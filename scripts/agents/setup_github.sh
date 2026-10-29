@@ -3,7 +3,7 @@
 #
 #   1. labels: agent:sme, agent:dev, agent:pm, agent:reviewed, agent:needs-human,
 #      severity:high|medium|low, pm:self-merge, epic, epic:parked, prototype:review, prototype:approved,
-#      regression (#470), release:hotfix (#471)
+#      regression (#470), release:hotfix (#471), needs-fix (#472)
 #   2. the Project board "optionsBot · agentic workflow", linked to the repo,
 #      Status columns: Triage → Ready → In progress → In review → Done, Blocked,
 #      and a Priority field (P0…P3) the PM agent sets and the Dev agent follows
@@ -40,6 +40,7 @@ label "prototype:approved" "0e8a16" "A person approved the epic's prototype: its
 label "regression"        "b60205" "A bug a merged PR caused: its body names it on a \"Caused by #N\" line (cmd/dora's change failure rate, #470)"
 label "sme:not-fixed"    "b60205" "The SME agent found the merged fix did not work: blocks scripts/promote.sh"
 label "release:hotfix"   "d93f0b" "With bug: release.sh releases its merged fix to stable after 1 h on mvp, before the 3-day soak (#471)"
+label "needs-fix"        "fbca04" "Checks failed (the Dev agent's or CI): back to the Dev agent once, with the failing log tails (#472)"
 
 # ── 2. Project board ────────────────────────────────────────────────────────
 num="$(gh project list --owner "$owner" --format json -L 100 |

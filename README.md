@@ -615,7 +615,7 @@ CI installs shellcheck and requires it; `make check` skips that step with a mess
 | backtest | 81 % | historical-date regression, writers, sweep, walk-forward |
 
 Regression tests for critical fixes were mutation-checked: they fail when the fix is reverted.
-CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary and the coverage floor, `govulncheck` and a Docker build on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs formatting, vet, race tests with a coverage summary and the coverage floor, `govulncheck` and a Docker build on every push to `main` and nightly; a pull request runs only the jobs its files need (`scripts/agents/checkfail.py suites`, #472).
 
 ## Project layout
 
