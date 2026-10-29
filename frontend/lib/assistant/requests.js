@@ -71,7 +71,7 @@ function issueUrl(v) {
 
 /**
  * The person's own requests for My requests, newest first: { id, ts, kind,
- * title, status, note, issue_url } — the queue's lines merged with the
+ * title, status, status_ts, note, issue_url } — the queue's lines merged with the
  * review's latest status line for each (in_review without one; a status
  * not in STATUSES is ignored).
  */
@@ -90,6 +90,7 @@ export function myRequests(requests, statuses, username) {
         kind: r.kind,
         title: r.fields?.title ?? "",
         status: s?.status ?? "in_review",
+        status_ts: typeof s?.ts === "string" ? s.ts : null, // when the review set it (the bell's item time, #447)
         note: typeof s?.note === "string" ? s.note : null,
         issue_url: issueUrl(s?.issue_url),
       };

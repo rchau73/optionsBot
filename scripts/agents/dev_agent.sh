@@ -115,6 +115,7 @@ End your answer with the exact RESULT block the skill defines."
 
 allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   "Bash(go build:*)" "Bash(go test:*)" "Bash(go vet:*)" "Bash(gofmt:*)" "Bash(go run ./cmd/stress:*)" "Bash(go mod tidy)"
+  "Bash(go run ./cmd/helpindex:*)" "Bash(go run ./cmd/paramdocs:*)" # the generators CLAUDE.md requires after a help source or a tuned key changes (#482: a guide change could not be finished)
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
   "Bash(ls:*)" "Bash(cat:*)" "Bash(head:*)" "Bash(tail:*)" "Bash(wc:*)" "Bash(grep:*)" "Bash(find:*)" "Bash(sed -n:*)"

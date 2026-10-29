@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import AssistantProvider from "@/components/AssistantProvider";
+import AssistantProvider, { useAssistant } from "@/components/AssistantProvider";
 import { MenuNav } from "@/components/MenuBar";
 import { CHECKLIST, DRAFT_HEADING, DRAFT_NOTICE, DRAFT_TEXT, NEEDS_INFO_TEXT, sentText } from "@/lib/assistantRequests";
 
@@ -170,4 +170,38 @@ test("My requests: empty and error states", async () => {
   fireEvent.click(within(p).getByRole("tab", { name: "Ask" }));
   fireEvent.click(within(p).getByRole("tab", { name: "My requests" }));
   expect(await within(p).findByRole("alert")).toHaveTextContent("Your requests could not be read: requests are off.");
+});
+
+// #447: the bell's "your request needs more" opens the panel on My requests, also when it is open on Ask.
+test("an opener can ask for the My requests tab; the menu's Ask opens on Ask again", async () => {
+  function Openers() {
+    const a = useAssistant();
+    return (
+      <>
+        <button type="button" onClick={() => a.openPanel({ tab: "requests" })}>
+          from the bell
+        </button>
+        <button type="button" onClick={() => a.close()}>
+          close it
+        </button>
+        <button type="button" onClick={() => a.openPanel()}>
+          from Ask
+        </button>
+      </>
+    );
+  }
+  render(
+    <AssistantProvider>
+      <Openers />
+    </AssistantProvider>,
+  );
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "from Ask" }));
+  const p = screen.getByRole("complementary", { name: "Assistant" });
+  expect(within(p).getByRole("tab", { name: "Ask" })).toHaveAttribute("aria-selected", "true");
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "from the bell" })));
+  expect(within(p).getByRole("tab", { name: "My requests" })).toHaveAttribute("aria-selected", "true");
+  fireEvent.click(screen.getByRole("button", { name: "close it" }));
+  fireEvent.click(screen.getByRole("button", { name: "from Ask" }));
+  expect(screen.getByRole("tab", { name: "Ask" })).toHaveAttribute("aria-selected", "true");
 });

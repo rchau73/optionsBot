@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import NotificationBell from "./NotificationBell";
 import UserMenu from "./UserMenu";
 import { useDismiss } from "./useDismiss";
 import { fetchMonitorConfig } from "@/lib/api";
@@ -12,7 +13,7 @@ import { botParam, menuGroups, showMenu } from "@/lib/menu";
 /**
  * The menu bar on every signed-in page (#385, #450): Overview · Details (pro)
  * · Operational ▾ (Positions, Income, Worst case, Activity, Account) · Help ▾
- * (How it works), then the signed-in person's menu ("bob ▾": Users and Audit for admins, Change
+ * (How it works), then the notification bell (#447) and the signed-in person's menu ("bob ▾": Users and Audit for admins, Change
  * password, Sign out; #394). The bot is the page's ?bot=, else the first
  * configured bot, and every link keeps it. Not shown on sign-in or the
  * reset-link page. person: { username, role } from the layout (the access
@@ -62,6 +63,9 @@ export function MenuNav({ pathname, bot = null, person = null }) {
           </li>
         ))}
         <li className="ml-auto">
+          <NotificationBell bot={bot} />
+        </li>
+        <li>
           <UserMenu role={person?.role ?? null} username={person?.username ?? null} />
         </li>
       </ul>

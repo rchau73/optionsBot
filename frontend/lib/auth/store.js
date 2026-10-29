@@ -62,6 +62,21 @@ CREATE TABLE IF NOT EXISTS survey_answers (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS survey_answers_user ON survey_answers(user_id);
+-- The notification bell (#447): which items a person has read (per person
+-- on the server, so a second device agrees; read_at in Unix seconds, pruned
+-- after 90 days like the items) and the kinds they turned off (enabled 0).
+CREATE TABLE IF NOT EXISTS notification_reads (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  item_id TEXT NOT NULL,
+  read_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS notification_settings (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind    TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind)
+);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -314,10 +329,38 @@ export class AuthStore {
     return removed;
   }
 
-  /** Deletes a user, every session of theirs and their reset links. */
+  /** The ids of the notification items a person has read (#447), as a Set. */
+  notificationReads(userId) {
+    return new Set(this.all("SELECT item_id FROM notification_reads WHERE user_id = ?", [userId]).map((r) => r.item_id));
+  }
+
+  /**
+   * Marks items read for a person (already read ones keep their date), and
+   * prunes read marks older than keepDays — their items are no longer listed.
+   */
+  markNotificationsRead(userId, itemIds, keepDays, nowMs = Date.now()) {
+    const nowSec = Math.floor(nowMs / 1000);
+    for (const id of itemIds) {
+      this.db.run("INSERT OR IGNORE INTO notification_reads (user_id, item_id, read_at) VALUES (?, ?, ?)", [userId, id, nowSec]);
+    }
+    this.write("DELETE FROM notification_reads WHERE read_at < ?", [nowSec - keepDays * 24 * 3600]);
+  }
+
+  /** A person's notification settings: kind → false for the kinds they turned off, true for those turned back on. */
+  notificationSettings(userId) {
+    return Object.fromEntries(this.all("SELECT kind, enabled FROM notification_settings WHERE user_id = ?", [userId]).map((r) => [r.kind, r.enabled === 1]));
+  }
+
+  setNotificationSetting(userId, kind, enabled) {
+    this.write("INSERT OR REPLACE INTO notification_settings (user_id, kind, enabled) VALUES (?, ?, ?)", [userId, kind, enabled ? 1 : 0]);
+  }
+
+  /** Deletes a user, every session of theirs, their reset links and their notification state. */
   deleteUser(id) {
     this.db.run("DELETE FROM refresh_tokens WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM reset_tokens WHERE user_id = ?", [id]);
+    this.db.run("DELETE FROM notification_reads WHERE user_id = ?", [id]);
+    this.db.run("DELETE FROM notification_settings WHERE user_id = ?", [id]);
     this.write("DELETE FROM users WHERE id = ?", [id]);
   }
 
