@@ -398,7 +398,7 @@ export class AuthService {
     return { ok: true };
   }
 
-  /** Audits a manual action a person asked a bot for (close, rebalance) with what the bot answered. */
+  /** Audits an action a person took through a route (close, rebalance with what the bot answered; a survey answer). */
   recordAction(user, action, fields) {
     this.audit(action, { username: user.username, role: user.role, ...fields });
   }

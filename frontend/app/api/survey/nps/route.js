@@ -60,5 +60,6 @@ export async function POST(request) {
     auth.store.setNpsOptOut(user.id, body.action === "opt_out", nowMs);
   }
   authLog("INFO", "nps survey state", { component: "analytics", username: user.username, action: body.action });
+  auth.recordAction(user, "nps_survey_changed", { change: body.action });
   return Response.json(npsView(auth, user, nowMs), { headers: NO_STORE });
 }

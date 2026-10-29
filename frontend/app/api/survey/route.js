@@ -67,5 +67,7 @@ export async function POST(request) {
     return Response.json({ error: "answer not stored: see the monitor's logs" }, { status: 500 });
   }
   authLog("INFO", "survey answer stored", { component: "analytics", username: user.username, survey_id: answer.surveyId, with_text: answer.text !== null });
+  // The survey only, never the codes or the text (#490).
+  auth.recordAction(user, "survey_answered", { survey_id: answer.surveyId });
   return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }
