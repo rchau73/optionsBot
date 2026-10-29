@@ -56,7 +56,9 @@ It answers from the published help, the bot's live page data and the user's own 
   - `__tests__/assistant-guard.test.js` runs the Go guard's cases and the golden set on the JS guard.
   - `__tests__/assistant-search.test.js` scores the JS search on `tests/testdata/helpkb_questions.yaml` against `helpkb_baseline.json`.
 - **Review log:** `data/monitor/assistant.jsonl` beside `auth.db` (`ASSISTANT_LOG_PATH`; off for an in-memory database), append-only, owner-only.
-  One `"kind": "answer"` line per question — `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false`, and for a retried answer `first_answer` (`model_answer`, `citations`, `verdict` of the first try) and `retry_error` when the retry call failed — and one `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
+  One `"kind": "answer"` line per question: `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false`.
+  A retried answer adds `first_answer` (`model_answer`, `citations`, `verdict` of the first try) and `retry_error` when the retry call failed.
+  One `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
   An answer that cannot be logged is not shown (500).
   The monitor's stdout gets one line per question with the id and outcome only.
 
