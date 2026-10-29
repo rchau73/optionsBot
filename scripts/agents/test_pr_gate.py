@@ -101,6 +101,15 @@ class AutoMerge(unittest.TestCase):
         self.assertEqual(auto(moved)[0], "wait")
         self.assertEqual(auto(moved, equiv=["abc"])[0], "merge")
 
+    def test_an_incomplete_review_is_not_reviewed(self):
+        # #476: a changed file left unread → wait "not fully reviewed", never ready or merge.
+        for markers in (["sha=abc verdict=incomplete policy=no"],
+                        ["sha=abc verdict=clean policy=no", "sha=abc verdict=incomplete policy=no"]):
+            a, why = auto(markers=markers)
+            self.assertEqual(a, "wait", markers)
+            self.assertIn("not fully reviewed", why)
+        self.assertEqual(auto(pr(headRefOid="new"), markers=["sha=abc verdict=incomplete policy=no"], equiv=["abc"])[0], "wait")
+
     def test_blocking_or_ci_still_stop_a_merge(self):
         self.assertEqual(auto(markers=["sha=abc verdict=blocking policy=no"])[0], "wait")
         red = [{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}]

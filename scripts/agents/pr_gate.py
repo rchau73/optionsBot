@@ -10,7 +10,8 @@ for review"). Pure rules here; pr_gate.sh reads GitHub and acts.
 
 pr.json: gh pr view --json number,state,isDraft,labels,headRefOid,mergeable,
 mergeStateStatus,statusCheckRollup. markers.txt: the Reviewer's markers on the
-PR, one "sha=<sha> verdict=<v> [policy=<yes|no>]" per line. open_deps.txt:
+PR, one "sha=<sha> verdict=<v> [policy=<yes|no>]" per line (verdict
+incomplete = a changed file left unread, #476: waits as not reviewed). open_deps.txt:
 issue numbers the PR's ticket still waits for, one per line. equiv.txt: shas
 whose review counts for the head (`equiv`). files.txt: the PR's changed paths.
 behind: commits of main the head lacks. auto: 1 = merge policy-free PRs.
@@ -111,6 +112,9 @@ def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False
         parts = dict(p.split("=", 1) for p in m.split() if "=" in p)
         if parts.get("sha") in counts:
             verdict, policy = parts.get("verdict"), parts.get("policy")
+    if verdict == "incomplete":
+        # The Reviewer left a changed file unread (#476): not reviewed at all.
+        return "wait", "not fully reviewed: a changed file was not read"
     if verdict != "clean":
         return "wait", "not yet reviewed clean on its current commit" if verdict is None else f"review verdict {verdict}"
     if "agent:needs-human" in labels:
