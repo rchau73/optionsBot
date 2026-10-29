@@ -183,7 +183,79 @@ The **Ask** button at the bottom right of every page opens a panel. You write a 
 
 **When something looks wrong**: a dimmed Ask button means the assistant is off or not set up; hover for the reason. "Retry" appears when a request failed.
 
-Learn more: OptionStrategy.md section 12; the glossary.
+Learn more: OptionStrategy.md section 12; the glossary. Features that are not menu pages (the survey, sign-in, consent, roles, environments, videos and the admin pages) are described in the sections below.
+
+## The monthly survey
+
+The survey is one optional question in the Ask panel: how likely you are to recommend the monitor, from 0 to 10. This is the NPS survey.
+
+**How to answer the NPS survey**: when it is due, a "1" shows on the Ask button. Open Ask and the question is the first card. Pick a number from 0 to 10. A score of 9 or 10 then asks what we do best. A score of 0 to 8 asks what to improve first. Choose from the short list of reasons and add a comment if you want; the comment is optional and stays private with your account. The answer never includes amounts.
+
+**How to skip the survey**: "Not now" or × closes it until next month. "Don't ask me again" turns it off. Account, Privacy has a switch that turns it back on. The assistant works the same whether you answer or not.
+
+**When it shows**: at most once every 30 days, counted from the day it was shown, answered or not. It shows only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times, and not while a bot's last 7 days is a net loss or cannot be read.
+
+**Can I open the survey myself?** No. You cannot trigger it on demand: it appears once every 30 days when you have agreed to analytics. When it is due you can still answer it in the Ask panel, or skip it.
+
+Learn more: "Analytics and your consent" and "The assistant" in this guide.
+
+## Sign-in and password
+
+You sign in at the sign-in page with a username and password. Every page and every part of the monitor needs a signed-in session; without one you are sent to the sign-in page. A session is kept alive while you use the monitor and ends after 14 days or when you sign out.
+
+**How to change your password**: choose Change password in the account menu. Enter the current password and the new one twice. The new one must differ from the current one and be at least 12 characters. Your sessions on other devices end when you change it.
+
+**How to reset a forgotten password**: ask an admin. An admin issues a single-use reset link on the Users page. Open the link, choose a new password and sign in with it. The link works once and then stops working.
+
+**Signed out everywhere**: a password change, a password reset, a role change or the deletion of your account signs you out on every device. Sign in again to continue.
+
+Learn more: "Roles" in this guide.
+
+## Roles
+
+There are three roles. A **user** may see every page. A **manager** may do what a user does and also close a leg by hand and rebalance by hand, including the dry run. An **admin** may do what a manager does and also use the admin pages: Users, Audit and Analytics.
+
+**Who can rebalance?** Managers and admins. Closing a leg by hand is the same. A user may still see the buttons, but the monitor refuses the action and the bot receives nothing. The role is checked each time you act, so a role change takes effect at once.
+
+Each environment has its own people and roles.
+
+Learn more: "Sign-in and password" and "For admins" in this guide.
+
+## Analytics and your consent
+
+The monitor collects usage analytics only if you say yes. Your answer is stored with your account. Until you answer, or if you say no, nothing is collected.
+
+**What the monitor collects about me**: which pages and features are used and how (for example that a help video was played), under a random session code. Events outside a fixed list are refused. **What it does not collect**: no keys, no passwords, no amounts, no positions, no orders and no text you type in the assistant.
+
+**How to say yes or no**: in Account, Privacy. Saying no stops collection at once. Every change of your answer is recorded in the audit trail.
+
+**What happens to events already stored**: they stay until you ask for their deletion. Deletion on request is done by the team; ask an admin.
+
+Learn more: "The monthly survey" in this guide.
+
+## Which environment you are looking at
+
+Each environment is a separate monitor with its own bot, Deribit account, people and passwords. The header shows which one you are in. **Stable** is the release track, where a tagged version runs. **mvp** runs the newest version of the code, where changes are tried first. A **testnet** label means the bot trades on Deribit's test exchange with test money, not real capital. Numbers from the two environments are never added together.
+
+Learn more: OptionStrategy.md section 12.
+
+## How-to videos
+
+Short how-to videos explain one task each: reading the summary card, one position and the worst case, why the last trade, the margin bar, why entries are frozen, closing a leg by hand, previewing a rebalance, and income month by month. They run 45 to 75 seconds and have captions. They are planned: none plays in the monitor yet.
+
+Learn more: "The assistant" in this guide.
+
+## For admins
+
+These pages are for the admin role only. A manager or a user who opens one is refused.
+
+**Users**: lists the people of this environment with role, email, when created and last sign-in. An admin creates a user (a username of 3 to 64 letters, digits, dots, underscores or hyphens, and a password of at least 12 characters), changes a role, resets a password, issues a single-use reset link, or deletes a user. Every change signs that person out everywhere. There is always at least one admin, and you cannot delete yourself.
+
+**Audit**: the trail of who did what: user changes, role changes and consent changes. It is read-only.
+
+**Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.
+
+Learn more: "Roles" and "Analytics and your consent" in this guide.
 
 ## Notifications
 
