@@ -176,6 +176,13 @@ type Week struct {
 	CommitToMerge Stat      `json:"commit_to_merge"`
 	MVP           EnvWeek   `json:"mvp"`
 	Stable        EnvWeek   `json:"stable"`
+	Summary       string    `json:"summary"` // SummaryMarkdown: what dora.sh posts on the E6 epic (#473 shows it)
+}
+
+// Deploy is one healthy mvp deploy (#473: the release train's ticks).
+type Deploy struct {
+	At     time.Time `json:"at"`
+	Commit string    `json:"commit"`
 }
 
 // Report is dora.json.
@@ -187,6 +194,7 @@ type Report struct {
 	Weeks              []Week     `json:"weeks"`
 	PRs                []PRRecord `json:"prs"`
 	Releases           []Release  `json:"releases"`
+	MVPDeploys         []Deploy   `json:"mvp_deploys"`
 	Failures           []Failure  `json:"failures"`
 	Problems           []string   `json:"problems"`
 }
@@ -313,11 +321,17 @@ func Build(in Inputs, now time.Time) Report {
 	for _, d := range releases {
 		r.Releases = append(r.Releases, Release{Tag: d.Tag, Commit: d.Commit, At: d.At, Failed: d.failed})
 	}
+	r.MVPDeploys = []Deploy{}
+	for _, d := range b.envs[EnvMVP].deploys {
+		r.MVPDeploys = append(r.MVPDeploys, Deploy{At: d.At, Commit: d.Commit})
+	}
 	for _, m := range b.merges {
 		r.PRs = append(r.PRs, *m)
 	}
 	for ws := from; !ws.After(now); ws = ws.AddDate(0, 0, 7) {
-		r.Weeks = append(r.Weeks, b.week(ws))
+		w := b.week(ws)
+		w.Summary = SummaryMarkdown(w)
+		r.Weeks = append(r.Weeks, w)
 	}
 	r.Problems = b.problems
 	if r.Problems == nil {

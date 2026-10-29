@@ -64,12 +64,14 @@ export const PROPERTIES = {
   // The overview's switches (#404).
   unit: enumOf("coin", "usd"),
   layer: enumOf("sma", "sma21", "swings", "flip", "strikes"),
+  // The admin Analytics page's topic (#473).
+  topic: enumOf("usage", "delivery"),
 };
 
 /** §2: event → the properties it may carry (each optional). */
 export const EVENTS = {
   session_started: ["entry_screen", "viewport"],
-  screen_viewed: ["screen"],
+  screen_viewed: ["screen", "topic"],
   panel_expanded: ["panel"],
   panel_collapsed: ["panel", "open_ms"],
   filter_changed: ["filter"],

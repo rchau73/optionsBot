@@ -982,5 +982,48 @@
     "risk_income": "It measures how people feel about the monitor, not how the bots trade.",
     "source": "frontend/README.md#analytics-page-445",
     "labels": ["NPS", "Promoters · passives · detractors"]
+  },
+  "deployment frequency": {
+    "short": "How often a new build goes live: healthy mvp deploys a day, or new releases on stable a week.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp it counts each healthy deploy of main; on stable each new release, a tag promoted for the first time. A rolled-back deploy does not count. The chip is the DORA band: elite, high, medium or low.",
+    "risk_income": "It measures how the team ships changes to the bots, not how the bots trade.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "lead time": {
+    "short": "How long a merged change takes to go live: the median time from a PR's merge to the first deploy that carries it.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. On mvp a change usually goes live minutes after its merge. On stable it waits for the 3-day soak on mvp and a release, so days. Below three PRs the chip says NOT YET.",
+    "risk_income": "A longer wait on stable is deliberate: a change runs on the test account for days before it reaches production.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "change failure rate": {
+    "short": "The share of deploys that failed: rolled back, a deploy-failed issue, a revert or a bug a PR caused.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers: failed deploys of all attempts in the week. Each failure counts once. NO FAILURE means nothing failed and there are too few deploys for a band yet.",
+    "risk_income": "A failed deploy on mvp is caught on the test account; on stable it reaches production, so both are shown apart.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "time to restore": {
+    "short": "How long a failure lasted: from the failed deploy to the healthy deploy or fix that ended it, median.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). One of the four DORA numbers. A rollback usually restores within minutes; a bug lasts until its fix goes live. NO FAILURE means there was nothing to restore that week.",
+    "risk_income": "While a failure lasts the bot may run an older or a faulty build: a short time to restore limits that.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "release train": {
+    "short": "The last 8 days of deploys: a mark for each stable release and a tick for each mvp deploy.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). Opening a PR in What went live puts a dot on each lane. A filled dot is where it went live; a hollow dot at the right edge means it is still waiting there.",
+    "risk_income": "It shows when builds changed, which helps to match a change in the bots' behaviour to a deploy.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "soak": {
+    "short": "The 3 days a build runs on mvp, the test account, before it may be released to stable.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). A release goes on the newest mvp deploy that is at least 3 days old. Until then a PR's stable column says when its soak ends, then that it waits for the next release.",
+    "risk_income": "The soak lets a change prove itself on the test account before it reaches production capital.",
+    "source": "frontend/README.md#delivery-dora-topic-473"
+  },
+  "what went live": {
+    "short": "Every merged pull request, with its merge time and when it went live on mvp and on stable.",
+    "long": "Analytics page, Delivery (DORA) topic (admins only). One row per merged PR, newest first. PR is its number, Epic the product area it belongs to. Merged is when it joined main. The two live columns say when the first deploy that carried it went live. Delivery result is ROLLED BACK, ON STABLE, LIVE ON MVP or NOT LIVE.",
+    "risk_income": "It lists changes to the bots' code; a row says nothing about the bots' results.",
+    "source": "frontend/README.md#delivery-dora-topic-473",
+    "labels": ["PR", "Title", "Epic", "Merged", "Live on mvp", "Live on stable", "Delivery result"]
   }
 }

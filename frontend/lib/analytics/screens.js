@@ -24,6 +24,18 @@ export function screenOf(pathname) {
   return item ? screenOfKey(item.key) : null;
 }
 
+/**
+ * The screen_viewed properties of a page, or null: { screen }, and on the
+ * admin Analytics page also its `topic` from ?topic= (#473: usage unless
+ * delivery). `search` is the page's URLSearchParams (or null).
+ */
+export function screenViewOf(pathname, search = null) {
+  const screen = screenOf(pathname);
+  if (!screen) return null;
+  if (screen !== "analytics") return { screen };
+  return { screen, topic: search?.get("topic") === "delivery" ? "delivery" : "usage" };
+}
+
 // The assistant route's outcomes (lib/assistant/service.js) → the plan's
 // `answer` kinds: what the person was shown, never why the guard chose it.
 const ANSWER_OF_OUTCOME = {

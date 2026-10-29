@@ -464,6 +464,13 @@ func TestDelivery_WriteJSONAndWeekMarkdown(t *testing.T) {
 			t.Errorf("W43.md lacks %q:\n%s", want, md)
 		}
 	}
+	// #473: the Analytics page's release train and weekly summary read these.
+	if len(back.MVPDeploys) != 6 || !back.MVPDeploys[0].At.Equal(dAt("2026-10-17T08:00:00Z")) || !back.MVPDeploys[5].At.Equal(dAt("2026-10-23T09:05:00Z")) {
+		t.Errorf("mvp_deploys (healthy deploys on main, by time; the rollback and the off-main line left out): %+v", back.MVPDeploys)
+	}
+	if w43 := dWeek(t, back, "2026-W43"); w43.Summary != delivery.SummaryMarkdown(w43) || !strings.Contains(w43.Summary, "**Delivery (DORA), week 2026-W43**") {
+		t.Errorf("W43 summary is not what dora.sh posts:\n%s", w43.Summary)
+	}
 	w40, _ := os.ReadFile(filepath.Join(dir, "2026-W40.md"))
 	if !strings.Contains(string(w40), "| Deployment frequency | deploy not recorded | release not recorded |") {
 		t.Errorf("W40.md:\n%s", w40)
