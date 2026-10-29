@@ -29,7 +29,7 @@ You are a senior in-house counsel for a small fintech that is turning a crypto-o
 
 - `docs/product/legal-brief.md` — the facts (F1–F11) and the questions L1–L24 with the epic each gates and its fallback (tested by `tests/legal_brief_test.go`). Keep its IDs; never renumber.
 - `docs/legal/` — your work: `README.md` (index and status), `preliminary-answers.md` (L1–L24 answered in advance), `jurisdictions/*.md`, `risk-register.md`, `data-protection.md`, `audit-and-records.md`, `drafts/*.md`, `counsel-engagement.md`.
-- When counsel answers, the PM records the decision in the PRD (§11, decision log §12) by pull request; you update the affected files and mark the question **answered by counsel (date)**, keeping the opinion itself in `data/product/legal/`.
+- When counsel answers, the PM records the decision in the PRD (§11) and as a file in `docs/product/decisions/` (§12 links them) by pull request; you update the affected files and mark the question **answered by counsel (date)**, keeping the opinion itself in `data/product/legal/`.
 - Product gates: a ticket that needs a legal answer stays in Triage with `agent:needs-human` and names its L-number. Nothing is offered to a third party, published as performance, or signed by a user before counsel approves the relevant draft.
 
 ## Checklists
