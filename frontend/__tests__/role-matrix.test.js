@@ -19,7 +19,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { hashToken } from "@/lib/auth/service";
 import { ACCESS_COOKIE, authKey, REFRESH_COOKIE, signAccess } from "@/lib/auth/tokens";
 import { OPTIONAL_KINDS } from "@/lib/notifications";
-import { CALLERS, callerAllowed, routeKey, STATE_CHANGING_ROUTES, STATE_METHODS, unlistedRoutes } from "@/lib/auth/routeRoles";
+import { CALLERS, callerAllowed, ROLE_GUARDED_READS, routeKey, STATE_CHANGING_ROUTES, STATE_METHODS, unlistedRoutes } from "@/lib/auth/routeRoles";
 import { TEST_SECRET, useTestAuth } from "@/test/auth";
 
 jest.setTimeout(120000);
@@ -295,5 +295,60 @@ describe("Scenario: an allowed action", () => {
     expect(res.status).toBe(403);
     expect(global.fetch).not.toHaveBeenCalled();
     expect(auditLines().filter((l) => l.action === "manual_close")).toEqual([]);
+  });
+});
+
+/** The module of a route ("GET /api/lab/runs/[id]" → app/api/lab/runs/[id]/route.js). */
+function routeModule(route) {
+  return require(path.join(API_DIR, route.split(" ")[1].replace(/^\/api\//, ""), "route.js"));
+}
+
+/** Sends a GET the way Next does: proxy.js first, then the handler. */
+async function sendGet(handler, p, params, headers) {
+  const request = new NextRequest(`${ORIGIN}${p}`, {
+    headers: {
+      host: "localhost:3100",
+      ...(headers.authorization ? { authorization: headers.authorization } : {}),
+      ...(headers.cookie ? { cookie: headers.cookie } : {}),
+    },
+  });
+  const passed = await proxy(request);
+  if (passed.headers.get("x-middleware-next") !== "1") return passed;
+  return handler(request, { params: Promise.resolve(params) });
+}
+
+const RUN_ID = "20261012T093000Z";
+const READ_FIXTURES = {
+  "GET /api/lab/runs": { path: "/api/lab/runs", params: {} },
+  "GET /api/lab/runs/[id]": { path: `/api/lab/runs/${RUN_ID}`, params: { id: RUN_ID } },
+};
+
+describe("Scenario: a role-guarded read (#539)", () => {
+  beforeEach(() => {
+    process.env.COMPARE_DIR = path.join(dir, "compare");
+    fs.mkdirSync(path.join(process.env.COMPARE_DIR, RUN_ID), { recursive: true });
+    fs.writeFileSync(path.join(process.env.COMPARE_DIR, RUN_ID, "report.json"), JSON.stringify({ underlying: "BTC", diffs: [] }));
+  });
+  afterEach(() => delete process.env.COMPARE_DIR);
+
+  test("every entry has a fixture and its route file exports GET and no state-changing method", () => {
+    for (const r of ROLE_GUARDED_READS) {
+      expect(READ_FIXTURES[r.route]).toBeDefined();
+      const mod = routeModule(r.route);
+      expect([r.route, typeof mod.GET]).toEqual([r.route, "function"]);
+      expect([r.route, STATE_METHODS.filter((m) => mod[m])]).toEqual([r.route, []]);
+    }
+  });
+
+  test.each(ROLE_GUARDED_READS.map((r) => [r.route, r]))("%s as every caller", async (_, entry) => {
+    const { GET } = routeModule(entry.route);
+    const { path: p, params } = READ_FIXTURES[entry.route];
+    for (const name of CALLERS) {
+      const { person: who, headers } = await caller(name);
+      const res = await sendGet(GET, p, params, headers);
+      const where = `${entry.route} as ${name}`;
+      if (callerAllowed(entry, name)) expect([where, res.status]).toEqual([where, 200]);
+      else expect([where, res.status]).toEqual([where, who ? 403 : 401]);
+    }
   });
 });
