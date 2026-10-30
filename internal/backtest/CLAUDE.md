@@ -19,4 +19,6 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
   - `-journal` prints the bot's actual P&L over the window to measure the gap.
   - `-liqcaps 5,10,20` (study, #487, `replay/liqcap.go`): one replay per `liquidity_cap_oi_pct`, one table — IM as % of the limit, decisions under 60 % of it with entries allowed, entries and lots cut, worst week;
     days with no recording are listed and the table marked indicative (`docs/studies/liquidity-cap.md`). The bot's cap stays fixed at 10.
+  - `-regimeholds confirmed,live` (study, #550, `replay/regimehold.go`): one replay per regime-side rule — the bot's (confirmed negative regime) and also on a live negative regime — one table:
+    net, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week (`docs/studies/regime-hold.md`); `-regimehold live` runs one replay so.
   Not modelled there: rebalance, leg balancing, churn breaker, journal-restored holds.

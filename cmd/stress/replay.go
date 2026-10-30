@@ -63,7 +63,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 // replayOwnFlags are the replay's own flags (and the shared input folder).
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
-	"gex": true, "liqcaps": true}
+	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -84,6 +84,8 @@ type replayOpts struct {
 	dir, from, to, configPath, journal, start, inputs string
 	gexDir                                            string // minute GEX records; "" = market_gex beside dir, "none" = hourly
 	liqCaps                                           string // the liquidity-cap study's caps (e.g. "5,10,20"); "" = one replay
+	regimeHold                                        string // the regime-side rule of one replay (#550): confirmed (the bot) | live
+	regimeHolds                                       string // the regime-hold study's rules (e.g. "confirmed,live"); "" = one replay
 	equity, flipWindowMin                             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
@@ -165,8 +167,20 @@ func runReplay(o replayOpts) error {
 	default:
 		return fmt.Errorf("-start %q: empty | journal", o.start)
 	}
+	if set.RegimeHold, err = parseHold(o.regimeHold); err != nil {
+		return err
+	}
+	if set.RegimeHold != replay.RegimeHoldConfirmed {
+		changed = append(changed, "-regimehold="+set.RegimeHold)
+	}
+	if o.liqCaps != "" && o.regimeHolds != "" {
+		return fmt.Errorf("-liqcaps and -regimeholds are two studies: run one at a time")
+	}
 	if o.liqCaps != "" {
 		return runCapStudy(snaps, set, o, changed)
+	}
+	if o.regimeHolds != "" {
+		return runHoldStudy(snaps, set, o, changed)
 	}
 	if o.trace {
 		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
@@ -256,6 +270,46 @@ func parseCaps(v string) ([]float64, error) {
 		caps = append(caps, c)
 	}
 	return caps, nil
+}
+
+// runHoldStudy is -regimeholds (#550): one replay per regime-side rule on the
+// same books and settings, printed as one table with the recording's gaps.
+func runHoldStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string) error {
+	if _, ok := o.set["regimehold"]; ok {
+		return fmt.Errorf("-regimeholds varies the hold itself: drop -regimehold")
+	}
+	var holds []string
+	for _, f := range strings.Split(o.regimeHolds, ",") {
+		h, err := parseHold(strings.TrimSpace(f))
+		if err != nil {
+			return err
+		}
+		holds = append(holds, h)
+	}
+	rows, err := replay.RegimeHoldStudy(snaps, set, holds)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Regime-hold study (#550), %s, direction %s, start %s", set.Cfg.Underlying, set.Cfg.GEXDirection, o.start)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Print(". confirmed = the bot (the trend's side held under a confirmed negative regime); live = also held while the live regime is negative. Entries and repairs; no rebalance top-ups in the replay.\n\n")
+	fmt.Print(replay.RegimeHoldMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To)))
+	return nil
+}
+
+// parseHold reads one regime-side rule; "" is the bot's.
+func parseHold(v string) (string, error) {
+	if v == "" {
+		return replay.RegimeHoldConfirmed, nil
+	}
+	for _, h := range replay.RegimeHolds {
+		if v == h {
+			return h, nil
+		}
+	}
+	return "", fmt.Errorf("-regimehold %q: want %s", v, strings.Join(replay.RegimeHolds, " | "))
 }
 
 // readMarketJSON reads market.json (replay.ReadMarketJSON); a missing file
