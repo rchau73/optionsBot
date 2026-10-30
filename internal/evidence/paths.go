@@ -13,6 +13,7 @@ type Paths struct {
 	Journal, History, Market, GEX, Stress, Config string
 	Directions                                    string // data/direction_history.jsonl (#245)
 	Deploys                                       string // <envs>/history/deploys.tsv, beside the clone (#361)
+	Root                                          string // the clone: its data/evidence/ holds the earlier weekly reports (#537)
 }
 
 // BotPaths lays out bot's files under root (an environment clone). Books
@@ -31,6 +32,7 @@ func BotPaths(root, booksRoot, bot string) Paths {
 
 		Directions: filepath.Join(dir, "data", "direction_history.jsonl"),
 		Deploys:    filepath.Join(filepath.Dir(root), "history", "deploys.tsv"),
+		Root:       root,
 	}
 }
 
