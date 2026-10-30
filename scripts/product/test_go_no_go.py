@@ -17,6 +17,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 PRICING = os.path.join(REPO, "docs", "product", "pricing-options.md")
 GO_NO_GO_DOC = os.path.join(REPO, "docs", "product", "go-no-go.md")
 LEGAL = os.path.join(REPO, "docs", "legal", "preliminary-answers.md")
+SCOREBOARD_CASES = os.path.join(REPO, "tests", "testdata", "scoreboard", "cases.json")
 
 
 def tally(share, n=20):
@@ -136,6 +137,25 @@ class ScorecardTest(unittest.TestCase):
         card = self.fx.card()
         self.assertEqual(card["rows"][2]["status"], gng.FAILS)
         self.assertEqual(card["overall"], "kill criterion met")
+
+    def test_e2_agrees_with_the_evidence_scoreboard(self):
+        # Scenario: both tools agree — the fixture tests/evidence_scoreboard_test.go reads too (#537):
+        # row 3 gives the scoreboard's status (its value names "not enough weeks" / "no spread") and ratios.
+        with open(SCOREBOARD_CASES, encoding="utf-8") as f:
+            cases = json.load(f)["cases"]
+        for c in cases:
+            with self.subTest(c["name"]):
+                fx = Fixture()
+                try:
+                    for week, engine, hold in c["weeks"]:
+                        fx.write(f"data/evidence/{week}/btc.json", evidence(week, engine, hold))
+                    e2 = gng.e2_row(fx.root, "btc")
+                finally:
+                    fx.close()
+                status = e2["status"] if e2["status"] in (gng.MEETS, gng.FAILS) else e2["value"]
+                self.assertEqual(status, c["status"])
+                if c["status"] in (gng.MEETS, gng.FAILS):
+                    self.assertEqual(e2["value"], f"engine {c['engine_ratio']:.2f} vs hold {c['hold_ratio']:.2f}")
 
     def test_e2_skips_non_week_folders_and_unknown_hold(self):
         self.fx.weeks(gng.E2_MIN_WEEKS, engine=lambda i: 1.0 + i, hold=lambda i: i)

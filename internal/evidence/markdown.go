@@ -171,6 +171,8 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		}
 	}
 
+	writeScoreboard(p, r.Score)
+
 	ut := r.Util.Stats
 	p("## Margin utilisation\n\nSource: %s (`history.Utilisation`, the figure of `/api/status`).\n\n", r.Util.Source)
 	if ut.MeanPct == nil {

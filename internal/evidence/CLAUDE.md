@@ -21,6 +21,11 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - not comparable — missing hours listed, no gap — under 90 % market coverage, a market gap over 3 h, coverage not measured or no replay;
     - causes only from the journal (frozen slot-hours, startup rebalance orders, closes with an `Actor`);
     - `Inputs.Account` (`DeribitAccount(root)`, set by `cmd/evidence`) = `live` drops every amount from its Markdown and JSON (% only).
+  - the twelve-week scoreboard (`scoreboard.go`, #537, `Report.Score`): PRD §6's kill test as of the report's week, pure `ScoreWeeks` over the last `ScoreboardWeeks` (12) weekly reports with both returns known
+    (`Inputs.Earlier`, read by `Load` with `ReadWeekly` from `Paths.Root`; this week's own `Hold`; a report of the same or a later week is ignored);
+    - `SharpeRatio` = mean ÷ sample sd, nil under 2 values or an sd ≤ 1e-9; status `meets` / `fails` / `not enough weeks` / `no spread`, ISO weeks missing from the first counted week on;
+    - ratios, counts and weeks only (no amount, live or not); a -from/-to report says why it has none;
+    - `scripts/product/go_no_go.py` row 3 is the same calculation, pinned by `tests/testdata/scoreboard/cases.json` (a change of the measure changes both).
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,
