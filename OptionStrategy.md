@@ -96,6 +96,7 @@ There is no cap.*
    Calls get the same treatment in a confirmed up-trend.
 5. **Even legs.** A strangle is only roughly direction-neutral when both legs have the same size.
    If they don't — one leg filled only partly, or an order filled twice — the bot buys back the extra on the larger side right away (it reduces risk, so it does this even while new entries are frozen).
+   A difference left by an exit that is filling in pieces is not an uneven strangle: the bot lets that exit finish first (up to 30 min after its last piece once the exit's rule stops firing).
 6. **Repairs.** If a strangle has lost one leg (rolled, or only one leg filled), it re-sells the missing leg at the same expiry and size, unless the market regime says that side is dangerous.
    A leg lost to a **stop-loss** is different: the market just moved hard against it, and selling it again at once sells into the same move.
    It waits until the market is calm again — no regime change pending, dealers not amplifying moves, and at least 3 days since the stop.
@@ -280,7 +281,7 @@ Every rule that opens, closes or holds a position, by market state.
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
 | **Top-up while a slot's leg is held after a stop-loss or manual close** | ⛔ that slot's top-up waits until the repair may run (`repair_held`: top-up held); a strangle missing a leg is never topped up, repair completes it | same | same | same | same |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1.5σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |
-| **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
+| **Balance legs** (buy back the excess of the larger leg) | ✅ · not while the smaller leg is being closed (a roll filling in pieces, a waiting stop), nor while either leg is part-way through an exit (one piece of a roll, delta exit or stop filled: it waits while the exit's rule fires, and 30 min after the last piece once it stops) | ✅ (it reduces risk) | ✅ | ✅ | ✅ |
 | **Entry and top-up at the same time** | one at a time: an entry waits while a top-up works (`entry_wait_topup`), a due top-up pass waits while an entry works (`rebalance_wait_entry`) — each sizes against the book without the other's orders | same | same | same | same |
 | **While a stop waits for the spread** | no entries, top-ups or repairs until it fires or is dropped | same | same | same | same |
 | **Without fresh GEX data** (startup, stale snapshot) | no entries (`gex_wait`), top-ups or repairs; exits, balancing and the MM cut run | same | same | same | same |

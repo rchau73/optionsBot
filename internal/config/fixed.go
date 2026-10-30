@@ -46,6 +46,9 @@ const (
 	FixedMarketRecordMinutes      = 60       // market history recording period
 	FixedSpreadAlertThreshold     = 0.05     // journal warns on spreads above 5 %
 	FixedHedgeReportThreshold     = 0.05     // hedge_report.json from this |net delta|
+	// A rule constant, never a YAML key (no Config field): the backtest fills
+	// whole, so there is no partial exit for cmd/stress to study.
+	FixedClosingHoldMinutes = 30 // a leg an exit closed in part stays "closing" this long after its last piece once the rule stops (#554)
 )
 
 // fixedKeys are the YAML keys of the settings above, with their value as the

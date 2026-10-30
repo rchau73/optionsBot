@@ -39,6 +39,10 @@ Read both before changing a rule.
     and so does a shutdown (`settleRestingCloses` when Run's context ends, on a detached 5 s context; `main` keeps the trading gateway open until Run returns);
     a failed cancel or read-back goes to the unknown-outcome path (cancel by label).
   - While it rests, leg balancing skips the strangle and the position check does not adopt the exchange being less short on that instrument.
+- **Even legs** — a leg an exit closed in part (`closinglegs.go`, #554): a piece of a stop-loss, DTE roll, delta exit, drift or take-profit that leaves a remainder marks the leg closing (`bookClose` → `noteClosingPiece`).
+  - Leg balancing skips the strangle while either leg is marked; the mark holds while the leg's rule fires and `ClosingHold` (30 min, `config.FixedClosingHoldMinutes`) after the last piece once it stops, and goes with the position.
+  - In memory: a restart forgets it (the strangle is balanced at once if still uneven).
+  - 2026-10-29/30 stable ETH: |Δ| on the drift (0.100) or exit (0.30) threshold ticked back between two IOC pieces and balancing trimmed the other leg four times, once 100 calls sold the same second.
 - **Position safety:** Churn breaker: a slot that buys back and re-sells `churn_max_round_trips` (3) times within `churn_window_minutes` (60) is paused for the window
   — no entries, repairs, upsizes or leg balancing; exits run.
 - **No re-selling into the move:**

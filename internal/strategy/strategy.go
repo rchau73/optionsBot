@@ -88,6 +88,9 @@ type Strategy struct {
 	// decision loop only).
 	restingCloses map[string]*restingClose
 	askStep       map[string]exitQuote
+	// Legs an exit closed in part, by position: the last piece's time
+	// (closinglegs.go; decision loop only).
+	closing map[string]time.Time
 	// Margin policy state, decision loop only: the last status (to journal
 	// changes), the IM limit the book was last resized to (NaN: never) and,
 	// after a complement fell short, the earliest time to rebalance again,
@@ -171,6 +174,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		forceCheck:       make(map[string]bool),
 		restingCloses:    make(map[string]*restingClose),
 		askStep:          make(map[string]exitQuote),
+		closing:          make(map[string]time.Time),
 		boughtBack:       make(map[string]bool),
 		churn:            make(map[slotKey]*churnLog),
 		churnUntil:       make(map[slotKey]time.Time),

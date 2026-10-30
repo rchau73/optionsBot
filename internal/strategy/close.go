@@ -126,6 +126,7 @@ func (s *Strategy) bookClose(pos *orders.Position, fill orders.Fill, reason, ord
 	s.pnl.record(slot, orders.ClosedNetPnL(&closed, fill))
 
 	remaining := pos.Qty - filled
+	s.noteClosingPiece(pos, reason, remaining, time.Now())
 	if remaining <= qtyEpsilon {
 		s.state.RemovePosition(pos.ID)
 		s.state.RemoveStrangleContaining(pos.ID)

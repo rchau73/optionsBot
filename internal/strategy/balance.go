@@ -20,13 +20,22 @@ import (
 // an IOC limit at the ask, like rolls: no resting order, and no fill means
 // try again next cycle. One-legged strangles are repair's job; strangles in
 // the rollout window are about to roll anyway; a strangle whose smaller leg
-// an exit rule is closing waits for that close to finish.
+// an exit rule is closing, or one of whose legs an exit closed in part
+// (closinglegs.go, #554), waits for that close to finish.
 func (s *Strategy) balanceStrangles(ctx context.Context) {
+	s.pruneClosing()
+	now := time.Now()
 	for _, st := range s.state.AllStrangles() {
 		call, put := s.livePosition(st.CallLeg), s.livePosition(st.PutLeg)
 		if call == nil || put == nil || s.repairPending(st.ID) ||
 			s.restingCloses[call.ID] != nil || s.restingCloses[put.ID] != nil || // an exit is working
-			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), time.Now()) {
+			s.churnPaused(makeSlotKey(st.TargetDTE, st.EntryDelta), now) {
+			continue
+		}
+		if callClosing, putClosing := s.legClosing(call, now), s.legClosing(put, now); callClosing || putClosing {
+			slog.Debug("balance legs: an exit closed a leg in part, waiting for it to finish",
+				"strangle_id", st.ID, "call_qty", call.Qty, "put_qty", put.Qty,
+				"call_closing", callClosing, "put_closing", putClosing)
 			continue
 		}
 		if call.DTE() <= s.cfg.RolloutDTE {
