@@ -32,3 +32,13 @@ A comment that fails to post is retried once.
 Done marker: `data/agents/assistant_review/<week>.done`.
 Ledger agent: `assistant_review`.
 Metrics and the review rule: [docs/product/assistant/README.md](../product/assistant/README.md#weekly-quality-review).
+
+**Live golden-set run** (#536): after the quality review, `usage.sh` runs [`assistant_golden.sh`](../../scripts/agents/assistant_golden.sh).
+In `ASSISTANT_GOLDEN_ENV` (default mvp), when its `.env` has `ANTHROPIC_API_KEY`, it runs `scripts/product/assistant_run.sh --env <env> --week <week>`: every golden question asked to the real assistant, graded and compared with the baseline.
+It posts `assistant_golden.py comment` on the E10 epic: counts and percentages per category and the regressions named, never a question or an answer.
+A regression is reported, not a failure; without the key nothing runs and no ledger line is written.
+A failed run is tried once more; a comment that fails to post is posted once more from the stored summary, without asking the model again.
+Done marker: `data/agents/assistant_golden/<week>.done`.
+Ledger agent: `assistant_golden`.
+Tests: `test_assistant_golden.py` (end to end on throwaway clones with stub `node`/`gh`).
+Score, cost and baseline: [docs/product/assistant/README.md](../product/assistant/README.md#live-golden-set-run).
