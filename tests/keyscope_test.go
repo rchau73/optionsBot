@@ -56,6 +56,14 @@ func ptrStr(b *bool) string {
 
 // keyScopeRun connects a gateway whose auth reply grants scope, with every
 // log line captured, and returns it with /api/status's key_scope and the logs.
+// Placeholder credentials: deliberately low-entropy so the repository's
+// secret scan (gitleaks) does not take them for real keys.
+const (
+	fakeAccountID       = "dummy-id-1111"
+	fakeAccountPassword = "dummy-pw-2222"
+	fakeAuthReply       = "dummy-tk-3333"
+)
+
 func keyScopeRun(t *testing.T, scope string) (*gw.Gateway, map[string]any, func() string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -70,10 +78,10 @@ func keyScopeRun(t *testing.T, scope string) (*gw.Gateway, map[string]any, func(
 	}
 
 	m := newMockDeribit(t)
-	reply, _ := json.Marshal(map[string]string{"access_token": "tok-SECRET-123", "scope": scope})
+	reply, _ := json.Marshal(map[string]string{"access_token": fakeAuthReply, "scope": scope})
 	m.on("public/auth", func(gw.JSONRPCRequest) mockReply { return mockReply{result: string(reply)} })
 	cfg := testGatewayConfig()
-	cfg.ClientID, cfg.ClientSecret = "client-ID-abc", "secret-XYZ-789"
+	cfg.ClientID, cfg.ClientSecret = fakeAccountID, fakeAccountPassword
 	g := connectGateway(t, m, cfg) // the bot still starts: Connect succeeds
 
 	h := api.New(staticView{sampleView()}, orders.NewWriterLogger(&bytes.Buffer{}, 0), api.WithKeyScope(g)).Handler()
@@ -167,9 +175,9 @@ func TestKeyScope_NoSecret(t *testing.T) {
 		t.Errorf("journal line = %v", line)
 	}
 	for what, text := range map[string]string{"logs": logs(), "status": string(status), "journal": journal.String()} {
-		for _, secret := range []string{"client-ID-abc", "secret-XYZ-789", "tok-SECRET-123"} {
-			if strings.Contains(text, secret) {
-				t.Errorf("%s holds %q", what, secret)
+		for _, fake := range []string{fakeAccountID, fakeAccountPassword, fakeAuthReply} {
+			if strings.Contains(text, fake) {
+				t.Errorf("%s holds %q", what, fake)
 			}
 		}
 	}
