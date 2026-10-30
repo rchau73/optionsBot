@@ -360,6 +360,27 @@ func TestAssistantReview_UnreadableLinesAreSkipped(t *testing.T) {
 	}
 }
 
+// Scenario: test questions stay out of the user-facing numbers (#536): a
+// golden-set run line (test_run) is never counted, listed or flagged.
+func TestAssistantReview_TestRunLinesAreLeftOut(t *testing.T) {
+	w := arWeek(t)
+	log := arAnswer(t, "p1", w.From, "answered", "What is a strangle?") +
+		arAnswer(t, "g1", w.From.Add(time.Hour), "dont_know", "golden question", "user", "golden-run", "role", "test_run", "test_run", true) +
+		arAnswer(t, "g2", w.From.Add(2*time.Hour), "answered", "golden question 2", "test_run", true) +
+		arFlag(t, "g1", w.From.Add(3*time.Hour), "a flag on a test answer")
+	lg, err := assistantreview.Parse(strings.NewReader(log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lg.TestRuns != 2 || lg.Skipped != 0 {
+		t.Fatalf("test runs %d skipped %d, want 2 and 0", lg.TestRuns, lg.Skipped)
+	}
+	r := arBuild(t, log, nil)
+	if r.Answers != 1 || r.Flagged != 0 || len(r.Review) != 0 {
+		t.Fatalf("answers %d flagged %d review %d: only the person's answer counts", r.Answers, r.Flagged, len(r.Review))
+	}
+}
+
 func TestAssistantReview_EmptyWeek(t *testing.T) {
 	r := arBuild(t, "", nil)
 	if r.Answers != 0 || r.FlagPct != nil || r.AnsweredPct != nil || len(r.Review) != 0 || len(r.Gaps) != 0 {

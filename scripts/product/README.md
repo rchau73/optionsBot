@@ -104,6 +104,23 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 
 Exit 0 when every question passes, 1 when one fails, 2 on bad input (unreadable JSON, an answer for an unknown id, two answers for one id).
 
+## Live golden-set run (`assistant_run.sh`, `assistant_golden.py`, #536)
+
+Asks the real assistant every golden question (`frontend/scripts/assistant-run.mjs`, the monitor's own `answerQuestion` on each question's fixture), grades the answers with `assistant_grade.py` and compares the score per category with the baseline.
+
+```bash
+bash scripts/product/assistant_run.sh --env mvp [--week 2026-W44] [--accept]   # the key from mvp's .env
+python3 scripts/product/assistant_golden.py score answers.jsonl --out-dir data/monitor/assistant_reviews --week 2026-W44 [--accept]
+python3 scripts/product/assistant_golden.py comment data/monitor/assistant_reviews/2026-W44.golden.summary.json   # the E10 comment: counts and % only
+```
+
+- A test run: outside the per-person limit, paced 2 s a question, its own log with every line `test_run` (never `assistant.jsonl`), no analytics event, no request queue.
+- The first run writes `golden_baseline.json`; a category more than 10 points under it is a regression (exit 1); `--accept` makes this run the baseline.
+- No `ANTHROPIC_API_KEY` → one message, exit 2, nothing written.
+- Cost: about one model call per question (≈ 115 a run), at most four for one question.
+
+Details: `docs/product/assistant/README.md` "Live golden-set run". Tests: `test_assistant_golden.py`, `frontend/__tests__/assistant-golden-run.test.js`.
+
 ## Go / no-go scorecard (`go_no_go.py`, #305)
 
 Puts E5's decision inputs side by side — rows, thresholds and the E2 window in `docs/product/go-no-go.md`:

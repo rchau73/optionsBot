@@ -109,6 +109,9 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     (`internal/usage/drops.go`: active users or help used ≥ 30 % under the 3 weeks' mean, a funnel ≥ 20 points under, a base under 10 = too few to judge, a week without events left out)
     finds one (dedup by week as `flaky.py`),
   - and posts `usage_week.py`'s summary on the E13 epic — named figures only, so no user, session or amount field; percentages only for a live env.
+  - after the assistant quality review (`assistant_review.sh`, #438) it runs `assistant_golden.sh` (#536): in `ASSISTANT_GOLDEN_ENV` (mvp) when its `.env` has `ANTHROPIC_API_KEY`,
+    `scripts/product/assistant_run.sh` asks the real assistant every golden question (a test run: its own log, `test_run`), grades it against `golden_baseline.json`
+    and posts counts and % per category on the E10 epic (`<week>.done`, ledger agent `assistant_golden`; a regression is reported, not a failure).
 - Daily delivery report (#470, docs/agents/dora.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);
