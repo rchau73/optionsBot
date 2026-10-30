@@ -4,7 +4,6 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 
 ```bash
 go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # assistant quality review (#438): answers by kind, guard reasons, flag rates, the review list of flagged and dont_know answers, gap candidates by nearest help passage (helpkb.Search) → data/monitor/assistant_reviews/<week>.md|json (private: question text) + .summary.json (counts/% only, posted on E10 by usage.sh → assistant_review.sh) + .golden_candidates.jsonl (golden.jsonl untouched); no model, no network (docs/product/assistant/README.md "Weekly quality review")
-bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set run (#536): frontend/scripts/assistant-run.mjs asks the real assistant (answerQuestion, lib/assistant/goldenrun.js) every golden question on its fixtures, paced, outside the per-person limit, its own log run.jsonl with every line test_run (never assistant.jsonl; cmd/assistantreview skips test_run lines) → answers.jsonl graded by assistant_golden.py against golden_baseline.json (> 10 pts down = regression, exit 1); no key → one message, nothing written (README "Live golden-set run")
 ```
 
 - **`internal/assistant/guard`** — the E10 answer guard (#260), pure;

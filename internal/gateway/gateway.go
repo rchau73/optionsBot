@@ -78,6 +78,8 @@ type Gateway struct {
 	retryCount atomic.Int64
 
 	conns ConnTracker // drops, reconnects and timeouts for the monitor
+
+	keyScope atomic.Pointer[KeyScope] // the scope of the last authentication (#538)
 }
 
 // pendingCall is a request that has been written and is waiting for its reply.
@@ -150,9 +152,9 @@ func (g *Gateway) Connect(ctx context.Context) error {
 func (g *Gateway) Fatal() <-chan error { return g.fatal }
 
 func (g *Gateway) connectOnce(rootCtx context.Context) error {
-	conn, resp, err := websocket.DefaultDialer.DialContext(rootCtx, g.endpoint, nil)
+	conn, _, err := websocket.DefaultDialer.DialContext(rootCtx, g.endpoint, nil)
 	if err != nil {
-		return dialError(g.endpoint, resp, err)
+		return fmt.Errorf("websocket dial: %w", err)
 	}
 
 	// Stop the previous connection's goroutines before starting new ones.
@@ -595,7 +597,8 @@ func (g *Gateway) authenticate(ctx context.Context) error {
 		return errors.New("auth failed: no access_token in response — check DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET in .env, and verify the API key has account:read and trade:read_write scopes")
 	}
 
-	g.log.Info("authenticated with Deribit", "scope", result.Scope)
+	g.log.Info("authenticated with Deribit")
+	g.noteKeyScope(result.Scope)
 	return nil
 }
 

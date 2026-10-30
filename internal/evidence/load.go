@@ -81,26 +81,7 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 		in.Equity = replay.ReadEquity(acct, bot)
 		in.EquitySource = acct + " (margin balance when captured)"
 	}
-	loadEarlier(&in, p, bot, note)
 	return in
-}
-
-// loadEarlier reads the bot's earlier weekly reports for the scoreboard
-// (#537). Without a clone root (Paths built by hand) none are read.
-func loadEarlier(in *Inputs, p Paths, bot string, note func(string, ...any)) {
-	if p.Root == "" {
-		return
-	}
-	in.WeeklySource = WeeklyGlob(p.Root, bot)
-	earlier, unreadable, err := ReadWeekly(p.Root, bot)
-	if err != nil {
-		note("earlier weekly reports not read: %v", err)
-		return
-	}
-	for _, u := range unreadable {
-		note("weekly report %s unreadable: its week counts as missing", u)
-	}
-	in.Earlier = earlier
 }
 
 // RunStress runs the standard shocks on the book captured in in.StressDir

@@ -31,10 +31,7 @@ A missing input is `missing`, never assumed.
   The product owner may change the window here and in `E2_MIN_WEEKS` together.
 - **Measure:** each week's return in USD of the engine (`return_usd_pct`: equity plus net P&L at the end spot against equity at the start spot) and of holding the coin (`hold_return_usd_pct`); the risk-adjusted figure of each is its weekly Sharpe ratio — mean ÷ standard deviation of the weekly returns, no risk-free rate.
 - **Reading:** meets when the engine's ratio is above hold's; fails otherwise.
-  A series with no spread (standard deviation at most 1e-9) has no ratio → missing.
-- **One calculation** (#537): `internal/evidence` `ScoreWeeks` and `SharpeRatio` (`scoreboard.go`) compute it, and every weekly evidence report carries the result as its `scoreboard` block (status `meets`, `fails`, `not enough weeks` or `no spread`, and the ISO weeks missing).
-  This scorecard's row 3 computes the same from the reports, and the shared fixture `tests/testdata/scoreboard/cases.json` pins both to the same statuses and ratios (`tests/evidence_scoreboard_test.go`, `test_go_no_go.py`).
-  A change of the measure changes both and the fixture.
+  A series with no spread has no ratio → missing.
 - **Which bot:** `--evidence-root` (the environment clone, default this checkout) and `--bot` (default `btc`).
   The track record is stable's.
 

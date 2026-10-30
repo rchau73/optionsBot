@@ -218,36 +218,8 @@ export class AuthService {
     this.store.deleteUser(target.id);
     authLog("INFO", "user deleted", { by: by.username, username: target.username });
     this.audit("user_deleted", { username: by.username, role: by.role, target: target.username });
-    return this.eraseUserData(by, target, "user_deleted");
-  }
 
-  /**
-   * A person deletes their own account (#543): the same steps as deleteUser —
-   * sessions, consent, analytics events, survey answers with any free text —
-   * for any role except the last admin (409 with the reason). Exchange
-   * accounts and funds are not the monitor's and are untouched.
-   * → { ok: true, events_removed | events_error, survey_answers_removed | survey_answers_error } | { ok: false, status, error }
-   */
-  deleteOwnAccount(user) {
-    const me = this.store.userById(user.id);
-    if (!me) return { ok: false, status: 404, error: "no such user" };
-    if (me.role === "admin" && this.store.countAdmins() <= 1) {
-      authLog("WARN", "account deletion refused: last admin", { username: me.username });
-      return { ok: false, status: 409, error: "you are the only admin: make another person an admin on the Users page first, then delete your account" };
-    }
-    this.store.deleteUser(me.id);
-    authLog("INFO", "account deleted by its owner", { username: me.username, role: me.role });
-    this.audit("account_deleted", { username: me.username, role: me.role });
-    return this.eraseUserData(me, me, "account_deleted");
-  }
-
-  /**
-   * The steps after a user row is gone: their analytics events, then their
-   * survey answers. A step that fails is an ERROR log, an audit line and
-   * `events_error` / `survey_answers_error` in the result, saying how it goes.
-   */
-  eraseUserData(by, target, reason) {
-    const who = { username: by.username, role: by.role, target: target.username, target_row_id: target.id, reason };
+    const who = { username: by.username, role: by.role, target: target.username, target_row_id: target.id, reason: "user_deleted" };
     const result = { ok: true };
     try {
       const { removed } = this.deleteEvents(target.id);

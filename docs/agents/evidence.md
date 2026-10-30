@@ -9,10 +9,6 @@ It makes no Claude call and places no order.
 1. For each environment and bot, `scripts/stress_inputs.sh <bot>` captures the week-end book into that clone's `data/stress/<bot>/`, through that environment's monitor with its read-only `MONITOR_API_TOKEN`.
 2. `go run ./cmd/evidence -env <env> -root <clone> -bot <bot> -week <week>` writes `data/evidence/<week>/<bot>.md` and `.json` in the clone.
    mvp records no books, so it gets `-books-root` = stable's clone.
-   Each report carries the **twelve-week scoreboard** (#537, `scoreboard` in the JSON, a section in the Markdown): PRD §6's kill test as of that week
-   — the engine's weekly Sharpe ratio against holding the coin's over the last 12 weekly reports with both returns known, read from the clone's earlier reports and this week's
-   — with the weeks counted, the weeks still needed, both ratios, the status (`meets`, `fails`, `not enough weeks`, `no spread`) and the ISO weeks missing since the first counted week.
-   Ratios, counts and weeks only, labelled "past performance, net of fees" and "a measured window, not a promise of returns"; the calculation is `docs/product/go-no-go.md` §3's.
 3. [`evidence_week.py`](../../scripts/agents/evidence_week.py) builds one comment from the `.json` reports, posted on the E2 epic: a row per env × bot with net P&L (% of equity), excess return vs holding the coin, worst 7 days, replay gap, the worst stress shock,
    E1 reliability (#361: mean IM ÷ limit against the 60 % target and whether it was met, the largest cause of idle slot time, startups and how many were restart-made — with their lots on testnet only — or `not measured` and why)
    and the missing days with the market books' share of the week's hours (`(replay partial)` under 90 %, #362),

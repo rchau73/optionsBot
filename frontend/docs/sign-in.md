@@ -40,17 +40,6 @@ A wrong `current` → 401 `Current password is wrong` and counts as a failed sig
 Success ends **every** session of the person, then opens a new one for this browser (new access and refresh cookies): other browsers' next refresh fails and they go to `/login`.
 Their access token, being a stateless JWT, still reads the monitor for up to 15 min; their close, rebalance and password change are refused at once (the session is gone)
 
-### Deleting your own account
-
-`DELETE /api/auth/account` (body `{}`, #543), the header's **Account ▾ → Delete my account** dialog (`components/DeleteAccount.jsx`).
-Live session required (re-read like a state-changing route), same-origin JSON only; any role.
-The last admin is refused with 409 and the reason (make another person an admin first); nothing changes.
-Otherwise `AuthService.deleteOwnAccount` runs the admin deletion's steps: the user row with its consent, every session, reset links and notification state, then the analytics events and the survey answers.
-The answer is `{"events_removed" or "events_error", "survey_answers_removed" or "survey_answers_error"}` and clears both cookies; the page goes to `/login`.
-Audited as `account_deleted` (the person's own `username` and `role`), followed by `events_deleted` and `survey_answers_deleted` with `reason: account_deleted`; logged `account deleted by its owner`.
-Exchange accounts and funds are not the monitor's and are untouched.
-The dialog's exit question is in [Analytics](analytics.md).
-
 ### Reset link
 
 For a person who forgot their password, no e-mail is needed (#307).
@@ -105,7 +94,6 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `password_reset` (an admin set another person's password, #306);
 - `reset_link_issued` (with `expires_at`, #307);
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
-- `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);

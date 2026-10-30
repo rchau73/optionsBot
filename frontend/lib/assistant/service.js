@@ -548,9 +548,7 @@ function applyRequestCheck(entry, verdict, passages) {
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
- * review log, where a retried answer's first try is `first_answer`; testRun:
- * the golden-set run's questions (#536), marked `test_run` so no review counts
- * them. A question that reads as a report (looksLikeReport, or the
+ * review log, where a retried answer's first try is `first_answer`. A question that reads as a report (looksLikeReport, or the
  * model's report flag on its answer) runs the request check instead of the
  * plain answer. → { status, body } for the route: 200 with { id, answer,
  * citations, outcome, checklist?, draft?, ai_generated, notice }, 502 when
@@ -567,7 +565,6 @@ export async function answerQuestion({
   model,
   index,
   file,
-  testRun = false,
   nowMs = Date.now(),
 }) {
   const hits = index.search(question, HELP_PASSAGES);
@@ -592,7 +589,6 @@ export async function answerQuestion({
     answer: null,
     flag: false,
   };
-  if (testRun) entry.test_run = true;
 
   let reply = null;
   let verdict = null;

@@ -76,11 +76,6 @@ type Inputs struct {
 	// Every recorded dataset's record times over the week, for the coverage
 	// section (#362); nil = not read.
 	Recorded []RecordedSet
-
-	// The bot's earlier weekly reports (ReadWeekly), for the twelve-week
-	// scoreboard (#537); nil = none read.
-	Earlier      []Report
-	WeeklySource string
 }
 
 // Report is the weekly evidence of one bot. Amounts are coin unless named
@@ -103,7 +98,6 @@ type Report struct {
 	E1        Reliability  `json:"e1_reliability"`
 	Coverage  Coverage     `json:"coverage"`
 	RVL       ReplayVsLive `json:"replay_vs_live"`
-	Score     Scoreboard   `json:"scoreboard"`
 	Equity    float64      `json:"equity"` // coin, at the start (0 = unknown)
 	EquitySrc string       `json:"equity_source"`
 }
@@ -235,7 +229,6 @@ func Build(in Inputs) Report {
 	r.Live = buildLive(in)
 	r.Bridge = BuildBridge(in.Points, w.From, w.To, in.History)
 	r.Hold = buildHold(in, r.Live.Perf)
-	r.Score = buildScoreboard(in, r.Hold)
 	r.Util = Util{Source: in.History, Stats: history.Utilisation(in.Points, w.From, w.To)}
 	r.Missing = Missing{
 		HistoryDays: dates(r.Live.Perf.MissingDays),

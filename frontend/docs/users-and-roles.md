@@ -100,23 +100,6 @@ Manager or admin; every read logged with the person; read-only
 
 **Refusals:** 400 any other id (`..`, a slash, …; the disk is not touched) · 404 no report · 500 unreadable or malformed JSON (a log line with the id, never the content) · 401/403 as above
 
-#### `GET /api/lab/runs` (#539)
-
-**Does:** `{"runs": [{id, time, underlying, label, changed, backtest, replay, stress_ran, windows, cliffs}]}` from the same `COMPARE_DIR/<id>/report.json` as `/api/compare`, newest first, 50 at most (`lib/lab.js`).
-`label` is "backtested, not a forecast"; `changed` is the report's `diffs` (key, base, proposed).
-`backtest` and `replay` are `{base, proposed}`, each `{return_pct, worst_week_pct, max_drawdown_pct, fees_pct}`: percentages only, drawdown and fees as % of the run's starting equity, so the risk sits beside the return; null when the source did not run or the config's run failed.
-`windows` is the proposal's wins per window (`-windows`), `cliffs` the number of cliffs (`-neighbours`); null without them.
-Manager or admin (`ROLE_GUARDED_READS` in `lib/auth/routeRoles.js`, called as every caller by the role-matrix test); read-only, applies nothing.
-
-**Refusals:** 401 no session · 403 role user
-
-#### `GET /api/lab/runs/<id>` (#539)
-
-**Does:** that run's list row, `report` (the `report.json` content, its `disclaimer` included) and `analysis`.
-`analysis` is "withheld pending legal review", and `analysis.json` is not read, while `L10_ANALYSIS_GATE_OPEN` in `lib/lab.js` is false: a constant, no setting, pinned to false by `__tests__/lab-route.test.js` until counsel's answer to legal question L10 is recorded in `docs/legal/preliminary-answers.md`.
-
-**Refusals:** 404 an id that is not a folder time (`../secrets`, a slash, …; the disk is not touched) or no run · 500 unreadable or malformed JSON (a log line with the id, never the content) · 401/403 as above
-
 #### `DELETE /api/admin/users/<id>` `{}`
 
 **Does:** `deleteUser` (and the person's analytics events, "Analytics" below) → `{"events_removed"}` or `{"events_error"}`

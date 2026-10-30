@@ -97,7 +97,9 @@ func TestMonitorGuide_SearchFindsGuideAndParameters(t *testing.T) {
 type guideItem struct{ key, label string }
 
 // guideAllowList: items with no guide entry, each with the reason.
-var guideAllowList = map[string]string{}
+var guideAllowList = map[string]string{
+	"survey:exit": "defined in surveys.md and accepted by POST /api/survey, but not shown in the monitor yet (only nps and answers are, #446, #498)",
+}
 
 var (
 	guideMarkerRe  = regexp.MustCompile(`<!--\s*guide:\s*(.*?)\s*-->`)

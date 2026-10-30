@@ -248,31 +248,6 @@ You sign in at the sign-in page with a username and password. Every page and eve
 
 Learn more: "Roles" in this guide.
 
-## Deleting your account
-
-<!-- guide: survey:exit, route:DELETE /api/auth/account -->
-
-You can delete your own monitor account at any time, whatever your role.
-
-**How to delete my account**: choose Delete my account in the account menu.
-The first screen says what is deleted: your sign-in, your usage analytics events and your survey answers, with any text you wrote.
-It cannot be undone.
-Press Continue, then Delete my account.
-
-**What deleting my account does not touch**: your exchange accounts and funds.
-The bots keep trading, and deposits and withdrawals stay on the exchange.
-
-**The question before you go**: below the delete button, one optional question asks the main reason you leave.
-Pick a reason, or Other with a few words if you want.
-Skip and delete, or ×, deletes the account at once without an answer; so does Delete my account with nothing picked.
-The answer is kept only if you said yes to usage analytics, and it is deleted with your account.
-Escape or Back returns to the first screen without deleting.
-
-**Why can't I delete my account as an admin?** The monitor always keeps one admin.
-If you are the only admin, make another person an admin on the Users page first, then delete your account.
-
-Learn more: "Analytics and your consent" in this guide.
-
 ## Roles
 
 There are three roles. A **user** may see every page. A **manager** may do what a user does and also close a leg by hand and rebalance by hand, including the dry run. An **admin** may do what a manager does and also use the admin pages: Users, Audit and Analytics.

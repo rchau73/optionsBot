@@ -12,6 +12,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     with `median_flip` and `gex_as_of` beside it for the monitor's regime chart;
   - a change of the SMA trend is journaled once as `trend_changed` (`trend.go`, #118); loop-published snapshots, never calls Deribit) and the journal's in-memory recent events;
   - `connections.<gateway>` in `/api/status` is each gateway's `ConnStats` (drops, reconnects, timeouts today; last drop time and error — `api.WithConnection`, #87).
+  - `key_scope` in `/api/status` is the trading key's scope (`api.WithKeyScope`, #538): `scopes`, `fund_scopes`, `can_move_funds` (null = unknown) and `status` trade_only|can_move_funds|unknown — scope names only, never the key; null when not wired.
   The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only) and `POST /api/rebalance` (manual rebalance, below: live and testnet):
   - bearer `BOT_ADMIN_TOKEN`, audited in the bot log and journaled; the monitor's server-side proxies add the token and refuse cross-origin requests.
   Both take an optional `"actor": {"user", "role"}` (#171: the monitor's signed-in person; `api.ActorOf` checks only its form — username 3–64 of `a-z 0-9 . _ -`, role admin|manager|user — none → `monitor`),
@@ -20,8 +21,6 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - **The role matrix** (#490): every state-changing monitor route, its allowed roles and its audit action is one table, `frontend/lib/auth/routeRoles.js` `STATE_CHANGING_ROUTES`;
     `frontend/__tests__/role-matrix.test.js` calls each as admin, manager, user, no session, the read-only `MONITOR_API_TOKEN` and an expired session,
     and fails on a route file, or a non-GET route registered here, that the table does not list (`bot` names the route here a monitor route forwards to).
-  - Read-only routes that only some roles may see are monitor routes too, listed in `ROLE_GUARDED_READS` of the same file:
-    the strategy-change lab's `GET /api/lab/runs` and `GET /api/lab/runs/<id>` (#539, managers and admins) read `data/compare/` in the monitor, not here — the bot has no roles (`frontend/docs/users-and-roles.md`).
   Never add other endpoints that change trading state without auth + confirmation + audit.
   `cmd/monitor-demo` serves it with simulated data.
   `/api/account` serves `internal/account` (cached `private/get_account_summaries` plus `private/get_positions` for each held currency, all kinds

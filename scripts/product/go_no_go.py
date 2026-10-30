@@ -27,7 +27,6 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 # PRD §6 kill criteria, quoted (changing them is a PRD pull request, not a code change).
 SURVEY_KILL_PCT = 30.0      # < 30 % of interviewed cycle holders would let software trade their account
 E2_MIN_WEEKS = 12           # go-no-go.md §3: weekly reports needed before the hold-the-coin row is read
-NO_SPREAD = 1e-9            # a standard deviation at or under this has no ratio (internal/evidence noSpread)
 LEGAL_GATE = ("L1", "L2", "L3", "L4", "L5", "L6", "L9")
 
 MEETS, FAILS, MISSING = "meets", "fails", "missing"
@@ -110,14 +109,12 @@ def weekly_reports(root, bot):
 
 
 def sharpe(values):
-    """Mean ÷ sample standard deviation; None under two values or with no spread.
-    The same calculation as internal/evidence.SharpeRatio (the weekly report's scoreboard, #537),
-    pinned to it by tests/testdata/scoreboard/cases.json."""
+    """Mean ÷ sample standard deviation; None under two values or with no spread."""
     if len(values) < 2:
         return None
     mean = sum(values) / len(values)
     sd = math.sqrt(sum((v - mean) ** 2 for v in values) / (len(values) - 1))
-    return mean / sd if sd > NO_SPREAD else None  # identical returns differ only by rounding
+    return mean / sd if sd > 0 else None
 
 
 def e2_row(root, bot, min_weeks=E2_MIN_WEEKS):

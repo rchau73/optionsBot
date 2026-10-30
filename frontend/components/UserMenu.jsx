@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import ChangePasswordModal from "./ChangePassword";
-import DeleteAccountModal from "./DeleteAccount";
 import SignOut from "./SignOut";
 import { useDismiss } from "./useDismiss";
 import { ADMIN_PAGES } from "@/lib/menu";
@@ -15,12 +14,11 @@ const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:
  * their name ("bob ▾"; "Account ▾" when the name cannot be read): Users,
  * Audit and Analytics (admins only, #306, #308, #445 — links only, the routes
  * enforce the role),
- * change your password, delete your account (#543), sign out of this browser.
+ * change your password, sign out of this browser.
  */
 export default function UserMenu({ role = null, username = null }) {
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const ref = useRef(null);
 
   // A click outside or Escape closes the menu.
@@ -57,22 +55,10 @@ export default function UserMenu({ role = null, username = null }) {
           >
             Change password
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={ITEM}
-            onClick={() => {
-              setOpen(false);
-              setDeleting(true);
-            }}
-          >
-            Delete my account
-          </button>
           <SignOut className={ITEM} />
         </div>
       ) : null}
       {changing ? <ChangePasswordModal onClose={() => setChanging(false)} /> : null}
-      {deleting ? <DeleteAccountModal onClose={() => setDeleting(false)} /> : null}
     </div>
   );
 }

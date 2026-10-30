@@ -64,9 +64,23 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"history_since":    s.historySince(),
 		"pnl":              v.PnL,
 		"connections":      conns,
+		"key_scope":        s.keyScopeStatus(),
 		"utilisation_7d":   s.utilisation(7 * 24 * time.Hour),
 		"utilisation_30d":  s.utilisation(30 * 24 * time.Hour),
 	})
+}
+
+// keyScopeStatus is the trading key's scope (#538): null when no source is
+// wired, the unknown status before the first authentication.
+func (s *Server) keyScopeStatus() *gateway.KeyScope {
+	if s.keyScope == nil {
+		return nil
+	}
+	ks, ok := s.keyScope.KeyScope()
+	if !ok {
+		ks = gateway.ParseKeyScope("")
+	}
+	return &ks
 }
 
 // utilisation is the margin utilisation over the last span (#174); null

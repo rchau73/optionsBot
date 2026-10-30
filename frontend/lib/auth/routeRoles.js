@@ -26,7 +26,6 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
-  { route: "DELETE /api/auth/account", roles: SIGNED_IN, audit: "account_deleted" },
   { route: "PATCH /api/admin/users/[id]", roles: ADMINS, audit: "role_changed" },
   { route: "POST /api/admin/users", roles: ADMINS, audit: "user_created" },
   { route: "POST /api/admin/users/[id]/password", roles: ADMINS, audit: "password_reset" },
@@ -48,15 +47,6 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },
   { route: "POST /api/survey/answers", roles: SIGNED_IN, audit: "answers_survey_shown" },
   { route: "POST /api/survey/nps", roles: SIGNED_IN, audit: "nps_survey_changed" },
-];
-
-/**
- * Read-only routes that only some roles may call (#539): the matrix test
- * calls each as every caller too, and checks the route file exports GET only.
- */
-export const ROLE_GUARDED_READS = [
-  { route: "GET /api/lab/runs", roles: MANAGERS },
-  { route: "GET /api/lab/runs/[id]", roles: MANAGERS },
 ];
 
 /** The table's route for an app/api route file and method: "app/api/consent/route.js", "POST" → "POST /api/consent". */

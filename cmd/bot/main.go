@@ -189,6 +189,12 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	// Date every settings change in the journal (#256): the effective
 	// settings' fingerprint and what changed since the previous start.
 	settings := orderLog.LogStartConfig(replay.LastConfig, cfg, cfgFile, cfg.Deployment, cfg.Version, time.Now())
+	// What the API key may do (#538): warn only, the bot starts either way.
+	keyScope, ok := gw.KeyScope()
+	if !ok {
+		keyScope = gateway.ParseKeyScope("") // unknown, never trade-only
+	}
+	orderLog.LogKeyScope(cfg.StrategyID, keyScope, time.Now())
 
 	// The GEX manager polls public/get_book_summary_by_currency (mainnet) every
 	// 60 s and classifies the gamma regime the strategy uses to shed legs and
@@ -283,7 +289,8 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		acct := account.NewPoller(gw)
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
 		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw),
-			api.WithDeployment(cfg.Deployment, cfg.Version), api.WithConfig(settings.Fingerprint, settings.Since)}
+			api.WithDeployment(cfg.Deployment, cfg.Version), api.WithConfig(settings.Fingerprint, settings.Since),
+			api.WithKeyScope(gw)}
 		if marketGW != gw {
 			opts = append(opts, api.WithConnection("mainnet-public", marketGW))
 		}

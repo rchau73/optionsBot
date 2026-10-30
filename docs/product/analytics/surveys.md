@@ -1,6 +1,6 @@
 # In-product surveys (E13)
 
-**Status:** content and data rules (#251, #297). The NPS card of §1 is built in the assistant panel (#446); it appears only to a person who said yes to analytics, and the monitor has no screen that asks for that yes yet, so in practice it waits for the consent prompt and the legal review below. The four answers card of §2 is built in the same place, on the same consent (#498). The exit question of §3 is built on the account deletion flow, consented-only (#543): it is stored only for a person who said yes to analytics, while counsel's C3 and C4 stay open; switching a bot off for good does not exist yet. The events they send are already in the event plan (`event-plan.md` §2 and §4) and the collector's allow-list (`frontend/lib/analytics/plan.js`), so the collector accepts them. The server side is built (#363): `POST /api/survey` stores an answer's codes and free text in `auth.db` beside the user and sends the codes-only event (§5). **No survey ships before the legal review in §6.**
+**Status:** content and data rules (#251, #297). The NPS card of §1 is built in the assistant panel (#446); it appears only to a person who said yes to analytics, and the monitor has no screen that asks for that yes yet, so in practice it waits for the consent prompt and the legal review below. The four answers card of §2 is built in the same place, on the same consent (#498). The exit step still waits for the flows it belongs to. The events they send are already in the event plan (`event-plan.md` §2 and §4) and the collector's allow-list (`frontend/lib/analytics/plan.js`), so the collector accepts them. The server side is built (#363): `POST /api/survey` stores an answer's codes and free text in `auth.db` beside the user and sends the codes-only event (§5). **No survey ships before the legal review in §6.**
 
 **Rule in one line:** every reason a person stays or leaves is recorded as a **code**, so the weekly report can count it. A survey never asks about amounts. It is never timed to flatter the score. Leaving is never delayed by a question.
 
@@ -53,10 +53,7 @@ These are the "why" choice questions tied to E3's four investor answers: what it
 
 ## 3. Exit survey
 
-**When:** a person deletes their account, or switches a bot off for good.
-Account deletion is built (#543): **Account menu › Delete my account** (`frontend/components/DeleteAccount.jsx`, `DELETE /api/auth/account`), for any role except the last admin, which the server refuses with the reason.
-Its first screen says what is deleted (sign-in, analytics events, survey answers with any text) and that exchange accounts and funds are not touched; its final screen carries the question below.
-Switching a bot off for good does not exist yet; the exit survey is part of the story that builds it.
+**When:** a person deletes their account, or switches a bot off for good. (Neither flow exists on the monitor yet. The exit survey is part of the story that builds each flow.)
 
 **Frequency cap:** once per leaving, on that flow's final screen only. It is never asked again afterwards, and never as a reminder or an e-mail.
 
@@ -64,8 +61,7 @@ Switching a bot off for good does not exist yet; the exit survey is part of the 
 - The question is on the same screen as the final confirmation, below the button that confirms leaving. It is never a step before that button.
 - The confirm button works with the question unanswered. There is no "are you sure you don't want to tell us?" and no second prompt.
 - "Pular / Skip" is one click and leaves at once. So does closing the screen.
-- Leaving goes ahead even if the survey answer cannot be stored. A failure is never shown to the person. As built, the answer is sent first and waited for at most 2 seconds (`EXIT_ANSWER_WAIT_MS`, `frontend/lib/analytics/exit.js`), so it is stored before the account and removed with it.
-- As built, Skip ("Skip and delete"), × ("Close and delete my account") and the delete button with nothing picked all delete at once and send `survey_dismissed`. Escape and Back step back to the first screen and delete nothing.
+- Leaving goes ahead even if the survey answer cannot be stored. The answer is sent without waiting, and a failure is never shown to the person.
 
 **Wording** (one optional question, and a text box for `other`):
 
@@ -78,7 +74,7 @@ The exit question shows the exit codes only, never the promoter codes.
 
 **Events:** `survey_shown {survey_id: exit}`; `survey_answered {survey_id: exit, reason_code}`; `survey_dismissed {survey_id: exit}` on Skip or close. These events are sent only for a person who said yes to analytics. A person who said no still sees the question; their coded reason is not stored until §6 settles how (counsel question C3): `POST /api/survey` answers 403 for them and stores nothing, which the screen ignores (leaving goes ahead).
 
-**Open point (account deletion):** deleting a user also deletes all their events in the same step (`AuthService.deleteUser`, event plan §5). As built (#543, the consented-only version), an exit answer from a deleted account is therefore deleted with it seconds after it is stored, and so is its free text, so the weekly report does not count it. The proposal for the build story, pending counsel (C4): the deletion step adds one to an anonymous weekly counter `(ISO week, reason_code)`, with no `user_id`, no session and no time finer than the week, and then deletes the user's events and text as now. Until then, only a bot switched off for good (the account stays) keeps its exit answer.
+**Open point (account deletion):** deleting a user also deletes all their events in the same step (`AuthService.deleteUser`, event plan §5). As built today, an exit answer from a deleted account is therefore deleted with it, and so is its free text. The proposal for the build story, pending counsel (C4): the deletion step adds one to an anonymous weekly counter `(ISO week, reason_code)`, with no `user_id`, no session and no time finer than the week, and then deletes the user's events and text as now. Until then, only a bot switched off for good (the account stays) keeps its exit answer.
 
 ## 4. Reason codes
 
@@ -126,17 +122,13 @@ Every one is an enum: `survey_id` (`nps`, `answers`, `exit`), `score` (the strin
   `GET /api/survey/answers` answers whether the card is due from it, the consent, the account age, `sign_in_count` and `nps_last_shown_at` (not within 7 days after NPS; `frontend/lib/analytics/answers.js`).
   `POST /api/survey/answers {"action": "shown"}` records the day only while it is due, so a second device or tab changes nothing (409) and shows no card.
   The page adds the same-session rule: in a tab where NPS is due or shown, the answers card is not shown.
-- **Exit answers** (#543): sent by the account deletion screen through the same `POST /api/survey`, before the deletion.
-  `AuthService.deleteOwnAccount` then removes them with the person's events (`account_deleted`, then `events_deleted` and `survey_answers_deleted`).
-  Without a yes to analytics the route answers 403 and nothing is kept (C3 open). No anonymous count outlives the deletion (C4 open).
+- Not built yet: the exit survey (its flows don't exist; counsel's C3 and C4 are open).
 
 **Never stored:** an amount, a position, the P&L sign used by the NPS timing rule, the text typed in any other field, the time spent on a question.
 
 ## 6. Data protection — **needs legal review**
 
 > **Needs legal review (LGPD/GDPR).** Not legal advice. The legal brief (`docs/product/legal-brief.md`) and the data-protection programme (`docs/legal/data-protection.md` §2: surveys and the exit survey on consent, 24 months or anonymised) apply. The free text is personal data and goes in the privacy policy draft (`docs/legal/drafts/politica-privacidade.md`). **No survey ships before counsel answers the questions below.**
-
-**Status (#543):** the exit question ships in its consented-only version while counsel's answers are awaited: shown to everyone, stored only on a yes to analytics, nothing kept after the deletion. C3 and C4 below are still open; their answers change only what is stored, never the screen.
 
 **Consent text** (draft, shown once with the first survey, *Yes* and *No* equally prominent):
 - PT-BR: "Suas respostas nos ajudam a melhorar o monitor. Guardamos a nota e o motivo escolhido, nunca valores ou posições. Um texto que você escrever fica junto da sua conta e é apagado com ela. Você pode mudar de ideia a qualquer momento no menu da conta."

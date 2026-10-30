@@ -87,19 +87,6 @@ class Body(unittest.TestCase):
         out = deploy_issue.body(SHA, "s", "r", "x" * 5000, "", [])
         self.assertNotIn("x" * (deploy_issue.MAX_LINE + 1), out)
 
-    def test_failed_rollback_points_outside_the_repo(self):
-        # #524: d43c6ff and its rollback c5152f7 both logged "bad handshake".
-        rollback = "**FAILED**: the rollback to `c5152f7` did not come back healthy, mvp is down"
-        log = "bot-btc-1 | gateway connect: websocket dial: websocket: bad handshake"
-        out = deploy_issue.body(SHA, "health check", rollback, log, "", [])
-        self.assertIn("**Likely outside the repo:**", out)
-        self.assertIn("refused the WebSocket connection", out)
-        self.assertNotIn("refused the WebSocket", deploy_issue.body(SHA, "health check", rollback, "panic: x", "", []))
-
-    def test_healthy_rollback_points_at_the_commits(self):
-        out = deploy_issue.body(SHA, "health check", "mvp rolled back to `aaaaaaa`, healthy", "bad handshake", "", [])
-        self.assertNotIn("Likely outside the repo", out)
-
     def test_empty_log(self):
         self.assertIn("(empty)", deploy_issue.body(SHA, "s", "r", "", "", []))
 

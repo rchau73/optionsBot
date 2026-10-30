@@ -19,9 +19,7 @@
 # data/agents/usage/<week>.done. Reads the monitors' event files only: no bot
 # state, no order. No Claude call.
 # First it runs assistant_review.sh, the assistant's weekly quality review
-# (#438: its own marker, ledger agent assistant_review, the E10 epic), then
-# assistant_golden.sh, the live golden-set run (#536: its own marker, ledger
-# agent assistant_golden, the E10 epic).
+# (#438: its own marker, ledger agent assistant_review, the E10 epic).
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -30,7 +28,6 @@ cd "$AGENT_REPO_DIR"
 # own marker, run first because this report's checks below exit early; it is
 # a no-op without an assistant log, and its failure never stops this report.
 bash "$AGENT_REPO_DIR/scripts/agents/assistant_review.sh" || log "usage: assistant_review.sh failed (exit $?)"
-bash "$AGENT_REPO_DIR/scripts/agents/assistant_golden.sh" || log "usage: assistant_golden.sh failed (exit $?)"
 US_PY="$AGENT_REPO_DIR/scripts/agents/usage_week.py"
 week="$(python3 "$US_PY" week)"
 state="$AGENT_STATE_DIR/usage"

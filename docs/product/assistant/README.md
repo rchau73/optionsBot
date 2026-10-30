@@ -11,7 +11,7 @@ python3 scripts/product/assistant_grade.py answers.jsonl          # score per ca
 python3 scripts/product/assistant_grade.py answers.jsonl --json
 ```
 
-`answers.jsonl` holds one `{"id", "text", "citations"}` object per question, produced by anything; the live golden-set run below produces it from the real assistant.
+`answers.jsonl` holds one `{"id", "text", "citations"}` object per question, produced by anything.
 
 ## One question per line
 
@@ -54,51 +54,6 @@ Minimum counts: 15 `how_it_works`, 10 `parameter` (one per tuned setting of CLAU
 A plain answer rejected only for `ungrounded_number`, `unknown_citation` or `points_to_document` is asked once more, with what failed; the fallback is shown only when the second answer is rejected too (contract §5).
 
 The phrase lists and the three canonical replies are in `internal/assistant/guard/phrases.go`. Counsel's answer to L11 changes those lists, not the design. Not wired to anything yet.
-
-## Live golden-set run
-
-The run (#536) asks the real assistant every question of `golden.jsonl`, grades the answers with `assistant_grade.py` and compares the score per category with the last accepted one, so a model, prompt or help change that makes answers worse is caught.
-
-```bash
-bash scripts/product/assistant_run.sh --env mvp                 # the key from mvp's .env; exit 1 on a regression
-bash scripts/product/assistant_run.sh --env mvp --accept        # a person accepts this run's score as the new baseline
-ANTHROPIC_API_KEY=… bash scripts/product/assistant_run.sh        # this checkout's data/monitor
-```
-
-**How it asks.** `frontend/scripts/assistant-run.mjs` runs the monitor's own `answerQuestion` (the same prompt, guard, model and help index, `lib/assistant/goldenrun.js`), not `POST /api/assistant`.
-- Each question gets the data its fixture holds, as the monitor would build it: `bot` (the bot's page data, journal and a Why?'s facts) and `request` (journal facts and P&L history points). These are invented figures, never a live account's.
-- It is outside the per-person limit of 30 questions an hour, which it never touches: the limit for people does not change. It paces itself instead, 2 s between questions.
-- A failed model call is asked once more; failed again, the question is still a line of `answers.jsonl` (outcome `model_error`, which the grader fails), so none is lost.
-- Without `ANTHROPIC_API_KEY` it stops with one message, before asking anything, and writes no answer and no score.
-
-**A test run, never counted as a person's question.**
-- Its log is a file of its own, `data/monitor/assistant_runs/<time>/run.jsonl`, never `assistant.jsonl`; it refuses the monitor's own files.
-- Every line of it carries `test_run: true` and the user `golden-run`; `cmd/assistantreview` leaves such lines out (`TestRuns`).
-- It sends no analytics event (E13 counts only the browser's) and never writes the request queue: only a person's Send does.
-
-**Files** (all in the private `data/monitor/`, 0600):
-
-| File | Holds |
-|---|---|
-| `assistant_runs/<time>/answers.jsonl` | the run's answers, the grader's input |
-| `assistant_runs/<time>/run.jsonl` | the run's review log, every line `test_run` |
-| `assistant_reviews/<week>.golden.json` | the scores and every failure with its reasons, by golden id |
-| `assistant_reviews/<week>.golden.summary.json` | counts and percentages per category, the baseline's score and the drop: what may be posted |
-| `assistant_reviews/golden_baseline.json` | the last accepted score per category |
-
-**Reading the score.** One row per golden category (`how_it_works`, `parameter`, `why_did_it`, `jargon`, `risk`, the two refusals, `unknown`, `request`) and `all`: questions passed, total, score, the baseline's score and the drop in points.
-- A correct answer cites an expected source and says every `must_say` fact; a refusal or an "I don't know" is right only in its own categories.
-- The first run sets the baseline.
-- A category whose score falls **more than 10 points** under its baseline is a regression (`THRESHOLD_PTS`): the summary names it with the drop, and the script exits 1.
-  One question of a 15-question category is 6.7 points, so a single answer that varies does not trip it; in a 5-question category one question is 20 points.
-- The baseline moves only when a person runs `--accept`.
-
-**Cost.** One model call per question that a help passage or a fixture can answer (about 115 a run on the claude-haiku-5-5 model the monitor uses), at most four for one question: a guard rejection's one more try, a failed call asked again, a report's request check.
-The weekly job runs it once a week in mvp; anyone may run it on demand.
-
-**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_golden.sh` after the quality review, in `ASSISTANT_GOLDEN_ENV` (default mvp) when its `.env` has `ANTHROPIC_API_KEY`.
-It posts `assistant_golden.py comment` on the E10 epic: counts and percentages per category, the regressions named, never a question or an answer.
-A failed run is tried once more; a comment that could not be posted is posted once more without asking the model again (docs/agents/usage.md "Weekly usage report").
 
 ## Weekly quality review
 

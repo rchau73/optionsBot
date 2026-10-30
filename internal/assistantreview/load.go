@@ -42,17 +42,12 @@ type Entry struct {
 	Outcome   string    `json:"outcome"`
 	Answer    string    `json:"answer"`
 	Note      string    `json:"note"` // a flag's note
-	TestRun   bool      `json:"test_run"`
 }
 
 // Log is the file as read: its usable lines and how many could not be read.
 type Log struct {
 	Entries []Entry
 	Skipped int // unreadable lines (a torn last line, a damaged one): counted, never fatal
-	// TestRuns counts the lines of the golden-set run (#536, test_run: true),
-	// left out: the run writes a log of its own, so one here was copied in by
-	// hand, and a test question is never a person's.
-	TestRuns int
 }
 
 // maxLine bounds one line (an answer line carries the model's text and a
@@ -60,7 +55,7 @@ type Log struct {
 const maxLine = 4 << 20
 
 // Parse reads JSON lines. A line that is not JSON, or has no kind or id, is
-// skipped and counted; a test-run line is left out and counted; the rest are read.
+// skipped and counted; the rest are read.
 func Parse(r io.Reader) (Log, error) {
 	var lg Log
 	sc := bufio.NewScanner(r)
@@ -73,10 +68,6 @@ func Parse(r io.Reader) (Log, error) {
 		var e Entry
 		if err := json.Unmarshal(b, &e); err != nil || e.Kind == "" || e.ID == "" {
 			lg.Skipped++
-			continue
-		}
-		if e.TestRun {
-			lg.TestRuns++
 			continue
 		}
 		lg.Entries = append(lg.Entries, e)

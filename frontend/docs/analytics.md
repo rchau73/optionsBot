@@ -116,10 +116,7 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
 - **Surveys (#297):** `survey_shown`, `survey_answered` and `survey_dismissed` carry codes only — `survey_id` (`nps`, `answers`, `exit`), `score` (the strings `0`–`10`), `reason_code`, `came_for`, `hardest_to_find`.
   A survey's free text never goes into an event; it is kept in `auth.db` beside the user (`survey_answers`, `POST /api/survey` above) and deleted with them.
   Wording, triggers, frequency caps and the legal review that must come first: `docs/product/analytics/surveys.md`.
-  The NPS card (#446) and the four answers card (#498) are built (above), and so is the exit question (below).
-- **The exit question (#543, `surveys.md` §3):** on the final screen of **Account ▾ → Delete my account** (`components/DeleteAccount.jsx`), below the delete button; the words and the leaving steps are in `lib/analytics/exit.js`.
-  The final screen sends `survey_shown {exit}`; a reason goes through `POST /api/survey` first, waited for at most 2 s, and a failure or a 403 (no consent) is ignored.
-  Skip, × or the delete button with nothing picked send `survey_dismissed {exit}`; then `DELETE /api/auth/account` deletes the account with those events.
+  The NPS card (#446) and the four answers card (#498) are built (above); the exit survey is not on screen yet.
 - **Collector:** `app/api/events/route.js` stores an event only for a signed-in person (re-read from the database), same-origin JSON ≤ 2 KB, whose `users.analytics_consent` is yes (403 otherwise) and when `ANALYTICS_SALT` (≥ 16 chars) is set (503 otherwise).
   An unknown event, a property not in the plan or a value outside its rule is refused whole: 400, nothing written, a WARN log naming the field, never its value. 204 when stored.
 - **Stored:** one JSON line per event in `data/monitor/events.jsonl`, beside `auth.db` (`EVENTS_PATH`; off for an in-memory database).
@@ -132,7 +129,7 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   The monitor prunes older lines when it starts and then every 24 h (`instrumentation-node.js`).
   Each run writes an `events_pruned` audit line with the kept and removed counts; a failure is an ERROR log and an `events_prune_failed` line.
   Every rewrite goes through `events.jsonl.tmp` (0600, fsync) and a rename, so a crash leaves the old file or the new one whole.
-- **Deleting a user** deletes their events in the same step: the `user_deleted` audit line (or `account_deleted`, when the person deletes their own account, #543) is followed by `events_deleted` with the count.
+- **Deleting a user** deletes their events in the same step: the `user_deleted` audit line is followed by `events_deleted` with the count.
   If the events cannot be deleted (e.g. `ANALYTICS_SALT` unset while the file exists), the user is still deleted, the failure is logged at ERROR and audited as `events_delete_failed`, and the answer's `events_error` gives the CLI command to retry with `--row-id`.
   Their survey answers (codes and free text) go in the same step: `survey_answers_deleted` with the count; a failure is an ERROR log, a `survey_answers_delete_failed` line and `survey_answers_error` in the answer, and the monitor deletes the rows left without a user when it next starts.
 - **Access and deletion requests:** run from the repository root with that environment's values (both are required: stable and mvp each have their own; `frontend/node_modules` must be installed):

@@ -51,7 +51,7 @@ Never reintroduce env-var overrides for logic parameters.
 - Each clone has its own `.env` — **its own Deribit account**: a bot cancels every order of its currency at startup and adopts every short it finds, so two environments on one account fight
   - — and a `deploy.env` (`OPTIONSBOT_ENV`, `MONITOR_PORT` 3000/3100, `BOT_RECORD_MARKET`; mvp also `BOT_CONFIG_BTC=./config_btc.mvp.yaml` — BTC on `gex_direction: sma` while stable stays on `bias`, to compare the two, #168;
   - that file is `config_btc.yaml` with only that line different, enforced by `TestConfig_MVPBTCDiffersOnlyInDirection`: change both).
-- `scripts/env_lib.sh` `env_check` refuses a shared `DERIBIT_CLIENT_ID` or port; compose refuses without `OPTIONSBOT_ENV`.
+- `scripts/env_lib.sh` `env_check` refuses a shared port, or a `DERIBIT_CLIENT_ID` shared by any two environment folders (#538); compose refuses without `OPTIONSBOT_ENV`.
 - Bots report `deployment`/`version` (`BOT_DEPLOYMENT`/`BOT_VERSION`) in `/api/status`, shown in the monitor header.
 - The dev checkout runs nothing; `data/btc` there links to stable's for the research tools.
 - The monitor requires a signed-in session on every page and `/api` route (#170, `frontend/README.md` "Sign-in"; users per environment, `AUTH_SECRET` in its `.env` or it won't start);

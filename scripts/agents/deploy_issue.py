@@ -70,28 +70,14 @@ def fence(text):
     return "`" * max(3, longest + 1)
 
 
-def cause_hint(rollback, log_tail):
-    """Where to look first. A rollback that failed too means the commit that
-    last passed fails now as well, so the cause is likely outside the repo
-    (#524: Deribit testnet refused both with "bad handshake")."""
-    if not rollback.startswith("**FAILED**"):
-        return ""
-    hint = ("\n- **Likely outside the repo:** the commit that last passed failed too. "
-            "Check the Deribit testnet endpoint and its status, the mvp `.env` credentials, DNS and the network first.")
-    if "bad handshake" in log_tail:
-        hint += " Deribit refused the WebSocket connection: the HTTP status in the log says why (503 maintenance, 403 blocked, 404 endpoint moved)."
-    return hint
-
-
 def body(sha, step, rollback, log_tail, commits, pairs):
-    hint = cause_hint(rollback, log_tail)
     log_tail = redact(tail(log_tail), pairs) or "(empty)"
     commits = redact(commits.strip(), pairs) or "(none)"
     f, g = fence(log_tail), fence(commits)
     return f"""🚀 **Deploy** — commit `{sha[:7]}` failed to deploy to **mvp** (testnet).
 
 - **Failed step:** {step}
-- **Rollback:** {rollback}{hint}
+- **Rollback:** {rollback}
 - **Not retried:** `mvp.failed` holds `{sha[:7]}`; the next commit on main deploys as usual.
 
 ### Commits in this deploy
