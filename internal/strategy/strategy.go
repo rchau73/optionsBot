@@ -99,6 +99,7 @@ type Strategy struct {
 	lastRisk         *risk.Status
 	appliedLimit     float64
 	startupPass      bool // the next rebalance is the first since startup: the band applies (#123)
+	limitChanged     bool // a confirmed limit change waits for its pass: downsizes go to the exact target (#555)
 	rebalanceRetryAt time.Time
 	unfilledPasses   int
 	pass             rebalancePass

@@ -141,6 +141,7 @@ The account as Deribit reports it, plus the margin policy each bot applies. Figu
 - Any pending limit change with its countdown, for example "1 of 2 daily closes".
 
 **The Rebalance button** resizes the positions towards the current limit. A dry run shows the plan and sends nothing. A real run asks for confirmation, and only a manager or an admin may run it.
+When IM is over the limit by 1.5 points or less and the limit has not changed, the plan buys nothing back: that is market drift, and the positions are shown as kept. Further over, it buys back toward the limit as before.
 <!-- guide: route:POST /api/bots/[bot]/rebalance -->
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand. No bot trades these, but they use margin, so they are shown.

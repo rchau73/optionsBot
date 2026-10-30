@@ -21,6 +21,10 @@ Read both before changing a rule.
     entries allowed and IM under 60 % of the limit for `IMUnderUseWindowMinutes` (360, fixed; a reading gap > `history.MaxSampleGap` restarts the window, margin unknown pauses it, entries not allowed ends it)
     journals one `im_under_use` risk line + WARN (IM, limit, `utilisation_pct`, `minutes`, `cause` — the vacant slot's last `Skip*` reason or `orders.Idle*`, the vocabulary `cmd/idlemargin` shares),
     `risk.im_under_use(_since)` in `/api/status`, `im_under_use_cleared` + WARN at ≥ 60 % or when entries stop being allowed; alert only, in memory.
+  - The drift band on downsizes (`limits.go`, pure `DownsizeDue`, #555, the issue's option A): `limitChanged` is set by a confirmed limit change and cleared once its pass is `Done`;
+    until then the pass cuts to the exact limit, any other pass (a top-up's retry, startup, the Rebalance button, its dry run) only above limit + `rebalance_startup_band_pct`.
+    A strangle left over its target is reported `kept` and the pass's `rebalance` line ends "drift, no leg bought back"; top-ups still need IM under the limit, the MM cut never waits.
+    2026-10-29 stable BTC: a retry 15 min after a top-up read 20.4 % of 20 % and cut 0.2 of four legs (−0.0016 BTC + fees); 10-28 the same with four legs.
 - **Size cap:** Portfolio margin can price a leg almost free when it offsets the book; the offset disappears when the rest of the book is closed.
 - **Liquidity cap:**
   - A strike missing from the mainnet book has no open interest (nothing sent); a wired source without a snapshot sends nothing.
