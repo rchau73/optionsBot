@@ -24,6 +24,9 @@ import (
 //   - IM above the limit: buy back whole lots above each strangle's share, at
 //     market — reducing exposure is a risk action, so speed beats price. At
 //     least one lot of each strangle stays (only the MM limit closes fully).
+//     Only after a confirmed limit change is that the exact limit; any other
+//     pass (retry, startup, manual) cuts only above the limit + the band
+//     (DownsizeDue, #555), so a drift just over it is not bought back.
 //   - IM below the limit: open a complement strangle for the missing size
 //     through the normal entry path, capped by the remaining headroom. If it
 //     times out short of its size, the rebalance runs again after
@@ -47,6 +50,12 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 	limit := m.status.LimitIMPct
 	share := SlotShare(limit, m.usage.MarginBalance, len(s.cfg.Slots()))
 	over := m.usage.IMPct() > limit
+	band := s.cfg.RebalanceStartupBandPct
+	cutDue := DownsizeDue(m.usage.IMPct(), limit, band, s.limitChanged)
+	driftKept := ""
+	if over && !cutDue {
+		driftKept = fmt.Sprintf("IM within +%g pp of the limit with no limit change: drift, no leg bought back", band)
+	}
 	headroom := m.usage.Headroom(limit)
 	rep := RebalanceReport{DryRun: dryRun, Done: true, LimitIMPct: limit, IMPct: m.usage.IMPct(),
 		SharePerSlot: share, MarginBalance: m.usage.MarginBalance, Unit: m.usage.Unit, Actions: []RebalanceAction{}}
@@ -54,8 +63,11 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 	if !dryRun {
 		s.startRebalancePass()
 		defer s.endRebalancePass()
-		s.logRisk(orders.RiskRebalance, fmt.Sprintf("IM %.1f%% vs limit %.0f%% (%s)", m.usage.IMPct(), limit, m.status.Reason),
-			m.status, m.usage, "")
+		detail := fmt.Sprintf("IM %.1f%% vs limit %.0f%% (%s)", m.usage.IMPct(), limit, m.status.Reason)
+		if driftKept != "" {
+			detail += " · " + driftKept
+		}
+		s.logRisk(orders.RiskRebalance, detail, m.status, m.usage, "")
 	}
 	slog.Info("rebalance: resizing toward the IM limit", "dry_run", dryRun,
 		"limit_im_pct", limit, "im_pct", fmt.Sprintf("%.2f", m.usage.IMPct()), "unit", m.usage.Unit,
@@ -154,6 +166,12 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 		}
 		if !over {
 			continue // under the limit overall: no reason to cut this strangle
+		}
+		if !cutDue {
+			if callTotal-targetQty >= lot-qtyEpsilon || putTotal-targetQty >= lot-qtyEpsilon {
+				rep.add(st, ActionKept, "", 0, targetQty, driftKept)
+			}
+			continue
 		}
 		for _, leg := range []struct {
 			pos   *orders.Position

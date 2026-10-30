@@ -125,6 +125,7 @@ func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
 			s.refBalance = b // the balance the new limit is first measured against (imalert.go)
 		}
 		s.startupPass = false // a confirmed limit change is met exactly, band or not
+		s.limitChanged = true // ... and so are its downsizes (DownsizeDue)
 	}
 	if !first && prev.Frozen == st.Frozen && prev.LimitIMPct == st.LimitIMPct && prev.Reason == st.Reason {
 		return
@@ -265,8 +266,24 @@ func (s *Strategy) runRebalance(ctx context.Context, m marginState) RebalanceRep
 	rep := s.rebalancePositions(ctx, m, false)
 	if !rep.Done {
 		s.appliedLimit = math.NaN() // something failed: run again next cycle
+	} else {
+		s.limitChanged = false // the change is met: later passes leave drift in the band alone
 	}
 	return rep
+}
+
+// DownsizeDue reports whether a rebalance pass buys legs back: IM above the
+// limit after a confirmed limit change (met exactly, as ever), otherwise only
+// above the limit + bandPct points. A retry, startup or manual pass is driven
+// by the market moving, not by the policy: 2026-10-29 stable BTC topped up to
+// the 20 % limit, and the retry pass 15 min later read 20.4 % and bought back
+// 0.2 of four legs at a loss (#555). The MM cut (max_mm_pct) never waits on
+// this. Pure.
+func DownsizeDue(imPct, limitPct, bandPct float64, limitChanged bool) bool {
+	if limitChanged {
+		return imPct > limitPct
+	}
+	return imPct > limitPct+math.Max(bandPct, 0)
 }
 
 // rebalanceBlockReason is RebalanceBlockReason for the current state. The

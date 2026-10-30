@@ -119,6 +119,7 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   A confirmed limit change (and startup) runs `rebalancePositions` toward it, sizing each slot as a whole (all its strangles)
   - — except that the first pass after a startup does nothing while IM is within `rebalance_startup_band_pct` (±1.5 pp) of the limit
     (`RebalanceInBand`, journaled `rebalance_in_band`; 2026-10-17 BTC: two deploys 38 min apart cut and re-sold 1.2 lots, #123), a later confirmed change is met exactly;
+  - other passes cut only above limit + band (`DownsizeDue`, #555);
   - a complement that times out short re-arms it after `rebalance_retry_minutes` (journaled `rebalance_retry`)
     — doubled per unfilled pass from the `rebalance_backoff_after` (3)-th pass in a row whose every complement ran to its fill timeout without filling both legs
     (#98: a put-only fill counts as unfilled; the `rebalance_retry` line names the legs that filled), up to `rebalance_retry_max_minutes` (60),
