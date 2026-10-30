@@ -18,6 +18,9 @@
 #      redacted, deploy_issue.py) and the commit range; deduplicated by the
 #      commit in its title, re-tried each tick until filed. A rollback that
 #      fails too is reported loudly and stops: nothing retries it;
+#   3b. after a healthy deploy, prunes untagged images and build cache older
+#      than 72 h (never volumes) and warns — log, notify, one open `bug`
+#      ticket — when the Docker disk is over 85 % full (#548, deploy_disk.py);
 #   4. moves every card whose issue is now closed (the PR said "Closes #n",
 #      or a person closed it) to Done; a card that was In review or In
 #      progress gets a comment naming the deployed commit.
@@ -110,6 +113,35 @@ fail() {
   exit 1
 }
 
+# docker_housekeeping — after a healthy deploy (#548): every rebuild leaves the
+# old image untagged and adds to the build cache, and nothing else prunes them
+# (2026-10-30: the Docker disk full, the monitors' writes failed with ENOSPC).
+# Removes untagged images and build cache older than 72 h — never volumes: a
+# monitor's data lives in one. Then warns (log, notify, one open ticket) when
+# the disk, as the monitor's volume sees it, is over 85 % full. Never fails
+# the deploy.
+docker_housekeeping() {
+  local f="$AGENT_STATE_DIR/deploy/disk" pct slug found url
+  docker image prune -f 2>&1 | tail -1 | sed 's/^/deploy: image prune: /' || log "deploy: docker image prune failed"
+  docker builder prune -f --filter until=72h 2>&1 | tail -1 | sed 's/^/deploy: builder prune: /' || log "deploy: docker builder prune failed"
+  env_compose mvp exec -T monitor df -P /app/data/monitor > "$f.df" 2>/dev/null || true
+  pct="$(python3 "$AGENT_REPO_DIR/scripts/agents/deploy_disk.py" check < "$f.df")" || pct=""
+  [[ -n "$pct" ]] || return 0
+  log "deploy: WARNING the Docker disk is $pct % full — see docker system df"
+  notify "Docker disk $pct % full" "mvp deploy ${target:0:7}: prune volumes or grow the disk"
+  slug="$(repo_slug)" || { log "deploy: GitHub unreachable — no disk ticket"; return 0; }
+  found="$(gh issue list -R "$slug" --state open --search "Docker disk in:title" --json number,title -L 20 |
+    python3 "$AGENT_REPO_DIR/scripts/agents/deploy_disk.py" find)" || { log "deploy: could not search the issues — no disk ticket"; return 0; }
+  if [[ -n "$found" ]]; then log "deploy: #$found already warns about the disk"; return 0; fi
+  docker system df > "$f.sysdf" 2>&1 || true
+  python3 "$AGENT_REPO_DIR/scripts/agents/deploy_disk.py" body "$pct" "$f.df" "$f.sysdf" > "$f.body"
+  url="$(gh issue create -R "$slug" --label bug --body-file "$f.body" \
+    --title "$(python3 "$AGENT_REPO_DIR/scripts/agents/deploy_disk.py" title "$pct")")" ||
+    { log "deploy: could not file the disk ticket"; return 0; }
+  add_to_board "$url" "Triage" >/dev/null || log "deploy: $url filed but not put on the board"
+  log "deploy: filed $url"
+}
+
 dir="$(env_dir mvp)"
 faildir="$AGENT_STATE_DIR/deploy/failed"
 if ! why="$(env_check mvp)"; then
@@ -171,6 +203,7 @@ env_record deploys.tsv mvp "$target"
 log "deploy: mvp ${target:0:7} healthy"
 run_end deployed "healthy on mvp"
 
+docker_housekeeping || true
 close_out "$target"
 "$AGENT_REPO_DIR/scripts/prune_branches.sh" "$dir" | tail -1 || true # merged agent branches
 notify "Deployed to mvp" "${target:0:7}: $(git -C "$dir" log -1 --format=%s "$target")"

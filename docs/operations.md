@@ -319,6 +319,13 @@ The issue is deduplicated by the sha in its title.
 If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
 
+**A healthy deploy prunes the Docker disk** (#548).
+Every rebuild leaves the old image untagged and adds to the build cache; on 2026-10-30 they filled the Docker VM disk and each monitor's volume (sign-ins, assistant log, analytics) failed to write with ENOSPC.
+After the health check passes, `deploy.sh` runs `docker image prune -f` (untagged images only) and `docker builder prune -f --filter until=72h`; one Docker daemon serves both environments, so stable's leftovers go too.
+Volumes are never pruned: a monitor's data lives in one.
+It then reads the disk as the mvp monitor's volume sees it (`df -P /app/data/monitor`); over 85 % full it logs a warning, notifies and files one `bug` issue `[E6] Docker disk over 85 % full (<pct> %)` in Triage with `docker system df` (none while one is open, `scripts/agents/deploy_disk.py`).
+A failed deploy prunes nothing, and the warning never fails a deploy.
+
 ### Nightly backup and restore
 
 **Backup** (#328).

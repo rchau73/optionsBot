@@ -16,10 +16,12 @@ TOKEN = "redactme-redactme"  # fake, low-entropy: CI's gitleaks must not take it
 
 DOCKER = """#!/usr/bin/env bash
 # docker compose … up|logs — logs each call with the commit the clone is on.
-state="$DEPLOY_TEST_DIR"; ver="$(cat app.txt)"
+state="$DEPLOY_TEST_DIR"; ver="$(cat app.txt 2>/dev/null)"
 echo "$* @ $ver" >> "$state/docker.log"
 case " $* " in
   *" up "*) grep -qx "$ver" "$state/compose_fails" 2>/dev/null && { echo "build error in $ver"; exit 1; }; exit 0 ;;
+  *" exec "*) cat "$state/df" 2>/dev/null; exit 0 ;;
+  *" system df"*) echo "Images 3 1 9GB 6GB (66%)"; exit 0 ;;
   *" logs "*) echo "bot-btc | panic: $ver is broken"; echo "monitor | Authorization: Bearer $(sed -n 's/^MONITOR_API_TOKEN=//p' .env)"; exit 0 ;;
 esac
 """
@@ -224,6 +226,55 @@ class Deploy(unittest.TestCase):
         self.assertEqual([l.split("\t")[1:] for l in lines], [["mvp", self.b]])
         self.assertEqual(self.creates(), [])
         self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
+
+    # #548: after a deploy, no untagged image and no build cache older than 72 h.
+    def prunes(self):
+        return [l.split(" @ ")[0] for l in self.read("docker.log").splitlines() if "prune" in l]
+
+    def df(self, pct):
+        self._write(self.t("df"), "Filesystem 1024-blocks Used Available Capacity Mounted on\n"
+                                  f"/dev/vda1 61255492 1000 1000 {pct}% /app/data/monitor\n")
+
+    def test_healthy_deploy_prunes_images_and_old_build_cache_never_volumes(self):
+        Monitor.healthy = {"A", "B"}
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.prunes(), ["image prune -f", "builder prune -f --filter until=72h"])
+        self.assertNotIn("volume", self.read("docker.log"))
+        self.assertNotIn("system prune", self.read("docker.log"))
+
+    def test_failed_deploy_prunes_nothing(self):
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertEqual(self.prunes(), [])
+
+    # A test covers the disk warning threshold.
+    def test_disk_over_85_pct_warns_with_one_ticket(self):
+        Monitor.healthy = {"A", "B"}
+        self.df(91)
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertIn("Docker disk is 91 % full", self.output)
+        self.assertEqual(len(self.creates()), 1)
+        self.assertIn("--label bug", self.creates()[0])
+        self.assertEqual(self.read("title.txt").strip(), "[E6] Docker disk over 85 % full (91 %)")
+        body = self.read("body.md")
+        self.assertIn("**91 %** full", body)
+        self.assertIn("/app/data/monitor", body)
+        self.assertIn("Images 3 1 9GB", body)
+        self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])  # still a healthy deploy
+
+    def test_disk_warning_is_not_filed_twice(self):
+        Monitor.healthy = {"A", "B", "C"}
+        self.df(95)
+        self._write(self.t("issues.json"), json.dumps([{"number": 12, "title": "[E6] Docker disk over 85 % full (90 %)"}]))
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertIn("#12 already warns", self.output)
+        self.assertEqual(self.creates(), [])
+
+    def test_disk_at_85_pct_or_unknown_files_nothing(self):
+        Monitor.healthy = {"A", "B"}
+        self.df(85)
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.creates(), [])
+        self.assertNotIn("WARNING", self.output)
 
     # The run ledger (#206): one start and one end line per deploy attempt.
     def ledger_ends(self):
