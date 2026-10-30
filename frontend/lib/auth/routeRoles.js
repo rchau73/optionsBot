@@ -50,6 +50,15 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/survey/nps", roles: SIGNED_IN, audit: "nps_survey_changed" },
 ];
 
+/**
+ * Read-only routes that only some roles may call (#539): the matrix test
+ * calls each as every caller too, and checks the route file exports GET only.
+ */
+export const ROLE_GUARDED_READS = [
+  { route: "GET /api/lab/runs", roles: MANAGERS },
+  { route: "GET /api/lab/runs/[id]", roles: MANAGERS },
+];
+
 /** The table's route for an app/api route file and method: "app/api/consent/route.js", "POST" → "POST /api/consent". */
 export function routeKey(file, method) {
   const dir = file.replace(/\\/g, "/").replace(/^.*?app\/api/, "/api").replace(/\/route\.js$/, "");

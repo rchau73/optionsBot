@@ -38,9 +38,10 @@ export function summarize(id, report) {
 /**
  * The reports of `dir`, newest first, at most `limit`. A folder that is not a
  * report id, or whose report.json is missing or unreadable, is skipped (and
- * named in `skipped`, ids only). A missing dir is an empty list.
+ * named in `skipped`, ids only). A missing dir is an empty list. `row` turns
+ * (id, parsed report) into a list row (the lab's runRow, #539).
  */
-export function listReports(dir, limit = LIST_LIMIT) {
+export function listReports(dir, limit = LIST_LIMIT, row = summarize) {
   let names;
   try {
     names = fs.readdirSync(dir);
@@ -52,7 +53,7 @@ export function listReports(dir, limit = LIST_LIMIT) {
   for (const id of names.filter(validId).sort().reverse()) {
     if (reports.length >= limit) break;
     try {
-      reports.push(summarize(id, JSON.parse(fs.readFileSync(path.join(dir, id, "report.json"), "utf8"))));
+      reports.push(row(id, JSON.parse(fs.readFileSync(path.join(dir, id, "report.json"), "utf8"))));
     } catch {
       skipped.push(id);
     }

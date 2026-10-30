@@ -11,6 +11,8 @@ go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of 
   - `DiffConfigs` lists the differing YAML keys first (flattened leaves; fixed values and `.env` are never compared), every report is headed `Disclaimer` ("Backtested/replayed, not a promise");
   - differing keys `cmd/stress` does not take are listed as `Stress.NotModelled` (`evidence.StressModels` — a new `StressArgs` flag needs its key in `stressKeys`).
   Reads files only; writes `data/compare/<time>/report.md|json`.
+  The monitor reads them back, read-only: `/api/compare` (#302) and the lab's `/api/lab/runs` (#539, `frontend/lib/lab.js`: headline in percentages, analysis withheld until legal question L10)
+  — a renamed or removed `report.json` field used there (`diffs`, `return_pct`, `worst_week_pct`, `max_drawdown*`, `fees*`, `equity*`, `windows.summary`, `neighbours.cliffs`) updates `lib/lab.js` too.
   A new figure in `backtest.Summary` or `replay.Result` worth comparing needs a line in `BacktestRun`/`ReplayRun` and `markdown.go`.
   `RunWindows` (`windows.go`, #301, `-windows week|day`) re-runs `Run` per ISO week or day (stress not windowed) into `Report.Windows`;
   - pure `Windows` and `SummarizeWindows` (wins, median, spread, worst window, replay/backtest order flips; a window that did not run is listed, counted nowhere).
