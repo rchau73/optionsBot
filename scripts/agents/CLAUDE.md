@@ -65,6 +65,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)
       and moves every closed issue's card to Done (each tick too, for issues closed by hand: the board's "Item closed" workflow is off);
+    - a healthy deploy prunes untagged images and build cache older than 72 h, never volumes (#548: the Docker disk filled, the monitors' writes failed with ENOSPC),
+      and over 85 % full (the monitor volume's `df`) warns: log, notify, one open `bug` `[E6] Docker disk over 85 % full (<pct> %)` (`deploy_disk.py`);
   - stable moves only by `scripts/promote.sh` (3-day soak, no open `sme:not-fixed`
     — the SME agent adds it when it reopens a not-fixed issue and verifies fixes on mvp's data, `data/sme/<date>/mvp/`),
     run by a person or by the automatic release below.
