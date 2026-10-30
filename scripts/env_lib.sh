@@ -58,10 +58,41 @@ env_monitor_url() { echo "http://127.0.0.1:$(env_port "$1")"; }
 # monitor's read-only service token (GET /api/bots/* without a session).
 env_monitor_token() { env_file_var "$(env_dir "$1")/.env" MONITOR_API_TOKEN; }
 
+# env_accounts_distinct <dir>... — no two of these environment directories
+# hold the same DERIBIT_CLIENT_ID in their .env (#538: a bot cancels every
+# order of its currency at startup and adopts every short it finds, so two bots
+# on one account fight). Prints both directories and fails otherwise; a
+# directory without a .env or a client id is skipped.
+env_accounts_distinct() {
+  local dirs=("$@") i j id oid
+  for ((i = 0; i < ${#dirs[@]}; i++)); do
+    id="$(env_file_var "${dirs[i]}/.env" DERIBIT_CLIENT_ID)"
+    [[ -n "$id" ]] || continue
+    for ((j = i + 1; j < ${#dirs[@]}; j++)); do
+      oid="$(env_file_var "${dirs[j]}/.env" DERIBIT_CLIENT_ID)"
+      if [[ "$oid" == "$id" ]]; then
+        echo "${dirs[i]} and ${dirs[j]} use the same Deribit account (DERIBIT_CLIENT_ID): each environment needs its own subaccount"; return 1
+      fi
+    done
+  done
+}
+
+# env_platform_dirs — every environment directory of the platform: each
+# folder of <envs> with a .env (stable, mvp and any other bot's clone).
+env_platform_dirs() {
+  local d
+  for d in "$ENVS_DIR"/*/; do
+    [[ -f "$d.env" ]] && echo "${d%/}"
+  done
+  return 0
+}
+
 # env_check <env> — the environment is set up and shares nothing with the
-# other one. Prints the reason and fails otherwise.
+# other one, nor its Deribit account with any environment of the platform.
+# Prints the reason and fails otherwise.
 env_check() {
-  local name="$1" dir other odir id oid
+  local name="$1" dir other odir id d
+  local dirs=()
   dir="$(env_dir "$name")"
   case " $ENV_NAMES " in *" $name "*) ;; *) echo "unknown environment '$name' (stable | mvp)"; return 1 ;; esac
   [[ -d "$dir/.git" ]] || { echo "$dir is not a clone: run scripts/envctl.sh $name init"; return 1; }
@@ -70,14 +101,12 @@ env_check() {
   [[ -f "$dir/.env" ]] || { echo "$dir/.env is missing: this environment's own Deribit credentials"; return 1; }
   id="$(env_file_var "$dir/.env" DERIBIT_CLIENT_ID)"
   [[ -n "$id" ]] || { echo "$dir/.env has no DERIBIT_CLIENT_ID"; return 1; }
+  while IFS= read -r d; do dirs+=("$d"); done < <(env_platform_dirs)
+  env_accounts_distinct "${dirs[@]}" || return 1
   for other in $ENV_NAMES; do
     [[ "$other" == "$name" ]] && continue
     odir="$(env_dir "$other")"
     [[ -f "$odir/.env" ]] || continue
-    oid="$(env_file_var "$odir/.env" DERIBIT_CLIENT_ID)"
-    if [[ "$oid" == "$id" ]]; then
-      echo "$name and $other use the same Deribit account (DERIBIT_CLIENT_ID): each environment needs its own subaccount"; return 1
-    fi
     if [[ -f "$odir/deploy.env" && "$(env_port "$other")" == "$(env_port "$name")" ]]; then
       echo "$name and $other use the same MONITOR_PORT"; return 1
     fi

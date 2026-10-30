@@ -1840,455 +1840,476 @@
       "source": "explain:cancelled:gamma_close",
       "title": "cancelled:gamma_close",
       "text": "Cancelled the order to sell the option: market makers' positioning turned against that side. Nothing had filled.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:cancelled:kill_switch/1",
       "source": "explain:cancelled:kill_switch",
       "title": "cancelled:kill_switch",
       "text": "Cancelled the order to sell the option: the kill switch stopped all trading. Nothing had filled.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:cancelled:order_timeout/1",
       "source": "explain:cancelled:order_timeout",
       "title": "cancelled:order_timeout",
       "text": "Cancelled the order to sell the option: it did not fill within the time allowed. Nothing had filled. If only one side of a strangle filled, a repair sells the other side later.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:cancelled:regime_side/1",
       "source": "explain:cancelled:regime_side",
       "title": "cancelled:regime_side",
       "text": "Cancelled the order to sell the option: market makers amplify moves now and the trend turned toward that side, so it is not sold. Nothing had filled.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:cancelled:resting_close/1",
       "source": "explain:cancelled:resting_close",
       "title": "cancelled:resting_close",
       "text": "Cancelled the resting order to buy back the option. Nothing had filled. If the rule that sent it still applies, the rest is bought at the asking price.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:cancelled:risk_frozen/1",
       "source": "explain:cancelled:risk_frozen",
       "title": "cancelled:risk_frozen",
       "text": "Cancelled the order to sell the option: new risk was paused (a margin-limit change waits for confirmation, or maintenance margin is too high). Nothing had filled.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:delta_drift/1",
       "source": "explain:closed:delta_drift",
       "title": "closed:delta_drift",
       "text": "Bought back the option: little premium was left to earn; it is sold again nearer the price (delta drift)",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:delta_exit/1",
       "source": "explain:closed:delta_exit",
       "title": "closed:delta_exit",
       "text": "Bought back the option: the price moved close to its strike, so the risk grew too fast (delta exit). Like a stop-loss, it will not be sold again on that side until its cooldown ends",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:dte_rollout/1",
       "source": "explain:closed:dte_rollout",
       "title": "closed:dte_rollout",
       "text": "Bought back the option: only few days to expiry left, so the strangle closes before expiry (time roll). The slot then opens a new strangle on a later expiry",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:gamma_regime/1",
       "source": "explain:closed:gamma_regime",
       "title": "closed:gamma_regime",
       "text": "Bought back the option: market makers' positioning pointed to a strong move against it (GEX shed). It is sold again once that signal has passed",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:kill_switch/1",
       "source": "explain:closed:kill_switch",
       "title": "closed:kill_switch",
       "text": "Bought back the option: the kill switch closed every position. The bot stays idle until it is restarted",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:manual_close/1",
       "source": "explain:closed:manual_close",
       "title": "closed:manual_close",
       "text": "Bought back the option by hand from the monitor (manual close). Like a stop-loss, it will not be sold again on that side until its cooldown ends",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:margin_mm_limit/1",
       "source": "explain:closed:margin_mm_limit",
       "title": "closed:margin_mm_limit",
       "text": "Bought back part of the option: maintenance margin reached its safety limit (margin cut). Nothing new is sold until it is lower",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:rebalance_downsize/1",
       "source": "explain:closed:rebalance_downsize",
       "title": "closed:rebalance_downsize",
       "text": "Bought back part of the option: margin in use was above its limit (rebalance). The rest stays open",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:rebalance_legs/1",
       "source": "explain:closed:rebalance_legs",
       "title": "closed:rebalance_legs",
       "text": "Bought back the extra option so the call and the put are the same size (leg balance)",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:roi_target/1",
       "source": "explain:closed:roi_target",
       "title": "closed:roi_target",
       "text": "Bought back the option: most of its premium was already earned (take-profit). The option is sold again to complete the strangle",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:closed:stop_loss/1",
       "source": "explain:closed:stop_loss",
       "title": "closed:stop_loss",
       "text": "Bought back the option: it lost twice its premium (stop-loss). It was bought back to limit the loss; the option will not be sold again on that side until its cooldown ends",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:config_loaded:first/1",
       "source": "explain:config_loaded:first",
       "title": "config_loaded:first",
       "text": "The bot recorded the settings it trades with; later starts will say what changed.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:config_loaded:unchanged/1",
       "source": "explain:config_loaded:unchanged",
       "title": "config_loaded:unchanged",
       "text": "The bot restarted with the same settings as before.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:filled:entry/1",
       "source": "explain:filled:entry",
       "title": "filled:entry",
       "text": "Sold the option to open a new strangle and collect its premium (entry)",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:filled:rebalance_upsize/1",
       "source": "explain:filled:rebalance_upsize",
       "title": "filled:rebalance_upsize",
       "text": "Sold more of the option to bring the slot up to its share of the margin limit (rebalance)",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:filled:repair/1",
       "source": "explain:filled:repair",
       "title": "filled:repair",
       "text": "Sold the option again to complete its strangle (repair)",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
+    },
+    {
+      "id": "explain:key_scope:can_move_funds/1",
+      "source": "explain:key_scope:can_move_funds",
+      "title": "key_scope:can_move_funds",
+      "text": "The bot checked its exchange key at startup: the key can also move funds out of the account. The policy refuses withdrawal rights, so the key should be replaced by a trade-only one; the bot keeps trading meanwhile.",
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
+    },
+    {
+      "id": "explain:key_scope:trade_only/1",
+      "source": "explain:key_scope:trade_only",
+      "title": "key_scope:trade_only",
+      "text": "The bot checked its exchange key at startup: it can trade but cannot withdraw or transfer funds.",
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
+    },
+    {
+      "id": "explain:key_scope:unknown/1",
+      "source": "explain:key_scope:unknown",
+      "title": "key_scope:unknown",
+      "text": "The bot could not read what its exchange key may do at startup, so whether it can move funds is unknown.",
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:pnl/1",
       "source": "explain:pnl",
       "title": "pnl",
       "text": "A periodic profit-and-loss snapshot; nothing was traded.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:reconciled/1",
       "source": "explain:reconciled",
       "title": "reconciled",
       "text": "Found a short option on the exchange at startup and took it into the book; the bot manages it like a position it sold itself.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:frozen/1",
       "source": "explain:risk_limit:frozen",
       "title": "risk_limit:frozen",
       "text": "New risk is paused: a change in volatility or in market makers' positioning would lower the margin limit, and it waits to be confirmed on daily closes. Exits, rolls and repairs continue.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:im_over_limit/1",
       "source": "explain:risk_limit:im_over_limit",
       "title": "risk_limit:im_over_limit",
       "text": "Margin in use (N %) is above its limit (N %) with no rebalance due, for example after a transfer or a price move. This is an alert only: the bot sends no order for it.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:im_over_limit_cleared/1",
       "source": "explain:risk_limit:im_over_limit_cleared",
       "title": "risk_limit:im_over_limit_cleared",
       "text": "Margin in use is back at or under its limit; the alert ends.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:im_under_use/1",
       "source": "explain:risk_limit:im_under_use",
       "title": "risk_limit:im_under_use",
       "text": "Margin in use (N %) has stayed under 60 % of its limit (N %) for hours while new trades were allowed. This is an alert only: the bot sends no order for it.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:im_under_use_cleared/1",
       "source": "explain:risk_limit:im_under_use_cleared",
       "title": "risk_limit:im_under_use_cleared",
       "text": "The unused-margin alert ends: margin in use is back at 60 % of its limit or more, or new trades are no longer allowed.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:limit_changed/1",
       "source": "explain:risk_limit:limit_changed",
       "title": "risk_limit:limit_changed",
       "text": "The margin limit changed to N % of the margin balance after a confirmed change in volatility or market positioning. The positions are resized toward it.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:mm_breach/1",
       "source": "explain:risk_limit:mm_breach",
       "title": "risk_limit:mm_breach",
       "text": "Maintenance margin reached its safety limit: positions are bought back at market now, and nothing new is sold until it is lower.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:rebalance/1",
       "source": "explain:risk_limit:rebalance",
       "title": "risk_limit:rebalance",
       "text": "The positions are resized so the margin in use matches the limit: slots under their share get more, slots over it are bought back in part.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:rebalance_in_band/1",
       "source": "explain:risk_limit:rebalance_in_band",
       "title": "risk_limit:rebalance_in_band",
       "text": "After a restart the positions were left as they are: the margin in use is already close to its limit.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:rebalance_manual/1",
       "source": "explain:risk_limit:rebalance_manual",
       "title": "risk_limit:rebalance_manual",
       "text": "A person asked for a rebalance from the monitor: the positions are resized toward the margin limit.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:rebalance_retry/1",
       "source": "explain:risk_limit:rebalance_retry",
       "title": "risk_limit:rebalance_retry",
       "text": "A rebalance order did not fill in full. The bot tries again after a short wait.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:regime_seeded/1",
       "source": "explain:risk_limit:regime_seeded",
       "title": "risk_limit:regime_seeded",
       "text": "First start with no history: the bot took today's market positioning as confirmed, so it trades from the start.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:risk_limit:unfrozen/1",
       "source": "explain:risk_limit:unfrozen",
       "title": "risk_limit:unfrozen",
       "text": "New risk is allowed again: the change that paused it was confirmed or went away.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:bias_warmup/1",
       "source": "explain:skipped:bias_warmup",
       "title": "skipped:bias_warmup",
       "text": "A close of one side was held back: that signal is trusted only once a full hour of data supports it (after a restart or a data gap). New sales of that side wait meanwhile.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:churn_paused/1",
       "source": "explain:skipped:churn_paused",
       "title": "skipped:churn_paused",
       "text": "This slot is paused: it bought back and sold again too many times within an hour. It resumes when the pause ends; exits still run.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:entry_rejected/1",
       "source": "explain:skipped:entry_rejected",
       "title": "skipped:entry_rejected",
       "text": "No new strangle in this slot: the order could not be sent (premium too small, size under the minimum, or an exchange error). It tries again next cycle.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:entry_wait_topup/1",
       "source": "explain:skipped:entry_wait_topup",
       "title": "skipped:entry_wait_topup",
       "text": "No new strangle yet: a rebalance order is still working, and the bot sizes one new position at a time so the two do not add up past the margin limit.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:gex_wait/1",
       "source": "explain:skipped:gex_wait",
       "title": "skipped:gex_wait",
       "text": "No new risk yet: the market makers' positioning data (GEX) is missing or out of date, so the bot waits for a fresh reading.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:liquidity_cap/1",
       "source": "explain:skipped:liquidity_cap",
       "title": "skipped:liquidity_cap",
       "text": "The order was made smaller: it is kept to a small share of the contracts open on each strike, so it can fill without moving the price. Under one contract nothing is sent.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:manual_close_refused/1",
       "source": "explain:skipped:manual_close_refused",
       "title": "skipped:manual_close_refused",
       "text": "A manual close from the monitor was refused: it is allowed only on a side the bot no longer sells (a negative gamma regime with the trend moving toward that side). Nothing was bought.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:margin_limit/1",
       "source": "explain:skipped:margin_limit",
       "title": "skipped:margin_limit",
       "text": "No new strangle in this slot: the margin it would use does not fit under the margin limit. The slot is tried again each cycle.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:margin_unknown/1",
       "source": "explain:skipped:margin_unknown",
       "title": "skipped:margin_unknown",
       "text": "No new strangle: the exchange's margin figures are missing or out of date, so the bot adds no risk until they come back.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:no_expiry/1",
       "source": "explain:skipped:no_expiry",
       "title": "skipped:no_expiry",
       "text": "No new strangle in this slot: the exchange lists no expiry date in the slot's range. It waits for one.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:no_free_expiry/1",
       "source": "explain:skipped:no_free_expiry",
       "title": "skipped:no_free_expiry",
       "text": "No new strangle in this slot: every expiry date in its range is already used by another slot, and each slot keeps its own date. It waits for a free one.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:no_strike/1",
       "source": "explain:skipped:no_strike",
       "title": "skipped:no_strike",
       "text": "No new strangle in this slot: no strike price was close enough to the slot's target risk (delta). It tries again next cycle.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:rebalance_wait_entry/1",
       "source": "explain:skipped:rebalance_wait_entry",
       "title": "skipped:rebalance_wait_entry",
       "text": "The rebalance waits: an entry order is still working, and the bot sizes one new position at a time so the two do not add up past the margin limit.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:regime_side/1",
       "source": "explain:skipped:regime_side",
       "title": "skipped:regime_side",
       "text": "One side is not sold: market makers' positioning favours strong moves and the price trend runs toward that side, so the bot sells only the other side for now.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:repair_held/1",
       "source": "explain:skipped:repair_held",
       "title": "skipped:repair_held",
       "text": "A missing leg is not sold again yet: a rule still holds that side back (a cooldown after a stop-loss or a close by hand, a GEX shed whose signal has not passed, or the trend under a negative gamma regime). It is sold again once that rule lets it go.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:repair_held:gex_shed/1",
       "source": "explain:skipped:repair_held:gex_shed",
       "title": "skipped:repair_held:gex_shed",
       "text": "A missing leg is not sold again yet: it was bought back because market makers' positioning pointed to a strong move against it (GEX shed). It is sold again once that signal has passed for long enough, not on a single reading.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:repair_held:regime_side/1",
       "source": "explain:skipped:repair_held:regime_side",
       "title": "skipped:repair_held:regime_side",
       "text": "A missing leg is not sold again yet: market makers' positioning favours strong moves and the price trend runs toward that side, so the bot does not sell it until that changes.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:repair_held:stopped/1",
       "source": "explain:skipped:repair_held:stopped",
       "title": "skipped:repair_held:stopped",
       "text": "A missing leg is not sold again yet: that side was closed by a stop-loss, a quick exit, a margin cut or by hand, so the bot waits for its cooldown and a calmer market before selling it again.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:repair_held:stopped_top_up/1",
       "source": "explain:skipped:repair_held:stopped_top_up",
       "title": "skipped:repair_held:stopped_top_up",
       "text": "The rebalance adds nothing to this slot yet: one of its sides was closed by a stop-loss, a quick exit, a margin cut or by hand, and that side waits for its cooldown and a calmer market. The rebalance tries again later.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:risk_frozen/1",
       "source": "explain:skipped:risk_frozen",
       "title": "skipped:risk_frozen",
       "text": "No new strangle: new risk is paused while a change in volatility or in market makers' positioning waits to be confirmed on daily closes. Exits and repairs continue.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:skipped:stop_deferred/1",
       "source": "explain:skipped:stop_deferred",
       "title": "skipped:stop_deferred",
       "text": "A stop-loss waits a few minutes: the option's order book is too thin (the asking price is far above the mid), so buying at market would cost too much. It fires once the spread is normal, or at market when the wait ends; nothing new is sold meanwhile.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:close_long/1",
       "source": "explain:submitted:close_long",
       "title": "submitted:close_long",
       "text": "Sent an order to sell the option because the bot held it long, and the strategy only sells options. It sells at the best bid.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:entry/1",
       "source": "explain:submitted:entry",
       "title": "submitted:entry",
       "text": "Sent an order to sell the option to open a new strangle and collect its premium. It rests on the order book; if it does not fill, its price steps down and it is cancelled after the fill timeout.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:rebalance_upsize/1",
       "source": "explain:submitted:rebalance_upsize",
       "title": "submitted:rebalance_upsize",
       "text": "Sent an order to sell the option to bring the slot up to its share of the margin limit. It rests on the order book; if it does not fill, its price steps down and it is cancelled after the fill timeout.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:repair/1",
       "source": "explain:submitted:repair",
       "title": "submitted:repair",
       "text": "Sent an order to sell the option to complete its strangle again. It rests on the order book; if it does not fill, its price steps down and it is cancelled after the fill timeout.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:rollout_19dte/1",
       "source": "explain:submitted:rollout_19dte",
       "title": "submitted:rollout_19dte",
       "text": "Sent an order to buy back the option because it is close to expiry. It rests at the mid price for a while; if the rule still applies when that time ends, the rest is bought at the asking price.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:rollout_delta_drift/1",
       "source": "explain:submitted:rollout_delta_drift",
       "title": "submitted:rollout_delta_drift",
       "text": "Sent an order to buy back the option because little premium is left to earn. It rests at the mid price for a while; if the rule still applies when that time ends, the rest is bought at the asking price.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     },
     {
       "id": "explain:submitted:rollout_roi/1",
       "source": "explain:submitted:rollout_roi",
       "title": "submitted:rollout_roi",
       "text": "Sent an order to buy back the option because most of its premium is already earned. It rests at the mid price for a while; if the rule still applies when that time ends, the rest is bought at the asking price.",
-      "blob": "f881eae4fc0757411764e1584b6def675c29df05"
+      "blob": "a6355306048fa5b1c4ea3fb2489a4d08ed99b805"
     }
   ]
 }

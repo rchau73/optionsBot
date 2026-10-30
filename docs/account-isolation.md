@@ -19,7 +19,7 @@ Claims about Deribit's key scopes carry a source link and the date they were che
 | 7 | Account polling | `internal/account` (`Poller.fetch`, `attachPositions`; started in `cmd/bot/main.go`) | `private/get_account_summaries`, `private/get_positions` (all kinds, per held currency) | Read-only. Shows the other bot's positions as unmanaged margin users. | Read-only and useful: foreign positions are visible, and their margin is part of the IM the policy reads. |
 | 8 | Margin policy reads account figures | `internal/risk`, `strategy/limits.go` (`AccountSummary.MarginUsage`) | account summary, `private/simulate_portfolio` | IM and MM include the other bot's book; each bot sizes against margin it did not create. | Sizing sees the customer's foreign margin and shrinks or freezes; the MM cut (`max_mm_pct`) buys back only bot-owned positions, so foreign margin can keep MM high with nothing the bot may close. |
 | 9 | Rate limits | `internal/gateway` (`RateLimiter`, two pools: matching engine / other) | all | The pools are per process; two bots on one account share Deribit's per-account limit without coordinating (`docs/architecture.md` §14). | Per account (assumption). One process per account keeps each account's pool its own. |
-| 10 | Environments refuse a shared client id | `env_check` in `scripts/env_lib.sh` (reads `DERIBIT_CLIENT_ID` of both `.env` files; "each environment needs its own subaccount") | none (local script) | The guard that exists: stable and mvp must use different Deribit (sub)accounts. | Same idea, enforced for the platform's own environments only. Nothing stops two customer bots from sharing an account today. |
+| 10 | Environments refuse a shared client id | `env_check` in `scripts/env_lib.sh` (#538: `env_accounts_distinct` reads `DERIBIT_CLIENT_ID` of every environment folder's `.env`; "each environment needs its own subaccount", naming both folders) | none (local script) | The guard that exists: no two environment folders of the platform (stable, mvp and any other bot's clone under `<envs>`) may use one Deribit (sub)account. | Same idea, for every bot folder on this host; a customer bot run elsewhere is not seen. |
 
 Also account-wide but not an order action: the startup `private/get_positions` regroup (`GroupPositions`) pairs positions whatever opened them, and the journal is per process (`data/<coin>/orders.log`), so a foreign position has no journal history and no slot hint.
 
@@ -28,7 +28,11 @@ Summary: rows 1, 2, 5 and 6 are the dangerous ones on a customer account. They a
 ### What the code does not give us today
 
 - No marker of which positions the bot opened. Positions on Deribit have no label; only orders do. Ownership can come only from the journal (`orders.log` fills) or from a dedicated account.
-- No key-scope check in this tree. The authentication reply's scope is read in `Gateway.authenticate` (`internal/gateway/gateway.go`) and only logged (`"authenticated with Deribit", "scope"`). Ticket #254 asked for a parsed `key_scope`; the PM noted it as closed, but the code above is all this branch contains, so verify on `main` before relying on it. Section 4 states the requirement either way.
+- The key-scope check warns, it does not refuse (#538).
+  `Gateway.authenticate` parses the reply's scope with `gateway.ParseKeyScope` (`internal/gateway/keyscope.go`): the granted scopes, the ones that can move funds and `can_move_funds` (null when the scope is empty or unreadable: unknown, never false).
+  A key that can move funds logs an ERROR at every authentication ("withdrawal rights are refused by policy"); `/api/status` reports `key_scope` and every start journals one `key_scope` line — scope names only, never the client id, secret or token.
+  The bot still starts: refusing to start on a broad key is a decision for a person, with legal input (**needs legal review**).
+  The scopes counted as moving funds are `wallet:read_write`, `account:read_write` (it can create API keys) and `custody:read_write` — an **assumption** (from memory of <https://docs.deribit.com/> "Access scope", 2026-10-30, no network access): a person confirms it against the page.
 
 ## 2. Isolation options
 
