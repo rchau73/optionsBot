@@ -165,7 +165,7 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   A buy-back never exceeds the short the exchange holds this cycle (`capToExchange`), so a wrong book cannot flip a position long.
   A long on an instrument the bot trades (book, working orders, past buy-backs) is sold at the bid (`close_long`); other longs are left alone.
 - **Even legs:** every cycle `balanceStrangles` (`balance.go`) buys back the excess of the larger leg of any strangle whose call and put differ by ≥ 1 lot (IOC at the ask, `rebalance_legs`),
-  outside the rollout window, when no repair is working, and not while an exit rule is closing the smaller leg (a roll filling in pieces: 2026-10-08 ETH shrank 503 → 303).
+  outside the rollout window, when no repair is working, and not while an exit rule is closing the smaller leg (2026-10-08 ETH 503 → 303), nor while a leg is part-closed by an exit (#554).
   Risk-reducing, so it runs while frozen.
   One-legged strangles stay with repair.
 - **Rollouts only close.**
