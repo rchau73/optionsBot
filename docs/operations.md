@@ -50,6 +50,8 @@ Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `ma
 **Why separate accounts:** at startup a bot cancels every order of its currency on the account, and every cycle it adopts any short position it finds there.
 Two environments on one account would cancel each other's orders and manage each other's positions.
 `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
+The account check covers every folder of `~/dev/go/optionsBot-env` with a `.env`, not only stable and mvp (#538, `env_accounts_distinct`), and names both folders.
+Each bot also checks its own API key at startup: a key that can move funds (withdraw or transfer) logs an ERROR, shows `key_scope.can_move_funds: true` in `/api/status` and is journaled as `key_scope`, but the bot still starts — replace it with a trade-only key (`account:read trade:read_write`).
 
 ```bash
 scripts/envctl.sh mvp init              # clone into ~/dev/go/optionsBot-env/mvp + write deploy.env; then add its .env

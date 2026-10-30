@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"optionsbot/internal/gateway"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -255,6 +256,24 @@ type journalLine struct {
 	Changes       []struct {
 		Key string `json:"key"`
 	} `json:"changes"`
+	Status string `json:"status"` // key_scope
+}
+
+// keyScopeWords says what a key_scope line (#538) recorded, by its status.
+var keyScopeWords = map[string]string{
+	gateway.KeyScopeTradeOnly: "The bot checked its exchange key at startup: it can trade but cannot withdraw or transfer funds.",
+	gateway.KeyScopeCanMoveFunds: "The bot checked its exchange key at startup: the key can also move funds out of the account. " +
+		"The policy refuses withdrawal rights, so the key should be replaced by a trade-only one; the bot keeps trading meanwhile.",
+	gateway.KeyScopeUnknown: "The bot could not read what its exchange key may do at startup, so whether it can move funds is unknown.",
+}
+
+// explainKeyScope says what a key_scope line recorded; an unreadable status
+// is the unknown sentence, never the trade-only one.
+func explainKeyScope(l journalLine) string {
+	if s, ok := keyScopeWords[l.Status]; ok {
+		return s
+	}
+	return keyScopeWords[gateway.KeyScopeUnknown]
 }
 
 // explainConfig says what a config_loaded line (#256) recorded.
@@ -318,6 +337,8 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 		return "A periodic profit-and-loss snapshot; nothing was traded.", ""
 	case orders.EventConfig:
 		return explainConfig(l), ""
+	case orders.EventKeyScope:
+		return explainKeyScope(l), ""
 	}
 	return generic("event=" + e.Event)
 }

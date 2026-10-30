@@ -78,6 +78,8 @@ type Gateway struct {
 	retryCount atomic.Int64
 
 	conns ConnTracker // drops, reconnects and timeouts for the monitor
+
+	keyScope atomic.Pointer[KeyScope] // the scope of the last authentication (#538)
 }
 
 // pendingCall is a request that has been written and is waiting for its reply.
@@ -595,7 +597,8 @@ func (g *Gateway) authenticate(ctx context.Context) error {
 		return errors.New("auth failed: no access_token in response — check DERIBIT_CLIENT_ID and DERIBIT_CLIENT_SECRET in .env, and verify the API key has account:read and trade:read_write scopes")
 	}
 
-	g.log.Info("authenticated with Deribit", "scope", result.Scope)
+	g.log.Info("authenticated with Deribit")
+	g.noteKeyScope(result.Scope)
 	return nil
 }
 

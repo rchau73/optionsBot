@@ -12,6 +12,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     with `median_flip` and `gex_as_of` beside it for the monitor's regime chart;
   - a change of the SMA trend is journaled once as `trend_changed` (`trend.go`, #118); loop-published snapshots, never calls Deribit) and the journal's in-memory recent events;
   - `connections.<gateway>` in `/api/status` is each gateway's `ConnStats` (drops, reconnects, timeouts today; last drop time and error — `api.WithConnection`, #87).
+  - `key_scope` in `/api/status` is the trading key's scope (`api.WithKeyScope`, #538): `scopes`, `fund_scopes`, `can_move_funds` (null = unknown) and `status` trade_only|can_move_funds|unknown — scope names only, never the key; null when not wired.
   The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only) and `POST /api/rebalance` (manual rebalance, below: live and testnet):
   - bearer `BOT_ADMIN_TOKEN`, audited in the bot log and journaled; the monitor's server-side proxies add the token and refuse cross-origin requests.
   Both take an optional `"actor": {"user", "role"}` (#171: the monitor's signed-in person; `api.ActorOf` checks only its form — username 3–64 of `a-z 0-9 . _ -`, role admin|manager|user — none → `monitor`),

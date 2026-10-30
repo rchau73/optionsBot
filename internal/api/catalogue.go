@@ -83,6 +83,9 @@ func Catalogue() []CatalogueEntry {
 	add(orders.EventPnL, pnl)
 	add(orders.EventConfig+":first", explainConfig(journalLine{First: true}))
 	add(orders.EventConfig+":unchanged", explainConfig(journalLine{Unchanged: true}))
+	for status, text := range keyScopeWords {
+		add(orders.EventKeyScope+":"+status, text)
+	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
