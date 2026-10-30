@@ -150,9 +150,9 @@ func (g *Gateway) Connect(ctx context.Context) error {
 func (g *Gateway) Fatal() <-chan error { return g.fatal }
 
 func (g *Gateway) connectOnce(rootCtx context.Context) error {
-	conn, _, err := websocket.DefaultDialer.DialContext(rootCtx, g.endpoint, nil)
+	conn, resp, err := websocket.DefaultDialer.DialContext(rootCtx, g.endpoint, nil)
 	if err != nil {
-		return fmt.Errorf("websocket dial: %w", err)
+		return dialError(g.endpoint, resp, err)
 	}
 
 	// Stop the previous connection's goroutines before starting new ones.
