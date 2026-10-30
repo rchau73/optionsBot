@@ -589,6 +589,7 @@ func main() {
 	calm := flag.Int("calm", 0, "calm days before the shock")
 	capMult := flag.Float64("cap", 2, "max_leg_size_multiple (0 = no cap)")
 	flag.Float64("liqcap", 10, "with -replay: liquidity_cap_oi_pct — an entry leg is at most this % of its strike's recorded open interest (the bot: 10, #103; 0 = off). The modelled paths have no open interest and ignore it")
+	flag.Float64("strikeivratio", config.FixedStrikeIVMaxRatio, "with -replay: a strike whose mark IV is more than this many times (or under 1/this of) its expiry's ATM IV is not picked (the bot: 1.5, #553; 0 = off). The modelled paths price every strike at one IV and ignore it")
 	steps := flag.Int("steps", 6, "decisions per day (6 = every 4 hours)")
 	breach := flag.Float64("breach", 0.30, "delta exit: close a short leg when its |delta| reaches this, as the bot (delta_exit_threshold; 0 = off)")
 	vrpFlag := flag.Float64("vrp", 0.85, "normal scenarios: realised vol as a fraction of implied (DVOL)")
@@ -1506,7 +1507,7 @@ func main() {
 					}
 					delete(s.stopped, missing)
 				}
-				in, err := strategy.SelectStrike(insts, present.Expiry, missing, s.slot.delta, 0.03)
+				in, err := strategy.SelectStrike(insts, present.Expiry, missing, s.slot.delta, 0.03, config.FixedStrikeIVMaxRatio)
 				if err != nil || in.Mid < minPre {
 					continue
 				}
@@ -1595,10 +1596,10 @@ func main() {
 				if !ok || share <= 0 {
 					continue
 				}
-				ci, e1 := strategy.SelectStrike(insts, exp, "call", sl.delta, 0.03)
-				pi, e2 := strategy.SelectStrike(insts, exp, "put", sl.delta, 0.03)
+				ci, e1 := strategy.SelectStrike(insts, exp, "call", sl.delta, 0.03, config.FixedStrikeIVMaxRatio)
+				pi, e2 := strategy.SelectStrike(insts, exp, "put", sl.delta, 0.03, config.FixedStrikeIVMaxRatio)
 				if *pairStrikes {
-					ci, pi, e1 = strategy.SelectStrikePair(insts, exp, sl.delta, 0.03)
+					ci, pi, e1 = strategy.SelectStrikePair(insts, exp, sl.delta, 0.03, config.FixedStrikeIVMaxRatio)
 				}
 				if e1 != nil || e2 != nil || ci.Mid < minPre || pi.Mid < minPre {
 					continue

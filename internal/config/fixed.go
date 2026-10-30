@@ -39,6 +39,7 @@ const (
 	FixedMaxDTEDeviation          = 10       // an expiry may be this many days from the slot's DTE
 	FixedExpiryStretch            = 1.5      // or the nearest free one up to DTE × this
 	FixedDeltaSlippage            = 0.03     // strike delta at most this far from the entry delta
+	FixedStrikeIVMaxRatio         = 1.5      // a strike's mark IV within ATM IV ÷/× 1.5, or it is not picked (#553: 88 % vs 38 % ATM gave a far wing Δ 0.15)
 	FixedMinTradeAmount           = 0.1      // order lot when an instrument has no minimum (Deribit's is read per option)
 	FixedEvalIntervalMS           = 40000    // decision loop period
 	FixedReportIntervalSec        = 60       // heartbeat and P&L line period
@@ -122,6 +123,7 @@ func (c *Config) ApplyFixed() {
 	c.MaxDTEDeviation = FixedMaxDTEDeviation
 	c.ExpiryStretch = FixedExpiryStretch
 	c.DeltaSlippage = FixedDeltaSlippage
+	c.StrikeIVMaxRatio = FixedStrikeIVMaxRatio
 	c.MinTradeAmount = FixedMinTradeAmount
 	c.EvalIntervalMS = FixedEvalIntervalMS
 	c.ReportIntervalSec = FixedReportIntervalSec

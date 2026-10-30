@@ -158,7 +158,7 @@ func TestSelectExpiry_UsesGivenNow(t *testing.T) {
 func TestSelectStrike(t *testing.T) {
 	exp := time.Date(2026, 3, 27, 8, 0, 0, 0, time.UTC)
 	opt := func(name, typ string, delta, mid float64) *marketdata.Instrument {
-		return &marketdata.Instrument{Name: name, Expiry: exp, OptionType: typ, Mid: mid, Greeks: marketdata.Greeks{Delta: delta}}
+		return &marketdata.Instrument{Name: name, Expiry: exp, OptionType: typ, Bid: mid * 0.9, Ask: mid * 1.1, Mid: mid, Greeks: marketdata.Greeks{Delta: delta}}
 	}
 	chain := []*marketdata.Instrument{
 		opt("C-ITM", "call", 0.70, 0.1),
@@ -168,20 +168,20 @@ func TestSelectStrike(t *testing.T) {
 		opt("P-17", "put", -0.17, 0.02),
 	}
 
-	got, err := strategy.SelectStrike(chain, exp, "call", 0.16, 0.05)
+	got, err := strategy.SelectStrike(chain, exp, "call", 0.16, 0.05, 0)
 	if err != nil || got.Name != "C-15" {
 		t.Errorf("closest OTM call with data should win, got %v (%v)", got, err)
 	}
-	if got, err := strategy.SelectStrike(chain, exp, "put", 0.16, 0); err != nil || got.Name != "P-17" {
+	if got, err := strategy.SelectStrike(chain, exp, "put", 0.16, 0, 0); err != nil || got.Name != "P-17" {
 		t.Errorf("put by |delta|: got %v (%v)", got, err)
 	}
-	if _, err := strategy.SelectStrike(chain, exp, "call", 0.40, 0.05); err == nil {
+	if _, err := strategy.SelectStrike(chain, exp, "call", 0.40, 0.05, 0); err == nil {
 		t.Error("no strike within delta slippage must be an error")
 	}
-	if _, err := strategy.SelectStrike(chain, exp.AddDate(0, 1, 0), "call", 0.16, 0); err == nil {
+	if _, err := strategy.SelectStrike(chain, exp.AddDate(0, 1, 0), "call", 0.16, 0, 0); err == nil {
 		t.Error("unknown expiry must be an error")
 	}
-	if _, err := strategy.SelectStrike(chain[:1], exp, "call", 0.16, 0); err == nil {
+	if _, err := strategy.SelectStrike(chain[:1], exp, "call", 0.16, 0, 0); err == nil {
 		t.Error("only ITM candidates must be an error")
 	}
 }

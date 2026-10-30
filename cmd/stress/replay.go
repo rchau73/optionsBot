@@ -32,18 +32,19 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 		c.GEXDirection = v
 		return nil
 	},
-	"flipbufsd":    floatField(func(c *config.Config) *float64 { return &c.GammaFlipBufferSD }),
-	"breach":       floatField(func(c *config.Config) *float64 { return &c.DeltaExitThreshold }),
-	"drift":        floatField(func(c *config.Config) *float64 { return &c.DeltaDriftThreshold }),
-	"tp":           floatField(func(c *config.Config) *float64 { return &c.ROITakeProfit }),
-	"cap":          floatField(func(c *config.Config) *float64 { return &c.MaxLegSizeMultiple }),
-	"liqcap":       floatField(func(c *config.Config) *float64 { return &c.LiquidityCapOIPct }),
-	"sma9band":     floatField(func(c *config.Config) *float64 { return &c.SMA9BandSD }),
-	"shedpersist":  intField(func(c *config.Config) *int { return &c.GEXShedConfirmSnapshots }),
-	"shedcross":    intField(func(c *config.Config) *int { return &c.GEXRepairConfirmSnapshots }),
-	"shedrelease":  intField(func(c *config.Config) *int { return &c.GEXRepairReleaseHours }),
-	"biascooldown": intField(func(c *config.Config) *int { return &c.GEXBiasRepairCooldownHours }),
-	"stopslipwait": intField(func(c *config.Config) *int { return &c.StopSpreadMaxWaitMin }),
+	"flipbufsd":     floatField(func(c *config.Config) *float64 { return &c.GammaFlipBufferSD }),
+	"breach":        floatField(func(c *config.Config) *float64 { return &c.DeltaExitThreshold }),
+	"drift":         floatField(func(c *config.Config) *float64 { return &c.DeltaDriftThreshold }),
+	"tp":            floatField(func(c *config.Config) *float64 { return &c.ROITakeProfit }),
+	"cap":           floatField(func(c *config.Config) *float64 { return &c.MaxLegSizeMultiple }),
+	"liqcap":        floatField(func(c *config.Config) *float64 { return &c.LiquidityCapOIPct }),
+	"strikeivratio": floatField(func(c *config.Config) *float64 { return &c.StrikeIVMaxRatio }),
+	"sma9band":      floatField(func(c *config.Config) *float64 { return &c.SMA9BandSD }),
+	"shedpersist":   intField(func(c *config.Config) *int { return &c.GEXShedConfirmSnapshots }),
+	"shedcross":     intField(func(c *config.Config) *int { return &c.GEXRepairConfirmSnapshots }),
+	"shedrelease":   intField(func(c *config.Config) *int { return &c.GEXRepairReleaseHours }),
+	"biascooldown":  intField(func(c *config.Config) *int { return &c.GEXBiasRepairCooldownHours }),
+	"stopslipwait":  intField(func(c *config.Config) *int { return &c.StopSpreadMaxWaitMin }),
 	"stopslip": func(c *config.Config, v string) error { // a fraction here, a percentage in the config
 		f, err := strconv.ParseFloat(v, 64)
 		c.StopSpreadGuardPct = f * 100

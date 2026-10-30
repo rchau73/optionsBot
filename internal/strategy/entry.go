@@ -24,10 +24,13 @@ func SelectExpiry(instruments []*marketdata.Instrument, now time.Time, targetDTE
 // expiry and option type. When maxDeltaSlippage > 0, only candidates within
 // [targetDelta - maxDeltaSlippage, targetDelta + maxDeltaSlippage] are eligible;
 // if none qualify, an error is returned. When maxDeltaSlippage == 0, the closest
-// candidate is returned regardless of distance.
-func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optType string, targetDelta, maxDeltaSlippage float64) (*marketdata.Instrument, error) {
+// candidate is returned regardless of distance. A strike that fails
+// StrikeQualityReason (no two-sided quote, or a mark IV more than ivMaxRatio
+// off the expiry's ATM IV) is never a candidate (#553).
+func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optType string, targetDelta, maxDeltaSlippage, ivMaxRatio float64) (*marketdata.Instrument, error) {
 	var candidates []*marketdata.Instrument
-	totalForExpiry, noData, itm := 0, 0, 0
+	totalForExpiry, noData, itm, noQuote, offSmile := 0, 0, 0, 0, 0
+	atmIV := ATMIV(instruments, expiry)
 	for _, inst := range instruments {
 		if !inst.Expiry.Equal(expiry) || inst.OptionType != optType {
 			continue
@@ -43,6 +46,14 @@ func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optTyp
 			itm++
 			continue
 		}
+		switch StrikeQualityReason(inst, atmIV, ivMaxRatio) {
+		case StrikeNoQuote:
+			noQuote++
+			continue
+		case StrikeOffSmile:
+			offSmile++
+			continue
+		}
 		candidates = append(candidates, inst)
 	}
 	if len(candidates) == 0 {
@@ -50,8 +61,9 @@ func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optTyp
 			return nil, fmt.Errorf("no %s instruments found for expiry %s (not in instrument chain)",
 				optType, expiry.Format("2006-01-02"))
 		}
-		return nil, fmt.Errorf("no OTM %s candidates for expiry %s: %d instruments found, %d have no ticker data (Mid=0, not subscribed), %d ITM",
-			optType, expiry.Format("2006-01-02"), totalForExpiry, noData, itm)
+		return nil, fmt.Errorf("no OTM %s candidates for expiry %s: %d instruments found, %d have no ticker data (Mid=0, not subscribed), %d ITM, %d %s, %d %s (ATM IV %.1f %%, max ×%.2f)",
+			optType, expiry.Format("2006-01-02"), totalForExpiry, noData, itm,
+			noQuote, StrikeNoQuote, offSmile, StrikeOffSmile, atmIV*100, ivMaxRatio)
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -64,8 +76,9 @@ func SelectStrike(instruments []*marketdata.Instrument, expiry time.Time, optTyp
 	if maxDeltaSlippage > 0 {
 		bestAbsDelta := math.Abs(best.Greeks.Delta)
 		if math.Abs(bestAbsDelta-targetDelta) > maxDeltaSlippage {
-			return nil, fmt.Errorf("no %s strike within delta slippage for expiry %s: target=%.4f slippage=%.4f closest=%.4f (%s)",
-				optType, expiry.Format("2006-01-02"), targetDelta, maxDeltaSlippage, bestAbsDelta, best.Name)
+			return nil, fmt.Errorf("no %s strike within delta slippage for expiry %s: target=%.4f slippage=%.4f closest=%.4f (%s); %d skipped: %s, %d skipped: %s",
+				optType, expiry.Format("2006-01-02"), targetDelta, maxDeltaSlippage, bestAbsDelta, best.Name,
+				noQuote, StrikeNoQuote, offSmile, StrikeOffSmile)
 		}
 	}
 	return best, nil
@@ -124,15 +137,16 @@ func NextMonthlyExpiry(ref time.Time, available []time.Time) (time.Time, bool) {
 // Picking each leg alone left the book with net delta: on a coarse strike
 // grid (ETH, 50–100 apart) the nearest put can sit at 0.18 while the nearest
 // call sits at 0.145 — on 2026-10-06 that added up to +55 ETH of delta.
-func SelectStrikePair(instruments []*marketdata.Instrument, expiry time.Time, targetDelta, maxDeltaSlippage float64) (call, put *marketdata.Instrument, err error) {
-	if call, err = SelectStrike(instruments, expiry, "call", targetDelta, maxDeltaSlippage); err != nil {
+func SelectStrikePair(instruments []*marketdata.Instrument, expiry time.Time, targetDelta, maxDeltaSlippage, ivMaxRatio float64) (call, put *marketdata.Instrument, err error) {
+	if call, err = SelectStrike(instruments, expiry, "call", targetDelta, maxDeltaSlippage, ivMaxRatio); err != nil {
 		return nil, nil, err
 	}
-	if put, err = SelectStrike(instruments, expiry, "put", targetDelta, maxDeltaSlippage); err != nil {
+	if put, err = SelectStrike(instruments, expiry, "put", targetDelta, maxDeltaSlippage, ivMaxRatio); err != nil {
 		return nil, nil, err
 	}
-	calls := eligibleStrikes(instruments, expiry, "call", targetDelta, maxDeltaSlippage)
-	puts := eligibleStrikes(instruments, expiry, "put", targetDelta, maxDeltaSlippage)
+	atmIV := ATMIV(instruments, expiry)
+	calls := eligibleStrikes(instruments, expiry, "call", targetDelta, maxDeltaSlippage, atmIV, ivMaxRatio)
+	puts := eligibleStrikes(instruments, expiry, "put", targetDelta, maxDeltaSlippage, atmIV, ivMaxRatio)
 	best := pairScore(call, put, targetDelta)
 	for _, c := range calls {
 		for _, p := range puts {
@@ -144,13 +158,17 @@ func SelectStrikePair(instruments []*marketdata.Instrument, expiry time.Time, ta
 	return call, put, nil
 }
 
-// eligibleStrikes are the quoted OTM strikes of optType at expiry whose
-// |delta| is within maxDeltaSlippage of targetDelta (any, when it is 0).
-func eligibleStrikes(instruments []*marketdata.Instrument, expiry time.Time, optType string, targetDelta, maxDeltaSlippage float64) []*marketdata.Instrument {
+// eligibleStrikes are the quoted OTM strikes of optType at expiry that pass
+// StrikeQualityReason and whose |delta| is within maxDeltaSlippage of
+// targetDelta (any, when it is 0).
+func eligibleStrikes(instruments []*marketdata.Instrument, expiry time.Time, optType string, targetDelta, maxDeltaSlippage, atmIV, ivMaxRatio float64) []*marketdata.Instrument {
 	var out []*marketdata.Instrument
 	for _, inst := range instruments {
 		d := math.Abs(inst.Greeks.Delta)
 		if !inst.Expiry.Equal(expiry) || inst.OptionType != optType || inst.Mid == 0 || d > 0.5 {
+			continue
+		}
+		if StrikeQualityReason(inst, atmIV, ivMaxRatio) != "" {
 			continue
 		}
 		if maxDeltaSlippage > 0 && math.Abs(d-targetDelta) > maxDeltaSlippage {

@@ -200,6 +200,7 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
 - **Strikes:** an entry or rebalance top-up picks its call and put together (`SelectStrikePair`): each within `delta_slippage` of the entry delta,
   the pair scoring | |Δc| − |Δp| | + ½ (distance of each from the target) — on a coarse grid (ETH) legs picked alone left the book tilted.
   A repair picks the strike nearest the entry delta (`SelectStrike`); matching it to the open leg was stress-tested and rejected (−25–30 % vs holding).
+  Both skip a strike without a bid and an ask, or with a mark IV beyond ATM IV ×/÷ `strike_iv_max_ratio` (1.5, fixed; `strikegate.go`, #553); none left → `no_strike`.
 - **One expiry per slot:** a vacant slot enters `SelectSlotExpiry` (`marketdata.PickExpiry`): its window's nearest expiry unless another slot holds it (open strangle, pending entry or unconfirmed order — `heldExpiries`),
   then the nearest free expiry up to target × `expiry_stretch`, otherwise it waits (`no_free_expiry` skip).
   An empty window still waits (`no_expiry`).

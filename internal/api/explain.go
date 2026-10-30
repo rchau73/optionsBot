@@ -117,7 +117,8 @@ var skipWords = map[string]string{
 		"It waits for one.",
 	strategy.SkipNoFreeExpiry: "No new strangle in this slot: every expiry date in its range is already used by another slot, " +
 		"and each slot keeps its own date. It waits for a free one.",
-	strategy.SkipNoStrike: "No new strangle in this slot: no strike price was close enough to the slot's target risk (delta). " +
+	strategy.SkipNoStrike: "No new option sold in this slot: no strike price was close enough to the slot's target risk (delta) " +
+		"with a real market — a buyer and a seller, and a price in line with the options near the money. " +
 		"It tries again next cycle.",
 	strategy.SkipEntryRejected: "No new strangle in this slot: the order could not be sent (premium too small, size under the minimum, " +
 		"or an exchange error). It tries again next cycle.",
