@@ -248,6 +248,41 @@ func TestGateway_ConnectFailsWithoutAccessToken(t *testing.T) {
 	}
 }
 
+// #524: mvp's bots logged only "bad handshake" for an hour; the error must name
+// what Deribit answered, so an outage or a block is told from a code bug.
+func TestGateway_ConnectRefusedHandshakeNamesTheHTTPStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "<html>\n  Under   maintenance\n</html>", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	endpoint := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	g := gw.New(testGatewayConfig(), gw.WithEndpoint(endpoint))
+	defer g.Close()
+	err := g.Connect(context.Background())
+	if !errors.Is(err, websocket.ErrBadHandshake) {
+		t.Fatalf("want a bad handshake, got %v", err)
+	}
+	for _, want := range []string{endpoint, "HTTP 503 Service Unavailable", "<html> Under maintenance </html>"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+func TestGateway_ConnectUnreachableHasNoHTTPStatus(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	endpoint := "ws" + strings.TrimPrefix(srv.URL, "http")
+	srv.Close() // nothing listens any more
+
+	g := gw.New(testGatewayConfig(), gw.WithEndpoint(endpoint))
+	defer g.Close()
+	err := g.Connect(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "websocket dial "+endpoint) || strings.Contains(err.Error(), "HTTP") {
+		t.Fatalf("want a dial error naming the endpoint without an HTTP status, got %v", err)
+	}
+}
+
 func TestGateway_CallReturnsResult(t *testing.T) {
 	m := newMockDeribit(t)
 	m.on("private/get_positions", func(gw.JSONRPCRequest) mockReply { return mockReply{result: `[{"size":-0.1}]`} })
