@@ -38,9 +38,13 @@ type Settings struct {
 	// record; option prices, greeks and fills stay those of the last hourly
 	// book (held, not interpolated), so an exit fires on the last book's mark
 	// and fills at its ask. An hour without records falls back to its book.
-	GEX   []recorder.GEXRecord
-	Book  []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace func(at time.Time, line string) // every action, as it happens (nil = none)
+	GEX []recorder.GEXRecord
+	// RegimeHold is the regime-side rule (regimehold.go, #550): "" or
+	// "confirmed" = the bot's; "live" also holds the trend's side while the
+	// live regime is negative.
+	RegimeHold string
+	Book       []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace      func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -85,9 +89,13 @@ type Result struct {
 	AvgUseOfLimitPct    float64 // IM as % of the limit, averaged over the decisions
 	EntryCycles         int     // decisions with entries allowed (not frozen, no MM breach, no deferred stop, fresh GEX)
 	UnderTargetCycles   int     // of them, IM under strategy.UnderUseTargetPct % of the limit
-	MaxDrawdown         float64
-	MaxIMPct, AvgIMPct  float64
-	Days                []Day
+	// The regime-hold study (#550, regimehold.go).
+	RegimeHeldEntries    int // entries opened without a side the regime-side rule held
+	RegimeSideHolds      int // entry or repair sides the rule held, once per decision
+	SoldIntoLiveNegative int // legs sold (entries, repairs) on the trend's side while the live regime was negative
+	MaxDrawdown          float64
+	MaxIMPct, AvgIMPct   float64
+	Days                 []Day
 }
 
 type strangle struct {
@@ -142,8 +150,9 @@ type engine struct {
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
 
-	now  time.Time // the snapshot being replayed
-	cash float64   // margin balance + what buying every short back at its mid costs
+	now  time.Time              // the snapshot being replayed
+	dec  strategy.GammaDecision // its GEX decision
+	cash float64                // margin balance + what buying every short back at its mid costs
 	peak float64
 	imN  int
 	res  Result
@@ -300,6 +309,7 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	quotes := snap.ByName()
 	e.gamma.PushPriceAt(at, spot)
 	dec := e.gamma.Evaluate()
+	e.dec = dec
 	st := e.riskStatus(at, dec)
 	if !trading {
 		return
@@ -552,8 +562,11 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if present == nil {
 			present, missing = s.put, "call"
 		}
-		if present == nil || dec.Sheds(missing) || present.DTEAt(at) <= c.RolloutDTE ||
-			strategy.RegimeSideBlockReason(missing, dec.TrendDir, st) != "" {
+		if present == nil || dec.Sheds(missing) || present.DTEAt(at) <= c.RolloutDTE {
+			continue
+		}
+		if e.sideHold(missing, dec, st) != "" {
+			e.res.RegimeSideHolds++
 			continue
 		}
 		k := key(s, missing)
@@ -634,8 +647,14 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			continue
 		}
 		var sides []entrySide
+		regimeHeld := false
 		for _, in := range []*marketdata.Instrument{ci, pi} {
-			if dec.Sheds(in.OptionType) || strategy.RegimeSideBlockReason(in.OptionType, dec.TrendDir, st) != "" {
+			if dec.Sheds(in.OptionType) {
+				continue
+			}
+			if e.sideHold(in.OptionType, dec, st) != "" {
+				regimeHeld = true
+				e.res.RegimeSideHolds++
 				continue
 			}
 			q := quotes[in.Name]
@@ -684,6 +703,9 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		occupied[sl], held[exp] = true, true
 		vacant--
 		e.res.Entries++
+		if regimeHeld {
+			e.res.RegimeHeldEntries++
+		}
 		e.act(at, "entry %dd ×%d: %s", sl.TargetDTE, lots, strings.Join(names, " + "))
 	}
 }
@@ -771,6 +793,9 @@ func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, pric
 	e.day.Fees += fee
 	e.res.Trades++
 	e.day.Trades++
+	if liveNegative(e.dec) && onTrendSide(q.OptionType, e.dec.TrendDir) {
+		e.res.SoldIntoLiveNegative++
+	}
 }
 
 // buyBack buys qty of p back at the ask; false when the ask side is empty
