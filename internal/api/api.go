@@ -73,6 +73,11 @@ type ConnectionSource interface {
 	ConnStats() gateway.ConnStats
 }
 
+// KeyScopeSource reports what the trading API key may do (gateway.Gateway).
+type KeyScopeSource interface {
+	KeyScope() (gateway.KeyScope, bool)
+}
+
 // Server is the monitor API for one bot process.
 type Server struct {
 	strategy    StrategySource
@@ -84,9 +89,10 @@ type Server struct {
 	connections map[string]ConnectionSource // by gateway name; empty → {}
 	token       string
 	started     time.Time
-	deployment  string        // local environment: stable | mvp | "" (run by hand)
-	version     string        // release tag or commit
-	config      *ConfigStatus // nil → "config": null
+	deployment  string         // local environment: stable | mvp | "" (run by hand)
+	version     string         // release tag or commit
+	config      *ConfigStatus  // nil → "config": null
+	keyScope    KeyScopeSource // nil → "key_scope": null
 	mux         *http.ServeMux
 }
 
@@ -131,6 +137,10 @@ type ConfigStatus struct {
 func WithConfig(fingerprint string, since time.Time) Option {
 	return func(s *Server) { s.config = &ConfigStatus{Fingerprint: fingerprint, Since: since} }
 }
+
+// WithKeyScope reports the trading key's scope in /api/status as
+// "key_scope" (#538): scope names and can_move_funds, never the key itself.
+func WithKeyScope(k KeyScopeSource) Option { return func(s *Server) { s.keyScope = k } }
 
 // WithConnection adds a gateway's drops, reconnects and timeouts to
 // /api/status under connections.<name> (e.g. "trading", "mainnet-public").

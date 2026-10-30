@@ -12,6 +12,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too; its 
   - Every start journals one `config_loaded` line (`orders.LogStartConfig`, #256):
     the fingerprint of `config.Effective` (YAML keys and fixed values only — never anything from `.env`), the full settings and `config.Diff` against the journal's last `config_loaded` (`Replay.LastConfig`, kept raw so the replay's fast path is unchanged);
     `first`/`unchanged` flags; `/api/status` `config: {fingerprint, since}`.
+  - and one `key_scope` line (`LogKeyScope`, #538): the API key's scope names and `can_move_funds`, never the key.
 - **The journal is the history:** at startup `main` replays `orders.log` (`orders.ReplayFile`, fast path: only fills/closes are decoded)
   and restores realised P&L per slot (`Strategy.RestorePnL`), event counts, the last 500 events and every open/close (`Logger.Restore`, served at `/api/trades`), so nothing the monitor shows resets on restart.
   Realised P&L has one source (the journal's closes); `history.Store` records it as given and adds nothing.
