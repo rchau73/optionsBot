@@ -96,6 +96,11 @@ async function caller(name) {
  */
 const FIXTURES = {
   "DELETE /api/admin/users/[id]": async ({ who }) => target(who),
+  "DELETE /api/auth/account": async ({ who }) => {
+    // Never the last admin: another one exists, so an admin caller may leave too.
+    if (who?.user.role === "admin") await person("admin");
+    return { path: "/api/auth/account", body: {}, actor: who?.user.username };
+  },
   "PATCH /api/admin/users/[id]": async ({ who }) => ({ ...(await target(who)), body: { role: "manager" } }),
   "POST /api/admin/users": async ({ who }) => ({
     path: "/api/admin/users",

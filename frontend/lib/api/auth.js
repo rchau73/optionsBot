@@ -20,6 +20,15 @@ export async function changePassword(current, next) {
 }
 
 /**
+ * Deletes the signed-in person's own account (#543): its sessions, analytics
+ * events and survey answers; both cookies are cleared. Throws with the
+ * server's reason (e.g. the last admin).
+ */
+export async function deleteAccount() {
+  return sendJSON("/api/auth/account", "DELETE", {});
+}
+
+/**
  * Sets a new password with a reset link (no session needed, so plain fetch);
  * every session of that person ends. Throws with the server's reason.
  */

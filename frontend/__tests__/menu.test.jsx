@@ -111,21 +111,21 @@ describe("Scenario: the person menu lives in the menu bar", () => {
   const open = (name) => fireEvent.click(screen.getByRole("button", { name }));
   const items = () => within(screen.getByRole("menu")).getAllByRole("menuitem").map((i) => i.textContent);
 
-  test("the bar ends with my name; its menu holds Change password and Sign out", () => {
+  test("the bar ends with my name; its menu holds Change password, Delete my account (#543) and Sign out", () => {
     at("/", "bot=btc");
     render(<MenuBar person={{ username: "bob", role: "user" }} />);
     const nav = screen.getByRole("navigation", { name: "Main" });
     const last = nav.querySelector("ul").lastElementChild;
     expect(within(last).getByRole("button", { name: "bob ▾" })).toHaveClass("min-h-11");
     open("bob ▾");
-    expect(items()).toEqual(["Change password", "Sign out"]);
+    expect(items()).toEqual(["Change password", "Delete my account", "Sign out"]);
   });
 
   test("for an admin it also holds Users, Audit and Analytics (#445)", () => {
     at("/", "bot=btc");
     render(<MenuBar person={{ username: "ana", role: "admin" }} />);
     open("ana ▾");
-    expect(items()).toEqual(["Users", "Audit", "Analytics", "Change password", "Sign out"]);
+    expect(items()).toEqual(["Users", "Audit", "Analytics", "Change password", "Delete my account", "Sign out"]);
     expect(screen.getByRole("menuitem", { name: "Users" })).toHaveAttribute("href", "/admin/users");
     expect(screen.getByRole("menuitem", { name: "Analytics" })).toHaveAttribute("href", "/admin/analytics");
   });
@@ -136,7 +136,7 @@ describe("Scenario: the person menu lives in the menu bar", () => {
     render(<MenuBar person={{ username: "bob", role }} />);
     open("bob ▾");
     expect(items()).not.toContain("Analytics");
-    expect(items()).toEqual(["Change password", "Sign out"]);
+    expect(items()).toEqual(["Change password", "Delete my account", "Sign out"]);
   });
 
   test("an unreadable session still offers the menu, as Account ▾", () => {

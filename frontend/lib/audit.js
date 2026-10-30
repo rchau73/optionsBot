@@ -17,6 +17,7 @@ export const AUDIT_ACTIONS = [
   "reset_link_issued",
   "password_reset_by_link",
   "user_deleted",
+  "account_deleted",
   "signed_out_everywhere",
   "manual_close",
   "manual_rebalance",

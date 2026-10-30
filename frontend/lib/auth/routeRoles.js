@@ -26,6 +26,7 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
+  { route: "DELETE /api/auth/account", roles: SIGNED_IN, audit: "account_deleted" },
   { route: "PATCH /api/admin/users/[id]", roles: ADMINS, audit: "role_changed" },
   { route: "POST /api/admin/users", roles: ADMINS, audit: "user_created" },
   { route: "POST /api/admin/users/[id]/password", roles: ADMINS, audit: "password_reset" },

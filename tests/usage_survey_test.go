@@ -261,6 +261,42 @@ func TestUsage_SurveyExitReasonsMostFrequentFirst(t *testing.T) {
 	}
 }
 
+// Scenario (#543): Weekly report — exit answers of several codes in the week →
+// the count per exit reason code, every code, and no free text.
+func TestUsage_WeeklyReportCountsEachExitReasonCode(t *testing.T) {
+	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
+	codes := []string{"price", "switched", "price", "other", "losses", "price"}
+	var lines []string
+	for i, code := range codes {
+		ts := at.Add(time.Duration(i) * time.Minute)
+		lines = append(lines,
+			usageLine(t, "survey_shown", ts, 500+i, map[string]any{"survey_id": "exit"}),
+			usageLine(t, "survey_answered", ts.Add(time.Second), 500+i, map[string]any{"survey_id": "exit", "reason_code": code}))
+	}
+	lines = append(lines, usageLine(t, "survey_dismissed", at.Add(time.Hour), 520, map[string]any{"survey_id": "exit"}))
+	r, written := surveyReport(t, lines)
+	want := map[string]int{"price": 3, "switched": 1, "other": 1, "losses": 1}
+	if len(r.Survey.ExitReasons) != len(want) {
+		t.Fatalf("exit = %v, want %v", r.Survey.ExitReasons, want)
+	}
+	for code, n := range want {
+		if r.Survey.ExitReasons[code] != n {
+			t.Fatalf("exit = %v, want %v", r.Survey.ExitReasons, want)
+		}
+		if !strings.Contains(written, "| "+code+" | "+strconv.Itoa(n)+" |") {
+			t.Fatalf("markdown has no row for %s:\n%s", code, written)
+		}
+	}
+	for _, f := range r.Survey.Surveys {
+		if f.ID == "exit" && (f.Shown != 6 || f.Answered != 6 || f.Dismissed != 1) {
+			t.Fatalf("exit funnel = %+v", f)
+		}
+	}
+	if strings.Contains(written, "free_text") || strings.Contains(written, `"text"`) {
+		t.Fatal("free text reached the report")
+	}
+}
+
 // Scenario: a field not on the allow-list → ignored, appears nowhere.
 func TestUsage_SurveyFieldOutsideTheAllowListAppearsNowhere(t *testing.T) {
 	at := usageWeek(t, "2026-W43").From.Add(30 * time.Hour)
