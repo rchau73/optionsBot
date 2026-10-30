@@ -139,8 +139,11 @@ type Config struct {
 	MaxDTEDeviation   int `yaml:"-"`
 	// ExpiryStretch: when a slot's own expiry is held by another slot, it may
 	// use the nearest free expiry up to target DTE × this; otherwise it waits.
-	ExpiryStretch       float64 `yaml:"-"`
-	DeltaSlippage       float64 `yaml:"-"`
+	ExpiryStretch float64 `yaml:"-"`
+	DeltaSlippage float64 `yaml:"-"`
+	// StrikeIVMaxRatio: a strike whose mark IV is more than this many times
+	// (or under 1/this of) its expiry's ATM IV is not picked (#553; 0 = off).
+	StrikeIVMaxRatio    float64 `yaml:"-"`
 	MinTradeAmount      float64 `yaml:"-"`
 	MinPremiumBTC       float64 `yaml:"min_premium"`
 	OrderFillTimeoutSec int     `yaml:"-"`

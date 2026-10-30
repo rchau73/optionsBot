@@ -98,7 +98,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 				"expiry", expiry.Format("2006-01-02"), "dte", marketdata.DaysToExpiry(expiry, time.Now()))
 		}
 
-		call, put, err := SelectStrikePair(instruments, expiry, slot.EntryDelta, s.cfg.DeltaSlippage)
+		call, put, err := SelectStrikePair(instruments, expiry, slot.EntryDelta, s.cfg.DeltaSlippage, s.cfg.StrikeIVMaxRatio)
 		if err != nil {
 			slog.Debug("skip entry: strike selection failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,

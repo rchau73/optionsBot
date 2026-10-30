@@ -63,10 +63,13 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		// Nearest the entry delta, not matched to the open leg: matching re-sells
 		// closer to the money after a move and cost ~30 % of the result against
 		// holding in stress tests (2026-10-07).
-		inst, err := SelectStrike(instruments, present.Expiry, missingType, delta, s.cfg.DeltaSlippage)
+		// Each try picks again from the current marks, and never a strike
+		// without a two-sided quote or with an off-smile IV (#553).
+		inst, err := SelectStrike(instruments, present.Expiry, missingType, delta, s.cfg.DeltaSlippage, s.cfg.StrikeIVMaxRatio)
 		if err != nil {
 			slog.Debug("repair: no suitable strike for missing leg",
 				"strangle_id", st.ID, "missing", missingType, "err", err)
+			s.noteSkip(st.TargetDTE, st.EntryDelta, SkipNoStrike, "repair "+missingType+": "+err.Error())
 			continue
 		}
 		if err := s.checkPremiumFloor(inst, s.cfg.RepairPriceFloor); err != nil {
@@ -103,6 +106,7 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 		delete(s.stopped, key)
 		delete(s.repairHeld, key)
 		delete(s.shedAnchors, key)
+		delete(s.lastSkip, makeSlotKey(st.TargetDTE, st.EntryDelta)) // a later no_strike is journaled again
 		s.addPending(ps)
 		slog.Info("repair: missing leg order submitted",
 			"strangle_id", st.ID, "missing", missingType,

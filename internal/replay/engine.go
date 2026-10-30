@@ -578,7 +578,7 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if insts == nil {
 			insts = snap.Instruments(e.lot)
 		}
-		in, err := strategy.SelectStrike(insts, present.Expiry, missing, s.slot.EntryDelta, c.DeltaSlippage)
+		in, err := strategy.SelectStrike(insts, present.Expiry, missing, s.slot.EntryDelta, c.DeltaSlippage, c.StrikeIVMaxRatio)
 		if err != nil {
 			continue
 		}
@@ -629,7 +629,7 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if exp.IsZero() {
 			continue
 		}
-		ci, pi, err := strategy.SelectStrikePair(insts, exp, sl.EntryDelta, c.DeltaSlippage)
+		ci, pi, err := strategy.SelectStrikePair(insts, exp, sl.EntryDelta, c.DeltaSlippage, c.StrikeIVMaxRatio)
 		if err != nil {
 			continue
 		}

@@ -72,6 +72,7 @@
   "MaxDTEDeviation": 10,
   "ExpiryStretch": 1.5,
   "DeltaSlippage": 0.03,
+  "StrikeIVMaxRatio": 1.5,
   "MinTradeAmount": 0.1,
   "MinPremiumBTC": 0.001,
   "OrderFillTimeoutSec": 90,

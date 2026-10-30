@@ -267,7 +267,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	// The complement adds to this strangle, so it uses this strangle's
 	// expiry — never a fresh pick, which could land on another slot's date.
 	expiry := st.CallLeg.Expiry
-	call, put, err := SelectStrikePair(instruments, expiry, st.EntryDelta, s.cfg.DeltaSlippage)
+	call, put, err := SelectStrikePair(instruments, expiry, st.EntryDelta, s.cfg.DeltaSlippage, s.cfg.StrikeIVMaxRatio)
 	if err != nil {
 		slog.Warn("rebalance: strike selection failed for complement strangle, skipping upsize",
 			"strangle_id", st.ID, "err", err)

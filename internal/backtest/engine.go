@@ -344,7 +344,7 @@ func (e *Engine) openLeg(ctx context.Context, instruments []*marketdata.Instrume
 	if entryDelta == 0 {
 		entryDelta = e.cfg.EntryDelta // legacy fallback
 	}
-	inst, err := strategy.SelectStrike(instruments, expiry, optType, entryDelta, e.cfg.DeltaSlippage)
+	inst, err := strategy.SelectStrike(instruments, expiry, optType, entryDelta, e.cfg.DeltaSlippage, e.cfg.StrikeIVMaxRatio)
 	if err != nil {
 		return nil
 	}
@@ -438,7 +438,7 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 			continue
 		}
 
-		call, put, err := strategy.SelectStrikePair(instruments, expiry, slot.EntryDelta, e.cfg.DeltaSlippage)
+		call, put, err := strategy.SelectStrikePair(instruments, expiry, slot.EntryDelta, e.cfg.DeltaSlippage, e.cfg.StrikeIVMaxRatio)
 		if err != nil {
 			slog.Debug("skip entry: strike selection failed",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,

@@ -713,14 +713,33 @@ func TestStrategy_OpensStrangleAndActivatesOnFill(t *testing.T) {
 
 func TestStrategy_EntrySubmitsAtMaxOfMidAndAsk(t *testing.T) {
 	f := newStrategyFixture(t)
-	f.market.setQuote(f.call, 0, 0.03) // no bid: mid 0.015, ask 0.03
+	f.market.setQuote(f.call, 0.001, 0.03) // wide: mid 0.0155, ask 0.03
 	f.startRun()
 
 	eventually(t, 2*time.Second, "entry submitted", func() bool { return len(f.exch.sells()) == 2 })
 	for _, o := range f.exch.sells() {
 		if o.Instrument == f.call && o.LimitPrice != 0.03 {
-			t.Errorf("call limit = %v, want ask 0.03 when bid is 0", o.LimitPrice)
+			t.Errorf("call limit = %v, want the ask 0.03", o.LimitPrice)
 		}
+	}
+}
+
+// A strike without a bid is not picked (#553): the slot waits on no_strike.
+func TestStrategy_EntrySkipsAStrikeWithoutABid(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.market.setQuote(f.call, 0, 0.03)
+	f.startRun()
+
+	eventually(t, 2*time.Second, "no_strike journaled", func() bool {
+		for _, s := range f.journal.events(orders.EventSkipped) {
+			if strings.HasPrefix(s.reason, strategy.SkipNoStrike) && strings.Contains(s.reason, strategy.StrikeNoQuote) {
+				return true
+			}
+		}
+		return false
+	})
+	if n := len(f.exch.sells()); n != 0 {
+		t.Errorf("no order may be sent for a strike without a bid, got %d", n)
 	}
 }
 
