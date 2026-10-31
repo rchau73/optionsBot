@@ -49,6 +49,7 @@ METRIC_NAMES = {
     "first_answers": "first sessions that saw the four answers",
     "manual_close": "manual-close dialogs confirmed",
     "rebalance": "rebalances confirmed after a preview",
+    "lapsed_share": "people who stopped coming back",
 }
 
 
@@ -114,6 +115,12 @@ def drop_text(d, live):
     """One drop in words. Live: shares and the change only."""
     name = METRIC_NAMES.get(d.get("metric"), "a metric")
     cur, base = num(d.get("current")), num(d.get("base"))
+    if d.get("kind") == "share":  # rising is bad: lapsed_share (#569)
+        text = (f"{name}: {pct(cur)} of the people who visited in the 4 weeks before, "
+                f"was {pct(base)} ({num(d.get('change_pts')) or 0:+.0f} pts)")
+        if not live:
+            text += f" — {num(d.get('starts')) or 0} people this week, {num(d.get('base_starts')) or 0} in the base weeks"
+        return text
     if d.get("kind") == "funnel":
         text = f"{name}: {pct(cur)} of starts, was {pct(base)} ({num(d.get('change_pts')) or 0:+.0f} pts)"
         if not live:
@@ -263,8 +270,9 @@ def issue(week, envs_dir, state_dir, issues, now, envs=("stable", "mvp")):
         lines.append("")
     lines += [
         "**Rules** (fixed in `internal/usage/drops.go`): a count (weekly active users, help used) at least 30 % under "
-        "the mean of the 3 weeks before; a funnel's completion share at least 20 points under theirs. "
-        "A base under 10 users or 10 funnel starts is too few to judge; a week with no events is left out.",
+        "the mean of the 3 weeks before; a funnel's completion share at least 20 points under theirs; "
+        "the share of people who stopped coming back at least 20 points over theirs. "
+        "A base under 10 users, 10 funnel starts or 10 people active in the 4 weeks before is too few to judge; a week with no events is left out.",
         "",
         "Find the why while it is fresh: a broken flow, a release (the report's `app_version`), or nobody signed in. "
         f"The week's reports: `<env>/data/monitor/reports/{week}.md`.",

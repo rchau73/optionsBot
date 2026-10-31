@@ -4,9 +4,9 @@ import Link from "next/link";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import Panel from "./Panel";
-import { Attention, DataBehind, QuestionCards } from "./UsageCards";
+import { Attention, DataBehind, Lapsed, QuestionCards } from "./UsageCards";
 import { fetchUsageReport } from "@/lib/api/admin";
-import { REPORT_ENVS, SMALL_SAMPLE, analyticsHref, isSmallSample, neighbourWeeks } from "@/lib/analytics/usageView";
+import { REPORT_ENVS, SMALL_SAMPLE, analyticsHref, isSmallSample, lapsedView, neighbourWeeks } from "@/lib/analytics/usageView";
 
 const TARGET =
   "inline-flex min-h-11 min-w-11 items-center justify-center rounded border border-line px-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
@@ -155,6 +155,7 @@ function Body({ data, error }) {
         </Notice>
       ) : null}
       <Attention report={r} />
+      {lapsedView(r)?.rising ? <Lapsed report={r} /> : null}
       <QuestionCards report={r} />
       <DataBehind data={data} />
     </>

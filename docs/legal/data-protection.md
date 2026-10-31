@@ -20,6 +20,7 @@
 | Positions, orders, journal, P&L | Run and explain the service; customer's record | V contract / VI exercise of rights | (b) / (f) | contract + 5 y |
 | Residence, investor-knowledge questionnaire | Eligibility, suitability-style protection | II legal obligation (if regulated) / V contract | (c) / (b) | contract + 5 y |
 | Product analytics (no amounts, no secrets) | Improve the product | IX legitimate interest (Brazil, with balancing test) or I consent | (a) consent (non-essential storage, ePrivacy) | 13 months |
+| Inactivity count (#569: people who visited in the 4 weeks before and not this week), from the same consented analytics events | Improve the product; ask why before people leave | as product analytics: only people who said yes, no new data collected | (a) consent | as product analytics; the weekly report holds counts only, never a user id |
 | Surveys, exit survey | Understand needs and churn | I consent | (a) | 24 months, or anonymised |
 | Support messages, assistant questions and answers | Support; review of AI answers | V contract / IX | (b) / (f) | 24 months |
 | Marketing email, waiting list | Contact about the product | I consent | (a) | until withdrawn |

@@ -156,6 +156,67 @@ describe("the other states", () => {
   });
 });
 
+describe("Scenario: the admin page shows who stopped coming back (#569)", () => {
+  const card = () => screen.getByRole("heading", { name: "Stopped coming back" }).closest("section");
+  const lapsedDrop = { metric: "lapsed_share", kind: "share", current: 45, base: 15, change_pts: 30, starts: 40, base_starts: 120 };
+
+  test("the counts by weeks away and by role, with an OK text tag while the share did not rise", () => {
+    view(answer());
+    const c = card();
+    expect(c).toHaveTextContent("People who visited in the last 4 weeks and did not visit this week.");
+    expect(within(c).getByText("6 of 30")).toBeInTheDocument();
+    expect(within(c).getByText("20 %")).toBeInTheDocument();
+    expect(within(c).getByText("OK")).toBeInTheDocument();
+    const away = within(c).getByRole("table", { name: "By weeks since the last visit" });
+    expect(within(away).getAllByRole("row").slice(1).map((r) => r.textContent)).toEqual(["1 week3", "2 weeks2", "3 weeks0", "4 weeks or more1"]);
+    const roles = within(c).getByRole("table", { name: "By role at the last visit" });
+    expect(within(roles).getAllByRole("row").slice(1).map((r) => r.textContent)).toEqual(["user5", "manager1"]);
+    // In the cards' grid, after Q2.
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings.indexOf("Stopped coming back")).toBe(headings.findIndex((h) => h.startsWith("Q2 · ")) + 1);
+  });
+
+  test("a rising share: DROP in Needs your attention, and the card moves right under it", () => {
+    const r = usageReport("2026-W44", { drops: { drops: [lapsedDrop] } });
+    view(answer("2026-W44", { report: r }));
+    const attention = screen.getByRole("heading", { name: "Needs your attention" }).closest("section");
+    expect(within(attention).getAllByRole("listitem")[0]).toHaveTextContent(
+      "DROPPeople who stopped coming back: 45 % of 40 people, was 15 % of 120 (+30 pts)",
+    );
+    expect(within(card()).getByText("DROP")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Stopped coming back" })).toHaveLength(1);
+    const headings = screen.getAllByRole("heading").map((h) => h.textContent);
+    expect(headings.indexOf("Stopped coming back")).toBe(headings.indexOf("Needs your attention") + 1);
+  });
+
+  test("a small base: the note, no share and no tag", () => {
+    const r = usageReport("2026-W44", { lapsed: { users: 3, by_role: { user: 3 }, weeks_away: { 1: 3 }, base: 7, note: "too few to judge" } });
+    view(answer("2026-W44", { report: r }));
+    const c = card();
+    expect(c).toHaveTextContent("Small sample: 7 people visited in those weeks, under 10. No share is given and no drop is raised.");
+    expect(within(c).getByText("—")).toBeInTheDocument();
+    expect(within(c).queryByText("OK")).toBeNull();
+    expect(within(c).queryByText("DROP")).toBeNull();
+  });
+
+  test("no one lapsed: the empty line, no tables", () => {
+    const r = usageReport("2026-W44", { lapsed: { users: 0, by_role: { user: 0 }, weeks_away: {}, base: 30, share_pct: 0 } });
+    view(answer("2026-W44", { report: r }));
+    expect(card()).toHaveTextContent("No one stopped coming back: everyone who visited in those weeks came back this week.");
+    expect(within(card()).queryByRole("table")).toBeNull();
+  });
+
+  test("a report written before #569 says so; a week with no events shows the no-events message and no card", () => {
+    const { unmount } = view(answer("2026-W44", { report: usageReport("2026-W44", { lapsed: undefined }) }));
+    expect(card()).toHaveTextContent("Not in this report (written before #569).");
+    unmount();
+    const r = { ...usageReport("2026-W44"), lapsed: undefined, events_in_week: 0, no_events: "No events were recorded in the week." };
+    view(answer("2026-W44", { report: r }));
+    expect(screen.getByText(/No events in 2026-W44/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Stopped coming back" })).toBeNull();
+  });
+});
+
 describe("Must not: no id, username, amount or free text", () => {
   test("the page shows none of the report's host path, and no id-like field exists to show", () => {
     const { container } = view(answer());

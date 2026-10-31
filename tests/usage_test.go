@@ -405,9 +405,15 @@ func TestUsage_SixWeekFixtureMatchesHandComputedValues(t *testing.T) {
 		t.Fatalf("W42 cohort = %+v", c42)
 	}
 
-	// The drop alert.
+	// Lapsed (#569): 1–50, 101 and 102 visited in W39–W42; 1–20 came back.
+	// 21–50 were last seen in W42, 101–102 in W39.
+	if l := cur.Lapsed; l == nil || l.Base != 52 || l.Users != 32 || l.WeeksAway["1"] != 30 || l.WeeksAway["4+"] != 2 || l.Note != "" {
+		t.Fatalf("W43 lapsed = %+v", cur.Lapsed)
+	}
+
+	// The drop alert; the fall of active people is also a rise of the lapsed share.
 	a := usage.Drops(cur, prev, usage.DefaultRules())
-	if len(a.Drops) != 2 {
+	if len(a.Drops) != 3 || a.Drops[2].Metric != usage.MetricLapsed || a.Drops[2].Kind != "share" || a.Drops[2].Starts != 52 {
 		t.Fatalf("drops = %+v", a.Drops)
 	}
 	act, mc := a.Drops[0], a.Drops[1]
@@ -450,8 +456,8 @@ func TestUsage_ReportJSONCarriesTheWeeksDrops(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, got := range []*usage.Alert{r.Drops, written.Drops} {
-		if got == nil || got.Week != "2026-W43" || len(got.Drops) != 2 ||
-			got.Drops[0].Metric != usage.MetricActive || got.Drops[1].Metric != usage.MetricManualClose {
+		if got == nil || got.Week != "2026-W43" || len(got.Drops) != 3 ||
+			got.Drops[0].Metric != usage.MetricActive || got.Drops[1].Metric != usage.MetricManualClose || got.Drops[2].Metric != usage.MetricLapsed {
 			t.Fatalf("drops = %+v", got)
 		}
 	}

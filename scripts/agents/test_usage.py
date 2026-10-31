@@ -42,6 +42,7 @@ def drops(*ds, missing=(), prev_active=40):
 
 
 ACTIVE_DROP = {"metric": "active_users", "kind": "count", "current": 20, "base": 40, "change_pct": -50}
+LAPSED_DROP = {"metric": "lapsed_share", "kind": "share", "current": 45, "base": 15, "change_pts": 30, "starts": 40, "base_starts": 120}
 CLOSE_DROP = {"metric": "manual_close", "kind": "funnel", "current": 50, "base": 80, "change_pts": -30, "starts": 10, "base_starts": 30}
 
 
@@ -170,6 +171,23 @@ class Pure(unittest.TestCase):
         old = [{"number": 9, "title": "[E13] Engagement drop: active_users 2026-W42", "state": "OPEN"},
                {"number": 10, "title": "[E13] Engagement drop: active_users 2026-W43", "state": "CLOSED", "closedAt": "2026-09-01T00:00:00Z"}]
         self.assertIsNotNone(usage_week.issue(WEEK, self.envs, self.state, old, NOW)[1])
+
+    def test_scenario_a_rising_lapsed_share_raises_the_weekly_drop_issue_once(self):
+        # #569: the lapsed share is named in words; a second run within DEDUP_DAYS files nothing.
+        self.put("mvp", report(), drops(LAPSED_DROP))
+        line, filing = usage_week.issue(WEEK, self.envs, self.state, [], NOW)
+        title, body = filing
+        self.assertEqual(title, "[E13] Engagement drop: lapsed_share 2026-W43")
+        self.assertIn("- people who stopped coming back: 45 % of the people who visited in the 4 weeks before, was 15 % (+30 pts)"
+                      " — 40 people this week, 120 in the base weeks", body)
+        filed = [{"number": 11, "title": title, "state": "CLOSED", "closedAt": (NOW - dt.timedelta(days=usage_week.DEDUP_DAYS - 1)).isoformat()}]
+        line, again = usage_week.issue(WEEK, self.envs, self.state, filed, NOW)
+        self.assertIsNone(again)
+        self.assertIn("#11 already reports it", line)
+
+    def test_lapsed_drop_live_env_shows_percentages_only(self):
+        text = usage_week.drop_text(LAPSED_DROP, True)
+        self.assertEqual(text, "people who stopped coming back: 45 % of the people who visited in the 4 weeks before, was 15 % (+30 pts)")
 
     def test_no_drop_files_nothing(self):
         self.put("mvp", report(), drops())

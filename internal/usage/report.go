@@ -31,6 +31,7 @@ type Report struct {
 
 	Active       *Active       `json:"active,omitempty"`        // Q1, Q2
 	Cohorts      []Cohort      `json:"cohorts,omitempty"`       // Q2
+	Lapsed       *Lapsed       `json:"lapsed,omitempty"`        // Q2: who stopped coming back (#569)
 	Panels       *Panels       `json:"panels,omitempty"`        // Q3
 	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
 	Help         *Help         `json:"help,omitempty"`          // Q5
@@ -212,6 +213,7 @@ func Build(events []Event, from, to time.Time) Report {
 	}
 	r.Active = buildActive(past, from, to)
 	r.Cohorts = buildCohorts(past, from, to)
+	r.Lapsed = buildLapsed(past, from, to)
 	r.Panels = buildPanels(week)
 	r.FirstAnswers = buildFirstAnswers(past, from)
 	r.Help = buildHelp(week)

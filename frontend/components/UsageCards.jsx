@@ -2,9 +2,12 @@ import Badge from "./Badge";
 import Panel from "./Panel";
 import {
   FIRST_ANSWERS_TARGET_MS,
+  LAPSED_LOOKBACK_WEEKS,
   NPS_MIN_ANSWERS,
+  SMALL_SAMPLE,
   attentionItems,
   countRows,
+  lapsedView,
   minutesText,
   neverOpenedScreens,
   pctText,
@@ -86,6 +89,53 @@ export function Attention({ report }) {
           Nothing dropped, nothing flagged, every screen and panel opened.
         </p>
       )}
+    </Panel>
+  );
+}
+
+/**
+ * "Stopped coming back" (#569): people who visited in the weeks before and
+ * not this week, by weeks away and role. DROP when the drop check raised the
+ * lapsed share, OK otherwise; under SMALL_SAMPLE people in the base, a note
+ * instead of a share. Absent from a report written before #569.
+ */
+export function Lapsed({ report }) {
+  const v = lapsedView(report);
+  const intro = `People who visited in the last ${LAPSED_LOOKBACK_WEEKS} weeks and did not visit this week.`;
+  if (!v) {
+    return (
+      <Panel title="Stopped coming back">
+        <p className="text-sm text-muted">Not in this report (written before #569).</p>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Stopped coming back">
+      <div className="space-y-3">
+        <p className="text-sm text-muted">{intro}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Figure label="Stopped coming back" value={`${v.users} of ${v.base}`} />
+          <Figure label="Share" value={v.tooFew ? "—" : pctText(v.share)} />
+        </div>
+        {v.tooFew ? (
+          <p className="text-sm">
+            Small sample: {v.base} {v.base === 1 ? "person" : "people"} visited in those weeks, under {SMALL_SAMPLE}. No share is given and no drop is raised.
+          </p>
+        ) : (
+          <p className="flex flex-wrap items-center gap-2 text-sm">
+            <Tag tag={v.rising ? "DROP" : "OK"} />
+            {v.rising ? "The share rose against the weeks before: see Needs your attention." : "The share did not rise against the weeks before."}
+          </p>
+        )}
+        {v.users === 0 ? (
+          <p className="text-sm text-muted">No one stopped coming back: everyone who visited in those weeks came back this week.</p>
+        ) : (
+          <>
+            <Counts caption="By weeks since the last visit" rows={v.weeksAway} head="People" />
+            <Counts caption="By role at the last visit" rows={v.byRole} head="People" />
+          </>
+        )}
+      </div>
     </Panel>
   );
 }
@@ -291,12 +341,18 @@ function Survey({ s }) {
   );
 }
 
-/** The eight cards, two columns on a desktop and one on a phone. */
+/**
+ * The eight cards and "Stopped coming back", two columns on a desktop and one
+ * on a phone. While the lapsed share rises that card sits under "Needs your
+ * attention" instead (UsageAnalytics), so it is not repeated here.
+ */
 export function QuestionCards({ report }) {
+  const rising = lapsedView(report)?.rising;
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Active a={report.active} />
       <Cohorts cohorts={report.cohorts ?? []} />
+      {rising ? null : <Lapsed report={report} />}
       <Panels p={report.panels} report={report} />
       <FirstAnswers f={report.first_answers} />
       <Help h={report.help} a={report.assistant} />
