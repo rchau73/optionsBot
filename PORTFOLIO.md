@@ -80,7 +80,7 @@ Workflow and guardrails in full: [AGENTIC.md](AGENTIC.md).
 3. **Two agent mistakes caught by the system, not by luck (2026-10-30).**
    A Dev agent's test fixture used realistic-looking fake keys, and the secret scan stopped the PR.
    Rebuilding that PR on the wrong base would have reverted two merged changes, and the Reviewer agent blocked it.
-   Both are now rules the agents follow.
+   Neither mistake reached the main branch.
 
 ---
 
