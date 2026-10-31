@@ -16,7 +16,8 @@ flowchart LR
         DEV["⑤ Dev agent · 6 min<br/>developer skill<br/>edit · test · commit"]
         PR["⑥ PR · In review<br/>checks re-run · CI"]
         REV["⑦ Reviewer agent · 6 min<br/>developer skill · Review mode<br/><b>read-only</b> · verified findings"]
-        H2(["⑧ Human reviews<br/>& merges · <b>gate 2</b>"])
+        GATE{"⑧ PR gate · 6 min<br/>changes policy?"}
+        H2(["Human reviews<br/>& merges · <b>gate 2</b><br/>policy PRs only"])
         DEP["⑨ Deploy · 6 min<br/>testnet only<br/>health check"]
         DONE["⑩ Done"]
         BLK["Blocked<br/>needs-human"]
@@ -25,7 +26,10 @@ flowchart LR
     PRD ==> H0 ==>|approved epics| PM
     BOTS ==> SME ==> TRI ==> PM ==>|"approved epic · rule area covered<br/>· prototype approved"| READY
     PM -->|outside the PRD| H1 --> READY
-    READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
+    READY --> DEV --> PR --> REV -->|no blocking finding| GATE
+    GATE ==>|"no: merges itself<br/>CI green · reviewed clean"| DEP
+    GATE -->|"yes: trading rules, risk, config,<br/>CI, agent permissions, release scripts"| H2 --> DEP
+    DEP --> DONE
     REV ==>|"🛑 blocking finding (bug): review posted + card back to Ready<br/>Dev fixes on the same PR · ≤ 2 rounds"| READY
     DEP -->|restart| BOTS
     DEV -.->|questions /<br/>failing checks| BLK -.->|answered| READY
@@ -39,7 +43,7 @@ flowchart LR
     class SME,PM sme
     class DEV,REV,DEP agent
     class H0,H1,H2 human
-    class PRD,TRI,READY,PR,DONE,BLK gh
+    class PRD,TRI,READY,PR,DONE,BLK,GATE gh
     class BOTS run
     style BIZ fill:#fffdf3,stroke:#f9a825,stroke-width:3px
     style ENG fill:#fafafa,stroke:#9e9e9e,stroke-width:1px,stroke-dasharray:4 3
