@@ -90,6 +90,29 @@ func Markdown(w io.Writer, r Report) error {
 		b.WriteString("\n")
 	}
 
+	if l := r.Lapsed; l != nil {
+		section("Lapsed", "Q2")
+		fmt.Fprintf(&b, "People who visited in the last %d weeks and did not visit this week (a visit = a `session_started`).\n\n", LapsedLookbackWeeks)
+		share := fmtPct(l.SharePct)
+		if l.Note != "" {
+			share = fmt.Sprintf("— (%s: %d people in the base, under %d)", l.Note, l.Base, DropMinBase)
+		}
+		b.WriteString("| Lapsed | Base | Share | " + strings.Join(roles, " | ") + " |")
+		for _, k := range LapsedWeeksAway {
+			fmt.Fprintf(&b, " %s wk away |", k)
+		}
+		b.WriteString("\n")
+		b.WriteString("|---:|---:|---|" + strings.Repeat("---:|", len(roles)+len(LapsedWeeksAway)) + "\n")
+		fmt.Fprintf(&b, "| %d | %d | %s |", l.Users, l.Base, share)
+		for _, k := range roles {
+			fmt.Fprintf(&b, " %d |", l.ByRole[k])
+		}
+		for _, k := range LapsedWeeksAway {
+			fmt.Fprintf(&b, " %d |", l.WeeksAway[k])
+		}
+		b.WriteString("\n\nBase = people with a visit in those weeks. Weeks away = weeks since the last visit; role = the role of that visit.\n\n")
+	}
+
 	if p := r.Panels; p != nil {
 		section("What is opened", "Q3")
 		countTable(&b, "Panel opened", p.Opens)

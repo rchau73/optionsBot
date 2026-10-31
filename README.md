@@ -492,6 +492,8 @@ Sections, each naming the source file and the span of its accepted events:
 
 - **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
 - **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 4 before it, and how many had any event in each later week (+1 … +4; a week not yet ended is `—`).
+- **Lapsed** (Q2, #569; JSON `lapsed`) — people with a `session_started` in the 4 weeks before the week and none in it, by the role of their last visit and by weeks since it (1, 2, 3, 4+), the base (people with a visit in those weeks) and the share; under 10 in the base a "too few to judge" note and no share.
+  The drop check raises `lapsed_share` when that share is 20 points or more over the 3 weeks before. Counts only, never a user id.
 - **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen — one per page of the monitor's menu (`overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`) plus `login` (#424).
 - **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
 - **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.

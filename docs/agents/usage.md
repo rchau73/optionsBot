@@ -14,7 +14,8 @@ It makes no Claude call, never reads bot state and places no order.
    **Live accounts:** an environment whose `.env` has `DERIBIT_ENV=live` gets percentages only.
 
 **Drop rules** (`internal/usage/drops.go`, fixed; `cmd/usage -alert-*` flags study them): weekly active users or help used (tips opened + videos played) at least 30 % under the mean of the 3 weeks before; the first-answers, manual-close or rebalance funnel's completion share at least 20 points under those weeks'.
-A base under 10 users (or 10 funnel starts, in the base and in the week) is `too few to judge`.
+The share of people who stopped coming back (`lapsed_share`, #569: active in the 4 weeks before, no visit in the week) at least 20 points over those weeks'; the issue names it "people who stopped coming back".
+A base under 10 users (or 10 funnel starts, or 10 people active in the 4 weeks before, in the base and in the week) is `too few to judge`.
 A week with no events is noted and left out of the base, never counted as zero.
 
 A missing or empty events file, or one with no event in the week, is logged and skipped.
