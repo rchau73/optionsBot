@@ -21,6 +21,9 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - not comparable — missing hours listed, no gap — under 90 % market coverage, a market gap over 3 h, coverage not measured or no replay;
     - causes only from the journal (frozen slot-hours, startup rebalance orders, closes with an `Actor`);
     - `Inputs.Account` (`DeribitAccount(root)`, set by `cmd/evidence`) = `live` drops every amount from its Markdown and JSON (% only).
+  - the account reconciliation (`reconcile.go`, #566, `Report.Recon`): pure `BuildReconciliation` — the margin balance at the first and last history point in the week carrying one, the journal's closes in between (net of fees; USD balance → each close's `PnLUSD`, else the history's spot);
+    - gap = change − booked, in the unit and % of the starting balance, flagged over `ReconcileTolerancePct` (1) with `ReconcileCauses` (pinned by `tests/evidence_reconcile_test.go`);
+    - under two balance points → "not enough history", no gap; days without one listed; `live` → % only; `evidence_week.py` `recon_cell` posts the % on E2.
   - the twelve-week scoreboard (`scoreboard.go`, #537, `Report.Score`): PRD §6's kill test as of the report's week, pure `ScoreWeeks` over the last `ScoreboardWeeks` (12) weekly reports with both returns known
     (`Inputs.Earlier`, read by `Load` with `ReadWeekly` from `Paths.Root`; this week's own `Hold`; a report of the same or a later week is ignored);
     - `SharpeRatio` = mean ÷ sample sd, nil under 2 values or an sd ≤ 1e-9; status `meets` / `fails` / `not enough weeks` / `no spread`, ISO weeks missing from the first counted week on;

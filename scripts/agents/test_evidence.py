@@ -74,6 +74,25 @@ class Week(unittest.TestCase):
         self.assertEqual(evidence_week.previous_week(dt.date(2027, 1, 4)), "2026-W53")
 
 
+class ReconCell(unittest.TestCase):
+    """The account reconciliation's cell (#566): % only, flagged over the tolerance."""
+
+    def test_within_tolerance(self):
+        r = report(reconciliation={"known": True, "gap_pct": 0.0, "gap": 0.0, "flagged": False, "tolerance_pct": 1})
+        self.assertEqual(evidence_week.recon_cell(r), "+0.00 % (within tolerance)")
+
+    def test_flagged_never_shows_the_amount(self):
+        r = report(reconciliation={"known": True, "gap_pct": -25.5, "gap": -0.51, "flagged": True, "tolerance_pct": 1})
+        cell = evidence_week.recon_cell(r)
+        self.assertEqual(cell, "⚠ -25.50 % over 1 %")
+        self.assertNotIn("0.51", cell)
+
+    def test_not_enough_history_and_older_reports(self):
+        r = report(reconciliation={"known": False, "note": "not enough history: 1 margin-balance point(s) in the week"})
+        self.assertEqual(evidence_week.recon_cell(r), "— (not enough history: 1 margin-balance point(s) in the week)")
+        self.assertEqual(evidence_week.recon_cell(report()), "— (not measured)")
+
+
 class Comment(unittest.TestCase):
     def setUp(self):
         self.envs = tempfile.mkdtemp()
@@ -102,6 +121,7 @@ class Comment(unittest.TestCase):
         self.assertIn("live +6.20 % (+26.57 % / 30 d) · replay +7.15 % (+30.64 % / 30 d)", row)  # return on margin
         self.assertIn("| -25.60 % |", row)                     # equity not explained by the bot (#277)
         self.assertNotIn("0.5123", row)                        # never the residual's amount
+        self.assertIn("| — (not measured) |", row)             # account vs booked P&L: a report before #566
         self.assertIn("-1.30 % (hold +4.20 %)", row)           # excess vs hold
         self.assertIn("-0.0040 BTC (-0.20 %)", row)            # worst 7 days
         self.assertIn("+0.0020 BTC (+0.10 %)", row)            # replay gap, % of equity

@@ -86,26 +86,27 @@ type Inputs struct {
 // Report is the weekly evidence of one bot. Amounts are coin unless named
 // USD; it stays in data/ (gitignored).
 type Report struct {
-	Env       string       `json:"env"`
-	Bot       string       `json:"bot"`
-	Week      string       `json:"week"`
-	From      time.Time    `json:"from"`
-	To        time.Time    `json:"to"` // exclusive
-	Live      Live         `json:"live"`
-	Bridge    Bridge       `json:"bridge"`
-	Replay    Replay       `json:"replay"`
-	Gap       Gap          `json:"gap"`
-	Stress    Stress       `json:"stress"`
-	Hold      Hold         `json:"hold"`
-	Util      Util         `json:"utilisation"`
-	ROM       ROM          `json:"return_on_margin"`
-	Missing   Missing      `json:"missing"`
-	E1        Reliability  `json:"e1_reliability"`
-	Coverage  Coverage     `json:"coverage"`
-	RVL       ReplayVsLive `json:"replay_vs_live"`
-	Score     Scoreboard   `json:"scoreboard"`
-	Equity    float64      `json:"equity"` // coin, at the start (0 = unknown)
-	EquitySrc string       `json:"equity_source"`
+	Env       string         `json:"env"`
+	Bot       string         `json:"bot"`
+	Week      string         `json:"week"`
+	From      time.Time      `json:"from"`
+	To        time.Time      `json:"to"` // exclusive
+	Live      Live           `json:"live"`
+	Bridge    Bridge         `json:"bridge"`
+	Recon     Reconciliation `json:"reconciliation"`
+	Replay    Replay         `json:"replay"`
+	Gap       Gap            `json:"gap"`
+	Stress    Stress         `json:"stress"`
+	Hold      Hold           `json:"hold"`
+	Util      Util           `json:"utilisation"`
+	ROM       ROM            `json:"return_on_margin"`
+	Missing   Missing        `json:"missing"`
+	E1        Reliability    `json:"e1_reliability"`
+	Coverage  Coverage       `json:"coverage"`
+	RVL       ReplayVsLive   `json:"replay_vs_live"`
+	Score     Scoreboard     `json:"scoreboard"`
+	Equity    float64        `json:"equity"` // coin, at the start (0 = unknown)
+	EquitySrc string         `json:"equity_source"`
 }
 
 // Live is what the bot did: the journal's closes in the window (realised,
@@ -234,6 +235,7 @@ func Build(in Inputs) Report {
 	}
 	r.Live = buildLive(in)
 	r.Bridge = BuildBridge(in.Points, w.From, w.To, in.History)
+	r.Recon = BuildReconciliation(in.Points, in.Trades, w, in.Account, in.History, in.Journal)
 	r.Hold = buildHold(in, r.Live.Perf)
 	r.Score = buildScoreboard(in, r.Hold)
 	r.Util = Util{Source: in.History, Stats: history.Utilisation(in.Points, w.From, w.To)}
