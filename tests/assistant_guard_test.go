@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"os"
 	"slices"
 	"strings"
@@ -214,6 +215,81 @@ func TestAssistantGuard_GoldenSet(t *testing.T) {
 			if v := guard.Check(bad, passages); v.OK {
 				t.Errorf("%s: must_not_say %q passes the guard", q.ID, phrase)
 			}
+		}
+	}
+}
+
+// languageCase is a case of tests/testdata/assistant_language_cases.json,
+// shared with the JavaScript twin's test (#565).
+type languageCase struct {
+	Name      string   `json:"name"`
+	Text      string   `json:"text"`
+	Citations []string `json:"citations"`
+	Reason    string   `json:"reason"`
+}
+
+func loadLanguageCases(t *testing.T) []languageCase {
+	t.Helper()
+	data, err := os.ReadFile("testdata/assistant_language_cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		Cases []languageCase `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &file); err != nil {
+		t.Fatal(err)
+	}
+	for i := range file.Cases {
+		file.Cases[i].Text = strings.ReplaceAll(file.Cases[i].Text, "{refusal}", guard.Refusal)
+	}
+	return file.Cases
+}
+
+// Scenario (#565): a Portuguese answer with a valid citation is rejected with
+// reason "language" — the case file the JavaScript twin's test reads too, so
+// both guards agree on the same cases; English answers pass.
+func TestAssistantGuard_PortugueseAnswerIsRejected(t *testing.T) {
+	cases := loadLanguageCases(t)
+	if len(cases) == 0 {
+		t.Fatal("no language cases")
+	}
+	for _, c := range cases {
+		v := checkAnswer(t, c.Text, c.Citations...)
+		if c.Reason == "" {
+			if !v.OK {
+				t.Errorf("%s: %q rejected: %v", c.Name, c.Text, v.Details)
+			}
+			continue
+		}
+		// Only the language: a citation or number slip would hide what the case pins.
+		if !slices.Equal(v.Reasons, []string{c.Reason}) {
+			t.Errorf("%s: %q verdict %+v, want only %s", c.Name, c.Text, v, c.Reason)
+		}
+		if !strings.HasPrefix(v.Details[0], guard.ReasonLanguage+": ") || !strings.HasSuffix(v.Details[0], "words are English") {
+			t.Errorf("%s: detail %q does not count the English words", c.Name, v.Details[0])
+		}
+	}
+}
+
+// Scenario (#565): a normal English answer is unaffected — every canonical
+// reply and every passage of the English help (the text an answer quotes),
+// cited to itself, clears the language check. A fragment of under five words
+// with no common English word (a heading alone) fails closed and is asked
+// once more: assistant_language_cases.json pins one.
+func TestAssistantGuard_EnglishIsNeverLanguage(t *testing.T) {
+	for _, reply := range []string{guard.DontKnow, guard.Refusal, guard.FallbackReply, guard.DontKnow + " " + guard.Refusal} {
+		if v := checkAnswer(t, reply); !v.OK {
+			t.Errorf("canonical reply %q rejected: %v", reply, v.Details)
+		}
+	}
+	for _, p := range helpPassages(t) {
+		if _, words := guard.EnglishShare(p.Text); words < 5 {
+			continue
+		}
+		v := guard.Check(guard.Answer{Text: p.Text, Citations: []string{p.ID}}, []helpkb.Passage{p})
+		if slices.Contains(v.Reasons, guard.ReasonLanguage) {
+			t.Errorf("help passage %s reads as not English: %v", p.ID, v.Details)
 		}
 	}
 }
