@@ -183,6 +183,7 @@ The **Ask** button at the bottom right of every page opens a panel. You write a 
 **What it will not do**: it gives no advice and no forecasts. It says "I don't know" when the sources do not cover the question. A question about money or timing, such as "should I close this?" or "where will the price go?", is refused.
 It answers in its own words and never just sends you to read a document.
 When it cannot back an answer with the bot's records and the help, it says it couldn't confirm an answer and won't guess.
+It answers in English, whatever language you write in: its checks for advice and forecasts read English only, so an answer in another language is never shown.
 
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 

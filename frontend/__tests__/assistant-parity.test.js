@@ -36,6 +36,16 @@ test.each([
   expect(phrases[jsName]).toEqual(goPatterns(goName));
 });
 
+test("englishWords equals ENGLISH_WORDS and minEnglishShare MIN_ENGLISH_SHARE (#565)", () => {
+  const start = goFile.indexOf("var englishWords = wordSet(");
+  expect(start).toBeGreaterThanOrEqual(0);
+  const block = goFile.slice(start, goFile.indexOf("\n)\n", start));
+  expect(phrases.ENGLISH_WORDS).toEqual([...block.matchAll(/"([^"]*)"/g)].map((m) => m[1]));
+  const share = goFile.match(/\nconst minEnglishShare = ([\d.]+)\n/);
+  expect(share).not.toBeNull();
+  expect(phrases.MIN_ENGLISH_SHARE).toBe(Number(share[1]));
+});
+
 test.each([
   ["DontKnow", "DONT_KNOW"],
   ["Refusal", "REFUSAL"],
