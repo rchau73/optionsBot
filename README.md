@@ -7,6 +7,8 @@
 > **🤖 This is also an agentic-development project.** AI agents watch the running bots, file issues, and implement approved issues as tested pull requests, with a person approving what gets built and what gets merged.
 > How it works and its guardrails: **[AGENTIC.md](AGENTIC.md)**.
 
+> **👋 Recruiters and hiring managers:** a one-page summary of the project, my role and the skills it shows is in **[PORTFOLIO.md](PORTFOLIO.md)**.
+
 A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https://www.deribit.com), manages them through their life (fill tracking, take-profit, rolls, stop-loss, regime-based leg shedding, kill switch) and backtests the same rules on historical data.
 
 > **⚠️ Disclaimer — read first.** This is a personal **software-engineering study**: a Go concurrency and system-design exercise that runs against a real derivatives exchange.
