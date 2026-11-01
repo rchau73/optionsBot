@@ -92,6 +92,7 @@ Statements about Deribit's behaviour are **assumption** unless a source and date
 2. **Check at connect time from Deribit's own reply.** `public/auth` returns the granted `scope` string (already received in `Gateway.authenticate`). Parse it with a pure function (`KeyScopeOf(scope, now)`: trade, wallet, account levels, expiry; unknown tokens ignored), keep the last result on the trading gateway only (public-only gateways have none) and expose a `key_scope` object in `/api/status` (`trade`, `wallet`, `withdraw_rights`, `can_trade`, `checked_at`). Never expose the raw scope string or any key identifier.
 3. **Warn, then refuse.** Report-only first: a WARN per authentication when withdrawal rights are present, an ERROR when trade is missing. For customers the bot must **refuse to start** with a withdraw-enabled key; for the platform's own running bots that is a person's call, because it could stop a live bot (product owner go/no-go).
 4. **Encrypted at rest.** Keys stored encrypted (a data key per secret, the master key from the environment or a secret manager, never in the repository or `.env.example`); decrypted only into the one process that needs it; never logged (the repository already refuses secrets in commits: `make hooks`, gitleaks).
+   Package: `internal/keystore` (#572) — `Put`/`Get`/`Revoke`/`List`, a data key per secret wrapped by `KEYSTORE_MASTER_KEY` (or `KEYSTORE_MASTER_KEY_FILE`), withdrawal-enabled or unreadable scopes refused, owner-only `data/keystore.json`; not wired to `cmd/bot` yet (the production master-key source is a person's choice).
 5. **Revocable and rotatable.** The customer can revoke the key at Deribit at any time; an authentication failure after a working session is treated as "key revoked": stop new risk and alert (nothing can be sent anyway). Rotation = replace the secret and restart that one account's process (the startup reconcile of section 1 then applies, so the startup guard matters). Whether Deribit keys expire by themselves is an assumption to confirm.
 6. **No key, client id or raw scope in logs, journal or API.**
 7. **Per-tenant view in the monitor:** account label, key-scope status, last authentication time, environment (live|testnet) — never the key.
@@ -112,7 +113,7 @@ Implementation stories this implies (to be filed only after the unit is chosen):
 
 1. Account registry and per-account process deploy (generalise `env_check` to refuse a shared account for any two bots).
 2. `KeyScopeOf` and `key_scope` in `/api/status` (report only), then refusal of withdraw-enabled keys for customer accounts.
-3. Encrypted key storage and the rotation/revocation flow.
+3. Encrypted key storage and the rotation/revocation flow — **started** (#572: the store, `internal/keystore`; the flow that uses it is still to come).
 4. Startup guard: stop and report on foreign orders/positions.
 5. Label-scoped startup cancel and kill-switch cancel; platform-unique label prefix.
 6. Journal-owned adoption and flatten (stress/replay study first).
