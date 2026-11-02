@@ -7,9 +7,10 @@
 // and the question, the sources, the model's text and what was shown are
 // logged for review. An answer with no citation becomes "I don't know"; an
 // answer rejected for a number or a citation from nowhere, or for sending the
-// person to a document, is asked once more with what failed (#534); any other
+// person to a document, or for not being in English (#565), is asked once
+// more with what failed (#534); any other
 // rejected answer, or a second rejection, becomes the fallback reply.
-import { REASON_NO_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, check, isCanonical } from "./guard";
+import { REASON_LANGUAGE, REASON_NO_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, check, isCanonical, isEnglish } from "./guard";
 import { appendLine, newAnswerId } from "./log";
 import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
 import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyChecklist, looksLikeReport } from "./request";
@@ -451,8 +452,10 @@ function outcomeOf(reply, verdict) {
 }
 
 // The rejections worth one more try (#534): a slip the model can fix from the
-// same sources. Advice and forecasts are never retried, nor an answer citing nothing.
-const RETRIED = [REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, REASON_POINTS_TO_DOCUMENT];
+// same sources, or an answer not in English (#565), which the advice and
+// forecast checks cannot read. Advice and forecasts are never retried, nor an
+// answer citing nothing.
+const RETRIED = [REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_LANGUAGE];
 
 /** The findings of one reason in a verdict's details ("ungrounded_number: 27" → "27"). */
 const findings = (verdict, reason) => verdict.details.filter((d) => d.startsWith(`${reason}: `)).map((d) => d.slice(reason.length + 2));
@@ -471,6 +474,7 @@ export function retryFeedback(verdict) {
   if (unknown.length) said.push(`${unknown.join(", ")} ${isAre(unknown)} among the listed sources: cite only the ids in square brackets.`);
   const pointers = findings(verdict, REASON_POINTS_TO_DOCUMENT);
   if (pointers.length) said.push(`Don't send the person to a document, guide or section ("${pointers.join('", "')}"): say what the source says, in your own words.`);
+  if (verdict.reasons.includes(REASON_LANGUAGE)) said.push("Your answer was not in English: answer in English, whatever language the question is in.");
   return said.join(" ");
 }
 
@@ -596,7 +600,11 @@ export async function answerQuestion({
 
   let reply = null;
   let verdict = null;
-  if (noAnswer(hits) && facts.length === 0 && live.length === 0) {
+  // A question not in English (#565) matches the English help poorly: its
+  // best hits go to the model anyway, so an advice or forecast question gets
+  // the refusal, not "I don't know"; the guard checks the answer as any other.
+  const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
+  if (!closeEnough && facts.length === 0 && live.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;

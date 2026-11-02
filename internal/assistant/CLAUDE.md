@@ -22,10 +22,12 @@ bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set r
     — `frontend/__tests__/assistant-*.test.js` keep phrases, guard cases, golden set and search baseline equal to the Go side, so a change here changes both:
   - `Check(Answer{Text, Citations}, passages)` rejects with `no_citation` (unless the text is exactly a canonical reply: `DontKnow`, `Refusal`, `FallbackReply`), `unknown_citation`,
     `ungrounded_number` (a number/percentage/date in no cited passage; 0.30 = 30 %), `advice`, `forecast`,
-    `points_to_document` ("see the guide": the assistant answers, never points to a document, #534);
+    `points_to_document` ("see the guide": the assistant answers, never points to a document, #534),
+    `language` (#565: under `minEnglishShare` (10 %) of the words are `englishWords`, the canonical replies left out — the lists read English only, so anything else fails closed; cases shared with the twin in `tests/testdata/assistant_language_cases.json`);
   - `Fallback` is the safe reply, naming no document;
-    the monitor asks the model once more (with what failed) before it, for an answer rejected only for `ungrounded_number`, `unknown_citation` or `points_to_document` (`retryFeedback`).
-  Phrase lists and replies live in `phrases.go` only (counsel's L11 answer changes a list).
+    the monitor asks the model once more (with what failed) before it, for an answer rejected only for `ungrounded_number`, `unknown_citation`, `points_to_document` or `language` (`retryFeedback`);
+    a question not in English sends its best help hits to the model even when none is close (`isEnglish`), so advice gets the refusal, not "I don't know".
+  Phrase lists, the English word list and replies live in `phrases.go` only (counsel's L11 answer changes a list).
   The answer contract is `docs/product/assistant/contract.md` (needs legal review);
   - the golden set `docs/product/assistant/golden.jsonl` (#313, #258: categories with minimum counts, expected sources, `must_say`/`must_not_say`, refuse/dont_know)
     is checked by `tests/assistant_questions_test.go` (sources resolve to OptionStrategy.md headings or index passages, one question per tuned setting and per close reason `PlainReason` explains)

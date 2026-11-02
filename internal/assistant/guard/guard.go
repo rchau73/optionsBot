@@ -1,6 +1,8 @@
 // Package guard checks an assistant answer before it could be shown (#260,
 // E10): it must cite the help, its numbers must come from what it cites, and
-// it must not advise, forecast or send the person to a document (#534). Pure:
+// it must not advise, forecast or send the person to a document (#534), and
+// it must be written in English, the only language the phrase lists read
+// (#565: anything else fails closed). Pure:
 // no model, no network. The monitor's assistant (#191) runs its JavaScript
 // twin, frontend/lib/assistant/guard.js, whose tests keep both equal (phrases,
 // cases, golden set): change both. The answer contract it enforces is
@@ -8,6 +10,7 @@
 package guard
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -24,6 +27,7 @@ const (
 	ReasonAdvice           = "advice"             // tells the user what to do
 	ReasonForecast         = "forecast"           // says what prices or returns will be
 	ReasonPointsToDocument = "points_to_document" // sends the person to a document instead of answering (#534)
+	ReasonLanguage         = "language"           // not written in English, so the phrase lists cannot judge it (#565)
 )
 
 // Answer is an assistant answer: its text and the passages it cites, each a
@@ -102,6 +106,10 @@ func Check(a Answer, sources []helpkb.Passage) Verdict {
 			v.add(ReasonPointsToDocument, strings.Trim(m, " \t\n.!?:;,("))
 		}
 	}
+	if !IsEnglish(text) {
+		english, words := EnglishShare(text)
+		v.add(ReasonLanguage, fmt.Sprintf("%d of %d words are English", english, words))
+	}
 
 	v.OK = len(v.Reasons) == 0
 	return v
@@ -119,6 +127,34 @@ func IsCanonical(text string) bool {
 	t := strings.Join(strings.Fields(text), " ")
 	// "I don't know" for the facts and the refusal for the advice (#427).
 	return t == DontKnow || t == Refusal || t == FallbackReply || t == DontKnow+" "+Refusal
+}
+
+// wordRe finds the words of a text: runs of letters ("don't" is "don", "t").
+var wordRe = regexp.MustCompile(`\p{L}+`)
+
+// EnglishShare counts the words of a text and how many of them are common
+// English words (englishWords), the canonical replies left out: they are
+// English, and one added to a Portuguese answer must not make it pass (#565).
+// A text with no word (numbers only) counts 0 words: nothing to judge.
+func EnglishShare(text string) (english, words int) {
+	t := strings.Join(strings.Fields(text), " ")
+	for _, reply := range []string{DontKnow, Refusal, FallbackReply} {
+		t = strings.ReplaceAll(t, reply, " ")
+	}
+	for _, w := range wordRe.FindAllString(t, -1) {
+		words++
+		if englishWords[strings.ToLower(w)] {
+			english++
+		}
+	}
+	return english, words
+}
+
+// IsEnglish is false when the text has words and under minEnglishShare of
+// them are common English words (#565).
+func IsEnglish(text string) bool {
+	english, words := EnglishShare(text)
+	return words == 0 || float64(english) >= minEnglishShare*float64(words)
 }
 
 // citedPassages resolves each citation by passage id or by source; one that

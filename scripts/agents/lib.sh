@@ -52,6 +52,16 @@ for x in (d[sys.argv[2]] if len(sys.argv) > 2 else d): print(x)' "$@"
 repo_slug() { gh repo view --json nameWithOwner -q .nameWithOwner; }
 repo_owner() { repo_slug | cut -d/ -f1; }
 
+# The repository is public: anyone may comment, review or (once the interaction
+# limit lapses) open an issue. The agents read only the owner's text — the
+# account they post as — so no one else's words reach a prompt or a marker
+# parser (#575). mine_jq <slug> → jq definitions to put before a gh -q filter:
+#   mine         keeps the items of an array the owner wrote (gh's .author.login or the API's .user.login)
+#   own_body     an issue's or PR's body if the owner wrote it, else a note that it was left out
+mine_jq() {
+  printf 'def mine: map(select((.author.login // .user.login) == "%s")); def own_body: if (.author.login // .user.login) == "%s" then (.body // "") else "(left out: not written by the repository owner)" end; ' "${1%%/*}" "${1%%/*}"
+}
+
 # The board's ids rarely change, and Project queries are expensive in GitHub's
 # GraphQL budget (a burst of them trips the secondary rate limit), so they are
 # cached in data/agents/project.json for a day. setup_github.sh clears it.
@@ -195,7 +205,7 @@ ready_next() {
 # when it is free. "human: …" means a dependency was closed as not planned.
 waiting_reason() {
   local body deps n states="{" sep=""
-  body="$(gh issue view "$1" -R "$(repo_slug)" --json body -q .body)"
+  body="$(gh issue view "$1" -R "$(repo_slug)" --json author,body -q "$(mine_jq "$(repo_slug)")own_body")"
   deps="$(printf '%s' "$body" | python3 "$AGENT_REPO_DIR/scripts/agents/pm_board.py" deps)"
   for n in $deps; do
     states="$states$sep\"$n\": $(gh issue view "$n" -R "$(repo_slug)" --json state,stateReason -q '{state, reason: .stateReason}' 2>/dev/null || echo '{"state": "OPEN"}')"
@@ -266,7 +276,7 @@ check_failed() {
   local issue="$1" item="$2" body="$3" source="$4" sha="${5:-}" slug hist n step
   local cf="$AGENT_REPO_DIR/scripts/agents/checkfail.py"
   slug="$(repo_slug)"; hist="$AGENT_STATE_DIR/check-failed-$$.json"
-  gh issue view "$issue" -R "$slug" --json comments > "$hist" < /dev/null || echo '{"comments": []}' > "$hist"
+  gh issue view "$issue" -R "$slug" --json comments -q "$(mine_jq "$slug")"'{comments: (.comments | mine)}' > "$hist" < /dev/null || echo '{"comments": []}' > "$hist"
   n="$(python3 "$cf" count "$hist")"; rm -f "$hist"
   step="$(python3 "$cf" next "$n")"
   if [[ "$step" == "needs-fix" ]]; then
