@@ -10,7 +10,8 @@ import { setAnalyticsConsent, track } from "@/lib/track";
 // stored analytics answer once, then sends one screen_viewed per page shown
 // (and per topic of the admin Analytics page, #473). Nothing is sent until
 // that answer is a yes (lib/track.js); no answer, a no or a failed read sends
-// nothing. Renders nothing. It reads the query string, so the layout wraps it
+// nothing. A yes given later on the consent notice or in Account (#577) sets
+// the sender itself, so the next page is counted. Renders nothing. It reads the query string, so the layout wraps it
 // in a Suspense boundary.
 export default function ScreenTracker() {
   const pathname = usePathname();

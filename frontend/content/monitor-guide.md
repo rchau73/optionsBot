@@ -146,7 +146,7 @@ When IM is over the limit by 1.5 points or less and the limit has not changed, t
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand. No bot trades these, but they use margin, so they are shown.
 
-**Privacy** has your switch for the monthly question in the assistant. It is off after you choose "Don't ask me again"; turn it back on here.
+**Privacy** has your usage analytics switch, showing your answer (Yes, No or Not asked yet); switching it off stops collection at once, and events already stored stay until you delete your account. It also has your switch for the monthly question in the assistant. It is off after you choose "Don't ask me again"; turn it back on here.
 
 **When something looks wrong**:
 - "IM over limit since …" means margin used is above the limit. The bot only warns; it sells and buys nothing to correct it by itself.
@@ -294,9 +294,11 @@ The monitor collects usage analytics only if you say yes. Your answer is stored 
 
 **What the monitor collects about me**: which pages and features are used and how (for example that a help video was played), under a random session code. Events outside a fixed list are refused. **What it does not collect**: no keys, no passwords, no amounts, no positions, no orders and no text you type in the assistant.
 
-**How to say yes or no**: in Account, Privacy. Saying no stops collection at once. Every change of your answer is recorded in the audit trail.
+**The consent question**: the first time you sign in, a card above the page asks once whether the monitor may record how you use it. Yes and No look the same and nothing is chosen for you. The card has no close button: an answer closes it, and it does not come back. It never covers the page, and nothing is sent until you say yes. If your answer could not be saved, the card says "Not saved" and offers Try again.
 
-**What happens to events already stored**: they stay until you ask for their deletion. Deletion on request is done by the team; ask an admin.
+**How to say yes or no**: on that card, or at any time in Account, Privacy, where the usage analytics switch shows your answer (Yes, No or Not asked yet). Saying no stops collection at once. Every change of your answer is recorded in the audit trail.
+
+**What happens to events already stored**: they stay until you ask for their deletion. Deleting your account deletes them (Delete my account in the account menu); an admin can also delete them on request.
 
 Learn more: "The monthly survey" in this guide.
 

@@ -2,6 +2,7 @@
 
 import Header from "./Header";
 import AccountPanel from "./AccountPanel";
+import AnalyticsConsentSettings from "./AnalyticsConsentSettings";
 import OtherPositions from "./OtherPositions";
 import PrivacySettings from "./PrivacySettings";
 import { useMonitor } from "@/hooks/useMonitor";
@@ -39,7 +40,10 @@ export function AccountView({ bots, error = null, polledAt }) {
         </section>
         <section aria-label="Privacy" className="rounded-lg border border-line bg-panel p-3">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Privacy</h2>
-          <PrivacySettings />
+          <div className="space-y-3">
+            <AnalyticsConsentSettings />
+            <PrivacySettings />
+          </div>
         </section>
       </main>
     </div>
