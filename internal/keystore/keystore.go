@@ -119,30 +119,53 @@ func Open(path string, masterKey []byte) (*Store, error) {
 }
 
 func (s *Store) load() error {
-	err := checkOwnerOnly(s.path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
+	accounts, err := readFile(s.path)
 	if err != nil {
 		return err
 	}
-	raw, err := os.ReadFile(s.path)
+	s.accounts = accounts
+	return nil
+}
+
+// ListFile is List of the store at path without the master key: labels,
+// statuses and scope statuses are not encrypted, so an admin check (the
+// account registry, #585) reads them without unsealing anything. A missing
+// file is an empty list; a file readable by group or others is refused.
+func ListFile(path string) ([]Entry, error) {
+	accounts, err := readFile(path)
 	if err != nil {
-		return fmt.Errorf("keystore: read %s: %w", s.path, err)
+		return nil, err
+	}
+	return entries(accounts), nil
+}
+
+// readFile reads the store's records; a missing file is an empty store.
+func readFile(path string) (map[string]*record, error) {
+	accounts := map[string]*record{}
+	err := checkOwnerOnly(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return accounts, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("keystore: read %s: %w", path, err)
 	}
 	var fd fileData
 	if err := json.Unmarshal(raw, &fd); err != nil {
-		return fmt.Errorf("keystore: parse %s: %w", s.path, err)
+		return nil, fmt.Errorf("keystore: parse %s: %w", path, err)
 	}
 	if fd.Version != fileVersion {
-		return fmt.Errorf("keystore: %s has version %d, want %d", s.path, fd.Version, fileVersion)
+		return nil, fmt.Errorf("keystore: %s has version %d, want %d", path, fd.Version, fileVersion)
 	}
 	for id, r := range fd.Accounts {
 		if r != nil {
-			s.accounts[id] = r
+			accounts[id] = r
 		}
 	}
-	return nil
+	return accounts, nil
 }
 
 // checkOwnerOnly refuses a file that the group or others may read or write.
@@ -271,8 +294,13 @@ func (s *Store) Revoke(accountID string) error {
 func (s *Store) List() []Entry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]Entry, 0, len(s.accounts))
-	for id, r := range s.accounts {
+	return entries(s.accounts)
+}
+
+// entries lists records as Entries sorted by account id.
+func entries(accounts map[string]*record) []Entry {
+	out := make([]Entry, 0, len(accounts))
+	for id, r := range accounts {
 		out = append(out, Entry{AccountID: id, Label: r.Label, Status: r.Status, KeyScope: r.KeyScope, UpdatedAt: r.UpdatedAt, RevokedAt: r.RevokedAt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].AccountID < out[j].AccountID })

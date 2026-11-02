@@ -111,7 +111,7 @@ Statements about Deribit's behaviour are **assumption** unless a source and date
 
 Implementation stories this implies (to be filed only after the unit is chosen):
 
-1. Account registry and per-account process deploy (generalise `env_check` to refuse a shared account for any two bots).
+1. Account registry and per-account process deploy (generalise `env_check` to refuse a shared account for any two bots) — **started** (#585: the registry, `internal/accounts` and `cmd/accounts -check`; read-only, one bot per account × currency, each account's key-scope status from the key store; the deploy tooling and `env_check` are unchanged).
 2. `KeyScopeOf` and `key_scope` in `/api/status` (report only), then refusal of withdraw-enabled keys for customer accounts.
 3. Encrypted key storage and the rotation/revocation flow — **started** (#572: the store, `internal/keystore`; the flow that uses it is still to come).
 4. Startup guard: stop and report on foreign orders/positions.

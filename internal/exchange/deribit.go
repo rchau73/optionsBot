@@ -7,6 +7,13 @@ import (
 	"optionsbot/internal/orders"
 )
 
+// Deribit is the exchange's key in data that names an exchange (the account
+// registry, internal/accounts, #585).
+const Deribit = "deribit"
+
+// Names are the exchanges the bot has an adapter for.
+var Names = []string{Deribit}
+
 // Compile-time checks that today's Deribit implementation satisfies every
 // interface of this package. A change to either side that breaks the fit
 // fails the build here.
