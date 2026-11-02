@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import AssistantProvider from "@/components/AssistantProvider";
+import ConsentNotice from "@/components/ConsentNotice";
 import MenuBar from "@/components/MenuBar";
 import ScreenTracker from "@/components/ScreenTracker";
 import { viewer } from "@/lib/auth/viewer";
@@ -35,6 +36,8 @@ export default async function RootLayout({ children }) {
               <ScreenTracker />
             </Suspense>
           ) : null}
+          {/* The one-time analytics question (#577), above the page and never over it; signed in only. */}
+          {me ? <ConsentNotice /> : null}
           {children}
         </AssistantRoot>
       </body>

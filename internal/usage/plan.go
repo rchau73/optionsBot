@@ -40,8 +40,10 @@ var boolRule = Rule{Type: "bool"}
 var Properties = map[string]Rule{
 	"allowed": boolRule,
 	// The kind of the assistant's reply, never its text (#424).
-	"answer":     enumOf(AssistantAnswers...),
-	"came_for":   enumOf(fourAnswers...),
+	"answer":   enumOf(AssistantAnswers...),
+	"came_for": enumOf(fourAnswers...),
+	// The person's analytics answer (#577); only a yes can be sent.
+	"consent":    enumOf("yes", "no"),
 	"elapsed_ms": duration(hourMs),
 	// The assistant panel's opener (#408).
 	"entry":           enumOf("menu", "why"),
@@ -96,6 +98,8 @@ var Events = map[string][]string{
 	"assistant_flag":         {},
 	"assistant_helpful":      {"helped"},
 	"assistant_open":         {"entry"},
+	"consent_answered":       {"consent"},
+	"consent_notice_shown":   {},
 	"data_stale_shown":       {"source"},
 	"details_section_jump":   {"section"},
 	"details_trade_expand":   {},

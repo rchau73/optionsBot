@@ -37,6 +37,8 @@ export const PROPERTIES = {
   // The kind of the assistant's reply, never its text (#424).
   answer: enumOf("answered", "dont_know", "refused", "fallback"),
   came_for: enumOf(...FOUR_ANSWERS),
+  // The person's analytics answer (#577); only a yes can be sent.
+  consent: enumOf("yes", "no"),
   elapsed_ms: duration(HOUR_MS),
   // The assistant panel's opener (#408).
   entry: enumOf("menu", "why"),
@@ -81,6 +83,8 @@ export const EVENTS = {
   assistant_flag: [],
   assistant_helpful: ["helped"],
   assistant_open: ["entry"],
+  consent_answered: ["consent"],
+  consent_notice_shown: [],
   data_stale_shown: ["source"],
   details_section_jump: ["section"],
   details_trade_expand: [],
