@@ -11,5 +11,7 @@
   "PendingOrders": {},
   "ConfirmCloseModal": {},
   "RebalanceModal": {},
-  "LoginForm": {}
+  "LoginForm": {},
+  "ConsentNotice": {},
+  "AnalyticsConsentSettings": {}
 }
