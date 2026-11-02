@@ -105,7 +105,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `flaky.sh` (from the tick, first tick of a UTC night from 03:00, `data/agents/flaky/<date>.done`, no Claude)
     runs `go test ./tests/... -race -count=5 -json` and `npm test -- --ci` ×3 on a clean `origin/main` worktree within 30 min (a time-out files nothing)
     and files one `bug` `[E6] Flaky test: <name>` in Triage per test that both passed and failed
-    (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged).
+    (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged);
+  - a jest timeout that fired over a minute late is `stalled` (the process was frozen: the Mac slept, #587), logged and not counted; `caffeinate -is` keeps the Mac awake during the hunt.
 - Weekly usage report (#340, #341, #252, docs/agents/usage.md "Weekly usage report"):
   - `usage.sh` (from the tick, first tick of a Monday UTC, `data/agents/usage/<week>.done`, no Claude) runs `cmd/usage -alert` in each env with a non-empty `data/monitor/events.jsonl`
     (none with events in the week → nothing posted, no marker, re-looked at hourly),
