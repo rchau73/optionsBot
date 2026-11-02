@@ -122,7 +122,8 @@ The message log is `role="log"` with `aria-live="polite"`.
 The question box takes 500 characters (Enter sends, Shift+Enter a new line), under it "Answers can be wrong: check the linked source.
 Not investment advice." and "n of 30 questions left this hour".
 **Why?** (`components/WhyButton.jsx`) on each row of the Details trade log and on each open or close of the Activity page asks "Why did <BOT> <open|close> the <put|call> <instrument> on <time>?" with `bot` and the row's journal `seq`.
-Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assistant_answered` (`answer`: `answered` \| `dont_know` \| `refused` \| `fallback`, from the route's `outcome` by `answerOf` in `lib/analytics/screens.js` — `no_citation` is `dont_know`, `rejected` is `fallback`; a 429, 503 or error sends none; #424), `assistant_flag` and `assistant_helpful` (`helped`: true \| false, #579) — never the question, the answer or its id.
+Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assistant_answered` (`answer`: `answered` \| `dont_know` \| `refused` \| `fallback`, from the route's `outcome` by `answerOf` in `lib/analytics/screens.js` — `no_citation` is `dont_know`, `rejected` is `fallback`; a 429, 503 or error sends none; #424) and `assistant_flag`.
+`assistant_helpful` (#579) carries `helped` (true \| false) only; no event carries the question, the answer or its id.
 
 ### Routes
 
