@@ -74,7 +74,7 @@ model_args=()
 budget_take requests # the daily budget (limit_lib.sh)
 started="$(date +%s)"
 rc=0
-claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
+no_github claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
