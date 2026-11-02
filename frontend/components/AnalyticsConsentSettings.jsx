@@ -1,9 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useConsent } from "@/hooks/useConsent";
 import { COPY, consentStatus, saveConsent } from "@/lib/analytics/consent";
-import { fetchConsent, sendConsent } from "@/lib/api/survey";
+import { sendConsent } from "@/lib/api/survey";
 import { setAnalyticsConsent, track } from "@/lib/track";
 
 const DEPS = { send: sendConsent, setConsent: setAnalyticsConsent, track };
@@ -15,18 +16,10 @@ const DEPS = { send: sendConsent, setConsent: setAnalyticsConsent, track };
  * deletes their account. Beside PrivacySettings (the NPS switch).
  */
 export default function AnalyticsConsentSettings() {
-  const [consent, setConsent] = useState(undefined); // undefined = not read yet, or unreadable
+  const consent = useConsent(); // shared with the notice: an answer there moves the switch
   const [note, setNote] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchConsent(controller.signal).then((c) => {
-      if (!controller.signal.aborted) setConsent(c);
-    });
-    return () => controller.abort();
-  }, []);
 
   const toggle = async () => {
     const next = consent !== true;
@@ -35,7 +28,6 @@ export default function AnalyticsConsentSettings() {
     setNote(null);
     try {
       const answer = await saveConsent(next, {}, DEPS);
-      setConsent(next);
       if (!next && answer?.note) setNote(answer.note);
     } catch (e) {
       setError(e.message);

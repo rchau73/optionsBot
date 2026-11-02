@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { COPY, noticeDue, saveConsent } from "@/lib/analytics/consent";
-import { fetchConsent, sendConsent } from "@/lib/api/survey";
+import { useConsent } from "@/hooks/useConsent";
+import { sendConsent } from "@/lib/api/survey";
 import { setAnalyticsConsent, track } from "@/lib/track";
 
 // Yes and No share every class: equal size and weight, neither pre-selected.
@@ -22,19 +23,11 @@ const DEPS = { send: sendConsent, setConsent: setAnalyticsConsent, track };
  */
 export default function ConsentNotice() {
   const pathname = usePathname();
-  const [consent, setConsent] = useState(undefined); // undefined = not read yet, or unreadable
+  const consent = useConsent(); // shared with Account › Privacy: an answer there closes the notice
   const [saving, setSaving] = useState(null); // the answer being saved
   const [failed, setFailed] = useState(null); // the answer that was not saved
   const card = useRef(null);
   const shown = noticeDue(consent, pathname);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchConsent(controller.signal).then((c) => {
-      if (!controller.signal.aborted) setConsent(c);
-    });
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     if (shown) card.current?.focus();
@@ -46,8 +39,7 @@ export default function ConsentNotice() {
     setSaving(yes);
     setFailed(null);
     try {
-      await saveConsent(yes, { fromNotice: true }, DEPS);
-      setConsent(yes);
+      await saveConsent(yes, { fromNotice: true }, DEPS); // useConsent hears the stored answer
     } catch {
       setFailed(yes);
     } finally {

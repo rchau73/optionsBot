@@ -216,6 +216,52 @@ describe("Scenario: change of mind in Account", () => {
   });
 });
 
+describe("the notice and Account › Privacy share one answer (review of #578)", () => {
+  const accountPage = () => (
+    <>
+      <ConsentNotice />
+      <AnalyticsConsentSettings />
+    </>
+  );
+
+  test.each([
+    ["switching Account to Yes", 1, true],
+    ["switching Account on, then off", 2, false],
+  ])("%s on /account closes the notice, which stays closed on the next page", async (_, clicks, value) => {
+    const db = fakeFetch({ consent: null });
+    const view = await renderAt("/account", accountPage());
+    expect(notice()).toBeInTheDocument();
+    for (let i = 0; i < clicks; i++) await act(async () => fireEvent.click(screen.getByRole("switch")));
+    expect(db.consent).toBe(value);
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", String(value));
+    expect(notice()).not.toBeInTheDocument();
+    await moveTo(view, "/income", accountPage());
+    expect(notice()).not.toBeInTheDocument();
+    expect(db.consent).toBe(value);
+  });
+
+  test.each([
+    ["Yes", "true", "Yes"],
+    ["No", "false", "No"],
+  ])("answering %s on the notice moves the Account switch at once", async (name, checked, status) => {
+    await renderAt("/account", accountPage());
+    expect(screen.getByText("Not asked yet")).toBeInTheDocument();
+    await click(name);
+    expect(notice()).not.toBeInTheDocument();
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", checked);
+    expect(screen.queryByText("Not asked yet")).not.toBeInTheDocument();
+    expect(screen.getAllByText(status).length).toBeGreaterThan(0);
+  });
+
+  test("a failed save in Account leaves the notice asking", async () => {
+    fakeFetch({ consent: null, postStatus: 500 });
+    await renderAt("/account", accountPage());
+    await act(async () => fireEvent.click(screen.getByRole("switch")));
+    expect(screen.getByRole("alert")).toHaveTextContent("Not saved");
+    expect(notice()).toBeInTheDocument();
+  });
+});
+
 describe("the consent words (lib/analytics/consent.js)", () => {
   const SURVEYS = fs.readFileSync(path.join(__dirname, "..", "..", "docs", "product", "analytics", "surveys.md"), "utf8");
 

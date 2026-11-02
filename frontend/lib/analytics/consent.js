@@ -61,22 +61,36 @@ export function noticeDue(consent, pathname) {
   return consent === null && !NO_NOTICE.some((re) => re.test(pathname ?? ""));
 }
 
+// The answers stored in this tab, told to every listener (hooks/useConsent.js),
+// so the notice and the Account row show one answer: one given in either
+// closes the notice and moves the switch at once.
+const listeners = new Set();
+
+/** Calls listener(consent) after each stored answer; → unsubscribe. */
+export function onConsentSaved(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 /**
  * Stores the person's answer and sets the sender to it (#577): a no stops
  * tracking at once, before the request; a yes starts it only once the server
  * stored it, so a failed save sends nothing. Then the consent_answered event
- * (and consent_notice_shown, from the notice) — only a yes can send them.
+ * (and consent_notice_shown, from the notice) — only a yes can send them —
+ * and every onConsentSaved listener hears the stored answer.
  * deps: { send(consent) → { consent, note }, setConsent(consent), track(event, props) }.
  * → the server's answer; throws with its reason.
  */
 export async function saveConsent(consent, { fromNotice = false } = {}, deps) {
-  if (consent !== true) deps.setConsent(false);
-  const answer = await deps.send(consent === true);
-  if (consent === true) {
+  const yes = consent === true;
+  if (!yes) deps.setConsent(false);
+  const answer = await deps.send(yes);
+  if (yes) {
     deps.setConsent(true);
     if (fromNotice) deps.track("consent_notice_shown");
     deps.track("consent_answered", { consent: "yes" });
   }
+  for (const listener of [...listeners]) listener(yes);
   return answer;
 }
 

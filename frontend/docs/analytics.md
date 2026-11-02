@@ -99,6 +99,7 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   A failed save keeps the card with "Not saved" and **Try again**, and sends nothing.
 - **Account › Privacy (#577):** `components/AnalyticsConsentSettings.jsx`, above the NPS switch: the answer (Yes / No / Not asked yet) and a switch storing the other one.
   Switching it off stops tracking at once and shows the API's `note` (stored events stay until deletion) with the path to **Delete my account**.
+- Both read the answer through `hooks/useConsent.js`, which also hears every answer `saveConsent` stores (`onConsentSaved`), so on `/account` an answer in either closes the notice and moves the switch at once.
 - The notice's shown, yes and no totals are the Analytics page's server-side `consent` counts (`{yes, no, unasked}`): a no is never an event.
 - **Page views** (#424): `components/ScreenTracker.jsx`, in the root layout for a signed-in person, reads the person's stored answer once (`GET /api/consent`, `fetchConsent` in `lib/api/survey.js`: true, false or null as stored, anything else not known), hands it to `setAnalyticsConsent`, then sends one `screen_viewed` per page shown.
   `screen` is the menu item's key with `_` for `-` (`lib/analytics/screens.js` `screenOf`).
