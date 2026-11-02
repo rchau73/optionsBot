@@ -50,9 +50,9 @@ touch "$state/last_sweep"
 
 slug="$(repo_slug)"
 gh issue list -R "$slug" --state all -L 300 --search '"assistant-request" in:body' \
-  --json number,state,stateReason,body > "$run/marked.json"
+  --json number,state,stateReason,author,body -q "$(mine_jq "$slug")"'mine' > "$run/marked.json" # the owner's only (#575)
 gh issue list -R "$slug" --state all -L 300 \
-  --json number,title,state,closedAt,labels,body > "$run/issues.json"
+  --json number,title,state,closedAt,labels,author,body -q "$(mine_jq "$slug")"'mine' > "$run/issues.json"
 read -r judge held < <(python3 "$RQ_PY" prepare "$run" "$run/marked.json" "$run/issues.json" "$slug" "${envs[@]}" 2> "$run/prepare.log")
 while IFS= read -r line; do log "$line"; done < "$run/prepare.log"
 [[ "$held" -eq 0 ]] || log "requests: the day's cap of issues is reached: $held request(s) wait for the next UTC day"

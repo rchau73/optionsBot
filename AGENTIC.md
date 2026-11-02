@@ -75,6 +75,7 @@ The Reviewer and Deploy steps are described in the loop and the guardrails below
 The agents' permissions are enforced by Claude Code, not by prompting: `--permission-mode dontAsk` with explicit allowed and denied tool lists ([`sme_review.sh`](scripts/agents/sme_review.sh), [`pm_agent.sh`](scripts/agents/pm_agent.sh), [`pm_answer.sh`](scripts/agents/pm_answer.sh), [`dev_agent.sh`](scripts/agents/dev_agent.sh), [`review_agent.sh`](scripts/agents/review_agent.sh)).
 Anything not on the allowed list is refused.
 Every GitHub action is taken by the shell script around the agent, after its own checks, never by the model itself.
+The agents read only the repository owner's GitHub text (the account they post as): the scripts drop other accounts' issue bodies, comments and reviews before a prompt or a marker parser sees them (`mine_jq` in `lib.sh`, #575), because anyone may comment on a public repository.
 
 ## Guardrails
 

@@ -64,7 +64,7 @@ log "dev: issue #$issue → $branch"
 # The pickup comment says which attempt this is and what came before, so the
 # issue alone tells the story even when a person moved the card back to Ready
 # on the board (a board move leaves no trace on the issue).
-gh issue view "$issue" -R "$slug" --json comments > "$run_dir/history.json"
+gh issue view "$issue" -R "$slug" --json comments -q "$(mine_jq "$slug")"'{comments: (.comments | mine)}' > "$run_dir/history.json"
 python3 "$AGENT_REPO_DIR/scripts/agents/pickup_comment.py" "$run_dir/history.json" "$branch" \
   "data/agents/dev/$(basename "$run_dir")" > "$run_dir/pickup.md"
 gh issue comment "$issue" -R "$slug" --body-file "$run_dir/pickup.md" >/dev/null
@@ -110,12 +110,13 @@ if [[ -n "$existing_pr" ]]; then
 fi
 
 # ── Task for the agent ──────────────────────────────────────────────────────
-gh issue view "$issue" -R "$slug" --json number,title,body,labels,comments \
-  -q '"# Issue #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(.body)\n\n## Comments\n\(.comments | map("### \(.author.login) (\(.createdAt))\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
+# Only the owner's text (mine_jq, #575): the repository is public.
+gh issue view "$issue" -R "$slug" --json number,title,author,body,labels,comments \
+  -q "$(mine_jq "$slug")"'"# Issue #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(own_body)\n\n## Comments\n\(.comments | mine | map("### \(.author.login) (\(.createdAt))\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
 if [[ -n "$existing_pr" ]]; then
   gh pr view "$existing_pr" -R "$slug" --json reviews,comments \
-    -q '"\n\n# Review feedback on PR #'"$existing_pr"' (address it)\n\(.reviews | map("### review by \(.author.login): \(.state)\n\(.body)") | join("\n\n"))\n\(.comments | map("### \(.author.login)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
-  gh api "repos/$slug/pulls/$existing_pr/comments" -q '.[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
+    -q "$(mine_jq "$slug")"'"\n\n# Review feedback on PR #'"$existing_pr"' (address it)\n\(.reviews | mine | map("### review by \(.author.login): \(.state)\n\(.body)") | join("\n\n"))\n\(.comments | mine | map("### \(.author.login)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
+  gh api "repos/$slug/pulls/$existing_pr/comments" -q "$(mine_jq "$slug")"'mine | .[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
   # From main's skill: the branch may predate this instruction.
   { echo; echo "# How to answer the review (developer skill, from main)"; echo
     grep -m1 '^\*\*When `.agent-task.md` carries review feedback\*\*' "$AGENT_REPO_DIR/.claude/skills/developer/SKILL.md"; } >> "$run_dir/task.md"

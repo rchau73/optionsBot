@@ -57,7 +57,7 @@ if ! python3 "$BOARD_PY" epics "$run/PRD.md" "$run/epics.json" 2> "$run/epics.er
 fi
 exec > >(tee -a "$run/run.log") 2>&1
 
-gh issue list -R "$slug" --label epic --state all -L 200 --json number,id,title,body,state,labels > "$run/epic_issues.json"
+gh issue list -R "$slug" --label epic --state all -L 200 --json number,id,title,author,body,state,labels -q "$(mine_jq "$slug")"'mine' > "$run/epic_issues.json"
 footer="_Epic of the approved PRD ([docs/product/PRD.md](../blob/main/docs/product/PRD.md), merged on main = approved by a person). Its stories are its sub-issues; the **PM agent** places new tickets here and ranks them. UI stories go to Ready once a person adds **prototype:approved** to this epic._"
 n="$(py 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$run/epics.json")"
 i=0
@@ -93,7 +93,7 @@ print("\t".join([e["id"], e["status"], title, str(cur["number"]) if cur else "-"
   i=$((i + 1))
 done
 # Epic numbers, node ids and prototype approval (a label only a person adds).
-gh issue list -R "$slug" --label epic --state all -L 200 --json number,id,body,labels > "$run/epic_issues.json"
+gh issue list -R "$slug" --label epic --state all -L 200 --json number,id,author,body,labels -q "$(mine_jq "$slug")"'mine' > "$run/epic_issues.json"
 py 'import json,sys
 issues = json.load(open(sys.argv[2])); es = json.load(open(sys.argv[1]))
 for e in es:
@@ -143,8 +143,8 @@ triage() {
 run_begin pm "" "" "$run"
 log "pm: deciding on #${todo// / #}"
 for num in $todo; do
-  gh issue view "$num" -R "$slug" --json number,title,body,labels,comments \
-    -q '{number, title, labels: [.labels[].name], body: .body[0:4000], comments: [.comments[-4:][] | {author: .author.login, at: .createdAt, body: .body[0:800]}]}'
+  gh issue view "$num" -R "$slug" --json number,title,author,body,labels,comments \
+    -q "$(mine_jq "$slug")"'{number, title, labels: [.labels[].name], body: own_body[0:4000], comments: [(.comments | mine)[-4:][] | {author: .author.login, at: .createdAt, body: .body[0:800]}]}'
 done | py 'import json,sys; json.dump([json.loads(l) for l in sys.stdin if l.strip()], open(sys.argv[1], "w"), indent=1)' "$run/pending_issues.json"
 
 PROMPT="Use the product-manager skill and run its \"Board triage (agent mode)\" procedure.

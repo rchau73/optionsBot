@@ -154,7 +154,8 @@ while read -r pr ref; do
   [[ "$issue" =~ ^[0-9]+$ ]] || continue
   card="$(awk -v n="$issue" '$2 == n { $1 = $2 = ""; sub(/^  /, ""); print; exit }' "$tmp/cards.txt")"
   gh pr view "$pr" -R "$slug" --json number,state,isDraft,labels,headRefOid,mergeable,mergeStateStatus,statusCheckRollup > "$tmp/pr.json" < /dev/null
-  gh api "repos/$slug/pulls/$pr/reviews" --paginate -q '.[].body' < /dev/null |
+  # Only the owner's reviews count (#575): anyone may review a public PR.
+  gh api "repos/$slug/pulls/$pr/reviews" --paginate -q "$(mine_jq "$slug")"'mine | .[].body' < /dev/null |
     grep -oE "<!-- agent-review sha=[0-9a-f]* verdict=[a-z]*( policy=[a-z]*)? -->" | sed "s/<!-- agent-review //; s/ -->//" > "$tmp/markers.txt" || true
   head="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefOid"])' "$tmp/pr.json")"
   # Every changed path (the files API pages past gh pr view's 100), how far
@@ -167,7 +168,7 @@ while read -r pr ref; do
     python3 "$GATE_PY" equiv "$tmp/compare.json" > "$tmp/equiv.txt" || true
   fi
   : > "$tmp/deps.txt"
-  for d in $(gh issue view "$issue" -R "$slug" --json body -q .body < /dev/null | python3 "$BOARD_PY" deps); do
+  for d in $(gh issue view "$issue" -R "$slug" --json author,body -q "$(mine_jq "$slug")"'own_body' < /dev/null | python3 "$BOARD_PY" deps); do
     [[ "$(gh issue view "$d" -R "$slug" --json state -q .state < /dev/null)" == "OPEN" ]] && echo "$d" >> "$tmp/deps.txt"
   done
   read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt" \

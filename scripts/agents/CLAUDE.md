@@ -7,6 +7,8 @@ go run ./cmd/usage -events data/monitor/events.jsonl -week 2026-W43   # monitor 
 go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.json -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -promotions ~/dev/go/optionsBot-env/history/promotions.tsv -out ~/dev/go/optionsBot-env/history/delivery   # delivery report (#470, pure internal/delivery, files only — dora.sh dumps git/gh daily): DORA metrics per ISO week × mvp/stable with bands ("too few samples" under 3; "not recorded" before deploys.tsv began, never 0) and every PR's merge, mvp-live and stable-live time and release → dora.json + <week>.md; failures = rollback lines, "[E6] mvp deploy failed" issues, Revert PRs, `regression` bugs with "Caused by #N"; malformed/off-main lines reported, never counted (docs/agents/dora.md "Delivery report (DORA)")
 ```
 
+- **Only the owner's text** (#575): a script reading issue bodies, comments or reviews filters them with `mine_jq` (`lib.sh`: `mine`, `own_body`) — the repo is public;
+  `test_owner_text.py` fails on a new read without it (report-only `dora.sh`, `metrics.sh`, `release.sh` are exempt).
 - **Agentic workflow** (`AGENTIC.md`, `scripts/agents/`):
   - the SME agent (`sme_review.sh`, daily, read-only, option-bot-specialist skill) files findings as `agent:sme` issues on the project board's Triage column
     (never a duplicate: it sees every open issue — any label, with body and last comments — and every one closed in 14 days,

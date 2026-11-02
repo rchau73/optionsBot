@@ -38,7 +38,7 @@ post="$AGENT_REPO_DIR/scripts/agents/review_post.py"
 
 # agent_reviews <pr> → the bodies' markers, one per line: "sha=… verdict=…".
 agent_reviews() {
-  gh api "repos/$slug/pulls/$1/reviews" --paginate -q '.[].body' |
+  gh api "repos/$slug/pulls/$1/reviews" --paginate -q "$(mine_jq "$slug")"'mine | .[].body' |
     grep -oE "<!-- $marker sha=[0-9a-f]* verdict=[a-z]*( policy=[a-z]*)? -->" | sed "s/<!-- $marker //; s/ -->//" || true
 }
 
@@ -131,15 +131,16 @@ cp -R "$review_dir" "$run_dir/agent-review"
   echo "  the PR gate treats it as not reviewed, it is retried once on the next tick, then a person reviews it."
   echo "  Say \`no\` honestly for a file you did not read."
   echo
-  gh issue view "$issue" -R "$slug" --json number,title,body \
-    -q '"# Ticket #\(.number): \(.title)\n\n\(.body)\n"'
-  gh pr view "$pr" -R "$slug" --json number,title,body \
-    -q '"\n# Pull request #\(.number): \(.title)\n\n\(.body)\n"'
+  # Only the owner's text (mine_jq, #575): the repository is public.
+  gh issue view "$issue" -R "$slug" --json number,title,author,body \
+    -q "$(mine_jq "$slug")"'"# Ticket #\(.number): \(.title)\n\n\(own_body)\n"'
+  gh pr view "$pr" -R "$slug" --json number,title,author,body \
+    -q "$(mine_jq "$slug")"'"\n# Pull request #\(.number): \(.title)\n\n\(own_body)\n"'
   echo; echo "# Earlier reviews on this PR (check whether each finding was addressed)"
   gh api "repos/$slug/pulls/$pr/reviews" --paginate \
-    -q '.[] | "### review by \(.user.login) on \(.commit_id[0:7]) (\(.state))\n\(.body)\n"'
+    -q "$(mine_jq "$slug")"'mine | .[] | "### review by \(.user.login) on \(.commit_id[0:7]) (\(.state))\n\(.body)\n"'
   gh api "repos/$slug/pulls/$pr/comments" --paginate \
-    -q '.[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"'
+    -q "$(mine_jq "$slug")"'mine | .[] | "### on \(.path):\(.line // .original_line) by \(.user.login)\n\(.body)\n"'
   echo; echo "# The diff"
   echo "Not here: one file per changed path, listed with its line count in \`.agent-review/index.md\`."
 } > "$run_dir/task.md"
