@@ -10,6 +10,8 @@ import path from "node:path";
 import { render, screen, waitFor } from "@testing-library/react";
 import AccountPanel from "@/components/AccountPanel";
 import ActivityFeed from "@/components/ActivityFeed";
+import AnalyticsConsentSettings from "@/components/AnalyticsConsentSettings";
+import ConsentNotice from "@/components/ConsentNotice";
 import Header from "@/components/Header";
 import HeldLegs from "@/components/HeldLegs";
 import InvestorSummary from "@/components/InvestorSummary";
@@ -153,6 +155,19 @@ const CASES = {
     global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) });
     const r = render(<LoginForm />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled()); // the refresh attempt on open
+    return r;
+  },
+  // #577: the one-time analytics notice (never answered) and the Account row.
+  ConsentNotice: async () => {
+    global.fetch = jest.fn().mockResolvedValue(reply(200, { consent: null }));
+    const r = render(<ConsentNotice />);
+    await screen.findByRole("button", { name: "Yes" });
+    return r;
+  },
+  AnalyticsConsentSettings: async () => {
+    global.fetch = jest.fn().mockResolvedValue(reply(200, { consent: true }));
+    const r = render(<AnalyticsConsentSettings />);
+    await waitFor(() => expect(screen.getByRole("switch")).toBeEnabled());
     return r;
   },
 };

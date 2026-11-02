@@ -89,8 +89,19 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   It sends nothing until `setAnalyticsConsent(true)`; "no" or not asked yet (the default) means nothing at all is sent.
   Events outside the plan are dropped in the page too.
   The session id is random (32 hex), new after 30 min without an event.
-  The consent can be set through `/api/consent` (below); the consent notice that asks it waits for E13's prototype.
-- **Page views** (#424): `components/ScreenTracker.jsx`, in the root layout for a signed-in person, reads the person's stored answer once (`GET /api/consent`, `fetchConsent` in `lib/api/survey.js`: anything but a boolean is null), hands it to `setAnalyticsConsent`, then sends one `screen_viewed` per page shown.
+  The consent is set through `/api/consent` (below), by the consent notice and the Account row (#577, below).
+- **Consent notice (#577):** `components/ConsentNotice.jsx`, in the root layout for a signed-in person, above the page (it never covers or blocks it).
+  It reads `GET /api/consent` and shows only on a null (never answered); an unreadable answer shows nothing, and so do `/login` and `/reset` (`noticeDue`).
+  The words are `surveys.md` §6's draft, a line on what a yes records (screens and help, never amounts or positions) and a link to Account, all in `lib/analytics/consent.js` (EN and PT-BR; the monitor shows EN).
+  *Yes* and *No* share one style (same size and weight, at least 44 px tall, nothing pre-selected); there is no close button: an answer closes it.
+  Focus moves to the card, a labelled region (no `role=dialog`).
+  A *No* turns tracking off before the request; a *Yes* turns it on only once stored, then sends `consent_notice_shown` and `consent_answered {consent: yes}` (`saveConsent`), so the next page sends its `screen_viewed`.
+  A failed save keeps the card with "Not saved" and **Try again**, and sends nothing.
+- **Account › Privacy (#577):** `components/AnalyticsConsentSettings.jsx`, above the NPS switch: the answer (Yes / No / Not asked yet) and a switch storing the other one.
+  Switching it off stops tracking at once and shows the API's `note` (stored events stay until deletion) with the path to **Delete my account**.
+- Both read the answer through `hooks/useConsent.js`, which also hears every answer `saveConsent` stores (`onConsentSaved`), so on `/account` an answer in either closes the notice and moves the switch at once.
+- The notice's shown, yes and no totals are the Analytics page's server-side `consent` counts (`{yes, no, unasked}`): a no is never an event.
+- **Page views** (#424): `components/ScreenTracker.jsx`, in the root layout for a signed-in person, reads the person's stored answer once (`GET /api/consent`, `fetchConsent` in `lib/api/survey.js`: true, false or null as stored, anything else not known), hands it to `setAnalyticsConsent`, then sends one `screen_viewed` per page shown.
   `screen` is the menu item's key with `_` for `-` (`lib/analytics/screens.js` `screenOf`).
   The values are `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account` and `details`.
   A page outside the menu, such as admin, sends none.
