@@ -34,7 +34,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/admin/users/[id]/signout", roles: ADMINS, audit: "signed_out_everywhere" },
   { route: "POST /api/assistant", roles: SIGNED_IN, audit: null, why: "each question is logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/feedback", roles: SIGNED_IN, audit: null, why: "the person who asked says whether the answer helped; logged with the person in assistant.jsonl" },
-  { route: "POST /api/assistant/flag",roles: SIGNED_IN, audit: null, why: "the flag is logged with the person in assistant.jsonl" },
+  { route: "POST /api/assistant/flag", roles: SIGNED_IN, audit: null, why: "the flag is logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/requests", roles: SIGNED_IN, audit: null, why: "the request is queued with the person in requests.jsonl" },
   { route: "POST /api/auth/login", roles: ANYONE, audit: "signed_in" },
   { route: "POST /api/auth/logout", roles: SIGNED_IN, audit: "signed_out" },

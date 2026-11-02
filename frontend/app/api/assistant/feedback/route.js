@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 
 const MAX_BODY = 512;
 // One choice per answer, changed once (#579): at most two feedback lines per
-// answer, so the writes stay bounded by the 30 questions an hour.
+// answer, so the writes stay bounded by the 30 questions an hour. The check
+// reads then appends, not atomically: two clicks racing on one answer can
+// leave a third line. Accepted — the review counts the last line per answer,
+// so the figures stay right and the writes stay small.
 const MAX_FEEDBACK_LINES = 2;
 
 /**
