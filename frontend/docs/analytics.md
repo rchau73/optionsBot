@@ -20,6 +20,17 @@ States: analytics off (`ANALYTICS_SALT` unset: a setup checklist, never the valu
 The page counts itself as `screen_viewed {screen: analytics}` (`lib/analytics/screens.js`).
 Components: `UsageAnalytics` (fetch, header, states), `UsageCards` (attention, cards, data); pure helpers in `lib/analytics/usageView.js`, file reading in `lib/analytics/reports.js`.
 
+### Stopped coming back (#569)
+
+One card reads the report's `lapsed` block: people who visited (a `session_started`) in the 4 weeks before the week and did not visit in it.
+It shows "N of base", the share, the people by weeks since their last visit (1, 2, 3, 4 or more) and by the role of that visit.
+- The share is the drop check's `lapsed_share`: rising 20 points or more over the 3 weeks before is a DROP in **Needs your attention**, and the card then moves right under it; otherwise it follows Q2 with an OK tag.
+- Under 10 people in the base (`usage.DropMinBase`): a small-sample note, no share, no tag, no drop.
+- Nobody lapsed: one "No one stopped coming back" line, no tables.
+- A report written before #569 has no `lapsed`: the card says so; a week with no events has no card (the no-events message stands).
+Counts only: no id or name, as the rest of the report.
+No new page, so the menu (`lib/menu.js`) and its test do not change.
+
 ### Routes
 
 #### `GET /api/admin/analytics?env=&week=`

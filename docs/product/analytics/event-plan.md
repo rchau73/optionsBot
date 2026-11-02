@@ -11,7 +11,7 @@ Every event answers at least one of these. An event that answers none is not col
 | ID | Question | Feeds | Answered in (`cmd/usage`) |
 |---|---|---|---|
 | Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
-| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +4 weeks), "Active users" |
+| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +4 weeks), "Active users", "Lapsed" (#569: people with a `session_started` in the 4 weeks before and none in the week, by role and weeks away; counts only, from the same consented events, no new event or property) |
 | Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, page views per screen) |
 | Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`) |
 | Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11, E10 | "Help" (tips, videos played/completed, share helped), "Assistant" (opened and asked per entry, replies per kind, flagged) |
@@ -19,7 +19,7 @@ Every event answers at least one of these. An event that answers none is not col
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
 | Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | "Why they stay or leave" (#342: each survey's shown/answered/dismissed and response rate, NPS bands and the score from 10 answers, coded why, came for / hardest to find, exit reasons with the top 3) |
 
-**Are users stopping?** The engagement-drop alert (§7) answers it every week from Q1, Q4, Q5 and Q6.
+**Are users stopping?** The engagement-drop alert (§7) answers it every week from Q1, Q2 (the lapsed share), Q4, Q5 and Q6.
 
 ## 2. Events
 
@@ -149,5 +149,6 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 | first answers found (with ÷ first sessions) | Q4 | completion share ≥ 20 points under the 3 weeks' pooled share |
 | manual close (confirmed ÷ opened) | Q6 | ≥ 20 points under |
 | rebalance (confirmed ÷ previewed) | Q6 | ≥ 20 points under |
+| lapsed share (lapsed ÷ people active in the 4 weeks before, #569) | Q2 "Lapsed" | ≥ 20 points **over** the 3 weeks' pooled share (rising is bad); under 10 people in either base is too few |
 
 A base under 10 users (or 10 funnel starts, in the base weeks and in the week) is "too few to judge" and raises nothing. A week with no events is noted and left out of the base, never counted as zero; a week with no events itself raises nothing. The issue and the epic comment carry counts and percentages only (percentages only for a live account).

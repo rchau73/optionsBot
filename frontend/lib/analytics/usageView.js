@@ -77,6 +77,7 @@ const METRICS = {
   first_answers: "First answers found",
   manual_close: "Manual-close funnel",
   rebalance: "Rebalance funnel",
+  lapsed_share: "People who stopped coming back",
 };
 
 /** A drop-check metric in plain words. */
@@ -87,10 +88,43 @@ const signed = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(round(v))}`
 
 /** One drop of the report's `drops` in one line, as the drop issue says it. */
 export function dropText(d) {
+  if (d.kind === "share") {
+    return `${metricLabel(d.metric)}: ${round(d.current)} % of ${d.starts} people, was ${round(d.base)} % of ${d.base_starts} (${signed(d.change_pts)} pts)`;
+  }
   if (d.kind === "funnel") {
     return `${metricLabel(d.metric)}: ${round(d.current)} % of ${d.starts} starts, was ${round(d.base)} % of ${d.base_starts} (${signed(d.change_pts)} pts)`;
   }
   return `${metricLabel(d.metric)}: ${round(d.current)}, mean of the weeks before ${d.base.toFixed(1)} (${signed(d.change_pct)} %)`;
+}
+
+/** usage.LapsedLookbackWeeks: a person who visited in these weeks before and not in the week has stopped coming back (#569). */
+export const LAPSED_LOOKBACK_WEEKS = 4;
+
+const WEEKS_AWAY = [
+  ["1", "1 week"],
+  ["2", "2 weeks"],
+  ["3", "3 weeks"],
+  ["4+", "4 weeks or more"],
+];
+
+/**
+ * The "Stopped coming back" card (#569) from the report's `lapsed` block →
+ * { users, base, share (null under the small-sample rule), tooFew, rising
+ * (the week's drop check raised lapsed_share), weeksAway [[label, n]], byRole },
+ * or null when the report has none (no events, or written before #569).
+ */
+export function lapsedView(report) {
+  const l = report?.lapsed;
+  if (!l) return null;
+  return {
+    users: l.users,
+    base: l.base,
+    share: typeof l.share_pct === "number" ? l.share_pct : null,
+    tooFew: Boolean(l.note),
+    rising: (report.drops?.drops ?? []).some((d) => d.metric === "lapsed_share"),
+    weeksAway: WEEKS_AWAY.map(([k, label]) => [label, l.weeks_away?.[k] ?? 0]),
+    byRole: countRows(l.by_role).filter(([, n]) => n > 0),
+  };
 }
 
 /** The screens of the week with no view, in the plan's order; "login" is never sent, so it is left out. */

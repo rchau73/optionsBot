@@ -150,6 +150,18 @@ def bridge_cell(r):
     return pct(b["residual_pct"])
 
 
+def recon_cell(r):
+    """The account's balance change against the journal's booked P&L (#566):
+    the gap in % of the starting balance, flagged over the tolerance."""
+    c = r.get("reconciliation")
+    if c is None:
+        return "— (not measured)"
+    if not c.get("known"):
+        return f"— ({c.get('note') or 'not enough history'})"
+    cell = pct(c["gap_pct"])
+    return f"⚠ {cell} over {c.get('tolerance_pct', 1):g} %" if c.get("flagged") else f"{cell} (within tolerance)"
+
+
 def stress_cell(r):
     s = r.get("stress") or {}
     if not s.get("ran"):
@@ -484,10 +496,12 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
            "One row per environment × bot, from `cmd/evidence` (README \"Evidence report\"). "
            "Percentages are of the margin balance at the week's start; the replay gap is replay − live. "
            "Return on margin = net P&L ÷ mean IM used (IM % × the margin balance at the week's start, an approximation).", "",
+           "Account vs booked P&L = the margin balance's change minus the journal's booked P&L, net of fees, in % of the starting balance "
+           "(measured on the account; ⚠ over the tolerance, the report lists the possible causes, #566).", "",
            "E1 reliability = mean IM ÷ limit while entries were allowed against the 60 % target, "
            "the largest cause of idle slot time, and the startups whose first 30 minutes changed the book (restart-made).", "",
-           "| env | bot | net P&L | return on margin | equity not explained by the bot | excess vs holding the coin | worst 7 days | replay gap | stress | E1 reliability | missing days | report |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "| env | bot | net P&L | return on margin | equity not explained by the bot | account vs booked P&L | excess vs holding the coin | worst 7 days | replay gap | stress | E1 reliability | missing days | report |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
     for env in envs:
         root = os.path.join(envs_dir, env)
@@ -502,11 +516,11 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
                 with open(path) as f:
                     r = json.load(f)
             except (OSError, ValueError):
-                out.append(f"| {label} | {bot} | no report | | | | | | | | | — |")
+                out.append(f"| {label} | {bot} | no report | | | | | | | | | | — |")
                 continue
             cur = bot.upper()
             out.append("| " + " | ".join([
-                label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
+                label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), recon_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
     if "stable" in envs:
         out += direction_block(stable_root, week)

@@ -6,18 +6,19 @@ flowchart LR
         TRI["② Issue · Triage<br/>cost in coin · USD · days<br/>options + recommendation"]
         PRD["⓪ PRD · epics<br/>product-manager + ux-designer<br/>roadmap · MVP · prototypes"]
         H0(["Human approves<br/>PRD merge · prototype<br/><b>gate 0</b>"])
-        PM["<b>③ PM agent · 15 min</b><br/>senior product manager<br/>one epic per ticket · priority<br/>Ready only if the PRD covers it<br/><i>read-only</i>"]
+        PM["<b>③ PM agent · 6 min</b><br/>senior product manager<br/>one epic per ticket · priority<br/>Ready only if the PRD covers it<br/><i>read-only</i>"]
         H1(["Human decides<br/>the rest · <b>gate 1</b>"])
     end
 
     subgraph ENG["⚙️ ENGINEERING DELIVERY · build it right"]
         direction LR
         READY["④ Ready"]
-        DEV["⑤ Dev agent · 15 min<br/>developer skill<br/>edit · test · commit"]
+        DEV["⑤ Dev agent · 6 min<br/>developer skill<br/>edit · test · commit"]
         PR["⑥ PR · In review<br/>checks re-run · CI"]
-        REV["⑦ Reviewer agent · 15 min<br/>developer skill · Review mode<br/><b>read-only</b> · verified findings"]
-        H2(["⑧ Human reviews<br/>& merges · <b>gate 2</b>"])
-        DEP["⑨ Deploy · 15 min<br/>testnet only<br/>health check"]
+        REV["⑦ Reviewer agent · 6 min<br/>developer skill · Review mode<br/><b>read-only</b> · verified findings"]
+        GATE{"⑧ PR gate · 6 min<br/>changes policy?"}
+        H2(["Human reviews<br/>& merges · <b>gate 2</b><br/>policy PRs only"])
+        DEP["⑨ Deploy · 6 min<br/>testnet only<br/>health check"]
         DONE["⑩ Done"]
         BLK["Blocked<br/>needs-human"]
     end
@@ -25,7 +26,10 @@ flowchart LR
     PRD ==> H0 ==>|approved epics| PM
     BOTS ==> SME ==> TRI ==> PM ==>|"approved epic · rule area covered<br/>· prototype approved"| READY
     PM -->|outside the PRD| H1 --> READY
-    READY --> DEV --> PR --> REV -->|no blocking finding| H2 --> DEP --> DONE
+    READY --> DEV --> PR --> REV -->|no blocking finding| GATE
+    GATE ==>|"no: merges itself<br/>CI green · reviewed clean"| DEP
+    GATE -->|"yes: trading rules, risk, config,<br/>CI, agent permissions, release scripts"| H2 --> DEP
+    DEP --> DONE
     REV ==>|"🛑 blocking finding (bug): review posted + card back to Ready<br/>Dev fixes on the same PR · ≤ 2 rounds"| READY
     DEP -->|restart| BOTS
     DEV -.->|questions /<br/>failing checks| BLK -.->|answered| READY
@@ -39,7 +43,7 @@ flowchart LR
     class SME,PM sme
     class DEV,REV,DEP agent
     class H0,H1,H2 human
-    class PRD,TRI,READY,PR,DONE,BLK gh
+    class PRD,TRI,READY,PR,DONE,BLK,GATE gh
     class BOTS run
     style BIZ fill:#fffdf3,stroke:#f9a825,stroke-width:3px
     style ENG fill:#fafafa,stroke:#9e9e9e,stroke-width:1px,stroke-dasharray:4 3

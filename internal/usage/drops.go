@@ -32,7 +32,11 @@ const (
 	MetricFirstAnswers = "first_answers" // first sessions that saw the four answers
 	MetricManualClose  = "manual_close"  // manual-close dialogs confirmed ÷ opened
 	MetricRebalance    = "rebalance"     // rebalances confirmed ÷ previewed
+	MetricLapsed       = "lapsed_share"  // people who stopped coming back ÷ people active in the lookback weeks (#569)
 )
+
+// dropMetrics are the metrics the check judges, in its order.
+var dropMetrics = []string{MetricActive, MetricHelp, MetricFirstAnswers, MetricManualClose, MetricRebalance, MetricLapsed}
 
 // Rules are the thresholds of the drop check.
 type Rules struct {
@@ -51,13 +55,13 @@ func DefaultRules() Rules {
 // in %, ChangePts the funnel share's change in points.
 type Drop struct {
 	Metric    string  `json:"metric"`
-	Kind      string  `json:"kind"` // count | funnel
+	Kind      string  `json:"kind"` // count | funnel | share (a share that rising is bad: lapsed_share)
 	Current   float64 `json:"current"`
 	Base      float64 `json:"base"` // mean of the base weeks (count) or their pooled share (funnel)
 	ChangePct float64 `json:"change_pct,omitempty"`
 	ChangePts float64 `json:"change_pts,omitempty"`
-	Starts    int     `json:"starts,omitempty"`      // funnel starts in the week
-	BaseStart int     `json:"base_starts,omitempty"` // funnel starts in the base weeks
+	Starts    int     `json:"starts,omitempty"`      // funnel starts (share: its base people) in the week
+	BaseStart int     `json:"base_starts,omitempty"` // … in the base weeks
 }
 
 // Skip is a metric the check did not judge, and why.
@@ -108,13 +112,13 @@ func Drops(current Report, previous []Report, rules Rules) Alert {
 	a.Weeks = append(a.Weeks, cur)
 	if cur.Missing {
 		a.Missing = append(a.Missing, cur.Week)
-		for _, m := range []string{MetricActive, MetricHelp, MetricFirstAnswers, MetricManualClose, MetricRebalance} {
+		for _, m := range dropMetrics {
 			a.Skipped = append(a.Skipped, Skip{m, "no events in the week"})
 		}
 		return a
 	}
 	if len(base) == 0 {
-		for _, m := range []string{MetricActive, MetricHelp, MetricFirstAnswers, MetricManualClose, MetricRebalance} {
+		for _, m := range dropMetrics {
 			a.Skipped = append(a.Skipped, Skip{m, "no earlier week with events"})
 		}
 		return a
@@ -156,12 +160,42 @@ func Drops(current Report, previous []Report, rules Rules) Alert {
 		}
 	}
 
+	// rising is the share's funnel falling: lapsed_share rising FunnelPts or
+	// more over the base weeks' pooled share, each base MinBase people or more.
+	// A report written before #569 has no Lapsed and is left out of the base.
+	rising := func(metric string, shareOf func(Report) (n, of int, ok bool)) {
+		baseN, baseOf := 0, 0
+		for _, r := range base {
+			if n, of, ok := shareOf(r); ok {
+				baseN += n
+				baseOf += of
+			}
+		}
+		n, of, ok := shareOf(current)
+		if !ok || baseOf < rules.MinBase || of < rules.MinBase {
+			a.Skipped = append(a.Skipped, Skip{metric, TooFew})
+			return
+		}
+		was := 100 * float64(baseN) / float64(baseOf)
+		now := 100 * float64(n) / float64(of)
+		if now-was >= rules.FunnelPts {
+			a.Drops = append(a.Drops, Drop{Metric: metric, Kind: "share", Current: now, Base: was,
+				ChangePts: now - was, Starts: of, BaseStart: baseOf})
+		}
+	}
+
 	count(MetricActive, func(r Report) int { return r.Active.Week.Users })
 	count(MetricHelp, func(r Report) int { return sumCounts(r.Help.Tips) + sumCounts(r.Help.VideosPlayed) })
 	funnel(MetricFirstAnswers, func(r Report) (int, int) { return r.FirstAnswers.WithAnswers, r.FirstAnswers.FirstSessions })
 	funnel(MetricManualClose, func(r Report) (int, int) { return r.ManualClose.Confirmed, r.ManualClose.Opened })
 	funnel(MetricRebalance, func(r Report) (int, int) {
 		return sumCounts(r.Rebalance.Confirmed), sumCounts(r.Rebalance.Previewed)
+	})
+	rising(MetricLapsed, func(r Report) (int, int, bool) {
+		if r.Lapsed == nil {
+			return 0, 0, false
+		}
+		return r.Lapsed.Users, r.Lapsed.Base, true
 	})
 	return a
 }
@@ -203,6 +237,9 @@ func sumCounts(m map[string]int) int {
 
 // String is the drop in one line, counts and shares only.
 func (d Drop) String() string {
+	if d.Kind == "share" {
+		return fmt.Sprintf("%s: %.0f %% of %d people, was %.0f %% of %d (%+.0f pts)", d.Metric, d.Current, d.Starts, d.Base, d.BaseStart, d.ChangePts)
+	}
 	if d.Kind == "funnel" {
 		return fmt.Sprintf("%s: %.0f %% of %d starts, was %.0f %% of %d (%+.0f pts)", d.Metric, d.Current, d.Starts, d.Base, d.BaseStart, d.ChangePts)
 	}

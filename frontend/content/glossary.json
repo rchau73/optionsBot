@@ -493,6 +493,13 @@
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Kill switch"]
   },
+  "lapsed": {
+    "short": "People who visited in the 4 weeks before and did not visit this week.",
+    "long": "Analytics page (admins only), the card Stopped coming back. It counts the people seen in the 4 weeks before the week and not in it, by weeks since their last visit and by role. Under 10 people it gives no share.",
+    "risk_income": "It measures whether people keep using the monitor, not trading results: a rise is a reason to ask them why.",
+    "source": "frontend/docs/analytics.md#stopped-coming-back-569",
+    "labels": ["Stopped coming back"]
+  },
   "last sign-in": {
     "short": "When the person last signed in with their password; never if they have not yet.",
     "long": "Users page (admins only). The time of the person's last successful sign-in. A browser that stays signed in refreshes its session without a new sign-in, so this can be older than their last visit.",

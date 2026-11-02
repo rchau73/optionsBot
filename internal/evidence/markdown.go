@@ -78,6 +78,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	p("\n")
 
 	writeBridge(p, r.Bridge)
+	writeReconciliation(p, r.Recon)
 
 	rp := r.Replay
 	p("## Replay\n\n")
