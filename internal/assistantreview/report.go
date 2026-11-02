@@ -39,6 +39,11 @@ const GapCoverage = helpkb.DefaultNoAnswer / 2
 // NoPassage names the gap group of questions no passage is close to.
 const NoPassage = "no passage close"
 
+// MinResponses is how many "Helped"/"Didn't help" answers a helped share
+// needs (#579): under it the share is null and the report says "too few
+// responses" — a share of three opinions says nothing.
+const MinResponses = 10
+
 // Report is one week of the assistant's answers. Private: it holds the
 // questions and answers.
 type Report struct {
@@ -55,6 +60,9 @@ type Report struct {
 	Flagged     int           `json:"flagged"`
 	FlagPct     *float64      `json:"flag_pct"`     // flagged ÷ answers; null without answers
 	AnsweredPct *float64      `json:"answered_pct"` // answered ÷ answers
+	// Feedback is the week's "Helped"/"Didn't help" answers (#579): the
+	// person's opinion, never a measure of correctness.
+	Feedback
 	// Review lists every flagged and every dont_know answer of the week, and
 	// every answer of an earlier week flagged during this one (Late).
 	Review []ReviewItem `json:"review"`
@@ -63,12 +71,48 @@ type Report struct {
 	Gaps []Gap `json:"gaps"`
 }
 
-// KindCount is one answer kind: how many, how many flagged.
+// KindCount is one answer kind: how many, how many flagged, and its feedback.
 type KindCount struct {
 	Kind    string   `json:"kind"`
 	Answers int      `json:"answers"`
 	Flagged int      `json:"flagged"`
 	FlagPct *float64 `json:"flag_pct"`
+	Feedback
+}
+
+// Feedback counts answers by the last "Helped"/"Didn't help" choice of the
+// person who asked (#579; the choice can be changed once, the last line wins).
+type Feedback struct {
+	Helped     int `json:"helped"`
+	NotHelped  int `json:"not_helped"`
+	NoFeedback int `json:"no_feedback"`
+	// HelpedPct = helped ÷ (helped + not helped); null under MinResponses responses.
+	HelpedPct *float64 `json:"helped_pct"`
+	// ResponsePct = (helped + not helped) ÷ answers; null without answers.
+	ResponsePct *float64 `json:"response_pct"`
+}
+
+// Responses is how many answers got a "Helped" or a "Didn't help".
+func (f Feedback) Responses() int { return f.Helped + f.NotHelped }
+
+// count adds one answer with its choice (nil: none).
+func (f *Feedback) count(helped *bool) {
+	switch {
+	case helped == nil:
+		f.NoFeedback++
+	case *helped:
+		f.Helped++
+	default:
+		f.NotHelped++
+	}
+}
+
+// shares fills the two percentages from the counts.
+func (f *Feedback) shares() {
+	if f.Responses() >= MinResponses {
+		f.HelpedPct = pct(f.Helped, f.Responses())
+	}
+	f.ResponsePct = pct(f.Responses(), f.Responses()+f.NoFeedback)
 }
 
 // ReasonCount is one guard reason and the answers that hit it.
@@ -122,6 +166,7 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 	var order []string
 	notes := map[string][]string{}
 	flaggedIn := map[string]bool{} // flagged by a flag line placed in the week
+	helped := map[string]*bool{}   // the last feedback choice per answer, from the whole log
 	for _, e := range lg.Entries {
 		switch e.Kind {
 		case KindAnswer:
@@ -137,6 +182,10 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 			}
 			if in(e.TS) {
 				flaggedIn[e.ID] = true
+			}
+		case KindFeedback:
+			if e.Helped != nil {
+				helped[e.ID] = e.Helped
 			}
 		}
 	}
@@ -162,6 +211,8 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 			r.Flagged++
 			kinds[kind].Flagged++
 		}
+		r.Feedback.count(helped[id])
+		kinds[kind].Feedback.count(helped[id])
 		for _, reason := range verdictReasons(a.Verdict) {
 			reasons[reason]++
 		}
@@ -173,12 +224,14 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 	for _, k := range Outcomes {
 		c := kinds[k]
 		c.FlagPct = pct(c.Flagged, c.Answers)
+		c.Feedback.shares()
 		r.ByOutcome = append(r.ByOutcome, *c)
 	}
 	for _, reason := range GuardReasons {
 		r.Reasons = append(r.Reasons, ReasonCount{Reason: reason, Answers: reasons[reason]})
 	}
 	r.FlagPct = pct(r.Flagged, r.Answers)
+	r.Feedback.shares()
 	r.AnsweredPct = pct(kinds[OutcomeAnswered].Answers, r.Answers)
 	sort.SliceStable(r.Review, func(i, j int) bool { return r.Review[i].Time.Before(r.Review[j].Time) })
 	r.Gaps = gaps(r.Review, index)

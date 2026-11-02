@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { GET as getState, POST as ask } from "@/app/api/assistant/route";
+import { POST as feedback } from "@/app/api/assistant/feedback/route";
 import { POST as flag } from "@/app/api/assistant/flag/route";
 import { readAnswers } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
@@ -27,6 +28,7 @@ const request = (url, body, headers = {}) =>
   });
 const askQ = (body, headers) => ask(request("/api/assistant", body, headers));
 const flagA = (body, headers) => flag(request("/api/assistant/flag", body, headers));
+const feedbackA = (body, headers) => feedback(request("/api/assistant/feedback", body, headers));
 const logged = () => [...readAnswers(file).values()];
 const state = (headers = {}) => getState(new Request("http://monitor/api/assistant", { headers: { host: "monitor", cookie, ...headers } }));
 
@@ -304,5 +306,78 @@ describe("flag", () => {
   ])("%s → %i", async (_name, body, status) => {
     await answerId();
     expect((await flagA(body)).status).toBe(status);
+  });
+});
+
+describe("feedback (#579)", () => {
+  const answerId = async () => (await (await askQ({ question: "what is a stop-loss" })).json()).id;
+  const lines = () => fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+
+  test("Scenario: A person marks an answer as helpful — one feedback line, no text", async () => {
+    const id = await answerId();
+    expect((await feedbackA({ id, helped: true })).status).toBe(204);
+    const all = lines();
+    expect(all).toHaveLength(2);
+    expect(all[1]).toEqual({ kind: "feedback", id, ts: expect.any(String), user: "viewer", role: "user", helped: true });
+    expect(readAnswers(file).get(id).feedback).toEqual([{ helped: true }]);
+    // The answer line is never rewritten, and no flag is sent by itself.
+    expect(all[0].flag).toBe(false);
+    expect(readAnswers(file).get(id).flag).toBe(false);
+  });
+
+  test("Scenario: A person says an answer did not help — helped=false is logged, no flag", async () => {
+    const id = await answerId();
+    expect((await feedbackA({ id, helped: false })).status).toBe(204);
+    expect(lines().map((l) => l.kind)).toEqual(["answer", "feedback"]);
+    expect(lines()[1].helped).toBe(false);
+  });
+
+  test("the choice can be changed once, then 409 and nothing written", async () => {
+    const id = await answerId();
+    expect((await feedbackA({ id, helped: false })).status).toBe(204);
+    expect((await feedbackA({ id, helped: true })).status).toBe(204);
+    expect((await feedbackA({ id, helped: false })).status).toBe(409);
+    expect(readAnswers(file).get(id).feedback).toEqual([{ helped: false }, { helped: true }]);
+  });
+
+  describe("Scenario: Feedback needs a session and a real answer", () => {
+    test("no session → 401, nothing written", async () => {
+      const id = await answerId();
+      expect((await feedbackA({ id, helped: true }, { cookie: "" })).status).toBe(401);
+      expect(lines()).toHaveLength(1);
+    });
+
+    test.each([
+      ["an unknown id", { id: "nope", helped: true }, 404],
+      ["no id", { helped: true }, 400],
+      ["no helped", { id: "x" }, 400],
+      ["helped not a boolean", { id: "x", helped: "yes" }, 400],
+    ])("%s → %i, nothing written", async (_name, body, status) => {
+      await answerId();
+      expect((await feedbackA(body)).status).toBe(status);
+      expect(lines()).toHaveLength(1);
+    });
+
+    test("cross-origin → 403", async () => {
+      const id = await answerId();
+      expect((await feedbackA({ id, helped: true }, { origin: "http://evil" })).status).toBe(403);
+      expect(lines()).toHaveLength(1);
+    });
+
+    test("someone else's answer → 403, even for a manager", async () => {
+      const id = await answerId();
+      ({ cookie } = await signedIn("boss", "manager"));
+      expect((await feedbackA({ id, helped: true })).status).toBe(403);
+      expect(lines()).toHaveLength(1);
+    });
+
+    test("an \"I don't know\" or the fallback takes no feedback (409)", async () => {
+      setAssistantModel(fakeModel({ text: "You should sell more puts.", citations: [SRC] }));
+      const fallback = await answerId();
+      const dontKnow = (await (await askQ({ question: "zxqv wplm" })).json()).id;
+      expect((await feedbackA({ id: fallback, helped: true })).status).toBe(409);
+      expect((await feedbackA({ id: dontKnow, helped: false })).status).toBe(409);
+      expect(lines().map((l) => l.kind)).toEqual(["answer", "answer"]);
+    });
   });
 });

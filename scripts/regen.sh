@@ -6,7 +6,9 @@
 #
 #   bash scripts/regen.sh             # regenerate every generated file
 #   bash scripts/regen.sh --resolve   # during a merge: resolve the conflicts in
-#       generated files by regenerating them, and stage them (never commits).
+#       generated files by regenerating them, and in sorted line lists
+#       (SORTED_LISTS) by keeping both sides' lines (scripts/merge_lines.py,
+#       #596), and stage them (never commits).
 #       Exits 3, listing them, while another file still conflicts: resolve
 #       those first (the generators read them), git add, then run it again.
 #
@@ -19,6 +21,10 @@ cd "$(git rev-parse --show-toplevel)"
 generated() {
   git check-attr --stdin linguist-generated | awk -F': ' '$3 == "true" || $3 == "set" { print $1 }'
 }
+
+# Sorted JSON-lines lists every PR adds to (tests/sorted_lists_test.go):
+# a conflict in them is two new lines side by side, both kept.
+SORTED_LISTS="docs/product/assistant/golden.jsonl"
 
 regen() {
   go run ./cmd/paramdocs # docs/parameters.md — first: the help index reads it
@@ -36,6 +42,11 @@ case "${1:-}" in
   "") regen ;;
   --resolve)
     conflicted="$(git diff --name-only --diff-filter=U)"
+    for f in $SORTED_LISTS; do
+      if printf '%s\n' "$conflicted" | grep -qxF "$f" && python3 scripts/merge_lines.py "$f"; then
+        conflicted="$(printf '%s\n' "$conflicted" | grep -vxF "$f" || true)"
+      fi
+    done
     gen=""
     [[ -z "$conflicted" ]] || gen="$(printf '%s\n' "$conflicted" | generated)"
     others="$conflicted"

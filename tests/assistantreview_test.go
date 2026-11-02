@@ -392,3 +392,99 @@ func TestAssistantReview_EmptyWeek(t *testing.T) {
 		t.Fatalf("a missing log is empty: %+v %v", lg, err)
 	}
 }
+
+func arFeedback(t *testing.T, id string, ts time.Time, helped bool) string {
+	return arLine(t, map[string]any{"kind": "feedback", "id": id, "ts": ts.Format(time.RFC3339Nano), "user": "alice.trader", "role": "user", "helped": helped})
+}
+
+// Scenario: The weekly review reports the helped share (#579).
+func TestAssistantReview_ReportsTheHelpedShare(t *testing.T) {
+	w := arWeek(t)
+	var log strings.Builder
+	// 14 answered: 9 helped (one changed its mind: no → yes), 3 didn't, 2 with no feedback;
+	// 2 dont_know: 1 didn't help, 1 none.
+	for i := 0; i < 14; i++ {
+		log.WriteString(arAnswer(t, fmt.Sprintf("a%d", i), w.From.Add(time.Duration(i)*time.Hour), "answered", "q"))
+	}
+	log.WriteString(arFeedback(t, "a8", w.From.Add(19*time.Hour), false)) // a8's first choice, changed below
+	for i := 0; i < 9; i++ {
+		log.WriteString(arFeedback(t, fmt.Sprintf("a%d", i), w.From.Add(20*time.Hour), true))
+	}
+	for i := 9; i < 12; i++ {
+		log.WriteString(arFeedback(t, fmt.Sprintf("a%d", i), w.From.Add(20*time.Hour), false))
+	}
+	log.WriteString(arAnswer(t, "d1", w.From, "dont_know", "q") + arAnswer(t, "d2", w.From, "dont_know", "q"))
+	log.WriteString(arFeedback(t, "d1", w.From.Add(time.Hour), false))
+	log.WriteString(arFeedback(t, "unknown", w.From, true)) // no answer line: not counted
+
+	r := arBuild(t, log.String(), nil)
+	a := arKind(r, "answered")
+	if a.Helped != 9 || a.NotHelped != 3 || a.NoFeedback != 2 {
+		t.Fatalf("answered feedback %+v", a.Feedback)
+	}
+	if a.HelpedPct == nil || *a.HelpedPct != 75 {
+		t.Fatalf("helped share %v, want 75", a.HelpedPct)
+	}
+	if a.ResponsePct == nil || *a.ResponsePct != 100*12.0/14 {
+		t.Fatalf("response rate %v, want 12 of 14", a.ResponsePct)
+	}
+	if r.Helped != 9 || r.NotHelped != 4 || r.NoFeedback != 3 || r.HelpedPct == nil || r.ResponsePct == nil {
+		t.Fatalf("week feedback %+v", r.Feedback)
+	}
+	// dont_know has 1 response: too few for a share; the rate is still given.
+	d := arKind(r, "dont_know")
+	if d.NotHelped != 1 || d.HelpedPct != nil || d.ResponsePct == nil || *d.ResponsePct != 50 {
+		t.Fatalf("dont_know feedback %+v", d.Feedback)
+	}
+	s := assistantreview.Summary(r)
+	if s.Helped != 9 || s.NotHelped != 4 || s.HelpedPct == nil || *s.HelpedPct != *r.HelpedPct {
+		t.Fatalf("summary feedback %+v", s.Feedback)
+	}
+	js, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{`"helped":9`, `"not_helped":4`, `"no_feedback":3`, `"helped_pct"`, `"response_pct"`} {
+		if !strings.Contains(string(js), key) {
+			t.Fatalf("summary json has no %s: %s", key, js)
+		}
+	}
+	var md bytes.Buffer
+	if err := assistantreview.Markdown(&md, r); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"## Did it help?", "not a measure of correctness",
+		"| answered | 14 | 9 | 3 | 2 | 75.0 % | 85.7 % |", "| dont_know | 2 | 0 | 1 | 1 | too few responses (1 of 10) | 50.0 % |"} {
+		if !strings.Contains(md.String(), want) {
+			t.Fatalf("report has no %q:\n%s", want, md.String())
+		}
+	}
+}
+
+// Scenario: a week with fewer than 10 responses says "too few responses" instead of a percentage.
+func TestAssistantReview_TooFewResponsesHasNoShare(t *testing.T) {
+	w := arWeek(t)
+	var log strings.Builder
+	for i := 0; i < assistantreview.MinResponses; i++ {
+		log.WriteString(arAnswer(t, fmt.Sprintf("a%d", i), w.From, "answered", "q"))
+		if i < assistantreview.MinResponses-1 {
+			log.WriteString(arFeedback(t, fmt.Sprintf("a%d", i), w.From, true))
+		}
+	}
+	r := arBuild(t, log.String(), nil)
+	if r.Helped != 9 || r.HelpedPct != nil || r.ResponsePct == nil || *r.ResponsePct != 90 {
+		t.Fatalf("9 responses: no share, rate 90 %%: %+v", r.Feedback)
+	}
+	var md bytes.Buffer
+	if err := assistantreview.Markdown(&md, r); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md.String(), "helped share too few responses (9 of 10)") {
+		t.Fatalf("report does not say too few responses:\n%s", md.String())
+	}
+	// The tenth response is the boundary: the share appears.
+	r = arBuild(t, log.String()+arFeedback(t, "a9", w.From, false), nil)
+	if r.HelpedPct == nil || *r.HelpedPct != 90 {
+		t.Fatalf("10 responses: share %v, want 90", r.HelpedPct)
+	}
+}

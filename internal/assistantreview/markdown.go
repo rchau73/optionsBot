@@ -16,12 +16,19 @@ func Markdown(w io.Writer, r Report) error {
 	p("%s to %s (UTC), from `data/monitor/assistant.jsonl` (#438). **Private:** this file holds the questions and answers; only the counts of `<week>.summary.json` may be shared.\n\n",
 		r.From.Format(time.DateOnly), r.To.AddDate(0, 0, -1).Format(time.DateOnly))
 	p("- Answers: %d — answered %s, flagged %d (%s)\n", r.Answers, fmtPct(r.AnsweredPct), r.Flagged, fmtPct(r.FlagPct))
+	p("- Did it help? (the person's opinion, not a measure of correctness): helped %d, didn't help %d, no feedback %d — helped share %s, response rate %s\n",
+		r.Helped, r.NotHelped, r.NoFeedback, helpedShare(r.Feedback), fmtPct(r.ResponsePct))
 	if r.Skipped > 0 {
 		p("- Unreadable log lines skipped: %d\n", r.Skipped)
 	}
 	p("\n## Answers by kind\n\n| kind | answers | flagged | flag rate |\n|---|---|---|---|\n")
 	for _, k := range r.ByOutcome {
 		p("| %s | %d | %d | %s |\n", k.Kind, k.Answers, k.Flagged, fmtPct(k.FlagPct))
+	}
+	p("\n## Did it help?\n\nThe last \"Helped\" or \"Didn't help\" of the person who asked (#579): their opinion, never a measure of correctness. Helped share = helped ÷ (helped + didn't help), shown from %d responses; response rate = (helped + didn't help) ÷ answers.\n\n", MinResponses)
+	p("| kind | answers | helped | didn't help | no feedback | helped share | response rate |\n|---|---|---|---|---|---|---|\n")
+	for _, k := range r.ByOutcome {
+		p("| %s | %d | %d | %d | %d | %s | %s |\n", k.Kind, k.Answers, k.Helped, k.NotHelped, k.NoFeedback, helpedShare(k.Feedback), fmtPct(k.ResponsePct))
 	}
 	p("\n## Guard rejections\n\n| reason | answers |\n|---|---|\n")
 	for _, g := range r.Reasons {
@@ -81,6 +88,14 @@ func fmtPct(v *float64) string {
 		return "—"
 	}
 	return fmt.Sprintf("%.1f %%", *v)
+}
+
+// helpedShare is the helped share, or "too few responses" under MinResponses.
+func helpedShare(f Feedback) string {
+	if f.HelpedPct == nil {
+		return fmt.Sprintf("too few responses (%d of %d)", f.Responses(), MinResponses)
+	}
+	return fmtPct(f.HelpedPct)
 }
 
 func oneLine(s string) string {

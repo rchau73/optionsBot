@@ -2,19 +2,23 @@
 # pr_gate.sh — every tick, before the agents: makes sure a person only picks up
 # Dev agent PRs that are ready (product owner, 2026-10-19). For each open
 # agent:dev PR (pr_gate.py decide):
-#   conflict → only in generated files: main merged in and the generators
-#              rerun here (scripts/regen.sh, #465), the Reviewer checks the
-#              new commit; any other: the card goes back to Ready with
+#   conflict → only in generated files or sorted line lists: main merged in,
+#              the lists merged line by line and the generators rerun here
+#              (scripts/regen.sh, #465, #596), the Reviewer checks the new
+#              commit; any other: the card goes back to Ready with
 #              needs-rebase, the Dev agent merges main and resolves (dev_agent.sh);
 #   update   → behind main without conflict: gh pr update-branch, and the
 #              Reviewer checks the new commit;
 #   ready    → reviewed clean on its current commit, CI green, CLEAN, no open
 #              dependency: label ready-to-merge (the person's queue) — a PR
 #              that changes a business rule or policy, or any PR with
-#              PR_AUTO_MERGE=0 (agents.env);
-#   merge    → the same, policy-free and up to date with main: merged here
-#              (#468, product owner 2026-10-28), at most one per run so the
-#              next one is updated and re-tested on the new main first;
+#              PR_AUTO_MERGE=0 (agents.env); the person approves it with the
+#              label merge:approved instead of the merge button (#596);
+#   merge    → the same, policy-free (or approved) and up to date with main:
+#              merged here (#468, product owner 2026-10-28), at most one per
+#              run so the next one is updated and re-tested on the new main
+#              first — approved PRs too, so several approved at once merge in
+#              turn instead of each making the next one conflict (#596);
 #   undraft  → a draft In review with CI green: gh pr ready, so the Reviewer
 #              starts on it (#472: the Dev agent opens every PR as a draft and
 #              hands the full suite to CI);
@@ -122,10 +126,41 @@ gate_run() {
   run_end "$1" "$2"
 }
 
+# approval — sets approved=1 when the owner's label merge:approved is on the PR
+# for the commit it was given on, or one that only updates it with main (#596).
+# The commit is the head when the gate first sees the label; a later commit of
+# the PR's own voids it: the label comes off, and the person is asked again.
+# Agent sessions hold no GitHub credentials (lib.sh no_github), so only the
+# person and these scripts can label; no script adds this one.
+approval() {
+  local key="$pr:approved" given
+  approved=0
+  given="$(recall "$key")"
+  if ! py 'import json,sys; sys.exit(0 if any(l["name"] == "merge:approved" for l in json.load(open(sys.argv[1]))["labels"]) else 1)' "$tmp/pr.json"; then
+    [[ -z "$given" ]] || remember "$key" ""
+    return 0
+  fi
+  [[ "$card" == "In progress" ]] && return 0 # a Dev agent may push any minute: decide waits
+  if [[ -z "$given" ]]; then
+    remember "$key" "$head"; given="$head"
+    log "pr-gate: #$pr approved (merge:approved) on ${head:0:7}"
+  fi
+  if [[ "$given" == "$head" ]] || grep -qx "$given" "$tmp/equiv.txt"; then
+    approved=1
+    return 0
+  fi
+  gh pr edit "$pr" -R "$slug" --remove-label merge:approved >/dev/null < /dev/null || true
+  gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — \`merge:approved\` was given on \`${given:0:7}\`; the PR has changed since (\`${head:0:7}\`), so the label came off. Look at the new commits and add it again to merge." >/dev/null < /dev/null || true
+  remember "$key" ""
+  log "pr-gate: #$pr approval of ${given:0:7} void: head is ${head:0:7}"
+  gate_run approval_void "approved commit ${given:0:7} is no longer the head"
+}
+
 # merge_regenerating <branch> — a PR that conflicts with main only in generated
 # files (.gitattributes linguist-generated: the help index, docs/parameters.md,
-# the effective-config goldens) needs no agent (#465): merge main into the
-# branch in a scratch worktree, rerun the generators (scripts/regen.sh), push.
+# the effective-config goldens) or in sorted line lists (golden.jsonl) needs no
+# agent (#465, #596): merge main into the branch in a scratch worktree, let
+# scripts/regen.sh merge the lists and rerun the generators, push.
 # Any other conflict, or a failure, pushes nothing and returns 1.
 merge_regenerating() {
   local branch="$1" wt="$tmp/merge"
@@ -160,7 +195,9 @@ while read -r pr ref; do
   head="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["headRefOid"])' "$tmp/pr.json")"
   # Every changed path (the files API pages past gh pr view's 100), how far
   # behind main the head is, and the review the head inherits, if any.
-  gh api "repos/$slug/pulls/$pr/files" --paginate -q '.[].filename' > "$tmp/files.txt" < /dev/null
+  gh api "repos/$slug/pulls/$pr/files" --paginate -q '.[] | "\(.deletions)\t\(.filename)"' > "$tmp/files.tsv" < /dev/null
+  cut -f2 "$tmp/files.tsv" > "$tmp/files.txt"
+  awk -F'\t' '$1 > 0 { print $2 }' "$tmp/files.tsv" > "$tmp/removed.txt" # paths that lose a line (pr_gate.py ADD_ONLY)
   behind="$(gh api "repos/$slug/compare/main...$head" -q .behind_by < /dev/null || echo 0)"
   : > "$tmp/equiv.txt"
   last="$(tail -1 "$tmp/markers.txt" | sed -n 's/^sha=\([0-9a-f]*\) .*/\1/p')"
@@ -171,8 +208,9 @@ while read -r pr ref; do
   for d in $(gh issue view "$issue" -R "$slug" --json author,body -q "$(mine_jq "$slug")"'own_body' < /dev/null | python3 "$BOARD_PY" deps); do
     [[ "$(gh issue view "$d" -R "$slug" --json state -q .state < /dev/null)" == "OPEN" ]] && echo "$d" >> "$tmp/deps.txt"
   done
+  approval
   read -r action why < <(python3 "$GATE_PY" decide "$tmp/pr.json" "$tmp/markers.txt" "$tmp/deps.txt" \
-    "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}" "$card")
+    "$tmp/equiv.txt" "$tmp/files.txt" "$behind" "${PR_AUTO_MERGE:-1}" "$card" "$tmp/removed.txt" "$approved")
   flaky_after_rerun
   has_ready="$(py 'import json,sys; print(any(l["name"] == "ready-to-merge" for l in json.load(open(sys.argv[1]))["labels"]))' "$tmp/pr.json")"
   issue_ready="$(gh issue view "$issue" -R "$slug" --json labels -q '[.labels[].name] | index("ready-to-merge") != null' < /dev/null)"
@@ -211,7 +249,7 @@ while read -r pr ref; do
       if [[ "$has_ready" != "True" ]]; then
         gh pr edit "$pr" -R "$slug" --add-label ready-to-merge >/dev/null < /dev/null
         if [[ "$(seen "$pr" "ready:$head")" != "1" ]]; then
-          gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — ready for you to merge (\`${head:0:7}\`): $why. Nothing it depends on is open." >/dev/null < /dev/null
+          gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — ready for you (\`${head:0:7}\`): $why. Nothing it depends on is open. To merge, add the label \`merge:approved\`: the gate merges approved PRs one at a time, each up to date with \`main\` and green first." >/dev/null < /dev/null
           notify "PR #$pr ready to merge" "issue #$issue"
           remember "$pr" "ready:$head"
         fi
@@ -226,7 +264,7 @@ while read -r pr ref; do
         gh pr comment "$pr" -R "$slug" --body "🤖 **PR gate** — merged \`${head:0:7}\`: $why (#468). mvp redeploys it on its next tick; stable moves only by a release." >/dev/null < /dev/null || true
         notify "PR #$pr merged" "issue #$issue"
         log "pr-gate: #$pr merged"
-        gate_run merged "reviewed clean, CI green, up to date, no policy change"
+        gate_run merged "$why"
       else
         log "pr-gate: #$pr merge refused: $(head -c 200 "$tmp/merge.err")"
         gate_run failed "merge refused: $(head -c 120 "$tmp/merge.err" | tr '\n' ' ')"

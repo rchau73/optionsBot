@@ -14,6 +14,10 @@ It makes no Claude call, so the budget does not hold it, and it runs beside the 
    Nothing is filed when an open issue, or one closed in the last 14 days, has a title ending in `Flaky test: <name>`.
 
 A test that failed every run is not flaky: it is logged and nothing is filed, because CI catches it.
+A jest test whose timeout fired more than a minute after it was due (`STALL_LATE_MS`) is not counted either: the process was frozen, not the test slow, and the log names it `stalled` (#587).
+On 2026-11-02 the runner slept mid-run: tests passed after 590 s and 740 s with 5–30 s timeouts, and tests that timed out in that window were filed as flaky (#587, #589).
+CPU load delays a timer by seconds, not a minute, so a test that is really slow under load is still filed.
+On macOS the hunt runs `caffeinate -is` for as long as `flaky.sh` lives, so the Mac does not idle-sleep mid-run.
 Past the time limit everything is stopped, nothing is filed and the log says it timed out.
 `data/agents/flaky/<date>.done` is written when the hunt starts, so a crash is not retried every tick.
 Results and logs: `data/agents/flaky/<date>/`.
