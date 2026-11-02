@@ -45,6 +45,11 @@ export async function flagAssistantAnswer(id) {
   await sendJSON("/api/assistant/flag", "POST", { id });
 }
 
+/** Says whether an assistant answer helped (#579); throws with the server's reason. */
+export async function sendAssistantFeedback(id, helped) {
+  await sendJSON("/api/assistant/feedback", "POST", { id, helped });
+}
+
 /**
  * Sends a draft request for review (#409): { answerId, kind, fields } →
  * { id, status }. Only the draft card's Send calls it; throws with the

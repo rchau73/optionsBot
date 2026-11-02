@@ -194,6 +194,13 @@ It answers in English, whatever language you write in: its checks for advice and
 **Limits and flags**: each person has a number of questions an hour, shown under the box. *Flag* marks an answer for review. Questions and answers are logged for review, never the account's keys.
 <!-- guide: route:POST /api/assistant, route:POST /api/assistant/flag -->
 
+**Did this help?**: under an answer, *Helped* and *Didn't help* tell the team whether it solved your question, in one click and without writing anything.
+The choice can be changed once.
+*Didn't help* also offers *Report it as wrong*, which flags the answer; nothing is flagged unless you press it.
+The buttons appear only under an answer, not under "I don't know", a refusal, the safe fallback reply or a request draft.
+Your choice is your opinion of the answer, not a check of whether it was correct; the weekly review counts the choices, never your question.
+<!-- guide: route:POST /api/assistant/feedback -->
+
 **How to report a bug or ask for a feature**: describe it in the Ask box with what you saw, where (the page, the bot and the time) and the evidence (a number, a journal entry or the steps to see it again). When something is missing, the assistant lists what to add. When it has enough, it shows a draft request, a bug or an enhancement. Nothing is sent until you press *Send for review*; *Edit* changes any field and *Discard* drops it. A sent request goes to a private review queue, not to the public repository, and amounts, account details and personal data are removed before anything is made public. Each person may send 10 requests a day.
 
 **My requests**: the tab in the Ask panel lists the requests you sent, newest first, with their status (In review, Filed, Fixed, Not planned, Not a bug, Duplicate or Needs info) and the team's note. You see only your own.

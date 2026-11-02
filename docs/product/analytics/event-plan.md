@@ -30,6 +30,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `assistant_answered` | the panel shows the monitor's reply to a question (status 200; a limit, an error or the assistant being off is no reply) — its kind only, never the question, the answer or their ids (#424) | `answer` | Q5 |
 | `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
 | `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
+| `assistant_helpful` | the person who asked clicks "Helped" or "Didn't help" under an answer (#579) — the choice only, never the question, the answer or its id; their opinion, not a measure of correctness | `helped` | Q5 |
 | `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
 | `consent_answered` | the person says yes to usage analytics, on the one-time notice or the Account › Privacy switch (#577); sent only after the yes is stored, so a no is never an event (the no totals come from the Analytics page's server-side consent counts) | `consent` | Q1, Q8 |
 | `consent_notice_shown` | the one-time consent notice was shown and answered yes (#577); sent with that yes, never before it (the shown totals come from the server-side consent counts) | — | Q1, Q8 |

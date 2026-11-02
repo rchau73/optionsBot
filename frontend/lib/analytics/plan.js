@@ -81,6 +81,7 @@ export const EVENTS = {
   assistant_answered: ["answer"],
   assistant_ask: ["entry"],
   assistant_flag: [],
+  assistant_helpful: ["helped"],
   assistant_open: ["entry"],
   consent_answered: ["consent"],
   consent_notice_shown: [],
