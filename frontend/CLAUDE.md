@@ -14,6 +14,9 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
 - **The team's cards in the Ask panel** (#446, #498): `NpsCard.jsx` and `AnswersCard.jsx`, one at a time (NPS first, never both in one tab);
   their due rules share `surveyNotEligibleReason` (`lib/analytics/nps.js`) and are decided on the server from the user's row, so a new card reuses it rather than a second copy.
 
+- **Did this help?** (#579): `components/HelpfulButtons.jsx` under an `answered` reply posts `POST /api/assistant/feedback` (a `feedback` line in `assistant.jsonl`, `frontend/docs/assistant.md` "Routes");
+  `cmd/assistantreview` reports `helped`, `not_helped`, `no_feedback`, `helped_pct` (from 10 responses) and `response_pct` per kind — the person's opinion, never a measure of correctness.
+
 - **The Overview's four answers** (#489, epic E3): `__tests__/overview-four-answers.test.jsx` renders the desktop Overview on four fixtures (profit, loss, nothing held, stale)
   and fails when a redesign drops one answer: the positions per strangle, the month net of fees in coin and USD (a loss as prominent as a gain),
   the worst case in money, and the last trade's one-click Why? (`LastTrade`, from `/api/summary`'s `last_action`).

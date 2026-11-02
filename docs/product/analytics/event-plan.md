@@ -30,6 +30,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `assistant_answered` | the panel shows the monitor's reply to a question (status 200; a limit, an error or the assistant being off is no reply) — its kind only, never the question, the answer or their ids (#424) | `answer` | Q5 |
 | `assistant_ask` | a question is sent from the panel; never its text | `entry` | Q5 |
 | `assistant_flag` | the person flags an answer as wrong; never the answer or its id | — | Q5, Q7 |
+| `assistant_helpful` | the person who asked clicks "Helped" or "Didn't help" under an answer (#579) — the choice only, never the question, the answer or its id; their opinion, not a measure of correctness | `helped` | Q5 |
 | `assistant_open` | the assistant panel opens: the menu bar's Ask, or Why? on a trade (E10, #408) | `entry` | Q5 |
 | `data_stale_shown` | the page shows a stale or failed-poll badge | `source` | Q7 |
 | `details_section_jump` | a link of the Details (pro) page's section bar is followed (#405) | `section` | Q3 |
