@@ -20,6 +20,11 @@ type View struct {
 	Halted      bool      `json:"halted"`  // kill switch has fired
 	LoopAt      time.Time `json:"loop_at"` // last completed decision cycle
 	EvalEveryMS int       `json:"eval_interval_ms"`
+	// LoopAgeSec is how old LoopAt is on the wall clock; LoopStale is true when
+	// it is more than LoopLateCycles intervals old and the loop is not halted
+	// (loopage.go, #593).
+	LoopAgeSec int  `json:"loop_age_sec"`
+	LoopStale  bool `json:"loop_stale"`
 	// StopLossMultiple: a leg is bought back once its loss reaches this
 	// multiple of its premium (stop_loss_multiplier), for the plain words.
 	StopLossMultiple float64 `json:"stop_loss_multiple"`
@@ -286,6 +291,8 @@ func (s *Strategy) View() View {
 		Halted:              pub.halted,
 		LoopAt:              pub.at,
 		EvalEveryMS:         s.cfg.EvalIntervalMS,
+		LoopAgeSec:          int(LoopAge(pub.at, now).Seconds()),
+		LoopStale:           LoopLate(pub.at, pub.halted, now, time.Duration(s.cfg.EvalIntervalMS)*time.Millisecond),
 		StopLossMultiple:    s.cfg.StopLossMultiplier,
 		DeltaExitThreshold:  s.cfg.DeltaExitThreshold,
 		RepairCooldownHours: s.cfg.RepairCooldownHours,
