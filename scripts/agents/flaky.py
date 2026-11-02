@@ -17,7 +17,10 @@ suites; this reads their results and writes the issues to file.
         (lib.sh note_flaky: a test a PR's checks retried and saw pass, #472)
 
 A test is flaky when it both passed and failed tonight; one that failed every
-run is not (CI catches it): it is logged, nothing is filed. An issue names a
+run is not (CI catches it): it is logged, nothing is filed. A jest test whose
+timeout fired more than STALL_LATE_MS after it was due is neither (#587): the
+process was frozen (2026-11-02: the runner slept, tests passed after 590 s with
+a 30 s timeout), so the run is only logged as stalled. An issue names a
 test when its title ends with "Flaky test: <name>"; an open one, or one closed
 in the last DEDUP_DAYS days, is a duplicate (as deploy_issue.py, nothing is
 filed twice).
@@ -27,6 +30,7 @@ Standard library only.
 import datetime as dt
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -38,6 +42,10 @@ DEDUP_DAYS = 14
 TIMED_OUT = 124
 GO_SUITE = "Go: `go test ./tests/... -race -count=5`"
 JEST_SUITE = "frontend: `npm test -- --ci`, 3 runs"
+# A timeout timer firing this late means the event loop did not run at all
+# (sleep, SIGSTOP); CPU load delays it by seconds, not a minute.
+STALL_LATE_MS = 60_000
+JEST_TIMEOUT = re.compile(r"Exceeded timeout of (\d+) ms")
 
 
 class Result:
@@ -45,7 +53,7 @@ class Result:
 
     def __init__(self, name, suite, where):
         self.name, self.suite, self.where = name, suite, where
-        self.passes = self.fails = 0
+        self.passes = self.fails = self.stalls = 0
         self.output = None  # the first failure's output
 
     def failed(self, output):
@@ -93,9 +101,18 @@ def _jest_file(path):
     return path.split(marker, 1)[1] if marker in path else os.path.basename(path)
 
 
+def stalled(assertion):
+    """True when a failed jest test timed out more than STALL_LATE_MS after its
+    timeout was due: the process was frozen, not the test slow."""
+    m = JEST_TIMEOUT.search("\n".join(assertion.get("failureMessages") or []))
+    duration = assertion.get("duration")
+    return bool(m) and isinstance(duration, (int, float)) and duration - int(m.group(1)) > STALL_LATE_MS
+
+
 def parse_jest(report, results):
     """Adds one `jest --json` report to results. A suite that failed with no
-    failing test (it did not load) counts as a failure of the suite itself."""
+    failing test (it did not load) counts as a failure of the suite itself;
+    a stalled test (see stalled) counts as neither a pass nor a failure."""
     for suite in report.get("testResults", []):
         where = _jest_file(suite.get("name", ""))
         any_failed = False
@@ -107,6 +124,9 @@ def parse_jest(report, results):
             r = results.setdefault(name, Result(name, JEST_SUITE, where))
             if status == "passed":
                 r.passes += 1
+            elif stalled(a):
+                any_failed = True  # the suite failed because of it, not by itself
+                r.stalls += 1
             else:
                 any_failed = True
                 r.failed("\n".join(a.get("failureMessages") or []))
@@ -188,6 +208,9 @@ def plan(results, issues, commit, pairs, now):
     """(log lines, [(title, body)] to file)."""
     flaky, broken = classify(results)
     lines, filings = [], []
+    for r in sorted((r for r in results.values() if r.stalls), key=lambda r: r.name):
+        lines.append(f"stalled: {r.name} ({r.stalls} run(s) timed out over {STALL_LATE_MS // 1000} s late: "
+                     "the process was frozen, e.g. the machine slept) — not counted")
     for r in broken:
         lines.append(f"always fails: {r.name} (failed {r.fails} of {r.fails}) — not flaky, nothing filed")
     for r in flaky:
@@ -197,7 +220,7 @@ def plan(results, issues, commit, pairs, now):
             continue
         lines.append(f"flaky: {r.name} (passed {r.passes}, failed {r.fails}) — filing")
         filings.append((title(r.name), body(r, commit, pairs)))
-    if not flaky and not broken:
+    if not lines:
         lines.append("no test failed")
     return lines, filings
 

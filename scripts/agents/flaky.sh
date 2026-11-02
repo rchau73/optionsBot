@@ -10,7 +10,8 @@
 #      `bug` issue "[E6] Flaky test: <name>" per flaky test in Triage (counts,
 #      commit, the first failure's output with .env secrets redacted), unless
 #      an open issue or one closed in 14 days already names it. A test that
-#      failed every run is logged, nothing filed (CI catches it).
+#      failed every run is logged, nothing filed (CI catches it); so is a jest
+#      timeout that fired over a minute late (the process was frozen, #587).
 # Past the time limit everything is stopped and nothing is filed: the log says
 # it timed out. The night is marked done when it starts, so a crash is not
 # retried every tick. No Claude call, no order; GitHub: the issues only.
@@ -42,6 +43,9 @@ on_exit_remove "$wt" # git worktree prune forgets it on the next night
 commit="$(git -C "$wt" rev-parse HEAD)"
 RUN_COMMIT="${commit:0:7}"
 log "flaky: testing ${commit:0:7} in $wt"
+# Keep the Mac awake while this script lives (#587: it slept mid-run on
+# 2026-11-02 and every test spanning the sleep timed out); skipped off macOS.
+if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & fi
 
 limit_sec="${FLAKY_LIMIT_SEC:-$(( ${FLAKY_LIMIT_MIN:-30} * 60 ))}" # FLAKY_LIMIT_SEC: tests
 deadline=$(( $(date +%s) + limit_sec ))
