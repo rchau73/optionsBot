@@ -23,6 +23,7 @@ slug="$(repo_slug)"; owner="$(repo_owner)"
 log "repo $slug"
 
 # ── 1. Labels ────────────────────────────────────────────────────────────────
+# GitHub refuses a label description over 100 characters.
 label() { gh label create "$1" -R "$slug" --color "$2" --description "$3" --force >/dev/null && log "label $1"; }
 label "agent:sme"         "5319e7" "Opened by the SME agent (daily review)"
 label "agent:dev"         "1d76db" "Pull request opened by the Dev agent"
@@ -32,16 +33,16 @@ label "severity:high"     "b60205" "Capital at risk or the bot not doing its job
 label "severity:medium"   "fbca04" "Money left on the table or a rule misbehaving"
 label "severity:low"      "c2e0c6" "Hygiene"
 label "agent:pm"          "0052cc" "Triaged by the PM agent (product-manager skill)"
-label "pm:self-merge"     "0052cc" "PRD pull request with no strategy policy change: the PM agent merges it once CI is green (remove to merge it yourself)"
+label "pm:self-merge"     "0052cc" "PRD PR with no strategy policy change: the PM agent merges it once green (remove: you merge)"
 label "epic"              "3e4b9e" "Epic of the approved PRD (docs/product/PRD.md): stories are its sub-issues"
 label "epic:parked"       "bfd4f2" "Epic parked in the PRD: nothing goes to Ready"
 label "prototype:review"  "f9d0c4" "Prototype ready for a person to review (link on the epic)"
 label "prototype:approved" "0e8a16" "A person approved the epic's prototype: its UI stories may go to Ready"
 label "regression"        "b60205" "A bug a merged PR caused: its body names it on a \"Caused by #N\" line (cmd/dora's change failure rate, #470)"
 label "sme:not-fixed"    "b60205" "The SME agent found the merged fix did not work: blocks scripts/promote.sh"
-label "release:hotfix"   "d93f0b" "With bug: release.sh releases its merged fix to stable after 1 h on mvp, before the 3-day soak (#471)"
+label "release:hotfix"   "d93f0b" "With bug: release.sh releases its fix to stable after 1 h on mvp, before the soak (#471)"
 label "needs-fix"        "fbca04" "Checks failed (the Dev agent's or CI): back to the Dev agent once, with the failing log tails (#472)"
-label "merge:approved"   "0e8a16" "A person approves this ready-to-merge PR: the PR gate merges it, one at a time, up to date with main and green first (#596)"
+label "merge:approved"   "0e8a16" "Approve a ready-to-merge PR: the PR gate merges approved PRs one at a time (#596)"
 
 # ── 2. Project board ────────────────────────────────────────────────────────
 num="$(gh project list --owner "$owner" --format json -L 100 |
