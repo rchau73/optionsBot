@@ -81,13 +81,34 @@ POLICY_PATHS = [
     ("scripts/agents/limit_lib.sh", "the agents' budget"),
 ]
 
+# Working docs inside docs/product/ that are no business rule or policy (#596):
+# the assistant's README and request triage, the lab, competitors, releases.
+# Each waited for a person's merge only because it lives beside the PRD, went
+# stale meanwhile and conflicted (#567: 47 h).
+WORKING_DOCS = (
+    "docs/product/assistant/README.md",
+    "docs/product/assistant/request-triage.md",
+    "docs/product/competitors/",
+    "docs/product/lab/",
+    "docs/product/releases/",
+)
+
+# Files that are no policy change while a PR only adds lines to them (#596):
+# a new golden question adds a test; changing or removing one changes what
+# the assistant is held to, which a person decides.
+ADD_ONLY = ("docs/product/assistant/golden.jsonl",)
+
+
 # The merge `gh pr update-branch` makes: no conflict is possible in it, so the
 # PR's own change is still the one the Reviewer saw.
 UPDATE_SUBJECT = re.compile(r"^Merge branch 'main' into ")
 
 
-def policy_paths(files):
-    """The policy reasons the changed paths touch, each named once, in list order."""
+def policy_paths(files, removed=()):
+    """The policy reasons the changed paths touch, each named once, in list order.
+    removed: the paths whose change deletes a line (ADD_ONLY counts only then)."""
+    removed = set(removed)
+    files = [f for f in files if not f.startswith(WORKING_DOCS) and not (f in ADD_ONLY and f not in removed)]
     out = []
     for prefix, why in POLICY_PATHS:
         if any(f.startswith(prefix) for f in files) and why not in out:
@@ -109,7 +130,10 @@ def equiv(compare):
     return compare.get("base_commit", {}).get("sha") or compare.get("merge_base_commit", {}).get("sha")
 
 
-def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card=""):
+def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card="", removed=(), approved=False):
+    """approved: a person labelled the PR merge:approved on this commit (or one
+    it is a clean update of): a policy PR then merges here like a free one,
+    one per run, up to date with main first (#596)."""
     labels = {l["name"] for l in pr.get("labels", [])}
     if pr.get("state") != "OPEN":
         return "wait", "not an open pull request"
@@ -152,13 +176,17 @@ def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False
         return "wait", why
     if pr.get("mergeStateStatus") not in ("CLEAN", "HAS_HOOKS"):
         return "wait", f"GitHub reports {pr.get('mergeStateStatus')}"
-    reasons = [f"it touches {why}" for why in policy_paths(files)]
+    reasons = [f"it touches {why}" for why in policy_paths(files, removed)]
     if policy == "yes":
         reasons.append("the Reviewer marked it a policy change")
     elif policy != "no":
         reasons.append("the Reviewer did not say whether it changes a policy")
+    if approved:
+        if behind > 0:
+            return "update", f"approved (merge:approved), behind main by {behind}: updated before it merges"
+        return "merge", "approved by a person (merge:approved), reviewed clean, CI green, up to date with main"
     if reasons:
-        return "ready", "reviewed clean, CI green, no conflict; a person merges it: " + "; ".join(reasons)
+        return "ready", "reviewed clean, CI green, no conflict; a person approves it: " + "; ".join(reasons)
     if not auto:
         return "ready", "reviewed clean, CI green, no conflict; auto-merge is off (PR_AUTO_MERGE=0)"
     if behind > 0:
@@ -190,11 +218,13 @@ def main(argv):
         raise SystemExit(f"unknown command {argv[1]}")
     pr = json.load(open(argv[2]))
     deps = [int(l) for l in lines(argv[4])]
-    extra = argv[5:10]
+    extra = argv[5:12]
     equiv_shas, files = (lines(extra[0]), lines(extra[1])) if extra else ((), ())
     behind, auto = (int(extra[2] or 0), extra[3] == "1") if extra else (0, False)
     card = extra[4] if len(extra) > 4 else ""
-    action, why = decide(pr, lines(argv[3]), deps, equiv_shas, files, behind, auto, card)
+    removed = lines(extra[5]) if len(extra) > 5 and extra[5] else ()
+    approved = len(extra) > 6 and extra[6] == "1"
+    action, why = decide(pr, lines(argv[3]), deps, equiv_shas, files, behind, auto, card, removed, approved)
     print(action, why)
 
 

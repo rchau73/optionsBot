@@ -134,6 +134,23 @@ class AutoMerge(unittest.TestCase):
             self.assertEqual(run("In progress"), "wait a Dev agent is working on it")
             self.assertTrue(run().startswith("merge"))
 
+    def test_working_docs_in_docs_product_are_not_policy(self):
+        # #596: they waited for a person only because they sit beside the PRD.
+        for path in ["docs/product/assistant/README.md", "docs/product/lab/README.md",
+                     "docs/product/competitors/README.md", "docs/product/releases/README.md"]:
+            self.assertEqual(auto(files=[path])[0], "merge", path)
+        for path in ["docs/product/PRD.md", "docs/product/decisions/x.md", "docs/product/analytics/event-plan.md",
+                     "docs/product/assistant/contract.md", "docs/product/education/tips.json", "docs/product/new.md"]:
+            self.assertEqual(auto(files=[path])[0], "ready", path)
+
+    def test_golden_questions_added_only_are_not_policy(self):
+        golden = "docs/product/assistant/golden.jsonl"
+        got = pr_gate.decide(pr(), CLEAN_FREE, [], (), [golden], 0, True, "", ())
+        self.assertEqual(got[0], "merge")
+        a, why = pr_gate.decide(pr(), CLEAN_FREE, [], (), [golden], 0, True, "", [golden])
+        self.assertEqual(a, "ready")
+        self.assertIn("the PRD and product policies", why)
+
     def test_blocking_or_ci_still_stop_a_merge(self):
         self.assertEqual(auto(markers=["sha=abc verdict=blocking policy=no"])[0], "wait")
         red = [{"__typename": "CheckRun", "name": "ci", "status": "COMPLETED", "conclusion": "FAILURE"}]
@@ -204,3 +221,40 @@ class Equiv(unittest.TestCase):
                   commit(subject="Merge remote-tracking branch 'origin/main'")]:
             self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": [commit(), c]}))
         self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": []}))
+
+
+def approved(p=None, markers=CLEAN, files=("internal/strategy/open.go",), behind=0, on=False):
+    return pr_gate.decide(p or pr(), markers, [], (), list(files), behind, on, "In review", (), True)
+
+
+class Approved(unittest.TestCase):
+    """#596: a person labels a ready policy PR merge:approved; the gate merges it in turn."""
+
+    def test_an_approved_policy_pr_merges_even_with_auto_merge_off(self):
+        a, why = approved()
+        self.assertEqual(a, "merge")
+        self.assertIn("merge:approved", why)
+
+    def test_behind_main_it_is_updated_first(self):
+        self.assertEqual(approved(behind=2)[0], "update")
+
+    def test_approval_never_skips_review_ci_or_a_conflict(self):
+        self.assertEqual(approved(markers=["sha=abc verdict=blocking policy=yes"])[0], "wait")
+        self.assertEqual(approved(pr(headRefOid="new"))[0], "wait")
+        running = [{"__typename": "CheckRun", "name": "ci", "status": "IN_PROGRESS"}]
+        self.assertEqual(approved(pr(statusCheckRollup=running))[0], "wait")
+        self.assertEqual(approved(pr(mergeable="CONFLICTING", mergeStateStatus="DIRTY"))[0], "conflict")
+        self.assertEqual(approved(pr(labels=[{"name": "agent:needs-human"}]))[0], "wait")
+
+    def test_main_reads_removed_paths_and_the_approval(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = {}
+            for name, text in {"pr": json.dumps(pr()), "markers": CLEAN_FREE[0], "deps": "", "equiv": "",
+                               "files": "docs/product/assistant/golden.jsonl", "removed": "docs/product/assistant/golden.jsonl"}.items():
+                paths[name] = os.path.join(d, name)
+                open(paths[name], "w").write(text)
+            args = [sys.executable, os.path.join(os.path.dirname(__file__), "pr_gate.py"), "decide",
+                    paths["pr"], paths["markers"], paths["deps"], paths["equiv"], paths["files"], "0", "1", "In review", paths["removed"]]
+            run = lambda *extra: subprocess.run(args + list(extra), capture_output=True, text=True, check=True).stdout.strip()
+            self.assertTrue(run("0").startswith("ready"))
+            self.assertTrue(run("1").startswith("merge"))

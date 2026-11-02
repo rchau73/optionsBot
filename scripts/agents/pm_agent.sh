@@ -155,7 +155,7 @@ You may also read CLAUDE.md, AGENTIC.md, OptionStrategy.md and docs/.
 Print only the report in the exact output shape the skill defines, ending with the PM-JSON block."
 budget_take pm # the daily budget (limit_lib.sh)
 started="$(date +%s)"
-if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
+if ! no_github claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
@@ -285,7 +285,7 @@ OptionStrategy.md, README.md, docs/, frontend/ and the code to write buildable s
 Print only the report in the exact output shape the skill defines, ending with the PM-STORIES block."
   budget_take pm # the daily budget (limit_lib.sh)
   started="$(date +%s)"
-  if claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
+  if no_github claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} --permission-mode dontAsk \
       --allowedTools "Read" "Grep" "Glob" "Skill" \
       --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \
       --strict-mcp-config --no-session-persistence --output-format text < /dev/null > "$run/plan.md"; then

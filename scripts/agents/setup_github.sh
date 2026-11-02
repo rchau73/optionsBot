@@ -41,6 +41,7 @@ label "regression"        "b60205" "A bug a merged PR caused: its body names it 
 label "sme:not-fixed"    "b60205" "The SME agent found the merged fix did not work: blocks scripts/promote.sh"
 label "release:hotfix"   "d93f0b" "With bug: release.sh releases its merged fix to stable after 1 h on mvp, before the 3-day soak (#471)"
 label "needs-fix"        "fbca04" "Checks failed (the Dev agent's or CI): back to the Dev agent once, with the failing log tails (#472)"
+label "merge:approved"   "0e8a16" "A person approves this ready-to-merge PR: the PR gate merges it, one at a time, up to date with main and green first (#596)"
 
 # ── 2. Project board ────────────────────────────────────────────────────────
 num="$(gh project list --owner "$owner" --format json -L 100 |
