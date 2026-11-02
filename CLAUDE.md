@@ -9,7 +9,7 @@ One sentence per line; a long one continues as sub-bullets.
 ```bash
 make build                     # go build -o bot ./cmd/bot
 make check                     # gofmt + go vet + shell scripts + race tests + coverage floor (what CI runs)
-scripts/check_cover.sh --update   # coverage floor (#330): fails when ./internal/... falls > 0.2 pt under scripts/cover_baseline.txt (lists the packages that fell vs cover_baseline_packages.txt); --update raises it — only by a person or a PR that says so
+scripts/check_cover.sh --update   # coverage floor (#330): fails when ./internal/... falls > 0.2 pt under scripts/cover_baseline.txt (names the packages that fell); --update raises it — only by a person or a PR that says so
 bash scripts/check_shell.sh    # bash -n + shellcheck -x --severity=warning on scripts/**/*.sh and .githooks/* (shellcheck skipped if not installed; CI requires it); every disable needs "disable=SCxxxx # why"
 make test                      # scripts/go_tests.sh all: core tests under -race, then the report/research tests (single goroutine) without it (#429)
 scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parallel jobs, merges their coverage profiles and on a PR runs only the jobs its files need (`scripts/agents/checkfail.py suites`, #472); a new slow single-goroutine test goes in REPORT_TESTS
@@ -17,7 +17,7 @@ make cover                     # coverage across ./internal/... (tests live in .
 bash scripts/regen.sh [--resolve]   # rewrite the generated files (.gitattributes linguist-generated); --resolve settles a merge conflict in them (#465) — never by hand
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
-scripts/promote.sh v0.3.0      # stable → a release: a new tag goes on the newest mvp deploy (deploys.tsv, never a rollback line) 3 days old (`--commit <sha>` = another build that ran in mvp); no open sme:not-fixed; rollback = an older tag; refuses inside stable's clone (#360)
+scripts/promote.sh v0.3.0      # stable → a release: tagged on the newest mvp deploy 3 days old, no open sme:not-fixed; rollback = an older tag (rules: docs/operations.md, #360)
 scripts/promote.sh v0.3.1 --commit <sha> --escalate "<reason>"   # admin escalation (#471): no soak, the reason audited; weekly/hotfix releases: scripts/agents/release.sh
 scripts/prune_branches.sh      # delete local branches already in main (GitHub deletes merged PR branches itself)
 make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
@@ -46,16 +46,13 @@ Strict separation — do not mix:
 
 Never reintroduce env-var overrides for logic parameters.
 
-**Two local environments, sharing nothing** (2026-10-17, #129; `docs/operations.md` "Environments"):
-- `~/dev/go/optionsBot-env/stable` (a release tag, moved only by `scripts/promote.sh` — a person's or the weekly `release.sh`'s — the track record, market recorder on) and `~/dev/go/optionsBot-env/mvp` (main, auto-deployed by `deploy.sh`; the agents run from it).
-- Each clone has its own `.env` — **its own Deribit account**: a bot cancels every order of its currency at startup and adopts every short it finds, so two environments on one account fight
-  - — and a `deploy.env` (`OPTIONSBOT_ENV`, `MONITOR_PORT` 3000/3100, `BOT_RECORD_MARKET`; mvp also `BOT_CONFIG_BTC=./config_btc.mvp.yaml` — BTC on `gex_direction: sma` while stable stays on `bias`, to compare the two, #168;
-  - that file is `config_btc.yaml` with only that line different, enforced by `TestConfig_MVPBTCDiffersOnlyInDirection`: change both).
-- `scripts/env_lib.sh` `env_check` refuses a shared port, or a `DERIBIT_CLIENT_ID` shared by any two environment folders (#538); compose refuses without `OPTIONSBOT_ENV`.
-- Bots report `deployment`/`version` (`BOT_DEPLOYMENT`/`BOT_VERSION`) in `/api/status`, shown in the monitor header.
+**Two local environments, sharing nothing** (#129; details, accounts and `deploy.env`: `docs/operations.md` "Environments"):
+- `~/dev/go/optionsBot-env/stable` (a release tag, moved only by `scripts/promote.sh`; the track record, market recorder on) and `~/dev/go/optionsBot-env/mvp` (main, auto-deployed by `deploy.sh`; the agents run from it).
+- Each clone has its own `.env` — **its own Deribit account** (a bot cancels every order of its currency at startup and adopts every short it finds); `env_check` refuses a shared port or account (#538), compose refuses without `OPTIONSBOT_ENV`.
+- mvp runs BTC on `config_btc.mvp.yaml` (`gex_direction: sma`, #168): `config_btc.yaml` with only that line different (`TestConfig_MVPBTCDiffersOnlyInDirection`): change both.
 - The dev checkout runs nothing; `data/btc` there links to stable's for the research tools.
-- The monitor requires a signed-in session on every page and `/api` route (#170, `frontend/README.md` "Sign-in"; users per environment, `AUTH_SECRET` in its `.env` or it won't start);
-  - scripts that read it (`wait_healthy`, the agents, `stress_inputs.sh`) send that environment's read-only `MONITOR_API_TOKEN` (`env_monitor_token`) — a new script reading the monitor must too.
+- The monitor requires a signed-in session on every page and `/api` route (#170, `frontend/README.md` "Sign-in");
+  a script that reads it sends that environment's read-only `MONITOR_API_TOKEN` (`env_monitor_token`), as `wait_healthy`, the agents and `stress_inputs.sh` do.
 
 **Few settings** (2026-10-14, the user's call: "far complex to manage"):
 - the YAML holds only what is tuned — slots, exits, `repair_cooldown_hours`, `gamma_flip_buffer_sd`, `gex_direction`, margin bands/MM, `max_leg_size_multiple`, `min_premium`.
@@ -216,11 +213,8 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
 ## Documentation
 
 - `README.md` technical overview · `OptionStrategy.md` business explanation · `docs/architecture.md` · `docs/operations.md` · `docs/README.md` (diagram index).
-- **Legal** (`docs/legal/`, the `legal-counsel` skill, #228): preparatory analysis for a licensed lawyer
-  — preliminary answers to the legal brief's L1–L24 (`docs/product/legal-brief.md`), studies per jurisdiction (Brazil first), risk register, data-protection programme, audit and records,
-  PT-BR drafts of terms, risk statement, privacy policy, API-key authorisation, testnet-trial agreement and disclaimers.
-  Not legal advice; nothing goes to an external user before counsel approves it.
-  Counsel's names, fees and opinions stay in the gitignored `data/product/legal/`.
+- **Legal** (`docs/legal/README.md`, the `legal-counsel` skill, #228): preparatory analysis and PT-BR drafts for a licensed lawyer.
+  Not legal advice; nothing goes to an external user before counsel approves it; counsel's names, fees and opinions stay in the gitignored `data/product/legal/`.
 - **Agentic workflow:** `scripts/agents/CLAUDE.md` and `AGENTIC.md`.
 - `OptionStrategy.md` §9 "Market regimes and what the bot does" is the table of every open/close/hold rule by market state (normal, freeze, confirmed negative regime, GEX shedding, MM limit).
   Update it in the same PR as any rule change.
