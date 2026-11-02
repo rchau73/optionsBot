@@ -325,6 +325,12 @@ These pages are for the admin role only. A manager or a user who opens one is re
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.
 <!-- guide: page:/admin/analytics, screen:analytics -->
 
+**Stopped coming back** (on Analytics): how many people visited in the 4 weeks before and did not visit this week, by weeks since their last visit and by role.
+Counts only, never a name.
+When their share rises 20 points or more over the 3 weeks before, the card shows DROP and sits under "Needs your attention".
+Under 10 people it gives a small-sample note and no share.
+Nobody gone shows "No one stopped coming back".
+
 Learn more: "Roles" and "Analytics and your consent" in this guide.
 
 ## Notifications

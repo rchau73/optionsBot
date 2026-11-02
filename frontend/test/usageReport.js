@@ -21,6 +21,7 @@ export function usageReport(week = "2026-W44", { active = 24, ...over } = {}) {
       { week: "2026-W40", from: "2026-09-28T00:00:00Z", users: 10, retained: [1, 2, 3, 4].map((o) => ({ offset: o, users: 8 - o, pct: (100 * (8 - o)) / 10 })) },
       { week: "2026-W44", from: "2026-10-26T00:00:00Z", users: 5, retained: [] },
     ],
+    lapsed: { users: 6, by_role: { admin: 0, manager: 1, user: 5 }, weeks_away: { 1: 3, 2: 2, 3: 0, "4+": 1 }, base: 30, share_pct: 20 },
     panels: {
       opens: { account: 4, held: 0, others: 2, trades: 7 },
       never_opened: ["held"],

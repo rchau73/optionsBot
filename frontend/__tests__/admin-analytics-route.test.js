@@ -91,6 +91,15 @@ describe("Scenario: not an admin", () => {
     }
     expect((await get("", "")).status).toBe(401);
   });
+
+  test("#569: the lapsed counts reach an admin as written and nobody else", async () => {
+    writeReport("stable", "2026-W44");
+    const admin = await (await get("", (await signedIn("root", "admin")).cookie)).json();
+    expect(admin.report.lapsed).toEqual(usageReport("2026-W44").lapsed);
+    const res = await get("", (await signedIn("p-manager", "manager")).cookie);
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).not.toMatch(/lapsed|weeks_away/);
+  });
 });
 
 describe("Scenario: analytics off", () => {
