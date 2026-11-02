@@ -1,9 +1,10 @@
 // Server-side only: the assistant's review log (#191, L11/L12: every AI
 // output logged and reviewable), data/monitor/assistant.jsonl. Append-only:
 // one "answer" line per question (question, sources given, citations, the
-// model's text, what was shown and why, user, flag false) and one "flag" line
-// each time someone marks an answer wrong — the answer line is never
-// rewritten, so the review keeps what was shown. readAnswers folds the flags in.
+// model's text, what was shown and why, user, flag false), one "flag" line
+// each time someone marks an answer wrong and one "feedback" line each time
+// the person who asked says it helped or not (#579) — the answer line is never
+// rewritten, so the review keeps what was shown. readAnswers folds both in.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -31,7 +32,11 @@ export function appendLine(file, entry) {
   }
 }
 
-/** Every answer line by id, with flag true once a flag line names it (unreadable lines skipped). */
+/**
+ * Every answer line by id, with flag true once a flag line names it, and
+ * `feedback` = the "feedback" lines that name it (#579: { helped } each, oldest
+ * first; the last is the person's choice). Unreadable lines are skipped.
+ */
 export function readAnswers(file) {
   const answers = new Map();
   let text;
@@ -48,8 +53,9 @@ export function readAnswers(file) {
     } catch {
       continue;
     }
-    if (e.kind === "answer") answers.set(e.id, e);
+    if (e.kind === "answer") answers.set(e.id, { ...e, feedback: [] });
     else if (e.kind === "flag" && answers.has(e.id)) answers.get(e.id).flag = true;
+    else if (e.kind === "feedback" && answers.has(e.id)) answers.get(e.id).feedback.push({ helped: e.helped });
   }
   return answers;
 }

@@ -111,6 +111,7 @@ const FIXTURES = {
   "POST /api/admin/users/[id]/reset-link": async ({ who }) => target(who, "/reset-link"),
   "POST /api/admin/users/[id]/signout": async ({ who }) => target(who, "/signout"),
   "POST /api/assistant": async () => ({ path: "/api/assistant", body: { question: "What is a strangle?" } }),
+  "POST /api/assistant/feedback": async () => ({ path: "/api/assistant/feedback", body: { id: "a-1", helped: true } }),
   "POST /api/assistant/flag": async () => ({ path: "/api/assistant/flag", body: { id: "a-1" } }),
   "POST /api/assistant/requests": async () => ({ path: "/api/assistant/requests", body: { answer_id: "a-1", kind: "bug", fields: {} } }),
   "POST /api/auth/login": async () => {

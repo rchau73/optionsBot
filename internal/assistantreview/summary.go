@@ -11,6 +11,9 @@ type Shareable struct {
 	Flagged     int      `json:"flagged"`
 	FlagPct     *float64 `json:"flag_pct"`
 	AnsweredPct *float64 `json:"answered_pct"`
+	// Feedback is the week's "Helped"/"Didn't help" counts and shares (#579):
+	// the person's opinion, not a measure of correctness.
+	Feedback
 	// ByOutcome and Reasons are the report's, every kind and reason listed.
 	ByOutcome []KindCount   `json:"by_outcome"`
 	Reasons   []ReasonCount `json:"guard_reasons"`
@@ -28,7 +31,7 @@ type Shareable struct {
 func Summary(r Report) Shareable {
 	s := Shareable{
 		Answers: r.Answers, Skipped: r.Skipped, Flagged: r.Flagged,
-		FlagPct: r.FlagPct, AnsweredPct: r.AnsweredPct,
+		FlagPct: r.FlagPct, AnsweredPct: r.AnsweredPct, Feedback: r.Feedback,
 		ByOutcome: append([]KindCount(nil), r.ByOutcome...),
 		Reasons:   append([]ReasonCount(nil), r.Reasons...),
 	}

@@ -9,7 +9,9 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -158,5 +160,57 @@ func TestSortedLists_AnEntryOutOfOrderFails(t *testing.T) {
 	}
 	if got := outOfOrder([]string{"a", "a", "b"}); got != "" {
 		t.Errorf("equal neighbours are in order, got %q", got)
+	}
+}
+
+// numberedGolden is the highest number each golden.jsonl prefix reached
+// before new ids were named (#596): two PRs that each took the next number
+// collided (#580, both ng-14). A numbered id above it fails.
+var numberedGolden = map[string]int{"adv": 8, "fct": 6, "how": 17, "jar": 8, "ng": 14, "par": 13, "pg": 12, "pm": 10, "req": 4, "risk": 7, "unk": 6, "why": 17}
+
+var (
+	numberedID = regexp.MustCompile(`^([a-z]+)-([0-9]+)$`)
+	namedID    = regexp.MustCompile(`^[a-z]+-[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+)
+
+// goldenIDProblem says what is wrong with a golden id, given the ids seen so far, or "".
+func goldenIDProblem(id string, seen map[string]bool) string {
+	if seen[id] {
+		return "used twice"
+	}
+	if m := numberedID.FindStringSubmatch(id); m != nil {
+		n, _ := strconv.Atoi(m[2])
+		if limit, ok := numberedGolden[m[1]]; ok && n <= limit {
+			return ""
+		}
+		return "numbered: name it <prefix>-<a few words>, e.g. ng-consent-analytics"
+	}
+	if !namedID.MatchString(id) {
+		return "not <prefix>-<a few words> (lower case, digits, hyphens)"
+	}
+	return ""
+}
+
+// Scenario: golden ids are unique, and new ones are named, not numbered.
+func TestSortedLists_GoldenIDsAreUniqueAndNamed(t *testing.T) {
+	seen := map[string]bool{}
+	for _, id := range goldenIDs(t, readRepoFile(t, "docs/product/assistant/golden.jsonl")) {
+		if p := goldenIDProblem(id, seen); p != "" {
+			t.Errorf("golden id %q: %s", id, p)
+		}
+		seen[id] = true
+	}
+	for id, want := range map[string]string{
+		"ng-14":                "",
+		"ng-consent-analytics": "",
+		"ng-15":                "numbered",
+		"new-01":               "numbered",
+		"how-01":               "used twice",
+		"NG_x":                 "not <prefix>",
+	} {
+		got := goldenIDProblem(id, map[string]bool{"how-01": true})
+		if (want == "") != (got == "") || !strings.HasPrefix(got, want) {
+			t.Errorf("goldenIDProblem(%q) = %q, want prefix %q", id, got, want)
+		}
 	}
 }

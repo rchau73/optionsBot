@@ -54,11 +54,14 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     and sends blocking findings back to Ready (≤ 2 fix rounds, then `agent:needs-human`; clean → `agent:reviewed`);
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),
     sends a PR that conflicts with main back to Ready with `needs-rebase` (the Dev agent always merges `origin/main` into an open PR's branch first and resolves conflicts as its first task),
-    - except a conflict only in generated files (#465): the gate merges main in a scratch worktree, reruns the generators (`scripts/regen.sh --resolve`) and pushes; the Dev agent's merge step does the same before the agent starts;
+    - except a conflict only in generated files or sorted line lists (#465, #596): the gate merges main in a scratch worktree and pushes,
+      `scripts/regen.sh --resolve` keeping both sides' lines of `golden.jsonl` (`scripts/merge_lines.py`) and rerunning the generators; the Dev agent's merge step does the same before the agent starts;
     never acts on a PR whose card is In progress (wait "a Dev agent is working on it", #478),
     and labels `ready-to-merge` (PR and card) only a PR reviewed clean on its current head, CI green, `CLEAN`, with no open dependency
-    — a PR that changes a business rule or policy waits there for the person, who merges those top-down in priority order;
-    - policy = a path in `pr_gate.py` `POLICY_PATHS`, or the Reviewer's `policy=yes` (none declared = yes);
+    — a PR that changes a business rule or policy waits there for the person, who approves it with the label `merge:approved` (#596): the gate merges approved PRs one per run, each up to date with main and green first, so several approved at once never conflict in turn;
+    - the approval holds for the head it was given on (and GitHub's update merges of it); a new commit of the PR's own takes the label off and asks again;
+    - policy = a path in `pr_gate.py` `POLICY_PATHS` (less its `WORKING_DOCS`, and `golden.jsonl` only when a line is removed or changed: `ADD_ONLY`, #596), or the Reviewer's `policy=yes` (none declared = yes);
+    - every agent session runs without GitHub credentials (`lib.sh` `no_github`, #596): code a session runs cannot call `gh` as the owner, so only the person and the scripts label or merge;
     - a policy-free one, up to date with main, is merged by the gate itself, one per run (#468, product owner 2026-10-28);
     - `PR_AUTO_MERGE=0` in `agents.env` turns it off;
   - a human merges every policy change (ruleset: PR + green CI); a review that left a changed file unread is `incomplete`, never clean, and counts as no review (#476);
@@ -105,7 +108,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `flaky.sh` (from the tick, first tick of a UTC night from 03:00, `data/agents/flaky/<date>.done`, no Claude)
     runs `go test ./tests/... -race -count=5 -json` and `npm test -- --ci` ×3 on a clean `origin/main` worktree within 30 min (a time-out files nothing)
     and files one `bug` `[E6] Flaky test: <name>` in Triage per test that both passed and failed
-    (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged).
+    (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged);
+  - a jest timeout that fired over a minute late is `stalled` (the process was frozen: the Mac slept, #587), logged and not counted; `caffeinate -is` keeps the Mac awake during the hunt.
 - Weekly usage report (#340, #341, #252, docs/agents/usage.md "Weekly usage report"):
   - `usage.sh` (from the tick, first tick of a Monday UTC, `data/agents/usage/<week>.done`, no Claude) runs `cmd/usage -alert` in each env with a non-empty `data/monitor/events.jsonl`
     (none with events in the week → nothing posted, no marker, re-looked at hourly),

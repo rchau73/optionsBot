@@ -1,6 +1,7 @@
 // Package assistantreview is the assistant's weekly quality review (#438): it
 // reads the monitor's review log, data/monitor/assistant.jsonl (one "answer"
 // line per question, one "flag" line each time someone marks an answer wrong,
+// one "feedback" line each time the person who asked says it helped or not,
 // frontend/lib/assistant/log.js), and reports how the week's questions were
 // answered, which answers were flagged, which questions the help could not
 // answer and the help passage nearest each of them. Pure apart from Load and
@@ -24,8 +25,9 @@ import (
 
 // Line kinds of assistant.jsonl.
 const (
-	KindAnswer = "answer"
-	KindFlag   = "flag"
+	KindAnswer   = "answer"
+	KindFlag     = "flag"
+	KindFeedback = "feedback" // "Helped" / "Didn't help" (#579): the person's opinion, not a measure of correctness
 )
 
 // Entry is one line of assistant.jsonl: the fields the review reads. The
@@ -41,7 +43,8 @@ type Entry struct {
 	Verdict   []string  `json:"verdict"`
 	Outcome   string    `json:"outcome"`
 	Answer    string    `json:"answer"`
-	Note      string    `json:"note"` // a flag's note
+	Note      string    `json:"note"`   // a flag's note
+	Helped    *bool     `json:"helped"` // a feedback line's choice
 	TestRun   bool      `json:"test_run"`
 }
 

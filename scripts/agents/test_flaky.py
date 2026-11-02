@@ -85,6 +85,25 @@ class Parse(unittest.TestCase):
         # The suite is not flaky because one of its tests failed.
         self.assertFalse(res["__tests__/api.test.js"].flaky)
 
+    def test_jest_timeout_fired_minutes_late_is_stalled_not_a_failure(self):
+        # #587, 2026-11-02 run 1: the runner slept; the test "failed" after 597 s on a 5 s timeout.
+        def run(duration, message="Exceeded timeout of 5000 ms for a test."):
+            return {"testResults": [{"name": "/wt/frontend/__tests__/api.test.js", "status": "failed", "assertionResults": [
+                {"fullName": "card › shows", "status": "failed", "duration": duration, "failureMessages": [f'thrown: "{message}"']}]}]}
+        res = {}
+        flaky.parse_jest(run(597_246), res)
+        flaky.parse_jest(jest_report({"card › shows": "passed"}), res)
+        r = res["__tests__/api.test.js › card › shows"]
+        self.assertEqual((r.passes, r.fails, r.stalls), (1, 0, 1))
+        self.assertFalse(r.flaky)
+        self.assertFalse(res["__tests__/api.test.js"].fails, "the suite did not fail by itself")
+        # At the boundary, a timeout under load, and any other failure: real failures.
+        for duration, message in [(65_000, "Exceeded timeout of 5000 ms"), (5_400, "Exceeded timeout of 5000 ms"),
+                                  (900_000, "expected 1, got 2"), (None, "Exceeded timeout of 5000 ms")]:
+            res = {}
+            flaky.parse_jest(run(duration, message), res)
+            self.assertEqual(res["__tests__/api.test.js › card › shows"].fails, 1, (duration, message))
+
     def test_jest_suite_that_did_not_load_is_a_failure_of_the_suite(self):
         res = {}
         flaky.parse_jest(jest_report({"api › a": "passed"}), res)
@@ -169,6 +188,14 @@ class Plan(unittest.TestCase):
         lines, filings = flaky.plan(self.results, issues, SHA, self.pairs, NOW)
         self.assertEqual(filings, [])
         self.assertTrue(any("#5 already names it" in l for l in lines))
+
+    def test_scenario_a_stalled_run_is_logged_nothing_filed(self):
+        r = flaky.Result("__tests__/card.test.jsx › card › shows", flaky.JEST_SUITE, "__tests__/card.test.jsx")
+        r.passes, r.stalls = 2, 1
+        lines, filings = flaky.plan({r.name: r}, [], SHA, [], NOW)
+        self.assertEqual(filings, [])
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith(f"stalled: {r.name} (1 run(s) timed out over 60 s late"), lines[0])
 
     def test_nothing_failed(self):
         lines, filings = flaky.plan(flaky.parse_go(go_night({"TestOK": [(True, "")]}), {}), [], SHA, [], NOW)
