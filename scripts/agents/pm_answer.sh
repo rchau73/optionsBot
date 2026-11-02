@@ -51,9 +51,9 @@ board_json > "$tmp/board.json"
 for num in $(py 'import json,sys
 for c in json.load(open(sys.argv[1])):
     if c["state"] == "OPEN" and "agent:pm" in c["labels"] and "epic" not in c["labels"]: print(c["number"])' "$tmp/board.json"); do
-  gh issue view "$num" -R "$slug" --json number,state,labels,createdAt,body,comments > "$tmp/issue.json"
+  gh issue view "$num" -R "$slug" --json number,state,labels,createdAt,author,body,comments -q "$(mine_jq "$slug")"'.body = own_body | .comments |= mine' > "$tmp/issue.json"
   pr="$(gh pr list -R "$slug" --head "pm/issue-$num" --state open --json number -q '.[0].number' || true)"
-  if [[ -n "$pr" ]]; then gh pr view "$pr" -R "$slug" --json comments,reviews > "$tmp/pr.json"; else echo '{}' > "$tmp/pr.json"; fi
+  if [[ -n "$pr" ]]; then gh pr view "$pr" -R "$slug" --json comments,reviews -q "$(mine_jq "$slug")"'.comments |= mine | .reviews |= mine' > "$tmp/pr.json"; else echo '{}' > "$tmp/pr.json"; fi
   py 'import json,sys
 i = json.load(open(sys.argv[1])); pr = json.load(open(sys.argv[2]))
 st = next(c["status"] for c in json.load(open(sys.argv[3])) if c["number"] == i["number"])
@@ -70,7 +70,8 @@ py 'import json,sys; json.dump([json.loads(l) for l in open(sys.argv[1]) if l.st
 # waiting, CI green, GitHub "CLEAN". No --admin: the ruleset still applies.
 git_locked fetch -q origin
 gh pr list -R "$slug" --label agent:pm --label "pm:self-merge" --state open \
-  --json number,headRefName,headRefOid,state,isDraft,labels,body,mergeStateStatus,statusCheckRollup > "$tmp/self-merge.json" ||
+  --json number,headRefName,headRefOid,state,isDraft,labels,author,body,mergeStateStatus,statusCheckRollup \
+  -q "$(mine_jq "$slug")"'mine' > "$tmp/self-merge.json" ||
   { log "pm-answer: listing self-merge PRs failed"; echo '[]' > "$tmp/self-merge.json"; }
 git show origin/main:docs/product/PRD.md > "$tmp/prd-main.md"
 for pr_num in $(py 'import json,sys; [print(p["number"]) for p in json.load(open(sys.argv[1]))]' "$tmp/self-merge.json"); do
@@ -187,12 +188,12 @@ fi
 base="$(git -C "$wt" rev-parse HEAD)"
 RUN_PR="$existing_pr"
 
-gh issue view "$issue" -R "$slug" --json number,title,body,labels,comments \
-  -q '"# Ticket #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(.body)\n\n## Comments (oldest first)\n\(.comments | map("### \(.createdAt)\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
+gh issue view "$issue" -R "$slug" --json number,title,author,body,labels,comments \
+  -q "$(mine_jq "$slug")"'"# Ticket #\(.number): \(.title)\n\nLabels: \([.labels[].name] | join(", "))\n\n\(own_body)\n\n## Comments (oldest first)\n\(.comments | mine | map("### \(.createdAt)\n\(.body)") | join("\n\n"))"' > "$run_dir/task.md"
 if [[ -n "$existing_pr" ]]; then
   gh pr view "$existing_pr" -R "$slug" --json comments,reviews \
-    -q '"\n\n# Your open PRD pull request #'"$existing_pr"' on this branch — its comments and reviews\n\(.comments | map("### \(.createdAt)\n\(.body)") | join("\n\n"))\n\(.reviews | map(select(.body != "")) | map("### review \(.state) \(.submittedAt)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
-  gh api "repos/$slug/pulls/$existing_pr/comments" -q '.[] | "### on \(.path):\(.line // .original_line)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
+    -q "$(mine_jq "$slug")"'"\n\n# Your open PRD pull request #'"$existing_pr"' on this branch — its comments and reviews\n\(.comments | mine | map("### \(.createdAt)\n\(.body)") | join("\n\n"))\n\(.reviews | mine | map(select(.body != "")) | map("### review \(.state) \(.submittedAt)\n\(.body)") | join("\n\n"))"' >> "$run_dir/task.md" || true
+  gh api "repos/$slug/pulls/$existing_pr/comments" -q "$(mine_jq "$slug")"'mine | .[] | "### on \(.path):\(.line // .original_line)\n\(.body)\n"' >> "$run_dir/task.md" 2>/dev/null || true
 fi
 { echo; echo "# The answer to act on"; echo; echo "The newest message from a person is the one at $answer_at. Messages starting with 🧭, 🤖, 🚀 or **SME are agents'."; } >> "$run_dir/task.md"
 cp "$run_dir/task.md" "$wt/.agent-task.md"

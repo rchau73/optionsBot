@@ -77,11 +77,14 @@ if [[ "$PUBLISH" == "1" ]] && slug="$(repo_slug 2>/dev/null)"; then
   # again (2026-10-16: #106 and #107 re-filed #86/#103). Bodies and last
   # comments let the agent match by problem, not by title.
   board_cards > "$OUT/board.txt" 2>/dev/null || : > "$OUT/board.txt"
-  if gh issue list -R "$slug" --state open -L 200 --json number,title,labels,body,comments > "$OUT/open_raw.json"; then
+  # Only the owner's issues and comments (mine_jq, #575): the repository is public.
+  if gh issue list -R "$slug" --state open -L 200 --json number,title,author,labels,body,comments \
+    -q "$(mine_jq "$slug")"'mine | map(.comments |= mine)' > "$OUT/open_raw.json"; then
     python3 "$ISSUES" shape "$OUT/open_raw.json" "$OUT/board.txt" "$OUT/open_issues.json"
   else echo '[]' > "$OUT/open_issues.json"; fi
   since="$(date -v-14d +%Y-%m-%d 2>/dev/null || date -d '-14 days' +%Y-%m-%d)"
-  if gh issue list -R "$slug" --state closed -L 100 --search "closed:>=$since" --json number,title,labels,body,comments,closedAt > "$OUT/closed_raw.json"; then
+  if gh issue list -R "$slug" --state closed -L 100 --search "closed:>=$since" --json number,title,author,labels,body,comments,closedAt \
+    -q "$(mine_jq "$slug")"'mine | map(.comments |= mine)' > "$OUT/closed_raw.json"; then
     python3 "$ISSUES" shape "$OUT/closed_raw.json" "$OUT/board.txt" "$OUT/closed_issues.json" closed
   else echo '[]' > "$OUT/closed_issues.json"; fi
   rm -f "$OUT/open_raw.json" "$OUT/closed_raw.json"

@@ -26,7 +26,7 @@ nums="$(python3 "$rq" candidates "$tmp/board.json" "$runs")"
 [[ -n "$nums" ]] || exit 0
 echo "{" > "$tmp/comments.json"; sep=""
 for n in $nums; do
-  printf '%s"%s": %s\n' "$sep" "$n" "$(gh issue view "$n" -R "$slug" --json comments -q .comments)" >> "$tmp/comments.json"
+  printf '%s"%s": %s\n' "$sep" "$n" "$(gh issue view "$n" -R "$slug" --json comments -q "$(mine_jq "$slug")"'.comments | mine')" >> "$tmp/comments.json"
   sep=","
 done
 echo "}" >> "$tmp/comments.json"
