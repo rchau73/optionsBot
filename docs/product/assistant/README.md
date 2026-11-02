@@ -17,7 +17,7 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 
 | Field | Meaning |
 |---|---|
-| `id` | unique, `<category prefix>-NN` |
+| `id` | unique, `<category prefix>-<a few words>` (`ng-consent-analytics`), in alphabetical place; numbered ids stop at the numbers they had (#596): two PRs that each took the next number collided |
 | `category` | `how_it_works`, `parameter`, `why_did_it`, `jargon`, `risk`, `refuse_advice`, `refuse_forecast`, `unknown` or `request` |
 | `question` | plain words, as a novice would ask |
 | `expected_behaviour` | `answer`; `refuse` for the two refusal categories; `dont_know` for `unknown` (the help cannot answer it); for `request` the request check's outcome: `needs_info`, `answered` or `draft` |
@@ -129,7 +129,7 @@ Nothing is added to `golden.jsonl` automatically.
 **Who reads the review list:** the product owner (or a manager they name), each week, on the host. **The rule:** every flagged answer is closed within 7 days in one of three ways:
 
 1. a help-source fix (a passage of OptionStrategy.md, the glossary or the monitor guide, then `go run ./cmd/helpindex`). A gap with a passage named means a better passage or a glossary term; "no passage close" means a new section;
-2. a golden-set case (copy the candidate into `golden.jsonl` and fill in its category, behaviour and sources);
+2. a golden-set case (copy the candidate into `golden.jsonl`, give it a named id and fill in its category, behaviour and sources);
 3. a recorded "answer was right", with the reason.
 
 **Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (docs/agents/usage.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.
