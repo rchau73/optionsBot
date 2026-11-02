@@ -67,6 +67,23 @@ export const DOCUMENT_POINTER_PATTERNS = [
   String.raw`\byou (can|could|may|might|will)(?: also)? (find|see|read|check|open|consult|look at|look up)\s+(?:[\w'’-]+\s+){0,3}?(?:(guide|document|documentation|docs|section|chapter|glossary|manual|help|faq|[\w-]+\.md)\b|§)`,
 ];
 
+/**
+ * Common English function words, none also a common Portuguese or Spanish
+ * word: an answer with under MIN_ENGLISH_SHARE of them is not English, and
+ * the lists above cannot judge it (#565, reason language).
+ */
+export const ENGLISH_WORDS = [
+  "the", "of", "and", "to", "in", "is", "are", "was", "were", "it", "its", "that", "this", "these", "those",
+  "with", "on", "at", "by", "from", "be", "been", "has", "have", "had", "not", "or", "an", "but", "than",
+  "then", "which", "what", "when", "where", "who", "how", "why", "if", "can", "will", "would", "could",
+  "does", "did", "you", "your", "they", "their", "there", "each", "only", "also", "into", "after", "before",
+  "while", "below", "above", "until", "without", "about", "over", "under", "between", "through", "all", "any",
+  "more", "most", "one", "other", "same", "such", "out", "up", "down", "off", "here", "now", "still", "just",
+];
+
+/** The share of ENGLISH_WORDS under which an answer is not English. */
+export const MIN_ENGLISH_SHARE = 0.1;
+
 /** Denials of a promise ("not a guaranteed price"), blanked before the forecast patterns run. */
 export const NEGATION_PATTERNS = [
   String.raw`\b(not|never|no|isn't|aren't) (a )?guarantee[ds]?\b`,

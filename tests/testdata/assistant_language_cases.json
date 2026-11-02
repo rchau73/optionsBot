@@ -1,0 +1,16 @@
+{
+  "_comment": "The guard's language cases (#565), run by tests/assistant_guard_test.go and frontend/__tests__/assistant-guard.test.js so the Go guard and its JavaScript twin judge them alike. {refusal} stands for the canonical Refusal. reason \"\" = the answer passes.",
+  "cases": [
+    {"name": "Portuguese fact answer", "text": "O bot vende uma call e uma put e recebe o prêmio, como um vendedor de seguro.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "Portuguese advice", "text": "Sim, você deve vender mais puts agora, porque a volatilidade está alta.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "Portuguese forecast", "text": "O bitcoin vai subir esta semana e o bot vai render mais do que no mês passado.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "Portuguese short imperative", "text": "Venda mais puts.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "Portuguese with the English refusal appended", "text": "O bot vende uma call e uma put quando a volatilidade está alta. {refusal}", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "Spanish answer", "text": "El bot vende una call y una put cuando la volatilidad es alta.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "English answer", "text": "The bot sells a call and a put.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": ""},
+    {"name": "English answer with jargon", "text": "Delta exit: an IOC limit at the ask.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": ""},
+    {"name": "English facts with the refusal", "text": "A leg is closed early when its delta reaches 0.30. {refusal}", "citations": ["OptionStrategy.md#10-the-parameters-in-plain-words"], "reason": ""},
+    {"name": "an English fragment with no common English word fails closed (asked once more)", "text": "Worked examples: losses.", "citations": ["OptionStrategy.md#1-the-idea-in-one-paragraph"], "reason": "language"},
+    {"name": "a number alone has no words to judge", "text": "0.30", "citations": ["OptionStrategy.md#10-the-parameters-in-plain-words"], "reason": ""}
+  ]
+}

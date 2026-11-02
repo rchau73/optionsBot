@@ -89,6 +89,33 @@ var negations = compile(
 	`\b(do|does|did|can|could|will) ?(not|n't) guarantee\b`,
 )
 
+// englishWords are common English function words, none of them also a common
+// Portuguese or Spanish word ("a", "as", "do", "no", "for", "me", "so" left
+// out): an answer in which fewer than minEnglishShare of the words are one of
+// them is not written in English, and the phrase lists above cannot judge it
+// (#565, reason language). Translating the lists is counsel's (L11).
+var englishWords = wordSet(
+	"the", "of", "and", "to", "in", "is", "are", "was", "were", "it", "its", "that", "this", "these", "those",
+	"with", "on", "at", "by", "from", "be", "been", "has", "have", "had", "not", "or", "an", "but", "than",
+	"then", "which", "what", "when", "where", "who", "how", "why", "if", "can", "will", "would", "could",
+	"does", "did", "you", "your", "they", "their", "there", "each", "only", "also", "into", "after", "before",
+	"while", "below", "above", "until", "without", "about", "over", "under", "between", "through", "all", "any",
+	"more", "most", "one", "other", "same", "such", "out", "up", "down", "off", "here", "now", "still", "just",
+)
+
+// minEnglishShare: the share of englishWords under which an answer is not
+// English. English help prose holds about a third of them; a Portuguese
+// answer almost none (tests/assistant_guard_test.go pins both sides).
+const minEnglishShare = 0.10
+
+func wordSet(words ...string) map[string]bool {
+	out := make(map[string]bool, len(words))
+	for _, w := range words {
+		out[w] = true
+	}
+	return out
+}
+
 func compile(patterns ...string) []*regexp.Regexp {
 	out := make([]*regexp.Regexp, len(patterns))
 	for i, p := range patterns {

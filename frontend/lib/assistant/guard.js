@@ -2,9 +2,21 @@
 // (#260), so the monitor checks every model answer before it is shown. An
 // answer must cite a passage it was given, every number in it must come from
 // what it cites, and it must not advise, forecast or send the person to a
-// document (#534). Pure: no model, no
+// document (#534), and it must be in English, the only language the phrase
+// lists read (#565: anything else fails closed). Pure: no model, no
 // network. __tests__/assistant-guard.test.js runs the Go tests' cases on it.
-import { ADVICE_NEGATION_PATTERNS, ADVICE_PATTERNS, DOCUMENT_POINTER_PATTERNS, DONT_KNOW, FALLBACK_REPLY, FORECAST_PATTERNS, NEGATION_PATTERNS, REFUSAL } from "./phrases";
+import {
+  ADVICE_NEGATION_PATTERNS,
+  ADVICE_PATTERNS,
+  DOCUMENT_POINTER_PATTERNS,
+  DONT_KNOW,
+  ENGLISH_WORDS,
+  FALLBACK_REPLY,
+  FORECAST_PATTERNS,
+  MIN_ENGLISH_SHARE,
+  NEGATION_PATTERNS,
+  REFUSAL,
+} from "./phrases";
 
 export const REASON_NO_CITATION = "no_citation";
 export const REASON_UNKNOWN_CITATION = "unknown_citation";
@@ -12,6 +24,7 @@ export const REASON_UNGROUNDED_NUMBER = "ungrounded_number";
 export const REASON_ADVICE = "advice";
 export const REASON_FORECAST = "forecast";
 export const REASON_POINTS_TO_DOCUMENT = "points_to_document";
+export const REASON_LANGUAGE = "language"; // not written in English: the phrase lists cannot judge it (#565)
 
 const advice = ADVICE_PATTERNS.map((p) => new RegExp(p, "i"));
 const adviceNegations = ADVICE_NEGATION_PATTERNS.map((p) => new RegExp(p, "gi"));
@@ -24,6 +37,26 @@ export function isCanonical(text) {
   const t = String(text ?? "").trim().split(/\s+/).join(" ");
   // "I don't know" for the facts and the refusal for the advice (#427).
   return t === DONT_KNOW || t === REFUSAL || t === FALLBACK_REPLY || t === `${DONT_KNOW} ${REFUSAL}`;
+}
+
+const englishWords = new Set(ENGLISH_WORDS);
+
+/**
+ * { english, words }: the words of a text (runs of letters) and how many are
+ * common English words, the canonical replies left out: one added to a
+ * Portuguese answer must not make it pass (#565). Numbers alone → 0 words.
+ */
+export function englishShare(text) {
+  let t = String(text ?? "").trim().split(/\s+/).join(" ");
+  for (const reply of [DONT_KNOW, REFUSAL, FALLBACK_REPLY]) t = t.replaceAll(reply, " ");
+  const all = t.match(/\p{L}+/gu) ?? [];
+  return { english: all.filter((w) => englishWords.has(w.toLowerCase())).length, words: all.length };
+}
+
+/** False when the text has words and under MIN_ENGLISH_SHARE of them are common English words (#565). */
+export function isEnglish(text) {
+  const { english, words } = englishShare(text);
+  return words === 0 || english >= MIN_ENGLISH_SHARE * words;
 }
 
 // Dates and numbers not glued to a word before them ("SMA9" is not a number).
@@ -105,6 +138,10 @@ export function check(answer, passages) {
   for (const re of documentPointers) {
     const m = text.match(re);
     if (m) add(REASON_POINTS_TO_DOCUMENT, m[0].replace(/^[\s.!?:;,(]+|[\s.!?:;,(]+$/g, ""));
+  }
+  if (!isEnglish(text)) {
+    const { english, words } = englishShare(text);
+    add(REASON_LANGUAGE, `${english} of ${words} words are English`);
   }
 
   return { ok: reasons.length === 0, reasons, details };
