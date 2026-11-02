@@ -165,8 +165,8 @@ func TestSortedLists_AnEntryOutOfOrderFails(t *testing.T) {
 
 // numberedGolden is the highest number each golden.jsonl prefix reached
 // before new ids were named (#596): two PRs that each took the next number
-// collided (#580, both ng-14). A numbered id above it fails.
-var numberedGolden = map[string]int{"adv": 8, "fct": 6, "how": 17, "jar": 8, "ng": 14, "par": 13, "pg": 12, "pm": 10, "req": 4, "risk": 7, "unk": 6, "why": 17}
+// collided (#580, both ng-14; its ng-15 merged as the rule did). A numbered id above it fails.
+var numberedGolden = map[string]int{"adv": 8, "fct": 6, "how": 17, "jar": 8, "ng": 15, "par": 13, "pg": 12, "pm": 10, "req": 4, "risk": 7, "unk": 6, "why": 17}
 
 var (
 	numberedID = regexp.MustCompile(`^([a-z]+)-([0-9]+)$`)
@@ -201,9 +201,9 @@ func TestSortedLists_GoldenIDsAreUniqueAndNamed(t *testing.T) {
 		seen[id] = true
 	}
 	for id, want := range map[string]string{
-		"ng-14":                "",
+		"ng-15":                "",
 		"ng-consent-analytics": "",
-		"ng-15":                "numbered",
+		"ng-16":                "numbered",
 		"new-01":               "numbered",
 		"how-01":               "used twice",
 		"NG_x":                 "not <prefix>",
