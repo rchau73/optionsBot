@@ -31,7 +31,7 @@ DERIBIT_ENV=live ./bot --config config_btc.yaml    # live — real capital, expl
 go test ./tests/... -run TestStrategy_ -v          # one group
 ```
 
-The research tools' commands (`cmd/stress`, `cmd/evidence`, `cmd/compare`, `cmd/dora`, …) are in the folder files of the index below.
+The research tools' commands (`cmd/stress`, `cmd/compare`, …) are in the folder files below.
 
 All tests live in `tests/` (package `tests`), not next to the source.
 Lists every PR adds to are kept in alphabetical order, a test failing otherwise (#465): `glossary.json` keys, `golden.jsonl` ids, the analytics plan (`plan.js`, `plan.go`, `event-plan.md`), the responsive audit's panels.
@@ -86,6 +86,7 @@ Each folder's notes are in its own `CLAUDE.md`, loaded when you work there:
 - `internal/orders/CLAUDE.md` — `Executor`, `StateManager`, the decision journal, P&L net of fees, the journal as the history.
 - `internal/api/CLAUDE.md` — the monitor API: every route, the two state-changing ones, plain words.
 - `internal/exchange/CLAUDE.md` — the exchange boundary (interfaces, Deribit as the only adapter, the coupling test).
+- `internal/accounts/CLAUDE.md` — the account registry, `cmd/accounts`.
 - `internal/recorder/CLAUDE.md` — market history for backtests and stress tests.
 - `internal/perf/CLAUDE.md` — performance summary and return on margin.
 - `internal/evidence/CLAUDE.md` — the weekly evidence report, track record and trend.
