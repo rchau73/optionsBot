@@ -9,4 +9,6 @@ Index of the education material.
   - Keys are the catalogue's (`config.Tunables()`), in alphabetical order.
   - Glossary terms are their own tips (`short` and `risk_income` in `frontend/content/glossary.json`).
   - `tests/tips_coverage_test.go` fails on a tunable or glossary term with no tip, a sentence over 25 words, a jargon word with no glossary entry, or a promised return; it names the key or term.
-  - No screen reads the file yet; the monitor will, once the epic's prototype is approved.
+  - The monitor serves it since #588: `GET /api/help/tips` (`frontend/docs/api-routes.md`) and `frontend/lib/tips.js`. No screen uses the route yet; the first one comes after the epic's prototype is approved.
+  - The monitor image is built from `frontend/` alone, so it reads a copy, `frontend/content/tips.json`.
+    After editing this file run `cp docs/product/education/tips.json frontend/content/tips.json`; `frontend/__tests__/tips-route.test.js` fails on a stale copy.
