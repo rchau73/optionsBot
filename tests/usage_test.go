@@ -100,7 +100,8 @@ func TestUsage_CohortRetentionFromASyntheticLog(t *testing.T) {
 	if err := usage.Markdown(&md, r); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(md.String(), "| 2026-W42 | 3 | 1 (33 %) | — | — | — |") {
+	// Only the weeks that have ended are columns (#607): W42's +1.
+	if !strings.Contains(md.String(), "| 2026-W42 | 3 | 1 (33 %) | too few to judge |") {
 		t.Fatalf("markdown cohort row missing:\n%s", md.String())
 	}
 	// The report week's own cohort is empty; week 43 has 1 active user.

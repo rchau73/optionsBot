@@ -69,8 +69,61 @@ describe("Scenario: admin sees the latest week", () => {
     expect(screen.getByRole("img", { name: /^Active people per day: 2026-10-26 3, / })).toBeInTheDocument();
     const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
     const w44 = within(q2).getByRole("rowheader", { name: "2026-W44" }).closest("tr");
-    expect(within(w44).getAllByText("—")).toHaveLength(4);
-    expect(within(q2).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["First week", "People", "+1", "+2", "+3", "+4"]);
+    expect(within(w44).getAllByText("—")).toHaveLength(12);
+    const w40 = within(q2).getByRole("rowheader", { name: "2026-W40" }).closest("tr");
+    expect(within(w40).getAllByText("—")).toHaveLength(8); // +5 … +12 not ended: never 0 %
+    expect(within(w40).queryByText(/^0 %/)).toBeNull();
+  });
+
+  // Scenario (#607): the Analytics page shows it.
+  test("the cohort table shows the 12 weeks and a status per cohort", () => {
+    view(answer());
+    const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
+    const heads = within(q2).getAllByRole("columnheader").map((c) => c.textContent);
+    expect(heads).toEqual(["First week", "People", ...Array.from({ length: 12 }, (_, i) => `+${i + 1}`), "Curve"]);
+    const status = (week) => within(q2).getByRole("rowheader", { name: week }).closest("tr").lastElementChild.textContent;
+    expect(status("2026-W32")).toBe("flattening");
+    expect(status("2026-W40")).toBe("falling");
+    expect(status("2026-W44")).toBe("too few to judge");
+    // A week with no first session is left out of the rows and named below.
+    expect(within(q2).queryByRole("rowheader", { name: "2026-W41" })).toBeNull();
+    expect(q2).toHaveTextContent("Weeks with no first session, left out: 2026-W41");
+  });
+
+  test("the screen-reader caption names each cohort's status", () => {
+    view(answer());
+    const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
+    const table = within(q2).getByRole("table");
+    expect(table.querySelector("caption")).toHaveClass("sr-only");
+    expect(table.querySelector("caption").textContent).toBe(
+      "Share of each first-week cohort back in each later week; — for a week not ended. Curve: 2026-W32 flattening, 2026-W40 falling, 2026-W44 too few to judge.",
+    );
+  });
+
+  test("below 480 px the table scrolls inside its own box, never the page", () => {
+    view(answer());
+    const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
+    expect(within(q2).getByRole("table").parentElement).toHaveClass("overflow-x-auto", "max-w-full");
+  });
+
+  test("columns stop at the last week any cohort has ended; a report before #607 says not judged", () => {
+    const report = usageReport("2026-W44", {
+      cohorts: [
+        { week: "2026-W42", users: 4, retained: [{ offset: 1, users: 2, pct: 50 }, { offset: 2, users: 1, pct: 25 }] },
+        { week: "2026-W44", users: 0, retained: [] },
+      ],
+    });
+    view(answer("2026-W44", { report }));
+    const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
+    expect(within(q2).getAllByRole("columnheader").map((c) => c.textContent)).toEqual(["First week", "People", "+1", "+2", "Curve"]);
+    expect(within(q2).getByText("not judged")).toBeInTheDocument();
+  });
+
+  test("no first session in any of the weeks: one plain line, no empty table", () => {
+    view(answer("2026-W44", { report: usageReport("2026-W44", { cohorts: [{ week: "2026-W44", users: 0, retained: [] }] }) }));
+    const q2 = screen.getByRole("heading", { name: /^Q2 · / }).closest("section");
+    expect(within(q2).queryByRole("table")).toBeNull();
+    expect(q2).toHaveTextContent("No one had a first session in these weeks.");
   });
 
   test("the data behind the page: file, time, events, consent counts and this week not reported yet", () => {

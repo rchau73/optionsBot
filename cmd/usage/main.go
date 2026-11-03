@@ -8,6 +8,7 @@
 //	go run ./cmd/usage -week 2026-W43
 //	go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl
 //	go run ./cmd/usage -week 2026-W43 -alert   # + the engagement-drop check (#341): DROPS {json}
+//	go run ./cmd/usage -week 2026-W43 -flat-step-pts 3   # study the cohort flattening check (#607)
 package main
 
 import (
@@ -30,10 +31,14 @@ func main() {
 	flag.Float64Var(&rules.CountPct, "alert-count-pct", rules.CountPct, "study: a count (active users, help used) drops when this % under the base weeks' mean")
 	flag.Float64Var(&rules.FunnelPts, "alert-funnel-pts", rules.FunnelPts, "study: a funnel drops when its completion share is this many points under the base weeks'")
 	flag.IntVar(&rules.MinBase, "alert-min-base", rules.MinBase, "study: the fewest users or funnel starts a rule judges")
+	flat := usage.DefaultFlatRules()
+	flag.IntVar(&flat.MinUsers, "flat-min-users", flat.MinUsers, "study: the fewest users a cohort needs before its curve is judged (#607)")
+	flag.IntVar(&flat.Weeks, "flat-weeks", flat.Weeks, "study: how many of a cohort's last ended weeks are compared with the week before")
+	flag.Float64Var(&flat.StepPts, "flat-step-pts", flat.StepPts, "study: a week within this many points of the one before is flat; a bigger fall is falling")
 	baseWeeks := flag.Int("alert-base-weeks", usage.DropBaseWeeks, "study: how many weeks before the report's are its base")
 	flag.Parse()
 
-	r, err := run(*events, *week, *out, rules, *baseWeeks)
+	r, err := run(*events, *week, *out, rules, flat, *baseWeeks)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "usage:", err)
 		os.Exit(1)
@@ -74,12 +79,12 @@ func window(week string) (evidence.Window, error) {
 	return evidence.ParseWeek(week)
 }
 
-func run(events, week, out string, rules usage.Rules, baseWeeks int) (usage.Report, error) {
+func run(events, week, out string, rules usage.Rules, flat usage.FlatRules, baseWeeks int) (usage.Report, error) {
 	w, err := window(week)
 	if err != nil {
 		return usage.Report{}, err
 	}
-	r, paths, err := usage.RunWith(events, w.From, w.To, w.Label, out, rules, baseWeeks)
+	r, paths, err := usage.RunWith(events, w.From, w.To, w.Label, out, rules, flat, baseWeeks)
 	if err != nil {
 		return usage.Report{}, err
 	}

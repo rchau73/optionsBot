@@ -366,6 +366,12 @@ When their share rises 20 points or more over the 3 weeks before, the card shows
 Under 10 people it gives a small-sample note and no share.
 Nobody gone shows "No one stopped coming back".
 
+**Do they come back** (Q2 on Analytics): each group of people who first came in the same week, and the share of them back in each of the 12 weeks after.
+A week that has not ended yet shows —, never 0 %.
+The Curve column says whether the group's return has levelled off: **flattening** when each of its last 3 weeks is within 5 points of the week before, **falling** when one dropped by more, **rising** when one rose by more.
+Under 10 people, or before 4 weeks have ended, it says **too few to judge** and makes no claim.
+On a phone the table scrolls sideways inside its card.
+
 Learn more: "Roles" and "Analytics and your consent" in this guide.
 
 ## Notifications
