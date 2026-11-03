@@ -24,7 +24,9 @@ The first page. It answers one question: is the bot running, and how is it doing
 
 **The last trade** sits under each band: when it happened and what the bot sold or bought back. One click on *Why?* opens the reason the bot recorded in its journal when it traded. For a buy-back it also shows that trade's past result, net of fees, in coin and USD. A past result is no promise of future results. *All actions, explained* opens the Activity page.
 
-**When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero.
+**When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
+
+**A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
 
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
@@ -51,7 +53,7 @@ Month by month, where the money came from. It reads the journal's closes, after 
 - *Result*: paid to you, minus buy-back, minus fees.
 - *Holding alone*: what the same coin would have gained or lost if it had only been held. In the coin it is 0 by definition; in USD it is the price change.
 
-A month with a loss is tinted and marked "loss". A month without closes says "no closes". The current month says "so far".
+A month with a loss is tinted and marked "loss". A month without closes says "no closes". The current month says "so far". Before the first close, every tile says "not yet", never a zero.
 
 **When something looks wrong**: a loss month is normal data, not an error; the table keeps it in the open. "Unknown" in *holding alone* means the price for that month was not recorded. Testnet income is practice money, not real income.
 
