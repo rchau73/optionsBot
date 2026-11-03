@@ -61,7 +61,7 @@ Never reintroduce env-var overrides for logic parameters.
 - Do not add a config key for a new rule: fix its value in `fixed.go` and keep a `cmd/stress` flag to study it.
 - `tests/config_effective_test.go` pins every effective setting of both shipped configs (golden `tests/testdata/effective_config_*.json`; regenerate with `UPDATE_GOLDEN=1` only for an intended change).
 - **A new tuned key needs a catalogue entry** (`internal/config/catalogue.go`, `config.Tunables()`, #255: plain words, unit, the range `Validate` enforces, cross rules, core-policy area, the tools that vary it)
-  and `go run ./cmd/paramdocs` to regenerate `docs/parameters.md`; `tests/config_catalogue_test.go` fails otherwise.
+  and `go run ./cmd/paramdocs` to regenerate `docs/parameters.md` and the lab's `frontend/content/lab-settings.json` (#586); `tests/config_catalogue_test.go` and `tests/lab_settings_test.go` fail otherwise.
 
 **Secrets never reach GitHub** (the repository is public):
 - `.env` and every `.env.*` except `.env.example` are ignored;

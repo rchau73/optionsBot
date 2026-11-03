@@ -292,6 +292,10 @@ There are three roles. A **user** may see every page. A **manager** may do what 
 
 **Is every action checked and recorded?** Yes. Every action that changes something is checked on the server against your role, whatever the page shows: the wrong role is refused and nothing changes. An allowed action is recorded in the audit trail with your username, the action and the time.
 
+**Can I check a setting value before a comparison run?** Managers and admins can. The monitor says whether the value is inside the range the bot accepts and, if not, which rule it breaks in plain words. It also says whether the setting is a core policy, where a new default needs the product owner, what the setting does to risk and income, and its current value. The check changes nothing: no config file or bot setting is touched. No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/validate -->
+
 Each environment has its own people and roles.
 
 Learn more: "Sign-in and password" and "For admins" in this guide.

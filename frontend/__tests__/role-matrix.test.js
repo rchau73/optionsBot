@@ -143,6 +143,7 @@ const FIXTURES = {
     actor: who?.user.username,
   }),
   "POST /api/consent": async ({ who }) => ({ path: "/api/consent", body: { consent: true }, actor: who?.user.username }),
+  "POST /api/lab/validate": async ({ who }) => ({ path: "/api/lab/validate", body: { key: "delta_drift_threshold", value: 0.05 }, actor: who?.user.username }),
   "POST /api/events": async ({ who }) => {
     if (who) auth.store.setAnalyticsConsent(who.user.id, true);
     return { path: "/api/events", body: { event: "panel_expanded", session_id: SESSION, props: { panel: "held" } } };

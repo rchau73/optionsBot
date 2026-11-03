@@ -27,7 +27,7 @@ generated() {
 SORTED_LISTS="docs/product/assistant/golden.jsonl"
 
 regen() {
-  go run ./cmd/paramdocs # docs/parameters.md — first: the help index reads it
+  go run ./cmd/paramdocs # docs/parameters.md and frontend/content/lab-settings.json — first: the help index reads the former
   go run ./cmd/helpindex # frontend/content/help-index.json
   # tests/testdata/effective_config_*.json: the test rewrites them under UPDATE_GOLDEN.
   local out
