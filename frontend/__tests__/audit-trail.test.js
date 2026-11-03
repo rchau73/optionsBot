@@ -21,6 +21,11 @@ let dir;
 let file;
 beforeEach(() => {
   useTestAuth();
+  // No first admin (#590): its argon2id hash (19 MiB, a fresh WebAssembly
+  // instance per call) ran on every getAuth of a fresh file database, for an
+  // admin no test here uses — and under the nightly's parallel workers one of
+  // them stalled a test past its 30 s. signedIn adds the people a test needs.
+  delete process.env.ADMIN_PASSWORD;
   jest.spyOn(console, "log").mockImplementation(() => {});
   jest.spyOn(console, "error").mockImplementation(() => {});
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "audit-trail-"));
@@ -36,7 +41,7 @@ afterEach(() => {
 
 const line = (time, action, username, extra = {}) => JSON.stringify({ time, action, username, role: "manager", ...extra });
 
-/** Signs in an admin (its sign-in writes nothing: signedIn adds a session directly), then replaces the trail with `lines`. */
+/** Signs in an admin (nothing is written: no first admin is bootstrapped and signedIn adds a session directly), then replaces the trail with `lines`. */
 async function adminWith(lines) {
   const s = await signedIn("root", "admin");
   fs.writeFileSync(file, lines.map((l) => `${l}\n`).join(""), { mode: 0o600 });
@@ -109,8 +114,9 @@ describe("Scenario: a damaged line does not break the page", () => {
 
 describe("empty, missing and off", () => {
   test("a missing file is an empty list, not an error", async () => {
-    const { cookie } = await signedIn("root", "admin");
-    fs.rmSync(file, { force: true }); // the first admin's user_created line
+    const { cookie, auth } = await signedIn("root", "admin");
+    // The fixture bootstraps no first admin (#590): no argon2 hash, so no user_created line either.
+    expect(auth.store.userByName("admin")).toBeFalsy();
     expect(fs.existsSync(file)).toBe(false);
     expect(await (await get("", cookie)).json()).toEqual({ off: false, entries: [], skipped: 0, next_before: null });
   });
