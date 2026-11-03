@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+Margin is what the exchange holds to cover open positions. The IM bar shows initial margin as a share of the margin balance.
+
+00:00:12.000 --> 00:00:26.000
+The tick on the bar is the IM limit. The bot sizes new positions so initial margin stays under it. The limit follows the volatility band, called DVOL.
+
+00:00:26.000 --> 00:00:36.000
+The monitor says why the limit is what it is now. In a confirmed negative regime it is the lowest one.
+
+00:00:36.000 --> 00:00:48.000
+The MM bar shows maintenance margin. It turns amber, then red. At the end of the bar the exchange can close positions.
+
+00:00:48.000 --> 00:01:00.000
+If initial margin goes over the limit, a badge says so. The bot only warns; it does not resize by itself.

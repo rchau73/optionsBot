@@ -155,6 +155,15 @@ Any signed-in role; 401 without a session.
 - The source is `docs/product/education/tips.json`; the image reads its copy `content/tips.json` (a test fails when stale).
 - `lib/tips.js` `findTip(key)` answers a setting's tip, else the glossary term's, else null.
 - No screen uses it yet.
+### `GET /api/help/videos` (#611)
+
+The how-to video manifest, read by the monitor's own server (`app/api/help/videos/route.js`); no bot call, nothing personal logged.
+Any signed-in role; 401 without a session.
+- `{videos: [...]}`, every video in id order: `id`, `title`, `task`, `duration_sec` (planned, at most 90), `captions` (repo path of the `.vtt`), `tips` (the tip keys that link it) and `status` (`storyboard` or `recorded`).
+- An unrecorded video has no file URL.
+- The source is `docs/product/education/videos.json`; the image reads its copy `content/videos.json` (a test fails when stale).
+- `lib/videos.js`: `findVideo(id)`, `videosForTip(tipKey)`, `allVideos()`.
+- No screen uses it yet.
 
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).

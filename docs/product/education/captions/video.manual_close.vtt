@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.000
+The Close button buys a leg back at market. It is grey when the bot's rule does not allow it, and the hover says why.
+
+00:00:11.000 --> 00:00:24.000
+It is active only on the side the bot no longer sells. That is, in a confirmed negative regime: puts in a bear trend, or calls in a bull trend.
+
+00:00:24.000 --> 00:00:38.000
+Before you confirm, read the window. A market buy pays the asking price, the spread and a fee. The result so far becomes final.
+
+00:00:38.000 --> 00:00:50.000
+It also says what follows. The side is held like after a stop-loss, so the bot does not sell it again at once.
+
+00:00:50.000 --> 00:01:02.000
+If it is the last leg of the strangle, the note is red. The slot becomes empty and the bot opens a new entry there.
+
+00:01:02.000 --> 00:01:15.000
+If you are unsure, cancel. Nothing is sent until you confirm, and every close is recorded with who made it.
