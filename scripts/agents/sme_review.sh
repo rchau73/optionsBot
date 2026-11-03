@@ -46,6 +46,9 @@ bots=""
 for b in $bots; do
   for ep in status positions orders pnl events trades; do fetch "$MONITOR_URL/api/bots/$b/$ep" "$b-$ep.json"; done
   fetch "$MONITOR_URL/api/bots/$b/pnl/history?range=1w" "$b-pnl-history-1w.json"
+  # A decision loop more than 2 cycles old (#593: loop_stale, loop_age_sec), named up front.
+  [[ -f "$OUT/$b-status.json" ]] && py 'import json,sys; s=json.load(open(sys.argv[1]))
+if s.get("loop_stale"): print("- STALE LOOP: %s last cycle %s, %s s old (eval every %s ms): exits are not being checked" % (sys.argv[2], s.get("loop_at"), s.get("loop_age_sec"), s.get("eval_interval_ms")))' "$OUT/$b-status.json" "$b" >> "$manifest" || true
 done
 [[ -n "$bots" ]] && fetch "$MONITOR_URL/api/bots/${bots%% *}/account" account.json
 # The mvp environment runs main (merged, not yet released): closed issues are

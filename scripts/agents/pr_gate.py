@@ -117,17 +117,34 @@ def policy_paths(files, removed=()):
 
 
 def equiv(compare):
-    """The base sha of a GitHub compare (base...head) when every commit in it is
-    a clean update-with-main merge GitHub made, else None."""
+    """The base sha of a GitHub compare (base...head) when the PR's own line from
+    head back to base (first parents) is only clean update-with-main merges
+    GitHub made, else None. The compare also lists the commits each merge
+    brought in from main (other PRs' commits and merges): those are main's, not
+    the PR's change, so only the first-parent line is checked (#596, PR #609: every real
+    update failed the check, and voided merge:approved)."""
     commits = compare.get("commits") or []
-    if not commits:
+    base = compare.get("base_commit", {}).get("sha") or compare.get("merge_base_commit", {}).get("sha")
+    if not commits or not base:
         return None
-    for c in commits:
+    by_sha = {c.get("sha"): c for c in commits}
+    parents_of_others = {p.get("sha") for c in commits for p in c.get("parents", [])}
+    tips = [c for c in commits if c.get("sha") not in parents_of_others]
+    if len(tips) != 1:
+        return None
+    c = tips[0]
+    while True:
         info = c.get("commit", {})
         subject = (info.get("message") or "").split("\n", 1)[0]
-        if len(c.get("parents", [])) != 2 or info.get("committer", {}).get("name") != "GitHub" or not UPDATE_SUBJECT.match(subject):
+        parents = c.get("parents", [])
+        if len(parents) != 2 or info.get("committer", {}).get("name") != "GitHub" or not UPDATE_SUBJECT.match(subject):
             return None
-    return compare.get("base_commit", {}).get("sha") or compare.get("merge_base_commit", {}).get("sha")
+        first = parents[0].get("sha")
+        if first == base:
+            return base
+        c = by_sha.get(first)
+        if c is None:
+            return None
 
 
 def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card="", removed=(), approved=False):

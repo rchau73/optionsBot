@@ -207,20 +207,38 @@ class CIFirst(unittest.TestCase):
         self.assertEqual(cli("ci-green"), 0)  # but its CI is green
 
 
-def commit(parents=2, committer="GitHub", subject="Merge branch 'main' into agent/issue-1"):
-    return {"parents": [{}] * parents, "commit": {"committer": {"name": committer}, "message": subject + "\n\nbody"}}
+def commit(sha, parents=("abc", "m1"), committer="GitHub", subject="Merge branch 'main' into agent/issue-1"):
+    return {"sha": sha, "parents": [{"sha": p} for p in parents],
+            "commit": {"committer": {"name": committer}, "message": subject + "\n\nbody"}}
+
+
+def main_commits():
+    """What main brought in: another PR's commit, its merge, a GitHub merge of main into that PR."""
+    return [commit("m0", parents=("x",), committer="Roberto Chau", subject="Fix something (#9)"),
+            commit("m1", parents=("y", "m0"), subject="Merge pull request #9 from rchau73/agent/issue-9"),
+            commit("m2", parents=("m1", "z"), subject="Merge branch 'main' into agent/issue-9")]
 
 
 class Equiv(unittest.TestCase):
     def test_only_github_update_merges_carry_the_review(self):
-        cmp = {"base_commit": {"sha": "abc"}, "commits": [commit(), commit()]}
+        cmp = {"base_commit": {"sha": "abc"}, "commits": [commit("u1", ("abc", "m1")), commit("u2", ("u1", "m2"))]}
+        self.assertEqual(pr_gate.equiv(cmp), "abc")
+
+    def test_the_commits_main_brought_in_do_not_count(self):
+        # #596, PR #609: one update-branch merge, with main's own commits in the compare.
+        cmp = {"base_commit": {"sha": "abc"}, "commits": main_commits() + [commit("u1", ("abc", "m2"))]}
         self.assertEqual(pr_gate.equiv(cmp), "abc")
 
     def test_anything_else_does_not(self):
-        for c in [commit(parents=1, subject="Fix review"), commit(committer="Roberto Chau"),
-                  commit(subject="Merge remote-tracking branch 'origin/main'")]:
-            self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": [commit(), c]}))
+        for c in [commit("u2", parents=("u1",), subject="Fix review"), commit("u2", ("u1", "m1"), committer="Roberto Chau"),
+                  commit("u2", ("u1", "m1"), subject="Merge remote-tracking branch 'origin/main'")]:
+            cmp = {"base_commit": {"sha": "abc"}, "commits": main_commits() + [commit("u1", ("abc", "m2")), c]}
+            self.assertIsNone(pr_gate.equiv(cmp))
         self.assertIsNone(pr_gate.equiv({"base_commit": {"sha": "abc"}, "commits": []}))
+
+    def test_a_line_that_never_reaches_base_does_not(self):
+        cmp = {"base_commit": {"sha": "abc"}, "commits": [commit("u1", ("other", "m1"))]}
+        self.assertIsNone(pr_gate.equiv(cmp))
 
 
 def approved(p=None, markers=CLEAN, files=("internal/strategy/open.go",), behind=0, on=False):

@@ -220,7 +220,9 @@ function MakingCard({ summary: s, bot }) {
         <div>
           <dt className="text-xs text-muted">Open now</dt>
           <dd>
-            {isNumber(s.income?.unrealised_coin) ? (
+            {s.holding?.legs === 0 ? (
+              <span className="text-muted">nothing open</span>
+            ) : isNumber(s.income?.unrealised_coin) ? (
               <Signed value={s.income.unrealised_coin}>{formatCoin(s.income.unrealised_coin, coin)}</Signed>
             ) : (
               <span className="text-muted">unknown</span>
@@ -241,7 +243,9 @@ function WorstCard({ summary: s, bot }) {
   const w = worstCaseLine(s.worst_case);
   return (
     <Card title="Worst case right now" loss>
-      {w.unknown ? (
+      {s.holding?.legs === 0 ? (
+        <p className="text-base">Nothing held: a bad day costs nothing.</p>
+      ) : w.unknown ? (
         <p className="text-base text-warn">Unknown: {w.unknown}.</p>
       ) : (
         <p className="text-base">
