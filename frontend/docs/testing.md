@@ -25,6 +25,16 @@ Not part of `npm test` (Jest only) nor of CI yet (the browser download).
 **The Overview's four answers (#489).** `__tests__/overview-four-answers.test.jsx` renders the desktop Overview with a mocked `useMonitor` on four fixtures: a profitable month, a loss, nothing held and stale data.
 It fails when the page stops answering one of the four questions a newcomer asks in the first five minutes: what the bot holds, whether it makes money (net of fees, coin and USD, a loss as prominent as a gain), the worst case in money, and why it made its last trade (one click).
 
+## Losses as visible as gains
+
+**Losses as visible as gains (#582).** `__tests__/loss-visibility.test.jsx` extends the four answers to every other page that shows a result: Income, Details (pro), the phone overview, Worst case and Positions.
+Its fixtures, in `test/resultFixtures.js`, carry the four answers' figures (the month ±0.00400 BTC, ±$410, net of fees) in the shape of each page's API: a profitable month, a loss and nothing held.
+On the loss fixture each page's result must show a minus sign and its unit (colour is never the only cue), with the same size and weight classes, its own and inherited, as the gain on the profit fixture.
+Worst case shows one estimate on both fixtures, so its gain is the calm day and its loss the 3σ fall of the same table.
+A result inside a closed `<details>`, a `hidden` block or screen-reader-only text fails, naming the page; so does one dropped from the page.
+On the nothing-held fixture each page says so in words and shows no 0.00000 or $0 standing for "nothing".
+A new page that shows a result gets its row in the test's `PAGES` table.
+
 ## Accessibility baseline
 
 **Accessibility baseline (#310).** `__tests__/a11y.test.jsx` renders every panel and dialog (and the sign-in form) with test data and runs axe-core (`jest-axe`, helper `test/a11y.js`; colour contrast is left to the browser audit — jsdom has no layout).

@@ -72,6 +72,27 @@ type fakeExchange struct {
 	// onCancel, when set, runs inside Cancel with mu held (e.g. the order
 	// fills just before the cancel reaches it); an error fails the cancel.
 	onCancel func(id string) error
+
+	// down plays a gateway that is reconnecting: every call fails with a lost
+	// connection and nothing reaches the exchange (#593).
+	down bool
+	// summaryDelay makes every account summary read wait this long first, as
+	// a request the gateway answers only with its timeout (#593).
+	summaryDelay time.Duration
+}
+
+// downErr is the error every call returns while the fake is down. Caller holds mu.
+func (f *fakeExchange) downErr(method string) error {
+	if f.down {
+		return fmt.Errorf("%s: %w", method, gateway.ErrConnectionLost)
+	}
+	return nil
+}
+
+func (f *fakeExchange) setDown(down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.down = down
 }
 
 // fillLocked marks an order filled (positions follow). Caller holds mu.
@@ -125,6 +146,9 @@ func (f *fakeExchange) applyFillLocked(o orders.Order, id string, qty, price flo
 func (f *fakeExchange) CancelByLabel(_ context.Context, _ string, label string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.downErr("private/cancel_by_label"); err != nil {
+		return 0, err
+	}
 	if f.cancelLabelErr != nil {
 		return 0, f.cancelLabelErr
 	}
@@ -152,6 +176,9 @@ func newFakeExchange() *fakeExchange {
 func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.downErr(fmt.Sprintf("private/%s", o.Direction)); err != nil {
+		return orders.Fill{}, err
+	}
 	f.nextID++
 	id := fmt.Sprintf("o-%d", f.nextID)
 	f.submitted = append(f.submitted, o)
@@ -226,6 +253,9 @@ func (f *fakeExchange) CancelAllOrders(_ context.Context, currency string) error
 func (f *fakeExchange) GetOrderState(_ context.Context, id string) (orders.OrderStateInfo, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.downErr("private/get_order_state"); err != nil {
+		return orders.OrderStateInfo{}, err
+	}
 	return f.orderStates[id], nil
 }
 
@@ -245,13 +275,23 @@ func (f *fakeExchange) AmendOrder(_ context.Context, id string, _ float64, price
 
 func (f *fakeExchange) GetAccountSummary(context.Context, string) (orders.AccountSummary, error) {
 	f.mu.Lock()
+	delay := f.summaryDelay
+	f.mu.Unlock()
+	time.Sleep(delay) // outside the lock, like a request waiting on the socket
+	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.downErr("private/get_account_summary"); err != nil {
+		return orders.AccountSummary{}, err
+	}
 	return f.summary, f.summaryErr
 }
 
 func (f *fakeExchange) GetPositions(context.Context, string) ([]orders.RawPosition, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.downErr("private/get_positions"); err != nil {
+		return nil, err
+	}
 	return append([]orders.RawPosition(nil), f.positions...), nil
 }
 
