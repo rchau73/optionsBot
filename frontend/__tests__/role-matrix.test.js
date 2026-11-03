@@ -101,6 +101,12 @@ const FIXTURES = {
     if (who?.user.role === "admin") await person("admin");
     return { path: "/api/auth/account", body: {}, actor: who?.user.username };
   },
+  "DELETE /api/auth/sessions/[id]": async ({ who }) => {
+    // The caller's other browser (#584); without a session, someone's session id.
+    const owner = who ?? (await person("user"));
+    const id = auth.store.addSession(hashToken(`other-browser-${seq}`), owner.user.id, Date.now() + 3600 * 1000);
+    return { path: `/api/auth/sessions/${id}`, params: { id }, body: {}, actor: who?.user.username };
+  },
   "PATCH /api/admin/users/[id]": async ({ who }) => ({ ...(await target(who)), body: { role: "manager" } }),
   "POST /api/admin/users": async ({ who }) => ({
     path: "/api/admin/users",
@@ -325,6 +331,7 @@ async function sendGet(handler, p, params, headers) {
 
 const RUN_ID = "20261012T093000Z";
 const READ_FIXTURES = {
+  "GET /api/auth/sessions": { path: "/api/auth/sessions", params: {} },
   "GET /api/lab/runs": { path: "/api/lab/runs", params: {} },
   "GET /api/lab/runs/[id]": { path: `/api/lab/runs/${RUN_ID}`, params: { id: RUN_ID } },
 };

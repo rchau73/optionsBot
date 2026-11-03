@@ -7,6 +7,7 @@ import { LOCK_FAILURES, LoginLimiter } from "./limits";
 import { normalizeUsername, ROLES } from "./store";
 import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
 import { authLog } from "./log";
+import { browserName } from "./browser";
 import { roleAtLeast } from "./roles";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
@@ -19,6 +20,11 @@ export const RESET_LINK_TTL_MS = 30 * 60 * 1000;
 /** SHA-256 (hex) of a refresh token: the only form stored. */
 export function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** The short form of a session's public id the audit names (#584): its first 8 characters. */
+export function shortSessionId(publicId) {
+  return String(publicId).slice(0, 8);
 }
 
 /** Why `next` may not replace `current`, in plain words, or null. */
@@ -55,7 +61,7 @@ export class AuthService {
    * locked usernames take the same time and get the same answer.
    * → { ok: true, user, access, refresh } | { ok: false, status, error, retryAfter? }
    */
-  async login({ username, password, ip = "unknown" }) {
+  async login({ username, password, ip = "unknown", userAgent = null }) {
     const now = this.now();
     const wait = this.limiter.takeIp(ip, now);
     if (wait > 0) {
@@ -91,7 +97,7 @@ export class AuthService {
     this.limiter.clear(name);
     const refresh = crypto.randomBytes(32).toString("base64url");
     const sid = hashToken(refresh);
-    this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now);
+    this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now, browserName(userAgent));
     this.store.recordSignIn(user.id, now);
     authLog("INFO", "signed in", { username: user.username, role: user.role, ip });
     this.audit("signed_in", { username: user.username, role: user.role, ip });
@@ -107,7 +113,7 @@ export class AuthService {
    * one for this browser only.
    * → { ok: true, user, access, refresh } | { ok: false, status, error, retryAfter? }
    */
-  async changePassword({ accessToken, current, next, ip = "unknown" }) {
+  async changePassword({ accessToken, current, next, ip = "unknown", userAgent = null }) {
     const acting = await this.actingUser(accessToken, "user");
     if (!acting.ok) return { ok: false, status: 401, session: true, error: "sign in required" };
     const user = acting.user;
@@ -139,7 +145,7 @@ export class AuthService {
     this.store.setPassword(user.id, await hashPassword(next), now);
     const refresh = crypto.randomBytes(32).toString("base64url");
     const sid = hashToken(refresh);
-    this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now);
+    this.store.addSession(sid, user.id, now + REFRESH_TTL_SEC * 1000, now, browserName(userAgent));
     authLog("INFO", "password changed", { event: "password_changed", username: user.username, ip });
     this.audit("password_changed", { username: user.username, role: user.role, ip });
     return { ok: true, user, access: await signAccess(user, this.key, now, sid), refresh };
@@ -153,6 +159,7 @@ export class AuthService {
     const userId = this.store.sessionUser(sid, now);
     const user = userId === null ? null : this.store.userById(userId);
     if (!user) return { ok: false };
+    this.store.touchSession(sid, now);
     return { ok: true, user, access: await signAccess(user, this.key, now, sid) };
   }
 
@@ -162,7 +169,7 @@ export class AuthService {
    * must still be live and theirs, the user must still exist, and their
    * current role must be at least `need`. The role is checked first, so a
    * demoted user hears 403 (not allowed), not 401 (sign in again).
-   * → { ok: true, user } | { ok: false, status: 401 (no user or no live session) | 403 (role) }
+   * → { ok: true, user, sid (the session's hash) } | { ok: false, status: 401 (no user or no live session) | 403 (role) }
    */
   async actingUser(accessToken, need) {
     const now = this.now();
@@ -178,7 +185,41 @@ export class AuthService {
       authLog("WARN", "action refused: session ended", { username: user.username });
       return { ok: false, status: 401 };
     }
-    return { ok: true, user };
+    return { ok: true, user, sid: claimed.sid };
+  }
+
+  /**
+   * The person's own live sessions (#584), last used first:
+   * [{ id, browser, created_at, last_used_at (ISO), current }]. `sid` is the
+   * session of the request (actingUser's). No token, hash or address.
+   */
+  listSessions(user, sid) {
+    return this.store.liveSessions(user.id, this.now()).map((s) => ({
+      id: s.publicId,
+      browser: s.browser || "Unknown browser",
+      created_at: new Date(s.createdAtSec * 1000).toISOString(),
+      last_used_at: new Date(s.lastUsedSec * 1000).toISOString(),
+      current: s.tokenHash === sid,
+    }));
+  }
+
+  /**
+   * Ends one of the person's own other sessions (#584): its next refresh
+   * fails (an access token it holds lives up to 15 minutes for reading).
+   * Someone else's or an unknown id → 404, the session in use → 409.
+   * → { ok: true } | { ok: false, status, error }
+   */
+  endSession(user, sid, publicId) {
+    const target = this.store.liveSessions(user.id, this.now()).find((s) => s.publicId === publicId);
+    if (!target) return { ok: false, status: 404, error: "no such session" };
+    if (target.tokenHash === sid) {
+      return { ok: false, status: 409, error: "this is the session you are using: use Sign out to end it" };
+    }
+    this.store.revokeSession(target.tokenHash);
+    const short = shortSessionId(publicId);
+    authLog("INFO", "session ended", { event: "session_ended", username: user.username, target_session: short });
+    this.audit("session_ended", { username: user.username, role: user.role, target_session: short });
+    return { ok: true };
   }
 
   /** Why `by` may not change `target` to `role` (or delete it, role null), or null. */
