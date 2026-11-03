@@ -264,6 +264,20 @@ You sign in at the sign-in page with a username and password. Every page and eve
 
 Learn more: "Roles" in this guide.
 
+## Active sessions
+
+<!-- guide: route:DELETE /api/auth/sessions/[id] -->
+
+Active sessions lists every browser where you are signed in to the monitor, whatever your role. You can sign out the ones you don't recognise, such as a lost phone or a shared computer, without changing your password.
+
+**How to see where I am signed in**: choose Active sessions in the account menu. Each row shows the browser, when it signed in and when it was last used. The browser you are using is marked This browser. No address is kept or shown.
+
+**How to sign out another device**: choose Sign out on its row. From that moment the browser can no longer change anything, and it goes to the sign-in page within 15 minutes, when its sign-in renews and fails. Until then it can still read pages.
+
+**Signing out this browser**: use Sign out in the account menu. Active sessions does not sign out the browser you are using.
+
+Learn more: "Sign-in and password" in this guide.
+
 ## Deleting your account
 
 <!-- guide: survey:exit, route:DELETE /api/auth/account -->

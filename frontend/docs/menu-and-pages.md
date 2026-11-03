@@ -13,7 +13,7 @@ It closes on Escape, a click outside or a choice (`components/useDismiss.js`, sh
 `menuItems` stays the flat list of every page in that order (the analytics screens and the phone check read it).
 Then comes the **notification bell**, pushed right (#447, below).
 The last item is **the signed-in person's menu**, labelled with their name, e.g. "bob ▾" (`components/UserMenu.jsx`, #394; "Account ▾" when the name cannot be read).
-It holds Users and Audit for an admin, Change password and Sign out.
+It holds Users and Audit for an admin, Change password, Active sessions (#584) and Sign out.
 The name and role come from the access token in `app/layout.jsx` (`lib/auth/viewer.js`, display only: the routes re-check the role).
 The pages' own headers no longer carry it.
 The current page is marked `aria-current="page"` and shown as a filled pill, or its dropdown is (none on the admin pages).

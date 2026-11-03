@@ -30,7 +30,12 @@ export async function POST(request) {
     return Response.json({ error: "sign-in is unavailable: see the monitor's logs" }, { status: 503 });
   }
 
-  const result = await auth.login({ username: body?.username, password: body?.password, ip: clientIp(request) });
+  const result = await auth.login({
+    username: body?.username,
+    password: body?.password,
+    ip: clientIp(request),
+    userAgent: request.headers.get("user-agent"),
+  });
   if (!result.ok) {
     const headers = result.retryAfter ? { "Retry-After": String(result.retryAfter) } : {};
     return Response.json({ error: result.error }, { status: result.status, headers });
