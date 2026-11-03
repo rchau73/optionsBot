@@ -163,7 +163,9 @@ The numbers page for an active trader. Figures come first and graphics are small
 
 **The top line** counts bots online, orders sent and filled, closes and entries skipped, since a date. The **section bar** jumps to Positions, Missing legs, Trades, Working orders and Not managed. A section is amber when it needs attention.
 
-**Open positions**: one line per leg, grouped by strangle. Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks. *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
+**Open positions**: one line per leg, grouped by strangle. Columns include when the leg was opened (its date and age), quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks. *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
+
+A roll or a repair opens a new leg on another strike, so a leg that showed a large gain can be replaced by one that starts a little negative: the opening fees and the spread come first, and time decay earns them back. Its *Opened* date shows it is new.
 <!-- guide: route:POST /api/bots/[bot]/close -->
 
 **Missing legs**: one row for each one-legged strangle. It shows who holds the repair (a stop, a GEX shed, the regime side), the market now and when the hold ends.

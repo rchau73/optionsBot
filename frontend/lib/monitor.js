@@ -166,6 +166,42 @@ export function consolidateRows(rows) {
   return [...byKey.values()];
 }
 
+/**
+ * When each row's leg was opened (#614), from the journal's opens and closes
+ * (/api/trades, per bot, oldest first): the first open of its instrument since
+ * the bot was last flat on it, so a top-up keeps the date and a leg sold again
+ * after a roll or a stop gets a new one. The position's own entry time is not
+ * used: a restart rebuilds the book from the exchange at the restart's time.
+ * Adds openedAt and lastAddedAt (the latest open, when later), null when the
+ * open is older than the loaded history.
+ */
+export function withOpened(rows, tradesByBot = {}) {
+  const runs = new Map(); // "bot:instrument" → { first, last, qty }
+  for (const [bot, trades] of Object.entries(tradesByBot)) {
+    for (const t of trades ?? []) {
+      if (t.kind !== "open" && t.kind !== "close") continue;
+      const k = `${bot}:${t.instrument}`;
+      const run = runs.get(k) ?? { first: null, last: null, qty: 0 };
+      if (t.kind === "open") {
+        if (run.qty <= QTY_EPS) run.first = t.at;
+        run.last = t.at;
+        run.qty += t.qty ?? 0;
+      } else {
+        run.qty -= t.qty ?? 0;
+        if (run.qty <= QTY_EPS) Object.assign(run, { first: null, last: null, qty: 0 });
+      }
+      runs.set(k, run);
+    }
+  }
+  return rows.map((r) => {
+    const run = runs.get(`${r.bot}:${r.instrument}`);
+    const openedAt = run?.first ?? null;
+    const lastAddedAt = run?.last && run.last !== openedAt ? run.last : null;
+    return { ...r, openedAt, lastAddedAt };
+  });
+}
+
+const QTY_EPS = 1e-9;
 const premiumOf = (r) => (isNumber(r.entry) && isNumber(r.qty) ? r.entry * r.qty : 0);
 const addNullable = (a, b) => (isNumber(a) && isNumber(b) ? a + b : isNumber(a) ? a : b);
 const minNullable = (a, b) => (isNumber(a) && isNumber(b) ? Math.min(a, b) : isNumber(a) ? a : b);
