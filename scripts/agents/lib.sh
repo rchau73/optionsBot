@@ -62,6 +62,25 @@ mine_jq() {
   printf 'def mine: map(select((.author.login // .user.login) == "%s")); def own_body: if (.author.login // .user.login) == "%s" then (.body // "") else "(left out: not written by the repository owner)" end; ' "${1%%/*}" "${1%%/*}"
 }
 
+# no_github <cmd…> — runs a command with no GitHub credentials (#596): gh sees
+# an empty config (logged in nowhere) and git has no credential helper, no
+# prompt and no ssh agent. An agent session runs code it wrote (go run,
+# python3, tests), which could otherwise call gh as the owner: label a PR
+# merge:approved, merge it, edit the board. The scripts around the session
+# push, comment and move cards themselves. A key file in ~/.ssh is still
+# readable; with it a session could push a branch, never merge (main takes
+# only a PR with green CI), and an approval is void after any new commit.
+no_github() {
+  local cfg rc
+  cfg="$(mktemp -d)"
+  env -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u SSH_AUTH_SOCK GH_CONFIG_DIR="$cfg" \
+    GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/usr/bin/false SSH_ASKPASS=/usr/bin/false \
+    GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= "$@"
+  rc=$?
+  rmdir "$cfg" 2>/dev/null || true
+  return $rc
+}
+
 # The board's ids rarely change, and Project queries are expensive in GitHub's
 # GraphQL budget (a burst of them trips the secondary rate limit), so they are
 # cached in data/agents/project.json for a day. setup_github.sh clears it.

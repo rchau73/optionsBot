@@ -10,6 +10,8 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT = os.path.join(ROOT, "scripts", "regen.sh")
+MERGE_LINES = os.path.join(ROOT, "scripts", "merge_lines.py")
+GOLDEN = "docs/product/assistant/golden.jsonl"
 GLOSSARY = "frontend/content/glossary.json"
 INDEX = "frontend/content/help-index.json"
 ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@x", "GIT_COMMITTER_NAME": "t",
@@ -138,6 +140,78 @@ class ConflictInASource(unittest.TestCase):
 
     def test_an_unknown_option_is_refused(self):
         self.assertEqual(regen(self.repo, "--bogus").returncode, 2)
+
+
+def rec(rid, q="q"):
+    return json.dumps({"id": rid, "question": q})
+
+
+class SortedListConflict(unittest.TestCase):
+    """#596: two branches each add a golden question next to each other."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = self.tmp.name
+        os.makedirs(os.path.join(self.repo, "scripts"))
+        os.makedirs(os.path.join(self.repo, os.path.dirname(GOLDEN)))
+        for src in (SCRIPT, MERGE_LINES):
+            shutil.copy2(src, os.path.join(self.repo, "scripts"))
+        self.write(GOLDEN, [rec("how-01"), rec("how-03"), rec("how-04")])
+        self.write("src.txt", ["base"])
+        git(self.repo, "init", "-q", "-b", "main")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-q", "-m", "base")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, name, lines):
+        with open(os.path.join(self.repo, name), "w") as f:
+            f.write("".join(l + "\n" for l in lines))
+
+    def read(self, name):
+        with open(os.path.join(self.repo, name)) as f:
+            return f.read()
+
+    def branches(self, a, b, src=False):
+        for branch, lines in (("a", a), ("b", b)):
+            git(self.repo, "checkout", "-q", "-b", branch, "main")
+            self.write(GOLDEN, lines)
+            if src:
+                self.write("src.txt", [branch])
+            git(self.repo, "commit", "-q", "-am", branch)
+        git(self.repo, "checkout", "-q", "a")
+        self.assertNotEqual(git(self.repo, "merge", "-q", "--no-edit", "b", check=False).returncode, 0)
+
+    def merge_lines(self):
+        return subprocess.run(["python3", "scripts/merge_lines.py", GOLDEN], cwd=self.repo, env=ENV, capture_output=True, text=True)
+
+    def test_both_new_lines_are_kept_in_order(self):
+        self.branches([rec("how-01"), rec("how-02-a"), rec("how-03"), rec("how-04")],
+                      [rec("how-01"), rec("how-02-b"), rec("how-03")])  # b also removed how-04
+        r = self.merge_lines()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ids = [json.loads(l)["id"] for l in self.read(GOLDEN).splitlines()]
+        self.assertEqual(ids, ["how-01", "how-02-a", "how-02-b", "how-03"], "both added; the removed line stays removed")
+        self.assertEqual(unmerged(self.repo), [])
+
+    def test_two_records_with_one_id_are_left_to_a_person(self):
+        self.branches([rec("how-01"), rec("how-02", "a"), rec("how-03"), rec("how-04")],
+                      [rec("how-01"), rec("how-02", "b"), rec("how-03"), rec("how-04")])
+        r = self.merge_lines()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('"how-02"', r.stderr)
+        self.assertIn("<<<<<<<", self.read(GOLDEN))
+        self.assertEqual(unmerged(self.repo), [GOLDEN])
+
+    def test_regen_resolve_settles_the_list_before_naming_other_conflicts(self):
+        self.branches([rec("how-01"), rec("how-02-a"), rec("how-03"), rec("how-04")],
+                      [rec("how-01"), rec("how-02-b"), rec("how-03"), rec("how-04")], src=True)
+        r = regen(self.repo, "--resolve")
+        self.assertEqual(r.returncode, 3)
+        self.assertIn("- src.txt", r.stderr)
+        self.assertNotIn(GOLDEN, r.stderr)
+        self.assertEqual(unmerged(self.repo), ["src.txt"])
 
 
 if __name__ == "__main__":

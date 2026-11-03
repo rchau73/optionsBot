@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import MyRequests from "./MyRequests";
 import AnswersCard from "./AnswersCard";
+import HelpfulButtons, { takesFeedback } from "./HelpfulButtons";
 import NpsCard from "./NpsCard";
 import RequestChecklist from "./RequestChecklist";
 import RequestDraftCard from "./RequestDraftCard";
@@ -248,7 +249,6 @@ function Message({ message: m, assistant, onShowRequests }) {
 }
 
 function Answer({ message: m, assistant, onShowRequests }) {
-  const [liked, setLiked] = useState(false);
   const [flagError, setFlagError] = useState(null);
   const bot = m.bot ?? assistant.bot;
   const q = bot ? `?bot=${encodeURIComponent(bot)}` : "";
@@ -300,10 +300,8 @@ function Answer({ message: m, assistant, onShowRequests }) {
           ))}
         </ul>
       ) : null}
+      {takesFeedback(m) ? <HelpfulButtons message={m} assistant={assistant} /> : null}
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" aria-label="Helpful" aria-pressed={liked} onClick={() => setLiked(!liked)} className={clsx(BUTTON, "min-w-11 border border-line", liked && "bg-slate-700")}>
-          👍
-        </button>
         <button type="button" onClick={onFlag} disabled={m.flagged} className={clsx(BUTTON, "border border-line disabled:opacity-60")}>
           {m.flagged ? "Flagged" : "Flag"}
         </button>

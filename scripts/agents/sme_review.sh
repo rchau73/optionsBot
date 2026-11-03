@@ -118,7 +118,7 @@ if [[ "${AGENTS_PAUSED:-0}" == "1" ]] || [[ "$(runs_today)" -ge "${AGENT_MAX_RUN
 fi
 budget_take sme # the daily budget (limit_lib.sh)
 # ${arr[@]+...}: macOS /bin/bash 3.2 treats an empty array as unset under set -u.
-if ! claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
+if ! no_github claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk \
   --allowedTools "Read" "Grep" "Glob" "Skill" \
   --disallowedTools "Bash" "Edit" "Write" "NotebookEdit" "WebFetch" "WebSearch" "Agent" \

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AskButton from "./AskButton";
 import AssistantPanel from "./AssistantPanel";
-import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantRequest } from "@/lib/api/assistant";
+import { askAssistant, fetchAssistantState, flagAssistantAnswer, sendAssistantFeedback, sendAssistantRequest } from "@/lib/api/assistant";
 import { fetchAnswersDue, fetchNpsDue, sendAnswersShown, sendNpsAction, sendSurveyAnswer } from "@/lib/api/survey";
 import { limitText, whyQuestion } from "@/lib/assistantPanel";
 import { answerOf } from "@/lib/analytics/screens";
@@ -228,6 +228,13 @@ export default function AssistantProvider({ children }) {
     track("assistant_flag", {});
   }, []);
 
+  // "Helped" / "Didn't help" (#579): the event carries the choice only — no question, answer or id.
+  const feedback = useCallback(async (message, helped) => {
+    await sendAssistantFeedback(message.answerId, helped);
+    setMessages((list) => list.map((m) => (m.id === message.id ? { ...m, helped, feedbackCount: (m.feedbackCount ?? 0) + 1 } : m)));
+    track("assistant_helpful", { helped });
+  }, []);
+
   // A draft request (#409) goes to the private queue only from here: the card's Send.
   const sendRequest = useCallback(async (message, kind, fields) => {
     const { id } = await sendAssistantRequest({ answerId: message.answerId, kind, fields });
@@ -241,12 +248,12 @@ export default function AssistantProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
+      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, feedback, sendRequest, discardDraft,
       npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest,
       answersDue, answersCard, answersAnswer, answersDismiss, answersClose,
     }),
     [
-      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, sendRequest, discardDraft,
+      open, bot, messages, enabled, remaining, openPanel, close, ask, askWhy, retry, flag, feedback, sendRequest, discardDraft,
       npsDue, npsCard, npsAnswer, npsDismiss, npsOptOut, npsClose, tabRequest,
       answersDue, answersCard, answersAnswer, answersDismiss, answersClose,
     ],
