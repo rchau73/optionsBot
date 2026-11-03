@@ -16,8 +16,9 @@ const NoEventsWhy = "No events were recorded in the week. That can be because no
 // with the report's window.
 const MonthDays = 30
 
-// CohortWeeks is how many weeks after its first a cohort is followed (N+1 … N+4).
-const CohortWeeks = 4
+// CohortWeeks is how many weeks after its first a cohort is followed
+// (N+1 … N+12: PRD §7 reads the curve at month 3, #607).
+const CohortWeeks = 12
 
 // Report is the usage report of one window (normally an ISO week). Counts
 // and shares only: no user_id, no session_id.
@@ -31,6 +32,7 @@ type Report struct {
 
 	Active       *Active       `json:"active,omitempty"`        // Q1, Q2
 	Cohorts      []Cohort      `json:"cohorts,omitempty"`       // Q2
+	CohortRules  *FlatRules    `json:"cohort_rules,omitempty"`  // Q2: the rules each cohort's status was judged on (#607)
 	Lapsed       *Lapsed       `json:"lapsed,omitempty"`        // Q2: who stopped coming back (#569)
 	Panels       *Panels       `json:"panels,omitempty"`        // Q3
 	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
@@ -89,6 +91,7 @@ type Cohort struct {
 	From     time.Time   `json:"from"`
 	Users    int         `json:"users"`
 	Retained []Retention `json:"retained"` // weeks +1 … +CohortWeeks that ended by the window's end
+	Status   string      `json:"status"`   // flattening | falling | rising | too few to judge (Flattening, #607)
 }
 
 // Retention is one later week of a cohort.
@@ -213,6 +216,7 @@ func Build(events []Event, from, to time.Time) Report {
 	}
 	r.Active = buildActive(past, from, to)
 	r.Cohorts = buildCohorts(past, from, to)
+	r.SetCohortRules(DefaultFlatRules())
 	r.Lapsed = buildLapsed(past, from, to)
 	r.Panels = buildPanels(week)
 	r.FirstAnswers = buildFirstAnswers(past, from)
@@ -222,6 +226,16 @@ func Build(events []Event, from, to time.Time) Report {
 	r.Trust = buildTrust(week)
 	r.Survey = buildSurvey(week)
 	return r
+}
+
+// SetCohortRules judges every cohort's status on rules (cmd/usage's -flat-*
+// flags study other thresholds) and records them in the report.
+func (r *Report) SetCohortRules(rules FlatRules) {
+	if r.Cohorts == nil {
+		return
+	}
+	judgeCohorts(r.Cohorts, rules)
+	r.CohortRules = &rules
 }
 
 // countUsers counts the distinct users of events in [from, to).

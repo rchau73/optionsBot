@@ -491,7 +491,9 @@ Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Mon
 Sections, each naming the source file and the span of its accepted events:
 
 - **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
-- **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 4 before it, and how many had any event in each later week (+1 … +4; a week not yet ended is `—`).
+- **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 12 before it, and how many had any event in each later week (+1 … +12, #607; a week not yet ended is `—`, never 0; columns stop at the last week any cohort has ended, a week with no first session is listed under the table).
+  Each cohort has a **curve** status (`usage.Flattening`, `internal/usage/flatten.go`): `flattening` when it has at least 10 users and each of its last 3 ended weeks is within 5 points of the week before, `falling` when one of them fell by more, `rising` when none fell by more but one rose by more, `too few to judge` under 10 users or 4 ended weeks.
+  The values are fixed; `-flat-min-users`, `-flat-weeks` and `-flat-step-pts` study others, and the report's JSON records the ones used (`cohort_rules`).
 - **Lapsed** (Q2, #569; JSON `lapsed`) — people with a `session_started` in the 4 weeks before the week and none in it, by the role of their last visit and by weeks since it (1, 2, 3, 4+), the base (people with a visit in those weeks) and the share; under 10 in the base a "too few to judge" note and no share.
   The drop check raises `lapsed_share` when that share is 20 points or more over the 3 weeks before. Counts only, never a user id.
 - **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen — one per page of the monitor's menu (`overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`) plus `login` (#424).

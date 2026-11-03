@@ -127,6 +127,33 @@ export function lapsedView(report) {
   };
 }
 
+/** usage.StatusTooFew: a cohort under 10 users or 4 ended weeks has no curve claim (#607). */
+export const COHORT_TOO_FEW = "too few to judge";
+
+/** A cohort of a report written before #607 carries no status. */
+export const COHORT_NOT_JUDGED = "not judged";
+
+/**
+ * The Q2 cohort table (#607) → { rows: the cohorts with people, each with its
+ * status; offsets: +1 … the last week any of them has ended (a later week of a
+ * younger cohort shows —, never 0); empty: the weeks with no first session }.
+ */
+export function cohortView(cohorts = []) {
+  const rows = cohorts.filter((c) => c.users > 0).map((c) => ({ ...c, status: c.status || COHORT_NOT_JUDGED }));
+  const weeks = Math.max(0, ...rows.map((c) => (c.retained ?? []).length));
+  return {
+    rows,
+    offsets: Array.from({ length: weeks }, (_, i) => i + 1),
+    empty: cohorts.filter((c) => !(c.users > 0)).map((c) => c.week),
+  };
+}
+
+/** The table's screen-reader caption: what a cell is, and each cohort's curve in words. */
+export function cohortCaption(rows) {
+  const curves = rows.map((c) => `${c.week} ${c.status}`).join(", ");
+  return `Share of each first-week cohort back in each later week; — for a week not ended. Curve: ${curves}.`;
+}
+
 /** The screens of the week with no view, in the plan's order; "login" is never sent, so it is left out. */
 export function neverOpenedScreens(report) {
   const screens = report?.panels?.screens ?? {};
