@@ -17,10 +17,20 @@ export function usageReport(week = "2026-W44", { active = 24, ...over } = {}) {
       month: { users: 31, by_role: {}, by_environment: {} },
       month_from: "2026-10-03T00:00:00Z",
     },
+    // #607: followed 12 weeks; W32 has them all, W40 four, W44 none; W41 had no first session.
     cohorts: [
-      { week: "2026-W40", from: "2026-09-28T00:00:00Z", users: 10, retained: [1, 2, 3, 4].map((o) => ({ offset: o, users: 8 - o, pct: (100 * (8 - o)) / 10 })) },
-      { week: "2026-W44", from: "2026-10-26T00:00:00Z", users: 5, retained: [] },
+      {
+        week: "2026-W32",
+        from: "2026-08-03T00:00:00Z",
+        users: 12,
+        retained: [9, 8, 7, 6, 6, 6, 6, 6, 6, 6, 6, 6].map((n, i) => ({ offset: i + 1, users: n, pct: (100 * n) / 12 })),
+        status: "flattening",
+      },
+      { week: "2026-W40", from: "2026-09-28T00:00:00Z", users: 10, retained: [1, 2, 3, 4].map((o) => ({ offset: o, users: 8 - o, pct: (100 * (8 - o)) / 10 })), status: "falling" },
+      { week: "2026-W41", from: "2026-10-05T00:00:00Z", users: 0, retained: [1, 2, 3].map((o) => ({ offset: o, users: 0 })), status: "too few to judge" },
+      { week: "2026-W44", from: "2026-10-26T00:00:00Z", users: 5, retained: [], status: "too few to judge" },
     ],
+    cohort_rules: { min_users: 10, weeks: 3, step_pts: 5 },
     lapsed: { users: 6, by_role: { admin: 0, manager: 1, user: 5 }, weeks_away: { 1: 3, 2: 2, 3: 0, "4+": 1 }, base: 30, share_pct: 20 },
     panels: {
       opens: { account: 4, held: 0, others: 2, trades: 7 },

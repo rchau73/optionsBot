@@ -52,6 +52,12 @@ METRIC_NAMES = {
     "lapsed_share": "people who stopped coming back",
 }
 
+# internal/usage/flatten.go (#607): a cohort's curve is judged on its last
+# FLAT_WEEKS ended weeks, each against the one before. Only these statuses are
+# copied, so no other text of the report can reach the comment.
+FLAT_WEEKS = 3
+CURVE_STATUSES = ("flattening", "falling", "rising", "too few to judge")
+
 
 def load_json(path):
     try:
@@ -100,12 +106,21 @@ def figures(report, drops):
             ret_users, ret_pct = num(r1.get("users")), num(r1.get("pct"))
             break
 
+    # The curve of the latest cohort with enough ended weeks to judge (#607).
+    curve = curve_cohort = None
+    for c in reversed(report.get("cohorts") or []):
+        if len(c.get("retained") or []) >= FLAT_WEEKS + 1:
+            curve = c.get("status") if c.get("status") in CURVE_STATUSES else None
+            curve_cohort = str(c.get("week", ""))[:10]
+            break
+
     fa = report.get("first_answers") or {}
     helped = report.get("help") or {}
     help_opened = sum(num(v) or 0 for k in ("tips", "videos_played") for v in (helped.get(k) or {}).values())
     return {
         "active": active, "prev": prev, "wow": wow,
         "cohort": cohort, "cohort_users": cohort_users, "ret_users": ret_users, "ret_pct": ret_pct,
+        "curve": curve, "curve_cohort": curve_cohort,
         "fa_n": num(fa.get("with_answers")) or 0, "fa_of": num(fa.get("first_sessions")) or 0, "fa_pct": num(fa.get("pct")),
         "help_opened": help_opened, "help_answers": num(helped.get("answers")) or 0, "helped_pct": num(helped.get("helped_pct")),
     }
@@ -181,8 +196,8 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
     out = [f"{HEADER} — week {week} (`scripts/agents/usage.sh`, #340)", "",
            "From `cmd/usage` over each environment's `data/monitor/events.jsonl` (README \"Usage report\"). "
            "Counts and percentages only: no user or session id.", "",
-           "| env | active users | vs last week | week-1 retention (latest cohort) | first answers found | help used | help answers (helped) | drops | report |",
-           "|---|---|---|---|---|---|---|---|---|"]
+           "| env | active users | vs last week | week-1 retention (latest cohort) | curve (latest cohort with 4 ended weeks) | first answers found | help used | help answers (helped) | drops | report |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
     live_envs, drop_lines, notes, nps = [], [], [], []
     for env, live, report, drops in rows:
         f = figures(report, drops)
@@ -199,10 +214,14 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
         else:
             ret = f"{f['ret_users']} of {f['cohort_users']} ({pct(f['ret_pct'])}, {f['cohort']})"
         wow = signed_pct(f["wow"]) if f["prev"] else "— (no events the week before)"
-        if live:
-            cells = ["—", wow, ret, pct(f["fa_pct"]), "—", pct(f["helped_pct"])]
+        if f["curve_cohort"] is None:
+            curve = "— (no cohort has 4 ended weeks)"
         else:
-            cells = [str(f["active"]), wow, ret, f"{f['fa_n']} of {f['fa_of']} ({pct(f['fa_pct'])})",
+            curve = f"{f['curve'] or '—'} ({f['curve_cohort']})"
+        if live:
+            cells = ["—", wow, ret, curve, pct(f["fa_pct"]), "—", pct(f["helped_pct"])]
+        else:
+            cells = [str(f["active"]), wow, ret, curve, f"{f['fa_n']} of {f['fa_of']} ({pct(f['fa_pct'])})",
                      str(f["help_opened"]), f"{f['help_answers']} ({pct(f['helped_pct'])})"]
         if drops is None:
             n_drops = "— (drop check did not run)"

@@ -20,6 +20,15 @@ States: analytics off (`ANALYTICS_SALT` unset: a setup checklist, never the valu
 The page counts itself as `screen_viewed {screen: analytics}` (`lib/analytics/screens.js`).
 Components: `UsageAnalytics` (fetch, header, states), `UsageCards` (attention, cards, data); pure helpers in `lib/analytics/usageView.js`, file reading in `lib/analytics/reports.js`.
 
+### Do they come back (Q2, #607)
+
+The Q2 card reads the report's `cohorts`: each first-week cohort followed for 12 weeks (`usage.CohortWeeks`), with its `status` (`usage.Flattening`).
+- Columns are +1 up to the last week any cohort has ended, then **Curve**; a later week a younger cohort has not ended is —, never 0 % (`cohortView` in `lib/analytics/usageView.js`).
+- Curve is a text badge (`flattening`, `falling`, `rising`, `too few to judge`; colour only repeats it); a report written before #607 shows `not judged`.
+- A cohort with no one is left out of the rows and named under the table; none with anyone → one "No one had a first session in these weeks." line.
+- The `sr-only` caption says what a cell is and names each cohort's curve (`cohortCaption`).
+- Below 480 px the table scrolls inside its own `overflow-x-auto` box, never the page (E12).
+
 ### Stopped coming back (#569)
 
 One card reads the report's `lapsed` block: people who visited (a `session_started`) in the 4 weeks before the week and did not visit in it.
