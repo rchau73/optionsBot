@@ -143,5 +143,18 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
     It is `[]` for a line that names neither, e.g. a risk change.
   - `source` is `"journal"`.
   An event (or a trade's event) no longer in memory → 404 `{"error": "not in recent history"}`, never a reconstruction; neither or both parameters, or a non-positive integer → 400.
+### `GET /api/help/tips` (#588)
+
+The plain-words tips, read by the monitor's own server (`app/api/help/tips/route.js`); no bot call, nothing personal logged.
+Any signed-in role; 401 without a session.
+- No query: `{tips: [...]}`, every setting's tip, by key.
+- `?key=<setting>`: `{kind: "setting", key, meaning, unit, raise_risk, raise_income, video (id or null), needs_product_owner}` (plus `policy_note` for those).
+  `needs_product_owner` is true for the core-policy settings (the tip has a `policy_note`).
+  A key with no tip is 404 `{"error": "no tip for this setting"}`, never an empty tip.
+- `?term=<term, setting key or label>`: `{kind: "term", term, short, risk_income}` from `content/glossary.json`; unknown → 404.
+- The source is `docs/product/education/tips.json`; the image reads its copy `content/tips.json` (a test fails when stale).
+- `lib/tips.js` `findTip(key)` answers a setting's tip, else the glossary term's, else null.
+- No screen uses it yet.
+
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
