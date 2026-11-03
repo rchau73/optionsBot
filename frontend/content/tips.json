@@ -1,0 +1,164 @@
+{
+  "backtest.commission_per_contract": {
+    "meaning": "Backtest only: the fee charged per contract in a simulation, as a fraction of the coin.",
+    "unit": "fraction of the underlying",
+    "raise_risk": "No effect on the live bot; a higher fee makes a backtest look worse.",
+    "raise_income": "No effect on the live bot; a higher fee lowers the income a backtest shows."
+  },
+  "backtest.fill_model": {
+    "meaning": "Backtest only: how a simulated order is priced. Today the simulator does not read it.",
+    "unit": "text",
+    "raise_risk": "No effect on the live bot or on today's simulator.",
+    "raise_income": "No effect on the live bot or on today's simulator."
+  },
+  "backtest.limit_fill_rule": {
+    "meaning": "Backtest only: when a simulated limit order fills, on the next tick or at once.",
+    "unit": "text",
+    "raise_risk": "No effect on the live bot; filling at once makes a backtest look safer than a real market.",
+    "raise_income": "No effect on the live bot; filling at once can make a backtest look better than a real market."
+  },
+  "backtest.margin_call_liquidation": {
+    "meaning": "Backtest only. Today the simulator does not read it.",
+    "unit": "on or off",
+    "raise_risk": "No effect on the live bot or on today's simulator.",
+    "raise_income": "No effect on the live bot or on today's simulator."
+  },
+  "backtest.slippage_pct": {
+    "meaning": "Backtest only: how far from the mid price a simulated market order fills.",
+    "unit": "fraction of mid",
+    "raise_risk": "No effect on the live bot; more slippage makes a backtest show larger losses.",
+    "raise_income": "No effect on the live bot; more slippage lowers the income a backtest shows."
+  },
+  "delta_drift_threshold": {
+    "meaning": "A leg whose delta falls below this has little premium left, so it is bought back and sold again nearer the entry delta.",
+    "unit": "delta (absolute)",
+    "raise_risk": "Raising it rolls legs sooner and more often, which adds fees and spread but keeps legs fresher.",
+    "raise_income": "Raising it collects fresh premium more often, minus the fees and spread of each roll.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "delta_exit_threshold": {
+    "meaning": "A leg whose delta reaches this is bought back before the stop-loss, because the move is real.",
+    "unit": "delta (absolute)",
+    "raise_risk": "Raising it waits longer before leaving a threatened leg, so a loss can grow closer to the stop-loss.",
+    "raise_income": "Raising it keeps legs open through small moves, which can keep more premium.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "dte_delta_matrix[].deltas[]": {
+    "meaning": "How far from the price each leg of a slot is sold, as delta.",
+    "unit": "delta (absolute)",
+    "raise_risk": "Raising it sells closer to the price, so moves reach the strikes more often and stops come sooner.",
+    "raise_income": "Raising it brings more premium per trade, with more stops and rolls to pay for.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "dte_delta_matrix[].dte": {
+    "meaning": "Each slot sells one strangle on an expiry about this many days away.",
+    "unit": "days",
+    "raise_risk": "Raising it holds each trade longer, so it sits through larger moves.",
+    "raise_income": "Raising it brings more premium per trade but slower time decay; lowering it means more rolls and fees.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "gamma_flip_buffer_sd": {
+    "meaning": "In a negative gamma regime a leg is shed only once the price is this far beyond the gamma flip.",
+    "unit": "daily standard deviations",
+    "raise_risk": "Raising it sheds less often, so more exposure stays open in a falling market.",
+    "raise_income": "Raising it keeps more legs selling, which keeps more premium but lowers protection.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "gex_direction": {
+    "meaning": "Which side to avoid in a negative gamma regime: the trend of moving averages (sma) or the price against the gamma flip (bias).",
+    "unit": "choice",
+    "raise_risk": "Neither choice is higher or lower; each changes which legs are shed and when they return.",
+    "raise_income": "Neither choice is higher or lower; each changes how long legs wait before they are sold again.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "iv_margin_bands[].max_im_pct": {
+    "meaning": "The most initial margin the bot may use in that band.",
+    "unit": "% of margin balance",
+    "raise_risk": "Raising it makes positions larger, so a move costs more.",
+    "raise_income": "Raising it sells more contracts, which brings more premium.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.margin_bar"
+  },
+  "iv_margin_bands[].min_iv_pct": {
+    "meaning": "Where a margin band starts, as the percentile of today's dvol over the last year.",
+    "unit": "dvol percentile",
+    "raise_risk": "Raising it keeps the bot in a lower band for longer, which limits its size.",
+    "raise_income": "Raising it keeps the bot smaller for longer, which brings less premium.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.margin_bar"
+  },
+  "max_leg_size_multiple": {
+    "meaning": "A new leg is at most this many times its slot's normal size.",
+    "unit": "× normal size",
+    "raise_risk": "Raising it allows larger legs when the book offsets them, so a move can cost more.",
+    "raise_income": "Raising it allows more contracts per leg, which brings more premium.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "max_mm_pct": {
+    "meaning": "Above this maintenance margin the bot cuts positions at market at once and opens nothing new.",
+    "unit": "% of margin balance",
+    "raise_risk": "Raising it leaves more room before forced cuts and less room before Deribit liquidates at 100.",
+    "raise_income": "Raising it avoids cuts that sell positions in a hurry, but can lose more if the move continues.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.margin_bar"
+  },
+  "min_premium": {
+    "meaning": "The least premium a leg must bring at its lowest order price; a leg under it is not sold.",
+    "unit": "coin per contract",
+    "raise_risk": "Raising it skips thin strikes, which leaves fewer positions open.",
+    "raise_income": "Raising it skips cheap legs, so income is lower when premiums are low.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "repair_cooldown_hours": {
+    "meaning": "After a stop-loss, delta exit or manual close, the leg is sold again no sooner than this.",
+    "unit": "hours",
+    "raise_risk": "Raising it sells less into a move, but leaves the strangle one-sided for longer.",
+    "raise_income": "Raising it keeps a leg out for longer, which gives up its premium meanwhile.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "roi_take_profit": {
+    "meaning": "A leg is bought back once it has earned this share of its premium, and sold again.",
+    "unit": "fraction of premium",
+    "raise_risk": "Raising it holds legs longer, so they stay exposed to moves meanwhile.",
+    "raise_income": "Raising it waits for more of each premium, with fewer trades and fewer fees.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "rollout_dte": {
+    "meaning": "A strangle is bought back when its expiry is this close, and its slot opens a new one.",
+    "unit": "days",
+    "raise_risk": "Raising it leaves the riskier last days sooner, so a sudden move does less harm.",
+    "raise_income": "Raising it gives up the last days of time decay, which lowers income.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "stop_loss_multiplier": {
+    "meaning": "A leg is bought back at market when its loss reaches this multiple of the premium it brought.",
+    "unit": "× premium",
+    "raise_risk": "Raising it allows a larger loss on one leg before it stops.",
+    "raise_income": "Raising it makes stops rarer, so fewer legs close on short spikes.",
+    "policy_note": "This is a core-policy setting: a change needs the product owner.",
+    "video": "video.change_setting"
+  },
+  "strategy_id": {
+    "meaning": "A name for the strategy in the journal and in order labels.",
+    "unit": "text",
+    "raise_risk": "No effect: it changes no trading rule.",
+    "raise_income": "No effect: it changes no trading rule."
+  },
+  "underlying": {
+    "meaning": "The coin this bot trades, BTC or ETH; there is one config file per coin.",
+    "unit": "text",
+    "raise_risk": "No effect on one bot: it names the bot rather than tunes it.",
+    "raise_income": "No effect on one bot: it names the bot rather than tunes it."
+  }
+}
