@@ -13,7 +13,7 @@ import PayoffModal from "./PayoffModal";
 import PnlChart from "./PnlChart";
 import { useMonitor } from "@/hooks/useMonitor";
 import { heldRows } from "@/lib/held";
-import { consolidateRows, filterRows, groupRows, legRows, summarise } from "@/lib/monitor";
+import { consolidateRows, filterRows, groupRows, legRows, summarise, withOpened } from "@/lib/monitor";
 import { pickAccount, unmanagedPositions } from "@/lib/account";
 import { countsLine, sectionCounts, stuckOrders, workingOrderCount } from "@/lib/details";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
@@ -101,7 +101,7 @@ export default function DetailsPage() {
   const chartBot = chart ? bots.find((b) => b.name === chart.bot) : null;
 
   const allTrades = useMemo(() => Object.values(trades ?? {}).flat(), [trades]);
-  const rows = useMemo(() => consolidateRows(legRows(bots)), [bots]);
+  const rows = useMemo(() => withOpened(consolidateRows(legRows(bots)), trades), [bots, trades]);
   const groups = useMemo(() => groupRows(filterRows(rows, filters), filters.groupBy), [rows, filters]);
   const options = useMemo(() => ({ bots: bots.map((b) => b.name), strategies: [...new Set(rows.map((r) => r.strategyId))] }), [bots, rows]);
   const held = heldRows(bots);

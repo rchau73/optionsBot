@@ -1,4 +1,4 @@
-import { consolidateRows, describeEvent, filterRows, flipBand, groupRows, legRows, mergeFeed, summarise } from "@/lib/monitor";
+import { consolidateRows, describeEvent, filterRows, flipBand, groupRows, legRows, mergeFeed, summarise, withOpened } from "@/lib/monitor";
 import { withStale } from "@/hooks/useMonitor";
 import { bot, positions } from "@/test/fixtures";
 
@@ -190,5 +190,35 @@ describe("flipBand", () => {
     expect(flipBand(st({ spot: 2490, gamma_flip: 2260 }, 0))).toMatchObject({ flip: 2260, low: null, high: null, zone: null });
     expect(flipBand(st({ spot: 2490 }, 3))).toBeNull();
     expect(flipBand(undefined)).toBeNull();
+  });
+});
+
+describe("withOpened (#614)", () => {
+  const row = { bot: "btc", instrument: "BTC-27NOV26-90000-C" };
+  const open = (at, qty = 1, instrument = row.instrument) => ({ kind: "open", at, qty, instrument });
+  const close = (at, qty = 1) => ({ kind: "close", at, qty, instrument: row.instrument });
+
+  test("a top-up keeps the first open's date and shows as last added", () => {
+    const [r] = withOpened([row], { btc: [open("2026-10-20T10:00:00Z"), open("2026-10-25T10:00:00Z", 0.5)] });
+    expect(r).toMatchObject({ openedAt: "2026-10-20T10:00:00Z", lastAddedAt: "2026-10-25T10:00:00Z" });
+  });
+
+  test("sold again after being flat (a roll back to the strike, a repair) starts a new date", () => {
+    const [r] = withOpened([row], { btc: [open("2026-10-01T10:00:00Z"), close("2026-10-10T10:00:00Z"), open("2026-11-02T10:00:00Z")] });
+    expect(r).toMatchObject({ openedAt: "2026-11-02T10:00:00Z", lastAddedAt: null });
+  });
+
+  test("a partial close keeps the date; other bots and instruments do not count", () => {
+    const [r] = withOpened([row], {
+      btc: [open("2026-10-01T10:00:00Z", 2), close("2026-10-05T10:00:00Z", 1), open("2026-10-06T10:00:00Z", 1, "BTC-27NOV26-70000-P")],
+      eth: [open("2026-10-03T10:00:00Z")],
+    });
+    expect(r.openedAt).toBe("2026-10-01T10:00:00Z");
+  });
+
+  test("an open older than the loaded history is unknown", () => {
+    const [r] = withOpened([row], { btc: [close("2026-10-05T10:00:00Z")] });
+    expect(r).toMatchObject({ openedAt: null, lastAddedAt: null });
+    expect(withOpened([row])[0].openedAt).toBeNull();
   });
 });
