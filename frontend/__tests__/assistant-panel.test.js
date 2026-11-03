@@ -65,12 +65,18 @@ const json = (status, body, headers = {}) => ({
   json: async () => body,
 });
 
-/** fetch: GET /api/assistant → state; POST /api/assistant → ask(); POST …/flag → flag(). */
-function fakeFetch({ state = json(200, { enabled: true, remaining: 30, per_hour: 30 }), ask = () => json(200, ANSWER), flag = () => json(204, null) } = {}) {
+/** fetch: GET /api/assistant → state; POST /api/assistant → ask(); POST …/flag → flag(); POST …/feedback → feedback(). */
+function fakeFetch({
+  state = json(200, { enabled: true, remaining: 30, per_hour: 30 }),
+  ask = () => json(200, ANSWER),
+  flag = () => json(204, null),
+  feedback = () => json(204, null),
+} = {}) {
   global.fetch = jest.fn(async (url, init = {}) => {
     if (url === "/api/assistant" && (init.method ?? "GET") === "GET") return state;
     if (url === "/api/assistant") return ask(JSON.parse(init.body));
     if (url === "/api/assistant/flag") return flag(JSON.parse(init.body));
+    if (url === "/api/assistant/feedback") return feedback(JSON.parse(init.body));
     throw new Error(`unexpected ${url}`);
   });
 }
@@ -282,12 +288,93 @@ describe("Scenario: Flag", () => {
     expect(within(answer).getByRole("button", { name: "Flag" })).toBeEnabled();
   });
 
-  test("👍 is a toggle button", async () => {
+});
+
+describe("Did this help? (#579)", () => {
+  const helpGroup = async (p) => within(await within(p).findByTestId("assistant-answer")).findByRole("group", { name: "Did this answer help you?" });
+
+  test("Scenario: A person marks an answer as helpful", async () => {
     const p = await openPanel();
     await askQuestion();
-    const like = await within(p).findByRole("button", { name: "Helpful" });
-    fireEvent.click(like);
-    expect(like).toHaveAttribute("aria-pressed", "true");
+    const group = await helpGroup(p);
+    const helped = within(group).getByRole("button", { name: "Helped" });
+    expect(helped).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(helped);
+    await waitFor(() => expect(helped).toHaveAttribute("aria-pressed", "true"));
+    expect(within(group).getByRole("button", { name: "Didn't help" })).toHaveAttribute("aria-pressed", "false");
+    expect(posts("/api/assistant/feedback")).toEqual([{ id: "a1", helped: true }]);
+    // The choice only: no question, no answer, no id.
+    expect(track).toHaveBeenCalledWith("assistant_helpful", { helped: true });
+    expect(within(group).queryByRole("button", { name: "Report it as wrong" })).toBeNull();
+  });
+
+  test("Scenario: A person says an answer did not help — the flag is offered, never sent by itself", async () => {
+    const p = await openPanel();
+    await askQuestion();
+    const group = await helpGroup(p);
+    fireEvent.click(within(group).getByRole("button", { name: "Didn't help" }));
+    const report = await within(group).findByRole("button", { name: "Report it as wrong" });
+    expect(posts("/api/assistant/feedback")).toEqual([{ id: "a1", helped: false }]);
+    expect(track).toHaveBeenCalledWith("assistant_helpful", { helped: false });
+    expect(posts("/api/assistant/flag")).toEqual([]);
+    fireEvent.click(report);
+    await waitFor(() => expect(posts("/api/assistant/flag")).toEqual([{ id: "a1" }]));
+    await waitFor(() => expect(within(group).queryByRole("button", { name: "Report it as wrong" })).toBeNull());
+    expect(within(p).getByRole("button", { name: "Flagged" })).toBeDisabled();
+  });
+
+  test("the choice can be changed once, then the other button is locked", async () => {
+    const p = await openPanel();
+    await askQuestion();
+    const group = await helpGroup(p);
+    const [helped, notHelped] = [within(group).getByRole("button", { name: "Helped" }), within(group).getByRole("button", { name: "Didn't help" })];
+    fireEvent.click(helped);
+    await waitFor(() => expect(helped).toHaveAttribute("aria-pressed", "true"));
+    expect(within(group).getByText(/can be changed once/)).toBeInTheDocument();
+    fireEvent.click(notHelped);
+    await waitFor(() => expect(notHelped).toHaveAttribute("aria-pressed", "true"));
+    expect(helped).toBeDisabled();
+    expect(posts("/api/assistant/feedback")).toEqual([{ id: "a1", helped: true }, { id: "a1", helped: false }]);
+  });
+
+  test("a refused feedback says so and keeps no choice", async () => {
+    fakeFetch({ feedback: () => json(409, { error: "this reply takes no feedback" }) });
+    const p = await openPanel();
+    await askQuestion();
+    const group = await helpGroup(p);
+    fireEvent.click(within(group).getByRole("button", { name: "Helped" }));
+    expect(await within(group).findByText("Not saved: this reply takes no feedback")).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "Helped" })).toHaveAttribute("aria-pressed", "false");
+    expect(track).not.toHaveBeenCalledWith("assistant_helpful", expect.anything());
+  });
+
+  test.each([
+    ["an \"I don't know\"", { outcome: "dont_know", answer: DONT_KNOW, citations: [] }],
+    ["a refusal", { outcome: "refused", answer: REFUSAL, citations: [] }],
+    ["the fallback", { outcome: "rejected", answer: "I can't answer that safely.", citations: [] }],
+    ["a request draft", { outcome: "draft", answer: "Here is a draft.", draft: { kind: "bug", fields: {} } }],
+  ])("Scenario: No buttons where they make no sense — %s", async (_name, reply) => {
+    fakeFetch({ ask: () => json(200, { ...ANSWER, ...reply }) });
+    const p = await openPanel();
+    await askQuestion();
+    const answer = await within(p).findByTestId("assistant-answer");
+    expect(within(answer).queryByRole("group", { name: "Did this answer help you?" })).toBeNull();
+    expect(within(answer).queryByRole("button", { name: "Helped" })).toBeNull();
+  });
+
+  test("Scenario: The panel works on a phone — both buttons are 44 px touch targets", async () => {
+    window.matchMedia = (q) => ({ matches: q === "(max-width: 639px)", addEventListener() {}, removeEventListener() {} });
+    await renderMenu();
+    fireEvent.click(askButton());
+    const sheet = screen.getByRole("dialog", { name: "Assistant" });
+    await askQuestion();
+    const group = await helpGroup(sheet);
+    for (const name of ["Helped", "Didn't help"]) {
+      const b = within(group).getByRole("button", { name });
+      expect(b.className).toMatch(/\bmin-h-11\b/);
+      expect(b.className).toMatch(/\bmin-w-11\b/);
+    }
+    expect(within(group).getByRole("button", { name: "Helped" }).closest("div").className).toMatch(/\bflex-wrap\b/);
   });
 });
 

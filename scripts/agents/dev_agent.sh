@@ -190,7 +190,7 @@ budget_take dev # the daily budget (limit_lib.sh)
 log "dev: running the agent in $wt"
 started="$(date +%s)"
 set +e
-(cd "$wt" && claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
+(cd "$wt" && no_github claude -p "$PROMPT" ${model_args[@]+"${model_args[@]}"} \
   --permission-mode dontAsk --allowedTools "${allowed[@]}" --disallowedTools "${denied[@]}" \
   --strict-mcp-config --no-session-persistence --output-format text < /dev/null) > "$run_dir/agent.md" 2>&1
 rc=$?

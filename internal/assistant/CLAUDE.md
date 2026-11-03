@@ -3,7 +3,7 @@
 Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 
 ```bash
-go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # assistant quality review (#438): answers by kind, guard reasons, flag rates, the review list of flagged and dont_know answers, gap candidates by nearest help passage (helpkb.Search) → data/monitor/assistant_reviews/<week>.md|json (private: question text) + .summary.json (counts/% only, posted on E10 by usage.sh → assistant_review.sh) + .golden_candidates.jsonl (golden.jsonl untouched); no model, no network (docs/product/assistant/README.md "Weekly quality review")
+go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # assistant quality review (#438): answers by kind, guard reasons, flag rates, helped / didn't help / no feedback with the helped share (from 10 responses, else "too few responses") and response rate (#579), the review list of flagged and dont_know answers, gap candidates by nearest help passage (helpkb.Search) → data/monitor/assistant_reviews/<week>.md|json (private: question text) + .summary.json (counts/% only, posted on E10 by usage.sh → assistant_review.sh) + .golden_candidates.jsonl (golden.jsonl untouched); no model, no network (docs/product/assistant/README.md "Weekly quality review")
 bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set run (#536): frontend/scripts/assistant-run.mjs asks the real assistant (answerQuestion, lib/assistant/goldenrun.js) every golden question on its fixtures, paced, outside the per-person limit, its own log run.jsonl with every line test_run (never assistant.jsonl; cmd/assistantreview skips test_run lines) → answers.jsonl graded by assistant_golden.py against golden_baseline.json (> 10 pts down = regression, exit 1); no key → one message, nothing written (README "Live golden-set run")
 ```
 
@@ -13,7 +13,7 @@ bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set r
     - #408: Claude on the best help passages + the bot's journal events +
       (#427) its live page data as `live:<bot>/market|leg/<instrument>` passages from `/api/status`, `/api/positions`, `/api/strangles/payoff` (cached 10 s)
     - — a mixed question gets its facts answered and only the advice declined with `Refusal`, `ANTHROPIC_API_KEY` in the monitor's `.env` or 503,
-      Q&A logged in `data/monitor/assistant.jsonl`, `POST /api/assistant/flag`, 30 questions/h per person;
+      Q&A logged in `data/monitor/assistant.jsonl`, `POST /api/assistant/flag`, `POST /api/assistant/feedback` (#579: "Helped"/"Didn't help", the asker only, two lines per answer), 30 questions/h per person;
     - #409: a question that reads as a report runs the request check — `lib/assistant/request.js`, the model's structured verdict checked server-side for what/where/evidence/not explained,
       evidence numbers by the guard's `ungrounded_number`, the bot's P&L history as `pnl:<bot>/<time>` passages → `needs_info` | `answered` | `draft`;
     - only the person's Send puts a draft in the private queue `data/monitor/requests.jsonl`, `POST|GET /api/assistant/requests`, 10 a day,

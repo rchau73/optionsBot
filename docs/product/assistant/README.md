@@ -17,7 +17,7 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 
 | Field | Meaning |
 |---|---|
-| `id` | unique, `<category prefix>-NN` |
+| `id` | unique, `<category prefix>-<a few words>` (`ng-consent-analytics`), in alphabetical place; numbered ids stop at the numbers they had (#596): two PRs that each took the next number collided |
 | `category` | `how_it_works`, `parameter`, `why_did_it`, `jargon`, `risk`, `refuse_advice`, `refuse_forecast`, `unknown` or `request` |
 | `question` | plain words, as a novice would ask |
 | `expected_behaviour` | `answer`; `refuse` for the two refusal categories; `dont_know` for `unknown` (the help cannot answer it); for `request` the request check's outcome: `needs_info`, `answered` or `draft` |
@@ -103,7 +103,7 @@ A failed run is tried once more; a comment that could not be posted is posted on
 
 ## Weekly quality review
 
-The monitor logs every answer and every "this answer is wrong" flag in `data/monitor/assistant.jsonl` (#191). `cmd/assistantreview` (#438, pure `internal/assistantreview`) reads it once a week and measures the PRD's guardrail "assistant answers flagged wrong" and an input to "self-service understanding". It calls no model and no network, and it never writes the log.
+The monitor logs every answer, every "this answer is wrong" flag and every "Helped" / "Didn't help" in `data/monitor/assistant.jsonl` (#191). `cmd/assistantreview` (#438, pure `internal/assistantreview`) reads it once a week and measures the PRD's guardrail "assistant answers flagged wrong" and an input to "self-service understanding". It calls no model and no network, and it never writes the log.
 
 ```bash
 go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/2026-W44.*
@@ -114,6 +114,9 @@ go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   
 - answers by kind (`answered`, `dont_know`, `refused`, `no_citation`, `rejected` = the fallback reply, `model_error`, `needs_info`, `draft`, `other`), and the share `answered`;
 - the guard reasons the answers hit (`no_citation`, `unknown_citation`, `ungrounded_number`, `advice`, `forecast`, `points_to_document`, `language`), each answer once per reason;
 - the share flagged, and the flag rate of each kind. A flag placed later still counts for its answer's week. A flag placed this week on an older answer puts that answer in this week's review list (`late`);
+- **did it help?** (#579, the panel's "Helped" / "Didn't help", the `feedback` lines): for the week and for each kind, `helped`, `not_helped` and `no_feedback` (the person's last choice; a choice placed later still counts for its answer's week).
+  The **helped share** = helped ÷ (helped + didn't help), shown only from 10 responses (`helped_pct` null and "too few responses" in the report otherwise); the **response rate** = (helped + didn't help) ÷ answers.
+  It is the person's opinion, never a measure of correctness, and feeds no claim about accuracy: the PRD's "self-service understanding" signal, whose target the PM proposes after four weeks of data;
 - unreadable log lines, counted and skipped.
 
 **Files** in `data/monitor/assistant_reviews/` (gitignored, 0600):
@@ -129,7 +132,7 @@ Nothing is added to `golden.jsonl` automatically.
 **Who reads the review list:** the product owner (or a manager they name), each week, on the host. **The rule:** every flagged answer is closed within 7 days in one of three ways:
 
 1. a help-source fix (a passage of OptionStrategy.md, the glossary or the monitor guide, then `go run ./cmd/helpindex`). A gap with a passage named means a better passage or a glossary term; "no passage close" means a new section;
-2. a golden-set case (copy the candidate into `golden.jsonl` and fill in its category, behaviour and sources);
+2. a golden-set case (copy the candidate into `golden.jsonl`, give it a named id and fill in its category, behaviour and sources);
 3. a recorded "answer was right", with the reason.
 
 **Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (docs/agents/usage.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.

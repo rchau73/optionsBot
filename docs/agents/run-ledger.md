@@ -25,7 +25,7 @@ Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-
   PM `triaged`, `stories_filed`, `failed`, `skipped_limit`;
   PM answer `replied`, `prd_pr_opened`, `prd_pr_updated`, `prd_merged`, `blocked`, `skipped_limit`;
   SME `reported`, `failed`, `skipped_limit`;
-  PR gate `sent_back`, `marked_ready` (a green draft), `ci_rerun` (untouched tests failed), `branch_updated`, `ready_to_merge`, `ready_removed`, `merged`, `failed`;
+  PR gate `sent_back`, `marked_ready` (a green draft), `ci_rerun` (untouched tests failed), `branch_updated`, `ready_to_merge`, `ready_removed`, `approval_void` (a `merge:approved` PR changed after the approval, #596), `merged`, `failed`;
   deploy `deployed`, `rolled_back`, `skipped`, `failed`;
   flaky-test hunt `filed`, `none`, `timed_out`, `failed`;
   usage report `posted`, `skipped`;

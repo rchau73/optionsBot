@@ -60,6 +60,7 @@ It answers from the published help, the bot's live page data and the user's own 
   One `"kind": "answer"` line per question: `id`, `ts`, `user`, `role`, `bot`, `question`, `sources` (passage ids given to the model), `model`, `model_answer` (the model's own text), `citations`, `verdict` (the guard's findings), `outcome`, `answer` (what was shown), `flag: false`.
   A retried answer adds `first_answer` (`model_answer`, `citations`, `verdict` of the first try) and `retry_error` when the retry call failed.
   One `"kind": "flag"` line per flag (`id`, `ts`, `user`, `role`, `note`); the answer line is never rewritten.
+  One `"kind": "feedback"` line per "Helped" / "Didn't help" click (#579: `id`, `ts`, `user`, `role`, `helped`), at most two per answer; no question or answer text.
   An answer that cannot be logged is not shown (500).
   The monitor's stdout gets one line per question with the id and outcome only.
 
@@ -108,7 +109,11 @@ The message log is `role="log"` with `aria-live="polite"`.
   - a glossary term's own source section;
   - a journal entry's trade row in Details (pro) (`#trade-<bot>-<seq>`);
   - the plain-words catalogue on Activity.
-- Each answer also has 👍, **Flag** (→ "Flagged") and a foot line.
+- Each answer also has **Flag** (→ "Flagged") and a foot line.
+- Under a reply of outcome `answered` that is no draft, **Did this help?** (`components/HelpfulButtons.jsx`, #579): **Helped** and **Didn't help** (`aria-pressed`, 44 px targets), one choice that can be changed once.
+  "Didn't help" offers **Report it as wrong** (the flag) as an optional second step; it never flags by itself.
+  No buttons under "I don't know", a refusal, the fallback or a request draft.
+  The choice is the person's opinion, never a measure of correctness.
   The foot line is "Answered from the cited sources", "Facts from your journal" or "Advice and forecasts are refused".
 - "I don't know" links How it works.
 - A refusal offers "How does sizing work?" and "Open Worst case".
@@ -117,7 +122,8 @@ The message log is `role="log"` with `aria-live="polite"`.
 The question box takes 500 characters (Enter sends, Shift+Enter a new line), under it "Answers can be wrong: check the linked source.
 Not investment advice." and "n of 30 questions left this hour".
 **Why?** (`components/WhyButton.jsx`) on each row of the Details trade log and on each open or close of the Activity page asks "Why did <BOT> <open|close> the <put|call> <instrument> on <time>?" with `bot` and the row's journal `seq`.
-Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assistant_answered` (`answer`: `answered` \| `dont_know` \| `refused` \| `fallback`, from the route's `outcome` by `answerOf` in `lib/analytics/screens.js` — `no_citation` is `dont_know`, `rejected` is `fallback`; a 429, 503 or error sends none; #424) and `assistant_flag` — never the question, the answer or its id.
+Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assistant_answered` (`answer`: `answered` \| `dont_know` \| `refused` \| `fallback`, from the route's `outcome` by `answerOf` in `lib/analytics/screens.js` — `no_citation` is `dont_know`, `rejected` is `fallback`; a 429, 503 or error sends none; #424) and `assistant_flag`.
+`assistant_helpful` (#579) carries `helped` (true \| false) only; no event carries the question, the answer or its id.
 
 ### Routes
 
@@ -139,6 +145,12 @@ Analytics: `assistant_open` / `assistant_ask` (`entry`: `menu` \| `why`), `assis
 With `seq` (a journal sequence number, the panel's Why?), the bot's `GET /api/explain?seq=` facts — the event's plain sentence, rule, detail and recorded market, and its related events — are passages too (`journal:<bot>/<seq>`); an event no longer in the bot's memory leaves the latest journal and the help (WARN log)
 
 **Refusals:** 401 no session · 403 cross-origin · 415 not JSON · 400 no question, over 500 characters, `bot` not a string, `seq` not a positive integer or without `bot` · 404 unknown bot · 413 body over 2 KB · 429 over `QUESTIONS_PER_HOUR` (30) per person, with `Retry-After` and `{"retry_after", "remaining": 0}` (in memory) · 502 the model failed (logged) · 503 no `ANTHROPIC_API_KEY`
+
+#### `POST /api/assistant/feedback` `{"id", "helped": true|false}`
+
+**Does:** 204: a feedback line for that answer (#579) — the choice only, no text; the last line is the person's choice, read by `cmd/assistantreview`
+
+**Refusals:** 401 · 403 cross-origin, or someone else's answer (only the person who asked) · 415 · 400 no id, `helped` not a boolean · 404 unknown id · 409 not an `answered` reply, or the choice already changed once (two lines per answer, so the writes stay bounded by the 30 questions an hour) · 413 body over 512 bytes · 503 no log file
 
 #### `POST /api/assistant/flag` `{"id", "note"?}`
 
