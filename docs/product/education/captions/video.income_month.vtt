@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+The income page shows the result month by month, after fees. Use the toggle to see it in coin or in dollars. The badge shows testnet or live.
+
+00:00:12.000 --> 00:00:24.000
+Each row starts with what the bot was paid. Then what it paid to buy back, and the exchange fees. The result is what is left.
+
+00:00:24.000 --> 00:00:33.000
+A loss month is tinted and marked as a loss. It has the same size as a month with a gain.
+
+00:00:33.000 --> 00:00:48.000
+Holding alone is what the same account would have done by just holding the coin that month. It shows how much of a dollar result is the coin's own move.
+
+00:00:48.000 --> 00:01:00.000
+Read the average with the worst month and the worst week. One good average can hide a bad month.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuditChainStatus from "@/components/AuditChainStatus";
 import AuditTrail from "@/components/AuditTrail";
 import { viewer } from "@/lib/auth/viewer";
 
@@ -18,7 +19,7 @@ export default async function AuditPage() {
       </header>
       <main className="mx-auto max-w-6xl p-4">
         {admin ? (
-          <AuditTrail />
+          <AuditTrail chain={<AuditChainStatus />} />
         ) : (
           <p role="alert" className="rounded border border-line bg-panel px-3 py-2">
             Only an admin reads the audit trail.

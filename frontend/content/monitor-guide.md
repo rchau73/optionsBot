@@ -168,17 +168,14 @@ Learn more: glossary terms *strangle*, *break-even*, *exit line*, *delta*, *stop
 The bot's method in three pictures, using the strangle you hold.
 If none is held, an example is shown and is labelled as an example.
 
-**1.
-One position, two legs**: the put (the floor) and the call (the ceiling), each with its strike, what it commits to on the expiry date and the premium paid now, in coin.
+**1. One position, two legs**: the put (the floor) and the call (the ceiling), each with its strike, what it commits to on the expiry date and the premium paid now, in coin.
 
-**2.
-What you end with on the expiry date**: a chart of the result at expiry.
+**2. What you end with on the expiry date**: a chart of the result at expiry.
 Between the strikes, all the premium is kept.
 Beyond a break-even, a loss grows; that zone is hatched.
 The dashed line is today's price.
 
-**3.
-How the bot defends the position**: four cards, in the order the rules are applied:
+**3. How the bot defends the position**: four cards, in the order the rules are applied:
 - *Take profit*: buy back when enough of the premium has been kept.
 - *Exit line*: buy back when a leg's delta reaches the delta-exit threshold, because the move looks real.
 - *Stop-loss*: buy back at market when the price of the option reaches the stop multiple.
@@ -478,6 +475,7 @@ An allowed action is recorded in the audit trail with your username, the action 
 
 **Can I check a setting value before a comparison run?** Managers and admins can.
 The monitor says whether the value is inside the range the bot accepts and, if not, which rule it breaks in plain words.
+Rules that depend on a whole list, such as the margin bands' "the lowest band starts at 0", are listed and said not checked, because one value does not show which band it replaces.
 It also says whether the setting is a core policy, where a new default needs the product owner, what the setting does to risk and income, and its current value.
 The check changes nothing: no config file or bot setting is touched.
 No screen shows it yet.
@@ -547,6 +545,16 @@ There is always at least one admin, and you cannot delete yourself.
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.
 <!-- guide: page:/admin/audit -->
+
+**Audit chain**: each line of the audit trail carries a fingerprint of the line before it, so a line changed or removed by hand shows.
+Under the filters the Audit page says "Chain intact" with how many lines were checked, or "Chain broken at line N" with its time and why: a line before it was removed, reordered or edited, or this line was edited or is damaged.
+Check again runs the check once more.
+A broken chain hides no line: the trail below still lists every line.
+Lines written before the chain began are legacy and are named as not covered.
+When the trail grows past its size limit it continues in a new file, and the check and the pages read across both.
+Nothing is ever deleted.
+The check shows tampering; it cannot stop someone who can rewrite the whole trail.
+<!-- guide: route:GET /api/admin/audit/verify -->
 
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes.
 A Delivery view is not on the page yet.

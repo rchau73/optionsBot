@@ -61,6 +61,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - MONITOR_API_TOKEN=${MONITOR_API_TOKEN:-}
+      # Audit trail rotation size in bytes (#619); empty = 20 MB.
+      - AUDIT_MAX_BYTES=${AUDIT_MAX_BYTES:-}
       # Analytics (#193): events.jsonl beside auth.db, only with consent and a
       # salt; the deployment and version tag each event (no account, no amount).
       - ANALYTICS_SALT=${ANALYTICS_SALT:-}

@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:13.000
+Every setting has a tip. It says what the setting is, and how it moves risk and income. Read it before you change anything.
+
+00:00:13.000 --> 00:00:25.000
+See the current value and the range the bot accepts. A value outside the range is refused when the bot starts.
+
+00:00:25.000 --> 00:00:37.000
+Read the risk sentence. A setting can raise the income and raise the possible loss in the same step.
+
+00:00:37.000 --> 00:00:50.000
+Change one setting at a time. When the bot starts, it records the settings that changed, so you can see what you changed and when.
+
+00:00:50.000 --> 00:01:00.000
+Then watch the margin bar and the activity feed. If the result is not what you wanted, set the old value back.
