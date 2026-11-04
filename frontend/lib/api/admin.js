@@ -26,3 +26,8 @@ export async function fetchDeliveryReport(signal) {
 export async function fetchAudit(query, signal) {
   return getJSON(`/api/admin/audit${query ? `?${query}` : ""}`, signal);
 }
+
+/** The audit trail's hash-chain check (admins only, #619) → { off, ok, checked, legacy, legacy_before, first_break }. */
+export async function fetchAuditChain(signal) {
+  return getJSON("/api/admin/audit/verify", signal);
+}

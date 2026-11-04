@@ -57,6 +57,7 @@ export const STATE_CHANGING_ROUTES = [
  * calls each as every caller too, and checks the route file exports GET only.
  */
 export const ROLE_GUARDED_READS = [
+  { route: "GET /api/admin/audit/verify", roles: ADMINS },
   { route: "GET /api/auth/sessions", roles: SIGNED_IN },
   { route: "GET /api/lab/runs", roles: MANAGERS },
   { route: "GET /api/lab/runs/[id]", roles: MANAGERS },

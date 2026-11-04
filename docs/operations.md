@@ -208,6 +208,16 @@ Each close and rebalance reaches the bot with `"actor": {"user", "role"}` (with 
 A request without an actor (e.g. the `curl` below) is recorded as `monitor`.
 Who did what on the monitor itself — sign-ins, failed sign-ins, lockouts, user changes, close and rebalance requests — is in the `monitor-auth` volume's `audit.jsonl` (`docker compose exec monitor tail data/monitor/audit.jsonl`), one JSON line each; never a password or token.
 
+**Audit chain and rotation (#619).** Each audit line carries `prev`, the SHA-256 of the line before it, and `line_hash`, the SHA-256 of itself; both are hashes of audit lines, never of a password or a token.
+The Audit page checks the whole trail (`GET /api/admin/audit/verify`) and says "Chain intact — N lines checked" or "Chain broken at line N (time)".
+Broken means a line was edited by hand, a line was removed or moved, or a line is damaged (cut short by a crash or a full disk); the page names the first such line, and the lines before it are intact.
+Lines written before #619 have no `prev`: they are legacy, counted and named, not checked.
+When it breaks, an admin: does not edit the file back (that is a second change); copies the trail and its archives out of the volume as they are (`docker compose cp monitor:/app/data/monitor ./audit-evidence`); compares the broken line with the nightly backup's copy and with the monitor's logs of that time (`scripts/envctl.sh <env> logs monitor`); and records what was found.
+A hash chain shows tampering; it cannot stop someone with write access to the whole volume from rewriting every line after a change, and lines removed from the very end leave no break — anchoring the newest hash off the host is a later option.
+When `audit.jsonl` reaches `AUDIT_MAX_BYTES` (`.env`, default 20 MB), the next audited action renames it to `audit.<UTC time>.jsonl` (owner-only, e.g. `audit.20261104T031433123Z.jsonl`) and starts a new file whose first line links to the old one's last line, so the chain crosses files.
+The Audit page reads the current file, then the archives newest first; the app deletes nothing — how long audit data is kept is a data protection question for counsel (PRD §11).
+One process writes each line whole (read the last line, link, append in one synchronous step); `scripts/analytics-user.mjs`, run by hand in another process, appends to the same file, so do not run it during heavy use.
+
 ## Watch the logs
 
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole).
@@ -333,7 +343,8 @@ A failed deploy prunes nothing, and the warning never fails a deploy.
 
 **Backup** (#328).
 The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them).
-Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/`: the request queue (`requests.jsonl`, `requests_status.jsonl`, #409) and the assistant's review log, `assistant.jsonl` (#438).
+Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/`: the request queue (`requests.jsonl`, `requests_status.jsonl`, #409), the assistant's review log, `assistant.jsonl` (#438), and the audit trail, `audit.jsonl` with every archive `audit.<UTC time>.jsonl` (#619, copied as they are).
+The script reads the clone's `data/monitor/`; the deployed monitor keeps these files in its `monitor-auth` Docker volume, so a file there that is not also in the clone's folder is not in the backup.
 Each line of that log must parse (`go run ./cmd/backupcheck -lines <copy>`), so a damaged copy fails the backup.
 No `.env` or secret is copied.
 Each copy passes a restore check, `go run ./cmd/backupcheck`: the journal must replay with `orders.ReplayFile` and hold no fewer events than the night before (each copy keeps its result in `check.json`).
