@@ -38,7 +38,6 @@ var docLongLineExceptions = map[string]struct {
 	".claude/skills/option-bot-specialist/references/dashboard.md": {1, reasonAgentFile},
 	"frontend/README.md":                                           {4, reasonNotReflowed},
 	"frontend/docs/responsive-audit.md":                            {8, reasonNotReflowed},
-	"frontend/content/monitor-guide.md":                            {7, "the help index cuts this file by heading; reflowing it is a follow-up checked with go run ./cmd/helpindex (#463)"},
 	"docs/product/analytics/surveys.md":                            {11, reasonNotReflowed},
 	"docs/product/analytics/event-plan.md":                         {8, reasonNotReflowed},
 	"docs/legal/jurisdictions/brazil.md":                           {9, reasonNotReflowed},

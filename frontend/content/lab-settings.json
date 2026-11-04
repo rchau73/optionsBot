@@ -1,0 +1,499 @@
+{
+  "_note": "Generated from internal/config (catalogue.go, labsettings.go) and the shipped config files: go run ./cmd/paramdocs. Do not edit by hand.",
+  "policy_note": "changing the default needs the product owner",
+  "settings": [
+    {
+      "key": "underlying",
+      "title": "Coin",
+      "unit": "",
+      "kind": "text",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "strategy_id",
+      "title": "Strategy name",
+      "unit": "",
+      "kind": "text",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "dte_delta_matrix[].dte",
+      "title": "Slot days to expiry",
+      "unit": "days",
+      "kind": "integer",
+      "min": null,
+      "max": null,
+      "step": 1,
+      "cross_rules": [
+        "above rollout_dte, or a new strangle would be rolled at once"
+      ],
+      "cross_rules_checked": true,
+      "policy": "entry",
+      "core_policy": true
+    },
+    {
+      "key": "dte_delta_matrix[].deltas[]",
+      "title": "Slot entry delta",
+      "unit": "delta (absolute)",
+      "kind": "number",
+      "min": 0.01,
+      "max": 0.49,
+      "step": 0.01,
+      "cross_rules": [
+        "delta_drift_threshold at most 75 % of it",
+        "delta_exit_threshold above it"
+      ],
+      "cross_rules_checked": true,
+      "policy": "entry",
+      "core_policy": true
+    },
+    {
+      "key": "rollout_dte",
+      "title": "Roll at days to expiry",
+      "unit": "days",
+      "kind": "integer",
+      "min": null,
+      "max": null,
+      "step": 1,
+      "cross_rules": [
+        "below every slot's dte"
+      ],
+      "cross_rules_checked": true,
+      "policy": "exits",
+      "core_policy": true
+    },
+    {
+      "key": "delta_drift_threshold",
+      "title": "Roll when delta falls below",
+      "unit": "delta (absolute)",
+      "kind": "number",
+      "min": 0,
+      "max": null,
+      "step": 0.01,
+      "cross_rules": [
+        "at most 75 % of every entry delta (config.MaxDriftToEntryRatio)"
+      ],
+      "cross_rules_checked": true,
+      "policy": "exits",
+      "core_policy": true
+    },
+    {
+      "key": "roi_take_profit",
+      "title": "Take profit at",
+      "unit": "fraction of premium",
+      "kind": "number",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "exits",
+      "core_policy": true
+    },
+    {
+      "key": "stop_loss_multiplier",
+      "title": "Stop-loss at",
+      "unit": "× premium",
+      "kind": "number",
+      "min": 0.1,
+      "max": null,
+      "step": 0.1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "exits",
+      "core_policy": true
+    },
+    {
+      "key": "delta_exit_threshold",
+      "title": "Delta exit at",
+      "unit": "delta (absolute)",
+      "kind": "number",
+      "min": null,
+      "max": 0.99,
+      "step": 0.01,
+      "cross_rules": [
+        "above every entry delta"
+      ],
+      "cross_rules_checked": true,
+      "policy": "exits",
+      "core_policy": true
+    },
+    {
+      "key": "repair_cooldown_hours",
+      "title": "Repair cooldown",
+      "unit": "hours",
+      "kind": "integer",
+      "min": 0,
+      "max": null,
+      "step": 1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "repair",
+      "core_policy": true
+    },
+    {
+      "key": "gamma_flip_buffer_sd",
+      "title": "Gamma flip buffer",
+      "unit": "daily standard deviations",
+      "kind": "number",
+      "min": 0,
+      "max": 3,
+      "step": 0.1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "gex",
+      "core_policy": true
+    },
+    {
+      "key": "gex_direction",
+      "title": "Direction source",
+      "unit": "",
+      "kind": "enum",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "values": [
+        "sma",
+        "bias"
+      ],
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "gex",
+      "core_policy": true
+    },
+    {
+      "key": "iv_margin_bands[].min_iv_pct",
+      "title": "Margin band start",
+      "unit": "DVOL percentile",
+      "kind": "number",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "cross_rules": [
+        "the lowest band starts at 0",
+        "no two bands start at the same percentile"
+      ],
+      "cross_rules_checked": false,
+      "policy": "margin",
+      "core_policy": true
+    },
+    {
+      "key": "iv_margin_bands[].max_im_pct",
+      "title": "Margin band limit",
+      "unit": "% of margin balance",
+      "kind": "number",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "margin",
+      "core_policy": true
+    },
+    {
+      "key": "max_mm_pct",
+      "title": "Maintenance-margin limit",
+      "unit": "% of margin balance",
+      "kind": "number",
+      "min": 1,
+      "max": 99,
+      "step": 1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "margin",
+      "core_policy": true
+    },
+    {
+      "key": "max_leg_size_multiple",
+      "title": "Leg size cap",
+      "unit": "× normal size",
+      "kind": "number",
+      "min": 1,
+      "max": null,
+      "step": 0.1,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "sizing",
+      "core_policy": true
+    },
+    {
+      "key": "min_premium",
+      "title": "Minimum premium",
+      "unit": "coin per contract",
+      "kind": "number",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "entry",
+      "core_policy": true
+    },
+    {
+      "key": "backtest.fill_model",
+      "title": "Backtest fill model",
+      "unit": "",
+      "kind": "text",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "backtest.slippage_pct",
+      "title": "Backtest market slippage",
+      "unit": "fraction of mid",
+      "kind": "number",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "backtest.limit_fill_rule",
+      "title": "Backtest limit fills",
+      "unit": "",
+      "kind": "text",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "backtest.commission_per_contract",
+      "title": "Backtest fee rate",
+      "unit": "fraction of the underlying",
+      "kind": "number",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    },
+    {
+      "key": "backtest.margin_call_liquidation",
+      "title": "Backtest margin-call liquidation",
+      "unit": "",
+      "kind": "bool",
+      "min": null,
+      "max": null,
+      "step": 0,
+      "cross_rules": [],
+      "cross_rules_checked": false,
+      "policy": "none",
+      "core_policy": false
+    }
+  ],
+  "fixed": {
+    "churn_max_round_trips": "3",
+    "churn_window_minutes": "60",
+    "delta_slippage": "0.03",
+    "entry_delta": "use dte_delta_matrix",
+    "entry_price_floor": "mid",
+    "eval_interval_ms": "40000",
+    "expiry_stretch": "1.5",
+    "gamma_regime_band_pct": "0.025, nearest_flip only",
+    "gamma_trend_lookback_days": "120",
+    "gex_bias_flip_window_minutes": "60",
+    "gex_bias_repair_cooldown_hours": "24",
+    "gex_method": "script",
+    "gex_repair_confirm_snapshots": "2",
+    "gex_repair_release_hours": "24",
+    "gex_shed_confirm_snapshots": "2",
+    "gex_strike_range_pct": "0.15",
+    "hedge_report_threshold": "0.05",
+    "iv_band_confirm_days": "2",
+    "iv_percentile_window": "252",
+    "liquidity_cap_oi_pct": "10",
+    "market_record_minutes": "60",
+    "max_dte_deviation": "10",
+    "min_trade_amount": "0.1, Deribit's minimum is read per option",
+    "order_fill_timeout_sec": "90",
+    "order_max_adjustments": "3",
+    "order_slippage_pct": "0.05",
+    "rebalance_retry_minutes": "15",
+    "repair_price_floor": "bid",
+    "report_interval_sec": "60",
+    "sma9_band_sd": "0.10",
+    "spread_alert_threshold": "0.05",
+    "stop_spread_guard_pct": "20",
+    "stop_spread_max_wait_minutes": "5",
+    "swing_pivot_n": "5",
+    "target_dte": "use dte_delta_matrix"
+  },
+  "configs": {
+    "BTC": {
+      "file": "config_btc.yaml",
+      "current": {
+        "backtest.commission_per_contract": 0.0003,
+        "backtest.fill_model": "mid",
+        "backtest.limit_fill_rule": "next_tick",
+        "backtest.margin_call_liquidation": true,
+        "backtest.slippage_pct": 0.001,
+        "delta_drift_threshold": 0.1,
+        "delta_exit_threshold": 0.3,
+        "dte_delta_matrix[].deltas[]": [
+          0.16,
+          0.16
+        ],
+        "dte_delta_matrix[].dte": [
+          25,
+          50
+        ],
+        "gamma_flip_buffer_sd": 1.5,
+        "gex_direction": "bias",
+        "iv_margin_bands[].max_im_pct": [
+          50,
+          35,
+          20
+        ],
+        "iv_margin_bands[].min_iv_pct": [
+          70,
+          30,
+          0
+        ],
+        "max_leg_size_multiple": 2,
+        "max_mm_pct": 35,
+        "min_premium": 0.001,
+        "repair_cooldown_hours": 72,
+        "roi_take_profit": 0.5,
+        "rollout_dte": 15,
+        "stop_loss_multiplier": 2,
+        "strategy_id": "",
+        "underlying": "BTC"
+      },
+      "above": {
+        "delta_exit_threshold": {
+          "value": 0.16,
+          "inclusive": false,
+          "rule": "must be above every entry delta: the highest is 0.16"
+        },
+        "dte_delta_matrix[].deltas[]": {
+          "value": 0.133333333,
+          "inclusive": true,
+          "rule": "must keep delta_drift_threshold (0.1) at most 75 % of it, so at least 0.1333"
+        },
+        "dte_delta_matrix[].dte": {
+          "value": 15,
+          "inclusive": false,
+          "rule": "must be above rollout_dte (15), or a new strangle would be rolled at once"
+        }
+      },
+      "below": {
+        "delta_drift_threshold": {
+          "value": 0.12,
+          "inclusive": true,
+          "rule": "must be at most 75 % of every entry delta: the lowest is 0.16, so at most 0.12"
+        },
+        "dte_delta_matrix[].deltas[]": {
+          "value": 0.3,
+          "inclusive": false,
+          "rule": "must be below delta_exit_threshold (0.3), or a new leg would be exited at once"
+        },
+        "rollout_dte": {
+          "value": 25,
+          "inclusive": false,
+          "rule": "must be below every slot's days to expiry: the lowest is 25"
+        }
+      }
+    },
+    "ETH": {
+      "file": "config_eth.yaml",
+      "current": {
+        "backtest.commission_per_contract": 0.0003,
+        "backtest.fill_model": "mid",
+        "backtest.limit_fill_rule": "next_tick",
+        "backtest.margin_call_liquidation": true,
+        "backtest.slippage_pct": 0.001,
+        "delta_drift_threshold": 0.1,
+        "delta_exit_threshold": 0.3,
+        "dte_delta_matrix[].deltas[]": [
+          0.16,
+          0.16
+        ],
+        "dte_delta_matrix[].dte": [
+          30,
+          50
+        ],
+        "gamma_flip_buffer_sd": 1.5,
+        "gex_direction": "sma",
+        "iv_margin_bands[].max_im_pct": [
+          50,
+          35,
+          20
+        ],
+        "iv_margin_bands[].min_iv_pct": [
+          70,
+          30,
+          0
+        ],
+        "max_leg_size_multiple": 2,
+        "max_mm_pct": 35,
+        "min_premium": 0.001,
+        "repair_cooldown_hours": 72,
+        "roi_take_profit": 0.5,
+        "rollout_dte": 15,
+        "stop_loss_multiplier": 2,
+        "strategy_id": "",
+        "underlying": "ETH"
+      },
+      "above": {
+        "delta_exit_threshold": {
+          "value": 0.16,
+          "inclusive": false,
+          "rule": "must be above every entry delta: the highest is 0.16"
+        },
+        "dte_delta_matrix[].deltas[]": {
+          "value": 0.133333333,
+          "inclusive": true,
+          "rule": "must keep delta_drift_threshold (0.1) at most 75 % of it, so at least 0.1333"
+        },
+        "dte_delta_matrix[].dte": {
+          "value": 15,
+          "inclusive": false,
+          "rule": "must be above rollout_dte (15), or a new strangle would be rolled at once"
+        }
+      },
+      "below": {
+        "delta_drift_threshold": {
+          "value": 0.12,
+          "inclusive": true,
+          "rule": "must be at most 75 % of every entry delta: the lowest is 0.16, so at most 0.12"
+        },
+        "dte_delta_matrix[].deltas[]": {
+          "value": 0.3,
+          "inclusive": false,
+          "rule": "must be below delta_exit_threshold (0.3), or a new leg would be exited at once"
+        },
+        "rollout_dte": {
+          "value": 30,
+          "inclusive": false,
+          "rule": "must be below every slot's days to expiry: the lowest is 30"
+        }
+      }
+    }
+  }
+}
