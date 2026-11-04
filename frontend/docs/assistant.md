@@ -9,6 +9,9 @@ It answers from the published help, the bot's live page data and the user's own 
 
 - **Sources** (`content/help-index.json`, built by `go run ./cmd/helpindex`): OptionStrategy.md, the glossary, the plain-words catalogue, `docs/parameters.md` (`parameters.md#<anchor>`) and the user-facing `content/monitor-guide.md` (`monitor-guide.md#<anchor>`, #418: one `##` section per menu page, named as its menu item).
   A new or renamed page updates the guide in the same PR; `tests/monitor_guide_test.go` fails otherwise.
+  - **The settings' tips** (#621): one passage per tip of `docs/product/education/tips.json`, source `tip:<key>`, titled with the setting's name in words (`helpkb.TipName`: "repair_cooldown_hours" → "repair cooldown"), its text the tip's meaning, risk, income and policy note word for word.
+    A question whose words are exactly a tip's name ("what does the repair cooldown do?") gets that tip first (`search.js` and `helpkb.Search`), so the answer says what the tip says; its chip reads "Tip: repair cooldown".
+    A tip is edited only in its own file; `go run ./cmd/helpindex` rebuilds the index, and `tests/helpindex_test.go` fails until it does.
 - **Flow** (`lib/assistant/service.js`): the model gets three kinds of passage.
   - The question's best `HELP_PASSAGES` (6) passages of `content/help-index.json` (`lib/assistant/search.js`, the BM25 of `internal/helpkb`).
   - With `bot`, that bot's journal facts of the last `JOURNAL_DAYS` (7) from its `/api/journal?days=7`.
@@ -107,6 +110,7 @@ The message log is `role="log"` with `aria-live="polite"`.
 - Each answer is shown as written (`pre-line`) with its **source chips**:
   - an OptionStrategy.md or other document section on the repository (new tab);
   - a glossary term's own source section;
+  - a setting's tip, "Tip: <name>", on the tips file (#621);
   - a journal entry's trade row in Details (pro) (`#trade-<bot>-<seq>`);
   - the plain-words catalogue on Activity.
 - Each answer also has **Flag** (→ "Flagged") and a foot line.
