@@ -124,6 +124,10 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 	if err := json.Unmarshal(s.Glossary, &gloss); err != nil {
 		t.Fatal(err)
 	}
+	var tips map[string]json.RawMessage
+	if err := json.Unmarshal(s.Tips, &tips); err != nil {
+		t.Fatal(err)
+	}
 	keys := map[string]bool{}
 	for _, e := range api.Catalogue() {
 		keys[e.Key] = true
@@ -131,6 +135,7 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 	blobs := map[string]string{
 		helpkb.StrategyFile:   helpkb.BlobHash(s.Strategy),
 		helpkb.GlossaryPrefix: helpkb.BlobHash(s.Glossary),
+		helpkb.TipPrefix:      helpkb.BlobHash(s.Tips),
 		helpkb.ExplainPrefix:  helpkb.BlobHash(s.Explain),
 		"parameters.md":       helpkb.BlobHash(s.Parameters),
 		"monitor-guide.md":    helpkb.BlobHash(s.Guide),
@@ -169,11 +174,14 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 		case strings.HasPrefix(c.Source, helpkb.GlossaryPrefix):
 			_, ok = gloss[c.Anchor()]
 			kind = helpkb.GlossaryPrefix
+		case strings.HasPrefix(c.Source, helpkb.TipPrefix):
+			_, ok = tips[c.Anchor()]
+			kind = helpkb.TipPrefix
 		case strings.HasPrefix(c.Source, helpkb.ExplainPrefix):
 			kind, ok = helpkb.ExplainPrefix, keys[c.Anchor()]
 		}
 		if !ok {
-			t.Errorf("%s: source %q resolves to no heading anchor, glossary term or catalogue key", c.ID, c.Source)
+			t.Errorf("%s: source %q resolves to no heading anchor, glossary term, tip or catalogue key", c.ID, c.Source)
 			continue
 		}
 		kinds[kind]++
@@ -196,12 +204,17 @@ func TestHelpIndex_EveryChunkIsCitable(t *testing.T) {
 			t.Errorf("glossary term %q has no passage", term)
 		}
 	}
+	for k := range tips {
+		if !cited[helpkb.TipPrefix+k] {
+			t.Errorf("tip %q has no passage", k)
+		}
+	}
 	for k := range keys {
 		if !cited[helpkb.ExplainPrefix+k] {
 			t.Errorf("catalogue key %q has no passage", k)
 		}
 	}
-	if kinds[helpkb.StrategyFile] < 30 || kinds[helpkb.GlossaryPrefix] < 100 || kinds[helpkb.ExplainPrefix] < 50 {
+	if kinds[helpkb.StrategyFile] < 30 || kinds[helpkb.GlossaryPrefix] < 100 || kinds[helpkb.TipPrefix] < len(tips) || kinds[helpkb.ExplainPrefix] < 50 {
 		t.Errorf("too few passages per source: %v", kinds)
 	}
 }

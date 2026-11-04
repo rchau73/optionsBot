@@ -20,13 +20,18 @@ const (
 	// ("parameters.md#<anchor>", "monitor-guide.md#<anchor>").
 	ParametersFile = "docs/parameters.md"
 	GuideFile      = "frontend/content/monitor-guide.md"
-	IndexFile      = "frontend/content/help-index.json"
+	// TipsFile is the settings' plain-words tips (#492, #588); the monitor
+	// serves its copy, frontend/content/tips.json.
+	TipsFile  = "docs/product/education/tips.json"
+	IndexFile = "frontend/content/help-index.json"
 )
 
 // Source kinds, the prefix of every passage's Source but the strategy's.
 const (
 	GlossaryPrefix = "glossary:"
 	ExplainPrefix  = "explain:"
+	// TipPrefix cites a setting's tip by its key ("tip:repair_cooldown_hours", #621).
+	TipPrefix = "tip:"
 )
 
 // IndexVersion is the format of help-index.json; bump it when a field changes.
@@ -47,8 +52,10 @@ type Sources struct {
 	Parameters []byte
 	Guide      []byte
 	Glossary   []byte
-	Catalogue  []CatalogueEntry
-	Explain    []byte
+	// Tips is TipsFile: one plain-words tip per tunable setting.
+	Tips      []byte
+	Catalogue []CatalogueEntry
+	Explain   []byte
 }
 
 // GlossaryEntry is the part of a glossary.json entry the index reads.
@@ -56,6 +63,34 @@ type GlossaryEntry struct {
 	Short      string `json:"short"`
 	Long       string `json:"long"`
 	RiskIncome string `json:"risk_income"`
+}
+
+// TipEntry is the part of a tips.json entry the index reads: what the setting
+// means, what raising it does to risk and to income, and the note on a
+// core-policy setting.
+type TipEntry struct {
+	Meaning     string `json:"meaning"`
+	RaiseRisk   string `json:"raise_risk"`
+	RaiseIncome string `json:"raise_income"`
+	PolicyNote  string `json:"policy_note"`
+}
+
+// tipUnitWords are a key's last word when it only names the unit
+// ("repair_cooldown_hours" → "repair cooldown").
+var tipUnitWords = map[string]bool{"hours": true, "pct": true, "sd": true}
+
+// TipName is a setting's name in words, from its key: "[]" dropped, "." and
+// "_" read as spaces, a trailing unit word left out ("repair_cooldown_hours"
+// → "repair cooldown", "iv_margin_bands[].max_im_pct" → "iv margin bands max
+// im"). It is the tip passage's title, so a question naming the setting
+// matches the title exactly; the monitor shows it as "Tip: <name>".
+func TipName(key string) string {
+	key = strings.ReplaceAll(key, "[]", "")
+	words := strings.FieldsFunc(key, func(r rune) bool { return r == '.' || r == '_' })
+	if n := len(words); n > 1 && tipUnitWords[words[n-1]] {
+		words = words[:n-1]
+	}
+	return strings.Join(words, " ")
 }
 
 // File is help-index.json.
@@ -74,12 +109,18 @@ func BlobHash(data []byte) string {
 }
 
 // Build makes the index: OptionStrategy.md's passages in the document's
-// order, then the glossary's terms and the catalogue's keys, each sorted.
-// A glossary term's passage is its short, long and risk/income texts.
+// order, then the glossary's terms, the settings' tips and the catalogue's
+// keys, each sorted. A glossary term's passage is its short, long and
+// risk/income texts; a tip's is its own words, unchanged: meaning, risk,
+// income and policy note (#621: the assistant cites what the tip says).
 func Build(s Sources) (File, error) {
 	var gloss map[string]GlossaryEntry
 	if err := json.Unmarshal(s.Glossary, &gloss); err != nil {
 		return File{}, fmt.Errorf("read %s: %w", GlossaryFile, err)
+	}
+	var tips map[string]TipEntry
+	if err := json.Unmarshal(s.Tips, &tips); err != nil {
+		return File{}, fmt.Errorf("read %s: %w", TipsFile, err)
 	}
 	var chunks []Passage
 	add := func(ps []Passage, blob string) {
@@ -107,6 +148,23 @@ func Build(s Sources) (File, error) {
 			}
 		}
 		add(TextPassages(GlossaryPrefix+t, t, strings.Join(paras, "\n\n")), glossBlob)
+	}
+
+	keys := make([]string, 0, len(tips))
+	for k := range tips {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	tipsBlob := BlobHash(s.Tips)
+	for _, k := range keys {
+		e := tips[k]
+		var paras []string
+		for _, p := range []string{e.Meaning, e.RaiseRisk, e.RaiseIncome, e.PolicyNote} {
+			if p = strings.TrimSpace(p); p != "" {
+				paras = append(paras, p)
+			}
+		}
+		add(TextPassages(TipPrefix+k, TipName(k), strings.Join(paras, "\n\n")), tipsBlob)
 	}
 
 	cat := append([]CatalogueEntry(nil), s.Catalogue...)
