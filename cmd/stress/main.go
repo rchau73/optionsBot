@@ -669,6 +669,9 @@ func main() {
 	replayLiqCaps := flag.String("liqcaps", "", "STUDY, with -replay: replay once per liquidity_cap_oi_pct in this list (e.g. 5,10,20, #487) and print one table — IM as % of the limit, cycles under 60 % of it with entries allowed, entries and lots cut, worst week; the bot's cap stays 10")
 	replayRegimeHold := flag.String("regimehold", "confirmed", "STUDY, with -replay (#550): the regime-side rule — confirmed (the bot: no puts in a bear trend, no calls in a bull trend under a CONFIRMED negative regime) | live (also while the LIVE regime is negative, before confirmation)")
 	replayRegimeHolds := flag.String("regimeholds", "", "STUDY, with -replay: replay once per regime-side rule in this list (confirmed,live, #550) and print one table — net P&L, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week")
+	replayRebalance := flag.String("rebalance", "off", "STUDY, with -replay (#638): the rebalance model — off (as before) | prorata (the bot: a confirmed limit change and its retries cut every strangle to its slot share, top-ups below it) | cheapest | winners (the downsize cuts whole strangles, least cost per IM freed or biggest winners first)")
+	replayRebalances := flag.String("rebalances", "", "STUDY, with -replay: replay once per downsize rule in this list (prorata,cheapest,winners, #638) and print one table — downsize cost, IM freed, cost per pp, IM and slot balance after the cut, top-ups, net; with -journal the bot's downsizes beside the replayed pro-rata ones")
+	replayLimits := flag.String("limits", "replay", "with -replay (#638): the IM limit, freeze and restarts — replay (rebuilt from the recorded DVOL and the replay's regime closes) | journal (the bot's own risk_limit lines in -journal, its starts as startup passes, its margin balance at -from)")
 	flag.Parse()
 	if *replayDir != "" {
 		set := map[string]string{}
@@ -684,7 +687,8 @@ func main() {
 		err := runReplay(replayOpts{dir: *replayDir, from: *replayFrom, to: *replayTo, configPath: cfgPath,
 			journal: *replayJournal, start: *replayStart, inputs: *dir, gexDir: *replayGEX, equity: *replayEquity,
 			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, liqCaps: *replayLiqCaps,
-			regimeHold: *replayRegimeHold, regimeHolds: *replayRegimeHolds, set: set})
+			regimeHold: *replayRegimeHold, regimeHolds: *replayRegimeHolds,
+			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)
 			os.Exit(1)

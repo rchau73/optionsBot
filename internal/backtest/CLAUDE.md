@@ -21,4 +21,8 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
     days with no recording are listed and the table marked indicative (`docs/studies/liquidity-cap.md`). The bot's cap stays fixed at 10.
   - `-regimeholds confirmed,live` (study, #550, `replay/regimehold.go`): one replay per regime-side rule — the bot's (confirmed negative regime) and also on a live negative regime — one table:
     net, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week (`docs/studies/regime-hold.md`); `-regimehold live` runs one replay so.
-  Not modelled there: rebalance, leg balancing, churn breaker, journal-restored holds.
+  - `-rebalance prorata` (#638, `replay/rebalance.go`; default `off`, so earlier replays are unchanged): the bot's rebalance — a pass on a confirmed limit change (cuts to the exact limit),
+    retries of a held or short top-up (cut only above limit + 1.5 pp, `DownsizeDue`), top-ups as `rebalancePositions`; `-limits journal` takes the limit, freeze and starts from the journal's `risk_limit` lines
+    (each start a startup pass with the ±1.5 pp band), and with `-journal` the bot's downsizes are listed beside the replay's per day and side.
+  - `-rebalances prorata,cheapest,winners` (study, #638): which strangle a downsize cuts — downsize P&L, IM freed, cost per pp, IM and slot balance after the cut, top-ups (`docs/studies/downsize-cut.md`).
+  Not modelled there: leg balancing, churn breaker, journal-restored holds; margin is the replay's scan, not Deribit's simulator.

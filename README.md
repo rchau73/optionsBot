@@ -302,6 +302,8 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 `-dir` gives `market.json` (daily closes and DVOL before the recording: the SMA trend needs 21 closes, the IV percentile 20 days) and `account.json` (the starting margin balance; `-equity` overrides).
 `-start journal` starts from the journal's open book at `-from`; `-journal` also prints the bot's **actual** P&L over the same window — its realised closes plus the change of its open book's unrealised P&L, both ends at the recorded mids — and the gap to the replay.
 `-trace` prints every action.
+`-rebalance prorata` (#638; default `off`) adds the bot's rebalance: downsizes on a confirmed limit change and on retries of a short top-up, top-ups below the slot targets; `-limits journal` takes the IM limit, freeze and restarts from the journal's `risk_limit` lines instead of rebuilding them.
+`-rebalances prorata,cheapest,winners` compares which strangle a downsize cuts (`docs/studies/downsize-cut.md`).
 Output: one line per day (spot, DVOL, live/confirmed regime, direction, limit, IM %, equity, day P&L, fees, trades, sheds, repairs, actions), a summary (net, realised, fees, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, unfilled orders, worst drawdown, IM max/avg) and a tab-separated `REPLAY` line for scripts.
 
 **GEX at the bot's pace** (#122).

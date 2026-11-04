@@ -87,25 +87,7 @@ func RegimeHoldMarkdown(coin string, rows []HoldRow, missing []time.Time) string
 	if len(rows) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	r0 := rows[0].Result
-	fmt.Fprintf(&b, "### %s — regime-side hold, %s → %s, %d decisions\n\n", coin,
-		r0.Start.Format("2006-01-02 15:04"), r0.End.Format("2006-01-02 15:04"), r0.Snapshots)
-	_, full := WorstWeek(r0.Days, r0.Equity0)
-	if len(missing) > 0 || !full {
-		fmt.Fprintf(&b, "**Indicative:** %d replayed days", len(r0.Days))
-		if len(missing) > 0 {
-			days := make([]string, len(missing))
-			for i, d := range missing {
-				days[i] = d.Format("2006-01-02")
-			}
-			fmt.Fprintf(&b, "; no recording on %d days (%s)", len(missing), strings.Join(days, ", "))
-		}
-		if !full {
-			b.WriteString("; under a week, so the worst week is the whole window")
-		}
-		b.WriteString(".\n\n")
-	}
+	b := studyHeader(coin, "regime-side hold", rows[0].Result, missing)
 	b.WriteString("| Hold | Net " + coin + " | Net (% of balance) | Realised | Entries | Entries opened without the held side | Side holds (decisions) | Legs sold into a live negative regime on the trend's side | Stops | Delta exits | Worst week (% of balance) |\n")
 	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
@@ -115,7 +97,7 @@ func RegimeHoldMarkdown(coin string, rows []HoldRow, missing []time.Time) string
 		if res.Equity0 > 0 {
 			net = res.Net / res.Equity0 * 100
 		}
-		fmt.Fprintf(&b, "| %s | %+.4f | %+.2f | %+.4f | %d | %d | %d | %d | %d | %d | %+.2f |\n",
+		fmt.Fprintf(b, "| %s | %+.4f | %+.2f | %+.4f | %d | %d | %d | %d | %d | %d | %+.2f |\n",
 			r.Hold, res.Net, net, res.Realised, res.Entries, res.RegimeHeldEntries, res.RegimeSideHolds,
 			res.SoldIntoLiveNegative, res.Stops, res.DeltaExits, ww)
 	}
