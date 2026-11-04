@@ -22,7 +22,7 @@ case " $* " in
   *" up "*) grep -qx "$ver" "$state/compose_fails" 2>/dev/null && { echo "build error in $ver"; exit 1; }; exit 0 ;;
   *" exec "*) cat "$state/df" 2>/dev/null; exit 0 ;;
   *" system df"*) echo "Images 3 1 9GB 6GB (66%)"; exit 0 ;;
-  *" logs "*) echo "bot-btc | panic: $ver is broken"; echo "monitor | Authorization: Bearer $(sed -n 's/^MONITOR_API_TOKEN=//p' .env)"; exit 0 ;;
+  *" logs "*) [[ -f "$state/logs" ]] && { cat "$state/logs"; exit 0; }; echo "bot-btc | panic: $ver is broken"; echo "monitor | Authorization: Bearer $(sed -n 's/^MONITOR_API_TOKEN=//p' .env)"; exit 0 ;;
 esac
 """
 
@@ -103,7 +103,8 @@ class Deploy(unittest.TestCase):
             os.chmod(t("bin", name), 0o755)
         self.env = dict(os.environ, PATH=t("bin") + os.pathsep + os.environ["PATH"], OPTIONSBOT_ENVS=t("envs"),
                                                 # 3 s: wait_healthy's loop runs at least once whatever the clock
-                        DEPLOY_TEST_DIR=self.tmp, AGENT_NOTIFY="0", DEPLOY_HEALTH_TIMEOUT_SEC="3")
+                        DEPLOY_TEST_DIR=self.tmp, AGENT_NOTIFY="0", DEPLOY_HEALTH_TIMEOUT_SEC="3",
+                        DEPLOY_OUTAGE_WAIT_SEC="3")
         for k in ("MONITOR_URL", "MVP_MONITOR_URL", "MONITOR_TOKEN", "MVP_MONITOR_TOKEN", "DEPLOY_ENABLED"):
             self.env.pop(k, None)
         self.t = t
@@ -226,6 +227,54 @@ class Deploy(unittest.TestCase):
         self.assertEqual([l.split("\t")[1:] for l in lines], [["mvp", self.b]])
         self.assertEqual(self.creates(), [])
         self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
+
+    # #631: Deribit testnet answering 502 to every connect is not a bad commit.
+    def deribit_logs(self, status="502 Bad Gateway"):
+        err = ("gateway connect: websocket dial wss://test.deribit.com/ws/api/v2: "
+               f"websocket: bad handshake (HTTP {status}: error code: {status[:3]})")
+        line = '{"time":"t","level":"ERROR","msg":"bot exited with error","err":"%s"}' % err
+        self._write(self.t("logs"), f"monitor-1 | ready\nbot-btc-1  | {line}\nbot-eth-1  | {line}\n")
+
+    def outage_marker(self):
+        return self.t("repo", "data", "agents", "deploy", "failed", f"{self.b}.outage")
+
+    # Scenario: Given the testnet returns 502 on connect, When the health check runs,
+    # Then the deploy reports an exchange outage and does not mark the commit as failed.
+    def test_exchange_outage_is_not_a_failed_commit(self):
+        self.deribit_logs()
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertIn("not the commit; waiting up to 3 s more", self.output)
+        self.assertIn("Deribit unreachable: HTTP 502 on connect, 2 bot exits — exchange outage, not a bad commit", self.output)
+        self.assertEqual(self.read("docker.log").count(" logs "), 2)  # looked again after the extra wait
+        self.assertEqual(self.mvp_head(), self.b)  # no rollback: A could not connect either
+        self.assertEqual(self.read("envs", "history", "mvp.failed"), "")
+        self.assertEqual(self.read("envs", "history", "mvp.deployed").strip(), self.a)
+        self.assertEqual(self.read("envs", "history", "deploys.tsv"), "")  # no rollback line for cmd/dora
+        self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["B"])
+        self.assertEqual(self.creates(), [])
+        self.assertEqual(self.ledger_ends(), [("exchange_outage", self.b[:7])])
+        self.assertTrue(os.path.exists(self.outage_marker()))  # notified once per commit
+
+    def test_after_the_outage_the_next_tick_deploys_the_commit(self):
+        self.deribit_logs()
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertEqual(self.run_deploy(), 1, self.output)  # still down: tried again, not skipped
+        Monitor.healthy = {"A", "B"}
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.read("envs", "history", "mvp.deployed").strip(), self.b)
+        self.assertEqual(self.ledger_ends(), [("exchange_outage", self.b[:7])] * 2 + [("deployed", self.b[:7])])
+        self.assertFalse(os.path.exists(self.outage_marker()))
+        self.assertEqual(self.creates(), [])
+
+    # Scenario: Given the bot exits for any other reason, Then the rollback behaves as today.
+    def test_a_4xx_handshake_is_the_commit_and_rolls_back(self):
+        self.deribit_logs("404 Not Found")
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertNotIn("waiting up to", self.output)
+        self.assertEqual(self.mvp_head(), self.a)
+        self.assertEqual(self.read("envs", "history", "mvp.failed").strip(), self.b)
+        self.assertEqual(len(self.creates()), 1)
+        self.assertEqual(self.ledger_ends(), [("rolled_back", self.b[:7])])
 
     # #548: after a deploy, no untagged image and no build cache older than 72 h.
     def prunes(self):
