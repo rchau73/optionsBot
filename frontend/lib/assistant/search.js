@@ -8,6 +8,8 @@ const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 // A passage whose title has exactly the question's words is about that term.
 const TITLE_MATCH_BOOST = 2.0;
+// A setting's tip ("tip:<key>", #621) the question names ranks before every other passage.
+const TIP_PREFIX = "tip:";
 
 /** The share of the question's weight the best passage must hold, else "I don't know". */
 export const DEFAULT_NO_ANSWER = 0.5;
@@ -106,11 +108,16 @@ export class HelpIndex {
         const norm = 1 - BM25_B + (BM25_B * this.lens[i]) / this.avgDL;
         score += (idf * f * (BM25_K1 + 1)) / (f + BM25_K1 * norm);
       }
-      if (sameTerms(this.titles[i], terms)) score *= TITLE_MATCH_BOOST;
-      if (score > 0) hits.push({ passage: this.docs[i], score, coverage: found / weight });
+      const titled = sameTerms(this.titles[i], terms);
+      if (titled) score *= TITLE_MATCH_BOOST;
+      if (score > 0) {
+        const namedTip = titled && String(this.docs[i].source ?? "").startsWith(TIP_PREFIX);
+        hits.push({ passage: this.docs[i], score, coverage: found / weight, namedTip });
+      }
     });
-    hits.sort((a, b) => b.score - a.score);
-    return hits.slice(0, k);
+    // A setting's tip the question names comes first (#621); every other hit ranks by score.
+    hits.sort((a, b) => (a.namedTip !== b.namedTip ? (a.namedTip ? -1 : 1) : b.score - a.score));
+    return hits.slice(0, k).map(({ namedTip, ...hit }) => hit);
   }
 }
 

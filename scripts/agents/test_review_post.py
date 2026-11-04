@@ -39,6 +39,20 @@ class Completeness(unittest.TestCase):
             self.assertIn(f"- `{f}` — read: yes", body)
         self.assertIn("- go test: ok", body)
 
+    def test_a_quoted_html_comment_does_not_end_the_block(self):
+        # #632: PR #612's review quoted "<!-- guide: … -->" and could not be read.
+        r, _ = review({"summary": "s", "checked": read_all(), "ran": "- read the `<!-- guide: route:POST /x -->` marker",
+                       "findings": [], "policy": {"changes": "no", "why": "x"}}, FILES)
+        self.assertEqual(r["verdict"], "clean")
+
+    def test_no_block_still_fails(self):
+        d = tempfile.mkdtemp()
+        md = os.path.join(d, "agent.md")
+        open(md, "w").write("answer without a block\n")
+        with self.assertRaises(SystemExit) as e:
+            review_post.parse(md, os.path.join(d, "review.json"))
+        self.assertIn("no REVIEW-JSON block", str(e.exception))
+
     def test_a_file_read_no_is_incomplete(self):
         r, body = review({"summary": "s", "checked": read_all(**{"internal/delivery/write.go": "no"}), "findings": [],
                           "policy": {"changes": "no", "why": "x"}}, FILES, "incomplete")
