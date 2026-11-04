@@ -595,6 +595,10 @@ The report gains a **Neighbours** section (`neighbours` in the JSON): per source
 The stress is not re-run for the neighbours; a key that is not a number setting is refused before anything runs.
 Nothing is applied: a change still takes effect only after a manager confirms it.
 
+**Proposed values instead of a file** (#641): `-set key=value` (repeatable, e.g. `-set gamma_flip_buffer_sd=1.2 -set gex_direction=sma`) makes the proposed config `-proposed`, or without it `-base`, with only those values, on a temporary copy removed after the run; `[]` in a key sets every element of the list.
+The report's `proposed` names it "config_btc.yaml with gamma_flip_buffer_sd=1.2".
+The lab's runner (`scripts/lab_runner.sh`, `cmd/labrun`) uses it for the run requests managers queue in the monitor (`docs/product/lab/README.md`).
+
 ## AI analysis of a comparison
 
 `cmd/analyze` (#426, epic E9) turns one comparison's `report.json` into a plain-words analysis and writes `analysis.md` and `analysis.json` beside it.

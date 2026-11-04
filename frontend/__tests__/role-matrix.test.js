@@ -149,6 +149,10 @@ const FIXTURES = {
     actor: who?.user.username,
   }),
   "POST /api/consent": async ({ who }) => ({ path: "/api/consent", body: { consent: true }, actor: who?.user.username }),
+  "POST /api/lab/requests": async ({ who }) => {
+    process.env.COMPARE_DIR = path.join(dir, "compare"); // the queue in the test's folder, never the clone's data/
+    return { path: "/api/lab/requests", body: { settings: [{ key: "gamma_flip_buffer_sd", value: 1.2 }] }, actor: who?.user.username };
+  },
   "POST /api/lab/validate": async ({ who }) => ({ path: "/api/lab/validate", body: { key: "delta_drift_threshold", value: 0.05 }, actor: who?.user.username }),
   "POST /api/events": async ({ who }) => {
     if (who) auth.store.setAnalyticsConsent(who.user.id, true);
@@ -225,7 +229,7 @@ afterEach(() => {
   global.fetch = realFetch;
   resetAuth();
   fs.rmSync(dir, { recursive: true, force: true });
-  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN"]) delete process.env[k];
+  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN", "COMPARE_DIR"]) delete process.env[k];
   if (modelKey !== undefined) process.env.ANTHROPIC_API_KEY = modelKey;
 });
 

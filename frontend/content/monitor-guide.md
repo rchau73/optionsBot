@@ -492,6 +492,20 @@ No screen shows it yet.
 
 <!-- guide: route:POST /api/lab/validate -->
 
+**Can I ask for a comparison run of a setting I am thinking of changing?** Managers and admins can.
+You send one or more proposed values, and each one is checked first in the same way.
+If a value breaks a rule, the monitor gives the reason and nothing is queued.
+A valid request waits in a queue with the status queued, and the audit trail records your username.
+A runner takes one request at a time and compares the bot's current settings with yours on the last seven days of past data, and also tries your number a little higher and a little lower.
+The status then goes to running, and then to done, or to failed with a short reason.
+A request that has not run within a day is marked expired.
+You may have three requests waiting or running at a time.
+A finished run appears in the list of runs, in percentages only, labelled "backtested, not a forecast".
+The request changes nothing: no config file or bot setting is touched, and a change takes effect only after a manager confirms it.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/requests -->
+
 Each environment has its own people and roles.
 
 Learn more: "Sign-in and password" and "For admins" in this guide.
