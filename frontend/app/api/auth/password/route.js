@@ -38,6 +38,7 @@ export async function POST(request) {
     current: body?.current,
     next: body?.next,
     ip: clientIp(request),
+    userAgent: request.headers.get("user-agent"),
   });
   if (!result.ok) {
     if (result.session) return sessionRequired();

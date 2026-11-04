@@ -43,6 +43,8 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"halted":           v.Halted,
 		"loop_at":          v.LoopAt,
 		"eval_interval_ms": v.EvalEveryMS,
+		"loop_age_sec":     v.LoopAgeSec,
+		"loop_stale":       v.LoopStale,
 		"uptime_sec":       int(time.Since(s.started).Seconds()),
 		"market":           v.Market,
 		"trend":            v.Trend,

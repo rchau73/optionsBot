@@ -24,6 +24,8 @@ def report(**over):
         "week": WEEK, "events_in_week": 120,
         "active": {"week": {"users": 20, "by_role": {"user": 20}}},
         "cohorts": [
+            {"week": "2026-W38", "users": 12, "status": "flattening",
+             "retained": [{"offset": o, "users": n, "pct": 100 * n / 12} for o, n in ((1, 8), (2, 7), (3, 7), (4, 7), (5, 6))]},
             {"week": "2026-W41", "users": 12, "retained": [{"offset": 1, "users": 9, "pct": 75.0}, {"offset": 2, "users": 6, "pct": 50.0}]},
             {"week": "2026-W42", "users": 10, "retained": [{"offset": 1, "users": 4, "pct": 40.0}]},
             {"week": "2026-W43", "users": 3, "retained": []},
@@ -77,8 +79,33 @@ class Pure(unittest.TestCase):
         self.assertTrue(text.startswith("🤖 **Usage report** — week 2026-W43"))
         row = next(l for l in text.splitlines() if l.startswith("| mvp"))
         # 20 active, −50 % vs 40, W42's cohort +1 = 4 of 10, 2 of 3 first answers, 5 tips + 2 videos, 4 answers.
-        self.assertEqual(row, "| mvp | 20 | -50 % | 4 of 10 (40 %, 2026-W42) | 2 of 3 (67 %) | 7 | 4 (75 %) | 0 | `mvp/data/monitor/reports/2026-W43.md` |")
+        self.assertEqual(row, "| mvp | 20 | -50 % | 4 of 10 (40 %, 2026-W42) | flattening (2026-W38) | 2 of 3 (67 %) | 7 | 4 (75 %) | 0 | `mvp/data/monitor/reports/2026-W43.md` |")
         self.assertNotIn("| stable", text)  # no report: left out
+
+    def test_curve_is_the_latest_cohort_with_four_ended_weeks(self):
+        """#607: the newest cohort that can be judged by time gives the curve; its status only, from the fixed list."""
+        r = report()
+        r["cohorts"].insert(1, {"week": "2026-W39", "users": 6, "status": "too few to judge",
+                                "retained": [{"offset": o, "users": 3, "pct": 50.0} for o in (1, 2, 3, 4)]})
+        self.put("mvp", r, drops())
+        row = next(l for l in self.comment().splitlines() if l.startswith("| mvp"))
+        self.assertIn("| too few to judge (2026-W39) |", row)
+
+    def test_no_cohort_with_four_ended_weeks_says_so(self):
+        r = report()
+        r["cohorts"] = r["cohorts"][1:]  # W41 has 2 ended weeks at most
+        self.put("mvp", r, drops())
+        self.assertIn("| — (no cohort has 4 ended weeks) |", self.comment())
+
+    def test_scenario_privacy_unchanged_a_status_outside_the_list_is_not_copied(self):
+        """#607: privacy is unchanged — the curve is one of the fixed statuses, never the report's text."""
+        r = report()
+        r["cohorts"][0]["status"] = "alice a0a0a0a0a0a0a0a0 1234.5678"
+        self.put("mvp", r, drops())
+        text = self.comment()
+        self.assertIn("| — (2026-W38) |", text)
+        for leak in ("alice", "a0a0a0a0a0a0a0a0", "1234.5678"):
+            self.assertNotIn(leak, text)
 
     def test_no_events_in_the_week_leaves_the_env_out(self):
         self.put("stable", report(events_in_week=0), drops())
@@ -90,7 +117,7 @@ class Pure(unittest.TestCase):
     def test_scenario_user_session_and_amount_fields_are_not_in_the_comment(self):
         r = report(user="alice", user_id="a0a0a0a0a0a0a0a0", session_id="b" * 32, amount=1234.5678)
         r["active"]["week"]["user"] = "bob"
-        r["cohorts"][1]["session"] = "c" * 32
+        r["cohorts"][2]["session"] = "c" * 32
         r["help"]["amount"] = 98765.4321
         d = drops(dict(ACTIVE_DROP, user="carol", amount=5555.55))
         self.put("mvp", r, d)
@@ -106,7 +133,7 @@ class Pure(unittest.TestCase):
         self.put("mvp", report(), drops())
         text = self.comment()
         row = next(l for l in text.splitlines() if l.startswith("| stable (live)"))
-        self.assertEqual(row, "| stable (live) | — | -50 % | 40 % (2026-W42) | 67 % | — | 75 % | 2 | `stable/data/monitor/reports/2026-W43.md` |")
+        self.assertEqual(row, "| stable (live) | — | -50 % | 40 % (2026-W42) | flattening (2026-W38) | 67 % | — | 75 % | 2 | `stable/data/monitor/reports/2026-W43.md` |")
         live_drops = [l for l in text.splitlines() if l.startswith("- stable:")]
         self.assertEqual(live_drops, ["- stable: weekly active users: -50 % against the mean of the base weeks",
                                       "- stable: manual-close dialogs confirmed: 50 % of starts, was 80 % (-30 pts)"])

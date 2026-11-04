@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import UsersAdmin from "@/components/UsersAdmin";
 import UserMenu from "@/components/UserMenu";
 import { confirmText, newUserProblem, passwordFormProblem } from "@/lib/users";
@@ -17,6 +17,16 @@ function mockFetch(answer = reply(200, {})) {
   global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users: USERS }) : answer));
 }
 const sent = () => global.fetch.mock.calls.filter(([, init]) => init?.method);
+
+/**
+ * Clicks a button that sends a request and waits, inside act, until the mocked
+ * reply is rendered (#592): a findBy* polls against a 1 s wall-clock timer that
+ * a busy or frozen runner can fire before React renders the reply.
+ */
+const clickAndSettle = (button) =>
+  act(async () => {
+    fireEvent.click(button);
+  });
 
 const realFetch = global.fetch;
 afterEach(() => {
@@ -54,8 +64,8 @@ describe("Users page", () => {
     expect(sent()).toEqual([]);
 
     fireEvent.click(within(screen.getByTestId("user-bob")).getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("bob is deleted (3 analytics events removed)");
+    await clickAndSettle(screen.getByRole("button", { name: "Delete user" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob is deleted (3 analytics events removed)");
     expect(sent()).toEqual([["/api/admin/users/2", expect.objectContaining({ method: "DELETE" })]]);
   });
 
@@ -63,8 +73,8 @@ describe("Users page", () => {
     mockFetch(reply(200, { events_removed: 1, survey_answers_error: "the user is deleted but their survey answers are not (disk full): the monitor deletes them at its next start" }));
     render(<UsersAdmin me="admin" />);
     fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Delete" }));
-    fireEvent.click(screen.getByRole("button", { name: "Delete user" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("bob is deleted, but: the user is deleted but their survey answers are not (disk full)");
+    await clickAndSettle(screen.getByRole("button", { name: "Delete user" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob is deleted, but: the user is deleted but their survey answers are not (disk full)");
   });
 
   test("a role change asks first and sends PATCH with the new role; the server's refusal is shown", async () => {
@@ -75,8 +85,8 @@ describe("Users page", () => {
     fireEvent.change(within(me).getByLabelText("Role of admin"), { target: { value: "user" } });
     fireEvent.click(within(me).getByRole("button", { name: "Change role" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("admin: admin → user");
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Change role" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("there must always be an admin");
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Change role" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("there must always be an admin");
     const [[url, init]] = sent();
     expect(url).toBe("/api/admin/users/1");
     expect(init.method).toBe("PATCH");
@@ -97,8 +107,8 @@ describe("Users page", () => {
 
     fireEvent.change(within(dialog).getByLabelText("New password"), { target: { value: "a long new password" } });
     fireEvent.change(within(dialog).getByLabelText("Confirm new password"), { target: { value: "a long new password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Reset password" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("bob's password is reset");
+    await clickAndSettle(within(dialog).getByRole("button", { name: "Reset password" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob's password is reset");
     const [[url, init]] = sent();
     expect(url).toBe("/api/admin/users/2/password");
     expect(JSON.parse(init.body)).toEqual({ password: "a long new password" });
@@ -108,8 +118,8 @@ describe("Users page", () => {
     mockFetch(reply(200, {}));
     render(<UsersAdmin me="admin" />);
     fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Sign out everywhere" }));
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sign out everywhere" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("bob is signed out everywhere");
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Sign out everywhere" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob is signed out everywhere");
     expect(sent()[0][0]).toBe("/api/admin/users/2/signout");
   });
 
@@ -126,8 +136,8 @@ describe("Users page", () => {
     expect(sent()).toEqual([]);
 
     fireEvent.change(within(form).getByLabelText("Confirm password"), { target: { value: "carol's password" } });
-    fireEvent.click(within(form).getByRole("button", { name: "Add user" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("carol (user) is added");
+    await clickAndSettle(within(form).getByRole("button", { name: "Add user" }));
+    expect(screen.getByRole("status")).toHaveTextContent("carol (user) is added");
     const [[url, init]] = sent();
     expect(url).toBe("/api/admin/users");
     expect(JSON.parse(init.body)).toEqual({ username: "carol", email: null, role: "user", password: "carol's password" });

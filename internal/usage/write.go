@@ -9,22 +9,24 @@ import (
 	"time"
 )
 
-// Run is RunWith on the fixed drop rules and DropBaseWeeks.
+// Run is RunWith on the fixed drop and flattening rules and DropBaseWeeks.
 func Run(eventsPath string, from, to time.Time, label, outDir string) (Report, []string, error) {
-	return RunWith(eventsPath, from, to, label, outDir, DefaultRules(), DropBaseWeeks)
+	return RunWith(eventsPath, from, to, label, outDir, DefaultRules(), DefaultFlatRules(), DropBaseWeeks)
 }
 
-// RunWith reads the events file, builds the report of [from, to), adds its
-// drop check against the baseWeeks weeks before it (Drops with rules) and
-// writes <outDir>/<label>.md and .json. A missing or empty file is a report
-// that says no events were recorded, not an error. Returns the two paths.
-func RunWith(eventsPath string, from, to time.Time, label, outDir string, rules Rules, baseWeeks int) (Report, []string, error) {
+// RunWith reads the events file, builds the report of [from, to), judges its
+// cohorts on flat (FlatteningWith), adds its drop check against the baseWeeks
+// weeks before it (Drops with rules) and writes <outDir>/<label>.md and .json.
+// A missing or empty file is a report that says no events were recorded, not
+// an error. Returns the two paths.
+func RunWith(eventsPath string, from, to time.Time, label, outDir string, rules Rules, flat FlatRules, baseWeeks int) (Report, []string, error) {
 	lg, err := Load(eventsPath)
 	if err != nil {
 		return Report{}, nil, err
 	}
 	r := BuildLog(lg, from, to)
 	r.Week = label
+	r.SetCohortRules(flat)
 	a := Drops(r, BuildWeeks(lg.Events, from, baseWeeks), rules)
 	r.Drops = &a
 	paths, err := Write(outDir, label, r)

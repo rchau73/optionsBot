@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AssistantProvider from "@/components/AssistantProvider";
 import { MenuNav } from "@/components/MenuBar";
 import TradeHistory from "@/components/TradeHistory";
@@ -28,6 +28,13 @@ import {
 // the monitor's own /api/assistant routes.
 
 jest.mock("@/lib/track", () => ({ track: jest.fn() }));
+
+// Each test renders the whole menu bar and panel and runs in ~40 ms alone, but
+// under a loaded runner (the Dev agent's checks: Go -race beside every jest
+// worker) one passed the 5 s default and failed with no race in it (#602).
+// Room for that load: 20 s a test, 5 s for each findBy/waitFor (default 1 s).
+jest.setTimeout(20_000);
+configure({ asyncUtilTimeout: 5_000 });
 
 const TRADE = {
   bot: "btc",

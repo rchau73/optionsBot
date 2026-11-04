@@ -61,7 +61,7 @@ export function sameOrigin(request) {
 /**
  * For a state-changing route: the person behind the request, re-read from the
  * database (live session, existing user, current role ≥ need — never the
- * token's word alone, #171). → { auth, user } or { response } (401 / 403 / 503)
+ * token's word alone, #171). → { auth, user, sid } or { response } (401 / 403 / 503)
  * to return as is.
  */
 export async function requireRole(request, need) {
@@ -72,7 +72,7 @@ export async function requireRole(request, need) {
     return { response: Response.json({ error: "sign-in is unavailable: see the monitor's logs" }, { status: 503 }) };
   }
   const r = await auth.actingUser(readCookie(request, ACCESS_COOKIE), need);
-  if (r.ok) return { auth, user: r.user };
+  if (r.ok) return { auth, user: r.user, sid: r.sid };
   return { response: r.status === 403 ? roleRequired(need) : sessionRequired() };
 }
 

@@ -347,6 +347,9 @@ func runLive(cfg *config.Config, cfgFile string) error {
 			"idle", idle.Round(time.Second), "limit", stallAfter)
 		fail(fmt.Errorf("decision loop stalled for %s", idle.Round(time.Second)))
 	})
+	// Earlier and log-only (#593): a cycle more than 2 intervals old, or the
+	// host suspended, is an ERROR line; /api/status shows loop_stale.
+	go strategy.WatchLoopAge(ctx, strat.Progress, time.Duration(cfg.EvalIntervalMS)*time.Millisecond, 10*time.Second)
 
 	if err := strat.Run(ctx); err != nil {
 		slog.Info("bot stopped", "reason", err)

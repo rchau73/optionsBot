@@ -54,7 +54,9 @@ For a buy-back it also shows that trade's past result, net of fees, in coin and 
 A past result is no promise of future results.
 *All actions, explained* opens the Activity page.
 
-**When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero.
+**When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
+
+**A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
 
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
@@ -90,6 +92,7 @@ A switch changes the amounts between the coin and USD.
 A month with a loss is tinted and marked "loss".
 A month without closes says "no closes".
 The current month says "so far".
+Before the first close, every tile says "not yet", never a zero.
 
 **When something looks wrong**: a loss month is normal data, not an error; the table keeps it in the open.
 "Unknown" in *holding alone* means the price for that month was not recorded.
@@ -253,6 +256,9 @@ A section is amber when it needs attention.
 **Open positions**: one line per leg, grouped by strangle.
 Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.
 *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
+
+*Opened* is when the bot sold the leg, with its age.
+A roll or a repair opens a new leg on another strike, so a leg that showed a large gain can be replaced by one that starts a little negative: the opening fees and the spread come first, and time decay earns them back.
 <!-- guide: route:POST /api/bots/[bot]/close -->
 
 **Missing legs**: one row for each one-legged strangle.
@@ -403,6 +409,20 @@ Sign in again to continue.
 
 Learn more: "Roles" in this guide.
 
+## Active sessions
+
+<!-- guide: route:DELETE /api/auth/sessions/[id] -->
+
+Active sessions lists every browser where you are signed in to the monitor, whatever your role. You can sign out the ones you don't recognise, such as a lost phone or a shared computer, without changing your password.
+
+**How to see where I am signed in**: choose Active sessions in the account menu. Each row shows the browser, when it signed in and when it was last used. The browser you are using is marked This browser. No address is kept or shown.
+
+**How to sign out another device**: choose Sign out on its row. From that moment the browser can no longer change anything, and it goes to the sign-in page within 15 minutes, when its sign-in renews and fails. Until then it can still read pages.
+
+**Signing out this browser**: use Sign out in the account menu. Active sessions does not sign out the browser you are using.
+
+Learn more: "Sign-in and password" in this guide.
+
 ## Deleting your account
 
 <!-- guide: survey:exit, route:DELETE /api/auth/account -->
@@ -525,6 +545,12 @@ Counts only, never a name.
 When their share rises 20 points or more over the 3 weeks before, the card shows DROP and sits under "Needs your attention".
 Under 10 people it gives a small-sample note and no share.
 Nobody gone shows "No one stopped coming back".
+
+**Do they come back** (Q2 on Analytics): each group of people who first came in the same week, and the share of them back in each of the 12 weeks after.
+A week that has not ended yet shows —, never 0 %.
+The Curve column says whether the group's return has levelled off: **flattening** when each of its last 3 weeks is within 5 points of the week before, **falling** when one dropped by more, **rising** when one rose by more.
+Under 10 people, or before 4 weeks have ended, it says **too few to judge** and makes no claim.
+On a phone the table scrolls sideways inside its card.
 
 Learn more: "Roles" and "Analytics and your consent" in this guide.
 

@@ -3,7 +3,7 @@ import clsx from "clsx";
 import Badge from "./Badge";
 import MicroBar from "./MicroBar";
 import { CloseButton, ConfirmCloseModal } from "./ManualClose";
-import { ageSeconds, formatAge, formatNumber, formatPct, formatPrice, isNumber } from "@/lib/format";
+import { ageSeconds, formatAge, formatDate, formatDateTime, formatNumber, formatPct, formatPrice, isNumber } from "@/lib/format";
 import { DELTA_EXIT_WARN, approxUSD, deltaExitRatio, formatCoinFirst } from "@/lib/details";
 import { holdRule } from "@/lib/held";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
@@ -69,6 +69,32 @@ function KeptCell({ pct }) {
   );
 }
 
+/** "3 d" / "5 h" / "20 m" since a leg was opened; null when unknown. */
+export function heldFor(iso, now = Date.now()) {
+  const s = ageSeconds(iso, now);
+  if (s == null) return null;
+  if (s < 3600) return `${Math.floor(s / 60)} m`;
+  if (s < 2 * 86400) return `${Math.floor(s / 3600)} h`;
+  return `${Math.floor(s / 86400)} d`;
+}
+
+/** The leg's opened date and how long ago; the full time (and the last top-up) in its title. */
+function OpenedCell({ row }) {
+  if (!row.openedAt) {
+    return (
+      <span className="text-muted" title="Opened before the trade history the monitor loaded">
+        —
+      </span>
+    );
+  }
+  const title = `Opened ${formatDateTime(row.openedAt)}${row.lastAddedAt ? ` · last added ${formatDateTime(row.lastAddedAt)}` : ""}`;
+  return (
+    <span title={title} data-testid="opened">
+      {formatDate(row.openedAt)} <span className="text-[11px] text-muted">{heldFor(row.openedAt)}</span>
+    </span>
+  );
+}
+
 const gammaE5 = (v) => (isNumber(v) ? (v * 1e5).toFixed(1) : "—");
 
 /** The bot's state for a group's label: down, stale with its age, or nothing. */
@@ -84,7 +110,8 @@ function botNote(health) {
  * default: "BTC · 25-day slot · expires 13 Nov · 16 days"), with the group's
  * P&L in its coin and its net greeks. A leg row: chip + strike (the full
  * instrument in its title; a click opens the strangle's payoff chart with
- * onOpenChart(bot, strangleId, element), #391), qty, entry → mark, premium
+ * onOpenChart(bot, strangleId, element), #391), opened (date and age, #614),
+ * qty, entry → mark, premium
  * kept, P&L in coin ≈ USD, |Δ| → exit, OTM %, stop, Θ/day, Vega, Γ ×10⁻⁵ and
  * Close… only where the bot allows a manual close. held: missing legs by
  * "<bot>:<strangle id>" (heldRows), each shown as its own row in its strangle.
@@ -101,6 +128,9 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
         <thead className="sticky top-0 z-10 bg-panel text-left text-xs uppercase text-muted">
           <tr className="border-b border-line">
             <th className={TD}>Leg</th>
+            <th className={TD} title="When the bot sold this leg: the first sale on this strike since it last held none. A leg opened by a roll or a repair is new: its P&L often starts a little negative, from the opening fees and the spread, and improves as time passes.">
+              Opened
+            </th>
             <th className="px-2 py-1 text-right">Qty</th>
             <th className="px-2 py-1 text-right" title="Entry price → the mark used to value the leg (mid of the live ticker)">
               Entry → mark
@@ -135,7 +165,7 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
           return (
             <tbody key={g.key} className={clsx("border-b border-line", dim && "opacity-60")} data-testid={`group-${g.key}`}>
               <tr className="bg-slate-800/40">
-                <td colSpan={4} className="px-2 py-1 font-semibold">
+                <td colSpan={5} className="px-2 py-1 font-semibold">
                   {g.key} <span className="text-xs font-normal text-muted">· {g.legs} legs</span>
                   {note ? <span className="ml-2 text-xs font-normal text-warn">{note}</span> : null}
                 </td>
@@ -188,6 +218,9 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
                       ) : null}
                     </span>
                   </td>
+                  <td className={TD}>
+                    <OpenedCell row={r} />
+                  </td>
                   <td className={NUM}>{r.qty}</td>
                   <td className={NUM}>
                     {formatPrice(r.entry)} → <Live value={r.mark}>{formatPrice(r.mark)}</Live>
@@ -219,7 +252,7 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
               ))}
               {missing.map((m) => (
                 <tr key={m.key} className="text-muted" data-testid={`missing-${m.key}`}>
-                  <td colSpan={12} className="px-2 py-1 text-xs">
+                  <td colSpan={13} className="px-2 py-1 text-xs">
                     <Badge tone={m.missing === "call" ? "call" : "put"}>{m.missing}</Badge> not held: {holdRule(m.rule).label} ·{" "}
                     <a href="#held" className="underline underline-offset-2 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet">
                       Missing legs

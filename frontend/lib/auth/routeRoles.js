@@ -27,6 +27,7 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
   { route: "DELETE /api/auth/account", roles: SIGNED_IN, audit: "account_deleted" },
+  { route: "DELETE /api/auth/sessions/[id]", roles: SIGNED_IN, audit: "session_ended" },
   { route: "PATCH /api/admin/users/[id]", roles: ADMINS, audit: "role_changed" },
   { route: "POST /api/admin/users", roles: ADMINS, audit: "user_created" },
   { route: "POST /api/admin/users/[id]/password", roles: ADMINS, audit: "password_reset" },
@@ -53,10 +54,11 @@ export const STATE_CHANGING_ROUTES = [
 ];
 
 /**
- * Read-only routes that only some roles may call (#539): the matrix test
+ * Read-only routes that only some roles (or only a live session, #584) may call (#539): the matrix test
  * calls each as every caller too, and checks the route file exports GET only.
  */
 export const ROLE_GUARDED_READS = [
+  { route: "GET /api/auth/sessions", roles: SIGNED_IN },
   { route: "GET /api/lab/runs", roles: MANAGERS },
   { route: "GET /api/lab/runs/[id]", roles: MANAGERS },
 ];

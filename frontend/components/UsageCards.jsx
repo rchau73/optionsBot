@@ -1,11 +1,15 @@
 import Badge from "./Badge";
 import Panel from "./Panel";
 import {
+  COHORT_NOT_JUDGED,
+  COHORT_TOO_FEW,
   FIRST_ANSWERS_TARGET_MS,
   LAPSED_LOOKBACK_WEEKS,
   NPS_MIN_ANSWERS,
   SMALL_SAMPLE,
   attentionItems,
+  cohortCaption,
+  cohortView,
   countRows,
   lapsedView,
   minutesText,
@@ -21,6 +25,8 @@ import { formatDateTime } from "@/lib/format";
 // people and actions only: the report carries no id, name, amount or text.
 
 const TAG_TONE = { DROP: "bad", FLAG: "warn", NEVER: "muted", OK: "good" };
+// A cohort's curve (#607): the status is in words, the tone only repeats it.
+const CURVE_TONE = { flattening: "good", falling: "bad", rising: "neutral", [COHORT_TOO_FEW]: "muted", [COHORT_NOT_JUDGED]: "muted" };
 
 /** A text tag: colour is never the only signal. */
 export function Tag({ tag }) {
@@ -164,50 +170,67 @@ function Active({ a }) {
 }
 
 function Cohorts({ cohorts }) {
-  const offsets = [1, 2, 3, 4];
+  const { rows, offsets, empty } = cohortView(cohorts);
+  if (!rows.length) {
+    return (
+      <Card q="Q2" title="Do they come back">
+        <p className="text-sm text-muted">No one had a first session in these weeks.</p>
+      </Card>
+    );
+  }
   return (
     <Card q="Q2" title="Do they come back">
-      <table className="w-full text-sm">
-        <caption className="sr-only">Share of each first-week cohort back in each later week; — for a week not ended</caption>
-        <thead>
-          <tr className="text-xs text-muted">
-            <th scope="col" className="text-left font-normal">
-              First week
-            </th>
-            <th scope="col" className="text-right font-normal">
-              People
-            </th>
-            {offsets.map((o) => (
-              <th key={o} scope="col" className="text-right font-normal">
-                +{o}
+      {/* Below 480 px the 12 weeks scroll inside this box, never the page (E12). */}
+      <div className="max-w-full overflow-x-auto">
+        <table className="w-full text-sm">
+          <caption className="sr-only">{cohortCaption(rows)}</caption>
+          <thead>
+            <tr className="text-xs text-muted">
+              <th scope="col" className="text-left font-normal">
+                First week
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {cohorts.map((c) => (
-            <tr key={c.week} className="border-t border-line/60">
-              <th scope="row" className="py-0.5 text-left font-normal">
-                {c.week}
+              <th scope="col" className="text-right font-normal">
+                People
               </th>
-              <td className="text-right tabular-nums">{c.users}</td>
-              {offsets.map((o) => {
-                const r = (c.retained ?? []).find((x) => x.offset === o);
-                const pct = r?.pct;
-                return (
-                  <td
-                    key={o}
-                    className="text-right tabular-nums"
-                    style={typeof pct === "number" ? { backgroundColor: `rgb(56 189 248 / ${(0.05 + (0.45 * pct) / 100).toFixed(2)})` } : undefined}
-                  >
-                    {r ? `${pctText(pct)} (${r.users})` : "—"}
-                  </td>
-                );
-              })}
+              {offsets.map((o) => (
+                <th key={o} scope="col" className="text-right font-normal">
+                  +{o}
+                </th>
+              ))}
+              <th scope="col" className="pl-2 text-left font-normal">
+                Curve
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.week} className="border-t border-line/60">
+                <th scope="row" className="whitespace-nowrap py-0.5 pr-2 text-left font-normal">
+                  {c.week}
+                </th>
+                <td className="text-right tabular-nums">{c.users}</td>
+                {offsets.map((o) => {
+                  const r = (c.retained ?? []).find((x) => x.offset === o);
+                  const pct = r?.pct;
+                  return (
+                    <td
+                      key={o}
+                      className="whitespace-nowrap pl-2 text-right tabular-nums"
+                      style={typeof pct === "number" ? { backgroundColor: `rgb(56 189 248 / ${(0.05 + (0.45 * pct) / 100).toFixed(2)})` } : undefined}
+                    >
+                      {r ? `${pctText(pct)} (${r.users})` : "—"}
+                    </td>
+                  );
+                })}
+                <td className="whitespace-nowrap pl-2">
+                  <Badge tone={CURVE_TONE[c.status] ?? "muted"}>{c.status}</Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {empty.length ? <p className="text-xs text-muted">Weeks with no first session, left out: {empty.join(", ")}</p> : null}
     </Card>
   );
 }
