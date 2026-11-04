@@ -21,4 +21,6 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
     days with no recording are listed and the table marked indicative (`docs/studies/liquidity-cap.md`). The bot's cap stays fixed at 10.
   - `-regimeholds confirmed,live` (study, #550, `replay/regimehold.go`): one replay per regime-side rule — the bot's (confirmed negative regime) and also on a live negative regime — one table:
     net, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week (`docs/studies/regime-hold.md`); `-regimehold live` runs one replay so.
+  - `-sheds all` (study, #637, `replay/shed.go`): one replay per GEX shed variant (today, none, `partial:K`, `delta:D`, a perp `hedge`) at each `-costs` multiple (1,2), one table:
+    net (coin, USD), shed closes per break, the named windows 9–17 Oct and 29 Oct–4 Nov, worst day/week, max MM, a −20 % gap on the held book, stops, MM cuts, a verdict against today's shed (`docs/studies/shed-variants.md`); `-shed hedge` runs one replay so.
   Not modelled there: rebalance, leg balancing, churn breaker, journal-restored holds.

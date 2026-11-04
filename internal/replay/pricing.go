@@ -71,21 +71,64 @@ type marginLeg struct {
 }
 
 // scanIM is the worst loss of the short legs over the shock grid, in the coin.
-func scanIM(legs []marginLeg, spot float64) float64 {
+func scanIM(legs []marginLeg, spot float64) float64 { return scanPortfolioIM(legs, 0, spot) }
+
+// scanPortfolioIM is scanIM with an inverse perpetual of perpUSD (USD
+// notional, negative = short) in the book (the shed study's hedge, #637).
+func scanPortfolioIM(legs []marginLeg, perpUSD, spot float64) float64 {
 	worst := 0.0
 	for _, sm := range spotShocks {
 		for _, vm := range volShocks {
-			loss := 0.0
-			for _, l := range legs {
-				p0 := inversePrice(l.optType, spot, l.strike, l.years, l.iv)
-				p1 := inversePrice(l.optType, spot*sm, l.strike, l.years, l.iv*vm)
-				loss += l.qty * (p1 - p0) // a short owes more coin as its price rises
-
-			}
-			worst = math.Max(worst, loss)
+			worst = math.Max(worst, shockLoss(legs, perpUSD, spot, sm, vm))
 		}
 	}
 	return worst
+}
+
+// shockLoss is the book's loss in the coin when spot moves × sm and every IV × vm.
+func shockLoss(legs []marginLeg, perpUSD, spot, sm, vm float64) float64 {
+	loss := -perpPnL(perpUSD, spot, spot*sm)
+	for _, l := range legs {
+		p0 := inversePrice(l.optType, spot, l.strike, l.years, l.iv)
+		p1 := inversePrice(l.optType, spot*sm, l.strike, l.years, l.iv*vm)
+		loss += l.qty * (p1 - p0) // a short owes more coin as its price rises
+	}
+	return loss
+}
+
+// perpPnL is what an inverse perpetual of usd (USD notional, negative =
+// short) earns in the coin when its price moves from p0 to p1.
+func perpPnL(usd, p0, p1 float64) float64 {
+	if p0 <= 0 || p1 <= 0 {
+		return 0
+	}
+	return usd * (1/p0 - 1/p1)
+}
+
+// The study's modelled gap (#637): spot falls 20 % at once and IV rises as
+// the margin scan's worst volatility shock.
+const (
+	GapMove       = 0.80
+	GapIVMultiple = 1.3
+)
+
+// gapLoss is the held book's loss in the coin if spot gapped × move with IV ×
+// ivMult (no exit fills inside the gap).
+func gapLoss(legs []marginLeg, perpUSD, spot, move, ivMult float64) float64 {
+	return math.Max(shockLoss(legs, perpUSD, spot, move, ivMult), 0)
+}
+
+// Widen is q with its spread m times as wide around the same mid (the
+// study's cost sensitivity); a bid stays above zero (never under bid ÷ m), so
+// a side that could fill still can. m ≤ 1 or a one-sided book: q as recorded.
+func Widen(q recorder.Quote, m float64) recorder.Quote {
+	if m <= 1 || q.Bid <= 0 || q.Ask <= 0 {
+		return q
+	}
+	mid := (q.Bid + q.Ask) / 2
+	q.Bid = math.Max(mid-m*(mid-q.Bid), q.Bid/m)
+	q.Ask = mid + m*(q.Ask-mid)
+	return q
 }
 
 // inversePrice is the Black–Scholes price of an option in the coin (USD
