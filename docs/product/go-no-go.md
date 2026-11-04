@@ -106,3 +106,4 @@ Open state is checked on the board, not here: if a ticket above is closed and it
 - Update sections 7 and 8 when a source changes: a tally, a fake-door result, counsel's answer or a new scorecard reading, each with its date.
 - No name, price, revenue figure or survey answer goes here, only the path under `data/product/` where it lives.
 - A change to the kill criteria is a PRD pull request, never an edit here.
+- What each launch phase needs, measures and does to step back is `launch-plan.md`.
