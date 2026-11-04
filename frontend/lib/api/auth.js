@@ -1,6 +1,6 @@
 // The signed-in person's session and password (/api/auth/...).
 
-import { apiFetch, navigation, sendJSON } from "./http.js";
+import { apiFetch, getJSON, navigation, sendJSON } from "./http.js";
 
 /** Ends the session (its refresh token stops working) and goes to the sign-in page. */
 export async function signOut() {
@@ -17,6 +17,19 @@ export async function signOut() {
  */
 export async function changePassword(current, next) {
   await sendJSON("/api/auth/password", "POST", { current, next });
+}
+
+/** The signed-in person's live sessions (#584): [{ id, browser, created_at, last_used_at, current }]. */
+export async function listSessions(signal) {
+  return (await getJSON("/api/auth/sessions", signal)).sessions;
+}
+
+/**
+ * Ends one of the person's other sessions (#584); its next refresh fails.
+ * Throws with the server's reason (e.g. the session in use).
+ */
+export async function endSession(id) {
+  await sendJSON(`/api/auth/sessions/${encodeURIComponent(id)}`, "DELETE", {});
 }
 
 /**

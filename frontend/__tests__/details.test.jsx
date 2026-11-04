@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import DetailsPage from "@/components/DetailsPage";
 import DotStrip, { MAX_DOTS, dotsOf } from "@/components/DotStrip";
 import MicroBar from "@/components/MicroBar";
-import PositionsTable, { DeltaExitCell } from "@/components/PositionsTable";
+import PositionsTable, { DeltaExitCell, heldFor } from "@/components/PositionsTable";
 import TradeHistory from "@/components/TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
 import {
@@ -20,7 +20,7 @@ import {
   stuckOrders,
   workingOrderCount,
 } from "@/lib/details";
-import { consolidateRows, groupRows, legRows, summarise } from "@/lib/monitor";
+import { consolidateRows, groupRows, legRows, summarise, withOpened } from "@/lib/monitor";
 import { track } from "@/lib/track";
 import { bot, positions, status } from "@/test/fixtures";
 
@@ -353,5 +353,27 @@ describe("Details (pro) page", () => {
     const summary = screen.getByTestId("trades-summary");
     expect(summary).toHaveTextContent("+0.00100 BTC≈ +$85");
     expect(summary).toHaveTextContent("+0.0200 ETH≈ +$50");
+  });
+});
+
+describe("Scenario: each leg shows when it was opened (#614)", () => {
+  test("the date and its age, the full time in the title; unknown is a dash", () => {
+    const rows = consolidateRows(legRows([bot()]));
+    const call = rows.find((r) => r.type === "call");
+    const trades = { btc: [{ kind: "open", at: "2026-11-01T12:00:00Z", qty: call.qty, instrument: call.instrument }] };
+    render(<PositionsTable groups={groupRows(withOpened(rows, trades), "strangle")} />);
+    const opened = screen.getAllByTestId("opened");
+    expect(opened).toHaveLength(1);
+    expect(opened[0].textContent).toContain("2026-11-01");
+    expect(opened[0].getAttribute("title")).toMatch(/^Opened 2026-11-01 09:00:00/);
+    expect(screen.getByTitle("Opened before the trade history the monitor loaded")).toBeInTheDocument();
+  });
+
+  test("heldFor: minutes, then hours up to two days, then days", () => {
+    const now = Date.parse("2026-11-03T12:00:00Z");
+    expect(heldFor("2026-11-03T11:40:00Z", now)).toBe("20 m");
+    expect(heldFor("2026-11-02T00:00:00Z", now)).toBe("36 h");
+    expect(heldFor("2026-10-30T12:00:00Z", now)).toBe("4 d");
+    expect(heldFor(null, now)).toBeNull();
   });
 });

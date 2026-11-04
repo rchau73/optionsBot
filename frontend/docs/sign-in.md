@@ -24,6 +24,7 @@ JWT HS256 (`jose`), 15 min, cookie `access_token_<env>` (`<env>` = `MONITOR_DEPL
 ### Refresh token
 
 32 random bytes, only its SHA-256 stored, 14 days, cookie `refresh_token_<env>` on path `/api/auth`; reusable until logout (several tabs).
+Each session row (`refresh_tokens`) also keeps a random public id (16 hex characters, the only id a person sees), the browser name read from the User-Agent at sign-in (`lib/auth/browser.js`, e.g. `Chrome on Windows`; the header itself is not stored) and when it was last refreshed (written at most once a minute), #584.
 A password change, a role change or a deletion ends every session of that user
 
 ### Silent refresh
@@ -50,6 +51,16 @@ The answer is `{"events_removed" or "events_error", "survey_answers_removed" or 
 Audited as `account_deleted` (the person's own `username` and `role`), followed by `events_deleted` and `survey_answers_deleted` with `reason: account_deleted`; logged `account deleted by its owner`.
 Exchange accounts and funds are not the monitor's and are untouched.
 The dialog's exit question is in [Analytics](analytics.md).
+
+### Active sessions
+
+The header's **Account ▾ → Active sessions** dialog (`components/ActiveSessions.jsx`, #584) lists where the person is signed in and signs out the other browsers, without changing the password.
+`GET /api/auth/sessions` and `DELETE /api/auth/sessions/<id>`: both need a live session, re-read like a state-changing route; any role ([API routes](api-routes.md)).
+A row shows the browser name, when it signed in and when it was last used, and **This browser** on the current one; never a token, hash or address.
+Signing out another browser deletes its session row: its close, rebalance and other changes are refused at once, and its next refresh fails, so it goes to `/login` within 15 min (its access token, a stateless JWT, still reads pages until then); the dialog says so.
+The session in use is refused with 409 (use **Sign out**); someone else's or an unknown id gets 404 and nothing changes.
+Audited as `session_ended` (`username`, `role`, `target_session`: the first 8 characters of the public id); logged `session ended`.
+No analytics event is sent.
 
 ### Reset link
 
@@ -90,6 +101,7 @@ One JSON line for each of these, with username and IP:
 - a reset by link: `password reset by link`, with `event: password_reset`, `via: link`, the person, `by` (the admin who issued it) and the IP;
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
+- another session signed out by its owner: `session ended` (with `event: session_ended` and `target_session`, #584);
 - a refused action.
 
 Never a password, hash, token or `AUTH_SECRET`
@@ -106,6 +118,7 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `reset_link_issued` (with `expires_at`, #307);
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
+- `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);

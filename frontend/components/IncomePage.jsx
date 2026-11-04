@@ -152,7 +152,8 @@ function Tile({ label, loss, children, sub }) {
 function Tiles({ income, unit, coin }) {
   const s = income.summary;
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
-  const total = tileAmount(s?.total_6m, unit);
+  // No close in the window: the total is "not yet", never an invented 0 (#582).
+  const total = (income.months ?? []).some((m) => m.closes > 0) ? tileAmount(s?.total_6m, unit) : null;
   const average = tileAmount(s?.average_month, unit);
   const worst = s?.worst_month ? (unit === "usd" ? s.worst_month.usd : s.worst_month.coin) : null;
   const ww = s?.worst_week;
@@ -160,7 +161,7 @@ function Tiles({ income, unit, coin }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Tile label="Last 6 months, after fees" sub={s ? returnLine(s, coin) : "not yet"}>
-        {s ? amount(total) : <span className="text-muted">not yet</span>}
+        {isNumber(total) ? amount(total) : <span className="text-muted">not yet</span>}
       </Tile>
       <Tile label="Average month" sub={s?.average_month ? upDownLine(s) : "not yet: no month with a close"}>
         {isNumber(average) ? amount(average) : <span className="text-muted">not yet</span>}

@@ -16,6 +16,10 @@ Part of the [monitor README](../README.md). Who may do what, and the Users page 
   - admin: ✓
   - manager: — (403)
   - user: — (403)
+- See your own sessions and sign out your other browsers (Account ▾ → Active sessions, `/api/auth/sessions`, #584); never another person's
+  - admin: ✓
+  - manager: ✓
+  - user: ✓
 - Read the audit trail (Audit page, `/api/admin/audit`)
   - admin: ✓
   - manager: — (403)
@@ -85,6 +89,20 @@ Your own row cannot be deleted or reset (use **Change password**).
 **Does:** `signOutEverywhere`; audited `signed_out_everywhere`
 
 **Refusals:** 404
+
+#### `GET /api/auth/sessions` (#584)
+
+**Does:** `{"sessions": [{id, browser, created_at, last_used_at, current}]}`: the signed-in person's own live sessions, last used first, `current: true` on the one asking (`AuthService.listSessions`); never a token, hash or address.
+Any role; the session is re-read like a state-changing route (`requireRole`), and the role matrix calls it as every caller (`ROLE_GUARDED_READS`)
+
+**Refusals:** 401 no session, an ended one or the service token
+
+#### `DELETE /api/auth/sessions/<id>` `{}` (#584)
+
+**Does:** `endSession`: deletes one of the person's own other sessions (its next refresh fails); audited `session_ended` with `target_session` (the id's first 8 characters).
+Any role; in the role matrix (`STATE_CHANGING_ROUTES`)
+
+**Refusals:** 404 someone else's or an unknown id (nothing changes) · 409 the session in use ("use Sign out")
 
 #### `GET /api/compare` (#302)
 

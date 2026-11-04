@@ -68,26 +68,7 @@ func Markdown(w io.Writer, r Report) error {
 
 	if len(r.Cohorts) > 0 {
 		section("Weekly cohort retention", "Q2")
-		b.WriteString("Users whose first `session_started` fell in the week, and the share with any event in each later week (— = that week has not ended).\n\n")
-		b.WriteString("| Cohort | Users |")
-		for j := 1; j <= CohortWeeks; j++ {
-			fmt.Fprintf(&b, " +%d |", j)
-		}
-		b.WriteString("\n|---|---:|" + strings.Repeat("---:|", CohortWeeks) + "\n")
-		for _, c := range r.Cohorts {
-			fmt.Fprintf(&b, "| %s | %d |", c.Week, c.Users)
-			for j := 1; j <= CohortWeeks; j++ {
-				cell := "—"
-				for _, ret := range c.Retained {
-					if ret.Offset == j {
-						cell = fmt.Sprintf("%d (%s)", ret.Users, fmtPct(ret.Pct))
-					}
-				}
-				b.WriteString(" " + cell + " |")
-			}
-			b.WriteString("\n")
-		}
-		b.WriteString("\n")
+		cohortMarkdown(&b, r.Cohorts, r.CohortRules)
 	}
 
 	if l := r.Lapsed; l != nil {
@@ -175,6 +156,57 @@ func Markdown(w io.Writer, r Report) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// cohortMarkdown is the cohort table (#607): the cohorts with users, the
+// later weeks up to the last one any of them has ended (— = not ended for
+// that cohort, never 0) and each cohort's status on rules.
+func cohortMarkdown(b *strings.Builder, cohorts []Cohort, rules *FlatRules) {
+	if rules == nil {
+		def := DefaultFlatRules()
+		rules = &def
+	}
+	b.WriteString("Users whose first `session_started` fell in the week, and the share with any event in each later week (— = that week has not ended).\n\n")
+	var empty []string
+	weeks := 0
+	for _, c := range cohorts {
+		if c.Users == 0 {
+			empty = append(empty, c.Week)
+			continue
+		}
+		weeks = max(weeks, len(c.Retained))
+	}
+	if len(empty) == len(cohorts) {
+		b.WriteString("No one had a first session in these weeks.\n\n")
+		return
+	}
+	b.WriteString("| Cohort | Users |")
+	for j := 1; j <= weeks; j++ {
+		fmt.Fprintf(b, " +%d |", j)
+	}
+	b.WriteString(" Curve |\n|---|---:|" + strings.Repeat("---:|", weeks) + "---|\n")
+	for _, c := range cohorts {
+		if c.Users == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "| %s | %d |", c.Week, c.Users)
+		for j := 1; j <= weeks; j++ {
+			cell := "—"
+			for _, ret := range c.Retained {
+				if ret.Offset == j {
+					cell = fmt.Sprintf("%d (%s)", ret.Users, fmtPct(ret.Pct))
+				}
+			}
+			b.WriteString(" " + cell + " |")
+		}
+		b.WriteString(" " + c.Status + " |\n")
+	}
+	fmt.Fprintf(b, "\nCurve: flattening = each of the last %d ended weeks within %.0f points of the week before; falling = one fell by more; "+
+		"rising = none fell by more, one rose by more; %s = under %d users or under %d ended weeks.\n\n",
+		rules.Weeks, rules.StepPts, StatusTooFew, rules.MinUsers, rules.Weeks+1)
+	if len(empty) > 0 {
+		fmt.Fprintf(b, "Weeks with no first session, left out: %s\n\n", strings.Join(empty, ", "))
+	}
 }
 
 // surveyMarkdown is the survey tally (#342): coded answers only.

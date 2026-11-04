@@ -771,11 +771,11 @@
     "labels": ["Reserved"]
   },
   "retention": {
-    "short": "Of the people who first came in a given week, the share who came back in each of the next four weeks.",
-    "long": "Analytics page (admins only). Each row is a group of people whose first visit fell in the same week: the first week. The columns show the share of that group seen again one, two, three and four weeks later. A dash marks a week that has not ended yet.",
+    "short": "Of the people who first came in a given week, the share who came back in each of the next twelve weeks.",
+    "long": "Analytics page (admins only). Each row is a group of people whose first visit fell in the same week: the first week. The columns show the share of that group seen again one to twelve weeks later. A dash marks a week that has not ended yet. Curve says whether the share has levelled off: flattening, falling, rising, or too few to judge under 10 people or 4 ended weeks.",
     "risk_income": "It measures whether the monitor is useful enough to come back to, not trading results.",
-    "source": "frontend/docs/analytics.md#analytics-page-445",
-    "labels": ["First week"]
+    "source": "frontend/docs/analytics.md#do-they-come-back-q2-607",
+    "labels": ["First week", "Curve"]
   },
   "roi_take_profit": {
     "short": "Setting: buy a leg back once this share of its premium is earned (0.50 = 50 % shipped).",

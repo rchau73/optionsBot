@@ -24,9 +24,11 @@ var (
 )
 
 const (
-	// requestTimeout bounds how long a request may wait for a reply, counted
-	// from when Call is made (time in the queue counts too).
-	requestTimeout = 30 * time.Second
+	// RequestTimeout bounds how long a request may wait for a reply, counted
+	// from when Call is made (time in the queue counts too). It stays under
+	// two decision cycles (#593, pinned by a test), so one call that is never
+	// answered cannot hold a cycle for longer than that.
+	RequestTimeout = 30 * time.Second
 	writeTimeout   = 10 * time.Second
 	// subscribeChunkSize is the max channels per public/subscribe call.
 	// Deribit enforces a 32 KB message limit; BTC options chains can have
@@ -132,7 +134,7 @@ func New(cfg *config.Config, opts ...Option) *Gateway {
 		fatal:    make(chan error, 1),
 		log:      slog.Default(),
 
-		requestTimeout: requestTimeout,
+		requestTimeout: RequestTimeout,
 	}
 	for _, opt := range opts {
 		opt(g)
@@ -501,9 +503,14 @@ func (g *Gateway) Call(ctx context.Context, method string, params any, priority 
 }
 
 func (g *Gateway) callOnce(ctx context.Context, method string, params any, priority int) (_ JSONRPCResponse, err error) {
+	start := time.Now()
 	defer func() {
 		if errors.Is(err, ErrRequestTimeout) {
 			g.conns.Timeout(time.Now())
+			// The call the caller was waiting on, by name (#593): the cycle
+			// goes on without its answer.
+			g.log.Error("request timed out", "method", method, "priority", priority,
+				"waited", time.Since(start).Round(time.Millisecond), "err", err)
 		}
 	}()
 	id := g.idCounter.Add(1)

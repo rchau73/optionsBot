@@ -11,6 +11,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     plus `candles` (#394, `candles.go`: the last 60 daily OHLC candles and today's live one, built from the startup history fetch and the pushed prices, no new Deribit call; only `Close` drives the trend),
     with `median_flip` and `gex_as_of` beside it for the monitor's regime chart;
   - a change of the SMA trend is journaled once as `trend_changed` (`trend.go`, #118); loop-published snapshots, never calls Deribit) and the journal's in-memory recent events;
+  - `loop_age_sec` (wall-clock age of `loop_at`) and `loop_stale` (over 2 eval intervals, not halted; `strategy.LoopLate`, #593) in `/api/status`; the SME collection names a stale loop in its MANIFEST.
   - `connections.<gateway>` in `/api/status` is each gateway's `ConnStats` (drops, reconnects, timeouts today; last drop time and error — `api.WithConnection`, #87).
   - `key_scope` in `/api/status` is the trading key's scope (`api.WithKeyScope`, #538): `scopes`, `fund_scopes`, `can_move_funds` (null = unknown) and `status` trade_only|can_move_funds|unknown — scope names only, never the key; null when not wired.
   The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only) and `POST /api/rebalance` (manual rebalance, below: live and testnet):

@@ -167,3 +167,4 @@ Any signed-in role; 401 without a session.
 
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
+- `GET /api/auth/sessions` and `DELETE /api/auth/sessions/<id>` (#584) are the monitor's own, never forwarded to a bot: a person's sessions and signing out the other ones ([Sign-in](sign-in.md#active-sessions), [Users and roles](users-and-roles.md)).

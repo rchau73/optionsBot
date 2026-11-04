@@ -15,3 +15,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   Key scope (#538, `keyscope.go`): each authentication parses Deribit's `scope` with pure `ParseKeyScope` (scopes, `fund_scopes`, `can_move_funds` — nil = unknown, never false) and keeps it for `Gateway.KeyScope()`;
   a key that can move funds (`wallet:read_write`, `account:read_write`, `custody:read_write` — an assumption to verify against docs.deribit.com) logs an ERROR, warn only: the bot still starts.
   `main` also runs a decision-loop watchdog (`strategy.WatchProgress`): no cycle for max(10 × eval interval, 10 min) → exit for a supervised restart (never when halted by the kill switch).
+  A timed-out request logs an ERROR naming its method (#593); `RequestTimeout` (30 s) + the caller's hard second stays under 2 cycles (`TestLoopAge_GatewayRequestTimeoutIsUnderTwoCycles`).
+  `strategy.WatchLoopAge` (`loopage.go`, log only, never restarts or trades): one ERROR when the last cycle is over 2 intervals old on the wall clock, an INFO when on time again,
+  and an ERROR when the host was suspended (wall clock ≥ 1 min ahead of the process's monotonic clock between two 10 s checks)
+  — 2026-11-02 both stable bots ran only in bursts about an hour apart (BTC's 6 s reconnect backoff took 49 min): Go's timers, deadlines and `WatchProgress` count only time the host is awake.

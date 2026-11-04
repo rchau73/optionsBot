@@ -2,6 +2,7 @@
 // (data/monitor/auth.db, one per environment). sql.js runs SQLite in
 // WebAssembly — no native build in the image — on an in-memory copy that is
 // written back to the file (temp file + rename) after every change.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import initSqlJs from "sql.js";
@@ -143,6 +144,20 @@ export class AuthStore {
       ["answers_last_shown_at", "INTEGER"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
+    const sessionCols = this.all("PRAGMA table_info(refresh_tokens)").map((c) => c.name);
+    const addedSession = [
+      // Active sessions (#584): the id the person sees (never the hash), the
+      // browser name read at sign-in, and when it was last refreshed (Unix seconds).
+      ["public_id", "TEXT"],
+      ["browser", "TEXT"],
+      ["last_used_at", "INTEGER"],
+    ].filter(([name]) => !sessionCols.includes(name));
+    for (const [name, type] of addedSession) this.db.exec(`ALTER TABLE refresh_tokens ADD COLUMN ${name} ${type}`);
+    if (addedSession.length > 0) {
+      // Sessions opened before the columns: a random id each, last used when created.
+      this.db.run("UPDATE refresh_tokens SET public_id = lower(hex(randomblob(8))) WHERE public_id IS NULL");
+      this.db.run("UPDATE refresh_tokens SET last_used_at = created_at WHERE last_used_at IS NULL");
+    }
     if (added.some(([name]) => name === "sign_in_count")) {
       // Sign-ins before the count existed: each live session was one, and a recorded sign-in at least one.
       this.db.run(`UPDATE users SET sign_in_count = MAX(
@@ -152,7 +167,7 @@ export class AuthStore {
     // Answers whose user is gone: a deletion whose survey step failed (AuthService.deleteUser) finishes here.
     this.db.run("DELETE FROM survey_answers WHERE user_id NOT IN (SELECT id FROM users)");
     const orphans = this.db.getRowsModified();
-    return added.length > 0 || orphans > 0;
+    return added.length > 0 || addedSession.length > 0 || orphans > 0;
   }
 
   save() {
@@ -388,15 +403,48 @@ export class AuthStore {
     this.write("DELETE FROM users WHERE id = ?", [id]);
   }
 
-  /** Stores a refresh token by its SHA-256 hash (the token itself is never stored). */
-  addSession(tokenHash, userId, expiresAtMs, nowMs = Date.now()) {
-    this.db.run("DELETE FROM refresh_tokens WHERE expires_at <= ?", [Math.floor(nowMs / 1000)]);
-    this.write("INSERT INTO refresh_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)", [
+  /**
+   * Stores a refresh token by its SHA-256 hash (the token itself is never
+   * stored) with the browser name Active sessions shows → the session's
+   * public id (#584).
+   */
+  addSession(tokenHash, userId, expiresAtMs, nowMs = Date.now(), browser = null) {
+    const nowSec = Math.floor(nowMs / 1000);
+    const publicId = crypto.randomBytes(8).toString("hex");
+    this.db.run("DELETE FROM refresh_tokens WHERE expires_at <= ?", [nowSec]);
+    this.write(
+      "INSERT INTO refresh_tokens (token_hash, user_id, expires_at, created_at, public_id, browser, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [tokenHash, userId, Math.floor(expiresAtMs / 1000), nowSec, publicId, browser, nowSec],
+    );
+    return publicId;
+  }
+
+  /**
+   * Marks a session used (a refresh). Written at most once a minute per
+   * session: every tab refreshes, and every write saves the whole file.
+   */
+  touchSession(tokenHash, nowMs = Date.now()) {
+    const nowSec = Math.floor(nowMs / 1000);
+    this.db.run("UPDATE refresh_tokens SET last_used_at = ? WHERE token_hash = ? AND (last_used_at IS NULL OR last_used_at < ?)", [
+      nowSec,
       tokenHash,
-      userId,
-      Math.floor(expiresAtMs / 1000),
-      Math.floor(nowMs / 1000),
+      nowSec - 60,
     ]);
+    if (this.db.getRowsModified() > 0) this.save();
+  }
+
+  /** A user's live sessions, last used first: { tokenHash, publicId, browser, createdAtSec, lastUsedSec }. */
+  liveSessions(userId, nowMs = Date.now()) {
+    return this.all(
+      "SELECT token_hash, public_id, browser, created_at, last_used_at FROM refresh_tokens WHERE user_id = ? AND expires_at > ? ORDER BY last_used_at DESC, created_at DESC",
+      [userId, Math.floor(nowMs / 1000)],
+    ).map((r) => ({
+      tokenHash: r.token_hash,
+      publicId: r.public_id,
+      browser: r.browser,
+      createdAtSec: r.created_at,
+      lastUsedSec: r.last_used_at ?? r.created_at,
+    }));
   }
 
   /** The user id of a live session, or null when it is unknown or expired. */
