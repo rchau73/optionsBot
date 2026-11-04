@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.000
+Each row is one leg of a strangle. You see its type, its strike and its days to expiry, called DTE.
+
+00:00:11.000 --> 00:00:24.000
+The premium is what the bot was paid when it sold the option. The mark is what the option is worth now. If the mark is lower, the leg is ahead.
+
+00:00:24.000 --> 00:00:38.000
+Unrealized P&L is the result if the leg were closed now. P&L percent compares it with the premium. A negative number is a loss.
+
+00:00:38.000 --> 00:00:50.000
+The stop-loss is a mark at which the bot buys the leg back to limit the loss. In a fast move, it can fill at a worse price.
+
+00:00:50.000 --> 00:01:03.000
+The worst-case page shows what different days would do to the account. A bad day is a loss in coin, in dollars and as a share of the account.
+
+00:01:03.000 --> 00:01:15.000
+The page does not say how often such a day happens. A model understates crypto's biggest moves, so read it as a guide, not a limit.
