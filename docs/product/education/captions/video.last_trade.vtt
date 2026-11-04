@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.000
+To see why the bot did something, open the activity feed. The first line of each item says what happened, in plain words.
+
+00:00:11.000 --> 00:00:24.000
+Open details to see the rule that fired and its numbers. The rule is the real reason; the sentence above it is a summary.
+
+00:00:24.000 --> 00:00:38.000
+A leg can end by a stop-loss, after a loss. It can end by take-profit, after most of the premium was kept. Or by a time roll, near its expiry.
+
+00:00:38.000 --> 00:00:48.000
+Skipped means the bot chose not to act, and the reason is written. A skipped entry is not an error.
+
+00:00:48.000 --> 00:01:00.000
+The trade history shows the result of each close, after fees. Wins and losses look the same, except for the sign.

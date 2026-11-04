@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:14.000
+A rebalance resizes each slot toward its share of the current IM limit. It sells more where there is room and buys back where the book is too large.
+
+00:00:14.000 --> 00:00:27.000
+Start with the dry run. It lists what the pass would do, slot by slot. It sends nothing and records no change.
+
+00:00:27.000 --> 00:00:42.000
+Read the risk before you confirm. Selling more adds premium and the risk of a big move. Buying back pays the asking price, the spread and fees.
+
+00:00:42.000 --> 00:00:56.000
+A slot can stay short of its share. The liquidity cap, a stop hold or the size cap can limit it, and the list says which.
+
+00:00:56.000 --> 00:01:15.000
+The real pass reads fresh margin, so its orders can differ from the preview. An order that does not fill in time is cancelled, and the rest is tried later.

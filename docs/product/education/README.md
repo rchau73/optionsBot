@@ -12,3 +12,9 @@ Index of the education material.
   - The monitor serves it since #588: `GET /api/help/tips` (`frontend/docs/api-routes.md`) and `frontend/lib/tips.js`. No screen uses the route yet; the first one comes after the epic's prototype is approved.
   - The monitor image is built from `frontend/` alone, so it reads a copy, `frontend/content/tips.json`.
     After editing this file run `cp docs/product/education/tips.json frontend/content/tips.json`; `frontend/__tests__/tips-route.test.js` fails on a stale copy.
+- `videos.json`: the manifest of the how-to videos (#611), one entry per `video.<id>` section of the storyboards, keys in alphabetical order.
+  - Each entry has `captions` (path), `duration_sec` (planned, at most 90), `id`, `status` (`storyboard` or `recorded`), `task` (one task), `tips` (the tip keys that link it) and `title`. No file URL while a video is unrecorded.
+  - `captions/<id>.vtt`: one caption file per video, built from the storyboard's captions.
+  - `tests/videos_coverage_test.go` fails on a storyboard with no entry, an entry with no storyboard, a tip whose video id is missing or does not list it, and a caption sentence over 25 words, with a jargon word with no glossary entry or a promised return; it names the id.
+  - The monitor serves it: `GET /api/help/videos` (`frontend/docs/api-routes.md`) and `frontend/lib/videos.js`. No screen uses it yet.
+  - The image reads a copy: after editing run `cp docs/product/education/videos.json frontend/content/videos.json`; `frontend/__tests__/videos-route.test.js` fails on a stale copy.

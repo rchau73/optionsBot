@@ -113,6 +113,19 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(dst)), ["requests.jsonl", "requests_status.jsonl"])
         self.assertFalse(os.path.exists(os.path.join(self.backups, today(), "stable", "monitor")))
 
+    def test_audit_trail_and_its_archives_are_copied(self):
+        """#619: audit.jsonl and every rotated archive audit.<UTC time>.jsonl are in the backup, as they are."""
+        self.write("mvp/data/monitor/audit.20261101T000000000Z.jsonl", '{"action":"signed_in","prev":""}\n')
+        self.write("mvp/data/monitor/audit.20261102T000000000Z.jsonl", '{"action":"locked","prev":"a"}\n')
+        self.write("mvp/data/monitor/audit.jsonl", '{"action":"signed_out","prev":"b"}\n')
+        self.write("mvp/data/monitor/auth.db", "users")
+        self.assertEqual(self.run_backup(), 0, self.output)
+        dst = os.path.join(self.backups, today(), "mvp", "monitor")
+        self.assertEqual(sorted(os.listdir(dst)), ["audit.20261101T000000000Z.jsonl", "audit.20261102T000000000Z.jsonl", "audit.jsonl"])
+        with open(os.path.join(dst, "audit.20261102T000000000Z.jsonl")) as f:
+            self.assertEqual(f.read(), '{"action":"locked","prev":"a"}\n')
+        self.assertFalse(os.path.exists(os.path.join(self.backups, today(), "stable", "monitor")))
+
     def test_scenario_the_assistant_log_is_backed_up(self):
         """#438: data/monitor/assistant.jsonl is copied to <date>/<env>/monitor/ and its lines checked."""
         self.write("mvp/data/monitor/assistant.jsonl", '{"kind":"answer","id":"a"}\n{"kind":"flag","id":"a"}\n')
