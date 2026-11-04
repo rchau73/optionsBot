@@ -75,7 +75,8 @@ func (ix *Index) idf(term string) float64 {
 }
 
 // Search returns the k passages scoring highest for the question (fewer when
-// fewer match), best first; ties keep the index's order.
+// fewer match), best first — a setting's tip the question names before any
+// other — ties keeping the index's order.
 func (ix *Index) Search(question string, k int) []Hit {
 	terms := unique(Tokens(question))
 	if len(terms) == 0 || k <= 0 {
@@ -85,7 +86,12 @@ func (ix *Index) Search(question string, k int) []Hit {
 	for _, t := range terms {
 		weight += ix.idf(t)
 	}
-	var hits []Hit
+	// namedTip marks a setting's tip whose name is the question's words.
+	type ranked struct {
+		Hit
+		namedTip bool
+	}
+	var hits []ranked
 	for i, tf := range ix.tf {
 		score, found := 0.0, 0.0
 		for _, t := range terms {
@@ -98,19 +104,36 @@ func (ix *Index) Search(question string, k int) []Hit {
 			norm := 1 - bm25B + bm25B*float64(ix.lens[i])/ix.avgDL
 			score += idf * f * (bm25K1 + 1) / (f + bm25K1*norm)
 		}
-		if sameTerms(ix.titles[i], terms) {
+		titled := sameTerms(ix.titles[i], terms)
+		if titled {
 			// "what is a stop-loss" names the glossary's "stop-loss" exactly.
 			score *= titleMatchBoost
 		}
 		if score > 0 {
-			hits = append(hits, Hit{Passage: ix.docs[i], Score: score, Coverage: found / weight})
+			hit := Hit{Passage: ix.docs[i], Score: score, Coverage: found / weight}
+			hits = append(hits, ranked{hit, titled && strings.HasPrefix(hit.Source, TipPrefix)})
 		}
 	}
-	sort.SliceStable(hits, func(a, b int) bool { return hits[a].Score > hits[b].Score })
+	// A setting's tip the question names ("what does the repair cooldown
+	// do?") comes first (#621), so the answer says what the tip next to the
+	// setting says; every other hit ranks by score.
+	sort.SliceStable(hits, func(a, b int) bool {
+		if hits[a].namedTip != hits[b].namedTip {
+			return hits[a].namedTip
+		}
+		return hits[a].Score > hits[b].Score
+	})
 	if len(hits) > k {
 		hits = hits[:k]
 	}
-	return hits
+	if len(hits) == 0 {
+		return nil
+	}
+	out := make([]Hit, len(hits))
+	for i, h := range hits {
+		out[i] = h.Hit
+	}
+	return out
 }
 
 // NoAnswer reports that the help does not answer the question: no passage

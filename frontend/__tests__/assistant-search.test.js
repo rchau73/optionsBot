@@ -61,3 +61,14 @@ test("an empty question or an empty index finds nothing", () => {
   expect(new HelpIndex([]).search("stop-loss", 3)).toEqual([]);
   expect(noAnswer([])).toBe(true);
 });
+
+// Scenario: a setting question is answered from its tip (#621) — the monitor's
+// search ranks the tip first, and its text is the tip's own words.
+test("a question naming a setting finds its tip first", () => {
+  const tips = JSON.parse(fs.readFileSync(path.join(process.cwd(), "content", "tips.json"), "utf8"));
+  const hits = new HelpIndex(helpIndex.chunks).search("what does the repair cooldown do?", 3);
+  expect(noAnswer(hits)).toBe(false);
+  expect(hits[0].passage.source).toBe("tip:repair_cooldown_hours");
+  expect(hits[0].passage.title).toBe("repair cooldown");
+  expect(hits[0].passage.text.startsWith(tips.repair_cooldown_hours.meaning)).toBe(true);
+});

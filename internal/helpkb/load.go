@@ -35,6 +35,9 @@ func LoadSources(root string) (Sources, error) {
 	if s.Glossary, err = read(GlossaryFile); err != nil {
 		return Sources{}, err
 	}
+	if s.Tips, err = read(TipsFile); err != nil {
+		return Sources{}, err
+	}
 	if s.Explain, err = read(ExplainFile); err != nil {
 		return Sources{}, err
 	}

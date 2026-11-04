@@ -63,6 +63,10 @@ export function journalSeqOf(id) {
 /** The index cites two files by base name; this is where they live in the repository. */
 const DOC_PATHS = { "parameters.md": "docs/parameters.md", "monitor-guide.md": "frontend/content/monitor-guide.md" };
 
+/** A setting's tip ("tip:repair_cooldown_hours", #621) cites the tips file, where every tip is written. */
+const TIP_PREFIX = "tip:";
+const TIPS_FILE = "docs/product/education/tips.json";
+
 /** A document source ("OptionStrategy.md#anchor", "docs/parameters.md#…") on the repository. */
 function docHref(source) {
   const [name, anchor] = source.split("#");
@@ -91,13 +95,15 @@ export function citationHref(citation, bot = null) {
     const term = glossary[source.slice("glossary:".length)];
     return term?.source ? { href: docHref(term.source), external: true } : null;
   }
+  if (source.startsWith(TIP_PREFIX)) return { href: `${DOCS_BASE}/${TIPS_FILE}`, external: true };
   if (source.startsWith("explain:")) return { href: `/activity${q(bot)}`, external: false };
   if (/^[\w./-]+\.md(#.*)?$/.test(source)) return { href: docHref(source), external: true };
   return null;
 }
 
-/** A chip's text: the passage title, else its source. */
+/** A chip's text: the passage title ("Tip: <name>" for a setting's tip, #621), else its source. */
 export function citationLabel(citation) {
+  if ((citation?.source ?? "").startsWith(TIP_PREFIX) && citation.title) return `Tip: ${citation.title}`;
   return citation?.title || citation?.source || citation?.id || "source";
 }
 
