@@ -149,6 +149,7 @@ Answer: `key`, `title`, `value`, `underlying`, `config` (the file), `valid`, `re
 It also carries `core_policy`, `policy`, `policy_note` ("changing the default needs the product owner", null when not core policy) and `tip` (`/api/help/tips`'s answer for the key, or null).
 Last come `current` (the shipped config's value; a list for a `[]` key) and `applied` ("nothing was changed").
 The setting's own range, step and kind are checked first, then the cross rules against the rest of that config (drift at most 75 % of every entry delta, exit above every entry delta, slot days to expiry above `rollout_dte`; a list key's value is checked as each element's).
+Rules that depend on the whole list (the margin bands' "the lowest band starts at 0" and "no two bands start at the same percentile") are listed but not checked for one value: the answer says `cross_rules_checked: false` with `cross_rules_note`, and `Validate` checks them when the run's config loads.
 Manager or admin (`STATE_CHANGING_ROUTES`, called as every caller by the role-matrix test, though it changes nothing); the audit line `lab_validate` names the key, the underlying and `valid`, never the value.
 
 **Refusals:** 400 no key or no value, malformed JSON, an unknown underlying, or a key fixed in code (`fixed.go`: "not tunable: it is fixed in code (<value>)") · 404 an unknown key · 403 cross-origin · 413 a body over 2 KB · 415 not JSON · 401/403 as above

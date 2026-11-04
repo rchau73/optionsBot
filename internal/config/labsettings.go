@@ -41,8 +41,13 @@ type LabSetting struct {
 	Step       float64  `json:"step"`
 	Values     []string `json:"values,omitempty"`
 	CrossRules []string `json:"cross_rules"`
-	Policy     string   `json:"policy"`
-	CorePolicy bool     `json:"core_policy"`
+	// CrossRulesChecked is false when the key's cross rules are listed but no
+	// bound checks them: they depend on the whole list (the margin bands'
+	// "lowest starts at 0", "no two start at the same percentile"), which one
+	// proposed value does not give.
+	CrossRulesChecked bool   `json:"cross_rules_checked"`
+	Policy            string `json:"policy"`
+	CorePolicy        bool   `json:"core_policy"`
 }
 
 // LabConfig is one shipped config: its current values and its cross-rule
@@ -90,7 +95,25 @@ func LabSettings(ts []Tunable, configs map[string]*Config, files map[string]stri
 		lc.File = files[u]
 		d.Configs[u] = lc
 	}
+	for i := range d.Settings {
+		d.Settings[i].CrossRulesChecked = boundInEvery(d.Configs, d.Settings[i].Key)
+	}
 	return d, nil
+}
+
+// boundInEvery reports whether every config has a cross-rule bound on key.
+func boundInEvery(configs map[string]*LabConfig, key string) bool {
+	if len(configs) == 0 {
+		return false
+	}
+	for _, lc := range configs {
+		_, above := lc.Above[key]
+		_, below := lc.Below[key]
+		if !above && !below {
+			return false
+		}
+	}
+	return true
 }
 
 // LabSettingsJSON renders the data as the file is written (keys sorted, a

@@ -10,6 +10,10 @@ import { findSettingTip } from "@/lib/tips";
 /** What every answer says: the check applies nothing. */
 export const APPLIES_NOTHING = "nothing was changed: a check only, no config file or bot setting is touched";
 
+/** What the answer says when a setting's cross rules are listed but not checked. */
+export const RULES_NOT_CHECKED =
+  "these rules depend on the whole list, so one value is not checked against them: Validate checks them when the run's config loads";
+
 const DEFAULT_UNDERLYING = "BTC";
 // A value off the step by less than this is on it (0.1 + 0.2 is 0.30000000000000004).
 const STEP_TOLERANCE = 1e-9;
@@ -48,7 +52,8 @@ function crossReasons(config, key, value) {
  * The answer to {key, value, underlying?}: { status, body }. 400 for a body
  * without a key or a value, a fixed key (not tunable) or an unknown
  * underlying; 404 for an unknown key; else 200 with `valid` and its reasons,
- * the range, the cross rules, the core-policy flag, the tip and the current
+ * the range, the cross rules (and a note when they are not checked for one
+ * value), the core-policy flag, the tip and the current
  * value in that underlying's shipped config.
  */
 export function validateProposal(body, data = labSettings) {
@@ -79,6 +84,8 @@ export function validateProposal(body, data = labSettings) {
       reasons,
       range: { kind: setting.kind, min: setting.min, max: setting.max, step: setting.step, unit: setting.unit, ...(setting.values ? { values: setting.values } : {}) },
       cross_rules: setting.cross_rules,
+      cross_rules_checked: setting.cross_rules_checked,
+      cross_rules_note: setting.cross_rules.length && !setting.cross_rules_checked ? RULES_NOT_CHECKED : null,
       core_policy: setting.core_policy,
       policy: setting.policy,
       policy_note: setting.core_policy ? data.policy_note : null,

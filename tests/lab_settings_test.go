@@ -143,3 +143,24 @@ func TestLabSettings_CrossBoundsMatchValidate(t *testing.T) {
 		}
 	}
 }
+
+// A cross rule no bound checks (the margin bands' list rules) is flagged
+// cross_rules_checked: false, so the answer never claims to have checked it;
+// every other key with cross rules has a bound in every config (#586 review).
+func TestLabSettings_UncheckedCrossRulesAreFlagged(t *testing.T) {
+	d := readLabData(t)
+	for _, s := range d.Settings {
+		bounded := len(d.Configs) > 0
+		for _, c := range d.Configs {
+			_, a := c.Above[s.Key]
+			_, b := c.Below[s.Key]
+			bounded = bounded && (a || b)
+		}
+		if s.CrossRulesChecked != bounded {
+			t.Errorf("%s: cross_rules_checked = %v, want %v", s.Key, s.CrossRulesChecked, bounded)
+		}
+		if len(s.CrossRules) > 0 && !bounded && s.Key != "iv_margin_bands[].min_iv_pct" {
+			t.Errorf("%s: cross rules %q with no bound — add one in addCrossBounds or list it here", s.Key, s.CrossRules)
+		}
+	}
+}

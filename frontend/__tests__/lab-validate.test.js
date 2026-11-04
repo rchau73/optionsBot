@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { POST } from "@/app/api/lab/validate/route";
 import labSettings from "@/content/lab-settings.json";
-import { APPLIES_NOTHING, validateProposal } from "@/lib/labvalidate";
+import { APPLIES_NOTHING, RULES_NOT_CHECKED, validateProposal } from "@/lib/labvalidate";
 import { signedIn, useTestAuth } from "@/test/auth";
 
 // #586: POST /api/lab/validate — may a proposed value be tried, and who must
@@ -94,6 +94,22 @@ describe("Scenario: value breaks a cross rule", () => {
     const r = validateProposal({ key, value });
     expect(r.body.valid).toBe(false);
     expect(r.body.reasons).toEqual([rule]);
+  });
+
+  test("the margin bands' list rules are listed, said not checked, never claimed as passed", () => {
+    // 35 duplicates an existing band start: one value cannot say which band it replaces.
+    const r = validateProposal({ key: "iv_margin_bands[].min_iv_pct", value: 35 });
+    expect(r.body).toEqual(
+      expect.objectContaining({
+        valid: true,
+        cross_rules: ["the lowest band starts at 0", "no two bands start at the same percentile"],
+        cross_rules_checked: false,
+        cross_rules_note: RULES_NOT_CHECKED,
+      }),
+    );
+    const checked = validateProposal({ key: "delta_exit_threshold", value: 0.35 }).body;
+    expect([checked.cross_rules_checked, checked.cross_rules_note]).toEqual([true, null]);
+    expect(validateProposal({ key: "roi_take_profit", value: 0.6 }).body.cross_rules_note).toBeNull();
   });
 
   test("the setting's own range, step and kind come first", () => {

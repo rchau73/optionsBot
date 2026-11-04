@@ -11,6 +11,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -23,6 +24,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -37,6 +39,7 @@
       "cross_rules": [
         "above rollout_dte, or a new strangle would be rolled at once"
       ],
+      "cross_rules_checked": true,
       "policy": "entry",
       "core_policy": true
     },
@@ -52,6 +55,7 @@
         "delta_drift_threshold at most 75 % of it",
         "delta_exit_threshold above it"
       ],
+      "cross_rules_checked": true,
       "policy": "entry",
       "core_policy": true
     },
@@ -66,6 +70,7 @@
       "cross_rules": [
         "below every slot's dte"
       ],
+      "cross_rules_checked": true,
       "policy": "exits",
       "core_policy": true
     },
@@ -80,6 +85,7 @@
       "cross_rules": [
         "at most 75 % of every entry delta (config.MaxDriftToEntryRatio)"
       ],
+      "cross_rules_checked": true,
       "policy": "exits",
       "core_policy": true
     },
@@ -92,6 +98,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "exits",
       "core_policy": true
     },
@@ -104,6 +111,7 @@
       "max": null,
       "step": 0.1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "exits",
       "core_policy": true
     },
@@ -118,6 +126,7 @@
       "cross_rules": [
         "above every entry delta"
       ],
+      "cross_rules_checked": true,
       "policy": "exits",
       "core_policy": true
     },
@@ -130,6 +139,7 @@
       "max": null,
       "step": 1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "repair",
       "core_policy": true
     },
@@ -142,6 +152,7 @@
       "max": 3,
       "step": 0.1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "gex",
       "core_policy": true
     },
@@ -158,6 +169,7 @@
         "bias"
       ],
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "gex",
       "core_policy": true
     },
@@ -173,6 +185,7 @@
         "the lowest band starts at 0",
         "no two bands start at the same percentile"
       ],
+      "cross_rules_checked": false,
       "policy": "margin",
       "core_policy": true
     },
@@ -185,6 +198,7 @@
       "max": 100,
       "step": 1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "margin",
       "core_policy": true
     },
@@ -197,6 +211,7 @@
       "max": 99,
       "step": 1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "margin",
       "core_policy": true
     },
@@ -209,6 +224,7 @@
       "max": null,
       "step": 0.1,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "sizing",
       "core_policy": true
     },
@@ -221,6 +237,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "entry",
       "core_policy": true
     },
@@ -233,6 +250,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -245,6 +263,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -257,6 +276,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -269,6 +289,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     },
@@ -281,6 +302,7 @@
       "max": null,
       "step": 0,
       "cross_rules": [],
+      "cross_rules_checked": false,
       "policy": "none",
       "core_policy": false
     }
