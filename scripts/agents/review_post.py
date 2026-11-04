@@ -85,10 +85,12 @@ def lines(path):
 
 def parse(agent_md, review_json, files_txt=None):
     text = open(agent_md).read()
-    m = re.search(r"<!-- REVIEW-JSON\s*(.*?)\s*-->", text, re.S)
+    # The JSON object ends the block, not the first "-->": a review may quote
+    # an HTML comment, such as a guide marker (#632).
+    m = re.search(r"<!-- REVIEW-JSON\s*", text)
     if not m:
         sys.exit("no REVIEW-JSON block in the agent's answer")
-    review = json.loads(m.group(1))
+    review, _ = json.JSONDecoder().raw_decode(text, m.end())
     findings = [f for f in review.get("findings", []) if f.get("severity") in SEVERITIES]
     review["findings"] = findings
     review["unread"] = unread(review.get("checked"), lines(files_txt) if files_txt else [])
