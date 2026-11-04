@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.000
+When entries are frozen, the bot opens nothing new. The block says why and how many daily closes are still needed.
+
+00:00:11.000 --> 00:00:23.000
+A freeze starts when a change of the volatility band or the gamma regime could lower the margin limit. It waits for the change to hold.
+
+00:00:23.000 --> 00:00:35.000
+During a freeze exits and rolls go on. Open positions stay open, so a freeze does not remove risk.
+
+00:00:35.000 --> 00:00:45.000
+If the change goes away, or is confirmed, the freeze ends and new entries are allowed again.

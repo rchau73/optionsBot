@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:11.000
+This is the summary card of one bot. The badge says whether it trades on testnet, which is practice money, or live.
+
+00:00:11.000 --> 00:00:25.000
+First, what it holds. A strangle is a pair of sold options, one call and one put. Each one is a leg. The card counts them and shows the nearest expiry.
+
+00:00:25.000 --> 00:00:38.000
+Second, income per month, after fees. A loss has a minus sign and the same size as a gain. A month with no closes says so.
+
+00:00:38.000 --> 00:00:50.000
+Third, the worst case now. It estimates the loss if the price moves a lot in one day. It is a model. A real day can be worse.
+
+00:00:50.000 --> 00:01:00.000
+Last, the latest action, in plain words. Everything below this card is detail. Open it when you want to know more.

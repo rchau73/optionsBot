@@ -1,0 +1,100 @@
+{
+  "video.change_setting": {
+    "captions": "docs/product/education/captions/video.change_setting.vtt",
+    "duration_sec": 60,
+    "id": "video.change_setting",
+    "status": "storyboard",
+    "task": "Change one setting safely and see what it changed.",
+    "tips": [
+      "delta_drift_threshold",
+      "delta_exit_threshold",
+      "dte_delta_matrix[].deltas[]",
+      "dte_delta_matrix[].dte",
+      "gamma_flip_buffer_sd",
+      "gex_direction",
+      "max_leg_size_multiple",
+      "min_premium",
+      "repair_cooldown_hours",
+      "roi_take_profit",
+      "rollout_dte",
+      "stop_loss_multiplier"
+    ],
+    "title": "Change a setting"
+  },
+  "video.freeze": {
+    "captions": "docs/product/education/captions/video.freeze.vtt",
+    "duration_sec": 45,
+    "id": "video.freeze",
+    "status": "storyboard",
+    "task": "Understand why new entries are frozen and what still runs.",
+    "tips": [],
+    "title": "Why entries are frozen"
+  },
+  "video.income_month": {
+    "captions": "docs/product/education/captions/video.income_month.vtt",
+    "duration_sec": 60,
+    "id": "video.income_month",
+    "status": "storyboard",
+    "task": "Read the income page, month by month.",
+    "tips": [],
+    "title": "Read the income page"
+  },
+  "video.last_trade": {
+    "captions": "docs/product/education/captions/video.last_trade.vtt",
+    "duration_sec": 60,
+    "id": "video.last_trade",
+    "status": "storyboard",
+    "task": "Find out why the bot made its last trade.",
+    "tips": [],
+    "title": "Why the last trade"
+  },
+  "video.manual_close": {
+    "captions": "docs/product/education/captions/video.manual_close.vtt",
+    "duration_sec": 75,
+    "id": "video.manual_close",
+    "status": "storyboard",
+    "task": "Close one leg by hand and know what follows.",
+    "tips": [],
+    "title": "Close a leg by hand"
+  },
+  "video.margin_bar": {
+    "captions": "docs/product/education/captions/video.margin_bar.vtt",
+    "duration_sec": 60,
+    "id": "video.margin_bar",
+    "status": "storyboard",
+    "task": "Read the margin bar and know what the limit and the colours mean.",
+    "tips": [
+      "iv_margin_bands[].max_im_pct",
+      "iv_margin_bands[].min_iv_pct",
+      "max_mm_pct"
+    ],
+    "title": "Read the margin bar"
+  },
+  "video.position_worst_case": {
+    "captions": "docs/product/education/captions/video.position_worst_case.vtt",
+    "duration_sec": 75,
+    "id": "video.position_worst_case",
+    "status": "storyboard",
+    "task": "Understand one open position and the worst-case page.",
+    "tips": [],
+    "title": "Open positions and the worst case"
+  },
+  "video.read_summary": {
+    "captions": "docs/product/education/captions/video.read_summary.vtt",
+    "duration_sec": 60,
+    "id": "video.read_summary",
+    "status": "storyboard",
+    "task": "Read the monitor's summary card and know what the bot holds, what it earned and what the worst case is.",
+    "tips": [],
+    "title": "Read the summary card"
+  },
+  "video.rebalance": {
+    "captions": "docs/product/education/captions/video.rebalance.vtt",
+    "duration_sec": 75,
+    "id": "video.rebalance",
+    "status": "storyboard",
+    "task": "Preview and run a rebalance and know what follows.",
+    "tips": [],
+    "title": "Preview and run a rebalance"
+  }
+}
