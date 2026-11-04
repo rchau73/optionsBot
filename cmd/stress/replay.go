@@ -63,7 +63,8 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 // replayOwnFlags are the replay's own flags (and the shared input folder).
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
-	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "rebalance": true, "rebalances": true, "limits": true}
+	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "shed": true, "sheds": true, "costs": true, "perpfunding": true,
+	"rebalance": true, "rebalances": true, "limits": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -86,10 +87,12 @@ type replayOpts struct {
 	liqCaps                                           string // the liquidity-cap study's caps (e.g. "5,10,20"); "" = one replay
 	regimeHold                                        string // the regime-side rule of one replay (#550): confirmed (the bot) | live
 	regimeHolds                                       string // the regime-hold study's rules (e.g. "confirmed,live"); "" = one replay
+	shed                                              string // what a GEX shed does in one replay (#637): today (the bot) | none | partial:K | delta:D | hedge
+	sheds, costs                                      string // the shed study's variants ("all" = the issue's) and cost multiples; "" = one replay
 	rebalance                                         string // the rebalance model's downsize rule (#638): off | prorata (the bot) | cheapest | winners
 	rebalances                                        string // the downsize study's rules (e.g. "prorata,cheapest,winners"); "" = one replay
 	limits                                            string // the IM limit, freeze and restarts: replay (rebuilt) | journal (the bot's risk_limit lines)
-	equity, flipWindowMin                             float64
+	equity, flipWindowMin, perpFundingPct             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
 }
@@ -200,14 +203,23 @@ func runReplay(o replayOpts) error {
 	if set.Rebalance != "" {
 		changed = append(changed, "-rebalance="+set.Rebalance)
 	}
+	set.PerpFundingPct = o.perpFundingPct
+	if o.shed != "" {
+		if set.Shed, err = replay.ParseShedVariant(o.shed); err != nil {
+			return err
+		}
+	}
+	if set.Shed.String() != replay.ShedToday {
+		changed = append(changed, "-shed="+set.Shed.String())
+	}
 	studies := 0
-	for _, s := range []string{o.liqCaps, o.regimeHolds, o.rebalances} {
+	for _, s := range []string{o.liqCaps, o.regimeHolds, o.sheds, o.rebalances} {
 		if s != "" {
 			studies++
 		}
 	}
 	if studies > 1 {
-		return fmt.Errorf("-liqcaps, -regimeholds and -rebalances are three studies: run one at a time")
+		return fmt.Errorf("-liqcaps, -regimeholds, -sheds and -rebalances are four studies: run one at a time")
 	}
 	if o.rebalances != "" {
 		return runRebalanceStudy(snaps, set, o, changed, trades)
@@ -217,6 +229,9 @@ func runReplay(o replayOpts) error {
 	}
 	if o.regimeHolds != "" {
 		return runHoldStudy(snaps, set, o, changed)
+	}
+	if o.sheds != "" {
+		return runShedStudy(snaps, set, o, changed)
 	}
 	if o.trace {
 		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
@@ -256,6 +271,8 @@ func runReplay(o replayOpts) error {
 	fmt.Printf("**Replay %s %s:** net %+.4f %s (%+.2f %%) · realised %+.4f · fees %.4f · trades %d (entries %d, repairs %d) · GEX sheds %d · stops %d · delta exits %d · rolls %d · MM cuts %d · unfilled %d · liquidity-capped legs %d · legs open at end %d · worst drawdown %.4f %s · IM max %.1f %% avg %.1f %%\n",
 		u, cfg.GEXDirection, res.Net, u, res.Net/res.Equity0*100, res.Realised, res.Fees, res.Trades, res.Entries, res.Repairs,
 		res.Sheds, res.Stops, res.DeltaExits, res.Rolls, res.MMCuts, res.Unfilled, res.LiquidityCapped, res.OpenAtEnd, res.MaxDrawdown, u, res.MaxIMPct, res.AvgIMPct)
+	fmt.Printf("Shed (%s): negative breaks %d · shed closes %+.4f %s · hedge P&L %+.4f (%d perp orders) · max MM %.1f %% · −20 %% gap loss up to %.1f %% of the balance\n",
+		set.Shed, res.ShedBreaks, res.ShedPnL, u, res.HedgePnL, res.HedgeTrades, res.MaxMMPct, res.MaxGapLossPct)
 	if set.Rebalance != "" {
 		fmt.Printf("**Rebalance (%s):** passes %d · downsizes %d (legs %d, lots %.0f) realised %+.4f %s for %.1f pp of IM freed · top-ups %d (held %d) · cuts left above the limit %d · largest slot ÷ its share %.2f\n",
 			set.Rebalance, res.RebalancePasses, res.Downsizes, res.DownsizeLegs, res.DownsizeLots, res.DownsizeCost, u, res.DownsizeIMFreedPP,
@@ -400,6 +417,38 @@ func runHoldStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, 
 	}
 	fmt.Print(". confirmed = the bot (the trend's side held under a confirmed negative regime); live = also held while the live regime is negative. Entries and repairs; no rebalance top-ups in the replay.\n\n")
 	fmt.Print(replay.RegimeHoldMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To)))
+	return nil
+}
+
+// runShedStudy is -sheds (#637): one replay per shed variant and cost
+// multiple on the same books and settings, printed as one table.
+func runShedStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string) error {
+	if _, ok := o.set["shed"]; ok {
+		return fmt.Errorf("-sheds varies the shed itself: drop -shed")
+	}
+	variants, err := replay.ParseShedVariants(o.sheds)
+	if err != nil {
+		return err
+	}
+	var costs []float64
+	for _, f := range strings.Split(o.costs, ",") {
+		m, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
+		if err != nil || m < 1 {
+			return fmt.Errorf("-costs %q: want multiples of 1 or more, comma-separated", o.costs)
+		}
+		costs = append(costs, m)
+	}
+	rows, err := replay.ShedStudy(snaps, set, variants, costs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Shed study (#637), %s, direction %s, start %s", set.Cfg.Underlying, set.Cfg.GEXDirection, o.start)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Printf(". Entries and repairs skip the shed side under every variant; stops, delta exits and the MM cut run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid by the hedge, re-hedged outside ±%.2f Δ per option; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
+		replay.PerpFeeRate*100, set.PerpFundingPct, replay.HedgeBand, (1-replay.GapMove)*100, replay.GapIVMultiple)
+	fmt.Print(replay.ShedStudyMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
 	return nil
 }
 

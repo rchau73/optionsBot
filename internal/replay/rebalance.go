@@ -340,11 +340,11 @@ func (e *engine) cutScore(s *strangle, quotes map[string]recorder.Quote, perLot 
 	}
 	cost, premium, value := 0.0, 0.0, 0.0
 	for _, p := range []*orders.Position{s.call, s.put} {
-		f := BuyFill(quotes[p.Instrument])
+		f := BuyFill(e.widen(quotes[p.Instrument]))
 		if !f.OK || p.Qty <= 0 {
 			return 0, false
 		}
-		cost += (f.Price-p.PremiumReceived/p.Qty)*e.lot + Fee(f.Price, e.lot)
+		cost += (f.Price-p.PremiumReceived/p.Qty)*e.lot + e.fee(f.Price, e.lot)
 		premium += p.PremiumReceived
 		value += p.CurrentMid * p.Qty
 	}
@@ -443,7 +443,7 @@ func (e *engine) topUps(at time.Time, snap recorder.Snapshot, dec strategy.Gamma
 		e.nextID++
 		c := &strangle{id: e.nextID, slot: s.slot}
 		for _, q := range []recorder.Quote{cq, pq} {
-			if f := SellFill(q, e.cfg.EntryPriceFloor); f.OK {
+			if f := SellFill(e.widen(q), e.cfg.EntryPriceFloor); f.OK {
 				e.sellInto(at, c, q, addQty, f.Price)
 			} else {
 				e.res.Unfilled++

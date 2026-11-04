@@ -53,8 +53,17 @@ type Settings struct {
 	// each makes the next rebalance a startup pass (rebalance.go).
 	Limits   []LimitAt
 	Restarts []time.Time
-	Book     []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace    func(at time.Time, line string) // every action, as it happens (nil = none)
+	// Shed is what a GEX shed does (shed.go, #637): the zero value is the
+	// bot's (buy the whole side back).
+	Shed ShedVariant
+	// CostMultiple widens every recorded spread around its mid and multiplies
+	// every fee by it (the study's 2× sensitivity); 0 or 1 = as recorded.
+	CostMultiple float64
+	// PerpFundingPct is the yearly funding the perp hedge pays, in % of its
+	// notional (MODEL: funding is not recorded), whichever way it faces.
+	PerpFundingPct float64
+	Book           []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace          func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -118,6 +127,14 @@ type Result struct {
 	TopUps, TopUpsHeld int        // complements sold; complements held (and re-armed)
 	TopUpLots          float64    // lots sold by the complements
 	DownsizeLog        []Downsize // every leg cut, for the journal comparison
+	// The shed study (#637, shed.go).
+	ShedBreaks         int     // negative breaks: decisions where a shed starts after one without
+	ShedPnL            float64 // realised on the GEX shed buy-backs, net of fees
+	HedgePnL           float64 // the perp hedge: its price moves, less fees and funding
+	HedgeTrades        int     // perp orders (opens, re-hedges, unwinds)
+	MaxMMPct           float64 // MM as % of the margin balance, highest over the decisions
+	AvgIM              float64 // IM in the coin, averaged over the decisions
+	MaxGapLossPct      float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
 	MaxDrawdown        float64
 	MaxIMPct, AvgIMPct float64
 	Days               []Day
@@ -175,6 +192,8 @@ type engine struct {
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
 	rb         rebalanceState
+	hedge      perpHedge // the shed study's perp hedge (shed.go)
+	shedding   bool      // the last decision shed (ShedBreaks)
 
 	now  time.Time              // the snapshot being replayed
 	dec  strategy.GammaDecision // its GEX decision
@@ -247,6 +266,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	if e.imN > 0 {
 		e.res.AvgIMPct /= float64(e.imN)
 		e.res.AvgUseOfLimitPct /= float64(e.imN)
+		e.res.AvgIM /= float64(e.imN)
 	}
 	for _, s := range e.book {
 		e.res.OpenAtEnd += len(s.legs())
@@ -359,11 +379,17 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	}
 	e.res.End = at
 	e.refreshMarks(at, quotes, spot)
+	e.markPerp(at, spot)
 
 	if dec.Shed != strategy.GammaActionNone {
-		e.shed(at, dec, quotes)
+		if !e.shedding {
+			e.res.ShedBreaks++
+		}
+		e.shed(at, dec, st, quotes, spot)
 	}
+	e.shedding = dec.Shed != strategy.GammaActionNone
 	stopsDeferred := e.exits(at, quotes)
+	e.maintainHedge(at, dec, spot)
 	u := e.usage(spot)
 	mmBreach := u.MMPct() >= st.MaxMMPct
 	if mmBreach {
@@ -384,6 +410,12 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	u = e.usage(spot)
 	e.res.MaxIMPct = math.Max(e.res.MaxIMPct, u.IMPct())
 	e.res.AvgIMPct += u.IMPct()
+	e.res.AvgIM += u.IM
+	e.res.MaxMMPct = math.Max(e.res.MaxMMPct, u.MMPct())
+	if u.MarginBalance > 0 {
+		gap := gapLoss(e.marginLegs(), e.hedge.usd, spot, GapMove, GapIVMultiple)
+		e.res.MaxGapLossPct = math.Max(e.res.MaxGapLossPct, gap/u.MarginBalance*100)
+	}
 	use := 0.0
 	if st.LimitIMPct > 0 {
 		use = u.IMPct() / st.LimitIMPct * 100
@@ -479,26 +511,6 @@ func (e *engine) refreshMarks(at time.Time, quotes map[string]recorder.Quote, sp
 				continue
 			}
 			p.CurrentMid, p.CurrentGreeks.Delta, p.CurrentGreeks.IV, p.MarkLive = q.LiveMid(), q.Delta, q.IV, true
-		}
-	}
-	e.prune()
-}
-
-// shed buys back every leg of the side GEX sheds, anchoring it (shed.go).
-func (e *engine) shed(at time.Time, dec strategy.GammaDecision, quotes map[string]recorder.Quote) {
-	typ := "put"
-	if dec.Shed == strategy.GammaActionCloseCalls {
-		typ = "call"
-	}
-	for _, s := range e.book {
-		p := s.leg(typ)
-		if p == nil {
-			continue
-		}
-		if e.buyBack(at, s, p, p.Qty, quotes, "GEX shed") {
-			e.anchors[key(s, typ)] = &strategy.ShedAnchor{At: at, Flip: dec.GammaFlip, BufferPct: dec.FlipBufferPct}
-			e.res.Sheds++
-			e.day.Sheds++
 		}
 	}
 	e.prune()
@@ -631,7 +643,7 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			continue
 		}
 		q := quotes[in.Name]
-		f := SellFill(q, c.RepairPriceFloor)
+		f := SellFill(e.widen(q), c.RepairPriceFloor)
 		if !f.OK {
 			e.res.Unfilled++
 			continue
@@ -698,7 +710,7 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 				sides = nil
 				break
 			}
-			sides = append(sides, entrySide{q, SellFill(q, c.EntryPriceFloor)})
+			sides = append(sides, entrySide{q, SellFill(e.widen(q), c.EntryPriceFloor)})
 		}
 		if len(sides) == 0 {
 			continue
@@ -763,12 +775,12 @@ func (e *engine) size(sides []entrySide, spot float64, st risk.Status, vacant, n
 		return out
 	}
 	book := e.marginLegs()
-	perLot := scanIM(append(book, extra(1)...), spot) - u.IM
+	perLot := scanPortfolioIM(append(book, extra(1)...), e.hedge.usd, spot) - u.IM
 	lots := strategy.EntryLots(share, perLot)
 	normal := strategy.TargetLots(slotShare, scanIM(extra(1), spot))
 	lots, _ = strategy.CapLots(lots, normal, e.cfg.MaxLegSizeMultiple)
 	for attempt := 0; attempt < 3 && lots >= 1; attempt++ {
-		im := scanIM(append(e.marginLegs(), extra(lots)...), spot)
+		im := scanPortfolioIM(append(e.marginLegs(), extra(lots)...), e.hedge.usd, spot)
 		post := risk.Usage{IM: im, MM: im * MMRatio, MarginBalance: u.MarginBalance}
 		if risk.Fits(post, st.LimitIMPct, st.MaxMMPct) {
 			return lots
@@ -800,7 +812,7 @@ func (e *engine) marginLegs() []marginLeg {
 // usage is the book's margin now (MODEL, see scanIM) against its margin
 // balance: cash less what buying every short back at its mid would cost.
 func (e *engine) usage(spot float64) risk.Usage {
-	im := scanIM(e.marginLegs(), spot)
+	im := scanPortfolioIM(e.marginLegs(), e.hedge.usd, spot)
 	value := 0.0
 	for _, s := range e.book {
 		for _, p := range s.legs() {
@@ -817,7 +829,7 @@ func (e *engine) sell(at time.Time, s *strangle, q recorder.Quote, qty, price fl
 }
 
 func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, price float64) {
-	fee := Fee(price, qty)
+	fee := e.fee(price, qty)
 	p := &orders.Position{ID: fmt.Sprintf("%s#%d", q.Instrument, at.Unix()), Instrument: q.Instrument, Strike: q.Strike,
 		Expiry: q.Expiry, OptionType: q.OptionType, Side: orders.DirectionSell, Qty: qty, EntryPrice: price,
 		UnderlyingPrice: q.UnderlyingPrice, EntryTime: at, PremiumReceived: price * qty, Fees: fee,
@@ -836,12 +848,12 @@ func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, pric
 // buyBack buys qty of p back at the ask; false when the ask side is empty
 // (the leg stays, the rule re-fires next hour).
 func (e *engine) buyBack(at time.Time, s *strangle, p *orders.Position, qty float64, quotes map[string]recorder.Quote, why string) bool {
-	f := BuyFill(quotes[p.Instrument])
+	f := BuyFill(e.widen(quotes[p.Instrument]))
 	if !f.OK {
 		e.res.Unfilled++
 		return false
 	}
-	fee := Fee(f.Price, qty)
+	fee := e.fee(f.Price, qty)
 	pnl := e.close(at, s, p, qty, f.Price, fee, why)
 	e.act(at, "%s: buy %s ×%.1f at %.4f (%+.4f)", why, p.Instrument, qty, f.Price, pnl)
 	e.res.Trades++
