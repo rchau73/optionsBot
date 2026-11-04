@@ -53,7 +53,9 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - each month's `premium_coin`/`buyback_coin`/`fees_coin` (from the journal's closes, `CloseParts`: buy-back = premium − fees − P&L, so `premium − buyback − fees = realised` always;
     USD at each close's spot, `CloseSpot`; these are in `/api/summary`'s months too),
   - the month's recorded spot and `hold_usd` (equity at the month's start × spot change),
-  - and `summary` (total, average of months with a close, up/down months, worst month, `perf`'s worst week, missing days)
+  - and `summary` (total, average of months with a close, up/down months, worst month, `perf`'s worst week — its `pct` null with `pct_note` when the week began before the first balance — missing days)
+  - and `start` (#629, `income_start.go`, pure `IncomeStartOf`): the "% of start" view from the first margin balance at or after `?from=` (default the window's first; `ParseIncomeFrom`, bad → 400)
+    — result % (closes after it ÷ balance), hold %, combined %, the worst week since it, and each month from its own first balance (`partial`, or `reason` with no %)
   - — its own route because it reads months of raw history points and `/api/summary` is polled every second.
   `/api/strangles/payoff` (`payoff.go`, pure `PayoffOf(view, now)`, #391) is each strangle's payoff chart for the monitor's Positions page, overview cards and modal:
   - ~121 points of `expiry_pnl` (coin-settled, as `BreakEvens`)

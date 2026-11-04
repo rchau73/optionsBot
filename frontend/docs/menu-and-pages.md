@@ -487,6 +487,14 @@ Header: "← Overview", "Income · <coin>", the TESTNET / LIVE badge and a **<co
 Four tiles: **Last 6 months, after fees** (with "% more <coin> than holding", or why it is unknown), **Average month** ("n months up, m down"), **Worst month** (with the coin's recorded move that month, omitted when not recorded) and **Worst week** (dates and % of the account; in coin in both units: the P&L history is in coin).
 The card "Each month, where the money came from": newest first — month ("(so far)" for the current one), paid to you, paid to buy back and exchange fees (negative), result, holding alone; a loss month is tinted and labelled "· loss"; a month without closes says "no closes"; holding alone is 0 in coin, the USD change in USD, "unknown: <reason>" when not recorded.
 Then "How the income works" and the footnotes (UTC months, closes only, testnet is practice, not investment advice).
+The worst week's % is left out, with the reason, when the week began before the first recorded balance (#629: stable's 8–15 Oct was divided by the 28 Oct balance).
+
+**% of start** (#629, `components/IncomeStartView.jsx`, `/api/income`'s `start`): the toggle's third choice, also reached from the 6-month tile's "See it as a % of the start balance".
+The **Start balance** strip: Deribit's margin balance in coin and USD, when it was recorded and where it comes from.
+Four tiles as signed % of it: **Bot result** (closes after the start, after fees), **Holding alone** (USD; 0 % in coin), **Bot + holding** (USD) and **Worst week** (the worst 7 days since the start, open positions at their marks; "not yet" with when it will be known before 7 days).
+The table "Each month, as a % of its start balance": start balance, bot result, holding alone, bot + holding; each month from its own first balance, "partial: from <date>" when it was recorded after the month began, "no %: <reason>" when there is none.
+`/income?bot=<name>&from=<time>` (e.g. `2026-10-28T11:45Z`) starts it at the first balance at or after that time, so stable and mvp line up on one start.
+No balance at all says so; a % is never shown as 0 for missing data.
 Loading, unavailable (with the reason), a failed refresh (keeps the last figures and says so) and no `?bot=` each have their own message; every missing figure says "not yet" or "unknown", never 0.
 The table scrolls inside its card at phone width; the toggle and links are 44 px targets.
 

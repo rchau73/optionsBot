@@ -8,6 +8,9 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 /** The unit toggle is remembered per browser under this key. */
 export const UNIT_STORAGE_KEY = "income.unit";
 
+/** The toggle's choices: the coin, USD, or % of the start balance (#629). */
+export const INCOME_UNITS = ["coin", "usd", "pct"];
+
 /** A signed amount in the chosen unit: "coin" → "+0.01200 BTC", "usd" → "+$1,200". */
 export function formatAmount(v, unit, coin) {
   return unit === "usd" ? formatSignedUSD(v) : formatCoin(v, coin);
@@ -76,7 +79,39 @@ export function returnLine(s, coin) {
 /** The worst week's % of the account, or why unknown. */
 export function worstWeekPct(ww) {
   if (!ww?.known) return null;
-  return isNumber(ww.pct) ? `${formatSignedPct(ww.pct).replace("%", " %")} of the account` : "% of the account unknown";
+  if (isNumber(ww.pct)) return `${formatSignedPct(ww.pct).replace("%", " %")} of the account`;
+  return ww.pct_note ? `% of the account unknown: ${ww.pct_note}` : "% of the account unknown";
+}
+
+/** A signed % with a space before the sign: "+1.25 %", "−0.65 %"; "—" when missing. */
+export function formatStartPct(v) {
+  return formatSignedPct(v, 2).replace("%", " %");
+}
+
+/**
+ * The "% of start" table rows (#629), newest first: each month from its own
+ * first balance, "partial: from <date>" when that balance came after the month
+ * began, and the reason with no number when the month has none.
+ */
+export function startTableRows(income) {
+  const months = income?.start?.months ?? [];
+  const last = months.length - 1;
+  return months
+    .map((m, i) => ({
+      month: m.month,
+      label: monthLabel(m.month),
+      current: i === last,
+      partialFrom: m.partial ? m.from : null,
+      reason: m.reason || (isNumber(m.result_pct) ? null : "no balance recorded"),
+      balanceCoin: m.balance_coin ?? null,
+      balanceUSD: m.balance_usd ?? null,
+      closes: m.closes ?? 0,
+      result: m.result_pct ?? null,
+      hold: m.hold_pct ?? null,
+      combined: m.combined_pct ?? null,
+      loss: isNumber(m.result_pct) && m.result_pct < 0,
+    }))
+    .reverse();
 }
 
 /** The amount of a tile in the chosen unit; null when missing. */
