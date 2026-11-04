@@ -102,6 +102,7 @@ Then answer the participant's questions, thank them and close the browser tab.
 ## 6. Answer key (demo data)
 
 `go run ./cmd/monitor-demo` with no flags: BTC, simulated, testnet (demo). **Fixed** answers are the same in every session. **Read it off the screen** means: write down the value the page shows at the moment the participant answers, and score against that.
+The Overview's "Since you last looked" card (#618) is not part of this 4-question answer key: moderators ignore it in round 2 unless the PO decides otherwise.
 
 ### Q1 — what does it hold
 
