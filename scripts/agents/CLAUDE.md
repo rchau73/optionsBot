@@ -60,6 +60,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     and labels `ready-to-merge` (PR and card) only a PR reviewed clean on its current head, CI green, `CLEAN`, with no open dependency
     — a PR that changes a business rule or policy waits there for the person, who approves it with the label `merge:approved` (#596): the gate merges approved PRs one per run, each up to date with main and green first, so several approved at once never conflict in turn;
     - the approval holds for the head it was given on (and GitHub's update merges of it); a new commit of the PR's own takes the label off and asks again;
+    - the gate's own regenerated-files merge keeps the approval and the clean review too (#634): it records the sha (`<pr>:regen`) when `pr_gate.py settled` finds it differs from git's merge only in generated files and sorted lists, and `equiv` walks it;
     - policy = a path in `pr_gate.py` `POLICY_PATHS` (less its `WORKING_DOCS`, and `golden.jsonl` only when a line is removed or changed: `ADD_ONLY`, #596), or the Reviewer's `policy=yes` (none declared = yes);
     - every agent session runs without GitHub credentials (`lib.sh` `no_github`, #596): code a session runs cannot call `gh` as the owner, so only the person and the scripts label or merge;
     - a policy-free one, up to date with main, is merged by the gate itself, one per run (#468, product owner 2026-10-28);

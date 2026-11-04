@@ -5,8 +5,13 @@ for review"). Pure rules here; pr_gate.sh reads GitHub and acts.
 
     pr_gate.py decide <pr.json> <markers.txt> <open_deps.txt> [<equiv.txt> <files.txt> <behind> <auto> [<card status>]]
         → one line: ACTION reason
-    pr_gate.py equiv <compare.json>   → the base sha when every commit after it
-        is a clean "update with main" merge GitHub made; nothing otherwise
+    pr_gate.py equiv <compare.json> [<pr_gate.json> <pr>]   → the base sha when
+        every commit after it is a clean "update with main" merge GitHub made,
+        or a regenerated-files merge the gate made itself (#634: the state's
+        "<pr>:regen" shas); nothing otherwise
+    pr_gate.py settled <worktree>     → exit 0 when the merge commit checked out
+        there differs from git's own merge of its two parents only in generated
+        files and sorted lists (what regen.sh --resolve may settle, #634)
     pr_gate.py green <pr.json>        → exit 0 when the PR is ready (not a
         draft) and CI is green on its head: the Reviewer starts only then (#472)
     pr_gate.py ci-green <pr.json>     → exit 0 when CI is green, draft or not
@@ -47,6 +52,7 @@ Standard library only.
 """
 import json
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, __import__("os").path.dirname(__file__))
@@ -103,6 +109,13 @@ ADD_ONLY = ("docs/product/assistant/golden.jsonl",)
 # PR's own change is still the one the Reviewer saw.
 UPDATE_SUBJECT = re.compile(r"^Merge branch 'main' into ")
 
+# The sorted line lists regen.sh --resolve merges line by line (its
+# SORTED_LISTS; test_pr_gate.py checks the two agree).
+SORTED_LISTS = ("docs/product/assistant/golden.jsonl",)
+
+# How many regenerated-files merges the gate remembers per PR (#634).
+REGEN_KEEP = 10
+
 
 def policy_paths(files, removed=()):
     """The policy reasons the changed paths touch, each named once, in list order.
@@ -116,13 +129,18 @@ def policy_paths(files, removed=()):
     return out
 
 
-def equiv(compare):
+def equiv(compare, regen=()):
     """The base sha of a GitHub compare (base...head) when the PR's own line from
     head back to base (first parents) is only clean update-with-main merges
     GitHub made, else None. The compare also lists the commits each merge
     brought in from main (other PRs' commits and merges): those are main's, not
     the PR's change, so only the first-parent line is checked (#596, PR #609: every real
-    update failed the check, and voided merge:approved)."""
+    update failed the check, and voided merge:approved).
+    regen: the merges of main the gate pushed itself after settling only
+    generated files and sorted lists (merge_regenerating, checked by `settled`
+    before it records them): they count like GitHub's (#634: #612 and #626 each
+    needed a new review and a new approval for the gate's own merge)."""
+    regen = set(regen)
     commits = compare.get("commits") or []
     base = compare.get("base_commit", {}).get("sha") or compare.get("merge_base_commit", {}).get("sha")
     if not commits or not base:
@@ -137,7 +155,8 @@ def equiv(compare):
         info = c.get("commit", {})
         subject = (info.get("message") or "").split("\n", 1)[0]
         parents = c.get("parents", [])
-        if len(parents) != 2 or info.get("committer", {}).get("name") != "GitHub" or not UPDATE_SUBJECT.match(subject):
+        github = info.get("committer", {}).get("name") == "GitHub" and UPDATE_SUBJECT.match(subject)
+        if len(parents) != 2 or not (github or c.get("sha") in regen):
             return None
         first = parents[0].get("sha")
         if first == base:
@@ -145,6 +164,53 @@ def equiv(compare):
         c = by_sha.get(first)
         if c is None:
             return None
+
+
+def only_settled(paths, generated):
+    """True when every path is a generated file (generated: the paths
+    .gitattributes marks linguist-generated) or a sorted list: the only files
+    regen.sh --resolve may settle. No path at all is a plain merge: True."""
+    generated = set(generated)
+    return all(p in generated or p in SORTED_LISTS for p in paths)
+
+
+def git(cwd, *args, check=True, stdin=None):
+    return subprocess.run(["git", "-C", cwd, *args], check=check, capture_output=True, text=True, input=stdin)
+
+
+def settled(worktree):
+    """True when HEAD in the worktree is a merge that differs from git's own
+    merge of its two parents (conflict markers and all) only in generated files
+    and sorted lists (#634). Anything else — another file the resolution
+    changed, a commit that is not a merge, a git failure — is False."""
+    try:
+        parents = git(worktree, "rev-list", "--parents", "-n", "1", "HEAD").stdout.split()[1:]
+        if len(parents) != 2:
+            return False
+        # Exit 1 = conflicts: the tree (first line) still holds git's merge, markers included.
+        tree = git(worktree, "merge-tree", "--write-tree", *parents, check=False)
+        if tree.returncode not in (0, 1) or not tree.stdout.strip():
+            return False
+        auto = tree.stdout.split("\n", 1)[0].strip()
+        paths = git(worktree, "diff", "--name-only", auto, "HEAD").stdout.split("\n")
+        paths = [p for p in paths if p]
+        if not paths:
+            return True
+        attrs = git(worktree, "check-attr", "--stdin", "linguist-generated", stdin="\n".join(paths) + "\n").stdout
+    except (subprocess.CalledProcessError, OSError):
+        return False
+    generated = [line.split(": ")[0] for line in attrs.splitlines() if line.split(": ")[-1] in ("true", "set")]
+    return only_settled(paths, generated)
+
+
+def regen_shas(state_path, pr):
+    """The regenerated-files merges the gate recorded for a PR (pr_gate.sh's state)."""
+    try:
+        with open(state_path) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return (state.get(f"{pr}:regen") or "").split()
 
 
 def decide(pr, markers, open_deps, equiv_shas=(), files=(), behind=0, auto=False, card="", removed=(), approved=False):
@@ -226,8 +292,11 @@ def main(argv):
         pr = json.load(open(argv[2]))
         ok = green(pr) if argv[1] == "green" else not checks_refusal(pr.get("statusCheckRollup"))
         sys.exit(0 if ok else 1)
+    if argv[1] == "settled":
+        sys.exit(0 if settled(argv[2]) else 1)
     if argv[1] == "equiv":
-        sha = equiv(json.load(open(argv[2])))
+        regen = regen_shas(argv[3], argv[4]) if len(argv) > 4 else ()
+        sha = equiv(json.load(open(argv[2])), regen)
         if sha:
             print(sha)
         return

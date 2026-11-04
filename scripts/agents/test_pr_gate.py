@@ -241,6 +241,123 @@ class Equiv(unittest.TestCase):
         self.assertIsNone(pr_gate.equiv(cmp))
 
 
+GATE_MERGE = dict(committer="Roberto Chau", subject="Merge remote-tracking branch 'origin/main' into HEAD")
+
+
+class GateRegenMerge(unittest.TestCase):
+    """#634: the gate's own regenerated-files merge keeps merge:approved and the clean review."""
+
+    def cmp(self, *extra):
+        return {"base_commit": {"sha": "abc"}, "commits": main_commits() + [commit("b1", ("abc", "m2"), **GATE_MERGE), *extra]}
+
+    def test_given_an_approved_reviewed_pr_when_the_gate_regenerates_then_b_is_approved_and_reviewed(self):
+        self.assertEqual(pr_gate.equiv(self.cmp(), regen=["b1"]), "abc")
+        # Both checks read that sha: the clean review on A counts for B, and so does the approval.
+        equiv = [pr_gate.equiv(self.cmp(), regen=["b1"])]
+        p = pr(headRefOid="b1")
+        self.assertEqual(pr_gate.decide(p, ["sha=abc verdict=clean policy=yes"], [], equiv, ["internal/strategy/x.go"],
+                                        0, False, "In review", (), True)[0], "merge")
+        # Mixed with GitHub's own update merges, in either order.
+        self.assertEqual(pr_gate.equiv(self.cmp(commit("u2", ("b1", "m2"))), regen=["b1"]), "abc")
+
+    def test_an_unrecorded_merge_still_voids(self):
+        # A person's or an agent's own merge of main: not recorded by the gate.
+        self.assertIsNone(pr_gate.equiv(self.cmp()))
+        self.assertIsNone(pr_gate.equiv(self.cmp(), regen=["other"]))
+
+    def test_a_recorded_sha_must_still_be_a_merge(self):
+        cmp = {"base_commit": {"sha": "abc"}, "commits": [commit("b1", ("abc",), **GATE_MERGE)]}
+        self.assertIsNone(pr_gate.equiv(cmp, regen=["b1"]))
+
+    def test_a_commit_after_it_still_voids(self):
+        self.assertIsNone(pr_gate.equiv(self.cmp(commit("c1", ("b1",), committer="t", subject="Fix")), regen=["b1"]))
+
+    def test_cli_reads_the_gate_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = {"cmp": os.path.join(d, "cmp.json"), "state": os.path.join(d, "pr_gate.json")}
+            for name, data in (("cmp", self.cmp()), ("state", {"7:regen": "old b1"})):
+                with open(paths[name], "w") as f:
+                    json.dump(data, f)
+            run = lambda *a: subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "pr_gate.py"), "equiv", *a],
+                                            capture_output=True, text=True).stdout.strip()
+            self.assertEqual(run(paths["cmp"], paths["state"], "7"), "abc")
+            self.assertEqual(run(paths["cmp"], paths["state"], "8"), "")
+            self.assertEqual(run(paths["cmp"]), "")
+            self.assertEqual(run(paths["cmp"], os.path.join(d, "missing.json"), "7"), "")
+
+    def test_only_generated_files_and_sorted_lists_are_settled(self):
+        gen = ["docs/parameters.md", "frontend/content/help-index.json"]
+        self.assertTrue(pr_gate.only_settled([], gen))
+        self.assertTrue(pr_gate.only_settled(["docs/parameters.md", "docs/product/assistant/golden.jsonl"], gen))
+        self.assertFalse(pr_gate.only_settled(["docs/parameters.md", "frontend/content/glossary.json"], gen))
+
+    def test_sorted_lists_agree_with_regen_sh(self):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, "scripts", "regen.sh")) as f:
+            text = f.read()
+        line = next(l for l in text.splitlines() if l.startswith("SORTED_LISTS="))
+        self.assertEqual(tuple(line.split("=", 1)[1].strip('"').split()), pr_gate.SORTED_LISTS)
+
+
+GIT_ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@x", "GIT_COMMITTER_NAME": "t",
+           "GIT_COMMITTER_EMAIL": "t@x", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+class Settled(unittest.TestCase):
+    """pr_gate.py settled on a throwaway repo: a merge whose conflict was only in a generated file."""
+
+    def git(self, *args, check=True):
+        return subprocess.run(["git", *args], cwd=self.repo, env=GIT_ENV, check=check, capture_output=True, text=True)
+
+    def write(self, path, text):
+        with open(os.path.join(self.repo, path), "w") as f:
+            f.write(text)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = self.tmp.name
+        self.git("init", "-q", "-b", "main")
+        self.write(".gitattributes", "gen.json linguist-generated=true\n")
+        for f in ("gen.json", "src.txt", "other.txt"):
+            self.write(f, "base\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("checkout", "-q", "-b", "pr")
+        self.write("gen.json", "pr\n")
+        self.write("src.txt", "pr\n")
+        self.git("commit", "-q", "-am", "pr change")
+        self.git("checkout", "-q", "main")
+        self.write("gen.json", "main\n")
+        self.write("other.txt", "main\n")
+        self.git("commit", "-q", "-am", "main change")
+        self.git("checkout", "-q", "pr")
+        self.assertNotEqual(self.git("merge", "--no-edit", "-q", "main", check=False).returncode, 0)
+
+    def settled(self):
+        return subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "pr_gate.py"), "settled", self.repo],
+                              env=GIT_ENV).returncode
+
+    def test_a_merge_that_settles_only_the_generated_file_is_settled(self):
+        self.write("gen.json", "regenerated\n")
+        self.git("add", "gen.json")
+        self.git("commit", "-q", "--no-edit")
+        self.assertEqual(self.settled(), 0)
+
+    def test_a_merge_that_changes_any_other_file_is_not(self):
+        self.write("gen.json", "regenerated\n")
+        self.write("src.txt", "edited during the merge\n")
+        self.git("add", "gen.json", "src.txt")
+        self.git("commit", "-q", "--no-edit")
+        self.assertEqual(self.settled(), 1)
+
+    def test_a_plain_commit_is_not(self):
+        self.git("merge", "--abort")
+        self.write("src.txt", "plain\n")
+        self.git("commit", "-q", "-am", "plain")
+        self.assertEqual(self.settled(), 1)
+
+
 def approved(p=None, markers=CLEAN, files=("internal/strategy/open.go",), behind=0, on=False):
     return pr_gate.decide(p or pr(), markers, [], (), list(files), behind, on, "In review", (), True)
 
