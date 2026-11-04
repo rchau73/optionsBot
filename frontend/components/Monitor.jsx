@@ -9,21 +9,26 @@ import OverviewPnl from "./OverviewPnl";
 import OverviewStatus from "./OverviewStatus";
 import OverviewTiles from "./OverviewTiles";
 import PayoffModal from "./PayoffModal";
+import SinceLastVisit from "./SinceLastVisit";
+import { useLastVisit } from "@/hooks/useLastVisit";
 import { useMonitor } from "@/hooks/useMonitor";
 import { summarise } from "@/lib/monitor";
+import { pickBot } from "@/lib/overview";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 /**
  * The overview, answer first (#404): the status line and the amber "held back" lines, the four tiles (coin
  * first, ≈ USD on the footer), the P&L chart (Coin per bot | USD all bots), then one band per bot — price chart
- * with the sold-strike corridor and its strangle rows, a row opening the payoff modal. The detail panels —
+ * with the sold-strike corridor and its strangle rows, a row opening the payoff modal, then "Since you last
+ * looked" (#618: this browser's last visit vs now, under the four answers). The detail panels —
  * positions, missing legs, trades, working orders, not managed, the USD P&L over every range — are their own
  * page, Details (pro) at /details (#405); Activity and Account too (/activity, /account).
  * On a phone (< 640 px) the overview shows one bot (`bot`, ?bot=) with a coin switch (#320); its menu links to
  * Details (pro).
  */
 export default function Monitor({ bot = null }) {
-  const { names, bots, error, pollMs } = useMonitor();
+  const { names, bots, trades, tradesComplete, error, pollMs, polledAt } = useMonitor();
+  const visit = useLastVisit(bots);
   // The payoff modal (#391): { bot, strangleId, opener } — opener gets the focus back on close.
   const [chart, setChart] = useState(null);
   const openChart = (botName, strangleId, opener) => setChart({ bot: botName, strangleId, opener });
@@ -44,6 +49,9 @@ export default function Monitor({ bot = null }) {
     <div className="min-h-screen">
       <div className="sm:hidden">
         <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} />
+        <div className="px-3 pb-3">
+          <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />
+        </div>
       </div>
       <div className="hidden sm:block" data-testid="desktop-monitor">
         <Header bots={bots} error={error} />
@@ -57,6 +65,7 @@ export default function Monitor({ bot = null }) {
           <OverviewTiles bots={bots} loading={!bots.length && !error} />
           <OverviewPnl names={names} units={units} />
           <BotDashboards bots={bots} onOpen={openChart} />
+          <SinceLastVisit bots={bots} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />
           <p>
             <Link
               href="/details"
