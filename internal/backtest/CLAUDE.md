@@ -23,4 +23,10 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
     net, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week (`docs/studies/regime-hold.md`); `-regimehold live` runs one replay so.
   - `-sheds all` (study, #637, `replay/shed.go`): one replay per GEX shed variant (today, none, `partial:K`, `delta:D`, a perp `hedge`) at each `-costs` multiple (1,2), one table:
     net (coin, USD), shed closes per break, the named windows 9–17 Oct and 29 Oct–4 Nov, worst day/week, max MM, a −20 % gap on the held book, stops, MM cuts, a verdict against today's shed (`docs/studies/shed-variants.md`); `-shed hedge` runs one replay so.
-  Not modelled there: rebalance, leg balancing, churn breaker, journal-restored holds.
+  - `-rebalance prorata` (#638, `replay/rebalance.go`; default `off`, so earlier replays are unchanged): the bot's rebalance — a pass on a confirmed limit change (cuts to the exact limit),
+    retries of a held or short top-up (cut only above limit + 1.5 pp, `DownsizeDue`), top-ups as `rebalancePositions`; `-limits journal` takes the limit, freeze and starts from the journal's `risk_limit` lines
+    (each start a startup pass with the ±1.5 pp band), and with `-journal` the bot's downsizes are listed beside the replay's per day and side.
+  - Starting balance (#638): `-equity`, else with `-journal` the bot's own margin balance at `-from` (its `risk_limit` lines and `data/pnl_history.jsonl`, `-pnlhistory`), else `account.json` (today's);
+    none → an error, never a 1-coin default (it priced ETH's ~489 ETH book on 1 ETH).
+  - `-rebalances prorata,cheapest,winners` (study, #638): which strangle a downsize cuts — downsize P&L, IM freed, cost per pp, IM and slot balance after the cut, top-ups (`docs/studies/downsize-cut.md`).
+  Not modelled there: leg balancing, churn breaker, journal-restored holds; margin is the replay's scan, not Deribit's simulator.

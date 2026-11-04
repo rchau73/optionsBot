@@ -43,6 +43,16 @@ type Settings struct {
 	// "confirmed" = the bot's; "live" also holds the trend's side while the
 	// live regime is negative.
 	RegimeHold string
+	// Rebalance is the rebalance model and its downsize rule (rebalance.go,
+	// #638): "" = none (as before), "prorata" = the bot's, "cheapest" or
+	// "winners" = the study's alternatives.
+	Rebalance string
+	// Limits, when set, are the IM limit and freeze in force (the journal's,
+	// JournalPolicy) instead of the replay's own; the limit then counts as
+	// resting on confirmed data. Restarts are the bot's starts in the window:
+	// each makes the next rebalance a startup pass (rebalance.go).
+	Limits   []LimitAt
+	Restarts []time.Time
 	// Shed is what a GEX shed does (shed.go, #637): the zero value is the
 	// bot's (buy the whole side back).
 	Shed ShedVariant
@@ -102,6 +112,21 @@ type Result struct {
 	RegimeHeldEntries    int // entries opened without a side the regime-side rule held
 	RegimeSideHolds      int // entry or repair sides the rule held, once per decision
 	SoldIntoLiveNegative int // legs sold (entries, repairs) on the trend's side while the live regime was negative
+	// The rebalance model (#638, rebalance.go).
+	RebalancePasses    int
+	StartupInBand      int        // startup passes skipped: IM within the band (Settings.Restarts)
+	Downsizes          int        // passes that cut
+	DownsizeLegs       int        // legs bought back by them
+	DownsizeLots       float64    // lots bought back, summed over the legs
+	DownsizeCost       float64    // their realised P&L, net of fees (negative = a cost)
+	DownsizeIMFreedPP  float64    // IM freed, percentage points of the margin balance, summed over the passes
+	CutsOverLimit      int        // cut passes that left IM above the limit
+	CutsUneven         int        // strangles whose call and put differed by more than a lot after a cut
+	MaxSlotShareRatio  float64    // the largest slot's IM (on its own) ÷ its slot share after a cut, at its worst
+	CutsSlotOverShare  int        // cut passes that left a slot above SlotOverShareRatio
+	TopUps, TopUpsHeld int        // complements sold; complements held (and re-armed)
+	TopUpLots          float64    // lots sold by the complements
+	DownsizeLog        []Downsize // every leg cut, for the journal comparison
 	// The shed study (#637, shed.go).
 	ShedBreaks         int     // negative breaks: decisions where a shed starts after one without
 	ShedPnL            float64 // realised on the GEX shed buy-backs, net of fees
@@ -166,8 +191,9 @@ type engine struct {
 	stopped    map[string]time.Time // strangle/side → when a stop, delta exit or MM cut closed it
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
-	hedge      perpHedge            // the shed study's perp hedge (shed.go)
-	shedding   bool                 // the last decision shed (ShedBreaks)
+	rb         rebalanceState
+	hedge      perpHedge // the shed study's perp hedge (shed.go)
+	shedding   bool      // the last decision shed (ShedBreaks)
 
 	now  time.Time              // the snapshot being replayed
 	dec  strategy.GammaDecision // its GEX decision
@@ -297,7 +323,8 @@ func (e *engine) openBook(snap recorder.Snapshot) {
 }
 
 // step runs one decision at `at` through the bot's cycle (strategy.evaluate):
-// marks → GEX → shed → exit rules → margin policy → repairs → entries. The
+// marks → GEX → shed → exit rules → margin policy (MM cut, rebalance) →
+// repairs → entries. The
 // prices are snap's; the GEX side, spot and DVOL are rec's when there is one
 // (a minute record), else rebuilt from snap.
 func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRecord, trading bool) {
@@ -331,6 +358,12 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	dec := e.gamma.Evaluate()
 	e.dec = dec
 	st := e.riskStatus(at, dec)
+	if l, ok := journalLimit(e.set.Limits, at); ok {
+		st.LimitIMPct, st.Frozen, st.CanRebalance = l.LimitPct, l.Frozen, true
+		if l.Frozen && st.FreezeReason == "" {
+			st.FreezeReason = "frozen in the journal"
+		}
+	}
 	if !trading {
 		return
 	}
@@ -361,6 +394,8 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	mmBreach := u.MMPct() >= st.MaxMMPct
 	if mmBreach {
 		e.cutForMM(at, u, st, quotes)
+	} else if e.set.Rebalance != "" {
+		e.rebalance(at, snap, dec, st, quotes, spot, gexErr == nil, stopsDeferred)
 	}
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.

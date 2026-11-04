@@ -101,26 +101,8 @@ func CapStudyMarkdown(coin string, rows []CapRow, missing []time.Time) string {
 	if len(rows) == 0 {
 		return ""
 	}
-	var b strings.Builder
-	r0 := rows[0].Result
-	fmt.Fprintf(&b, "### %s — liquidity cap %s → %s, %d decisions\n\n", coin,
-		r0.Start.Format("2006-01-02 15:04"), r0.End.Format("2006-01-02 15:04"), r0.Snapshots)
-	_, full := WorstWeek(r0.Days, r0.Equity0)
-	if len(missing) > 0 || !full {
-		fmt.Fprintf(&b, "**Indicative:** %d replayed days", len(r0.Days))
-		if len(missing) > 0 {
-			days := make([]string, len(missing))
-			for i, d := range missing {
-				days[i] = d.Format("2006-01-02")
-			}
-			fmt.Fprintf(&b, "; no recording on %d days (%s)", len(missing), strings.Join(days, ", "))
-		}
-		if !full {
-			b.WriteString("; under a week, so the worst week is the whole window")
-		}
-		b.WriteString(".\n\n")
-	}
-	fmt.Fprintf(&b, "| Cap (%% of OI) | Avg IM (%% of limit) | Cycles under %.0f %% of limit, entries allowed | Entries cut or blocked | Lots cut | Legs capped | Net (%% of balance) | Worst week (%% of balance) |\n",
+	b := studyHeader(coin, "liquidity cap", rows[0].Result, missing)
+	fmt.Fprintf(b, "| Cap (%% of OI) | Avg IM (%% of limit) | Cycles under %.0f %% of limit, entries allowed | Entries cut or blocked | Lots cut | Legs capped | Net (%% of balance) | Worst week (%% of balance) |\n",
 		strategy.UnderUseTargetPct)
 	b.WriteString("|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rows {
@@ -130,9 +112,33 @@ func CapStudyMarkdown(coin string, rows []CapRow, missing []time.Time) string {
 		if res.Equity0 > 0 {
 			net = res.Net / res.Equity0 * 100
 		}
-		fmt.Fprintf(&b, "| %g | %.1f | %.1f %% (%d of %d) | %d (%d sent) | %.0f | %d | %+.2f | %+.2f |\n",
+		fmt.Fprintf(b, "| %g | %.1f | %.1f %% (%d of %d) | %d (%d sent) | %.0f | %d | %+.2f | %+.2f |\n",
 			r.CapPct, res.AvgUseOfLimitPct, r.UnderTargetShare(), res.UnderTargetCycles, res.EntryCycles,
 			res.LiquidityEntriesCut, res.Entries, res.LiquidityLotsCut, res.LiquidityCapped, net, ww)
 	}
 	return b.String()
+}
+
+// studyHeader opens a study's table: the coin, the study, the window and,
+// on a gapped or short recording, the **Indicative:** note with the gaps.
+func studyHeader(coin, study string, r0 Result, missing []time.Time) *strings.Builder {
+	b := &strings.Builder{}
+	fmt.Fprintf(b, "### %s — %s, %s → %s, %d decisions\n\n", coin, study,
+		r0.Start.Format("2006-01-02 15:04"), r0.End.Format("2006-01-02 15:04"), r0.Snapshots)
+	_, full := WorstWeek(r0.Days, r0.Equity0)
+	if len(missing) > 0 || !full {
+		fmt.Fprintf(b, "**Indicative:** %d replayed days", len(r0.Days))
+		if len(missing) > 0 {
+			days := make([]string, len(missing))
+			for i, d := range missing {
+				days[i] = d.Format("2006-01-02")
+			}
+			fmt.Fprintf(b, "; no recording on %d days (%s)", len(missing), strings.Join(days, ", "))
+		}
+		if !full {
+			b.WriteString("; under a week, so the worst week is the whole window")
+		}
+		b.WriteString(".\n\n")
+	}
+	return b
 }
