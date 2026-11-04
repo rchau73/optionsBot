@@ -15,6 +15,7 @@ For architecture and design see the [main README](../README.md); for the trading
 - [BTC and ETH side by side](#btc-and-eth-side-by-side)
 - [macOS sleep caveat](#macos-sleep-caveat)
 - [Troubleshooting](#troubleshooting)
+- [Account keys (registry and key store)](#account-keys-registry-and-key-store)
 
 ## Run locally
 
@@ -463,3 +464,23 @@ Logs carry the `gateway` field; the public one starts with `connected (public da
 Each has its own rate limiter.
 If either gives up reconnecting the bot exits non-zero so the supervisor restarts it.
 `gex_snapshot` lines show `method`, `regime`, `gamma_flip` and `first_expiry` — compare them with GestaoCarteira's `runOptIndicator.sh`, which uses the same rules.
+
+## Account keys (registry and key store)
+
+The account registry (`data/accounts.json`, #585) and the key store (`data/keystore.json`, #572) are not wired to the bots yet; these commands keep them in step (#625).
+The master key comes from `KEYSTORE_MASTER_KEY` or `KEYSTORE_MASTER_KEY_FILE` in the person's own environment; where it lives in production is the person's choice, and agents never write it.
+The key is read from an owner-only JSON file (`{"client_id": …, "client_secret": …, "scope": …}`, the scope as Deribit shows it for the key) or stdin, never from an argument.
+
+```bash
+go run ./cmd/accounts key add    --account <id> --key-file key.json   # account with no active key; refuses a key that can move funds
+go run ./cmd/accounts key rotate --account <id> < key.json            # new key sealed → key_id moved → old key revoked
+go run ./cmd/accounts key revoke --account <id>                       # the account shows blocked (revoked) in -check
+go run ./cmd/accounts -check                                          # one row per account, its key-scope status
+```
+
+- A refused key (withdrawal rights, or a scope that cannot be read) writes nothing, and the message never holds the key or its scope.
+- A rotation that fails at any step leaves the account on its old, working key (a new key already sealed is revoked again).
+- Replacing or revoking a key changes nothing in a running bot: a person restarts or stops that account's bot, and the startup reconcile then applies.
+  The command restarts nothing.
+- Each action that changed a key appends one line to `data/accounts_audit.jsonl` (owner-only): time, the OS user, the account id, the action — no key, key id or scope.
+- Exit 0 done, 1 refused or failed, 2 bad usage or an unreadable file.
