@@ -5,7 +5,7 @@ Part of [Agentic development](../../AGENTIC.md).
 The journal is the bots' only history, so the tick copies it every night (#328, epic E6).
 On the first tick after 00:00 UTC, [`backup_data.sh`](../../scripts/agents/backup_data.sh) copies, for each environment (stable, mvp) and bot (`BACKUP_BOTS`, default `btc eth`) whose folder exists,
 `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/`
-(plus each environment's monitor request queue, `data/monitor/requests.jsonl` and `requests_status.jsonl`, and the assistant's review log `data/monitor/assistant.jsonl`, to `<date>/<env>/monitor/`, #409, #438.
+(plus each environment's monitor request queue, `data/monitor/requests.jsonl` and `requests_status.jsonl`, and the assistant's review log `data/monitor/assistant.jsonl`, and the audit trail `data/monitor/audit.jsonl` with its archives `audit.<UTC time>.jsonl`, to `<date>/<env>/monitor/`, #409, #438, #619.
 Each line of the copied log must parse, `backupcheck -lines`; a torn last line is allowed) to `<envs>/history/backups/<date>/<env>/<bot>/`.
 Named files only: no `.env`, no secret (an `.env*` found in the archive is dropped).
 It reads the live files and never writes to them.
