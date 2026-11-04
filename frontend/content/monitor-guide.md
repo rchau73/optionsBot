@@ -357,6 +357,9 @@ These pages are for the admin role only. A manager or a user who opens one is re
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer). It is read-only.
 <!-- guide: page:/admin/audit -->
 
+**Audit chain**: each line of the audit trail carries a fingerprint of the line before it, so a line changed or removed by hand shows. Under the filters the Audit page says "Chain intact" with how many lines were checked, or "Chain broken at line N" with its time and why: a line before it was removed, reordered or edited, or this line was edited or is damaged. Check again runs the check once more. A broken chain hides no line: the trail below still lists every line. Lines written before the chain began are legacy and are named as not covered. When the trail grows past its size limit it continues in a new file, and the check and the pages read across both. Nothing is ever deleted. The check shows tampering; it cannot stop someone who can rewrite the whole trail.
+<!-- guide: route:GET /api/admin/audit/verify -->
+
 **Analytics**: the weekly usage report (Usage), built only from the events of people who said yes. A Delivery view is not on the page yet.
 <!-- guide: page:/admin/analytics, screen:analytics -->
 
