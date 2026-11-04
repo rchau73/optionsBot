@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
 	"optionsbot/internal/replay"
@@ -238,11 +239,9 @@ func TestReplayJournalPolicy_LimitsAndRestarts(t *testing.T) {
 	if len(restarts) != 1 || !restarts[0].Equal(at(22, 19)) {
 		t.Errorf("restarts = %v, want the one startup line", restarts)
 	}
-	if b := replay.JournalBalanceAt(recs, at(23, 0)); b != 1.70 {
-		t.Errorf("balance on 23 Oct = %v, want 1.70 (the last journaled before it)", b)
-	}
-	if b := replay.JournalBalanceAt(recs, at(20, 0)); b != 0 {
-		t.Errorf("balance before the journal = %v, want 0", b)
+	balances := replay.BalanceSamples(recs, nil, "BTC")
+	if b, ok := replay.JournalBalanceAt(balances, at(23, 0)); !ok || b.Coin != 1.70 || b.Source != "risk_limit" {
+		t.Errorf("balance on 23 Oct = %+v, want 1.70 (the last journaled before it)", b)
 	}
 
 	// Read from orders.log: only the risk_limit lines, a torn one skipped.
@@ -261,6 +260,69 @@ func TestReplayJournalPolicy_LimitsAndRestarts(t *testing.T) {
 	}
 	if _, err := replay.ReadRiskRecords(filepath.Join(t.TempDir(), "none.log")); err == nil {
 		t.Error("a missing journal must fail")
+	}
+}
+
+// The replay starts from the bot's own margin balance at -from (PM on #640:
+// a 1-coin fallback reported ETH's −0.35 ETH as −35 % of a ~489 ETH book):
+// risk_limit lines and P&L points both count, a USD balance is converted at
+// the spot of its P&L point, a start's line without a balance is skipped,
+// and before the first record the first one after -from is taken.
+func TestReplayJournalBalance_StartingBalance(t *testing.T) {
+	t.Parallel()
+	at := func(d, h int) time.Time { return time.Date(2026, 10, d, h, 0, 0, 0, time.UTC) }
+	f := func(v float64) *float64 { return &v }
+	recs := []orders.RiskRecord{
+		{Timestamp: at(22, 19), Change: orders.RiskLimitChanged, Detail: "startup: x", LimitIMPct: 20}, // before the first margin read
+		{Timestamp: at(24, 9), Change: orders.RiskFrozen, LimitIMPct: 20, Unit: "ETH", MarginBalance: 489.1},
+		{Timestamp: at(26, 9), Change: orders.RiskFrozen, LimitIMPct: 20, Unit: "USD", MarginBalance: 1_000_000}, // no P&L point near it
+		{Timestamp: at(27, 9), Change: orders.RiskFrozen, LimitIMPct: 20, Unit: "USD", MarginBalance: 1_000_000},
+	}
+	points := []history.Point{
+		{T: at(23, 0), Spot: 4000}, // margin unknown that cycle
+		{T: at(25, 0), Spot: 4000, MarginBalance: f(486.0), Unit: "ETH"},
+		{T: at(27, 9).Add(20 * time.Minute), Spot: 2000, MarginBalance: f(1_000_000), Unit: "USD"},
+		{T: at(28, 0), Spot: 2000, MarginBalance: f(480.1), Unit: "BTC"}, // another coin: left out
+	}
+	samples := replay.BalanceSamples(recs, points, "ETH")
+	if len(samples) != 4 {
+		t.Fatalf("samples = %+v, want 24 Oct (journal), 25 Oct (P&L), 27 Oct (journal, at the P&L spot), 27 Oct (P&L, USD)", samples)
+	}
+	for _, c := range []struct {
+		name   string
+		t      time.Time
+		coin   float64
+		source string
+	}{
+		{"before any record: the first after -from", at(20, 0), 489.1, "risk_limit"},
+		{"a start's line has no balance: the last before it", at(24, 12), 489.1, "risk_limit"},
+		{"the P&L history between journal lines", at(26, 12), 486.0, "pnl_history"},
+		{"a USD balance at the nearest P&L spot", at(27, 9).Add(time.Minute), 500, "risk_limit"},
+		{"after every record: the last", at(31, 0), 500, "pnl_history"},
+	} {
+		b, ok := replay.JournalBalanceAt(samples, c.t)
+		if !ok || math.Abs(b.Coin-c.coin) > 1e-9 || b.Source != c.source {
+			t.Errorf("%s: %+v (%v), want %.1f from %s", c.name, b, ok, c.coin, c.source)
+		}
+	}
+	if _, ok := replay.JournalBalanceAt(replay.BalanceSamples(recs[:1], nil, "ETH"), at(20, 0)); ok {
+		t.Error("no balance recorded: want none (the replay then refuses to guess one)")
+	}
+
+	// Read from pnl_history.jsonl: a torn line skipped, a missing file is no points.
+	path := filepath.Join(t.TempDir(), "pnl_history.jsonl")
+	lines := `{"t":"2026-10-28T00:00:00Z","spot":4000,"margin_balance":489.1,"unit":"ETH"}
+{"t":"2026-10-28T00:01:00Z","spot":4000,"margin_bal
+`
+	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := replay.ReadPnLHistory(path)
+	if err != nil || len(read) != 1 || read[0].MarginBalance == nil || *read[0].MarginBalance != 489.1 {
+		t.Errorf("read %+v (%v), want the one complete point", read, err)
+	}
+	if read, err := replay.ReadPnLHistory(filepath.Join(t.TempDir(), "none.jsonl")); err != nil || read != nil {
+		t.Errorf("missing file: %v (%v), want no points and no error", read, err)
 	}
 }
 

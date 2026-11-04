@@ -20,7 +20,15 @@ When a pass runs follows the bot (`enforceMarginPolicy`): a confirmed limit chan
 IM above the limit with no pass due is alert only, as live (#166).
 
 The replay rebuilds the IM limit from the recorded DVOL and its own regime closes, which need not match what the bot held.
-`-limits journal` takes the limit, the freeze and the bot's starts (each one a startup pass) from the journal's `risk_limit` lines, and the starting balance from the journal at `-from`:
+`-limits journal` takes the limit, the freeze and the bot's starts (each one a startup pass) from the journal's `risk_limit` lines.
+
+The starting balance is the bot's own at `-from` whenever `-journal` is given (`-equity` overrides it):
+- the last margin balance at or before `-from` in the journal's `risk_limit` lines or in `data/pnl_history.jsonl` beside it (`-pnlhistory` for another path), else the first one after `-from`;
+- a balance in USD (cross collateral) is converted at the spot of its P&L point;
+- without a journal, `account.json` in `-dir` (today's balance, said so on the first line);
+- with none of them the replay stops with an error. It used to fall back to 1 coin, which priced every percentage of ETH's ~489 ETH book on 1 ETH.
+
+The first line printed names the balance and where it came from; with `-journal` the report also prints the bot's own balance change over the window, beside the replay's net.
 
 ```bash
 go run ./cmd/stress -currency BTC -replay data/btc/data/market -from 2026-10-20 -to 2026-11-03 -dir data/stress/btc -journal data/btc/orders.log -start journal -limits journal -rebalances prorata,cheapest,winners
@@ -40,6 +48,10 @@ The columns:
 ## Results (stable's recordings and journal)
 
 Percentages and counts only: no amounts of a live bot appear in this file.
+
+**To be re-run.** These tables and the journal check below were made before the starting-balance fix.
+On the PM's run the balance had fallen back to 1 coin, which made BTC's percentages ~15 % too large and ETH's ~490× too large, and sized every slot target on that 1 coin.
+Re-run the three commands above on stable's data and replace both tables; the first line printed must name a balance from the bot (`risk_limit` or `pnl_history`).
 
 | Coin, window | Rule | Net (% of balance) | Cut passes | Legs cut | Downsize P&L (% of balance) | IM freed (pp) | Cost per pp (% of balance) | Above limit after | Largest slot ÷ share | Top-ups | Entries | Worst week (%) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -77,3 +89,7 @@ Per day and side, BTC 10-20 → 11-03:
 22 Oct, the largest cut, comes at the same minute (the 19:48 restart) but smaller: the replay's margin is a scenario scan, not Deribit's simulator (it read IM 27.3 % where Deribit read 24.6 %, and sized the slot target on its own IM per lot),
 and by then its book had drifted from the bot's (its own rolls and repairs chose other strikes and sizes).
 The replay's sizes are therefore indicative; its timing follows the bot.
+
+**Acceptance status:** "the replayed downsizes on 22 Oct and 26 Oct match the journal's cuts within one lot step" is met for 26 Oct and **not yet met for 22 Oct** on this table.
+The timing of the 22 Oct startup pass is pinned on a synthetic book (`TestReplayRebalance_StartupPassBand`: one cut at the restart above limit + 1.5 pp, none within the band, none without a restart).
+If the 22 Oct size still differs after the re-run, the follow-up is to calibrate the replay's margin scan to the IM % in the journal's `risk_limit` lines (Deribit's figure).

@@ -672,6 +672,7 @@ func main() {
 	replayRebalance := flag.String("rebalance", "off", "STUDY, with -replay (#638): the rebalance model — off (as before) | prorata (the bot: a confirmed limit change and its retries cut every strangle to its slot share, top-ups below it) | cheapest | winners (the downsize cuts whole strangles, least cost per IM freed or biggest winners first)")
 	replayRebalances := flag.String("rebalances", "", "STUDY, with -replay: replay once per downsize rule in this list (prorata,cheapest,winners, #638) and print one table — downsize cost, IM freed, cost per pp, IM and slot balance after the cut, top-ups, net; with -journal the bot's downsizes beside the replayed pro-rata ones")
 	replayLimits := flag.String("limits", "replay", "with -replay (#638): the IM limit, freeze and restarts — replay (rebuilt from the recorded DVOL and the replay's regime closes) | journal (the bot's own risk_limit lines in -journal, its starts as startup passes, its margin balance at -from)")
+	replayPnLHistory := flag.String("pnlhistory", "", "with -replay -journal (#638): the bot's data/pnl_history.jsonl, read with the journal's risk_limit lines for its margin balance at -from (the replay's starting balance unless -equity); default data/pnl_history.jsonl beside -journal")
 	replayShed := flag.String("shed", "today", "STUDY, with -replay (#637): what a GEX shed does — today (the bot: buy the whole side back) | none | partial:K (cut to the slot target × K) | delta:D (only legs with |Δ| ≥ D) | hedge (keep the legs, short/long the perpetual for the side's delta)")
 	replaySheds := flag.String("sheds", "", "STUDY, with -replay: replay once per shed variant in this list (all = today,none,partial:0.5,partial:0,delta:0.20,delta:0.25,hedge, #637) at each -costs multiple and print one table — net (coin, USD), named windows, worst day/week, max MM, −20 % gap loss, stops, MM cuts, verdict")
 	replayCosts := flag.String("costs", "1,2", "with -sheds: cost multiples — every spread widened around its mid and every fee multiplied (1 = as recorded)")
@@ -693,7 +694,7 @@ func main() {
 			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, liqCaps: *replayLiqCaps,
 			regimeHold: *replayRegimeHold, regimeHolds: *replayRegimeHolds, shed: *replayShed, sheds: *replaySheds,
 			costs: *replayCosts, perpFundingPct: *replayPerpFunding,
-			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, set: set})
+			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, pnlHistory: *replayPnLHistory, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)
 			os.Exit(1)

@@ -64,7 +64,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
 	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "shed": true, "sheds": true, "costs": true, "perpfunding": true,
-	"rebalance": true, "rebalances": true, "limits": true}
+	"rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -92,6 +92,7 @@ type replayOpts struct {
 	rebalance                                         string // the rebalance model's downsize rule (#638): off | prorata (the bot) | cheapest | winners
 	rebalances                                        string // the downsize study's rules (e.g. "prorata,cheapest,winners"); "" = one replay
 	limits                                            string // the IM limit, freeze and restarts: replay (rebuilt) | journal (the bot's risk_limit lines)
+	pnlHistory                                        string // the bot's pnl_history.jsonl (balances); "" = data/pnl_history.jsonl beside -journal
 	equity, flipWindowMin, perpFundingPct             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
@@ -149,19 +150,30 @@ func runReplay(o replayOpts) error {
 		}
 	}
 	set.Closes, set.DVOL = readMarketJSON(filepath.Join(o.inputs, "market.json"))
-	if set.Equity <= 0 {
-		set.Equity = replay.ReadEquity(filepath.Join(o.inputs, "account.json"), cfg.Underlying)
-	}
-	if set.Equity <= 0 {
-		set.Equity = 1
-	}
 	var trades []orders.Trade
+	var recs []orders.RiskRecord
+	var balances []replay.BalanceAt
 	if o.journal != "" {
 		rp, err := orders.ReplayFile(o.journal, 0)
 		if err != nil {
 			return err
 		}
 		trades = rp.Trades
+		if recs, err = replay.ReadRiskRecords(o.journal); err != nil {
+			return err
+		}
+		pnlPath := o.pnlHistory
+		if pnlPath == "" {
+			pnlPath = filepath.Join(filepath.Dir(o.journal), "data", "pnl_history.jsonl")
+		}
+		points, err := replay.ReadPnLHistory(pnlPath)
+		if err != nil {
+			return err
+		}
+		balances = replay.BalanceSamples(recs, points, cfg.Underlying)
+	}
+	if set.Equity, err = startingBalance(o, balances, from, cfg.Underlying); err != nil {
+		return err
 	}
 	switch o.limits {
 	case "", "replay":
@@ -169,14 +181,7 @@ func runReplay(o replayOpts) error {
 		if o.journal == "" {
 			return fmt.Errorf("-limits journal needs -journal orders.log")
 		}
-		recs, err := replay.ReadRiskRecords(o.journal)
-		if err != nil {
-			return err
-		}
 		set.Limits, set.Restarts = replay.JournalPolicy(recs)
-		if b := replay.JournalBalanceAt(recs, from); o.equity <= 0 && b > 0 {
-			set.Equity = b // the bot's margin balance at -from, not today's
-		}
 		changed = append(changed, "-limits=journal")
 	default:
 		return fmt.Errorf("-limits %q: replay | journal", o.limits)
@@ -222,7 +227,7 @@ func runReplay(o replayOpts) error {
 		return fmt.Errorf("-liqcaps, -regimeholds, -sheds and -rebalances are four studies: run one at a time")
 	}
 	if o.rebalances != "" {
-		return runRebalanceStudy(snaps, set, o, changed, trades)
+		return runRebalanceStudy(snaps, set, o, changed, trades, balances)
 	}
 	if o.liqCaps != "" {
 		return runCapStudy(snaps, set, o, changed)
@@ -290,11 +295,49 @@ func runReplay(o replayOpts) error {
 		a := replay.ActualPnL(trades, window, res.Start, res.End)
 		fmt.Printf("**Journal (what the bot did), same window:** net %+.4f %s = realised %+.4f + unrealised %+.4f → %+.4f · opens %d · closes %d · legs without a recorded quote %d · replay − journal %+.4f %s\n",
 			a.Net, u, a.Realised, a.Unrealised0, a.Unrealised1, a.Opens, a.Closes, a.Unmarked, res.Net-a.Net, u)
+		fmt.Print(botBalanceChange(balances, res.Start, res.End, u))
 		if set.Rebalance != "" {
 			fmt.Print("\n" + replay.DownsizeMatchMarkdown(u, replay.CompareDownsizes(trades, res.DownsizeLog, res.Start, res.End, lotOf(u))))
 		}
 	}
 	return nil
+}
+
+// startingBalance is the margin balance the replay starts from at -from, in
+// the coin (#638: a 1-coin fallback reported ETH's −0.35 ETH as −35 % of a
+// ~489 ETH book): -equity, else the bot's own balance at -from (journal and
+// P&L history), else account.json's (today's), else an error.
+func startingBalance(o replayOpts, balances []replay.BalanceAt, from time.Time, coin string) (float64, error) {
+	if o.equity > 0 {
+		fmt.Printf("Starting balance %.4f %s (-equity)\n", o.equity, coin)
+		return o.equity, nil
+	}
+	if b, ok := replay.JournalBalanceAt(balances, from); ok {
+		when := "at -from"
+		if b.At.After(from) {
+			when = "the first recorded, after -from"
+		}
+		fmt.Printf("Starting balance %.4f %s (the bot's %s, %s, %s)\n", b.Coin, coin, b.Source, b.At.UTC().Format(time.RFC3339), when)
+		return b.Coin, nil
+	}
+	path := filepath.Join(o.inputs, "account.json")
+	if b := replay.ReadEquity(path, coin); b > 0 {
+		fmt.Printf("Starting balance %.4f %s (%s: today's, not the balance at -from)\n", b, coin, path)
+		return b, nil
+	}
+	return 0, fmt.Errorf("no starting balance: pass -equity, or -journal with margin_balance in its risk_limit lines or its data/pnl_history.jsonl (-pnlhistory), or -dir with account.json")
+}
+
+// botBalanceChange is the bot's own margin balance at the start and end of
+// the window, for the replay's net beside it ("" without both).
+func botBalanceChange(balances []replay.BalanceAt, start, end time.Time, coin string) string {
+	b0, ok0 := replay.JournalBalanceAt(balances, start)
+	b1, ok1 := replay.JournalBalanceAt(balances, end)
+	if !ok0 || !ok1 || b1.At.Before(b0.At) || b0.At.Equal(b1.At) || b0.Coin <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("**Bot's margin balance (deposits and withdrawals included):** %.4f → %.4f %s (%s → %s) = %+.2f %%\n",
+		b0.Coin, b1.Coin, coin, b0.At.UTC().Format("01-02 15:04"), b1.At.UTC().Format("01-02 15:04"), (b1.Coin-b0.Coin)/b0.Coin*100)
 }
 
 // lotOf is Deribit's minimum option size: 0.1 BTC, 1 ETH.
@@ -308,7 +351,7 @@ func lotOf(coin string) float64 {
 // runRebalanceStudy is -rebalances (#638): one replay per downsize rule on
 // the same books and settings, one table, and with -journal the bot's own
 // downsizes beside the replayed pro-rata ones.
-func runRebalanceStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string, trades []orders.Trade) error {
+func runRebalanceStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string, trades []orders.Trade, balances []replay.BalanceAt) error {
 	if _, ok := o.set["rebalance"]; ok {
 		return fmt.Errorf("-rebalances varies the rule itself: drop -rebalance")
 	}
@@ -337,6 +380,7 @@ func runRebalanceStudy(snaps []recorder.Snapshot, set replay.Settings, o replayO
 	if trades != nil {
 		for _, r := range rows {
 			if r.Rule == replay.RebalanceProRata {
+				fmt.Print("\n" + botBalanceChange(balances, r.Result.Start, r.Result.End, u))
 				fmt.Print("\n" + replay.DownsizeMatchMarkdown(u, replay.CompareDownsizes(trades, r.Result.DownsizeLog, r.Result.Start, r.Result.End, lotOf(u))))
 			}
 		}
