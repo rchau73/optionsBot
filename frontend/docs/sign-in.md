@@ -127,6 +127,8 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `nps_survey_changed` (`change`: shown, opt_out or opt_in, #490);
 - `answers_survey_shown` (the four answers card was shown, nothing else, #498);
 - `manual_close` and `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
+Every line ends with two fields of the hash chain (#619, `lib/auth/auditchain.js`): `prev`, the SHA-256 of the previous line's exact bytes (`""` for the first line of the trail), and `line_hash`, the SHA-256 of the line itself up to `,"line_hash"`.
+Both are hashes of audit lines, never of a password or a token; the Audit page leaves them out of the detail column.
 Never a password, hash or token (nor a reset link).
 Admins read it on the Audit page (below)
 

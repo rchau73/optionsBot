@@ -14,9 +14,10 @@ const EMPTY = { user: "", action: "", from: "", to: "" };
 /**
  * The Audit page (#308, #249; admins only — GET /api/admin/audit enforces
  * it): who did what, newest first, filtered by person, action and UTC day,
- * 100 lines at a time with "Older" for the next page. Read-only.
+ * 100 lines at a time with "Older" for the next page. Read-only. `chain`
+ * (the page's AuditChainStatus, #619) is shown under the filters.
  */
-export default function AuditTrail() {
+export default function AuditTrail({ chain = null }) {
   const [form, setForm] = useState(EMPTY); // the filters being typed
   const [filters, setFilters] = useState(EMPTY); // the filters applied
   const [page, setPage] = useState(null); // { off, entries, skipped, next_before }
@@ -100,6 +101,8 @@ export default function AuditTrail() {
           </button>
         </form>
       </Panel>
+
+      {chain}
 
       <Panel title="Audit trail" right={page && !page.off ? <span className="text-xs text-muted">{page.entries.length} shown</span> : null}>
         {error ? (

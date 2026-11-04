@@ -20,7 +20,7 @@ Part of the [monitor README](../README.md). Who may do what, and the Users page 
   - admin: ✓
   - manager: ✓
   - user: ✓
-- Read the audit trail (Audit page, `/api/admin/audit`)
+- Read the audit trail and check its hash chain (Audit page, `/api/admin/audit`, `/api/admin/audit/verify`, #619)
   - admin: ✓
   - manager: — (403)
   - user: — (403)
@@ -37,6 +37,7 @@ Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_C
 `__tests__/role-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the read-only `MONITOR_API_TOKEN` and with an expired session.
 A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
 A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
+Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
 Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing).
 **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401).
 So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later.

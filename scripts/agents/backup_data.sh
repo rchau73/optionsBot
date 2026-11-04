@@ -9,7 +9,8 @@
 #   .jsonl files, archive/) — named files only: no .env, no secret; and each
 #   environment's monitor request queue, data/monitor/requests.jsonl and
 #   requests_status.jsonl, to <date>/<env>/monitor/ (#409), with the
-#   assistant's review log data/monitor/assistant.jsonl (#438);
+#   assistant's review log data/monitor/assistant.jsonl (#438) and the audit
+#   trail data/monitor/audit.jsonl with its archives audit.<UTC time>.jsonl (#619);
 #   then go run ./cmd/backupcheck on each copy: the journal must replay
 #   (orders.ReplayFile) and hold no fewer events than the previous good copy.
 # The copy is built in <backups>/.<date>.partial and becomes <date> only when
@@ -116,7 +117,10 @@ done <<< "$sources"
 # line must parse (backupcheck -lines; a torn last line is allowed).
 for env in $ENV_NAMES; do
   msrc="$(env_dir "$env")/data/monitor"
-  for f in requests.jsonl requests_status.jsonl assistant.jsonl; do
+  # The audit trail (#619): audit.jsonl and its rotated archives audit.<UTC time>.jsonl,
+  # copied as they are; their hash chain is checked by the Audit page, not here.
+  for f in requests.jsonl requests_status.jsonl assistant.jsonl audit.jsonl "$msrc"/audit.*.jsonl; do
+    f="${f##*/}"
     if [[ -f "$msrc/$f" ]]; then
       mkdir -p "$work/$env/monitor"
       cp -p "$msrc/$f" "$work/$env/monitor/"

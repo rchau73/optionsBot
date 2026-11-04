@@ -22,6 +22,7 @@ import { AuthService } from "@/lib/auth/service";
 import { AuthStore } from "@/lib/auth/store";
 import { authKey } from "@/lib/auth/tokens";
 import { TEST_SECRET } from "@/test/auth";
+import { auditEntries } from "@/test/auditLines";
 
 // Low entropy on purpose: a test value, not a secret (CI runs gitleaks).
 const SALT = "s".repeat(32);
@@ -235,7 +236,7 @@ describe("Scenario: deleting a user removes the answers (#363)", () => {
 describe("Scenario: Access request", () => {
   let db, auditFile;
   const env = () => ({ AUTH_DB_PATH: db, ANALYTICS_SALT: SALT, EVENTS_PATH: file, AUDIT_PATH: auditFile });
-  const audits = () => fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const audits = () => auditEntries(auditFile);
 
   beforeEach(async () => {
     db = path.join(dir, "auth.db");

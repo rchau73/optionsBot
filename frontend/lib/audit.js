@@ -96,15 +96,46 @@ export function auditMatches(entry, { user, action, from, to }) {
   return true;
 }
 
-// Shown in their own columns; everything else goes to "detail".
-const COLUMNS = new Set(["time", "action", "username", "role", "target", "bot"]);
+// Shown in their own columns, or the hash chain's own fields (#619,
+// lib/auth/auditchain.js CHAIN_FIELDS: server-only, so named again here);
+// everything else goes to "detail".
+const NOT_DETAIL = new Set(["time", "action", "username", "role", "target", "bot", "prev", "line_hash"]);
 
 /** The "detail" column of a line: its other fields as stored, `key=value`, in file order. */
 export function auditDetail(entry) {
   return Object.entries(entry)
-    .filter(([k]) => !COLUMNS.has(k))
+    .filter(([k]) => !NOT_DETAIL.has(k))
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" ");
+}
+
+// What each break reason of GET /api/admin/audit/verify means, in words.
+const BREAK_REASONS = {
+  link: "a line before it was removed, reordered or edited",
+  edited: "this line was edited",
+  damaged: "this line is not a readable audit line",
+  unchained: "this line has no link to the line before",
+};
+
+/**
+ * The Audit page's chain line (#619) from the verify route's answer →
+ * { broken, text, legacy (the legacy sentence or null) }; null when the trail is off.
+ */
+export function auditChainSummary(result, formatTime = (t) => t) {
+  if (!result || result.off) return null;
+  const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
+  let legacy = null;
+  if (result.legacy > 0) {
+    legacy = result.legacy_before
+      ? `${n(result.legacy, "legacy line", "legacy lines")} before ${formatTime(result.legacy_before)} ${result.legacy === 1 ? "is" : "are"} not covered.`
+      : `${n(result.legacy, "legacy line is", "legacy lines are")} not covered: no line is chained yet.`;
+  }
+  if (result.ok) return { broken: false, text: `Chain intact — ${n(result.checked, "line", "lines")} checked.`, legacy };
+  const b = result.first_break;
+  const where = `line ${b.line.toLocaleString("en-US")}${b.archive ? ` of ${b.file}` : ""}`;
+  const when = b.time ? ` (${formatTime(b.time)})` : "";
+  const why = BREAK_REASONS[b.reason] ?? b.reason;
+  return { broken: true, text: `Chain broken at ${where}${when}: ${why}. ${n(result.checked, "line", "lines")} before it checked intact.`, legacy };
 }
 
 /** The query string of an audit request from the page's filters (empty ones left out). */

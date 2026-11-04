@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { GET, POST } from "@/app/api/consent/route";
 import { POST as postEvent } from "@/app/api/events/route";
+import { auditEntries } from "@/test/auditLines";
 import { signedIn, useTestAuth } from "@/test/auth";
 
 // #363: the person's answer to usage analytics, set through the route.
@@ -23,10 +24,7 @@ const sendEvent = () =>
   postEvent(new Request("http://monitor/api/events", { method: "POST", headers: headers(), body: JSON.stringify({ event: "screen_viewed", session_id: SESSION, props: {} }) }));
 const stored = () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean) : []);
 // The consent lines only (the first admin's creation is audited too).
-const audits = () =>
-  (fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []).filter(
-    (e) => e.action === "analytics_consent_changed",
-  );
+const audits = () => auditEntries(auditFile).filter((e) => e.action === "analytics_consent_changed");
 
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "consent-"));
