@@ -172,6 +172,21 @@ describe("Scenario: no open positions or stale data", () => {
   });
 });
 
+describe("Since you last looked (#618) stays under the four answers", () => {
+  test("the card comes after the tiles, the strangle rows and the last trade, so it never pushes them below the first screen", () => {
+    window.localStorage.setItem("monitor.lastVisit.btc", JSON.stringify({ at: new Date(Date.now() - 20 * 3_600_000).toISOString(), worst: null, warnings: [] }));
+    const page = renderOverview(FIXTURES.profit());
+    const card = within(page).getByRole("region", { name: "Since you last looked" });
+    const answers = [
+      within(page).getByRole("region", { name: "Coins earned this month" }),
+      within(page).getByRole("region", { name: "Worst case" }),
+      within(page).getByTestId("strangle-row-btc-a"),
+      within(page).getByRole("region", { name: "BTC · last trade" }),
+    ];
+    for (const a of answers) expect(a.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe("the helpers behind the four answers", () => {
   test("lastTradeLine: unknown, none, open and close", () => {
     expect(lastTradeLine({ summary: null })).toEqual({ unknown: "not loaded yet" });

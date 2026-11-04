@@ -203,7 +203,23 @@ On the right is one **strangle row** per strangle (`components/StrangleRow.jsx`,
 - It has an amber note when a leg is held back (`missingLine`).
 - A click opens the payoff modal, and focus returns to the row.
 A stale bot's band is dimmed with its age; a bot that is down says so; no strangles: "Nothing held: the bot opens a strangle when a slot is vacant and margin allows"; a brand-new bot shows its first-day panel in the list's place.
-**5.** A "Details (pro) →" link to `/details` (#405: the detail panels are that page now), then the footer.
+**5. Since you last looked** (`components/SinceLastVisit.jsx`, helpers in `lib/sincevisit.js`, #618), under the four answers (`overview-four-answers.test.jsx` pins the order).
+- The last visit is a time kept only in this browser (`localStorage`, `monitor.lastVisit.<bot>`, with that moment's worst case and header warnings; `hooks/useLastVisit.js`).
+  It is written once the page has been open and visible for 10 s, then at most once a minute while it stays visible, so a quick reload keeps the summary.
+  No request carries it and no analytics event is sent.
+- One block per bot:
+  - the result of the closes since then, net of fees, in coin and USD (a loss with its minus sign and "▼ loss", as large as a gain);
+  - each close with its reason in plain words (take profit, time roll, exit line, stop-loss; at most 5 rows, then "and n more" and "All in Activity →");
+  - the legs sold, and the worst case (3 σ day) then vs now: larger, smaller or about the same (within 10 %), with both figures.
+- A header warning (HALTED, OFFLINE, STALE, IM over limit) that began since the last visit gets a one-line pointer; the chip stays in the header.
+- States:
+  - no stored visit → no card, only "Next time you come back, this shows what changed since this visit.";
+  - nothing closed or sold → "Nothing happened since <time>"; closes still loading → "Loading the closes…"; a bot down → "Closes unknown: <reason>";
+  - a worst case not recorded → "unknown: <reason>", never 0; away more than 30 days → the window is the last 30 days and says so.
+- "Hide until my next visit" hides it (`monitor.lastVisit.dismissed`) until a newer visit is stored; on a phone the card is under the phone overview, for the coin shown.
+- No page is added, renamed or removed, so the menu is unchanged.
+
+**6.** A "Details (pro) →" link to `/details` (#405: the detail panels are that page now), then the footer.
 Analytics: `overview_unit_toggle` (`unit`) and `overview_layer_toggle` (`layer`)
 
 ### Overview dashboard (first block, one section per bot; #394 — superseded by #404 above: the tiles moved to the top row, the strangle cards became rows, the regime chart became the band's price chart)
