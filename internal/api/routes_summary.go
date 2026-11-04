@@ -53,7 +53,14 @@ func (s *Server) performance(w http.ResponseWriter, r *http.Request) {
 }
 
 // income serves GET /api/income.
-func (s *Server) income(w http.ResponseWriter, _ *http.Request) {
+// ?from= (#629) starts the "% of start" view at the first balance at or after
+// that time, so two environments line up on one start.
+func (s *Server) income(w http.ResponseWriter, r *http.Request) {
+	requested, err := ParseIncomeFrom(r.URL.Query().Get("from"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	now := time.Now().UTC()
 	var trades []orders.Trade
 	if ts, ok := s.events.(TradeSource); ok {
@@ -64,9 +71,19 @@ func (s *Server) income(w http.ResponseWriter, _ *http.Request) {
 	var points []history.Point
 	if src, ok := s.history.(PointSource); ok && len(inc.Months) > 0 {
 		from, _ := time.Parse("2006-01", inc.Months[0].Month)
+		if !requested.IsZero() && requested.Before(from) {
+			from = requested
+		}
 		points = src.Points(from, now)
 	}
-	writeJSON(w, IncomeWithHistory(inc, points, now, v.Environment))
+	months := make([]string, len(inc.Months))
+	for i, m := range inc.Months {
+		months[i] = m.Month
+	}
+	start := IncomeStartOf(months, trades, points, requested, now)
+	inc = IncomeWithHistory(inc, points, now, v.Environment)
+	inc.Start = &start
+	writeJSON(w, inc)
 }
 
 // HistoryRanges maps the chart's range names to how far back they reach.

@@ -78,6 +78,8 @@ type WorstWeek struct {
 	End   *time.Time `json:"end"`
 	Coin  float64    `json:"coin"`
 	Pct   *float64   `json:"pct"`
+	// PctNote says why Pct is null though the equity is known (/api/income, #629).
+	PctNote string `json:"pct_note,omitempty"`
 }
 
 // PerformanceLabel is "live" only for a live bot; anything else is testnet.
@@ -93,7 +95,14 @@ func PerformanceLabel(environment string) string {
 // that point's spot when it is in USD (cross collateral). ok is false when no
 // point carries a usable balance; reason then says why. Never computed from P&L.
 func EquityAtStart(points []history.Point) (equity float64, reason string, ok bool) {
-	for _, p := range points {
+	_, equity, reason, ok = firstBalance(points)
+	return equity, reason, ok
+}
+
+// firstBalance is EquityAtStart with the index of the point it came from
+// (-1 when none), so a caller can measure from that point's time and spot.
+func firstBalance(points []history.Point) (i int, equity float64, reason string, ok bool) {
+	for i, p := range points {
 		if p.MarginBalance == nil || *p.MarginBalance <= 0 || p.Unit == "" {
 			continue
 		}
@@ -101,12 +110,12 @@ func EquityAtStart(points []history.Point) (equity float64, reason string, ok bo
 			if p.Spot <= 0 {
 				continue
 			}
-			return *p.MarginBalance / p.Spot, "margin balance in USD (cross collateral) at " +
+			return i, *p.MarginBalance / p.Spot, "margin balance in USD (cross collateral) at " +
 				p.T.UTC().Format(time.RFC3339) + ", converted at that line's spot", true
 		}
-		return *p.MarginBalance, "margin balance in " + p.Unit + " at " + p.T.UTC().Format(time.RFC3339), true
+		return i, *p.MarginBalance, "margin balance in " + p.Unit + " at " + p.T.UTC().Format(time.RFC3339), true
 	}
-	return 0, "no P&L history line in the window carries Deribit's margin balance", false
+	return -1, 0, "no P&L history line in the window carries Deribit's margin balance", false
 }
 
 // BuildPerformance is the pure payload for points within [from, to].

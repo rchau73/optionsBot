@@ -106,11 +106,20 @@ A month without closes says "no closes".
 The current month says "so far".
 Before the first close, every tile says "not yet", never a zero.
 
+**% of start**: the switch's third choice shows every result as a % of the start balance.
+The start balance is the account's balance on Deribit when the period began, with the time it was recorded.
+Four tiles: *Bot result*, *Holding alone* (in USD; 0 % in the coin), *Bot + holding* and *Worst week*, all measured from that same time.
+The table shows each month from its own first balance.
+A month whose balance was recorded after it began says "partial: from" that date; a month with no balance says why and shows no %.
+Because each result is a share of its own balance, two bots of different size compare directly.
+To start two environments at the same time, add `&from=` and a time to the address, for example `/income?bot=btc&from=2026-10-28T11:45Z`.
+The worst week needs 7 days after the start balance; before that it says "not yet" and when it will be known.
+
 **When something looks wrong**: a loss month is normal data, not an error; the table keeps it in the open.
 "Unknown" in *holding alone* means the price for that month was not recorded.
 Testnet income is practice money, not real income.
 
-Learn more: glossary terms *income over months*, *worst month*, *worst week*, *premium*, *exchange fees*; OptionStrategy.md section 4.
+Learn more: glossary terms *income over months*, *worst month*, *worst week*, *start balance*, *% of start*, *premium*, *exchange fees*; OptionStrategy.md section 4.
 
 ## Worst case
 

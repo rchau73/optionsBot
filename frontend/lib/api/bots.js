@@ -66,9 +66,9 @@ export async function fetchBotTrades(name, after, signal) {
   return getJSON(botUrl(name, `/trades?after=${after}&limit=1000`), signal);
 }
 
-/** One bot's income month by month with its summary (/api/income, #319). */
-export async function fetchBotIncome(name, signal) {
-  return getJSON(botUrl(name, "/income"), signal);
+/** One bot's income month by month with its summary (/api/income, #319); from (#629) starts the % view. */
+export async function fetchBotIncome(name, signal, from = null) {
+  return getJSON(botUrl(name, from ? `/income?from=${encodeURIComponent(from)}` : "/income"), signal);
 }
 
 /** One bot's performance over a range (/api/performance?range=7d|30d|all, #232). */

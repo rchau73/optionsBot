@@ -4,17 +4,19 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 import Badge from "./Badge";
+import IncomeStartView from "./IncomeStartView";
 import { useIncome } from "@/hooks/useIncome";
 import { formatDate, formatDateTime, isNumber } from "@/lib/format";
-import { UNIT_STORAGE_KEY, formatAmount, incomeTableRows, returnLine, tileAmount, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
+import { INCOME_UNITS, UNIT_STORAGE_KEY, formatAmount, incomeTableRows, returnLine, tileAmount, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
 import { monthLabel, toneOf } from "@/lib/summary";
 
 // The income page (#319, prototype screen 3): one bot's income month by month
-// — four tiles and where each month's money came from — in coin or USD.
+// — four tiles and where each month's money came from — in coin, USD or as a
+// % of the start balance (#629).
 
-/** The page for ?bot=<name>: loads /api/income every minute. */
-export default function IncomePage({ bot }) {
-  const { income, error, loading } = useIncome(bot);
+/** The page for ?bot=<name>[&from=<time>]: loads /api/income every minute. */
+export default function IncomePage({ bot, from = null }) {
+  const { income, error, loading } = useIncome(bot, from);
   const [unit, setUnit] = useUnit();
   return <IncomeView bot={bot} income={income} error={error} loading={loading} unit={unit} onUnit={setUnit} />;
 }
@@ -38,11 +40,11 @@ const readUnit = () => {
   }
 };
 
-/** The coin | USD choice, remembered per browser. */
+/** The coin | USD | % of start choice, remembered per browser. */
 function useUnit() {
   const [local, setLocal] = useState(null); // this visit's choice when storage is unavailable
   const saved = useSyncExternalStore(subscribeUnit, readUnit, () => null);
-  const unit = local ?? (saved === "usd" ? "usd" : "coin");
+  const unit = local ?? (INCOME_UNITS.includes(saved) ? saved : "coin");
   const choose = (u) => {
     setLocal(u);
     try {
@@ -88,8 +90,14 @@ export function IncomeView({ bot, income, error, loading, unit = "coin", onUnit 
                 Last refresh failed ({error}); showing the figures from before.
               </p>
             ) : null}
-            <Tiles income={income} unit={unit} coin={coin} />
-            <MonthTable income={income} unit={unit} coin={coin} />
+            {unit === "pct" ? (
+              <IncomeStartView income={income} coin={coin} />
+            ) : (
+              <>
+                <Tiles income={income} unit={unit} coin={coin} onUnit={onUnit} />
+                <MonthTable income={income} unit={unit} coin={coin} />
+              </>
+            )}
             <HowItWorks coin={coin} />
           </>
         )}
@@ -129,6 +137,7 @@ function UnitToggle({ coin, unit, onUnit }) {
     <div role="group" aria-label="Show amounts in" className="flex overflow-hidden rounded-md border border-line">
       {button("coin", coin)}
       {button("usd", "USD")}
+      {button("pct", "% of start")}
     </div>
   );
 }
@@ -139,17 +148,18 @@ function Signed({ value, children }) {
   return <span className={clsx("font-semibold tabular-nums", tone === "profit" && "text-profit", tone === "loss" && "text-loss")}>{children}</span>;
 }
 
-function Tile({ label, loss, children, sub }) {
+function Tile({ label, loss, children, sub, action }) {
   return (
     <section aria-label={label} className={clsx("rounded-lg border bg-panel px-3 py-2", loss ? "border-loss/60" : "border-line")}>
       <h2 className="text-xs uppercase tracking-wide text-muted">{label}</h2>
       <div className="mt-0.5 text-lg">{children}</div>
       {sub ? <p className="text-xs text-muted">{sub}</p> : null}
+      {action}
     </section>
   );
 }
 
-function Tiles({ income, unit, coin }) {
+function Tiles({ income, unit, coin, onUnit }) {
   const s = income.summary;
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
   // No close in the window: the total is "not yet", never an invented 0 (#582).
@@ -160,7 +170,19 @@ function Tiles({ income, unit, coin }) {
   const wwUSD = unit === "usd" && ww?.known;
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Tile label="Last 6 months, after fees" sub={s ? returnLine(s, coin) : "not yet"}>
+      <Tile
+        label="Last 6 months, after fees"
+        sub={s ? returnLine(s, coin) : "not yet"}
+        action={
+          <button
+            type="button"
+            onClick={() => onUnit("pct")}
+            className="min-h-11 text-sm text-testnet underline underline-offset-2 focus-visible:outline focus-visible:outline-2"
+          >
+            See it as a % of the start balance
+          </button>
+        }
+      >
         {isNumber(total) ? amount(total) : <span className="text-muted">not yet</span>}
       </Tile>
       <Tile label="Average month" sub={s?.average_month ? upDownLine(s) : "not yet: no month with a close"}>
