@@ -16,6 +16,7 @@ import {
   REFUSAL,
   DONT_KNOW,
   citationHref,
+  citationLabel,
   footLine,
   journalSeqOf,
   legOf,
@@ -445,8 +446,18 @@ describe("lib/assistantPanel", () => {
     [{ id: "explain:closed:stop_loss", source: "explain:closed:stop_loss" }, { href: "/activity?bot=btc", external: false }],
     [{ id: "journal:eth", source: "journal:eth" }, { href: "/details?bot=eth#trades", external: false }],
     [{ source: "somewhere" }, null],
+    [{ id: "tip:repair_cooldown_hours/1", source: "tip:repair_cooldown_hours" }, { href: `${DOCS_BASE}/docs/product/education/tips.json`, external: true }],
   ])("citationHref(%j)", (citation, want) => {
     expect(citationHref(citation, "btc")).toEqual(want);
+  });
+
+  // Scenario: a setting question is answered from its tip (#621) — the chip names the tip.
+  test.each([
+    [{ id: "tip:repair_cooldown_hours/1", source: "tip:repair_cooldown_hours", title: "repair cooldown" }, "Tip: repair cooldown"],
+    [{ id: "tip:x/1", source: "tip:x" }, "tip:x"],
+    [{ id: "glossary:stop-loss/1", source: "glossary:stop-loss", title: "stop-loss" }, "stop-loss"],
+  ])("citationLabel(%j)", (citation, want) => {
+    expect(citationLabel(citation)).toBe(want);
   });
 
   test("footLine: journal facts, cited sources, refusals", () => {

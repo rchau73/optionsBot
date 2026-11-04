@@ -9,7 +9,8 @@ Terms are in alphabetical order (#465, `tests/sorted_lists_test.go`): a new one 
 Config keys are entries under their YAML name, nested ones as `parent.child` (`backtest.fill_model`).
 `lib/glossary.js` `findTerm(label)` finds an entry by term, config key or label.
 The settings' tips (`docs/product/education/tips.json`) are served with the terms by `GET /api/help/tips` and `lib/tips.js` `findTip(key)` (#588; setting first, then glossary term; no screen yet), see `api-routes.md`.
-The tips UI (E11) and the assistant (E10) will read them.
+The tips UI (E11) will read them.
+The assistant (E10) answers from them (#621): each setting's tip is a passage of `content/help-index.json` (`tip:<key>`, its chip "Tip: <name>"), and each glossary term already is one (`glossary:<term>`); after editing a tip, run `go run ./cmd/helpindex` (`assistant.md` "Sources").
 
 Tests keep it complete: `__tests__/glossary.test.js` fails when a literal column header (`<th>`), `<dt>`, `label="…"` prop, hold-rule, feed-event or exit-reason label in the monitor, or a key of `config_btc.yaml`/`config_eth.yaml`/`config_btc.mvp.yaml`, has no entry, when a source anchor does not exist, and on return promises; `tests/glossary_test.go` checks every key `config.Load` accepts.
 **A new column or setting needs its entry in the same PR.** Writing rules: short sentences (8th-grade reading), no jargon without its own entry, no return promises.

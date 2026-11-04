@@ -183,9 +183,10 @@ Learn more: glossary terms *premium kept*, *delta exit*, *stop hold*, *working o
 
 ## The assistant
 
-The **Ask** button at the bottom right of every page opens a panel. You write a question; it answers from the published help (the strategy guide, this guide, the settings reference and the glossary) and from the bot's journal of the last seven days.
+The **Ask** button at the bottom right of every page opens a panel. You write a question; it answers from the published help (the strategy guide, this guide, the settings reference, the settings' tips and the glossary) and from the bot's journal of the last seven days.
 
 **How to read an answer**: each answer lists its sources as chips. A chip opens the document section, the glossary term or the trade in Details (pro). Check the source: answers can be wrong. The line under the answer says whether it came from the help, from your journal, or was refused.
+Ask what a setting does, such as "what does the repair cooldown do?", and the answer uses the words of that setting's tip, with a chip named "Tip: repair cooldown".
 
 **What it will not do**: it gives no advice and no forecasts. It says "I don't know" when the sources do not cover the question. A question about money or timing, such as "should I close this?" or "where will the price go?", is refused.
 It answers in its own words and never just sends you to read a document.
