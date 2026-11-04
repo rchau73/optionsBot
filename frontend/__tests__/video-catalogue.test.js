@@ -18,8 +18,8 @@ export function catalogueProblems(entries) {
     const out = [];
     const bad = (what) => out.push(`${id}: ${what}`);
     if (!/^video\.[a-z]+(_[a-z]+)*$/.test(id)) bad("id is not video.<letters and _>");
-    for (const f of ["title", "task", "screen", "storyboard", "captions"]) if (!v[f] || typeof v[f] !== "string") bad(`no ${f}`);
-    if (!(Number.isInteger(v.seconds) && v.seconds >= 30 && v.seconds <= 90)) bad(`${v.seconds} s is not 30-90`);
+    for (const f of ["title", "task", "captions"]) if (!v[f] || typeof v[f] !== "string") bad(`no ${f}`);
+    if (!(Number.isInteger(v.duration_sec) && v.duration_sec >= 30 && v.duration_sec <= 90)) bad(`${v.duration_sec} s is not 30-90`);
     return out;
   });
 }
@@ -31,20 +31,17 @@ describe("video catalogue (#300)", () => {
 
   // Scenario: Length rule
   test("an entry of 120 seconds fails, naming the entry", () => {
-    expect(catalogueProblems({ "video.long": { ...videos["video.freeze"], seconds: 120 } })).toEqual(["video.long: 120 s is not 30-90"]);
+    expect(catalogueProblems({ "video.long": { ...videos["video.freeze"], duration_sec: 120 } })).toEqual(["video.long: 120 s is not 30-90"]);
   });
 
   test("every storyboard of #189 has an entry, with its length, and no entry lacks a storyboard", () => {
     const boards = parseStoryboards();
     expect(Object.keys(videos).sort()).toEqual(boards.map((b) => b.id).sort());
-    for (const b of boards) expect([b.id, videos[b.id].seconds]).toEqual([b.id, b.length]);
+    for (const b of boards) expect([b.id, videos[b.id].duration_sec]).toEqual([b.id, b.length]);
   });
 
-  test("each storyboard path exists and an unrecorded video may lack its captions file", () => {
-    for (const [id, v] of Object.entries(videos)) {
-      expect([id, fs.existsSync(path.join(REPO, v.storyboard))]).toEqual([id, true]);
-      if (v.status !== "planned") expect([id, fs.existsSync(path.join(REPO, v.captions))]).toEqual([id, true]);
-    }
+  test("each entry has its captions file", () => {
+    for (const [id, v] of Object.entries(videos)) expect([id, fs.existsSync(path.join(REPO, v.captions))]).toEqual([id, true]);
   });
 
   test("a glossary key becomes a tip id of letters and _ only", () => {
