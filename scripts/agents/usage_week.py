@@ -114,6 +114,10 @@ def figures(report, drops):
             curve_cohort = str(c.get("week", ""))[:10]
             break
 
+    # Activation of the report's own week (#620): its last entry.
+    act_weeks = (report.get("activation") or {}).get("weeks") or []
+    act = act_weeks[-1] if act_weeks and isinstance(act_weeks[-1], dict) else None
+
     fa = report.get("first_answers") or {}
     helped = report.get("help") or {}
     help_opened = sum(num(v) or 0 for k in ("tips", "videos_played") for v in (helped.get(k) or {}).values())
@@ -122,8 +126,26 @@ def figures(report, drops):
         "cohort": cohort, "cohort_users": cohort_users, "ret_users": ret_users, "ret_pct": ret_pct,
         "curve": curve, "curve_cohort": curve_cohort,
         "fa_n": num(fa.get("with_answers")) or 0, "fa_of": num(fa.get("first_sessions")) or 0, "fa_pct": num(fa.get("pct")),
+        "act": act,
         "help_opened": help_opened, "help_answers": num(helped.get("answers")) or 0, "helped_pct": num(helped.get("helped_pct")),
     }
+
+
+def activation_cell(act, live):
+    """The week's activation (#620): 'n of m (share, median min)'; live: the share only.
+    Too few new people or no event is said in words, never a share or a zero."""
+    if act is None:
+        return "—"
+    if act.get("no_events"):
+        return "— (no events)"
+    n, of = num(act.get("activated")) or 0, num(act.get("users")) or 0
+    if act.get("note"):
+        return "too few to judge" if live else f"{n} of {of} (too few to judge)"
+    share_text = pct(num(act.get("pct")))
+    if live:
+        return share_text
+    med = num(act.get("median_minutes"))
+    return f"{n} of {of} ({share_text}" + ("" if med is None else f", median {med:.0f} min") + ")"
 
 
 def drop_text(d, live):
@@ -196,8 +218,8 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
     out = [f"{HEADER} — week {week} (`scripts/agents/usage.sh`, #340)", "",
            "From `cmd/usage` over each environment's `data/monitor/events.jsonl` (README \"Usage report\"). "
            "Counts and percentages only: no user or session id.", "",
-           "| env | active users | vs last week | week-1 retention (latest cohort) | curve (latest cohort with 4 ended weeks) | first answers found | help used | help answers (helped) | drops | report |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+           "| env | active users | vs last week | week-1 retention (latest cohort) | curve (latest cohort with 4 ended weeks) | first answers found | activated in the first day | help used | help answers (helped) | drops | report |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs, drop_lines, notes, nps = [], [], [], []
     for env, live, report, drops in rows:
         f = figures(report, drops)
@@ -219,10 +241,10 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
         else:
             curve = f"{f['curve'] or '—'} ({f['curve_cohort']})"
         if live:
-            cells = ["—", wow, ret, curve, pct(f["fa_pct"]), "—", pct(f["helped_pct"])]
+            cells = ["—", wow, ret, curve, pct(f["fa_pct"]), activation_cell(f["act"], True), "—", pct(f["helped_pct"])]
         else:
             cells = [str(f["active"]), wow, ret, curve, f"{f['fa_n']} of {f['fa_of']} ({pct(f['fa_pct'])})",
-                     str(f["help_opened"]), f"{f['help_answers']} ({pct(f['helped_pct'])})"]
+                     activation_cell(f["act"], False), str(f["help_opened"]), f"{f['help_answers']} ({pct(f['helped_pct'])})"]
         if drops is None:
             n_drops = "— (drop check did not run)"
         else:

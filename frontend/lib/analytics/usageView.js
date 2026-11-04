@@ -154,6 +154,46 @@ export function cohortCaption(rows) {
   return `Share of each first-week cohort back in each later week; — for a week not ended. Curve: ${curves}.`;
 }
 
+/** usage.ActivationMinUsers: under this many new people a week's activation share is not given (#620). */
+export const ACTIVATION_MIN_USERS = 10;
+
+/**
+ * The activation card (#620) from the report's `activation` block →
+ * { latest: the report's own week (or null when it had no event), rows: the
+ * weeks with events, newest first, each { week, users, overview, activated,
+ * share (null when too few), median (minutes or null), tooFew }, empty: the
+ * weeks with no event (noted, never a zero), windowHours, minUsers }, or null
+ * for a report written before #620.
+ */
+export function activationView(report) {
+  const a = report?.activation;
+  if (!a || !Array.isArray(a.weeks)) return null;
+  const rows = a.weeks
+    .filter((w) => !w.no_events)
+    .map((w) => ({
+      week: w.week,
+      users: w.users ?? 0,
+      overview: w.overview ?? 0,
+      activated: w.activated ?? 0,
+      share: typeof w.pct === "number" ? w.pct : null,
+      median: typeof w.median_minutes === "number" ? w.median_minutes : null,
+      tooFew: Boolean(w.note),
+    }))
+    .reverse();
+  const last = a.weeks.at(-1);
+  return {
+    latest: last && !last.no_events ? rows[0] : null,
+    latestWeek: last?.week ?? null,
+    rows,
+    empty: a.weeks.filter((w) => w.no_events).map((w) => w.week),
+    windowHours: a.window_hours ?? 24,
+    minUsers: a.min_users ?? ACTIVATION_MIN_USERS,
+  };
+}
+
+/** Minutes as "9 min" (whole minutes under an hour, else "1.5 h"), or "—". */
+export const minutesShort = (m) => (typeof m !== "number" ? "—" : m < 60 ? `${Math.round(m)} min` : `${(m / 60).toFixed(1)} h`);
+
 /** The screens of the week with no view, in the plan's order; "login" is never sent, so it is left out. */
 export function neverOpenedScreens(report) {
   const screens = report?.panels?.screens ?? {};

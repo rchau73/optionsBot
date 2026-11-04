@@ -1,8 +1,8 @@
 // Command usage writes the weekly monitor usage and cohort report (#295)
 // from the analytics events the monitor collects (data/monitor/events.jsonl,
 // docs/product/analytics/event-plan.md): active users, cohort retention,
-// panels opened, first answers, help, the manual-close and rebalance funnels
-// and trust signals — counts and shares only, never a user or session id.
+// activation (#620), panels opened, first answers, help, the manual-close
+// and rebalance funnels and trust signals — counts and shares only, never a user or session id.
 // It reads that file only and writes data/monitor/reports/<week>.md|json.
 //
 //	go run ./cmd/usage -week 2026-W43
@@ -91,6 +91,9 @@ func run(events, week, out string, rules usage.Rules, flat usage.FlatRules, base
 	fmt.Printf("%s: %d events in the week, %d lines rejected\n", w.Label, r.EventsInWeek, r.Source.RejectedTotal)
 	if r.EventsInWeek == 0 {
 		fmt.Println(r.NoEvents)
+	}
+	if a := r.Activation; a != nil && len(a.Weeks) > 0 {
+		fmt.Println(a.Weeks[len(a.Weeks)-1].Line())
 	}
 	for _, p := range paths {
 		fmt.Println("wrote", p)
