@@ -40,6 +40,17 @@ It shows "N of base", the share, the people by weeks since their last visit (1, 
 Counts only: no id or name, as the rest of the report.
 No new page, so the menu (`lib/menu.js`) and its test do not change.
 
+### Activation in the first day (Q2, Q4, #620)
+
+`components/ActivationCard.jsx` reads the report's `activation` block (`usage.Activation`, event plan §8) and follows "Stopped coming back" in the cards' grid.
+A new person is activated when, within 24 h of their first session, they opened the Overview and then a worst-case view, a trade's reason, or a tip or the assistant.
+- The top line is the report's own week: "N of new people", the share and the median minutes to that step (`minutesShort`).
+- The table lists the last 12 weeks that had events, newest first: new people, opened the Overview, activated, share, median.
+- Under 10 new people (`usage.ActivationMinUsers`) the share and the median are "too few", with a `too few to judge` text badge for the week; no alert is ever raised on it.
+- A week with no event at all is not a row: it is named under the table ("not counted as zero"); the report's own week without events says so in words.
+- A report written before #620 has no `activation`: the card says so (`activationView` returns null).
+Counts and shares only, as the rest of the report; the menu does not change.
+
 ### Routes
 
 #### `GET /api/admin/analytics?env=&week=`

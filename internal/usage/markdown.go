@@ -94,6 +94,11 @@ func Markdown(w io.Writer, r Report) error {
 		b.WriteString("\n\nBase = people with a visit in those weeks. Weeks away = weeks since the last visit; role = the role of that visit.\n\n")
 	}
 
+	if a := r.Activation; a != nil {
+		section("Activation in the first day", "Q2, Q4")
+		activationMarkdown(&b, a)
+	}
+
 	if p := r.Panels; p != nil {
 		section("What is opened", "Q3")
 		countTable(&b, "Panel opened", p.Opens)
@@ -206,6 +211,38 @@ func cohortMarkdown(b *strings.Builder, cohorts []Cohort, rules *FlatRules) {
 		rules.Weeks, rules.StepPts, StatusTooFew, rules.MinUsers, rules.Weeks+1)
 	if len(empty) > 0 {
 		fmt.Fprintf(b, "Weeks with no first session, left out: %s\n\n", strings.Join(empty, ", "))
+	}
+}
+
+// activationMarkdown is the activation table (#620): the weeks with events,
+// oldest first; a week without any event is listed apart, never a zero.
+func activationMarkdown(b *strings.Builder, a *Activation) {
+	fmt.Fprintf(b, "New people (first `session_started` in the week) who, within %d h of it, opened the Overview and then a worst-case view, "+
+		"a trade's reason or a tip or the assistant; minutes from that first start to the step.\n\n", a.WindowHours)
+	b.WriteString("| Week | New people | Opened the Overview | Activated | Share | Median minutes | " + strings.Join(ActivationSteps, " | ") + " |\n")
+	b.WriteString("|---|---:|---:|---:|---|---:|" + strings.Repeat("---:|", len(ActivationSteps)) + "\n")
+	var empty []string
+	for _, w := range a.Weeks {
+		if w.NoEvents {
+			empty = append(empty, w.Week)
+			continue
+		}
+		share, med := fmtPct(w.Pct), "—"
+		if w.Note != "" {
+			share = fmt.Sprintf("— (%s: under %d new people)", w.Note, a.MinUsers)
+		}
+		if w.MedianMinutes != nil {
+			med = fmt.Sprintf("%.1f", *w.MedianMinutes)
+		}
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %s | %s |", w.Week, w.Users, w.Overview, w.Activated, share, med)
+		for _, k := range ActivationSteps {
+			fmt.Fprintf(b, " %d |", w.ByStep[k])
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\nStep = the first activating step of each person. No alert is raised on this measure.\n\n")
+	if len(empty) > 0 {
+		fmt.Fprintf(b, "Weeks with no events, left out (not zero): %s\n\n", strings.Join(empty, ", "))
 	}
 }
 
