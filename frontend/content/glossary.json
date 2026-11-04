@@ -1,4 +1,11 @@
 {
+  "% of start": {
+    "short": "A result shown as a share of the start balance, so bots of different size compare.",
+    "long": "Income page, third choice of the switch. Bot result is the closes after the start, after fees, divided by the start balance. Holding alone is the coin's price change from the same time. Bot + holding is both together, in USD.",
+    "risk_income": "A loss shows as a negative %, as large as a gain of the same size.",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
+    "labels": ["% of start", "Bot result", "Bot + holding", "Bot result, % of start", "Holding alone, % of start", "Bot + holding, % of start", "Worst week, % of start"]
+  },
   "action funnel": {
     "short": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.",
     "long": "Analytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.",
@@ -849,6 +856,13 @@
     "long": "Spot is the current market price of BTC or ETH. Every other number on the monitor is measured against it: how far a strike is, how far the gamma flip is, and the value of positions in US dollars.",
     "risk_income": "Spot moving toward a strike raises the risk of that leg.",
     "source": "OptionStrategy.md#1-the-idea-in-one-paragraph"
+  },
+  "start balance": {
+    "short": "The account's balance on Deribit when the period began, with the time it was recorded.",
+    "long": "Income page, % of start. It is the first margin balance in the bot's P&L history at or after the start. A month uses its own first balance; one recorded after the month began is marked partial.",
+    "risk_income": "Every % on that view is measured against it, so a small account and a large one compare.",
+    "source": "frontend/docs/menu-and-pages.md#income-page",
+    "labels": ["Start balance"]
   },
   "stop hold": {
     "short": "After a stop-loss, delta exit or manual close, that side is not sold again for 72 hours.",

@@ -85,6 +85,8 @@ type IncomeSummary struct {
 	// Summary is the months in a few figures, with the P&L history's worst
 	// week (/api/income only, #319; null in /api/summary).
 	Summary *IncomeStats `json:"summary"`
+	// Start is the "% of start" view (/api/income only, #629; null in /api/summary).
+	Start *IncomeStart `json:"start"`
 }
 
 // MonthIncome is one calendar month (UTC) of realised P&L.

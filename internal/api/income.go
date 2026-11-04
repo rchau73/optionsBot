@@ -107,7 +107,7 @@ func IncomeWithHistory(inc IncomeSummary, points []history.Point, now time.Time,
 	}
 
 	in := windowOf(points, from, now)
-	equity, note, known := EquityAtStart(in)
+	at, equity, note, known := firstBalance(in)
 	s := perf.Summarize(in, equity, from, now)
 	st := &IncomeStats{
 		From: from, To: now, Label: PerformanceLabel(environment), Source: IncomeSource,
@@ -121,7 +121,13 @@ func IncomeWithHistory(inc IncomeSummary, points []history.Point, now time.Time,
 	if s.WorstWeekKnown {
 		start, end := s.WorstWeekStart, s.WorstWeekEnd
 		st.WorstWeek.Start, st.WorstWeek.End = &start, &end
-		if known {
+		// A week that began before the balance was first recorded is not a %
+		// of it (#629: stable's 8–15 Oct was divided by the 28 Oct balance).
+		switch {
+		case !known:
+		case start.Before(in[at].T):
+			st.WorstWeek.PctNote = "the balance was first recorded on " + in[at].T.UTC().Format("2 Jan 2006") + ", after this week began"
+		default:
 			st.WorstWeek.Pct = ptr(s.WorstWeekPct)
 		}
 	}
