@@ -153,7 +153,10 @@ The runner (`scripts/lab_runner.sh` → `cmd/labrun`, one at a time) runs `cmd/c
 Manager or admin (`STATE_CHANGING_ROUTES`); the audit line `lab_request` names the person, the request id, the underlying and the keys, never the values.
 It writes no config and applies no setting.
 
-**Refusals:** 400 no settings, more than 5, a key listed twice or not a setting key, a value outside its range or a cross rule (`error` "<key>: <reason>", `reasons`), a fixed key or an unknown underlying · 404 an unknown key · 429 three requests of yours already queued or running · 403 cross-origin · 413 a body over 4 KB · 415 not JSON · 500 the file could not be written · 401/403 as above; every refusal answers `queued: false`
+**Refusals** (every refusal answers `queued: false`):
+- 400 no settings, more than 5, a key listed twice or not a setting key, a value outside its range or a cross rule (`error` "<key>: <reason>", `reasons`), a fixed key or an unknown underlying.
+- 404 an unknown key · 429 three requests of yours already queued or running · 403 cross-origin.
+- 413 a body over 4 KB · 415 not JSON · 500 the file could not be written · 401/403 as above.
 
 #### `POST /api/lab/validate` `{"key", "value", "underlying"?}` (#586)
 

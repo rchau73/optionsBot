@@ -78,9 +78,10 @@ GO_READS = (
 # non-doc paths under frontend/ always run them.
 FRONTEND_READS = (
     "OptionStrategy.md", "config_", "docs/parameters.md", "docs/product/",
-    "frontend/README.md", "frontend/content/", "frontend/docs/",
-    "internal/api/", "internal/assistant/guard/", "tests/testdata/",
+    "cmd/labrun/main.go", "frontend/README.md", "frontend/content/", "frontend/docs/",
+    "internal/api/", "internal/assistant/guard/", "internal/compare/requests.go", "scripts/lab_runner.sh", "tests/testdata/",
 )  # internal/api/: role-matrix.test.js checks every bot POST route is in the monitor's role table (#490)
+# cmd/labrun, internal/compare/requests.go, scripts/lab_runner.sh: lab-requests.test.js checks none writes a config (#641)
 # What the scripts job tests (shellcheck, the Python unit tests) and what those tests read.
 SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/", "go.mod", "go.sum",
                  "internal/", "scripts/")
