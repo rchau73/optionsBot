@@ -9,8 +9,9 @@ It makes no Claude call, never reads bot state and places no order.
 1. `go run ./cmd/usage -events <clone>/data/monitor/events.jsonl -week <week> -out <clone>/data/monitor/reports -alert` (from the agents' clone, so stable needs no newer code) writes `<week>.md` and `.json` in the clone and prints the engagement-drop check on its `DROPS` line.
 2. When a key number fell, one `bug` issue `[E13] Engagement drop: <metrics> <week>` goes to **Triage**: every falling metric of every environment, counts and percentages only.
    Nothing is filed when an open issue, or one closed in the last 14 days, has an `[E13] Engagement drop:` title ending with that week.
-3. [`usage_week.py`](../../scripts/agents/usage_week.py) builds one comment, posted on the E13 epic: per environment, active users, the change against the week before, week-1 retention of the latest cohort, the curve of the latest cohort with 4 ended weeks, first answers found, help used and help answers, the drops and the weeks with no events.
+3. [`usage_week.py`](../../scripts/agents/usage_week.py) builds one comment, posted on the E13 epic: per environment, active users, the change against the week before, week-1 retention of the latest cohort, the curve of the latest cohort with 4 ended weeks, first answers found, activated in the first day, help used and help answers, the drops and the weeks with no events.
    The curve (#607) is `flattening`, `falling`, `rising` or `too few to judge`, copied only from that fixed list.
+   **Activated in the first day** (#620, event plan §8) is the week's new people who opened the Overview and then a worst-case view, a trade's reason or a tip or the assistant within 24 h: "8 of 12 (67 %, median 9 min)"; under 10 new people "too few to judge", a week without events "— (no events)"; no drop rule reads it.
    It reads named figures only, so no user, session or amount field can reach GitHub.
    **Live accounts:** an environment whose `.env` has `DERIBIT_ENV=live` gets percentages only.
 

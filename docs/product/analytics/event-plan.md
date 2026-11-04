@@ -11,9 +11,9 @@ Every event answers at least one of these. An event that answers none is not col
 | ID | Question | Feeds | Answered in (`cmd/usage`) |
 |---|---|---|---|
 | Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
-| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +12 weeks, each cohort's curve `flattening`, `falling`, `rising` or `too few to judge`, #607: PRD §7's "curve flattens by month 3"), "Active users", "Lapsed" (#569: people with a `session_started` in the 4 weeks before and none in the week, by role and weeks away; counts only, from the same consented events, no new event or property) |
+| Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +12 weeks, each cohort's curve `flattening`, `falling`, `rising` or `too few to judge`, #607: PRD §7's "curve flattens by month 3"), "Active users", "Lapsed" (#569: people with a `session_started` in the 4 weeks before and none in the week, by role and weeks away; counts only, from the same consented events, no new event or property), "Activation in the first day" (#620, §8) |
 | Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, page views per screen) |
-| Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`) |
+| Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`), "Activation in the first day" (#620, §8: time-to-value) |
 | Q5 | Which help (tips, videos, empty-state text) is used, and does it resolve the question without a person? | PRD §7 self-service understanding, E11, E10 | "Help" (tips, videos played/completed, share helped), "Assistant" (opened and asked per entry, replies per kind, flagged) |
 | Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
@@ -156,3 +156,20 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 | lapsed share (lapsed ÷ people active in the 4 weeks before, #569) | Q2 "Lapsed" | ≥ 20 points **over** the 3 weeks' pooled share (rising is bad); under 10 people in either base is too few |
 
 A base under 10 users (or 10 funnel starts, in the base weeks and in the week) is "too few to judge" and raises nothing. A week with no events is noted and left out of the base, never counted as zero; a week with no events itself raises nothing. The issue and the epic comment carry counts and percentages only (percentages only for a live account).
+
+## 8. Activation (time-to-value, #620)
+
+Does a new person reach a useful answer early, and how fast? `cmd/usage` answers it in "Activation in the first day" (Q2, Q4) from events this plan already collects: no new event or property.
+
+- **New person:** their first `session_started` ever falls in the week (the cohort's rule, Q2).
+- **Activated:** within 24 h of that start (`usage.ActivationWindow`), a `screen_viewed` with `screen` `overview`, then one of these steps:
+  - a risk / worst-case view: `screen_viewed` with `screen` `worst_case`;
+  - a trade's reason: `assistant_open` with `entry` `why` (Why? on a trade), or `details_trade_expand`;
+  - a tip or the assistant: `tip_opened`, `assistant_open` with `entry` `menu`, or `assistant_ask`.
+- **Time-to-value:** minutes from that first `session_started` to the step; the week shows the median.
+- **Weeks:** the report's week and the 11 before it (`usage.ActivationWeeks`), each with new people, how many opened the Overview, how many were activated, the share, the median and the first step of each activated person.
+- **Small base:** under 10 new people (`usage.ActivationMinUsers`) the week is `too few to judge`: no share and no median.
+- **Missing weeks:** a week with no event at all is noted and left out, never counted as zero.
+- **No alert:** §7's drop rules do not read it.
+
+Only people who said yes send events (§5), so a person who did not accept analytics is in no figure; counts and shares only, never a `user_id`.

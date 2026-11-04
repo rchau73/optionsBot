@@ -1,3 +1,4 @@
+import ActivationCard from "./ActivationCard";
 import Badge from "./Badge";
 import Panel from "./Panel";
 import {
@@ -376,6 +377,7 @@ export function QuestionCards({ report }) {
       <Active a={report.active} />
       <Cohorts cohorts={report.cohorts ?? []} />
       {rising ? null : <Lapsed report={report} />}
+      <ActivationCard report={report} />
       <Panels p={report.panels} report={report} />
       <FirstAnswers f={report.first_answers} />
       <Help h={report.help} a={report.assistant} />

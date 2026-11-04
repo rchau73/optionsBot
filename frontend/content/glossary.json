@@ -13,6 +13,13 @@
     "source": "frontend/docs/users-and-roles.md#users-page-306",
     "labels": ["Actions"]
   },
+  "activation": {
+    "short": "Of the people who first came in a week, how many reached a useful answer within a day, and how fast.",
+    "long": "Analytics page (admins only). A new person is activated when, within 24 hours of their first visit, they opened the Overview and then the worst case, a trade's reason, a tip or the assistant. New people counts them; opened the Overview shows how many got that far; median is the typical minutes to the answer. Under 10 new people it is too few to judge.",
+    "risk_income": "A count of people, not of money: it says nothing about how the bots trade.",
+    "source": "frontend/docs/analytics.md#activation-in-the-first-day-q2-q4-620",
+    "labels": ["New people", "Opened the Overview", "Activated", "Median"]
+  },
   "active people": {
     "short": "How many different people used the monitor in a period. Each person counts once, however often they came.",
     "long": "Analytics page (admins only). The weekly usage report counts each person once per period, shown for this week, the last 30 days and by role. It keeps a scrambled code per person, never a name or email, and shows counts only. Only people who agreed to analytics are counted.",

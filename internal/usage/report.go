@@ -34,6 +34,7 @@ type Report struct {
 	Cohorts      []Cohort      `json:"cohorts,omitempty"`       // Q2
 	CohortRules  *FlatRules    `json:"cohort_rules,omitempty"`  // Q2: the rules each cohort's status was judged on (#607)
 	Lapsed       *Lapsed       `json:"lapsed,omitempty"`        // Q2: who stopped coming back (#569)
+	Activation   *Activation   `json:"activation,omitempty"`    // Q2, Q4: new people reaching an answer within a day (#620)
 	Panels       *Panels       `json:"panels,omitempty"`        // Q3
 	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
 	Help         *Help         `json:"help,omitempty"`          // Q5
@@ -218,6 +219,7 @@ func Build(events []Event, from, to time.Time) Report {
 	r.Cohorts = buildCohorts(past, from, to)
 	r.SetCohortRules(DefaultFlatRules())
 	r.Lapsed = buildLapsed(past, from, to)
+	r.Activation = buildActivation(past, from)
 	r.Panels = buildPanels(week)
 	r.FirstAnswers = buildFirstAnswers(past, from)
 	r.Help = buildHelp(week)
@@ -290,15 +292,7 @@ func buildActive(past []Event, from, to time.Time) *Active {
 // buildCohorts follows the cohorts of the window's week and the CohortWeeks
 // weeks before it; weeks are 7-day steps aligned on `from`.
 func buildCohorts(past []Event, from, to time.Time) []Cohort {
-	first := map[string]time.Time{} // user → first session_started
-	for _, e := range past {
-		if e.Name != "session_started" {
-			continue
-		}
-		if t, ok := first[e.UserID]; !ok || e.TS.Before(t) {
-			first[e.UserID] = e.TS
-		}
-	}
+	first := firstStarts(past)
 	const week = 7 * 24 * time.Hour
 	var out []Cohort
 	for k := -CohortWeeks; k <= 0; k++ {
@@ -524,7 +518,7 @@ func pct(n, of int) *float64 {
 	return &v
 }
 
-func median(v []int64) int64 {
+func median[T int64 | float64](v []T) T {
 	s := slices.Clone(v)
 	slices.Sort(s)
 	n := len(s)

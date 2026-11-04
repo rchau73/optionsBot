@@ -31,6 +31,24 @@ export function usageReport(week = "2026-W44", { active = 24, ...over } = {}) {
       { week: "2026-W44", from: "2026-10-26T00:00:00Z", users: 5, retained: [], status: "too few to judge" },
     ],
     cohort_rules: { min_users: 10, weeks: 3, step_pts: 5 },
+    // #620: the last 12 weeks; W33–W38 had no events, W41 had events and no new person.
+    activation: {
+      window_hours: 24,
+      min_users: 10,
+      weeks: Array.from({ length: 12 }, (_, i) => {
+        const week = `2026-W${String(33 + i).padStart(2, "0")}`;
+        if (i < 6) return { week, users: 0, overview: 0, activated: 0, by_step: {}, no_events: true, note: "too few to judge" };
+        const byWeek = {
+          "2026-W39": { users: 11, overview: 9, activated: 5, pct: 45.45, median_minutes: 14 },
+          "2026-W40": { users: 6, overview: 5, activated: 3, note: "too few to judge" },
+          "2026-W41": { users: 0, overview: 0, activated: 0, note: "too few to judge" },
+          "2026-W42": { users: 10, overview: 10, activated: 7, pct: 70, median_minutes: 6.5 },
+          "2026-W43": { users: 13, overview: 11, activated: 9, pct: 69.23, median_minutes: 8 },
+          "2026-W44": { users: 12, overview: 10, activated: 8, pct: 66.67, median_minutes: 9 },
+        };
+        return { week, by_step: { worst_case: 0, trade_reason: 0, help: 0 }, ...byWeek[week] };
+      }),
+    },
     lapsed: { users: 6, by_role: { admin: 0, manager: 1, user: 5 }, weeks_away: { 1: 3, 2: 2, 3: 0, "4+": 1 }, base: 30, share_pct: 20 },
     panels: {
       opens: { account: 4, held: 0, others: 2, trades: 7 },

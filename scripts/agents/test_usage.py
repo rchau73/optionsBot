@@ -31,6 +31,10 @@ def report(**over):
             {"week": "2026-W43", "users": 3, "retained": []},
         ],
         "first_answers": {"first_sessions": 3, "with_answers": 2, "pct": 66.666},
+        "activation": {"window_hours": 24, "min_users": 10, "weeks": [
+            {"week": "2026-W42", "users": 4, "activated": 1, "note": "too few to judge"},
+            {"week": WEEK, "users": 12, "overview": 10, "activated": 8, "pct": 66.666, "median_minutes": 9.0},
+        ]},
         "help": {"tips": {"tip.gamma_flip": 5}, "videos_played": {"video.read_monitor": 2}, "answers": 4, "helped": 3, "helped_pct": 75.0},
     }
     r.update(over)
@@ -79,8 +83,24 @@ class Pure(unittest.TestCase):
         self.assertTrue(text.startswith("🤖 **Usage report** — week 2026-W43"))
         row = next(l for l in text.splitlines() if l.startswith("| mvp"))
         # 20 active, −50 % vs 40, W42's cohort +1 = 4 of 10, 2 of 3 first answers, 5 tips + 2 videos, 4 answers.
-        self.assertEqual(row, "| mvp | 20 | -50 % | 4 of 10 (40 %, 2026-W42) | flattening (2026-W38) | 2 of 3 (67 %) | 7 | 4 (75 %) | 0 | `mvp/data/monitor/reports/2026-W43.md` |")
+        self.assertEqual(row, "| mvp | 20 | -50 % | 4 of 10 (40 %, 2026-W42) | flattening (2026-W38) | 2 of 3 (67 %) | 8 of 12 (67 %, median 9 min) | 7 | 4 (75 %) | 0 | `mvp/data/monitor/reports/2026-W43.md` |")
         self.assertNotIn("| stable", text)  # no report: left out
+
+    def test_scenario_activation_too_few_or_no_events_is_said_in_words(self):
+        """#620: under 10 new people the cell says too few to judge (no share); a week without events is not a zero."""
+        r = report()
+        r["activation"]["weeks"][-1] = {"week": WEEK, "users": 6, "activated": 3, "note": "too few to judge"}
+        self.put("mvp", r, drops())
+        self.put("stable", r, drops(), dotenv="DERIBIT_ENV=live\n")
+        text = self.comment()
+        self.assertIn("| 3 of 6 (too few to judge) |", next(l for l in text.splitlines() if l.startswith("| mvp")))
+        self.assertIn("| too few to judge |", next(l for l in text.splitlines() if l.startswith("| stable (live)")))
+        r["activation"]["weeks"][-1] = {"week": WEEK, "users": 0, "activated": 0, "no_events": True, "note": "too few to judge"}
+        self.put("mvp", r, drops())
+        self.assertIn("| — (no events) |", self.comment())
+        del r["activation"]
+        self.put("mvp", r, drops())
+        self.assertIn("| 2 of 3 (67 %) | — | 7 |", self.comment())
 
     def test_curve_is_the_latest_cohort_with_four_ended_weeks(self):
         """#607: the newest cohort that can be judged by time gives the curve; its status only, from the fixed list."""
@@ -133,7 +153,7 @@ class Pure(unittest.TestCase):
         self.put("mvp", report(), drops())
         text = self.comment()
         row = next(l for l in text.splitlines() if l.startswith("| stable (live)"))
-        self.assertEqual(row, "| stable (live) | — | -50 % | 40 % (2026-W42) | flattening (2026-W38) | 67 % | — | 75 % | 2 | `stable/data/monitor/reports/2026-W43.md` |")
+        self.assertEqual(row, "| stable (live) | — | -50 % | 40 % (2026-W42) | flattening (2026-W38) | 67 % | 67 % | — | 75 % | 2 | `stable/data/monitor/reports/2026-W43.md` |")
         live_drops = [l for l in text.splitlines() if l.startswith("- stable:")]
         self.assertEqual(live_drops, ["- stable: weekly active users: -50 % against the mean of the base weeks",
                                       "- stable: manual-close dialogs confirmed: 50 % of starts, was 80 % (-30 pts)"])
