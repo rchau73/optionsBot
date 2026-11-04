@@ -57,13 +57,14 @@ while read -r it num; do
   # A head is reviewed once — an incomplete review (a changed file unread,
   # #476) once more on the next tick, then it is left for a person.
   [[ "$(agent_reviews "$p" < /dev/null | python3 "$post" due "$h" /dev/stdin)" == "yes" ]] || continue
-  # A head that only adds GitHub's update-with-main merges to the last review
-  # keeps that review (pr_gate.py equiv, #468): nothing new to read — unless
-  # that review was incomplete.
+  # A head that only adds GitHub's update-with-main merges, or the PR gate's
+  # own regenerated-files merges (its state's "<pr>:regen", #634), to the last
+  # review keeps that review (pr_gate.py equiv, #468): nothing new to read —
+  # unless that review was incomplete.
   last="$(agent_reviews "$p" < /dev/null | tail -1 | sed -n 's/^sha=\([0-9a-f]*\) verdict=\([a-z]*\).*/\1 \2/p')"
   last_verdict="${last#* }"; last="${last%% *}"
   if [[ -n "$last" && "$last_verdict" != "incomplete" ]] && gh api "repos/$slug/compare/$last...$h" < /dev/null 2>/dev/null |
-      python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" equiv /dev/stdin | grep -q .; then continue; fi
+      python3 "$AGENT_REPO_DIR/scripts/agents/pr_gate.py" equiv /dev/stdin "$AGENT_STATE_DIR/pr_gate.json" "$p" | grep -q .; then continue; fi
   # A green head only (#472): a ready PR (the gate marks the Dev agent's draft
   # ready once CI passes) whose CI is green — never a commit that then fails.
   gh pr view "$p" -R "$slug" --json state,isDraft,statusCheckRollup > "$AGENT_STATE_DIR/review-pick-$$.json" < /dev/null || continue

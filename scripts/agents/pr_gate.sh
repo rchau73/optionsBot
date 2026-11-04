@@ -31,9 +31,10 @@
 #              the card goes to a person (Blocked, agent:needs-human);
 #   wait     → the label comes off until it is ready again — always while the
 #              card is In progress: a Dev agent is working on it (#478).
-# A clean review carries over GitHub's own update-with-main merges (no
-# conflict is possible in them: pr_gate.py equiv), so updating a PR before it
-# merges costs no new review.
+# A clean review and merge:approved carry over GitHub's own update-with-main
+# merges (no conflict is possible in them: pr_gate.py equiv) and the gate's own
+# regenerated-files merges (#634), so updating a PR before it merges costs no
+# new review or approval.
 # No Claude call; one comment per PR commit at most.
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -127,7 +128,8 @@ gate_run() {
 }
 
 # approval — sets approved=1 when the owner's label merge:approved is on the PR
-# for the commit it was given on, or one that only updates it with main (#596).
+# for the commit it was given on, or one that only updates it with main (#596;
+# the gate's regenerated-files merges too, #634).
 # The commit is the head when the gate first sees the label; a later commit of
 # the PR's own voids it: the label comes off, and the person is asked again.
 # Agent sessions hold no GitHub credentials (lib.sh no_github), so only the
@@ -162,16 +164,28 @@ approval() {
 # agent (#465, #596): merge main into the branch in a scratch worktree, let
 # scripts/regen.sh merge the lists and rerun the generators, push.
 # Any other conflict, or a failure, pushes nothing and returns 1.
+# The pushed sha is recorded ("<pr>:regen") when the merge differs from git's
+# own only in generated files and sorted lists (pr_gate.py settled): equiv then
+# carries the clean review and merge:approved across it (#634).
 merge_regenerating() {
-  local branch="$1" wt="$tmp/merge"
+  local branch="$1" wt="$tmp/merge" sha clean=0
   git_locked fetch -q origin || return 1
   git_locked worktree add -q --detach "$wt" "origin/$branch" 2>/dev/null || return 1
   local rc=1
   if ! git -C "$wt" merge --no-edit -q origin/main >/dev/null 2>&1 &&
     (cd "$wt" && bash scripts/regen.sh --resolve) >> "$tmp/regen.log" 2>&1 &&
-    git -C "$wt" commit -q --no-edit &&
-    git_locked -C "$wt" push -q origin "HEAD:$branch"; then
-    rc=0
+    git -C "$wt" commit -q --no-edit; then
+    sha="$(git -C "$wt" rev-parse HEAD)"
+    python3 "$GATE_PY" settled "$wt" && clean=1
+    if git_locked -C "$wt" push -q origin "HEAD:$branch"; then
+      rc=0
+      if [[ "$clean" -eq 1 ]]; then
+        # shellcheck disable=SC2046 # word splitting wanted: the recorded shas, newest last
+        remember "$pr:regen" "$(printf '%s\n' $(recall "$pr:regen") "$sha" | tail -10 | paste -sd' ' -)"
+      else
+        log "pr-gate: #$pr regen merge ${sha:0:7} changed more than generated files: the review and approval do not carry over"
+      fi
+    fi
   fi
   git_locked worktree remove --force "$wt" 2>/dev/null || true
   return $rc
@@ -202,7 +216,7 @@ while read -r pr ref; do
   : > "$tmp/equiv.txt"
   last="$(tail -1 "$tmp/markers.txt" | sed -n 's/^sha=\([0-9a-f]*\) .*/\1/p')"
   if [[ -n "$last" && "$last" != "$head" ]] && gh api "repos/$slug/compare/$last...$head" > "$tmp/compare.json" < /dev/null; then
-    python3 "$GATE_PY" equiv "$tmp/compare.json" > "$tmp/equiv.txt" || true
+    python3 "$GATE_PY" equiv "$tmp/compare.json" "$STATE" "$pr" > "$tmp/equiv.txt" || true
   fi
   : > "$tmp/deps.txt"
   for d in $(gh issue view "$issue" -R "$slug" --json author,body -q "$(mine_jq "$slug")"'own_body' < /dev/null | python3 "$BOARD_PY" deps); do
