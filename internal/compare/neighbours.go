@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"optionsbot/internal/config"
 )
 
@@ -316,84 +314,10 @@ func cliffsBetween(source string, a, b NeighbourRow, fa, fb NeighbourFigures, th
 // loadWith loads the config file at path with key set to value, through
 // config.Load (defaults, fixed values, Validate) on a temporary copy.
 func loadWith(path, key string, value float64) (*config.Config, error) {
-	body, err := os.ReadFile(path)
+	tmp, err := WriteWith(path, []Setting{{Key: key, Value: value}})
 	if err != nil {
 		return nil, err
 	}
-	var doc any
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		return nil, err
-	}
-	if doc, err = setPath(doc, key, value); err != nil {
-		return nil, err
-	}
-	out, err := yaml.Marshal(doc)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.CreateTemp("", "neighbour-*.yaml")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.Write(out); err != nil {
-		f.Close()
-		return nil, err
-	}
-	if err := f.Close(); err != nil {
-		return nil, err
-	}
-	return config.Load(f.Name())
-}
-
-var segRe = regexp.MustCompile(`^([a-z0-9_]+)((?:\[\d+\])*)$`)
-
-// setPath sets key ("a.b", "list[1].deltas[0]") in a decoded YAML document.
-// A missing map key is added; a missing list element is an error.
-func setPath(doc any, key string, value float64) (any, error) {
-	head, rest, nested := strings.Cut(key, ".")
-	m := segRe.FindStringSubmatch(head)
-	if m == nil {
-		return nil, fmt.Errorf("key %q: cannot read %q", key, head)
-	}
-	obj, ok := doc.(map[string]any)
-	if doc == nil {
-		obj, ok = map[string]any{}, true
-	}
-	if !ok {
-		return nil, fmt.Errorf("key %q: %q is not a section", key, head)
-	}
-	var idx []int
-	for _, s := range indexRe.FindAllString(m[2], -1) {
-		n, _ := strconv.Atoi(strings.Trim(s, "[]"))
-		idx = append(idx, n)
-	}
-	set := func(cur any) (any, error) {
-		if nested {
-			return setPath(cur, rest, value)
-		}
-		return value, nil
-	}
-	child, err := setIndexed(obj[m[1]], idx, set, key)
-	if err != nil {
-		return nil, err
-	}
-	obj[m[1]] = child
-	return obj, nil
-}
-
-func setIndexed(cur any, idx []int, set func(any) (any, error), key string) (any, error) {
-	if len(idx) == 0 {
-		return set(cur)
-	}
-	list, ok := cur.([]any)
-	if !ok || idx[0] >= len(list) {
-		return nil, fmt.Errorf("key %q: no element %d in the proposed file", key, idx[0])
-	}
-	v, err := setIndexed(list[idx[0]], idx[1:], set, key)
-	if err != nil {
-		return nil, err
-	}
-	list[idx[0]] = v
-	return list, nil
+	defer os.Remove(tmp)
+	return config.Load(tmp)
 }

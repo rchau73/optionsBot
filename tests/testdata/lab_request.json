@@ -1,0 +1,14 @@
+{
+  "id": "20261104T230000Z-a1b2c3d4",
+  "requester": "mgr",
+  "requested_at": "2026-11-04T23:00:00.000Z",
+  "underlying": "BTC",
+  "settings": [
+    {
+      "key": "gamma_flip_buffer_sd",
+      "value": 1.2
+    }
+  ],
+  "status": "queued",
+  "updated_at": "2026-11-04T23:00:00.000Z"
+}

@@ -115,12 +115,14 @@ describe("Scenario: list runs", () => {
 
   test("an empty or missing dir is an empty list; an unreadable report is skipped", async () => {
     const { cookie } = await signedIn("mgr", "manager");
-    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual({ runs: [] });
+    // `requests` (#641): the run requests with no report yet, none here.
+    const empty = { runs: [], requests: [] };
+    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual(empty);
     put(A, "{ broken");
-    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual({ runs: [] });
+    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual(empty);
     expect(logs.join("\n")).toContain("lab runs unreadable");
     process.env.COMPARE_DIR = path.join(root, "nowhere");
-    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual({ runs: [] });
+    expect(await (await list(req(cookie, "/api/lab/runs"))).json()).toEqual(empty);
   });
 });
 

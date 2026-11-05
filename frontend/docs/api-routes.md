@@ -165,6 +165,16 @@ Any signed-in role; 401 without a session.
 - `lib/videos.js`: `findVideo(id)`, `videosForTip(tipKey)`, `allVideos()`.
 - No screen uses it yet.
 
+### `POST /api/lab/requests` (#641)
+
+Asks for a comparison run of the shipped config against proposed values, on the monitor's own server (`app/api/lab/requests/route.js`, `lib/labrequests.js`); no bot call, no config written, nothing applied.
+Managers and admins, same-origin JSON `{"settings": [{"key", "value"}], "underlying"?}` (BTC by default, at most 5 values).
+- Each value is checked like `POST /api/lab/validate`; a refused one answers 400 with the reason and queues nothing.
+- A valid request is one file in the private queue `COMPARE_DIR/requests/`, status `queued`, for the runner (`scripts/lab_runner.sh`); `GET /api/lab/runs` lists it with its status under `requests` until its report is listed.
+- At most 3 requests per person waiting or running (429); one queued over a day is expired.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/lab/requests`".
+- No screen uses it yet.
+
 ### `POST /api/lab/validate` (#586)
 
 Checks a proposed setting value for the strategy-change lab, on the monitor's own server (`app/api/lab/validate/route.js`, `lib/labvalidate.js`); no bot call, nothing written or applied.

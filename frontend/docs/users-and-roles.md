@@ -13,7 +13,7 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: — (403)
-- Read the strategy-change lab's runs and check a proposed setting value (`/api/lab/runs`, `POST /api/lab/validate`; nothing is applied)
+- Read the strategy-change lab's runs, check a proposed setting value and request a comparison run (`/api/lab/runs`, `POST /api/lab/validate`, `POST /api/lab/requests`; nothing is applied)
   - admin: ✓
   - manager: ✓
   - user: — (403)
@@ -130,6 +130,8 @@ Manager or admin; every read logged with the person; read-only
 `label` is "backtested, not a forecast"; `changed` is the report's `diffs` (key, base, proposed).
 `backtest` and `replay` are `{base, proposed}`, each `{return_pct, worst_week_pct, max_drawdown_pct, fees_pct}`: percentages only, drawdown and fees as % of the run's starting equity, so the risk sits beside the return; null when the source did not run or the config's run failed.
 `windows` is the proposal's wins per window (`-windows`), `cliffs` the number of cliffs (`-neighbours`); null without them.
+`requests` (#641) are the run requests (`POST /api/lab/requests`) whose report is not in `runs` yet, newest first, 50 at most: `{id, requested_at, requester, underlying, settings, status, updated_at, run_id, reason}`.
+`status` is `queued`, `running`, `failed` (with `reason`), `expired` (queued over a day ago; shown so before the runner marks the file) or `done` while its report cannot be read yet; a done request whose report is listed appears only in `runs`.
 Manager or admin (`ROLE_GUARDED_READS` in `lib/auth/routeRoles.js`, called as every caller by the role-matrix test); read-only, applies nothing.
 
 **Refusals:** 401 no session · 403 role user
@@ -140,6 +142,21 @@ Manager or admin (`ROLE_GUARDED_READS` in `lib/auth/routeRoles.js`, called as ev
 `analysis` is "withheld pending legal review", and `analysis.json` is not read, while `L10_ANALYSIS_GATE_OPEN` in `lib/lab.js` is false: a constant, no setting, pinned to false by `__tests__/lab-route.test.js` until counsel's answer to legal question L10 is recorded in `docs/legal/preliminary-answers.md`.
 
 **Refusals:** 404 an id that is not a folder time (`../secrets`, a slash, …; the disk is not touched) or no run · 500 unreadable or malformed JSON (a log line with the id, never the content) · 401/403 as above
+
+#### `POST /api/lab/requests` `{"settings": [{"key", "value"}], "underlying"?}` (#641)
+
+**Does:** asks for a comparison run of the shipped config of that underlying (BTC by default) against the same config with these values (`lib/labrequests.js`).
+Each value is checked like `POST /api/lab/validate` (a key with a list index, `dte_delta_matrix[0].dte`, as its catalogue key; `[]` means every element); one refused value refuses the whole request, with the reason, and nothing is written.
+A valid request becomes `COMPARE_DIR/requests/<id>.json` (mode 0600; id = UTC time and a random suffix): `id`, `requester`, `requested_at`, `underlying`, `settings`, `status: "queued"`, `updated_at` — no secret, no amount.
+201 with that record and `queued: true`.
+The runner (`scripts/lab_runner.sh` → `cmd/labrun`, one at a time) runs `cmd/compare -set … -neighbours <the first number>` over the last 7 whole UTC days and writes `running`, then `done` with `run_id` or `failed` with a short `reason`; a request still queued after a day becomes `expired`.
+Manager or admin (`STATE_CHANGING_ROUTES`); the audit line `lab_request` names the person, the request id, the underlying and the keys, never the values.
+It writes no config and applies no setting.
+
+**Refusals** (every refusal answers `queued: false`):
+- 400 no settings, more than 5, a key listed twice or not a setting key, a value outside its range or a cross rule (`error` "<key>: <reason>", `reasons`), a fixed key or an unknown underlying.
+- 404 an unknown key · 429 three requests of yours already queued or running · 403 cross-origin.
+- 413 a body over 4 KB · 415 not JSON · 500 the file could not be written · 401/403 as above.
 
 #### `POST /api/lab/validate` `{"key", "value", "underlying"?}` (#586)
 

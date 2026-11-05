@@ -6,6 +6,9 @@
 // -windows week|day also compares the backtest and the replay window by
 // window (#301). -neighbours <key> re-runs the proposed config with that
 // setting moved ±10 % and ±20 % and flags cliffs between neighbours (#495).
+// -set key=value (repeatable, #641) builds the proposed config from -base
+// (or -proposed) with only those values, on a temporary copy: the lab's run
+// requests (cmd/labrun) carry values, not a file.
 // See README "Settings comparison".
 //
 //	go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 \
@@ -37,18 +40,47 @@ func main() {
 	out := flag.String("out", "data/compare", "reports folder: <out>/<UTC time>/report.md|json")
 	windows := flag.String("windows", "", "also compare per window: week (ISO weeks, UTC) or day (empty = the whole span only)")
 	neighbours := flag.String("neighbours", "", "also re-run the proposed config with this setting (a key as in the Differences, e.g. gamma_flip_buffer_sd) at −20, −10, +10 and +20 % and flag cliffs (empty = skip)")
+	var sets setFlags
+	flag.Var(&sets, "set", "key=value, repeatable: the proposed config is -proposed (or, without it, -base) with these values, on a temporary copy (#641); [] in a key = every element of the list")
 	flag.Parse()
 
 	paths := compare.Paths{Base: *base, Proposed: *proposed, CSV: *csv, Market: *market, GEX: *gexDir, Stress: *stress}
-	if err := run(paths, *from, *to, *equity, *stressCmd, *out, *windows, *neighbours); err != nil {
+	if err := run(paths, sets, *from, *to, *equity, *stressCmd, *out, *windows, *neighbours); err != nil {
 		fmt.Fprintln(os.Stderr, "compare:", err)
 		os.Exit(1)
 	}
 }
 
-func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out, windows, neighbours string) error {
+// setFlags collects the repeatable -set key=value.
+type setFlags []compare.Setting
+
+func (s *setFlags) String() string { return fmt.Sprint(len(*s)) }
+
+func (s *setFlags) Set(v string) error {
+	one, err := compare.ParseSetting(v)
+	if err != nil {
+		return err
+	}
+	*s = append(*s, one)
+	return nil
+}
+
+func run(p compare.Paths, sets []compare.Setting, fromStr, toStr string, equity float64, stressCmd, out, windows, neighbours string) error {
+	label := ""
+	if p.Base != "" && len(sets) > 0 {
+		from := p.Proposed
+		if from == "" {
+			from = p.Base
+		}
+		tmp, err := compare.WriteWith(from, sets)
+		if err != nil {
+			return fmt.Errorf("-set: %w", err)
+		}
+		defer os.Remove(tmp)
+		p.Proposed, label = tmp, compare.SettingsLabel(from, sets)
+	}
 	if p.Base == "" || p.Proposed == "" {
-		return fmt.Errorf("-base and -proposed are both needed")
+		return fmt.Errorf("-base and -proposed (or -set) are both needed")
 	}
 	unit, err := compare.ParseUnit(windows)
 	if err != nil {
@@ -81,6 +113,9 @@ func run(p compare.Paths, fromStr, toStr string, equity float64, stressCmd, out,
 	}
 	compare.RunStress(&in, stressCmd)
 	r := compare.Run(in)
+	if label != "" {
+		r.Proposed = label // the temporary file's name says nothing
+	}
 	if unit != "" {
 		wr := compare.RunWindows(in, unit)
 		r.Windows = &wr
