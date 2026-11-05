@@ -12,6 +12,8 @@ import { NPS_ASK_LABEL } from "@/lib/analytics/nps";
 
 jest.mock("@/lib/track", () => ({ track: jest.fn(), currentSessionId: jest.fn(() => "0123456789abcdef0123456789abcdef") }));
 
+jest.setTimeout(20_000); // about 200 ms alone, but the first test timed out at 5 s once under a full parallel run (#666)
+
 const SESSION = "0123456789abcdef0123456789abcdef";
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => body });
 
