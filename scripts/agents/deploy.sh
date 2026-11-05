@@ -18,6 +18,11 @@
 #      redacted, deploy_issue.py) and the commit range; deduplicated by the
 #      commit in its title, re-tried each tick until filed. A rollback that
 #      fails too is reported loudly and stops: nothing retries it;
+#      a health check whose log shows only Deribit refusing the connection
+#      (5xx handshake, refused/timed-out dial; deploy_issue.py outage, #631)
+#      waits DEPLOY_OUTAGE_WAIT_SEC more, and if Deribit is still down it is an
+#      exchange outage: no rollback, no mvp.failed, no issue — one notify, and
+#      the next tick deploys the commit again;
 #   3b. after a healthy deploy, prunes untagged images and build cache older
 #      than 72 h (never volumes) and warns — log, notify, one open `bug`
 #      ticket — when the Docker disk is over 85 % full (#548, deploy_disk.py);
@@ -32,7 +37,8 @@
 # Stable is never touched here: a person promotes it (scripts/promote.sh).
 # The agents run from the mvp clone, so this also keeps their scripts current.
 #
-# Env: DEPLOY_ENABLED (1), DEPLOY_HEALTH_TIMEOUT_SEC (300), AGENT_NOTIFY.
+# Env: DEPLOY_ENABLED (1), DEPLOY_HEALTH_TIMEOUT_SEC (300),
+# DEPLOY_OUTAGE_WAIT_SEC (600), AGENT_NOTIFY.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -110,6 +116,35 @@ fail() {
   if [[ "$outcome" == "rolled_back" ]]; then run_end rolled_back "$step failed: back to ${deployed:0:7}"
   else run_end failed "$step failed; rollback: ${deployed:+failed}${deployed:-none}"; fi
   file_issue "$target"
+  exit 1
+}
+
+# healthy <timeout sec> — wait_healthy on mvp; when it fails, the last 80
+# log lines are in $step_log for outage_reason and fail.
+healthy() {
+  wait_healthy "$url" "$1" "$token" && return 0
+  env_compose mvp logs --no-color --tail 80 > "$step_log" 2>&1 || true
+  return 1
+}
+
+# outage_reason — prints why $step_log reads as a Deribit outage (every bot
+# exit a connect the exchange or the network refused, deploy_issue.py
+# outage); fails when it does not.
+outage_reason() { python3 "$AGENT_REPO_DIR/scripts/agents/deploy_issue.py" outage < "$step_log"; }
+
+# exchange_outage <why> — still unhealthy, but only because Deribit is
+# unreachable (#631: testnet answered 502 to every connect): not the commit's
+# fault and a rollback could not come up either. mvp stays on the target, which
+# is not marked failed, so the next tick deploys it again; notified once per
+# commit, no issue filed, no rollback line (cmd/dora counts none).
+exchange_outage() {
+  log "deploy: mvp ${target:0:7} not healthy: $1 — exchange outage, not a bad commit; no rollback, retried next tick"
+  if [[ ! -f "$faildir/$target.outage" ]]; then
+    echo "$1" > "$faildir/$target.outage"
+    notify "Deploy waiting: Deribit unreachable" "mvp ${target:0:7}: $1; retried each tick"
+  fi
+  rm -f "$step_log"
+  run_end exchange_outage "$1"
   exit 1
 }
 
@@ -193,11 +228,18 @@ step_log="$faildir/$target.step.log"
 rc=0; env_compose mvp up -d --build > "$step_log" 2>&1 || rc=$?
 cat "$step_log"
 [[ $rc -eq 0 ]] || fail "docker compose up --build" "$step_log"
-if ! wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}" "$token"; then
-  env_compose mvp logs --no-color --tail 80 > "$step_log" 2>&1 || true
-  fail "health check (no fresh decision loop within ${DEPLOY_HEALTH_TIMEOUT_SEC:-300} s)" "$step_log"
+if ! healthy "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"; then
+  if why="$(outage_reason)"; then
+    log "deploy: $why — not the commit; waiting up to ${DEPLOY_OUTAGE_WAIT_SEC:-600} s more"
+    if ! healthy "${DEPLOY_OUTAGE_WAIT_SEC:-600}"; then
+      why="$(outage_reason)" && exchange_outage "$why"
+      fail "health check (no fresh decision loop within ${DEPLOY_HEALTH_TIMEOUT_SEC:-300} s + ${DEPLOY_OUTAGE_WAIT_SEC:-600} s)" "$step_log"
+    fi
+  else
+    fail "health check (no fresh decision loop within ${DEPLOY_HEALTH_TIMEOUT_SEC:-300} s)" "$step_log"
+  fi
 fi
-rm -f "$step_log"
+rm -f "$step_log" "$faildir/$target.outage"
 echo "$target" > "$state"
 env_record deploys.tsv mvp "$target"
 log "deploy: mvp ${target:0:7} healthy"

@@ -333,6 +333,12 @@ The issue is deduplicated by the sha in its title.
 If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
 
+**An exchange outage is not a failed deploy** (#631: on 2026-11-04 Deribit testnet answered HTTP 502 to every connect, and a good commit was rolled back).
+When the health check fails and every bot exit in the log is a connect Deribit or the network refused (a 5xx handshake, a refused, reset or timed-out dial, an unknown host; `deploy_issue.py outage`), `deploy.sh` waits `DEPLOY_OUTAGE_WAIT_SEC` (600) more.
+If the bots come up, the deploy is healthy as usual.
+If Deribit is still down, it is logged and notified once as an exchange outage: no rollback (the last good commit could not connect either), nothing in `mvp.failed` or `deploys.tsv`, no issue, ledger outcome `exchange_outage`.
+The next tick deploys the same commit again; a 4xx handshake, a panic or any other exit is the commit's and rolls back as above.
+
 **A healthy deploy prunes the Docker disk** (#548).
 Every rebuild leaves the old image untagged and adds to the build cache; on 2026-10-30 they filled the Docker VM disk and each monitor's volume (sign-ins, assistant log, analytics) failed to write with ENOSPC.
 After the health check passes, `deploy.sh` runs `docker image prune -f` (untagged images only) and `docker builder prune -f --filter until=72h`; one Docker daemon serves both environments, so stable's leftovers go too.

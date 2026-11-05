@@ -138,6 +138,11 @@ func Markdown(w io.Writer, r Report) error {
 		fmt.Fprintf(&b, "Replies: %d · answered with a citation: %s · flagged as wrong: %d\n\n", a.Replies, fmtPct(a.AnsweredPct), a.Flagged)
 	}
 
+	if e := r.Education; e != nil {
+		section("Education", "Q5")
+		writeEducation(&b, e)
+	}
+
 	if mc := r.ManualClose; mc != nil {
 		section("Manual close funnel", "Q6")
 		fmt.Fprintf(&b, "| Step | Count |\n|---|---:|\n| opened | %d |\n| … allowed | %d |\n| … not allowed | %d |\n| cancelled | %d |\n| confirmed | %d |\n| … last leg | %d |\n\n",
@@ -309,6 +314,32 @@ func countTable(b *strings.Builder, head string, m map[string]int) {
 		fmt.Fprintf(b, "| %s | %d |\n", k, m[k])
 	}
 	b.WriteString("\n")
+}
+
+func writeEducation(b *strings.Builder, e *Education) {
+	if e.NoData {
+		b.WriteString("No data yet: " + e.Why + "\n\n")
+		return
+	}
+	per := func(v *float64) string {
+		if v == nil {
+			return "—"
+		}
+		return fmt.Sprintf("%.2f", *v)
+	}
+	fmt.Fprintf(b, "Active people: %d · tips opened per person: %s · videos played per person: %s · video completion: %s\n\n",
+		e.ActivePeople, per(e.TipsPerPerson), per(e.VideosPerPerson), fmtPct(e.VideoCompletionPct))
+	fmt.Fprintf(b, "Resolved by a tip or video: %d of %d answers · by the assistant: %d of %d · share of resolved help from tips and videos: %s\n\n",
+		e.TipVideoResolved, e.TipVideoAnswers, e.AssistantResolved, e.AssistantAnswers, fmtPct(e.ResolvedByTipVideoPct))
+	tipTable := func(head string, tips []TipCount) {
+		m := map[string]int{}
+		for _, t := range tips {
+			m[t.Tip] = t.Count
+		}
+		countTable(b, head, m)
+	}
+	tipTable("Tip opened, no question after", e.NoFollowUp)
+	tipTable("Tip opened, then an assistant question (rewrite candidates)", e.FollowedByQuestion)
 }
 
 func sortedKeys(m map[string]int) []string {

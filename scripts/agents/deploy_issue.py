@@ -5,6 +5,7 @@ deploy to mvp (#204). Pure text here; deploy.sh reads GitHub and acts.
     deploy_issue.py title <sha> <subject>                        → the issue title
     deploy_issue.py find <sha> < issues.json                     → number of an issue already filed for <sha>, or nothing
     deploy_issue.py body <sha> <meta> <tail> <range> [env...]    → the issue body (markdown)
+    deploy_issue.py outage < log                                 → why the log reads as a Deribit outage; exit 1 when it does not (#631)
 
 issues.json: gh issue list --json number,title. meta: the failed step on its
 first line, the rollback outcome on its second. tail: the log of the failed
@@ -19,6 +20,7 @@ Standard library only.
 import json
 import re
 import sys
+from collections import Counter
 
 TAIL_LINES = 80
 MAX_LINE = 400  # characters kept per log line: a GitHub body holds 65,536
@@ -83,6 +85,36 @@ def cause_hint(rollback, log_tail):
     return hint
 
 
+# A bot that cannot reach Deribit (#631, 2026-11-04: testnet answered 502 to
+# every connect for the whole health check) is not a bad commit. Only errors
+# the exchange or the network decide count: a 5xx handshake, a refused,
+# reset or timed-out dial, an unknown host. A 4xx (an endpoint a commit
+# changed) or any other exit is the commit's.
+BOT_EXIT = re.compile(r'"msg":"bot exited with error".*?"err":"((?:[^"\\]|\\.)*)"')
+EXCHANGE_DOWN = re.compile(
+    r"^gateway connect: websocket dial \S+: (?:websocket: bad handshake \(HTTP (5\d\d)\b"
+    r"|.*\b(connection refused|connection reset|i/o timeout|no such host|network is unreachable|EOF)\b)")
+CRASH = re.compile(r"\bpanic:|\bfatal error:")
+
+
+def exchange_outage(log_tail):
+    """Why the log reads as an exchange outage ("HTTP 502 on connect, 14 exits"),
+    or "" when it does not: at least one bot exit, every bot exit a connect the
+    exchange or the network refused, and no crash."""
+    if CRASH.search(log_tail):
+        return ""
+    causes = []
+    for err in BOT_EXIT.findall(log_tail):
+        m = EXCHANGE_DOWN.match(err)
+        if not m:
+            return ""
+        causes.append(f"HTTP {m.group(1)}" if m.group(1) else m.group(2))
+    if not causes:
+        return ""
+    common = Counter(causes).most_common(1)[0][0]  # ties: the first seen
+    return f"Deribit unreachable: {common} on connect, {len(causes)} bot exits"
+
+
 def body(sha, step, rollback, log_tail, commits, pairs):
     hint = cause_hint(rollback, log_tail)
     log_tail = redact(tail(log_tail), pairs) or "(empty)"
@@ -121,6 +153,11 @@ def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "title" and len(argv) == 4:
         print(title(argv[2], argv[3]))
+    elif cmd == "outage" and len(argv) == 2:
+        why = exchange_outage(sys.stdin.read())
+        if not why:
+            return 1
+        print(why)
     elif cmd == "find" and len(argv) == 3:
         n = find(argv[2], json.load(sys.stdin))
         if n is not None:

@@ -18,3 +18,10 @@ Index of the education material.
   - `tests/videos_coverage_test.go` fails on a storyboard with no entry, an entry with no storyboard, a tip whose video id is missing or does not list it, and a caption sentence over 25 words, with a jargon word with no glossary entry or a promised return; it names the id.
   - The monitor serves it: `GET /api/help/videos` (`frontend/docs/api-routes.md`) and `frontend/lib/videos.js`. No screen uses it yet.
   - The image reads a copy: after editing run `cp docs/product/education/videos.json frontend/content/videos.json`; `frontend/__tests__/videos-route.test.js` fails on a stale copy.
+
+## Measuring use (#642)
+
+The events `tip_opened`, `video_played`, `video_completed` and `help_resolved` (analytics event plan §2) carry catalogue ids only, never an amount or text, and follow the E13 consent: with analytics off nothing is sent.
+Their ids must exist in `tips.json` and `videos.json` (the collector refuses others).
+The weekly usage report's "Education" section reads them: tips and videos per active person, the share of resolved help from tips and videos against the assistant, and the tip keys to rewrite.
+With no events it says "No data yet". No screen emits the events until the first tip or video screen ships.

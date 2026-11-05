@@ -71,6 +71,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)
       and moves every closed issue's card to Done (each tick too, for issues closed by hand: the board's "Item closed" workflow is off);
+    - a health check whose log shows only Deribit refusing the connect (5xx handshake, refused/timed-out dial; `deploy_issue.py outage`, #631) waits `DEPLOY_OUTAGE_WAIT_SEC` (600) more,
+      then, still down, is an exchange outage: no rollback, no `mvp.failed`, no issue, one notify, ledger `exchange_outage`; the next tick redeploys the commit;
     - a healthy deploy prunes untagged images and build cache older than 72 h, never volumes (#548: the Docker disk filled, the monitors' writes failed with ENOSPC),
       and over 85 % full (the monitor volume's `df`) warns: log, notify, one open `bug` `[E6] Docker disk over 85 % full (<pct> %)` (`deploy_disk.py`);
   - stable moves only by `scripts/promote.sh` (3-day soak, no open `sme:not-fixed`
