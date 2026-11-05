@@ -23,6 +23,10 @@ type ciWorkflow struct {
 		Name    string            `yaml:"name"`
 		If      string            `yaml:"if"`
 		Outputs map[string]string `yaml:"outputs"`
+		Steps   []struct {
+			Name string `yaml:"name"`
+			Run  string `yaml:"run"`
+		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
 
