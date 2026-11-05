@@ -7,12 +7,14 @@
 #   data/regime_history.jsonl, data/direction_history.jsonl and data/archive/
 #   to <envs>/history/backups/<date>/<env>/<bot>/ (orders.log, the three
 #   .jsonl files, archive/) — named files only: no .env, no secret; and each
-#   environment's monitor request queue, data/monitor/requests.jsonl and
-#   requests_status.jsonl, to <date>/<env>/monitor/ (#409), with the
-#   assistant's review log data/monitor/assistant.jsonl (#438) and the audit
-#   trail data/monitor/audit.jsonl with its archives audit.<UTC time>.jsonl (#619);
+#   environment's monitor files to <date>/<env>/monitor/ (#650): users
+#   (auth.db), analytics events, the assistant's review log (#438), request
+#   queue (#409) and audit trail with its archives (#619), read from the
+#   running monitor's monitor-auth volume (envctl.sh … cp, read-only), else —
+#   the container not running, logged — from the clone's data/monitor;
 #   then go run ./cmd/backupcheck on each copy: the journal must replay
-#   (orders.ReplayFile) and hold no fewer events than the previous good copy.
+#   (orders.ReplayFile) and hold no fewer events than the previous good copy;
+#   every monitor .jsonl must parse and the audit chain must hold.
 # The copy is built in <backups>/.<date>.partial and becomes <date> only when
 # every check passes; then the newest BACKUP_KEEP_DAYS (14) are kept. A failed
 # check keeps the copy as <date>.failed, notifies the person, ends the run
@@ -20,8 +22,9 @@
 # a later tick; after the second attempt the day is marked done whatever
 # happened: data/agents/backup/<date>.done. A bot folder that the previous good
 # backup had and is now gone fails the check too.
-# Reads the live files only (cp): never writes to them, never deletes anything
-# in a clone's data/. No Claude call, no git, no Deribit call.
+# Reads the live files only (cp, docker compose cp out of the container): never
+# writes to them or to the volume, never deletes anything in a clone's data/.
+# No Claude call, no git, no Deribit call.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -110,28 +113,64 @@ while read -r env bot; do
   fi
 done <<< "$sources"
 
-# The monitor's private request queue (#409): requests.jsonl and the review's
-# requests_status.jsonl of each environment, copied as they are to
-# <date>/<env>/monitor/ (not journals: no restore check); and the assistant's
-# review log, assistant.jsonl (#438, the L11/L12 audit trail), whose every
-# line must parse (backupcheck -lines; a torn last line is allowed).
+# The monitor's own files (#650), read from where the deployed monitor keeps
+# them — its monitor-auth volume, /app/data/monitor — through the running
+# container (envctl.sh … cp, read-only), else from the clone's data/monitor.
+# Only these names are copied (never a key, token or env file):
+#   auth.db                users, sign-in lockouts and survey answers (password and token hashes only)
+#   events.jsonl           analytics events (#193)
+#   assistant.jsonl        the assistant's review log (#438, L11/L12)
+#   requests.jsonl, requests_status.jsonl   the assistant's request queue (#409)
+#   audit.jsonl, audit.<UTC time>.jsonl     the audit trail and its rotated archives (#619)
+# Every .jsonl copied must parse (backupcheck -lines; a torn last line is
+# allowed) and the audit trail's hash chain must hold on the copy (-audit).
+MONITOR_FILES="auth.db events.jsonl assistant.jsonl requests.jsonl requests_status.jsonl audit.jsonl"
+AUDIT_ARCHIVE='audit.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]Z.jsonl'
+envctl="$AGENT_REPO_DIR/scripts/envctl.sh"
+
+# monitor_volume <env> <dir> — copies the running monitor's /app/data/monitor
+# into <dir>; fails (nothing copied) when the stack is not set up or the
+# monitor container is not running.
+monitor_volume() {
+  local edir; edir="$(env_dir "$1")"
+  [[ -f "$edir/.env" && -f "$edir/deploy.env" ]] || return 1
+  [[ -n "$(bash "$envctl" "$1" ps -q --status running monitor 2>/dev/null)" ]] || return 1
+  bash "$envctl" "$1" cp monitor:/app/data/monitor/. "$2" >> "$state/$day.log" 2>&1
+}
+
 for env in $ENV_NAMES; do
-  msrc="$(env_dir "$env")/data/monitor"
-  # The audit trail (#619): audit.jsonl and its rotated archives audit.<UTC time>.jsonl,
-  # copied as they are; their hash chain is checked by the Audit page, not here.
-  for f in requests.jsonl requests_status.jsonl assistant.jsonl audit.jsonl "$msrc"/audit.*.jsonl; do
+  vol="$state/.volume-$env"
+  rm -rf "$vol"; mkdir -p "$vol"
+  if monitor_volume "$env" "$vol"; then
+    msrc="$vol"; log "backup: $env monitor files from the monitor-auth volume"
+  else
+    msrc="$(env_dir "$env")/data/monitor"
+    log "backup: $env monitor not running, monitor files from the clone's $msrc"
+  fi
+  mdst="$work/$env/monitor"
+  for f in $MONITOR_FILES "$msrc"/$AUDIT_ARCHIVE; do
     f="${f##*/}"
-    if [[ -f "$msrc/$f" ]]; then
-      mkdir -p "$work/$env/monitor"
-      cp -p "$msrc/$f" "$work/$env/monitor/"
+    # A plain file only: a link could point anywhere.
+    if [[ -f "$msrc/$f" && ! -L "$msrc/$f" ]]; then
+      mkdir -p "$mdst"
+      cp -p "$msrc/$f" "$mdst/"
     fi
   done
-  alog="$work/$env/monitor/assistant.jsonl"
-  if [[ -f "$alog" && -z "$failed" ]]; then
-    if out="$("$check" -lines "$alog" 2>&1)"; then
-      log "backup: $env assistant log ok — ${out#RESULT }"
+  rm -rf "$vol"
+  [[ -d "$mdst" && -z "$failed" ]] || continue
+  for f in "$mdst"/*.jsonl; do
+    [[ -f "$f" ]] || continue
+    if out="$("$check" -lines "$f" 2>&1)"; then
+      log "backup: $env ${f##*/} ok — ${out#RESULT }"
     else
-      fail "$env" monitor "assistant log check: $(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tail -1)"
+      fail "$env" monitor "${f##*/} check: $(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tail -1)"
+    fi
+  done
+  if [[ -f "$mdst/audit.jsonl" ]] || compgen -G "$mdst/$AUDIT_ARCHIVE" > /dev/null; then
+    if out="$("$check" -audit "$mdst" 2>&1)"; then
+      log "backup: $env audit chain intact — ${out#RESULT }"
+    else
+      fail "$env" monitor "audit chain check: $(printf '%s' "$out" | grep -v '^[[:space:]]*$' | tail -1)"
     fi
   fi
 done

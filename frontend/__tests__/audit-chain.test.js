@@ -298,6 +298,15 @@ describe("the chain never holds a secret", () => {
   });
 });
 
+describe("the backup's chain check agrees (#650)", () => {
+  // The nightly backup checks its copy with internal/backup.CheckAuditChain
+  // (tests/backup_check_test.go reads the same fixture): both must call it intact.
+  test("the shared fixture (an archive, then audit.jsonl) is intact here too", async () => {
+    const file = path.join(__dirname, "..", "..", "tests", "testdata", "audit_chain", "audit.jsonl");
+    expect(await verifyAudit(file)).toMatchObject({ ok: true, checked: 4, legacy: 0, first_break: null });
+  });
+});
+
 describe("auditChainSummary", () => {
   test("broken, in an archive, with legacy; off says nothing", () => {
     const fmt = (t) => `<${t}>`;
