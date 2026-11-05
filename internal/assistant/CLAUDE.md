@@ -11,7 +11,8 @@ bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set r
   - the monitor's `POST /api/assistant` (#191, `frontend/lib/assistant/`;
     - its panel on every signed-in page — Ask in the menu bar, Why? on trade rows sending the journal `seq` whose `/api/explain` facts become passages,
     - #408: Claude on the best help passages + the bot's journal events +
-      (#427) its live page data as `live:<bot>/market|leg/<instrument>` passages from `/api/status`, `/api/positions`, `/api/strangles/payoff` (cached 10 s)
+      (#427) its live page data as `live:<bot>/market|leg/<instrument>` passages from `/api/status`, `/api/positions`, `/api/strangles/payoff` (cached 10 s) +
+      (#648) for a results question only (`asksAboutResults`) its `/api/performance?range=7d|30d` as `perf:<bot>/7d|30d` passages (`perfPassages`, cached 10 s, unknowns with the route's reason; golden `results` cases)
     - — a mixed question gets its facts answered and only the advice declined with `Refusal`, `ANTHROPIC_API_KEY` in the monitor's `.env` or 503,
       Q&A logged in `data/monitor/assistant.jsonl`, `POST /api/assistant/flag`, `POST /api/assistant/feedback` (#579: "Helped"/"Didn't help", the asker only, two lines per answer), 30 questions/h per person;
     - #409: a question that reads as a report runs the request check — `lib/assistant/request.js`, the model's structured verdict checked server-side for what/where/evidence/not explained,

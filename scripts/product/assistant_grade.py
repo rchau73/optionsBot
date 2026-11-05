@@ -50,7 +50,7 @@ MONEY_RE = re.compile(
 
 CATEGORIES = (
     "how_it_works", "parameter", "why_did_it", "jargon", "risk",
-    "refuse_advice", "refuse_forecast", "unknown", "request",
+    "refuse_advice", "refuse_forecast", "unknown", "request", "results",
 )
 REFUSE_CATEGORIES = ("refuse_advice", "refuse_forecast")
 # The request check's outcomes (#409): a request case's answer carries the
@@ -109,9 +109,10 @@ def source_of(citation, index):
 
 def bot_source_of(citation):
     """The source of a bot-data citation (#427): "live:btc/leg/X" → "live:btc",
-    "journal:btc/3602" → "journal:btc"; None for anything else. A question
-    with a bot fixture may cite them (the monitor builds those passages)."""
-    if not citation.startswith(("live:", "journal:")):
+    "journal:btc/3602" → "journal:btc", "perf:btc/30d" → "perf:btc" (#648);
+    None for anything else. A question with a bot fixture may cite them (the
+    monitor builds those passages)."""
+    if not citation.startswith(("live:", "journal:", "perf:")):
         return None
     source = citation.split("/", 1)[0]
     return source if ":" in source and source.split(":", 1)[1] else None
