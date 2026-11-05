@@ -146,6 +146,9 @@ func (e *Executor) Submit(ctx context.Context, order Order) (Fill, error) {
 	if order.TimeInForce != "" {
 		params["time_in_force"] = order.TimeInForce
 	}
+	if order.ReduceOnly {
+		params["reduce_only"] = true
+	}
 	if order.Label != "" {
 		label := order.Label
 		if len(label) > MaxLabelLen {
@@ -220,7 +223,7 @@ const deribitPriceTooLowCode = 10005
 // market-data and entry traffic.
 func submitPriority(reason string) int {
 	switch reason {
-	case TriggerStopLoss200Pct, TriggerKillSwitch, TriggerGammaClose:
+	case TriggerStopLoss200Pct, TriggerKillSwitch, TriggerGammaClose, TriggerFuturesHedgeClose:
 		return gateway.PriorityHigh
 	default:
 		return gateway.PriorityLow
@@ -315,6 +318,31 @@ func (e *Executor) GetPositions(ctx context.Context, currency string) ([]RawPosi
 	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
 		"currency": currency,
 		"kind":     "option",
+	}, gateway.PriorityLow)
+}
+
+// GetFuturePositions returns the currency's open futures positions
+// (perpetual included). Kept apart from GetPositions, which is option-only,
+// so reconcile and the position check never adopt a hedge (#657).
+func (e *Executor) GetFuturePositions(ctx context.Context, currency string) ([]RawPosition, error) {
+	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
+		"currency": currency,
+		"kind":     "future",
+	}, gateway.PriorityLow)
+}
+
+// GetInstrumentSpec reads an instrument's contract size, minimum amount and
+// tick (public/get_instrument).
+func (e *Executor) GetInstrumentSpec(ctx context.Context, name string) (InstrumentSpec, error) {
+	return call[InstrumentSpec](ctx, e.gw, "public/get_instrument", map[string]any{
+		"instrument_name": name,
+	}, gateway.PriorityLow)
+}
+
+// GetTicker reads an instrument's best bid and ask, mark and index (public/ticker).
+func (e *Executor) GetTicker(ctx context.Context, name string) (Ticker, error) {
+	return call[Ticker](ctx, e.gw, "public/ticker", map[string]any{
+		"instrument_name": name,
 	}, gateway.PriorityLow)
 }
 

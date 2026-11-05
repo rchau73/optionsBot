@@ -86,6 +86,11 @@ type Deps struct {
 	// Directions is optional: records the SMA trend next to the GEX bias
 	// whenever either (or the shed signal) changes.
 	Directions DirectionRecorder
+	// Futures and HedgeModePath are the futures hedge experiment's (#657):
+	// the exchange's futures calls and the file that keeps the mode and its
+	// benchmark. Either missing leaves the experiment unavailable (OFF).
+	Futures       FuturesTrader
+	HedgeModePath string
 }
 
 // DirectionRecorder keeps the direction sources' history (never read by trading).

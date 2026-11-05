@@ -43,6 +43,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/auth/refresh", roles: ANYONE, audit: null, why: "renews the caller's own session; changes nothing a person decides" },
   { route: "POST /api/auth/reset", roles: ANYONE, audit: "password_reset_by_link" },
   { route: "POST /api/bots/[bot]/close", roles: MANAGERS, audit: "manual_close", bot: "POST /api/positions/close" },
+  { route: "POST /api/bots/[bot]/hedge", roles: ADMINS, audit: "futures_hedge_switched", bot: "POST /api/hedge" },
   { route: "POST /api/bots/[bot]/rebalance", roles: MANAGERS, audit: "manual_rebalance", bot: "POST /api/rebalance" },
   { route: "POST /api/consent", roles: SIGNED_IN, audit: "analytics_consent_changed" },
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },

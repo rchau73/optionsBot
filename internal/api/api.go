@@ -80,20 +80,23 @@ type KeyScopeSource interface {
 
 // Server is the monitor API for one bot process.
 type Server struct {
-	strategy    StrategySource
-	events      EventSource
-	history     PnLHistory                  // nil → empty history
-	account     AccountSource               // nil → no account data
-	closer      ManualCloser                // nil → no manual close route
-	rebal       ManualRebalancer            // nil → no manual rebalance route
-	connections map[string]ConnectionSource // by gateway name; empty → {}
-	token       string
-	started     time.Time
-	deployment  string         // local environment: stable | mvp | "" (run by hand)
-	version     string         // release tag or commit
-	config      *ConfigStatus  // nil → "config": null
-	keyScope    KeyScopeSource // nil → "key_scope": null
-	mux         *http.ServeMux
+	strategy     StrategySource
+	events       EventSource
+	history      PnLHistory       // nil → empty history
+	account      AccountSource    // nil → no account data
+	closer       ManualCloser     // nil → no manual close route
+	rebal        ManualRebalancer // nil → no manual rebalance route
+	hedge        HedgeController  // nil → no futures hedge routes (#657)
+	hedgeLive    bool             // a live bot: the hedge switch is refused
+	hedgePreview previewCache
+	connections  map[string]ConnectionSource // by gateway name; empty → {}
+	token        string
+	started      time.Time
+	deployment   string         // local environment: stable | mvp | "" (run by hand)
+	version      string         // release tag or commit
+	config       *ConfigStatus  // nil → "config": null
+	keyScope     KeyScopeSource // nil → "key_scope": null
+	mux          *http.ServeMux
 }
 
 // Option configures a Server.
@@ -163,6 +166,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.routesSummary(s.mux)
 	s.routesJournal(s.mux)
 	s.routesActions(s.mux)
+	s.routesHedge(s.mux)
 	return s
 }
 

@@ -14,9 +14,12 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `loop_age_sec` (wall-clock age of `loop_at`) and `loop_stale` (over 2 eval intervals, not halted; `strategy.LoopLate`, #593) in `/api/status`; the SME collection names a stale loop in its MANIFEST.
   - `connections.<gateway>` in `/api/status` is each gateway's `ConnStats` (drops, reconnects, timeouts today; last drop time and error — `api.WithConnection`, #87).
   - `key_scope` in `/api/status` is the trading key's scope (`api.WithKeyScope`, #538): `scopes`, `fund_scopes`, `can_move_funds` (null = unknown) and `status` trade_only|can_move_funds|unknown — scope names only, never the key; null when not wired.
-  The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only) and `POST /api/rebalance` (manual rebalance, below: live and testnet):
+  `GET /api/hedge[?preview=true]` (`routes_hedge.go`, #657) is the futures hedge experiment: `Strategy.HedgeState` (mode, the perpetual, net delta, band, benchmark), `switchable`,
+  and with `preview` `Strategy.HedgePreview` (exchange reads, cached 10 s; an error is `preview_error`).
+  The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only), `POST /api/rebalance` (manual rebalance, below: live and testnet)
+  and `POST /api/hedge` (`{"enabled": bool, "actor"}`, the futures hedge switch: testnet only, 403 live, 409 when the strategy refuses — the perpetual not closed, the mode unchanged):
   - bearer `BOT_ADMIN_TOKEN`, audited in the bot log and journaled; the monitor's server-side proxies add the token and refuse cross-origin requests.
-  Both take an optional `"actor": {"user", "role"}` (#171: the monitor's signed-in person; `api.ActorOf` checks only its form — username 3–64 of `a-z 0-9 . _ -`, role admin|manager|user — none → `monitor`),
+  All three take an optional `"actor": {"user", "role"}` (#171: the monitor's signed-in person; `api.ActorOf` checks only its form — username 3–64 of `a-z 0-9 . _ -`, role admin|manager|user — none → `monitor`),
   - logged as `by` and journaled as `orders.Actor` (the close's `actor` via `buyToCloseBy`, `rebalance_manual`'s `actor`, `Trade.Actor` in `/api/trades`);
   - who may act is the monitor's check (roles, re-read from its user database), never the bot's.
   - **The role matrix** (#490): every state-changing monitor route, its allowed roles and its audit action is one table, `frontend/lib/auth/routeRoles.js` `STATE_CHANGING_ROUTES`;

@@ -244,6 +244,17 @@ When IM is over the limit by 1.5 points or less and the limit has not changed, t
 Further over, it buys back toward the limit as before.
 <!-- guide: route:POST /api/bots/[bot]/rebalance -->
 
+**Futures hedge (experiment, testnet)**: one card per bot.
+Off by default; while it is on, the GEX shed keeps its legs and the bot trades the coin's perpetual future to hold the book's direction (delta) near zero.
+The card shows the options' delta, the perpetual and the net delta, how many hedge orders went out in the last hour, and the comparison with the shed since the experiment started: positive when the hedge did better, negative (in red, with its minus sign) when the shed did.
+The comparison is an estimate: the side that is not trading is followed on paper.
+Only an admin may switch it.
+Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
+If the perpetual cannot be closed, the experiment stays on.
+The kill switch closes the perpetual too.
+The perpetual also appears under "Not managed by the bot", because it is not an option.
+<!-- guide: route:POST /api/bots/[bot]/hedge -->
+
 **Not managed by the bot** lists any other position on the account, for example one bought by hand.
 No bot trades these, but they use margin, so they are shown.
 

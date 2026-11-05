@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "session_ended",
   "manual_close",
   "manual_rebalance",
+  "futures_hedge_switched",
   "events_pruned",
   "events_prune_failed",
   "events_deleted",

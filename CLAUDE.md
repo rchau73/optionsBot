@@ -94,8 +94,8 @@ Each folder's notes are in its own `CLAUDE.md`, loaded when you work there:
 - `scripts/agents/CLAUDE.md` — the agentic workflow: SME, PM, Dev, Reviewer, PR gate, deploy, ledger and the scheduled reports.
 - `frontend/CLAUDE.md` — monitor pages and the menu.
 - `tests/CLAUDE.md` — notable test files.
-- **`internal/hedge`** — writes `hedge_report.json` when |net delta| ≥ threshold.
-  **Never places orders.**
+- **`internal/hedge`** — writes `hedge_report.json` when |net delta| ≥ threshold, and the futures hedge's pure rules and benchmark (#657).
+  **Never places orders** (the strategy does).
 
 ### Trading rules (keep these true)
 
@@ -189,7 +189,9 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   (confirmed negative regime; puts in a bear trend, calls in a bull trend) — the leg the bot no longer sells but may still hold (2026-10-09 BTC: puts re-sold during two minutes of neutral trend).
 - **Kill switch:** cancel all orders for the currency → read back and book what each working entry filled (`settleLeg` + `finalizePending`)
   → flatten at market with retries on a detached context, the book matched to the exchange's shorts before each pass (`syncBookToExchange`, no drift confirmation) and the exchange checked flat at the end
-  → stay idle (don't exit; Docker would restart into trading).
+  → flatten the coin's perpetual too, whatever the hedge mode (`flattenPerp`) → stay idle (don't exit; Docker would restart into trading).
+- **Futures hedge experiment** (`futureshedge.go`, #657; off unless switched from the monitor, `data/hedge_mode.json`, testnet only): while on, the GEX shed closes nothing (`shed_hedged` skip)
+  and the perpetual holds net delta within 5 % of the margin balance (`hedge.HedgeOrder`, IOC, ≤ 12 orders/h); stops, exits and the MM cut still close legs (`internal/strategy/CLAUDE.md`).
 - **Startup** (reconcile, regrouping, slot assignment: `internal/strategy/CLAUDE.md`).
   **No new risk without fresh GEX** (`gexready.go`, pure `GEXWaitReason`): with GEX wired, entries (`gex_wait` skip), top-ups and repairs wait until the first snapshot and whenever it is older than `GEXStaleAfter` (5 min)
   — before it the regime and trend are unknown (2026-10-09: both bots sold puts seconds after a restart into a negative regime with a bear trend).

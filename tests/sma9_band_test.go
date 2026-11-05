@@ -204,9 +204,11 @@ func TestStrategy_RegimeSideBlockCancelsWorkingPut(t *testing.T) {
 	if cancel.filledQty != 0.1 {
 		t.Errorf("the cancel reads back the partial fill: filled %v, want 0.1", cancel.filledQty)
 	}
-	if p := f.position(f.put); p == nil || p.Qty != 0.1 {
-		t.Errorf("the partial fill is booked as the put leg, got %+v", p)
-	}
+	// The cancel is journaled before finalizePending books the fill: wait for it.
+	eventually(t, 2*time.Second, "the partial fill is booked as the put leg", func() bool {
+		p := f.position(f.put)
+		return p != nil && p.Qty == 0.1
+	})
 	time.Sleep(50 * time.Millisecond)
 	if n := putSells(f); n != 1 {
 		t.Errorf("no further put is sold while the side is blocked, got %d sells", n)

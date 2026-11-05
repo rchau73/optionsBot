@@ -99,6 +99,24 @@ Read both before changing a rule.
   - The request runs on the Run goroutine (`manualCh`), re-checks the rule, records the leg like a stop (repair held by `RepairBlockReason`) and closes with `TriggerManualClose`;
     a request the loop has not taken within 25 s is dropped unexecuted.
 - **Kill switch:** 2026-10-09: pending entries were dropped unread and 100 filled lots stayed short.
+  It also closes the coin's perpetual at market, reduce-only, retried and checked (`flattenPerp`, #657), whether the futures hedge is on or off.
+- **Futures hedge experiment** (`futureshedge.go`, `futureshedgeview.go`, #657; the product owner's go on the issue, 2026-11-05):
+  - The mode lives in `data/hedge_mode.json` (`hedge.ModeState`: on/off, since, by, the benchmark's ledger); missing or unreadable → OFF.
+    It is switched only by `POST /api/hedge` (admins, testnet), on the Run goroutine (`hedgeCh`), journaled `hedge_mode_changed` with the person.
+  - While ON, `handleGammaAction` keeps every leg the shed would close (`noteShedHedged`: one `shed_hedged` skip per leg with the ask it would have paid, no shed anchor); `Action` still holds entries and repairs of that side.
+  - Every cycle after leg balancing `stepFuturesHedge` reads the perpetual from the exchange (`GetFuturePositions`, kind=future: `GetPositions` stays option-only, so reconcile never adopts it),
+    and trades it by −net delta in whole contracts when |options + perpetual| ≥ band = 5 % of the margin balance in coin (`hedge.HedgeOrder`, `config.FixedFuturesHedgeBandPct`):
+    IOC at the bid (sell) or ask (buy) from `public/ticker`, contract size from `public/get_instrument` (none → no order, never guessed), at most 12 orders a rolling hour (the 13th journals `hedge_rate_limited` once).
+    Allowed while frozen (it only reduces delta); never during the kill switch.
+    Each fill journals `hedge_fill` with the market snapshot.
+  - An order whose outcome is unknown is cancelled by label and journaled `hedge_failed`; the next cycle reads the position before sending anything.
+  - Switching OFF closes the perpetual at market, reduce-only (`closePerp`, `hedge_closed` with its realised coin); if it cannot, the mode stays ON and the request fails.
+    The kept legs' holding ends there: the shed acts on them from the next cycle.
+  - `HedgePreview` (read-only: a position read, the account summary, one `simulate_portfolio` with the perpetual removed) gives the close's result and fee, delta and IM/MM now → after,
+    the options' delta–gamma P&L at −10/−5/+5/+10 % without the hedge, and warnings (a shed on the next cycle, MM over its limit).
+  - The benchmark (`hedge.Ledger`, saved in the mode file every 5 min and on every trade or switch): the real perpetual from its fills (drift to the exchange booked at the mark),
+    a paper hedge at the index price with a 0.05 % taker fee while OFF, and one counterfactual per shed decision (kept while ON, bought back while OFF) followed at its mark until its DTE roll;
+    advantage = hedge P&L + Σ (shed price − later price) × qty — an estimate, labelled so on the monitor.
 - **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency`, load positions, regroup with `GroupPositions`
   - — an expiry may hold several strangles: calls and puts paired by size, then rank from the money;
   - leftovers one-legged, except that an uneven pair's excess is split onto a lone leg of the other type on the same expiry,

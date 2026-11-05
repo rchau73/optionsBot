@@ -92,6 +92,7 @@ var eventSamples = map[string]map[string]any{
 	orders.EventTrend:      {"from": "bull", "to": "bear", "reason": "price < swing low"},
 	orders.EventConfig:     {"fingerprint": "0123456789ab", "changes": []map[string]any{{"key": "repair_cooldown_hours", "from": 72, "to": 48}}},
 	orders.EventKeyScope:   {"scopes": []string{"account:read", "trade:read_write"}, "can_move_funds": false, "status": "trade_only"},
+	orders.EventHedge:      {"change": orders.HedgeFill, "side": "sell", "amount_usd": 17700},
 }
 
 // openTriggers and nonCloseTriggers sort the trigger constants: every other
@@ -101,7 +102,7 @@ var (
 	nonCloseTriggers = map[string]bool{
 		orders.TriggerEntry: true, orders.TriggerRepair: true, orders.TriggerRebalanceUpsize: true,
 		orders.TriggerCloseLong: true, orders.TriggerReconciled: true, orders.TriggerTimeout: true, orders.TriggerRiskFrozen: true,
-		orders.TriggerRegimeSide: true,
+		orders.TriggerRegimeSide: true, orders.TriggerFuturesHedge: true, orders.TriggerFuturesHedgeClose: true,
 	}
 )
 
@@ -151,6 +152,9 @@ func catalogueSentences(t *testing.T) map[string]string {
 	}
 	for _, ch := range journalConsts(t, "../internal/orders", "Risk") {
 		explain("risk "+ch, event(orders.EventRisk, map[string]any{"change": ch, "limit_im_pct": 20, "im_pct": 24}))
+	}
+	for _, ch := range journalConsts(t, "../internal/orders", "Hedge") {
+		explain("hedge "+ch, event(orders.EventHedge, map[string]any{"change": ch}))
 	}
 	for _, sk := range journalConsts(t, "../internal/strategy", "Skip") {
 		explain("skip "+sk, event(orders.EventSkipped, map[string]any{"skip_reason": sk + ": the numbers"}))

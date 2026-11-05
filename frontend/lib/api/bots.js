@@ -50,6 +50,11 @@ export async function fetchBotPayoff(name, signal) {
   return getJSON(botUrl(name, "/strangles/payoff"), signal);
 }
 
+/** The futures hedge experiment of one bot (#657): mode, perpetual, benchmark; with preview, what switching off would do. */
+export async function fetchBotHedge(name, preview, signal) {
+  return getJSON(botUrl(name, preview ? "/hedge?preview=true" : "/hedge"), signal);
+}
+
 /** The investor summary of one bot (/api/summary): holding, income, worst case, last action. */
 export async function fetchBotSummary(name, signal) {
   return getJSON(botUrl(name, "/summary"), signal);

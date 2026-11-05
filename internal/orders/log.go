@@ -266,6 +266,15 @@ func (l *Logger) LogRisk(r RiskRecord) {
 	l.writeJSON(EventRisk, r, slog.Default().With("event", EventRisk, "change", r.Change))
 }
 
+// LogHedge records a futures-hedge decision (#657).
+func (l *Logger) LogHedge(r HedgeRecord) {
+	r.Event = EventHedge
+	if r.Timestamp.IsZero() {
+		r.Timestamp = time.Now()
+	}
+	l.writeJSON(EventHedge, r, slog.Default().With("event", EventHedge, "change", r.Change))
+}
+
 // LogTrend records a change of the SMA trend.
 func (l *Logger) LogTrend(r TrendRecord) {
 	r.Event = EventTrend

@@ -196,6 +196,8 @@ type published struct {
 
 	manualOn  bool   // manual closes enabled (SetManualClose)
 	manualOff string // why not, shown on every leg
+
+	hedge HedgeView // the futures hedge experiment (futureshedgeview.go)
 }
 
 // publish copies the loop-owned state for readers. Call on the Run goroutine.
@@ -219,6 +221,7 @@ func (s *Strategy) publish() {
 	trend, bias := s.gamma.Trend(), s.gamma.Bias()
 	levels := SMAView{SMALevels: s.gamma.SMALevels(), Candles: s.gamma.Candles()}
 	medianFlip := s.gamma.MedianFlip()
+	hv := s.hedgeView(time.Now())
 
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
@@ -226,6 +229,7 @@ func (s *Strategy) publish() {
 	s.pub.trend, s.pub.sma, s.pub.levels, s.pub.bias = trend, levels.Trend, levels, bias
 	s.pub.medianFlip = medianFlip
 	s.pub.pending = pending
+	s.pub.hedge = hv
 }
 
 // recordAccount stores the latest account summary for the view.

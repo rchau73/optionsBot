@@ -52,6 +52,9 @@ const gexHistoryDir = "data/market_gex"
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
+
+// hedgeModePath keeps the futures hedge experiment's mode and benchmark (#657).
+const hedgeModePath = "data/hedge_mode.json"
 const directionHistoryPath = "data/direction_history.jsonl"
 
 func main() {
@@ -257,6 +260,9 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		Regimes:  regimes,
 		// The SMA trend next to the GEX bias, for comparing the two.
 		Directions: directions,
+		// The futures hedge experiment (#657): off unless switched on from the monitor.
+		Futures:       exec,
+		HedgeModePath: hedgeModePath,
 	})
 	strat.RestorePnL(replay.Realised, replay.Closed)
 	strat.RestoreStops(replay.Trades) // stopped, hand-closed and GEX-shed sides stay held across the restart
@@ -311,6 +317,9 @@ func runLive(cfg *config.Config, cfgFile string) error {
 			opts = append(opts, api.WithManualRebalance(strat, cfg.AdminToken))
 			slog.Info("monitor API: manual rebalance enabled", "live", cfg.IsLive())
 		}
+		// The futures hedge experiment (#657): readable everywhere, switched
+		// only on testnet with BOT_ADMIN_TOKEN.
+		opts = append(opts, api.WithFuturesHedge(strat, cfg.AdminToken, cfg.IsLive()))
 		mon := api.New(strat, orderLog, opts...)
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {
