@@ -4,6 +4,7 @@
 // their ≈ USD on the footer. Missing data says "unknown: <reason>", never 0.
 import { riskRows } from "./account";
 import { MISSING, formatCoin, formatDateTime, formatPct, isNumber } from "./format";
+import { hedgeShown } from "./futuresHedge";
 import { clockHM, coinOf, plainFreeze, stateWords, worstCaseLine } from "./overview";
 import { formatSignedPct, formatSignedUSD, toneOf } from "./summary";
 
@@ -68,6 +69,29 @@ export function worstLines(bots) {
     if (w.unknown) return unknownLine(b, `unknown: ${w.unknown}`);
     const pct = isNumber(w.pct) ? `${formatSignedPct(-Math.abs(w.pct))} of account` : "% of account unknown";
     return { ...line(b, -Math.abs(w.lossCoin), -Math.abs(w.lossUSD), { note: pct }), tone: "loss", pct: w.pct };
+  });
+}
+
+/** A delta to 4 decimals; rounded first, so a book at zero reads 0.0000, not −0.0000. */
+const delta4 = (v, coin) => formatCoin(Math.round(v * 1e4) / 1e4 || 0, coin, 4);
+
+/**
+ * Net delta (#666): options + perpetual while a hedge is shown, with both under
+ * it; else the options, "options only". A hedge that cannot be read falls back
+ * to the options' delta from the payoff and says so. Never a profit colour.
+ */
+export function netDeltaLines(bots) {
+  return bots.map((b) => {
+    const coin = coinOf(b);
+    const h = b.hedge;
+    const shown = hedgeShown(h);
+    if (b.summary && holdsNothing(b) && !shown) return { ...nothingOpenLine(b), note: "options only" };
+    const reading = (v, note) => ({ ...line(b, v, isNumber(b.summary?.spot) ? v * b.summary.spot : null), text: delta4(v, coin), tone: "flat", note });
+    if (shown) return reading(h.net_delta_coin, `options ${delta4(h.options_delta_coin)} · hedge ${delta4(h.perp_delta_coin)}`);
+    if (h) return reading(h.options_delta_coin, "options only");
+    const options = b.payoff?.bot_net_delta;
+    if (!isNumber(options)) return unknownLine(b, `unknown: ${b.error ?? b.payoffError ?? "no delta yet"}`);
+    return reading(options, b.hedgeError ? "options only · hedge state unavailable" : "options only");
   });
 }
 

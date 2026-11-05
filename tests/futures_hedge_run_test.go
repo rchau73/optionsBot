@@ -414,6 +414,44 @@ func TestFuturesHedge_KillSwitchFlattensThePerpetual(t *testing.T) {
 	}
 }
 
+// Scenario: the monitor's view prices the whole book (#666): the moves with
+// and without the perpetual, its closed result and fees, and testnet.
+func TestFuturesHedge_ViewPricesTheBook(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.06, -0.2905, true) // +0.2305, hedged below
+	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+	f.startRun()
+	eventually(t, 2*time.Second, "perpetual read", func() bool { return f.strat.HedgeState().PerpUSD == -23050 })
+	v := f.strat.HedgeState()
+	if !v.Testnet || len(v.BookScenarios) != len(hedge.ScenarioMoves) {
+		t.Fatalf("testnet %v, %d scenarios: want testnet with every move", v.Testnet, len(v.BookScenarios))
+	}
+	for _, sc := range v.BookScenarios {
+		if want := sc.OptionsUSD - 23050*sc.MovePct/100; !near(sc.BookUSD, want, 0.01) {
+			t.Errorf("%+v: book USD, want %.2f", sc, want)
+		}
+	}
+}
+
+// A perpetual a failed close left behind counts in the net delta with the
+// mode off (#666): it is on the account, whatever the mode.
+func TestFuturesHedge_ViewCountsWhatIsLeftOpenWhileOff(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+	f.exch.onSubmit = func(o orders.Order, id string) orders.Fill {
+		if o.Instrument == testPerp {
+			return orders.Fill{OrderID: id} // never fills
+		}
+		return hedgeFills(o, id)
+	}
+	f.startRun()
+	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	f.strat.KillSwitch()
+	eventually(t, 5*time.Second, "the failed close published", func() bool {
+		v := f.strat.HedgeState()
+		return !v.Enabled && v.PerpUSD == -23050 && near(v.NetDelta, v.OptionsDelta-0.2305, 1e-3)
+	})
+}
+
 // Scenario: switching off previews, then closes the hedge.
 func TestFuturesHedge_SwitchOffPreviewsThenCloses(t *testing.T) {
 	f, _ := newHedgeFixture(t, 0.06, -0.2905, true) // +0.2305, hedged below

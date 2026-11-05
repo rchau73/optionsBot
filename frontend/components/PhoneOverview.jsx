@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useId, useState } from "react";
 import Badge from "./Badge";
 import FirstDayPanel from "./FirstDayPanel";
+import HedgeLine from "./HedgeLine";
 import { Signed } from "./InvestorSummary";
 import MonthBars from "./MonthBars";
 import RegimeChart from "./RegimeChart";
@@ -23,7 +24,7 @@ const LINK = "inline-flex min-h-11 items-center text-base text-testnet underline
  * bots: every bot; selected/onSelect: the bot shown (by name). Its menu opens
  * the other views, Details (pro) included (/details, #405).
  */
-export default function PhoneOverview({ bots, selected, onSelect }) {
+export default function PhoneOverview({ bots, selected, onSelect, now }) {
   const bot = bots.find((b) => b.name === selected) ?? bots[0];
   if (!bot) return null;
   const s = bot.summary;
@@ -43,6 +44,7 @@ export default function PhoneOverview({ bots, selected, onSelect }) {
         ) : (
           <>
             <Headline bot={bot} />
+            <HedgeLine bot={bot} now={now} net />
             <Card title={`${coinOf(bot)} market regime`}>
               <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
             </Card>

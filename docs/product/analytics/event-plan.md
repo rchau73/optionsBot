@@ -35,7 +35,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `consent_answered` | the person says yes to usage analytics, on the one-time notice or the Account › Privacy switch (#577); sent only after the yes is stored, so a no is never an event (the no totals come from the Analytics page's server-side consent counts) | `consent` | Q1, Q8 |
 | `consent_notice_shown` | the one-time consent notice was shown and answered yes (#577); sent with that yes, never before it (the shown totals come from the server-side consent counts) | — | Q1, Q8 |
 | `data_stale_shown` | the page shows a stale or failed-poll badge | `source` | Q7 |
-| `details_section_jump` | a link of the Details (pro) page's section bar is followed (#405) | `section` | Q3 |
+| `details_section_jump` | a link of the Details (pro) page's section bar, or the Overview's futures hedge line (#666), is followed (#405) | `section` | Q3 |
 | `details_trade_expand` | a trade row of Details (pro) is opened to its detail row (#405) | — | Q3 |
 | `drill_opened` | a row is expanded to its detail (strategy → slot → leg → orders) | `level` | Q3, Q4 |
 | `filter_changed` | a filter or grouping of Open positions changes (which one, not its value) | `filter` | Q3 |
@@ -106,7 +106,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `reason_code` | enum | `value_unclear`, `losses`, `too_complex`, `price`, `trust`, `switched`, `steady_income`, `easy_to_follow`, `saves_time`, `clear_risk`, `explains_trades`, `trust_numbers`, `helpful_answers`, `hard_to_find`, `missing_feature`, `other` (`surveys.md` §4) |
 | `score` | enum | `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10` (strings: the NPS score) |
 | `screen` | enum | `overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`, `login`, `analytics` (one per page of the menu, #424; the admin Analytics page, #445) |
-| `section` | enum | `positions`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
+| `section` | enum | `positions`, `hedge`, `held`, `trades`, `orders`, `others` (the Details (pro) sections) |
 | `side` | enum | `call`, `put` |
 | `source` | enum | `bot_api`, `account`, `pnl_history` |
 | `survey_id` | enum | `nps`, `answers`, `exit` |

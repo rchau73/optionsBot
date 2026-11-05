@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import Panel from "./Panel";
 import Filters from "./Filters";
 import PositionsTable from "./PositionsTable";
+import HedgeRows from "./HedgeRows";
 import HeldLegs from "./HeldLegs";
 import TradeHistory from "./TradeHistory";
 import PendingOrders from "./PendingOrders";
@@ -16,6 +17,7 @@ import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise, withOpened } from "@/lib/monitor";
 import { pickAccount, unmanagedPositions } from "@/lib/account";
 import { countsLine, sectionCounts, stuckOrders, workingOrderCount } from "@/lib/details";
+import { hedgeShown, hedgeState } from "@/lib/futuresHedge";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 import { track } from "@/lib/track";
 
@@ -23,7 +25,7 @@ const NO_FILTERS = { bot: "", strategy: "", type: "", moneyness: "", groupBy: "s
 
 const ORDERS_HINT =
   "Limit orders resting on Deribit. Filled orders move to Open positions; unfilled ones are cancelled after the fill timeout and retried on a later cycle.";
-const OTHERS_HINT = "Positions on the account that no bot manages. No bot closes or sizes them, but Deribit counts them in equity and margin.";
+const OTHERS_HINT = "Positions on the account that no bot opened. The hedge's perpetual is not listed here: only the part beyond what the bot holds.";
 
 /** The title's one text line of counts (no tiles). */
 function CountsLine({ kpi, polledAt }) {
@@ -88,7 +90,8 @@ function OneLine({ id, title, text, hint }) {
  * Details (pro), its own page (#405): /details. For the active trader, numbers
  * first and graphics small — the title with one line of counts, a sticky bar
  * of section links, then Open positions (one line per leg, grouped by
- * strangle), Missing legs, Trades and results, Working orders and Not managed.
+ * strangle), the Futures hedge while one is shown (#666), Missing legs, Trades
+ * and results, Working orders and Not managed.
  * P&L is in each bot's coin first, ≈ USD beside it; coins are never added
  * together. Reads the existing APIs only, through useMonitor.
  */
@@ -123,6 +126,8 @@ export default function DetailsPage() {
     orders,
     stuck: polledAt ? stuckOrders(bots, polledAt) : 0,
     others: others.rows.length,
+    hedges: bots.filter((b) => hedgeShown(b.hedge)).length,
+    hedgeAttention: bots.some((b) => hedgeShown(b.hedge) && hedgeState(b.hedge) !== "on"),
   });
 
   return (
@@ -160,6 +165,8 @@ export default function DetailsPage() {
           <PositionsTable groups={groups} statuses={statuses} onOpenChart={openChart} held={filters.groupBy === "strangle" ? heldByStrangle : {}} health={health} />
         )}
       </Panel>
+
+      <HedgeRows bots={bots} now={polledAt} />
 
       <Panel id="held" className="scroll-mt-12" title="Missing legs: why repair holds them">
         {loading ? <Skeleton /> : <HeldLegs bots={bots} onOpenChart={openChart} />}

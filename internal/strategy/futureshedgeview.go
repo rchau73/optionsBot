@@ -42,6 +42,14 @@ type HedgeView struct {
 	// bought back on the next cycle.
 	ShedNow   string        `json:"shed_now"`
 	Benchmark hedge.Summary `json:"benchmark"`
+	// Testnet: the hedge is only ever on a test account's prices.
+	Testnet bool `json:"testnet"`
+	// The real perpetual's closed result and fees (coin, from the ledger).
+	RealisedCoin float64 `json:"realised_coin"`
+	FeesCoin     float64 `json:"fees_coin"`
+	// BookScenarios: the one-day move table of the Positions page (#666);
+	// empty while a leg has no greeks or there is no spot.
+	BookScenarios []hedge.BookScenario `json:"book_scenarios"`
 }
 
 func shedSideWord(a GammaAction) string {
@@ -72,11 +80,19 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 		ShedNow:   shedSideWord(s.fh.shedSide),
 		Benchmark: s.fh.mode.Ledger.Summarise(p.RealizedFunding, mark),
 	}
-	if !v.Enabled { // the real perpetual is only read while the mode is on
+	// The real perpetual is only read while the mode is on; what a failed
+	// close left open still counts.
+	if !v.Enabled && math.Abs(p.Size) < 0.5 {
 		v.NetDelta = optDelta
 	}
 	if v.UnrealisedCoin == 0 && p.Size != 0 {
 		v.UnrealisedCoin = hedge.PerpPnL(p.Size, p.AveragePrice, mark)
+	}
+	v.Testnet = !s.cfg.IsLive()
+	v.RealisedCoin, v.FeesCoin = s.fh.mode.Ledger.Real.Realised, s.fh.mode.Ledger.Real.Fees
+	v.BookScenarios = []hedge.BookScenario{}
+	if len(s.state.UnpricedLegs()) == 0 {
+		v.BookScenarios = hedge.BookScenarios(spot, s.state.TotalNetDelta(), s.state.NetGamma(), p.Size)
 	}
 	switch {
 	case s.futures == nil:

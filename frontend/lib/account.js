@@ -1,6 +1,7 @@
 // Pure helpers for the account / collateral panel.
 
-import { ageSeconds } from "./format";
+import { ageSeconds, isNumber } from "./format";
+import { PERP_FLAT_USD } from "./futuresHedge";
 
 /** Deribit starts liquidation when maintenance margin reaches 100 % of margin balance. */
 export const LIQUIDATION_MM_PCT = 100;
@@ -104,8 +105,9 @@ export function riskRows(bots) {
 
 /**
  * Positions on the account that no bot manages: every position Deribit
- * reports (the freshest account snapshot) minus the legs in the bots' books.
- * They are not traded by any bot but still use margin.
+ * reports (the freshest account snapshot) minus the legs in the bots' books
+ * and the perpetual each bot's futures hedge holds (#666): only what is beyond
+ * its size stays listed. They are not traded by any bot but still use margin.
  * Returns { rows, error, reported } — reported is false for bots too old to
  * send positions, so "none" is never shown when the list is unknown.
  */
@@ -116,8 +118,18 @@ export function unmanagedPositions(account, bots) {
   const managed = new Set(
     bots.flatMap((b) => (b.positions?.strangles ?? []).flatMap((s) => (s.legs ?? []).map((l) => l.instrument))),
   );
-  const rows = snap.positions.filter((p) => !managed.has(p.instrument));
+  const hedged = Object.fromEntries(bots.filter((b) => b.hedge?.instrument).map((b) => [b.hedge.instrument, b.hedge.perp_usd]));
+  const rows = snap.positions.filter((p) => !managed.has(p.instrument)).flatMap((p) => beyondHedge(p, hedged[p.instrument]));
   return { rows, error: snap.positions_error || null, reported: true };
+}
+
+/** What of position p is beyond the hedge's own size (USD, signed): p whole, a smaller p, or nothing. */
+function beyondHedge(p, hedgeUSD) {
+  if (!hedgeUSD) return [p];
+  const excess = p.size - hedgeUSD;
+  if (Math.abs(excess) < PERP_FLAT_USD) return [];
+  const share = (v) => (isNumber(v) ? (v * excess) / p.size : v);
+  return [{ ...p, size: excess, total_pnl: share(p.total_pnl), delta: share(p.delta), initial_margin: share(p.initial_margin), maintenance_margin: share(p.maintenance_margin) }];
 }
 
 /** Sum of a field per currency: { BTC: −0.106, … }. */

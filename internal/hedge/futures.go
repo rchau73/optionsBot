@@ -169,3 +169,31 @@ func ScenarioPnL(spot, delta, gamma, movePct float64) Scenario {
 	}
 	return Scenario{MovePct: movePct, Spot: moved, PnLCoin: coin, PnLUSD: usd}
 }
+
+// BookScenario is the book's result for a one-day spot move: the options
+// alone (delta–gamma, as ScenarioPnL) and with the perpetual's inverse P&L
+// over the same move. Coin and, at the moved price, USD.
+type BookScenario struct {
+	MovePct     float64 `json:"move_pct"`
+	Spot        float64 `json:"spot"`
+	OptionsCoin float64 `json:"options_coin"`
+	OptionsUSD  float64 `json:"options_usd"`
+	BookCoin    float64 `json:"book_coin"`
+	BookUSD     float64 `json:"book_usd"`
+}
+
+// BookScenarios prices ScenarioMoves on the whole book (#666). Empty without
+// a spot price: nothing to move.
+func BookScenarios(spot, delta, gamma, perpUSD float64) []BookScenario {
+	out := []BookScenario{}
+	if spot <= 0 {
+		return out
+	}
+	for _, m := range ScenarioMoves {
+		sc := ScenarioPnL(spot, delta, gamma, m)
+		perp := PerpPnL(perpUSD, spot, sc.Spot)
+		out = append(out, BookScenario{MovePct: m, Spot: sc.Spot, OptionsCoin: sc.PnLCoin, OptionsUSD: sc.PnLUSD,
+			BookCoin: sc.PnLCoin + perp, BookUSD: sc.PnLUSD + perp*sc.Spot})
+	}
+	return out
+}
