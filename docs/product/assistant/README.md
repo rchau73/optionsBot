@@ -18,7 +18,7 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 | Field | Meaning |
 |---|---|
 | `id` | unique, `<category prefix>-<a few words>` (`ng-consent-analytics`), in alphabetical place; numbered ids stop at the numbers they had (#596): two PRs that each took the next number collided |
-| `category` | `how_it_works`, `parameter`, `why_did_it`, `jargon`, `risk`, `refuse_advice`, `refuse_forecast`, `unknown` or `request` |
+| `category` | `how_it_works`, `parameter`, `why_did_it`, `jargon`, `risk`, `refuse_advice`, `refuse_forecast`, `unknown`, `request` or `results` (#648: a period's result, answered from the bot's performance) |
 | `question` | plain words, as a novice would ask |
 | `expected_behaviour` | `answer`; `refuse` for the two refusal categories; `dont_know` for `unknown` (the help cannot answer it); for `request` the request check's outcome: `needs_info`, `answered` or `draft` |
 | `expected_sources` | the sources that answer it, as `help-index.json` names them: `OptionStrategy.md#<heading anchor>`, `glossary:<term>`, `explain:<event>:<reason>`; empty for refusals and `unknown` |
@@ -27,8 +27,9 @@ python3 scripts/product/assistant_grade.py answers.jsonl --json
 | `setting` | `parameter` only: the config key it asks about |
 | `journal` | `why_did_it` only: the journal fixture the question is about — `kind` (`close`, `skip`, `risk`) and `reason` (its journal label, e.g. `stop_loss`, `gex_wait`, `repair_held`), `option_type` for a close |
 | `request` | `request` only (#409): the request check's fixture — `passages` (journal facts and P&L history points as the monitor sends them, `{id, source, title, text}`), `verdict` (the model's structured reply), `unticked` (the checklist items that must be unticked: `what`, `where`, `evidence`, `not_explained`) and `draft_kind` (`bug`, `enhancement`) for a draft |
+| `bot` | a question about the bot's own data (#427): its routes' answers (`status`, `positions`, `payoff`, `journal`, `explain` for a Why?) and a correct `answer` citing the passages the monitor builds from them (`live:<bot>/…`, `journal:<bot>/…`); a `results` question also has `perf` (#648): `/api/performance`'s answers for `7d` and `30d`, cited as `perf:<bot>/7d|30d`, invented testnet figures |
 
-Minimum counts: 15 `how_it_works`, 10 `parameter` (one per tuned setting of CLAUDE.md "Few settings"), 10 `why_did_it` (one per close reason `PlainReason` explains), 5 `jargon`, 5 `risk`, 10 refusals (5 of each kind), 5 `unknown`, 3 `request` (a vague report → `needs_info`, figures the journal agrees with → `answered`, real evidence → `draft`). The monitor's `frontend/__tests__/assistant-request.test.js` runs every `request` fixture through the request check (`lib/assistant/request.js`); the grader checks a live answer's `outcome` against `expected_behaviour`.
+Minimum counts: 15 `how_it_works`, 10 `parameter` (one per tuned setting of CLAUDE.md "Few settings"), 10 `why_did_it` (one per close reason `PlainReason` explains), 5 `jargon`, 5 `risk`, 10 refusals (5 of each kind), 5 `unknown`, 3 `request` (a vague report → `needs_info`, figures the journal agrees with → `answered`, real evidence → `draft`), 4 `results` (a month, the worst week, against holding, a negative week with its journal reason; `frontend/__tests__/assistant-perf.test.js` checks each answer against its fixture's passages). The monitor's `frontend/__tests__/assistant-request.test.js` runs every `request` fixture through the request check (`lib/assistant/request.js`); the grader checks a live answer's `outcome` against `expected_behaviour`.
 
 ## Adding a question
 

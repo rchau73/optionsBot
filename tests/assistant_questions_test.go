@@ -59,7 +59,10 @@ type goldenBot struct {
 	// Explain is /api/explain's answer for a Why? on one trade (#534): the
 	// monitor's __tests__/assistant-why.test.js builds its passages.
 	Explain json.RawMessage `json:"explain,omitempty"`
-	Answer  struct {
+	// Perf is /api/performance's answers for range 7d and 30d (#648): the
+	// monitor's __tests__/assistant-perf.test.js builds their perf:<bot>/… passages.
+	Perf   json.RawMessage `json:"perf,omitempty"`
+	Answer struct {
 		Text      string   `json:"text"`
 		Citations []string `json:"citations"`
 	} `json:"answer"`
@@ -68,7 +71,7 @@ type goldenBot struct {
 // botSource says whether a source names a bot's own data (#427), which a
 // question's bot fixture provides, never the help index.
 func botSource(s string) bool {
-	return strings.HasPrefix(s, "live:") || strings.HasPrefix(s, "journal:")
+	return strings.HasPrefix(s, "live:") || strings.HasPrefix(s, "journal:") || strings.HasPrefix(s, "perf:")
 }
 
 // requestBehaviours are the request check's outcomes (#409): its category
@@ -87,6 +90,7 @@ var goldenMinimum = map[string]int{
 	"refuse_forecast": 5,
 	"unknown":         5,
 	"request":         3, // vague → needs_info, consistent figures → answered, evidence → draft
+	"results":         4, // a month, the worst week, against holding, a negative week (#648)
 }
 
 var goldenBehaviour = map[string]string{
@@ -98,6 +102,7 @@ var goldenBehaviour = map[string]string{
 	"refuse_advice":   "refuse",
 	"refuse_forecast": "refuse",
 	"unknown":         "dont_know",
+	"results":         "answer",
 }
 
 // journalEvent names the catalogue event of a journal fixture's kind.
@@ -222,6 +227,9 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		}
 		if q.Bot != nil && (q.ExpectedBehaviour != "answer" || len(q.Bot.Answer.Citations) == 0 || len(q.Bot.Status) == 0 || len(q.Bot.Journal) == 0) {
 			t.Errorf("%s: a bot fixture needs status, journal and a cited answer to an answer question", q.ID)
+		}
+		if (q.Category == "results") != (q.Bot != nil && len(q.Bot.Perf) > 0) {
+			t.Errorf("%s: a performance fixture belongs to results questions only, and each has one", q.ID)
 		}
 	}
 	for cat, min := range goldenMinimum {

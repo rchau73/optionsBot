@@ -8,7 +8,7 @@ import { configuredBots } from "@/lib/bots";
 import { QuestionLimiter } from "./limit";
 import { anthropicClient } from "./model";
 import { HelpIndex } from "./search";
-import { JOURNAL_CACHE_MS, JOURNAL_DAYS, LIVE_CACHE_MS, explainPassages, journalPassages, livePassages, pnlPassages } from "./service";
+import { JOURNAL_CACHE_MS, JOURNAL_DAYS, LIVE_CACHE_MS, PERF_CACHE_MS, explainPassages, journalPassages, livePassages, perfPassages, pnlPassages } from "./service";
 
 const KEY = Symbol.for("optionsbot.monitor.assistant");
 // A week of orders.log is read back by the bot: allow it more than a ring read.
@@ -17,7 +17,7 @@ const JOURNAL_TIMEOUT_MS = 5000;
 const LIVE_TIMEOUT_MS = 3000;
 
 function shared() {
-  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map() };
+  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map(), perfs: new Map() };
   return globalThis[KEY];
 }
 
@@ -37,13 +37,14 @@ export function assistantModel() {
   return s.model === undefined ? anthropicClient() : s.model;
 }
 
-/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal or live data. */
+/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal, live or performance data. */
 export function setAssistantModel(model) {
   const s = shared();
   s.model = model;
   s.limiter = new QuestionLimiter();
   s.journals = new Map();
   s.lives = new Map();
+  s.perfs = new Map();
 }
 
 /** GET <bot>/<path> as JSON; throws on a failed read or a non-2xx answer. */
@@ -81,6 +82,30 @@ export async function botLive(bot, nowMs = Date.now()) {
     return passages;
   } catch (err) {
     authLog("WARN", "assistant: bot live data unavailable", { component: "assistant", bot, error: err.message });
+    return [];
+  }
+}
+
+/**
+ * A configured bot's performance over the last 7 and 30 days (#648) as
+ * passages (perfPassages): /api/performance?range=7d and ?range=30d, read
+ * together and kept PERF_CACHE_MS per bot. A bot that does not answer
+ * either → [] with a WARN (not cached: the help, the live data and the
+ * journal still answer). null for a bot that is not configured.
+ */
+export async function botPerformance(bot, nowMs = Date.now()) {
+  const target = configuredBots().find((b) => b.name === bot);
+  if (!target) return null;
+  const s = shared();
+  const cached = s.perfs.get(bot);
+  if (cached && nowMs - cached.at < PERF_CACHE_MS) return cached.passages;
+  try {
+    const [perf7, perf30] = await Promise.all([readBot(target, "/api/performance?range=7d"), readBot(target, "/api/performance?range=30d")]);
+    const passages = perfPassages(bot, perf7, perf30);
+    s.perfs.set(bot, { at: nowMs, passages });
+    return passages;
+  } catch (err) {
+    authLog("WARN", "assistant: bot performance unavailable", { component: "assistant", bot, error: err.message });
     return [];
   }
 }

@@ -2,8 +2,8 @@ import { authDbPath, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { assistantLogPath } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
-import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal, botLive, botPnl } from "@/lib/assistant/server";
-import { answerQuestion, mergePassages, validQuestion } from "@/lib/assistant/service";
+import { assistantIndex, assistantLimiter, assistantModel, botExplain, botJournal, botLive, botPerformance, botPnl } from "@/lib/assistant/server";
+import { answerQuestion, asksAboutResults, mergePassages, validQuestion } from "@/lib/assistant/service";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,8 @@ export async function GET(request) {
  * "seq"?} from a signed-in person (any role, re-read from the user database;
  * 401 without a session). Answers from the help index and, with "bot", that
  * bot's live page data (#427: open legs, the market now) and its journal
- * facts (the last week and its held legs' whole history); with "seq" too (the panel's "Why?" on a trade,
+ * facts (the last week and its held legs' whole history), and for a question
+ * about results its 7- and 30-day performance (#648); with "seq" too (the panel's "Why?" on a trade,
  * #408) also the facts the journal recorded about that event
  * (GET /api/explain). The answer must cite them, else it is replaced by
  * "I don't know" (no citation) or the fallback reply (advice, forecast, a
@@ -91,8 +92,11 @@ export async function POST(request) {
   }
   let journal = [];
   let live = [];
+  let perf = [];
   if (bot !== null) {
-    [journal, live] = await Promise.all([botJournal(bot), botLive(bot)]);
+    // The performance figures are read only for a question about results (#648).
+    const results = asksAboutResults(valid.question);
+    [journal, live, perf] = await Promise.all([botJournal(bot), botLive(bot), results ? botPerformance(bot) : []]);
     if (journal === null) return Response.json({ error: "unknown bot" }, { status: 404 });
     if (seq !== null) journal = mergePassages(await botExplain(bot, seq), journal);
   }
@@ -102,6 +106,7 @@ export async function POST(request) {
     bot,
     journal,
     live: live ?? [],
+    perf: perf ?? [],
     reportPassages: async () => (bot !== null ? botPnl(bot) : []),
     // The one more try of a rejected answer is a model call too (#534): it counts, and is skipped when the hour's budget is spent.
     takeRetry: () => limiter.take(user.id, Date.now()) === 0,

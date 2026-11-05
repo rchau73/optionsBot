@@ -311,6 +311,13 @@ It answers in its own words and never just sends you to read a document.
 When it cannot back an answer with the bot's records and the help, it says it couldn't confirm an answer and won't guess.
 It answers in English, whatever language you write in: its checks for advice and forecasts read English only, so an answer in another language is never shown.
 
+**How did I do this week or this month?**: ask about your results, such as "how did I do this month?", "what was my worst week?" or "did I beat just holding my coin?", and the answer reads the bot's figures for the last 7 and 30 days.
+They are net P&L after fees in coin and in USD, the return on the account, what holding the coin did over the same days, the largest fall and the worst week with its dates.
+Its chip names the window, and the answer says whether the figures are testnet or live.
+A loss is shown with its minus sign, in the same words as a gain.
+A figure the bot could not measure, such as the return when no balance was recorded, is called unknown with the reason; days with no records are named, never filled in.
+These are past results: a question about future results, such as "will I make money next month?", is refused.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
