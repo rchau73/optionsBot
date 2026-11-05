@@ -233,10 +233,11 @@ func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
 			continue
 		}
 		detail := shedDetail(dec, s.md.UnderlyingPrice(), pos.OptionType)
-		if s.fh.mode.Enabled { // the futures hedge experiment keeps the leg (#657)
+		if s.hedgeKeepsShed() { // the futures hedge experiment keeps the leg (#657)
 			s.noteShedHedged(pos, detail, time.Now())
 			continue
 		}
+		s.endKeptLeg(pos)
 		s.noteShed(pos, dec, time.Now())
 		price := s.shedPrice(pos)
 		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail)

@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -190,6 +191,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
 	s.loadHedgeMode(d.HedgeModePath)
+	s.fh.recheck = cmp.Or(d.HedgeRecheck, config.FixedFuturesHedgeRecheckMinutes*time.Minute)
 	return s
 }
 

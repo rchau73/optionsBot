@@ -74,6 +74,12 @@ var ErrForbidden = errors.New("forbidden: check API key scopes")
 // deribitForbiddenCode is Deribit's error code for "forbidden".
 const deribitForbiddenCode = 13021
 
+// Deribit's error codes for a rejection the next cycle would only repeat.
+const (
+	deribitNotEnoughFundsCode = 10009
+	deribitLockedByAdminCode  = 10019
+)
+
 // call sends one JSON-RPC request and decodes its result into T.
 func call[T any](ctx context.Context, gw rpcCaller, method string, params any, priority int) (T, error) {
 	var out T
@@ -254,6 +260,26 @@ func MaybePlaced(err error) bool {
 		return false
 	}
 	return true
+}
+
+// LastingRejection puts in plain words a rejection that retrying next cycle
+// cannot cure (#664); "" for any other error.
+func LastingRejection(err error) string {
+	var rpcErr *gateway.RPCError
+	if errors.As(err, &rpcErr) {
+		switch rpcErr.Code {
+		case deribitLockedByAdminCode:
+			return "Deribit is not taking orders (locked_by_admin), usually scheduled maintenance"
+		case deribitNotEnoughFundsCode:
+			return "the account does not have enough funds for this order"
+		case deribitForbiddenCode:
+			return "the API key may not place this order"
+		}
+	}
+	if errors.Is(err, ErrForbidden) {
+		return "the API key may not place this order"
+	}
+	return ""
 }
 
 func (e *Executor) Cancel(ctx context.Context, orderID string) error {

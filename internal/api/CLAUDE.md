@@ -14,7 +14,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `loop_age_sec` (wall-clock age of `loop_at`) and `loop_stale` (over 2 eval intervals, not halted; `strategy.LoopLate`, #593) in `/api/status`; the SME collection names a stale loop in its MANIFEST.
   - `connections.<gateway>` in `/api/status` is each gateway's `ConnStats` (drops, reconnects, timeouts today; last drop time and error — `api.WithConnection`, #87).
   - `key_scope` in `/api/status` is the trading key's scope (`api.WithKeyScope`, #538): `scopes`, `fund_scopes`, `can_move_funds` (null = unknown) and `status` trade_only|can_move_funds|unknown — scope names only, never the key; null when not wired.
-  `GET /api/hedge[?preview=true]` (`routes_hedge.go`, #657) is the futures hedge experiment: `Strategy.HedgeState` (mode, the perpetual, net delta, band, benchmark), `switchable`,
+  `GET /api/hedge[?preview=true]` (`routes_hedge.go`, #657) is the futures hedge experiment: `Strategy.HedgeState` (mode, the perpetual, net delta, band, benchmark with its `pricing`, `kill_switch`, and #664's `halted`, `halt_reason`, `recheck_at`, `not_holding`), `switchable`,
   and with `preview` `Strategy.HedgePreview` (exchange reads, cached 10 s; an error is `preview_error`).
   The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only), `POST /api/rebalance` (manual rebalance, below: live and testnet)
   and `POST /api/hedge` (`{"enabled": bool, "actor"}`, the futures hedge switch: testnet only, 403 live, 409 when the strategy refuses — the perpetual not closed, the mode unchanged):

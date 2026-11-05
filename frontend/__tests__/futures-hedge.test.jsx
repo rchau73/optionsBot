@@ -8,6 +8,7 @@ const hedge = (over = {}) => ({
   enabled: true,
   since: "2026-11-05T16:00:00Z",
   by: "roberto",
+  kill_switch: false,
   halted: false,
   underlying: "BTC",
   instrument: "BTC-PERPETUAL",
@@ -67,6 +68,46 @@ describe("futures hedge card", () => {
     expect(screen.getByTitle("the futures hedge experiment is testnet-only")).toBeInTheDocument();
     rerender(<FuturesHedgeView bot="btc" data={{ hedge: hedge({ available: false, enabled: false, unavailable: "this bot has no futures connection" }), switchable: true }} />);
     expect(screen.getByRole("button", { name: /Switch on/ })).toBeDisabled();
+  });
+
+  test("a halted hedge says why in plain words and that the shed is back, and the admin can still switch off", () => {
+    const paused = hedge({
+      halted: true,
+      halt_reason: "Deribit is not taking orders (locked_by_admin), usually scheduled maintenance",
+      not_holding: "Deribit is not taking orders (locked_by_admin), usually scheduled maintenance",
+      recheck_at: "2026-11-05T17:10:00Z",
+    });
+    render(<FuturesHedgeView bot="btc" data={{ hedge: paused, switchable: true }} onSwitch={jest.fn()} />);
+    const card = screen.getByTestId("hedge-btc");
+    expect(card).toHaveTextContent("Paused");
+    expect(card).toHaveTextContent("the GEX shed buys the threatened side back as usual");
+    expect(card).not.toHaveTextContent("the GEX shed keeps its legs");
+    expect(screen.getByTestId("hedge-halt-btc")).toHaveTextContent("usually scheduled maintenance");
+    expect(screen.getByTestId("hedge-halt-btc")).toHaveTextContent("resumes by itself");
+    expect(screen.getByRole("button", { name: /Switch off/ })).toBeEnabled();
+  });
+
+  test("a hedge that is not filling says why, without calling it paused", () => {
+    render(<FuturesHedgeView bot="btc" data={{ hedge: hedge({ not_holding: "the perpetual has no price to trade at" }), switchable: true }} onSwitch={jest.fn()} />);
+    expect(screen.getByTestId("hedge-btc")).toHaveTextContent("Not holding");
+    expect(screen.getByTestId("hedge-halt-btc")).toHaveTextContent("Why: the perpetual has no price to trade at.");
+  });
+
+  test("a reason left over with the mode off shows nothing", () => {
+    render(<FuturesHedgeView bot="btc" data={{ hedge: hedge({ enabled: false, not_holding: "stale" }), switchable: true }} onSwitch={jest.fn()} />);
+    expect(screen.queryByTestId("hedge-halt-btc")).not.toBeInTheDocument();
+  });
+
+  test("the kill switch grays the switch, a paused hedge does not", () => {
+    render(<FuturesHedgeView bot="btc" data={{ hedge: hedge({ kill_switch: true }), switchable: true }} />);
+    expect(screen.getByRole("button", { name: /Switch off/ })).toBeDisabled();
+    expect(screen.getByTitle("the kill switch has fired")).toBeInTheDocument();
+  });
+
+  test("says what the benchmark is priced at", () => {
+    const b = { ...hedge().benchmark, pricing: "index", pricing_note: "benchmark priced at the index (testnet): fills and marks at the index price, funding left out" };
+    render(<FuturesHedgeView bot="btc" data={{ hedge: hedge({ benchmark: b }), switchable: true }} />);
+    expect(screen.getByTestId("hedge-benchmark-btc")).toHaveTextContent("enchmark priced at the index (testnet)");
   });
 
   test("opens the dialog for the other state", () => {

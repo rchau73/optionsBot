@@ -57,6 +57,10 @@ const (
 	FixedFuturesHedgeBandPct    = 5      // re-hedge when |net delta| ≥ 5 % of the margin balance (coin)
 	FixedFuturesHedgeMaxPerHour = 12     // at most 12 hedge orders in a rolling hour; the 13th waits (hedge_rate_limited)
 	FixedFuturesHedgeFeeRate    = 0.0005 // the perpetual's taker fee assumed by the preview and the paper hedge (verify on Deribit)
+	// A hedge that cannot trade gives the shed back (#664).
+	FixedFuturesHedgeUnfilledCycles = 3  // cycles in a row with a hedge due and no fill: the shed is back (hedge_unavailable)
+	FixedFuturesHedgeRecheckMinutes = 10 // a halted hedge looks again this often (hedge_halted)
+	FixedFuturesHedgeMaxIndexGapPct = 1  // live: no hedge order priced more than this % from the index (hedge_price_away)
 )
 
 // fixedKeys are the YAML keys of the settings above, with their value as the
