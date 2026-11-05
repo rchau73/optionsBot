@@ -7,7 +7,7 @@ import Badge from "./Badge";
 import IncomeStartView from "./IncomeStartView";
 import { useIncome } from "@/hooks/useIncome";
 import { formatDate, formatDateTime, isNumber } from "@/lib/format";
-import { INCOME_UNITS, UNIT_STORAGE_KEY, formatAmount, incomeTableRows, returnLine, tileAmount, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
+import { INCOME_UNITS, UNIT_STORAGE_KEY, formatAmount, hasHedgeIncome, incomeTableRows, monthTraded, returnLine, tileAmount, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
 import { monthLabel, toneOf } from "@/lib/summary";
 
 // The income page (#319, prototype screen 3): one bot's income month by month
@@ -163,7 +163,7 @@ function Tiles({ income, unit, coin, onUnit }) {
   const s = income.summary;
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
   // No close in the window: the total is "not yet", never an invented 0 (#582).
-  const total = (income.months ?? []).some((m) => m.closes > 0) ? tileAmount(s?.total_6m, unit) : null;
+  const total = (income.months ?? []).some(monthTraded) ? tileAmount(s?.total_6m, unit) : null;
   const average = tileAmount(s?.average_month, unit);
   const worst = s?.worst_month ? (unit === "usd" ? s.worst_month.usd : s.worst_month.coin) : null;
   const ww = s?.worst_week;
@@ -209,6 +209,7 @@ function Tiles({ income, unit, coin, onUnit }) {
 function MonthTable({ income, unit, coin }) {
   const rows = incomeTableRows(income, unit);
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
+  const hedged = hasHedgeIncome(income);
   return (
     <section aria-label="Each month, where the money came from" className="rounded-lg border border-line bg-panel">
       <h2 className="border-b border-line px-4 py-2 text-sm font-semibold uppercase tracking-wide text-muted">Each month, where the money came from</h2>
@@ -220,6 +221,7 @@ function MonthTable({ income, unit, coin }) {
               <th className="px-2 py-2 text-right font-medium">Paid to you</th>
               <th className="px-2 py-2 text-right font-medium">Paid to buy back</th>
               <th className="px-2 py-2 text-right font-medium">Exchange fees</th>
+              {hedged ? <th className="px-2 py-2 text-right font-medium">Futures hedge</th> : null}
               <th className="px-2 py-2 text-right font-medium">Result</th>
               <th className="px-4 py-2 text-right font-medium">Holding alone</th>
             </tr>
@@ -232,15 +234,16 @@ function MonthTable({ income, unit, coin }) {
                   {r.current ? <span className="text-muted"> (so far)</span> : null}
                   {r.loss ? <span className="font-semibold text-loss"> · loss</span> : null}
                 </th>
-                {r.closes ? (
+                {r.traded ? (
                   <>
                     <td className="px-2 py-1.5 text-right">{amount(r.premium)}</td>
                     <td className="px-2 py-1.5 text-right">{amount(r.buyback)}</td>
                     <td className="px-2 py-1.5 text-right">{amount(r.fees)}</td>
+                    {hedged ? <td className="px-2 py-1.5 text-right">{amount(r.hedge)}</td> : null}
                     <td className="px-2 py-1.5 text-right">{amount(r.result)}</td>
                   </>
                 ) : (
-                  <td colSpan={4} className="px-2 py-1.5 text-right text-muted">
+                  <td colSpan={hedged ? 5 : 4} className="px-2 py-1.5 text-right text-muted">
                     no closes
                   </td>
                 )}
@@ -252,6 +255,12 @@ function MonthTable({ income, unit, coin }) {
           </tbody>
         </table>
       </div>
+      {hedged ? (
+        <p className="border-t border-line px-4 py-2 text-sm text-muted">
+          Futures hedge is the perpetual&apos;s realised result, after its fees and with its funding, and it is in each month&apos;s result. Open
+          positions count when they close, so the perpetual&apos;s open gain or loss is not here.
+        </p>
+      ) : null}
       <p className="border-t border-line px-4 py-2 text-sm text-muted">
         Counted in {coin}, holding alone neither gains nor loses: every {coin} earned here is extra. In dollars, both move with the {coin} price;
         switch to <span className="font-semibold">USD</span> above to compare.

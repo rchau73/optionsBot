@@ -53,12 +53,15 @@ type HedgeRecord struct {
 	OrderID     string  `json:"order_id,omitempty"`
 	// The book around the trade: the options' delta, the perpetual's before
 	// it, the band, and the realised P&L of a close (coin, net of the fee).
-	OptionsDelta float64        `json:"options_delta"`
-	PerpDelta    float64        `json:"perp_delta"`
-	BandCoin     float64        `json:"band_coin,omitempty"`
-	RealisedCoin float64        `json:"realised_coin,omitempty"`
-	Market       MarketSnapshot `json:"market"`
-	Portfolio    MarketContext  `json:"portfolio"`
+	OptionsDelta float64 `json:"options_delta"`
+	PerpDelta    float64 `json:"perp_delta"`
+	BandCoin     float64 `json:"band_coin,omitempty"`
+	RealisedCoin float64 `json:"realised_coin,omitempty"`
+	// FundingCoin is the perpetual's realised funding as Deribit reported it
+	// on the read before this trade (coin, a running figure, not this trade's).
+	FundingCoin float64        `json:"funding_coin,omitempty"`
+	Market      MarketSnapshot `json:"market"`
+	Portfolio   MarketContext  `json:"portfolio"`
 }
 
 // TrendRecord is one change of the SMA trend with the levels behind it. It

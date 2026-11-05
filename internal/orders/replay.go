@@ -40,6 +40,7 @@ type Trade struct {
 	Theta   float64 `json:"theta"`
 	Vega    float64 `json:"vega"`
 	Premium float64 `json:"premium"`
+	OpenFee float64 `json:"open_fee,omitempty"` // opens only, coin: what the fill was charged
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
 	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
@@ -59,6 +60,29 @@ type Trade struct {
 }
 
 // tradeOf turns a filled or closed journal record into a Trade.
+// PerpFill is one filled trade of the futures hedge's perpetual, from the
+// journal's hedge_fill and hedge_closed lines (#665): the income page rebuilds
+// the perpetual's realised P&L from them.
+type PerpFill struct {
+	At          time.Time `json:"at"`
+	Side        string    `json:"side"`
+	FilledUSD   float64   `json:"filled_usd"`
+	Price       float64   `json:"price"`
+	FeeCoin     float64   `json:"fee_coin"`
+	FundingCoin float64   `json:"funding_coin"` // the running reading, HedgeRecord.FundingCoin
+	Spot        float64   `json:"spot"`
+}
+
+// perpFillOf is r as a fill; ok is false for a line that moved nothing (a
+// mode change, a failed order, an IOC that found no match).
+func perpFillOf(r HedgeRecord) (PerpFill, bool) {
+	if (r.Change != HedgeFill && r.Change != HedgeClosed) || r.FilledUSD <= 0 {
+		return PerpFill{}, false
+	}
+	return PerpFill{At: r.Timestamp, Side: r.Side, FilledUSD: r.FilledUSD, Price: r.Price,
+		FeeCoin: r.FeeCoin, FundingCoin: r.FundingCoin, Spot: r.Market.Spot}, true
+}
+
 func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 	t := Trade{
 		Seq: seq, At: rec.Timestamp, StrategyID: rec.StrategyID, Slot: rec.Slot,
@@ -70,7 +94,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 	}
 	switch rec.Event {
 	case EventFilled:
-		t.Kind, t.Reason = "open", rec.TriggerReason
+		t.Kind, t.Reason, t.OpenFee = "open", rec.TriggerReason, rec.Fee
 	case EventClosed:
 		t.Kind, t.Reason = "close", rec.CloseReason
 		if t.Reason == "" {
@@ -93,6 +117,8 @@ type Replay struct {
 	Closed   map[SlotRef]int     // closes per slot
 	FirstAt  time.Time           // time of the first event (zero for an empty journal)
 	Skipped  int                 // unreadable lines (e.g. a torn write), ignored
+	// PerpFills is every filled trade of the futures hedge's perpetual, oldest first.
+	PerpFills []PerpFill
 	// LastConfig is the last config_loaded line, undecoded (nil when the
 	// journal has none): the next start compares its settings with it.
 	LastConfig []byte
@@ -186,6 +212,9 @@ func (rp *Replay) add(ring *recentRing, line []byte) {
 	if event == EventConfig {
 		rp.LastConfig = append(rp.LastConfig[:0], line...)
 	}
+	if event == EventHedge {
+		rp.addHedge(line)
+	}
 	if !trade {
 		return
 	}
@@ -196,6 +225,17 @@ func (rp *Replay) add(ring *recentRing, line []byte) {
 		k := SlotKey(rec.Slot)
 		rp.Realised[k] += rec.PnL
 		rp.Closed[k]++
+	}
+}
+
+// addHedge keeps a hedge line's fill; a torn line is skipped.
+func (rp *Replay) addHedge(line []byte) {
+	var r HedgeRecord
+	if json.Unmarshal(line, &r) != nil {
+		return
+	}
+	if f, ok := perpFillOf(r); ok {
+		rp.PerpFills = append(rp.PerpFills, f)
 	}
 }
 

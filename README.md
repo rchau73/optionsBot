@@ -423,6 +423,10 @@ Sections, each naming its source:
   Days without a balance point are listed; under two points it says "not enough history" and shows no gap; a live account shows percentages only.
   Under two points with equity (history written before #277, or margin unknown), or a unit that changed in the week, it says why instead.
   The weekly summary on the epic shows the residual's % only.
+- **Where the result came from** (#581, `attribution.go`) — the week's realised result split into the premium of the legs closed, the buy-back cost by exit reason (stop-loss, delta exit, DTE roll, delta drift, take-profit, MM cut, other, the other reasons named) and the fees, each as a % of the starting equity, in coin and USD unless the account is live.
+  The parts are read from each close's journal line and the rows sum to the Live section's realised figure: what does not add up is the `unexplained` row, with its size, flagged over `AttributionTolerancePct` (1 %).
+  A week without closes says so and still shows the premium sold and the opening fees paid in the week, which stand outside the sum (they are booked when each leg closes).
+  The stop-losses' share of the buy-back cost goes on to the track record and the trend.
 - **Replay** — the bot's rules (`internal/replay`, the environment's config: `BOT_CONFIG_<BOT>` of its `deploy.env`, else `config_<bot>.yaml`) on the recorded mainnet books of the week, starting from the journal's book at Monday 00:00, deciding on minute GEX records where they exist; 7 days of earlier recording warm it up.
   Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`.
   Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
@@ -464,7 +468,7 @@ go run ./cmd/evidence -env stable -track-record -trend        # both bots; -bot 
   The equity at the start is the margin balance of the earliest weekly report that carries one, and the report names that week.
   With none, the equity is unknown: coin figures still show and every % of equity says unknown.
   **Since inception** means since the first line of the *current* history file, because `--reset-history` archives older lines and this report does not read them.
-  Next come the UTC days of the span with no point (listed, never interpolated) and one row per ISO week of the span, read from that week's report as written: net in coin and %, net in USD %, hold %, excess, max drawdown %, return on margin live and replayed, the replay − live gap in coin and %, utilisation and the week's missing days.
+  Next come the UTC days of the span with no point (listed, never interpolated) and one row per ISO week of the span, read from that week's report as written: net in coin and %, net in USD %, hold %, excess, max drawdown %, return on margin live and replayed, the replay − live gap in coin and %, utilisation, the stop-losses' share of the buy-back cost and the week's missing days.
   A week without a report is marked "not reported", never recomputed.
   A field an older report does not carry (e.g. return on margin before #278) reads "not measured".
   A file that does not parse is listed and its week counts as not reported.

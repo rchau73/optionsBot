@@ -316,7 +316,7 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	booked := s.bookPerpFill(side, fill, price, index)
 	s.saveHedge(now, true)
 	s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeFill, Side: side, AmountUSD: usd, FilledUSD: fill.Qty,
-		Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, OrderID: fill.OrderID,
+		Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID,
 		OptionsDelta: optDelta, PerpDelta: perpDelta, BandCoin: band, Detail: detail})
 	slog.Info("futures hedge", "side", side, "amount_usd", usd, "filled_usd", fill.Qty, "price", fill.FillPrice,
 		"options_delta", optDelta, "perp_delta", perpDelta, "band", band)
@@ -655,7 +655,7 @@ func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts i
 		booked := s.bookPerpFill(side, fill, perpMark(perp, spot), spot)
 		left = perp.Size + map[string]float64{hedge.SideBuy: 1, hedge.SideSell: -1}[side]*fill.Qty
 		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeClosed, Side: side, AmountUSD: order.Qty, FilledUSD: fill.Qty,
-			Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, OrderID: fill.OrderID, OptionsDelta: s.state.TotalCoinDelta(),
+			Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID, OptionsDelta: s.state.TotalCoinDelta(),
 			PerpDelta:    hedge.PerpDelta(perp.Size, perpMark(perp, spot)),
 			RealisedCoin: s.fh.mode.Ledger.Real.Realised - s.fh.mode.Ledger.Real.Fees - before,
 			Detail:       fmt.Sprintf("%s: %s %.0f USD of %s at market (reduce-only), filled %.0f", why, side, order.Qty, s.perpName(), fill.Qty)})

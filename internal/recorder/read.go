@@ -1,13 +1,9 @@
 package recorder
 
 import (
-	"bufio"
-	"compress/gzip"
+	"bytes"
 	"encoding/csv"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -105,7 +101,8 @@ func (s Snapshot) SummaryRows() []gex.SummaryRow {
 
 // ReadDir reads every day file in dir from the UTC day of from through the
 // day of to (both included; a zero bound is open) and returns the snapshots
-// in time order. Days without a file are skipped.
+// in time order. Days without a file are skipped; a damaged day gives its
+// complete members (ReadFile).
 func ReadDir(dir string, from, to time.Time) ([]Snapshot, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "*.csv.gz"))
 	if err != nil {
@@ -132,61 +129,48 @@ func ReadDir(dir string, from, to time.Time) ([]Snapshot, error) {
 }
 
 // ReadFile reads one day file, one gzip member (one snapshot) at a time. A
-// torn member (a crash while appending) is dropped whole, with the rest of
-// the file; a bad row in a complete member is an error.
+// damaged member is dropped whole and the members after it are read, with a
+// warning (readMembers); a bad row in a complete member is an error.
 func ReadFile(path string) ([]Snapshot, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	br := bufio.NewReader(f) // a ByteReader: gzip then stops exactly at each member's end
-	zr, err := gzip.NewReader(br)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	var (
-		out  []Snapshot
-		cols map[string]int
-	)
-	for {
-		zr.Multistream(false)
-		recs, err := csv.NewReader(zr).ReadAll() // FieldsPerRecord is set by the first row of each member
+	var out []Snapshot
+	cols := columns(Header) // the current layout, in case the first member took the file's header with it
+	err := readMembers(path, func(plain []byte) (first, last time.Time, err error) {
+		recs, err := csv.NewReader(bytes.NewReader(plain)).ReadAll() // FieldsPerRecord is set by the first row of each member
 		if err != nil {
-			if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, gzip.ErrChecksum) {
-				return out, nil // torn member
-			}
-			return nil, fmt.Errorf("read %s: %w", path, err)
+			return first, last, err
 		}
 		for _, rec := range recs {
 			if rec[0] == Header[0] { // the header (written once per file)
-				cols = map[string]int{}
-				for i, name := range rec {
-					cols[name] = i
-				}
+				cols = columns(rec)
 				continue
-			}
-			if cols == nil {
-				return nil, fmt.Errorf("read %s: no header", path)
 			}
 			at, q, dvol, err := parseRow(rec, cols)
 			if err != nil {
-				return nil, fmt.Errorf("read %s: %w", path, err)
+				return first, last, err
 			}
 			if n := len(out); n == 0 || !out[n-1].At.Equal(at) {
 				out = append(out, Snapshot{At: at, DVOL: dvol})
 			}
 			out[len(out)-1].Quotes = append(out[len(out)-1].Quotes, q)
+			if first.IsZero() {
+				first = at
+			}
+			last = at
 		}
-		switch err := zr.Reset(br); {
-		case errors.Is(err, io.EOF):
-			return out, nil
-		case errors.Is(err, io.ErrUnexpectedEOF):
-			return out, nil // a member cut inside its header
-		case err != nil:
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
+		return first, last, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return out, nil
+}
+
+func columns(header []string) map[string]int {
+	cols := make(map[string]int, len(header))
+	for i, name := range header {
+		cols[name] = i
+	}
+	return cols
 }
 
 func parseRow(rec []string, cols map[string]int) (time.Time, Quote, float64, error) {

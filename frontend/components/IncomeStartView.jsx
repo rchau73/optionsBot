@@ -145,7 +145,7 @@ function StartMonthTable({ income, coin }) {
         </table>
       </div>
       <p className="border-t border-line px-4 py-2 text-sm text-muted">
-        Each month is measured from its own first balance. Bot result counts the closes after it, net of fees; holding alone is the {coin} price
+        Each month is measured from its own first balance. Bot result counts the closes after it, and any futures hedge result, net of fees; holding alone is the {coin} price
         move from that time; open positions count when they close. Add <span className="font-semibold">?from=</span> to the address to start both
         environments at the same time.
       </p>

@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { formatCoin, formatNumber, formatUSD, isNumber } from "@/lib/format";
 import { formatSignedPct, formatSignedUSD, toneOf } from "@/lib/summary";
-import { clockHHMM, formatMove, headlineLoss, scenarioRows, stopWord, whyNoScenarios } from "@/lib/worstcase";
+import { clockHHMM, formatMove, headlineLoss, optionsOnlyLoss, scenarioRows, stopWord, whyNoScenarios } from "@/lib/worstcase";
 
 // "Worst case right now" (#318, prototype screen 2): a headline with the worse
 // 3σ day, five one-day moves in money, what the bot does on a bad day and what
@@ -94,6 +94,7 @@ export default function WorstCaseReport({ summary }) {
           bad&rdquo; is {wc.sigmas ?? 3} daily standard deviations: {formatNumber(wc.dvol, 1)} % ÷ √365 × {wc.sigmas ?? 3} ≈{" "}
           {formatNumber(wc.move_pct, 1)} %. The account figure is Deribit&apos;s equity in {coin}. Exits are not modelled here: the real loss
           stops at the exit lines if prices move smoothly.
+          {wc.hedge ? ` The figures include the open perpetual's gain or loss at each moved price, from its average price of ${formatUSD(wc.hedge.avg_price)}.` : null}
         </p>
       </details>
     </section>
@@ -102,6 +103,7 @@ export default function WorstCaseReport({ summary }) {
 
 function Headline({ summary, coin }) {
   const loss = headlineLoss(summary);
+  const optionsOnly = optionsOnlyLoss(summary);
   const at = clockHHMM(summary.as_of);
   return (
     <div className="space-y-1">
@@ -119,6 +121,23 @@ function Headline({ summary, coin }) {
           <>this model shows no loss on either side</>
         )}
       </h1>
+      {optionsOnly ? (
+        <p className="text-base">
+          This includes the futures hedge. The options alone:{" "}
+          {optionsOnly.usd > 0 ? (
+            <>
+              about{" "}
+              <strong className="text-loss">
+                −{Math.abs(optionsOnly.coin).toFixed(4)} {coin} (−{formatUSD(Math.abs(optionsOnly.usd))})
+              </strong>
+              {isNumber(optionsOnly.pct) ? `, ${Math.abs(optionsOnly.pct).toFixed(1)} % of the account` : null}
+            </>
+          ) : (
+            "no loss on either side"
+          )}
+          .
+        </p>
+      ) : null}
       <p className="text-base text-muted">
         Estimated at {at ?? "an unknown time"} from today&apos;s option prices. It changes as {coin} and its expected swings move.
       </p>

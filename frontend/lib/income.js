@@ -28,22 +28,39 @@ export function incomeTableRows(income, unit) {
   const usd = unit === "usd";
   return months
     .map((m, i) => {
-      const closes = m.closes ?? 0;
+      const traded = monthTraded(m);
       return {
         month: m.month,
         label: monthLabel(m.month),
         current: i === last,
-        closes,
-        loss: closes > 0 && (usd ? m.realised_usd : m.realised_coin) < 0,
+        closes: m.closes ?? 0,
+        traded,
+        loss: traded && (usd ? m.realised_usd : m.realised_coin) < 0,
         premium: usd ? m.premium_usd : m.premium_coin,
         buyback: negate(usd ? m.buyback_usd : m.buyback_coin),
         fees: negate(usd ? m.fees_usd : m.fees_coin),
+        hedge: (usd ? m.hedge_usd : m.hedge_coin) ?? 0,
         result: usd ? m.realised_usd : m.realised_coin,
         hold: usd ? (m.hold_usd ?? null) : 0,
         holdReason: usd && !isNumber(m.hold_usd) ? m.hold_reason || "not recorded" : null,
       };
     })
     .reverse();
+}
+
+/** The futures hedge made or cost something in this month (#665). */
+function monthHedged(m) {
+  return (m.hedge_fills ?? 0) > 0 || (isNumber(m.hedge_coin) && m.hedge_coin !== 0);
+}
+
+/** The month has a result: a close, or futures hedge activity. */
+export function monthTraded(m) {
+  return (m.closes ?? 0) > 0 || monthHedged(m);
+}
+
+/** True when a month shown has a futures hedge figure: the table then shows that source. */
+export function hasHedgeIncome(income) {
+  return (income?.months ?? []).some(monthHedged);
 }
 
 function negate(v) {

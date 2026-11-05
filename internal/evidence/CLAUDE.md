@@ -24,6 +24,11 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - the account reconciliation (`reconcile.go`, #566, `Report.Recon`): pure `BuildReconciliation` — the margin balance at the first and last history point in the week carrying one, the journal's closes in between (net of fees; USD balance → each close's `PnLUSD`, else the history's spot);
     - gap = change − booked, in the unit and % of the starting balance, flagged over `ReconcileTolerancePct` (1) with `ReconcileCauses` (pinned by `tests/evidence_reconcile_test.go`);
     - under two balance points → "not enough history", no gap; days without one listed; `live` → % only; `evidence_week.py` `recon_cell` posts the % on E2.
+  - the attribution section (`attribution.go`, #581, `Report.Attr`): pure `buildAttribution` over the week's closes — premium of the legs closed, buy-back cost by exit reason, fees;
+    - the buy-back is fill price × quantity, not `api.CloseParts`' remainder, so a close that does not add up shows;
+    - the rows sum to `Live.Realised`, any difference a row `unexplained`, flagged over `AttributionTolerancePct` (1) of the starting equity;
+    - the week's opens (premium, `Trade.OpenFee`) stand outside the sum;
+    - `live` → % only; equity unknown → % `unknown`; `stop_share_pct` (stop-losses' share of the buy-back cost) is the one `WeekRow` figure.
   - the twelve-week scoreboard (`scoreboard.go`, #537, `Report.Score`): PRD §6's kill test as of the report's week, pure `ScoreWeeks` over the last `ScoreboardWeeks` (12) weekly reports with both returns known
     (`Inputs.Earlier`, read by `Load` with `ReadWeekly` from `Paths.Root`; this week's own `Hold`; a report of the same or a later week is ignored);
     - `SharpeRatio` = mean ÷ sample sd, nil under 2 values or an sd ≤ 1e-9; status `meets` / `fails` / `not enough weeks` / `no spread`, ISO weeks missing from the first counted week on;
