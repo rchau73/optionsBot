@@ -91,14 +91,17 @@ func RateLimited(sent []time.Time, now time.Time, max int) bool {
 // PreviewInput is what the switch-off preview is built from.
 type PreviewInput struct {
 	Spot         float64
-	OptionsDelta float64 // coin
-	OptionsGamma float64 // coin per USD of spot
-	PerpUSD      float64 // signed perpetual position
-	PerpAvg      float64
-	PerpMark     float64
-	Unrealised   float64 // coin, as Deribit reports it (0: computed from the prices)
-	Funding      float64 // coin, realised funding of the position
-	FeeRate      float64 // taker fee rate for the close
+	OptionsDelta float64 // coin delta (premium-adjusted: what the hedge holds at zero)
+	// ScenarioDelta is the options' Black–Scholes (USD) delta, which the
+	// delta–gamma scenarios in USD use with OptionsGamma.
+	ScenarioDelta float64
+	OptionsGamma  float64 // coin per USD of spot
+	PerpUSD       float64 // signed perpetual position
+	PerpAvg       float64
+	PerpMark      float64
+	Unrealised    float64 // coin, as Deribit reports it (0: computed from the prices)
+	Funding       float64 // coin, realised funding of the position
+	FeeRate       float64 // taker fee rate for the close
 }
 
 // Scenario is the options' P&L for a spot move once the hedge is closed:
@@ -150,7 +153,7 @@ func BuildPreview(in PreviewInput) Preview {
 		DeltaNow: in.OptionsDelta + perpDelta, DeltaAfter: in.OptionsDelta,
 	}
 	for _, m := range ScenarioMoves {
-		p.Scenarios = append(p.Scenarios, ScenarioPnL(in.Spot, in.OptionsDelta, in.OptionsGamma, m))
+		p.Scenarios = append(p.Scenarios, ScenarioPnL(in.Spot, in.ScenarioDelta, in.OptionsGamma, m))
 	}
 	return p
 }

@@ -59,7 +59,7 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 	spot := s.md.UnderlyingPrice()
 	p := s.fh.perp
 	mark := perpMark(p, spot)
-	optDelta := s.state.TotalNetDelta()
+	optDelta := s.state.TotalCoinDelta()
 	perpDelta := hedge.PerpDelta(p.Size, mark)
 	v := HedgeView{
 		Available: s.futures != nil && s.fh.path != "", Enabled: s.fh.mode.Enabled, Since: s.fh.mode.Since,
@@ -144,7 +144,7 @@ func (s *Strategy) HedgePreview(ctx context.Context) (HedgePreview, error) {
 	}
 	out := HedgePreview{
 		Preview: hedge.BuildPreview(hedge.PreviewInput{
-			Spot: spot, OptionsDelta: s.state.TotalNetDelta(), OptionsGamma: s.state.NetGamma(),
+			Spot: spot, OptionsDelta: s.state.TotalCoinDelta(), ScenarioDelta: s.state.TotalNetDelta(), OptionsGamma: s.state.NetGamma(),
 			PerpUSD: p.size, PerpAvg: p.avg, PerpMark: p.mark, Unrealised: p.floating, Funding: p.funding,
 			FeeRate: config.FixedFuturesHedgeFeeRate,
 		}),

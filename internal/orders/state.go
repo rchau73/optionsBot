@@ -205,6 +205,21 @@ func (s *StateManager) TotalNetDelta() float64 {
 	return s.sumShort(func(g Greeks) float64 { return g.Delta })
 }
 
+// TotalCoinDelta is the book's delta in coin terms, the one a coin-margined
+// account's equity moves with: an inverse option's value is mark (coin) ×
+// spot in USD, so its coin delta is the Black–Scholes delta less its mark in
+// coin. A short leg contributes −qty × (delta − mark). The futures hedge
+// (#657) holds this at zero; TotalNetDelta stays the USD (Black–Scholes) delta.
+func (s *StateManager) TotalCoinDelta() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	total := 0.0
+	for _, p := range s.positions {
+		total -= (p.CurrentGreeks.Delta - p.CurrentMid) * p.Qty
+	}
+	return total
+}
+
 func (s *StateManager) sumShort(greek func(Greeks) float64) float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

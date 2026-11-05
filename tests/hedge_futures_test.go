@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"optionsbot/internal/hedge"
+	"optionsbot/internal/orders"
 )
 
 // The futures hedge experiment's pure rules (#657).
@@ -97,7 +98,7 @@ func TestRateLimited_RollingHour(t *testing.T) {
 // Scenario: the switch-off preview (the issue's numbers).
 func TestBuildPreview_IssueExample(t *testing.T) {
 	p := hedge.BuildPreview(hedge.PreviewInput{
-		Spot: 76775, OptionsDelta: 0.2305, OptionsGamma: -0.000175,
+		Spot: 76775, OptionsDelta: 0.2305, ScenarioDelta: 0.2305, OptionsGamma: -0.000175,
 		PerpUSD: -17700, PerpAvg: 76775, PerpMark: 76775, FeeRate: 0.0005,
 	})
 	if !near(p.DeltaNow, 0, 0.001) || p.DeltaAfter != 0.2305 {
@@ -181,5 +182,23 @@ func TestModeFile_MissingIsOffAndRoundTrips(t *testing.T) {
 	}
 	if st, err := hedge.LoadMode(path); err == nil || st.Enabled {
 		t.Errorf("a corrupt file must be an error and OFF, got %+v %v", st, err)
+	}
+}
+
+// The hedge holds the coin delta at zero: an inverse option's coin delta is
+// its Black–Scholes delta less its mark in coin, so a short strangle is less
+// short calls and more long puts than its USD delta says (#657 review).
+func TestFuturesHedge_CoinDeltaIsPremiumAdjusted(t *testing.T) {
+	st := orders.NewStateManager()
+	st.AddPosition(&orders.Position{ID: "c", Instrument: "BTC-27NOV26-96000-C", OptionType: "call", Qty: 2,
+		CurrentMid: 0.0125, CurrentGreeks: orders.Greeks{Delta: 0.18}})
+	st.AddPosition(&orders.Position{ID: "p", Instrument: "BTC-27NOV26-66000-P", OptionType: "put", Qty: 2,
+		CurrentMid: 0.0125, CurrentGreeks: orders.Greeks{Delta: -0.16}})
+	if usd := st.TotalNetDelta(); !near(usd, -0.04, 1e-12) {
+		t.Fatalf("USD delta %v, want −0.04", usd)
+	}
+	// −2·(0.18 − 0.0125) − 2·(−0.16 − 0.0125) = −0.335 + 0.345 = +0.01
+	if coin := st.TotalCoinDelta(); !near(coin, 0.01, 1e-12) {
+		t.Fatalf("coin delta %v, want +0.01", coin)
 	}
 }

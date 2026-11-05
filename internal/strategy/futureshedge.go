@@ -204,7 +204,7 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 		slog.Warn("futures hedge: no contract size — no hedge this cycle", "err", err)
 		return
 	}
-	optDelta := s.state.TotalNetDelta()
+	optDelta := s.state.TotalCoinDelta()
 	perpDelta := hedge.PerpDelta(perp.Size, perpMark(perp, spot))
 	band := hedgeBand(m, s.cfg.Underlying, spot)
 	s.fh.band = band
@@ -324,7 +324,7 @@ func (s *Strategy) paperHedge(ctx context.Context, m marginState, spot float64, 
 		return
 	}
 	v := &s.fh.mode.Ledger.Virtual
-	usd, side := hedge.HedgeOrder(s.state.TotalNetDelta(), hedge.PerpDelta(v.SizeUSD, spot),
+	usd, side := hedge.HedgeOrder(s.state.TotalCoinDelta(), hedge.PerpDelta(v.SizeUSD, spot),
 		hedgeBand(m, s.cfg.Underlying, spot), spot, spec.ContractSize)
 	if usd == 0 || hedge.RateLimited(s.fh.paperSent, now, config.FixedFuturesHedgeMaxPerHour) {
 		return
@@ -489,7 +489,7 @@ func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts i
 		s.bookPerpFill(side, fill, perpMark(perp, spot))
 		left = perp.Size + map[string]float64{hedge.SideBuy: 1, hedge.SideSell: -1}[side]*fill.Qty
 		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeClosed, Side: side, AmountUSD: order.Qty, FilledUSD: fill.Qty,
-			Price: fill.FillPrice, FeeCoin: fill.Fee, OrderID: fill.OrderID, OptionsDelta: s.state.TotalNetDelta(),
+			Price: fill.FillPrice, FeeCoin: fill.Fee, OrderID: fill.OrderID, OptionsDelta: s.state.TotalCoinDelta(),
 			PerpDelta:    hedge.PerpDelta(perp.Size, perpMark(perp, spot)),
 			RealisedCoin: s.fh.mode.Ledger.Real.Realised - s.fh.mode.Ledger.Real.Fees - before,
 			Detail:       fmt.Sprintf("%s: %s %.0f USD of %s at market (reduce-only), filled %.0f", why, side, order.Qty, s.perpName(), fill.Qty)})
@@ -644,7 +644,7 @@ func (s *Strategy) switchHedge(ctx context.Context, enable bool, by orders.Actor
 		res.Detail += fmt.Sprintf("; %.0f USD of %s closed at market, realised %+.6f %s", res.ClosedUSD, s.perpName(), res.RealisedCoin, s.cfg.Underlying)
 	}
 	s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeModeChanged, Actor: &actor, Enabled: &on,
-		OptionsDelta: s.state.TotalNetDelta(), PerpDelta: hedge.PerpDelta(s.fh.perp.Size, perpMark(s.fh.perp, s.md.UnderlyingPrice())),
+		OptionsDelta: s.state.TotalCoinDelta(), PerpDelta: hedge.PerpDelta(s.fh.perp.Size, perpMark(s.fh.perp, s.md.UnderlyingPrice())),
 		RealisedCoin: res.RealisedCoin, Detail: res.Detail})
 	slog.Warn("futures hedge switched", "enabled", enable, "by", actor)
 	return res, nil

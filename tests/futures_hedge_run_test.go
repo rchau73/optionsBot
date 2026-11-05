@@ -65,14 +65,17 @@ func hedgeFills(o orders.Order, id string) orders.Fill {
 	return orders.Fill{OrderID: id}
 }
 
-// newHedgeFixture holds a 1-lot strangle whose call and put deltas make the
-// book's delta −callDelta − putDelta (short), with a 1.157 BTC margin
-// balance (band 0.05785 BTC) and the experiment on or off.
+// newHedgeFixture holds a 1-lot strangle whose coin delta (what the hedge
+// holds at zero) is −callDelta − putDelta, with a 1.157 BTC margin balance
+// (band 0.05785 BTC) and the experiment on or off. Each leg's mark is 0.02
+// BTC and an inverse option's coin delta is its delta less its mark, so the
+// put's Black–Scholes delta is set 0.04 higher to keep that sum.
 func newHedgeFixture(t *testing.T, callDelta, putDelta float64, enabled bool) (*strategyFixture, *fakeFutures) {
 	t.Helper()
 	f := newStrategyFixture(t)
 	f.exch.summary = orders.AccountSummary{Currency: "BTC", Equity: 1.157, AvailableFunds: 1.157, MarginBalance: 1.157}
 	f.withOpenStrangle(1.0, 0.02)
+	putDelta += 2 * 0.02 // the two legs' marks (see above)
 	f.market.instruments[f.call].Greeks.Delta = callDelta
 	f.market.instruments[f.put].Greeks.Delta = putDelta
 	f.exch.positions[0].Delta, f.exch.positions[1].Delta = callDelta, putDelta

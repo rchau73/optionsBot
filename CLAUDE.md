@@ -191,7 +191,8 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   → flatten at market with retries on a detached context, the book matched to the exchange's shorts before each pass (`syncBookToExchange`, no drift confirmation) and the exchange checked flat at the end
   → flatten the coin's perpetual too, whatever the hedge mode (`flattenPerp`) → stay idle (don't exit; Docker would restart into trading).
 - **Futures hedge experiment** (`futureshedge.go`, #657; off unless switched from the monitor, `data/hedge_mode.json`, testnet only): while on, the GEX shed closes nothing (`shed_hedged` skip)
-  and the perpetual holds net delta within 5 % of the margin balance (`hedge.HedgeOrder`, IOC, ≤ 12 orders/h); stops, exits and the MM cut still close legs (`internal/strategy/CLAUDE.md`).
+  and the perpetual holds the **coin** delta (each leg's delta less its mark in coin, `TotalCoinDelta`: what a coin-margined account's equity moves with)
+  within 5 % of the margin balance (`hedge.HedgeOrder`, IOC, ≤ 12 orders/h); stops, exits and the MM cut still close legs (`internal/strategy/CLAUDE.md`).
 - **Startup** (reconcile, regrouping, slot assignment: `internal/strategy/CLAUDE.md`).
   **No new risk without fresh GEX** (`gexready.go`, pure `GEXWaitReason`): with GEX wired, entries (`gex_wait` skip), top-ups and repairs wait until the first snapshot and whenever it is older than `GEXStaleAfter` (5 min)
   — before it the regime and trend are unknown (2026-10-09: both bots sold puts seconds after a restart into a negative regime with a bear trend).

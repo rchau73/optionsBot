@@ -106,6 +106,8 @@ Read both before changing a rule.
   - While ON, `handleGammaAction` keeps every leg the shed would close (`noteShedHedged`: one `shed_hedged` skip per leg with the ask it would have paid, no shed anchor); `Action` still holds entries and repairs of that side.
   - Every cycle after leg balancing `stepFuturesHedge` reads the perpetual from the exchange (`GetFuturePositions`, kind=future: `GetPositions` stays option-only, so reconcile never adopts it),
     and trades it by −net delta in whole contracts when |options + perpetual| ≥ band = 5 % of the margin balance in coin (`hedge.HedgeOrder`, `config.FixedFuturesHedgeBandPct`):
+    the options count in **coin** delta (`TotalCoinDelta` = −qty × (delta − mark): an inverse option's coin delta is its Black–Scholes delta less its mark in coin),
+    since the USD delta under-hedged a 1-lot strangle by ≈ 0.025 BTC; the preview's USD scenarios keep the Black–Scholes delta;
     IOC at the bid (sell) or ask (buy) from `public/ticker`, contract size from `public/get_instrument` (none → no order, never guessed), at most 12 orders a rolling hour (the 13th journals `hedge_rate_limited` once).
     Allowed while frozen (it only reduces delta); never during the kill switch.
     Each fill journals `hedge_fill` with the market snapshot.
