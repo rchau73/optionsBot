@@ -177,9 +177,12 @@ jobs:
       - name: Coverage summary
         if: needs.changes.outputs.go == 'true'
         run: |
+          set -o pipefail # tee's status must not hide check_cover's FAIL (#659)
           bash scripts/go_tests.sh merge coverage.out coverage-core.out coverage-reports.out
-          bash scripts/check_cover.sh --profile coverage.out | tee cover.txt
-          echo "### $(tail -1 cover.txt)" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          bash scripts/check_cover.sh --profile coverage.out | tee cover.txt || status=$?
+          echo "### $(grep -m1 -- 'coverage [0-9]' cover.txt)" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
       - uses: actions/upload-artifact@v6
         if: needs.changes.outputs.go == 'true'
