@@ -201,4 +201,30 @@ func TestFuturesHedge_CoinDeltaIsPremiumAdjusted(t *testing.T) {
 	if coin := st.TotalCoinDelta(); !near(coin, 0.01, 1e-12) {
 		t.Fatalf("coin delta %v, want +0.01", coin)
 	}
+	if legs := st.UnpricedLegs(); len(legs) != 0 {
+		t.Fatalf("every leg has greeks, got %v", legs)
+	}
+	st.AddPosition(&orders.Position{ID: "n", Instrument: "BTC-27NOV26-70000-P", OptionType: "put", Qty: 1, CurrentMid: 0.02})
+	if legs := st.UnpricedLegs(); len(legs) != 1 || legs[0] != "BTC-27NOV26-70000-P" {
+		t.Fatalf("a leg with all-zero greeks is unpriced, got %v", legs)
+	}
+}
+
+// KeptQty counts only the open kept legs of that instrument: not a real
+// shed, not a finished leg, not another instrument.
+func TestLedger_KeptQty(t *testing.T) {
+	const put = "BTC-27NOV26-66000-P"
+	l := hedge.Ledger{Legs: []hedge.Counterfactual{
+		{Mode: hedge.CounterHedged, Instrument: put, Qty: 1},
+		{Mode: hedge.CounterHedged, Instrument: put, Qty: 0.5},
+		{Mode: hedge.CounterHedged, Instrument: put, Qty: 2, Done: true},
+		{Mode: hedge.CounterShed, Instrument: put, Qty: 4},
+		{Mode: hedge.CounterHedged, Instrument: "BTC-27NOV26-96000-C", Qty: 8},
+	}}
+	if got := l.KeptQty(put); got != 1.5 {
+		t.Errorf("KeptQty %v, want 1.5", got)
+	}
+	if got := l.KeptQty("BTC-27NOV26-70000-P"); got != 0 {
+		t.Errorf("KeptQty of an unknown instrument %v, want 0", got)
+	}
 }

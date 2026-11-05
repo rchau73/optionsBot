@@ -133,6 +133,18 @@ func (l *Ledger) AddLeg(c Counterfactual) {
 	l.Legs = l.Legs[1:]
 }
 
+// KeptQty is the quantity of instrument the ledger already follows as kept
+// legs (mode ON). It survives a restart, so a leg is not counted twice.
+func (l Ledger) KeptQty(instrument string) float64 {
+	total := 0.0
+	for _, c := range l.Legs {
+		if c.Mode == CounterHedged && !c.Done && c.Instrument == instrument {
+			total += c.Qty
+		}
+	}
+	return total
+}
+
 // Summary is the benchmark as the monitor shows it.
 type Summary struct {
 	Since         time.Time        `json:"since"`

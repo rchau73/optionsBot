@@ -164,8 +164,9 @@ export function FuturesHedgeDialog({ bot, enable, hedge, onClose }) {
     if (enable) return undefined;
     let open = true;
     fetchBotHedge(bot, true).then(
-      (d) => open && (d.preview ? setState({ phase: "ready", preview: d.preview }) : setState({ phase: "error", error: d.preview_error ?? "no preview" })),
-      (e) => open && setState({ phase: "error", error: e.message }),
+      // A failed preview must not trap the admin: the switch-off stays possible, with a warning.
+      (d) => open && setState(d.preview ? { phase: "ready", preview: d.preview } : { phase: "ready", previewError: d.preview_error ?? "no preview" }),
+      (e) => open && setState({ phase: "ready", previewError: e.message }),
     );
     return () => {
       open = false;
@@ -197,6 +198,12 @@ export function FuturesHedgeDialog({ bot, enable, hedge, onClose }) {
         {enable ? <SwitchOnText hedge={hedge} /> : null}
         {!enable && state.phase === "preview" ? <p className="mb-3 text-muted">Asking the bot what switching off would do (nothing is sent)…</p> : null}
         {!enable && state.preview ? <SwitchOffPreview p={state.preview} /> : null}
+        {state.previewError ? (
+          <p className="mb-3 rounded bg-warn/10 px-2 py-1 text-warn">
+            The preview is unavailable: {state.previewError}. You can still switch off: any open perpetual is closed at market, without seeing its result, the margin after or the risk it
+            leaves.
+          </p>
+        ) : null}
         {state.phase === "running" ? <p className="mb-3 text-muted">Switching…</p> : null}
         {state.phase === "error" ? <p className="mb-3 rounded bg-loss/15 px-2 py-1 text-loss">Not switched: {state.error}</p> : null}
         {state.phase === "done" && state.result ? <p className="mb-3 rounded bg-profit/10 px-2 py-1 text-profit">Done: {state.result.detail}</p> : null}

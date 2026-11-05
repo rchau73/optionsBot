@@ -104,6 +104,22 @@ describe("futures hedge switch", () => {
     expect(global.fetch).toHaveBeenLastCalledWith("/api/bots/btc/hedge", expect.objectContaining({ body: JSON.stringify({ enabled: false }) }));
   });
 
+  test.each([
+    ["the bot reports no preview", () => Promise.resolve(reply(200, { hedge: hedge(), preview_error: "exchange slow" })), "exchange slow"],
+    ["the read fails", () => Promise.reject(new Error("network down")), "network down"],
+  ])("when %s the admin can still switch off, warned", async (_, previewReply, why) => {
+    global.fetch = jest
+      .fn()
+      .mockImplementationOnce(previewReply)
+      .mockResolvedValueOnce(reply(200, { enabled: false, closed_usd: 17700, detail: "futures hedge OFF by roberto" }));
+    render(<FuturesHedgeDialog bot="btc" enable={false} hedge={hedge()} onClose={jest.fn()} />);
+
+    expect(await screen.findByText(/The preview is unavailable/)).toHaveTextContent(why);
+    expect(screen.queryByTestId("hedge-preview")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close the perpetual and switch off" }));
+    await screen.findByText(/Done: futures hedge OFF by roberto/);
+  });
+
   test("a refused switch says why and keeps the state", async () => {
     global.fetch = jest.fn().mockResolvedValueOnce(reply(409, { error: "the perpetual could not be closed: the experiment stays ON" }));
     render(<FuturesHedgeDialog bot="btc" enable hedge={hedge({ enabled: false })} onClose={jest.fn()} />);

@@ -111,6 +111,7 @@ Read both before changing a rule.
     IOC at the bid (sell) or ask (buy) from `public/ticker`, contract size from `public/get_instrument` (none → no order, never guessed), at most 12 orders a rolling hour (the 13th journals `hedge_rate_limited` once).
     Allowed while frozen (it only reduces delta); never during the kill switch.
     Each fill journals `hedge_fill` with the market snapshot.
+    A cycle with the margin unknown (band 0) or a leg without greeks (`UnpricedLegs`: it would count as its mark alone) trades nothing, real or paper.
   - An order whose outcome is unknown is cancelled by label and journaled `hedge_failed`; the next cycle reads the position before sending anything.
   - Switching OFF closes the perpetual at market, reduce-only (`closePerp`, `hedge_closed` with its realised coin); if it cannot, the mode stays ON and the request fails.
     The kept legs' holding ends there: the shed acts on them from the next cycle.
@@ -119,6 +120,8 @@ Read both before changing a rule.
   - The benchmark (`hedge.Ledger`, saved in the mode file every 5 min and on every trade or switch): the real perpetual from its fills (drift to the exchange booked at the mark),
     a paper hedge at the index price with a 0.05 % taker fee while OFF, and one counterfactual per shed decision (kept while ON, bought back while OFF) followed at its mark until its DTE roll;
     advantage = hedge P&L + Σ (shed price − later price) × qty — an estimate, labelled so on the monitor.
+    `shedNoted` is in memory, so after a restart the persisted ledger says what is already followed (`Ledger.KeptQty` per instrument): a kept leg is never counted twice.
+    The band, rate and fee have no `cmd/stress` flag: the backtest has no perpetual, funding or re-hedge fills, so the benchmark studies them live.
 - **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency`, load positions, regroup with `GroupPositions`
   - — an expiry may hold several strangles: calls and puts paired by size, then rank from the money;
   - leftovers one-legged, except that an uneven pair's excess is split onto a lone leg of the other type on the same expiry,

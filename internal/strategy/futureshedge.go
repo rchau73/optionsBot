@@ -59,6 +59,7 @@ type futuresHedge struct {
 	// sent / paperSent: the real and paper hedge orders of the last hour.
 	sent, paperSent []time.Time
 	rateNoted       bool            // the current rate-limit wait is journaled
+	unpricedNoted   bool            // the current wait for a leg's greeks is logged
 	shedNoted       map[string]bool // positions already journaled shed_hedged
 	perp            orders.RawPosition
 	perpAt          time.Time // when perp was read (zero: never)
@@ -191,6 +192,22 @@ func (s *Strategy) stepFuturesHedge(ctx context.Context, m marginState, now time
 	s.saveHedge(now, false)
 }
 
+// coinDelta is the options' coin delta for the hedge. While a leg has no
+// greeks yet it would count as its mark alone, so there is no reading and no
+// hedge, real or paper, that cycle (warned once per episode).
+func (s *Strategy) coinDelta() (float64, bool) {
+	legs := s.state.UnpricedLegs()
+	if len(legs) > 0 {
+		if !s.fh.unpricedNoted {
+			s.fh.unpricedNoted = true
+			slog.Warn("futures hedge: a leg has no greeks yet — no hedge until it does", "legs", legs)
+		}
+		return 0, false
+	}
+	s.fh.unpricedNoted = false
+	return s.state.TotalCoinDelta(), true
+}
+
 // realHedge trades the perpetual so the book's net delta is back inside the band.
 func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, now time.Time) {
 	perp, err := s.readPerp(ctx)
@@ -204,13 +221,16 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 		slog.Warn("futures hedge: no contract size — no hedge this cycle", "err", err)
 		return
 	}
-	optDelta := s.state.TotalCoinDelta()
-	perpDelta := hedge.PerpDelta(perp.Size, perpMark(perp, spot))
 	band := hedgeBand(m, s.cfg.Underlying, spot)
 	s.fh.band = band
 	if band <= 0 {
 		return // margin unknown: nothing to size the band from
 	}
+	optDelta, ok := s.coinDelta()
+	if !ok {
+		return
+	}
+	perpDelta := hedge.PerpDelta(perp.Size, perpMark(perp, spot))
 	usd, side := hedge.HedgeOrder(optDelta, perpDelta, band, spot, spec.ContractSize)
 	if usd == 0 {
 		s.fh.rateNoted = false
@@ -323,9 +343,16 @@ func (s *Strategy) paperHedge(ctx context.Context, m marginState, spot float64, 
 	if err != nil {
 		return
 	}
+	band := hedgeBand(m, s.cfg.Underlying, spot)
+	if band <= 0 {
+		return // margin unknown: nothing to size the band from
+	}
+	optDelta, ok := s.coinDelta()
+	if !ok {
+		return
+	}
 	v := &s.fh.mode.Ledger.Virtual
-	usd, side := hedge.HedgeOrder(s.state.TotalCoinDelta(), hedge.PerpDelta(v.SizeUSD, spot),
-		hedgeBand(m, s.cfg.Underlying, spot), spot, spec.ContractSize)
+	usd, side := hedge.HedgeOrder(optDelta, hedge.PerpDelta(v.SizeUSD, spot), band, spot, spec.ContractSize)
 	if usd == 0 || hedge.RateLimited(s.fh.paperSent, now, config.FixedFuturesHedgeMaxPerHour) {
 		return
 	}
@@ -359,17 +386,34 @@ func (s *Strategy) shedPrice(pos *orders.Position) float64 {
 }
 
 // noteShedHedged journals once per leg that the shed would have bought it
-// back, and records the counterfactual (mode ON).
+// back, and records the counterfactual (mode ON). shedNoted is in memory and
+// a restart may give the leg a new ID, so the persisted ledger decides how
+// much of the instrument is still unfollowed: only that part is new.
 func (s *Strategy) noteShedHedged(pos *orders.Position, detail string, now time.Time) {
 	if s.fh.shedNoted[pos.ID] {
 		return
 	}
 	s.fh.shedNoted[pos.ID] = true
+	qty := math.Min(pos.Qty, s.heldQty(pos.Instrument)-s.fh.mode.Ledger.KeptQty(pos.Instrument))
+	if qty <= qtyEpsilon {
+		return
+	}
 	price := s.shedPrice(pos)
-	s.addCounterfactual(hedge.CounterHedged, pos, pos.Qty, price, now)
+	s.addCounterfactual(hedge.CounterHedged, pos, qty, price, now)
 	jctx := s.instrumentContext(pos.Instrument, s.slotOf(pos.ID))
-	jctx.Detail = fmt.Sprintf("%s — kept: the futures hedge holds the delta; the shed would have bought %.4g at %.4f", detail, pos.Qty, price)
+	jctx.Detail = fmt.Sprintf("%s — kept: the futures hedge holds the delta; the shed would have bought %.4g at %.4f", detail, qty, price)
 	s.journal.LogSkipped(SkipShedHedged+" "+pos.Instrument, jctx)
+}
+
+// heldQty is the book's total on one instrument (several positions may share it).
+func (s *Strategy) heldQty(instrument string) float64 {
+	total := 0.0
+	for _, p := range s.state.AllPositions() {
+		if p.Instrument == instrument {
+			total += p.Qty
+		}
+	}
+	return total
 }
 
 // noteShedCounterfactual records a real shed (mode OFF) for the benchmark.

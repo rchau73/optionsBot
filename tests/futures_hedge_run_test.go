@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"errors"
 	"math"
 	"path/filepath"
 	"strings"
@@ -218,6 +219,42 @@ func TestFuturesHedge_NoContractSizeNoOrder(t *testing.T) {
 	}
 }
 
+// Negative (#658 review): with the margin unknown the band is 0, and a band
+// of 0 must mean no hedge, not a hedge of any size. The paper hedge waits too
+// (it is the benchmark's data), then trades once the margin is back.
+func TestFuturesHedge_PaperHedgeWaitsForTheMargin(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.06, -0.2905, false)
+	f.exch.summaryErr = errors.New("account summary timed out")
+	f.startRun()
+	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	time.Sleep(150 * time.Millisecond)
+	if v := f.strat.HedgeState().Benchmark.VirtualTrades; v != 0 {
+		t.Fatalf("margin unknown: %d paper trades, want 0", v)
+	}
+	f.exch.mu.Lock()
+	f.exch.summaryErr = nil
+	f.exch.mu.Unlock()
+	eventually(t, 2*time.Second, "paper hedge booked", func() bool { return f.strat.HedgeState().Benchmark.VirtualTrades == 1 })
+}
+
+// Negative (#658 review): a leg with no greeks yet counts as its mark alone,
+// so the coin delta is wrong: nothing trades until the leg is priced.
+func TestFuturesHedge_LegWithoutGreeksNoOrder(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0, -0.2905, true)
+	f.market.instruments[f.call].UpdatedAt = time.Time{} // no quote yet (a live zero delta would roll the leg)
+	f.startRun()
+	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	time.Sleep(150 * time.Millisecond)
+	if n := len(f.exch.perpOrders()); n != 0 {
+		t.Fatalf("a leg without greeks: %d perpetual orders, want 0", n)
+	}
+	f.market.setDelta(f.call, 0.06)
+	eventually(t, 2*time.Second, "perpetual sold", func() bool { return len(f.exch.perpOrders()) == 1 })
+	if o := f.exch.perpOrders()[0]; o.Direction != orders.DirectionSell || o.Qty != 23050 {
+		t.Fatalf("hedge order %+v, want sell 23,050 USD once the leg is priced", o)
+	}
+}
+
 // Negative: a hedge order whose reply is lost is cancelled by label; the
 // next cycle reads the position (filled) and sends nothing more.
 func TestFuturesHedge_UnknownOutcomeCancelsByLabelAndReadsBack(t *testing.T) {
@@ -265,13 +302,7 @@ func TestFuturesHedge_ShedKeepsLegsStopLossStillFires(t *testing.T) {
 			t.Fatalf("no shed buy-back while the hedge is on, got %+v", b)
 		}
 	}
-	n := 0
-	for _, e := range f.journal.events(orders.EventSkipped) {
-		if strings.HasPrefix(e.reason, "shed_hedged") {
-			n++
-		}
-	}
-	if n != 1 {
+	if n := f.shedHedgedSkips(); n != 1 {
 		t.Errorf("shed_hedged journaled %d times, want once per leg", n)
 	}
 	if st, _ := hedge.LoadMode(f.hedgeAt); len(st.Ledger.Legs) != 1 || st.Ledger.Legs[0].Mode != hedge.CounterHedged || st.Ledger.Legs[0].ShedPrice != 0.021 {
@@ -287,6 +318,63 @@ func TestFuturesHedge_ShedKeepsLegsStopLossStillFires(t *testing.T) {
 		}
 		return false
 	})
+}
+
+func (f *strategyFixture) shedHedgedSkips() int {
+	n := 0
+	for _, e := range f.journal.events(orders.EventSkipped) {
+		if strings.HasPrefix(e.reason, "shed_hedged") {
+			n++
+		}
+	}
+	return n
+}
+
+// Negative (#658 review): a restart forgets shedNoted but not the ledger, so
+// a leg still shed is not counted, or journaled, a second time.
+func TestFuturesHedge_RestartKeepsOneCounterfactualPerLeg(t *testing.T) {
+	first, _ := newHedgeFixture(t, 0.16, -0.16, true)
+	first.withPutSheddingRegime()
+	first.startRun()
+	eventually(t, 2*time.Second, "kept leg saved", func() bool {
+		st, _ := hedge.LoadMode(first.hedgeAt)
+		return len(st.Ledger.Legs) == 1
+	})
+	first.cancel()
+	err := <-first.runErr
+	first.runErr <- err // for the fixture's cleanup
+
+	second, _ := newHedgeFixture(t, 0.16, -0.16, true)
+	second.hedgeAt = first.hedgeAt
+	second.withPutSheddingRegime()
+	second.startRun()
+	eventually(t, 2*time.Second, "the shed seen after the restart", func() bool { return second.strat.HedgeState().ShedNow == "puts" })
+	time.Sleep(100 * time.Millisecond)
+	if n := second.shedHedgedSkips(); n != 0 {
+		t.Errorf("the restart journaled shed_hedged %d times, want 0", n)
+	}
+	if legs := second.strat.HedgeState().Benchmark.Legs; len(legs) != 1 {
+		t.Errorf("after the restart the ledger has %d legs, want 1: %+v", len(legs), legs)
+	}
+}
+
+// Only the part of a leg the ledger does not follow yet is a new
+// counterfactual (a position that grew, or two sharing the instrument).
+func TestFuturesHedge_CounterfactualCoversOnlyTheUnfollowedQty(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, true)
+	f.withPutSheddingRegime()
+	seen := time.Now().Add(-time.Hour)
+	if err := hedge.SaveMode(f.hedgeAt, hedge.ModeState{Enabled: true, Since: seen, Ledger: hedge.Ledger{Since: seen, Legs: []hedge.Counterfactual{
+		{At: seen, Mode: hedge.CounterHedged, Instrument: f.put, OptionType: "put", Qty: 0.4, ShedPrice: 0.02, LastPrice: 0.02, LastAt: seen},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	f.startRun()
+	eventually(t, 2*time.Second, "shed_hedged journaled", func() bool { return f.shedHedgedSkips() == 1 })
+	eventually(t, 2*time.Second, "view published", func() bool { return len(f.strat.HedgeState().Benchmark.Legs) == 2 })
+	if got := f.strat.HedgeState().Benchmark.Legs[1].Qty; !near(got, 0.6, 1e-9) {
+		t.Errorf("new counterfactual qty %v, want 0.6 of the 1.0 held", got)
+	}
 }
 
 // With the experiment OFF a real shed is recorded for the benchmark.

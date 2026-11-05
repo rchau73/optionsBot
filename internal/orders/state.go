@@ -220,6 +220,20 @@ func (s *StateManager) TotalCoinDelta() float64 {
 	return total
 }
 
+// UnpricedLegs lists the open positions with no greeks yet (all zero, not
+// refreshed): their delta is unknown, not zero.
+func (s *StateManager) UnpricedLegs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []string
+	for _, p := range s.positions {
+		if p.CurrentGreeks == (Greeks{}) {
+			out = append(out, p.Instrument)
+		}
+	}
+	return out
+}
+
 func (s *StateManager) sumShort(greek func(Greeks) float64) float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

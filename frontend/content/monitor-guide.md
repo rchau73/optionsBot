@@ -250,6 +250,7 @@ The card shows the options' delta, the perpetual and the net delta, how many hed
 The comparison is an estimate: the side that is not trading is followed on paper.
 Only an admin may switch it.
 Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
+If that preview cannot be read, the window says so and the admin can still switch off.
 If the perpetual cannot be closed, the experiment stays on.
 The kill switch closes the perpetual too.
 The perpetual also appears under "Not managed by the bot", because it is not an option.

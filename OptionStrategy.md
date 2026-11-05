@@ -104,8 +104,9 @@ There is no cap.*
 7. **Keeps a decision diary.** Every order, fill, close and skipped opportunity is written down together with the market at that moment: BTC price, the volatility index (DVOL), whether the option was in or out of the money and by how much, how much open interest sat at that strike, and the dealer-positioning regime.
    Every minute it also writes the profit and loss of each slot, realised and open.
    This is what lets you judge, afterwards, which settings earn money and under which conditions.
-8. **Reports, never hedges.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file.
+8. **Reports, and hedges only in an experiment.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file.
    A human decides whether to act on it.
+   The one exception is the futures hedge experiment, off by default and on test money only: while an admin has it on, the bot trades the coin's perpetual future to hold the delta near zero (section 9).
 
 ## 4. How a trade can end
 
@@ -226,8 +227,9 @@ On Deribit, BTC options are priced in BTC; dollar figures use the BTC price at t
 - **Premium floor:** refuses to sell options too cheap to justify their risk.
 - **Validation:** nonsensical settings (deltas ≥ 0.5, slots inside the roll window, margin limits outside 0–100 %, no stop-loss) stop the bot at startup.
 - **Testnet by default; live only on explicit opt-in.**
-- **What is *not* covered:** the strangle has no long "wings", and the bot does not hedge automatically, so in a gap the loss is not capped.
-  Covered alternatives, such as iron condors and delta hedging with perpetual futures, are the natural next research step.
+- **What is *not* covered:** the strangle has no long "wings", and outside the futures hedge experiment (section 9) the bot does not hedge automatically, so in a gap the loss is not capped.
+  Even with that experiment on, a future removes direction only, so a gap still costs through gamma.
+  Covered alternatives, such as iron condors, are the natural next research step.
 
 ## 9. Market regimes and what the bot does
 
