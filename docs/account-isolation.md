@@ -100,6 +100,7 @@ Statements about Deribit's behaviour are **assumption** unless a source and date
    `key revoke` leaves the account `blocked` (`revoked`) in `-check`; both print that a person restarts or stops that account's bot, and the command restarts nothing. Whether Deribit keys expire by themselves is an assumption to confirm.
 6. **No key, client id or raw scope in logs, journal or API.**
 7. **Per-tenant view in the monitor:** account label, key-scope status, last authentication time, environment (live|testnet) — never the key.
+   Its data contract exists (#655): `go run ./cmd/accounts -check -json [-out data/accounts_status.json]` gives each account's id, label, exchange, environment, bots and key status (ok, missing, revoked, can_move_funds, unknown_scope) plus the named rule breaks, with no key id; the monitor view itself is a later story, with E7 (admin role).
 
 **Needs legal review:** custody and control of a customer's key (who may hold it, for how long), the authorisation text for the API key, data-protection treatment of key material, and any claim that the key "cannot move funds" (L21/L22 in the legal brief depend on it).
 
@@ -121,7 +122,7 @@ Implementation stories this implies (to be filed only after the unit is chosen):
 4. Startup guard: stop and report on foreign orders/positions.
 5. Label-scoped startup cancel and kill-switch cancel; platform-unique label prefix.
 6. Journal-owned adoption and flatten (stress/replay study first).
-7. Monitor per-tenant view (with E7).
+7. Monitor per-tenant view (with E7) — **data contract built** (#655: `cmd/accounts -check -json` and the owner-only status file `-out`, `accounts.StatusDocument`, key-free); the screen belongs with E7 (admin role).
 
 ## 6. Not decided here
 
