@@ -3,6 +3,7 @@
 import Header from "./Header";
 import AccountPanel from "./AccountPanel";
 import AnalyticsConsentSettings from "./AnalyticsConsentSettings";
+import FuturesHedge from "./FuturesHedge";
 import OtherPositions from "./OtherPositions";
 import PrivacySettings from "./PrivacySettings";
 import { useMonitor } from "@/hooks/useMonitor";
@@ -33,6 +34,14 @@ export function AccountView({ bots, error = null, polledAt }) {
         <section aria-label="Account and collateral" className="rounded-lg border border-line bg-panel p-3">
           <h1 className="mb-2 text-lg font-bold">Account &amp; collateral (shared by all bots)</h1>
           <AccountPanel account={account} risk={risk} />
+        </section>
+        <section aria-label="Futures hedge experiment" className="rounded-lg border border-line bg-panel p-3">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Futures hedge (experiment, testnet)</h2>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {bots.map((b) => (
+              <FuturesHedge key={b.name} bot={b.name} />
+            ))}
+          </div>
         </section>
         <section aria-label="Not managed by the bot" className="rounded-lg border border-line bg-panel p-3">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Not managed by the bot (still uses margin)</h2>

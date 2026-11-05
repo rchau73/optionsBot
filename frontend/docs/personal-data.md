@@ -114,7 +114,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
-- trading actions from the monitor: `manual_close`, `manual_rebalance`;
+- trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The monitor's JSON logs

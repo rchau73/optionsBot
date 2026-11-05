@@ -21,14 +21,16 @@ const (
 	TriggerDeltaExit         = "delta_exit" // short leg's |delta| reached delta_exit_threshold — closed, held like a stop
 	TriggerGammaClose        = "gamma_close"
 	TriggerKillSwitch        = "kill_switch"
-	TriggerManualClose       = "manual_close"       // closed by hand from the monitor (regime-side block only) — held like a stop
-	TriggerReconciled        = "reconciled"         // position loaded from exchange on startup
-	TriggerTimeout           = "order_timeout"      // limit order cancelled after fill-timeout elapsed
-	TriggerRebalanceDownsize = "rebalance_downsize" // position exceeds the confirmed IM limit — partial close
-	TriggerMarginMM          = "margin_mm_limit"    // maintenance margin above max_mm_pct — immediate partial close
-	TriggerRebalanceLegs     = "rebalance_legs"     // strangle legs of different sizes — excess of the larger leg bought back
-	TriggerRiskFrozen        = "risk_frozen"        // working entry/top-up cancelled: new risk frozen or MM limit reached
-	TriggerRegimeSide        = "regime_side"        // working sell cancelled: confirmed negative regime and the trend block its side (#243)
+	TriggerManualClose       = "manual_close"        // closed by hand from the monitor (regime-side block only) — held like a stop
+	TriggerReconciled        = "reconciled"          // position loaded from exchange on startup
+	TriggerTimeout           = "order_timeout"       // limit order cancelled after fill-timeout elapsed
+	TriggerRebalanceDownsize = "rebalance_downsize"  // position exceeds the confirmed IM limit — partial close
+	TriggerMarginMM          = "margin_mm_limit"     // maintenance margin above max_mm_pct — immediate partial close
+	TriggerRebalanceLegs     = "rebalance_legs"      // strangle legs of different sizes — excess of the larger leg bought back
+	TriggerRiskFrozen        = "risk_frozen"         // working entry/top-up cancelled: new risk frozen or MM limit reached
+	TriggerRegimeSide        = "regime_side"         // working sell cancelled: confirmed negative regime and the trend block its side (#243)
+	TriggerFuturesHedge      = "futures_hedge"       // perpetual trade holding the book's delta near zero (#657, experiment)
+	TriggerFuturesHedgeClose = "futures_hedge_close" // the perpetual closed at market: the experiment switched off (#657)
 )
 
 // Order direction and type constants.
@@ -197,6 +199,30 @@ type RawPosition struct {
 	Rho            float64 `json:"rho"`
 	Kind           string  `json:"kind"`
 	FloatingPnL    float64 `json:"floating_profit_loss"`
+	// Futures only (#657): an inverse future's Size is in USD; Deribit's
+	// realised funding and realised P&L of the position, in coin.
+	SizeCurrency    float64 `json:"size_currency"`
+	RealizedFunding float64 `json:"realized_funding"`
+	RealizedPnL     float64 `json:"realized_profit_loss"`
+}
+
+// InstrumentSpec is the part of public/get_instrument a futures order needs:
+// an inverse future's amount is in USD, in multiples of ContractSize.
+type InstrumentSpec struct {
+	Name           string  `json:"instrument_name"`
+	Kind           string  `json:"kind"`
+	ContractSize   float64 `json:"contract_size"`
+	MinTradeAmount float64 `json:"min_trade_amount"`
+	TickSize       float64 `json:"tick_size"`
+}
+
+// Ticker is the part of public/ticker a hedge order is priced from.
+type Ticker struct {
+	Instrument string  `json:"instrument_name"`
+	BestBid    float64 `json:"best_bid_price"`
+	BestAsk    float64 `json:"best_ask_price"`
+	Mark       float64 `json:"mark_price"`
+	Index      float64 `json:"index_price"`
 }
 
 // Fill represents an order execution result.
@@ -245,6 +271,9 @@ type Order struct {
 	// Label tags the order on Deribit with its strategy and slot (max 64
 	// characters), so exchange-side fills can be attributed per strategy.
 	Label string
+	// ReduceOnly makes Deribit refuse any part that would open or grow a
+	// position (the futures hedge's switch-off close and kill switch, #657).
+	ReduceOnly bool
 }
 
 // MaxLabelLen is Deribit's limit for an order label.

@@ -13,6 +13,10 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: — (403)
+- Switch the futures hedge experiment on or off (Account page, `POST /api/bots/<bot>/hedge`, #657; testnet only, the bot refuses it live)
+  - admin: ✓
+  - manager: — (403)
+  - user: — (403)
 - Read the strategy-change lab's runs, check a proposed setting value and request a comparison run (`/api/lab/runs`, `POST /api/lab/validate`, `POST /api/lab/requests`; nothing is applied)
   - admin: ✓
   - manager: ✓

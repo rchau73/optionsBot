@@ -143,6 +143,15 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
     It is `[]` for a line that names neither, e.g. a risk change.
   - `source` is `"journal"`.
   An event (or a trade's event) no longer in memory → 404 `{"error": "not in recent history"}`, never a reconstruction; neither or both parameters, or a non-positive integer → 400.
+
+### `GET` and `POST /api/bots/<bot>/hedge` (#657)
+
+The futures hedge experiment of one bot (`app/api/bots/[bot]/hedge/route.js`), shown as a card per bot on the Account page (`components/FuturesHedge.jsx`).
+- `GET` forwards to the bot's `GET /api/hedge`: `hedge` (mode, since, by, the perpetual, options and net delta, band, orders in the last hour, `shed_now`, `benchmark`), `switchable` and, on a live bot, `switch_off_reason`.
+  `?preview=true` adds `preview` (what switching off would do: the close and its fee, delta and IM/MM now → after, the options' P&L at −10/−5/+5/+10 %, `warnings`) or `preview_error`; it reads the exchange, so it waits up to 25 s.
+- `POST {"enabled": true|false}` forwards to the bot's `POST /api/hedge` with `BOT_ADMIN_TOKEN` and the person as `actor`; admins only, same-origin JSON, audited as `futures_hedge_switched`.
+  The bot refuses it live (403) and answers 409 when it refuses (the perpetual could not be closed: the experiment stays on).
+
 ### `GET /api/help/tips` (#588)
 
 The plain-words tips, read by the monitor's own server (`app/api/help/tips/route.js`); no bot call, nothing personal logged.

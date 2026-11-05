@@ -45,8 +45,10 @@ type Strategy struct {
 	// lastSMATrend is the SMA trend last seen, so a change is journaled once
 	// (trend.go; decision loop only).
 	lastSMATrend string
-	oi           OISource    // may be nil
-	history      PnLRecorder // may be nil
+	oi           OISource      // may be nil
+	history      PnLRecorder   // may be nil
+	futures      FuturesTrader // may be nil: no futures hedge (#657)
+	fh           futuresHedge  // the futures hedge experiment (futureshedge.go; decision loop only)
 	pnl          *pnlBook
 
 	lastSkip  map[slotKey]string // last skip reason journaled per slot (decision loop only)
@@ -120,6 +122,7 @@ type Strategy struct {
 	killSwitchCh chan struct{}
 	manualCh     chan manualReq    // manual closes from the monitor (manualclose.go)
 	rebalanceCh  chan rebalanceReq // manual rebalances from the monitor (manualrebalance.go)
+	hedgeCh      chan hedgeReq     // futures hedge switches from the monitor (futureshedge.go)
 
 	manualRebMu   sync.Mutex // guards lastManualReb (set by the loop, read by RequestRebalance)
 	lastManualReb time.Time
@@ -147,7 +150,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
 	}
-	return &Strategy{
+	s := &Strategy{
 		cfg:              cfg,
 		md:               d.Market,
 		exch:             d.Exchange,
@@ -182,8 +185,12 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		killSwitchCh:     make(chan struct{}),
 		manualCh:         make(chan manualReq, 1),
 		rebalanceCh:      make(chan rebalanceReq, 1),
+		hedgeCh:          make(chan hedgeReq, 1),
+		futures:          d.Futures,
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
+	s.loadHedgeMode(d.HedgeModePath)
+	return s
 }
 
 // Run restores state from the exchange and then evaluates the book every
@@ -229,6 +236,8 @@ func (s *Strategy) Run(ctx context.Context) error {
 			s.runManualClose(ctx, req)
 		case req := <-s.rebalanceCh:
 			s.runManualRebalance(ctx, req)
+		case req := <-s.hedgeCh:
+			s.runHedgeSwitch(ctx, req)
 		}
 	}
 }
@@ -284,6 +293,7 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	s.checkPositions(ctx)
 	s.flattenLongs(ctx)
 
+	s.fh.shedSide = gammaDec.Shed
 	if gammaDec.Shed != GammaActionNone {
 		s.handleGammaAction(ctx, gammaDec)
 	}
@@ -322,6 +332,11 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	// directional bet: trim the larger leg. Risk-reducing, so not frozen.
 	s.balanceStrangles(ctx)
 
+	// The futures hedge experiment (#657): the perpetual holds the book's
+	// delta near zero while the mode is on (risk-reducing, so not frozen);
+	// off, the paper hedge runs for the benchmark.
+	s.stepFuturesHedge(ctx, m, time.Now())
+
 	// Repair skips a leg only when GEX is actively shedding that leg type,
 	// using the same GammaDecision as entry, so the two never disagree.
 	// It restores a structure already held, so a freeze does not stop it;
@@ -351,6 +366,7 @@ func (s *Strategy) trackPositions(ctx context.Context) {
 	for _, pos := range positions {
 		names = append(names, pos.Instrument)
 	}
+	names = append(names, s.counterfactualInstruments()...) // the benchmark follows shed legs (#657)
 	if err := s.md.Track(ctx, names); err != nil {
 		slog.Warn("cannot subscribe to held instruments", "err", err)
 	}

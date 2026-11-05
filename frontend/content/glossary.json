@@ -199,7 +199,7 @@
     "long": "Delta shows how much an option's price moves when the coin moves by 1. It is also a rough guess of the chance the option pays out at expiry. A 0.16-delta option pays out about 16 times in 100. When the price moves toward a strike, that leg's delta grows.",
     "risk_income": "Selling at a higher delta brings more premium and a higher chance of a loss.",
     "source": "OptionStrategy.md#2-options-in-five-minutes",
-    "labels": ["Δ"]
+    "labels": ["Δ", "Options delta", "Net delta"]
   },
   "delta drift": {
     "short": "Buying back a leg whose delta fell below 0.10: far from the price, little premium left.",
@@ -339,6 +339,13 @@
     "risk_income": "During a freeze no new income is added, and no new risk is taken.",
     "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
     "labels": ["Entries frozen", "Unfrozen", "New entries"]
+  },
+  "futures hedge": {
+    "short": "An experiment: instead of buying a side back, the bot trades a future to cancel the book's direction.",
+    "long": "Off by default. While it is on, the GEX shed keeps its options and the bot buys or sells the coin's perpetual future so the book's delta stays near zero. A perpetual is a future with no expiry. Each trade pays a fee and the spread. Switching off closes the future at market.",
+    "risk_income": "The options keep earning, but a big move still costs, and frequent re-hedges in a choppy market add up.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Futures hedge", "Perpetual", "Hedge orders, last hour"]
   },
   "gamma": {
     "short": "How fast delta changes when the price moves.",

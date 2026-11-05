@@ -33,6 +33,8 @@ var deribitMethods = map[string][]string{
 	"public/get_volatility_index_data":    {"marketdata"},
 	"public/get_book_summary_by_currency": {"gex", "recorder"},
 	"public/get_tradingview_chart_data":   {"orders"},
+	"public/get_instrument":               {"orders"},
+	"public/ticker":                       {"orders"},
 	"private/buy":                         {"gateway", "orders"},
 	"private/sell":                        {"gateway", "orders"},
 	"private/edit":                        {"gateway", "orders"},
