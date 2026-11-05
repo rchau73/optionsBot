@@ -88,6 +88,8 @@ var orderPurpose = map[string]string{
 	orders.TriggerRebalanceLegs:     "so the call and the put are the same size",
 	orders.TriggerRiskFrozen:        "while new risk is paused",
 	orders.TriggerRegimeSide:        "while that side is not sold: market makers amplify moves and the trend runs toward it",
+	orders.TriggerFuturesHedge:      "to hold the book's direction near zero with the perpetual future (futures hedge experiment)",
+	orders.TriggerFuturesHedgeClose: "to close the perpetual future hedge: the experiment was switched off",
 }
 
 // cancelWhy says why the bot cancelled a working sell order, by the trigger
@@ -98,6 +100,17 @@ var cancelWhy = map[string]string{
 	orders.TriggerGammaClose: "market makers' positioning turned against that side",
 	orders.TriggerKillSwitch: "the kill switch stopped all trading",
 	orders.TriggerRegimeSide: "market makers amplify moves now and the trend turned toward that side, so it is not sold",
+}
+
+// hedgeWords explains a futures hedge record (#657), by its change.
+var hedgeWords = map[string]string{
+	orders.HedgeFill: "Traded the perpetual future to bring the book's direction (delta) back near zero: " +
+		"the futures hedge experiment keeps the options and offsets their direction instead of buying a side back.",
+	orders.HedgeClosed: "Closed the perpetual future hedge at market: the experiment was switched off, or the kill switch closed everything.",
+	orders.HedgeModeChanged: "A person switched the futures hedge experiment from the monitor. " +
+		"On, the GEX shed keeps its legs and a future offsets their direction; off, the shed buys them back again.",
+	orders.HedgeRateLimited: "A futures hedge trade waits: the hourly limit of hedge orders was reached. It is tried again next cycle.",
+	orders.HedgeFailed:      "A futures hedge order did not go through; the next cycle reads the position from the exchange before trying again.",
 }
 
 // skipWords explains a journaled skip, by its reason word.
@@ -131,6 +144,8 @@ var skipWords = map[string]string{
 		"so the bot sells only the other side for now.",
 	strategy.SkipGEXWait: "No new risk yet: the market makers' positioning data (GEX) is missing or out of date, " +
 		"so the bot waits for a fresh reading.",
+	strategy.SkipShedHedged: "The GEX shed would have bought this option back; the futures hedge experiment keeps it " +
+		"and offsets the book's direction with the perpetual future instead. The stop-loss and the other exits still apply.",
 	strategy.SkipBiasWarmup: "A close of one side was held back: that signal is trusted only once a full hour of data supports it " +
 		"(after a restart or a data gap). New sales of that side wait meanwhile.",
 	strategy.SkipEntryWaitTopup: "No new strangle yet: a rebalance order is still working, and the bot sizes one new position at a time " +
@@ -340,6 +355,11 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 		return explainConfig(l), ""
 	case orders.EventKeyScope:
 		return explainKeyScope(l), ""
+	case orders.EventHedge:
+		if s, ok := hedgeWords[l.Change]; ok {
+			return s, ""
+		}
+		return generic("change=" + l.Change)
 	}
 	return generic("event=" + e.Event)
 }

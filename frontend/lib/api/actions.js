@@ -1,4 +1,4 @@
-// The two requests that change a bot's trading state, through the monitor's
+// The requests that change a bot's trading state, through the monitor's
 // proxy, which adds the bot's admin token and checks the person's role.
 
 import { sendJSON } from "./http.js";
@@ -19,4 +19,13 @@ export async function closePositions(name, positionIds) {
  */
 export async function rebalanceBot(name, dryRun) {
   return sendJSON(`/api/bots/${encodeURIComponent(name)}/rebalance`, "POST", { dry_run: dryRun });
+}
+
+/**
+ * Switches the futures hedge experiment of one bot on or off (#657; admins,
+ * testnet only). Off closes the perpetual at market first; throws with the
+ * bot's reason when it refuses (the experiment then stays as it was).
+ */
+export async function setFuturesHedge(name, enabled) {
+  return sendJSON(`/api/bots/${encodeURIComponent(name)}/hedge`, "POST", { enabled });
 }

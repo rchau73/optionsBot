@@ -67,6 +67,10 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 		}
 	}
 
+	// The perpetual hedge too, whatever the mode (#657): flat options with an
+	// open future would be a naked directional position.
+	s.flattenPerp(kctx)
+
 	if err := s.syncBookToExchange(kctx); err != nil {
 		slog.Error("kill switch: could not confirm the exchange is flat — check it manually", "err", err)
 	}

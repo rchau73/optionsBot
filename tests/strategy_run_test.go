@@ -79,6 +79,9 @@ type fakeExchange struct {
 	// summaryDelay makes every account summary read wait this long first, as
 	// a request the gateway answers only with its timeout (#593).
 	summaryDelay time.Duration
+	// perpIMPerUSD: what SimulatePortfolio adds per USD of perpetual traded
+	// (removing a hedge raises the book's margin, #657).
+	perpIMPerUSD float64
 }
 
 // downErr is the error every call returns while the fake is down. Caller holds mu.
@@ -292,7 +295,14 @@ func (f *fakeExchange) GetPositions(context.Context, string) ([]orders.RawPositi
 	if err := f.downErr("private/get_positions"); err != nil {
 		return nil, err
 	}
-	return append([]orders.RawPosition(nil), f.positions...), nil
+	// kind=option, as the executor asks: a perpetual hedge is not listed (#657).
+	out := []orders.RawPosition{}
+	for _, p := range f.positions {
+		if !strings.HasSuffix(p.InstrumentName, "-PERPETUAL") {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeExchange) GetMargins(context.Context, string, float64, float64) (orders.MarginInfo, error) {
@@ -318,7 +328,12 @@ func (f *fakeExchange) SimulatePortfolio(_ context.Context, currency string, pos
 			}
 		}
 	}
-	for _, size := range positions {
+	for inst, size := range positions {
+		if strings.HasSuffix(inst, "-PERPETUAL") { // a hedge removed: the book's margin rises
+			out.InitialMargin += f.perpIMPerUSD * math.Abs(size)
+			out.MaintenanceMargin += f.perpIMPerUSD * math.Abs(size) * f.mmRatio
+			continue
+		}
 		dIM := -size / 0.1 * f.imPerLot / 2
 		out.InitialMargin += dIM
 		out.MaintenanceMargin += dIM * f.mmRatio
@@ -495,12 +510,31 @@ type recordingJournal struct {
 	pnl     []orders.PnLRecord
 	risk    []orders.RiskRecord
 	trends  []orders.TrendRecord
+	hedges  []orders.HedgeRecord
 }
 
 func (j *recordingJournal) LogRisk(r orders.RiskRecord) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.risk = append(j.risk, r)
+}
+
+func (j *recordingJournal) LogHedge(r orders.HedgeRecord) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.hedges = append(j.hedges, r)
+}
+
+func (j *recordingJournal) hedgeChanges(change string) []orders.HedgeRecord {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var out []orders.HedgeRecord
+	for _, r := range j.hedges {
+		if r.Change == change {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (j *recordingJournal) LogTrend(r orders.TrendRecord) {
@@ -619,6 +653,8 @@ type strategyFixture struct {
 	regimes  strategy.RegimeHistory     // optional; set with withConfirmedRegime
 	dirs     strategy.DirectionRecorder // optional
 	oi       strategy.OISource          // optional
+	futures  strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
+	hedgeAt  string                     // optional: its mode file
 	journal  *recordingJournal
 	logger   *orders.Logger // when set, used as the journal instead of the recorder
 	cancel   context.CancelFunc
@@ -684,6 +720,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
 			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
+			Futures: f.futures, HedgeModePath: f.hedgeAt,
 		})
 		if f.beforeRun != nil {
 			f.beforeRun(f.strat)

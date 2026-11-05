@@ -16,7 +16,44 @@ const (
 	EventTrend      = "trend_changed"
 	EventConfig     = "config_loaded" // startup: the effective settings and what changed since the last start (#256)
 	EventKeyScope   = "key_scope"     // startup: what the API key may do, from Deribit's auth scope (#538)
+	EventHedge      = "hedge"         // the futures hedge experiment: fills, closes, mode switches (#657)
 )
+
+// Futures hedge changes journaled as EventHedge (#657).
+const (
+	HedgeFill        = "hedge_fill"         // a perpetual trade filled (in part or whole)
+	HedgeClosed      = "hedge_closed"       // the perpetual closed at market: switched off, or the kill switch
+	HedgeModeChanged = "hedge_mode_changed" // a person switched the experiment on or off
+	HedgeRateLimited = "hedge_rate_limited" // a due hedge waits: 12 orders in the last hour
+	HedgeFailed      = "hedge_failed"       // a hedge order failed or its outcome is unknown (cancelled by label)
+)
+
+// HedgeRecord is one futures-hedge decision with the figures behind it.
+// Deltas are in coin; amounts of the inverse perpetual are in USD.
+type HedgeRecord struct {
+	Timestamp  time.Time `json:"timestamp"`
+	Event      string    `json:"event"` // always "hedge"
+	StrategyID string    `json:"strategy_id"`
+	Change     string    `json:"change"`
+	Detail     string    `json:"detail"`
+	Actor      *Actor    `json:"actor,omitempty"`
+	Enabled    *bool     `json:"enabled,omitempty"` // hedge_mode_changed: the new state
+	Instrument string    `json:"instrument,omitempty"`
+	Side       string    `json:"side,omitempty"`
+	AmountUSD  float64   `json:"amount_usd,omitempty"`
+	FilledUSD  float64   `json:"filled_usd,omitempty"`
+	Price      float64   `json:"price,omitempty"`
+	FeeCoin    float64   `json:"fee_coin,omitempty"`
+	OrderID    string    `json:"order_id,omitempty"`
+	// The book around the trade: the options' delta, the perpetual's before
+	// it, the band, and the realised P&L of a close (coin, net of the fee).
+	OptionsDelta float64        `json:"options_delta"`
+	PerpDelta    float64        `json:"perp_delta"`
+	BandCoin     float64        `json:"band_coin,omitempty"`
+	RealisedCoin float64        `json:"realised_coin,omitempty"`
+	Market       MarketSnapshot `json:"market"`
+	Portfolio    MarketContext  `json:"portfolio"`
+}
 
 // TrendRecord is one change of the SMA trend with the levels behind it. It
 // is journaled whatever the direction source (gex_direction): under bias the

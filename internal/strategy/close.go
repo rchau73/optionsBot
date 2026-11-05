@@ -232,11 +232,18 @@ func (s *Strategy) handleGammaAction(ctx context.Context, dec GammaDecision) {
 		if !shouldClose {
 			continue
 		}
-		s.noteShed(pos, dec, time.Now())
 		detail := shedDetail(dec, s.md.UnderlyingPrice(), pos.OptionType)
-		if _, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail); err != nil {
+		if s.fh.mode.Enabled { // the futures hedge experiment keeps the leg (#657)
+			s.noteShedHedged(pos, detail, time.Now())
+			continue
+		}
+		s.noteShed(pos, dec, time.Now())
+		price := s.shedPrice(pos)
+		filled, err := s.buyToClose(ctx, pos, pos.Qty, orders.TriggerGammaClose, 0, detail)
+		if err != nil {
 			slog.Error("gamma close failed", "err", err, "instrument", pos.Instrument)
 		}
+		s.noteShedCounterfactual(pos, filled, price, time.Now())
 	}
 }
 

@@ -142,6 +142,12 @@ const FIXTURES = {
     body: { position_ids: ["p1"] },
     actor: who?.user.username,
   }),
+  "POST /api/bots/[bot]/hedge": async ({ who }) => ({
+    path: "/api/bots/btc/hedge",
+    params: { bot: "btc" },
+    body: { enabled: true },
+    actor: who?.user.username,
+  }),
   "POST /api/bots/[bot]/rebalance": async ({ who }) => ({
     path: "/api/bots/btc/rebalance",
     params: { bot: "btc" },
