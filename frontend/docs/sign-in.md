@@ -1,6 +1,7 @@
 # Sign-in
 
 Part of the [monitor README](../README.md).
+What each table, the audit file and the logs keep about a person, and for how long: [Personal data](personal-data.md).
 
 ## Sign-in
 

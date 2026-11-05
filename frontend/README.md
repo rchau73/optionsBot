@@ -15,6 +15,7 @@ Each area has its own file under `docs/`, so a change to one area does not touch
 - [Sign-in](docs/sign-in.md): sessions, passwords, lockout, reset links, the service token
 - [Users and roles](docs/users-and-roles.md): who may do what, and the Users page
 - [Audit](docs/audit.md): the audit trail and its page
+- [Personal data](docs/personal-data.md): what the accounts system stores about a person, why, how long, how it is deleted
 - [Analytics](docs/analytics.md): usage events, surveys, retention, and the Analytics page
 - [Assistant](docs/assistant.md): the help assistant, its guard, its panel and its routes
 - [Glossary and help content](docs/glossary-and-help.md): glossary, risk notes, empty states, videos
