@@ -54,7 +54,7 @@ const (
 	// cmd/stress flag: the backtest has no perpetual, funding or re-hedge
 	// fills to model them with, so they are studied live by the hedge-vs-shed
 	// benchmark (a change of value would be a code change on its numbers).
-	FixedFuturesHedgeBandPct    = 5     // re-hedge when |net delta| ≥ 5 % of the margin balance (coin)
+	FixedFuturesHedgeBandPct    = 5      // re-hedge when |net delta| ≥ 5 % of the margin balance (coin)
 	FixedFuturesHedgeMaxPerHour = 12     // at most 12 hedge orders in a rolling hour; the 13th waits (hedge_rate_limited)
 	FixedFuturesHedgeFeeRate    = 0.0005 // the perpetual's taker fee assumed by the preview and the paper hedge (verify on Deribit)
 )
