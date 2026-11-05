@@ -504,6 +504,10 @@ Sections, each naming the source file and the span of its accepted events:
 - **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen — one per page of the monitor's menu (`overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`) plus `login` (#424).
 - **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
 - **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
+- **Education** (Q5, #642; JSON `education`, `internal/usage/education.go`) — tips opened and videos played per active person, the video completion rate,
+  the share of resolved help that came from a tip or video (`help_resolved` with `helped=true`) against the assistant (`assistant_helpful` with `helped=true`), and the top 5 tip keys opened with no assistant question after.
+  The top 5 followed by one in the same session within 10 minutes are the candidates to rewrite.
+  Ids and counts only. With no tip, video or help event the section says "No data yet" and prints no rate.
 - **Assistant** (Q5, #424; JSON `assistant`) — the panel opened and questions asked per `entry` (`menu`, `why`), replies per kind (`answered`, `dont_know`, `refused`, `fallback`), the share answered with a citation, and the answers flagged as wrong.
   Counts only: never a question, an answer or an id.
 - **Manual close and rebalance funnels** (Q6) — opened (allowed or not), cancelled, confirmed (last leg), results per outcome; rebalance previews and confirmations per outcome.

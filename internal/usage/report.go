@@ -39,6 +39,7 @@ type Report struct {
 	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
 	Help         *Help         `json:"help,omitempty"`          // Q5
 	Assistant    *Assistant    `json:"assistant,omitempty"`     // Q5
+	Education    *Education    `json:"education,omitempty"`     // Q5: E11's measure (#642)
 	ManualClose  *ManualClose  `json:"manual_close,omitempty"`  // Q6
 	Rebalance    *Rebalance    `json:"rebalance,omitempty"`     // Q6
 	Trust        *Trust        `json:"trust,omitempty"`         // Q7
@@ -224,6 +225,7 @@ func Build(events []Event, from, to time.Time) Report {
 	r.FirstAnswers = buildFirstAnswers(past, from)
 	r.Help = buildHelp(week)
 	r.Assistant = buildAssistant(week)
+	r.Education = buildEducation(week, r.Active.Week.Users)
 	r.ManualClose, r.Rebalance = buildFunnels(week)
 	r.Trust = buildTrust(week)
 	r.Survey = buildSurvey(week)
