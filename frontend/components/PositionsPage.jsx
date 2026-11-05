@@ -2,8 +2,11 @@
 
 import clsx from "clsx";
 import { useState } from "react";
+import BookPayoffPanel from "./BookPayoffPanel";
+import HedgeCard from "./HedgeCard";
 import PayoffCard from "./PayoffCard";
 import { usePayoff } from "@/hooks/usePayoff";
+import { hedgeShown } from "@/lib/futuresHedge";
 import { payoffStrangles } from "@/lib/payoff";
 
 /**
@@ -14,7 +17,7 @@ import { payoffStrangles } from "@/lib/payoff";
  */
 export default function PositionsPage({ bot = null }) {
   const [chosen, setChosen] = useState(bot);
-  const { names, payoff, error } = usePayoff(chosen ?? null);
+  const { names, payoff, error, hedge, hedgeError } = usePayoff(chosen ?? null);
   const current = chosen ?? names?.[0] ?? null;
   // The first bot is known only once the monitor answers; poll it from then on.
   if (!chosen && current) setChosen(current);
@@ -25,11 +28,11 @@ export default function PositionsPage({ bot = null }) {
     url.searchParams.set("bot", name);
     window.history.replaceState(null, "", url);
   };
-  return <PositionsScreen names={names} bot={current} payoff={payoff} error={error} onSelect={select} />;
+  return <PositionsScreen names={names} bot={current} payoff={payoff} error={error} hedge={hedge} hedgeError={hedgeError} onSelect={select} />;
 }
 
 /** Pure render of the page, for tests: no polling. */
-export function PositionsScreen({ names, bot, payoff, error, onSelect }) {
+export function PositionsScreen({ names, bot, payoff, error, hedge = null, hedgeError = null, onSelect }) {
   const list = payoffStrangles(payoff);
   const coin = payoff?.underlying || bot?.toUpperCase() || "";
   return (
@@ -64,6 +67,9 @@ export function PositionsScreen({ names, bot, payoff, error, onSelect }) {
           Not updating: {error}. The charts below are from the last answer.
         </p>
       ) : null}
+      {hedgeShown(hedge) ? <BookPayoffPanel h={hedge} coin={coin} /> : null}
+      {hedgeShown(hedge) ? <HedgeCard h={hedge} coin={coin} /> : null}
+      {hedgeError ? <p className="text-sm text-warn">Futures hedge: hedge state unavailable ({hedgeError}).</p> : null}
       {!payoff ? (
         error ? (
           <p role="alert" className="text-base text-warn">

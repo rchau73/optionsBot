@@ -112,10 +112,11 @@ export function flipBarGeometry(spot, flip, bufferPct) {
   return { bandLeft: at(low), bandWidth: at(high) - at(low), flip: at(flip), spot: at(spot), low, high, above: spot > high, below: spot < low };
 }
 
-/** Section counts of the sticky bar, and whether each needs attention (amber). */
-export function sectionCounts({ legs, held, trades, orders, stuck, others }) {
+/** Section counts of the sticky bar, and whether each needs attention (amber); Futures hedge only with one shown. */
+export function sectionCounts({ legs, held, trades, orders, stuck, others, hedges = 0, hedgeAttention = false }) {
   return [
     { id: "positions", label: "Positions", n: legs, attention: false },
+    ...(hedges > 0 ? [{ id: "hedge", label: "Futures hedge", n: hedges, attention: hedgeAttention }] : []),
     { id: "held", label: "Missing legs", n: held, attention: held > 0 },
     { id: "trades", label: "Trades", n: trades, attention: false },
     { id: "orders", label: "Working orders", n: orders, attention: stuck > 0 },

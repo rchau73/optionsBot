@@ -3,13 +3,17 @@ import clsx from "clsx";
 /**
  * A labelled number. tone: "good" | "bad" | undefined. children (optional)
  * replace the single value, e.g. one line per bot (#404); footer is a last
- * muted line; region makes the tile a named landmark (aria-label = label).
+ * muted line; region makes the tile a named landmark (aria-label = label);
+ * tip sits beside the label.
  */
-export default function StatTile({ label, value, sub, tone, children, footer, region = false }) {
+export default function StatTile({ label, value, sub, tone, children, footer, region = false, tip = null }) {
   const Box = region ? "section" : "div";
   return (
     <Box aria-label={region ? label : undefined} className="flex flex-col rounded-lg border border-line bg-panel px-3 py-2">
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
+      <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-wide text-muted">
+        {label}
+        {tip}
+      </div>
       {value != null ? (
         <div className={clsx("mt-0.5 text-lg font-semibold tabular-nums", tone === "good" && "text-profit", tone === "bad" && "text-loss")}>{value}</div>
       ) : null}

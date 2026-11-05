@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import Header from "./Header";
+import { HedgeLines } from "./HedgeLine";
 import PhoneOverview from "./PhoneOverview";
 import BotDashboards from "./BotDashboard";
 import OverviewPnl from "./OverviewPnl";
@@ -17,8 +18,8 @@ import { pickBot } from "@/lib/overview";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 
 /**
- * The overview, answer first (#404): the status line and the amber "held back" lines, the four tiles (coin
- * first, ≈ USD on the footer), the P&L chart (Coin per bot | USD all bots), then one band per bot — price chart
+ * The overview, answer first (#404): the status line and the amber "held back" lines, the tiles (coin first,
+ * ≈ USD on the footer), one futures hedge line per bot while a hedge is shown (#666), the P&L chart (Coin per bot | USD all bots), then one band per bot — price chart
  * with the sold-strike corridor and its strangle rows, a row opening the payoff modal, then "Since you last
  * looked" (#618: this browser's last visit vs now, under the four answers). The detail panels —
  * positions, missing legs, trades, working orders, not managed, the USD P&L over every range — are their own
@@ -48,7 +49,7 @@ export default function Monitor({ bot = null }) {
   return (
     <div className="min-h-screen">
       <div className="sm:hidden">
-        <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} />
+        <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} now={polledAt} />
         <div className="px-3 pb-3">
           <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />
         </div>
@@ -63,6 +64,7 @@ export default function Monitor({ bot = null }) {
           ) : null}
           <OverviewStatus bots={bots} />
           <OverviewTiles bots={bots} loading={!bots.length && !error} />
+          <HedgeLines bots={bots} now={polledAt} />
           <OverviewPnl names={names} units={units} />
           <BotDashboards bots={bots} onOpen={openChart} />
           <SinceLastVisit bots={bots} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />

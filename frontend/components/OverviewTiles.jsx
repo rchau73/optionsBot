@@ -1,11 +1,12 @@
 import clsx from "clsx";
 import MarginBar from "./MarginBar";
 import StatTile from "./StatTile";
-import { earnedLines, marginLines, openLines, roomFooter, usdFooter, worstLines } from "@/lib/tiles";
+import TermTip from "./TermTip";
+import { earnedLines, marginLines, netDeltaLines, openLines, roomFooter, usdFooter, worstLines } from "@/lib/tiles";
 
-// The overview's four tiles (#404): one line per bot in its own coin — coins
-// are never added together — and a footer with ≈ USD (the margin tile: the
-// room left per bot). Loading shows skeleton tiles.
+// The overview's tiles (#404, Net delta #666): one line per bot in its own coin
+// — coins are never added together — and a footer with ≈ USD (the margin tile:
+// the room left per bot). Loading shows skeleton tiles.
 
 const TONE = { profit: "text-profit", loss: "text-loss", muted: "text-muted", flat: "" };
 
@@ -28,8 +29,8 @@ function Lines({ lines }) {
 export default function OverviewTiles({ bots, loading = false }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="tiles-loading" aria-busy="true">
-        {[0, 1, 2, 3].map((i) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5" data-testid="tiles-loading" aria-busy="true">
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="h-24 animate-pulse rounded-lg border border-line bg-panel" />
         ))}
       </div>
@@ -39,8 +40,9 @@ export default function OverviewTiles({ bots, loading = false }) {
   const open = openLines(bots);
   const worst = worstLines(bots);
   const margin = marginLines(bots);
+  const delta = netDeltaLines(bots);
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="overview-tiles">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5" data-testid="overview-tiles">
       <StatTile region label="Coins earned this month" sub="realised, net of fees" footer={usdFooter(earned)}>
         <Lines lines={earned} />
       </StatTile>
@@ -62,6 +64,9 @@ export default function OverviewTiles({ bots, loading = false }) {
             ),
           )}
         </ul>
+      </StatTile>
+      <StatTile region label="Net delta" sub="the book's direction, in coin" footer={usdFooter(delta)} tip={<TermTip term="Net delta" />}>
+        <Lines lines={delta} />
       </StatTile>
     </div>
   );
