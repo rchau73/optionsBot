@@ -23,6 +23,8 @@ const (
 	// WorstCaseModel names the model in the payload, so nobody reads it as a
 	// quote.
 	WorstCaseModel = "model: Black–Scholes on each leg's current IV (DVOL when missing), spot moved ±3 daily σ (σ = DVOL ÷ √365) over one day"
+	// WorstCaseHedgedModel is WorstCaseModel while a perpetual is open (#665).
+	WorstCaseHedgedModel = WorstCaseModel + "; plus the perpetual's inverse P&L from its average price, size × (1/average price − 1/moved price)"
 )
 
 // Summary is the /api/summary payload.
@@ -113,6 +115,19 @@ type MonthIncome struct {
 	SpotDays   *float64 `json:"spot_days"` // days between the two spots
 	HoldUSD    *float64 `json:"hold_usd"`
 	HoldReason string   `json:"hold_reason,omitempty"` // why hold_usd is null
+	// The futures hedge (#665, hedgeincome.go), absent without one:
+	// realised − fees + funding = hedge_coin, already in realised_coin.
+	HedgeFills        int     `json:"hedge_fills,omitempty"`
+	HedgeRealisedCoin float64 `json:"hedge_realised_coin,omitempty"`
+	HedgeFeesCoin     float64 `json:"hedge_fees_coin,omitempty"`
+	HedgeFundingCoin  float64 `json:"hedge_funding_coin,omitempty"`
+	HedgeCoin         float64 `json:"hedge_coin,omitempty"`
+	HedgeUSD          float64 `json:"hedge_usd,omitempty"`
+}
+
+// traded reports whether the month has a result: a close or hedge activity.
+func (m MonthIncome) traded() bool {
+	return m.Closes > 0 || m.HedgeFills > 0 || m.HedgeCoin != 0
 }
 
 // WorstCase is the modelled loss of the book for a one-day move each way.
@@ -129,6 +144,18 @@ type WorstCase struct {
 	// Scenarios: the book after each of ScenarioSigmas' one-day moves, worst
 	// fall first (#318); empty when not available.
 	Scenarios []Scenario `json:"scenarios"`
+	// Hedge is the open perpetual already in the figures above, with the
+	// options alone beside it (#665); absent without one.
+	Hedge *WorstCaseHedge `json:"hedge,omitempty"`
+}
+
+// WorstCaseHedge is the perpetual a worst case includes (size signed, USD)
+// and the same two moves on the options alone.
+type WorstCaseHedge struct {
+	SizeUSD     float64   `json:"size_usd"`
+	AvgPrice    float64   `json:"avg_price"`
+	OptionsDown MoveShock `json:"options_down"`
+	OptionsUp   MoveShock `json:"options_up"`
 }
 
 // ScenarioSigmas are the one-day moves of the worst-case page, in daily σ.

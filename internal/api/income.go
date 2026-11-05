@@ -21,6 +21,9 @@ import (
 // IncomeSource is the history's own description in the payload.
 const IncomeSource = "realised: journal closes, net of fees; spot, equity and worst week: data/pnl_history.jsonl (the bot's P&L history)"
 
+// IncomeHedgedSource is IncomeSource once a month shown has futures hedge income.
+const IncomeHedgedSource = "realised: journal closes and hedge fills, net of fees, with the perpetual's funding; spot, equity and worst week: data/pnl_history.jsonl (the bot's P&L history)"
+
 // IncomeStats is the months in a few figures. Coin figures rank; USD ones are
 // the same closes at their own spot.
 type IncomeStats struct {
@@ -34,8 +37,8 @@ type IncomeStats struct {
 	EquityNote string   `json:"equity_note"` // where it comes from, or why unknown
 	ReturnPct  *float64 `json:"return_pct"`  // total coin ÷ equity: % more coin than holding
 
-	// The average of the months with at least one close (a month the bot
-	// did not trade is not a zero month).
+	// The average of the months with at least one close or hedge trade (a
+	// month the bot did not trade is not a zero month).
 	AverageMonth *Amount    `json:"average_month"` // null before the first close
 	ActiveMonths int        `json:"active_months"`
 	UpMonths     int        `json:"up_months"`
@@ -138,7 +141,10 @@ func IncomeWithHistory(inc IncomeSummary, points []history.Point, now time.Time,
 	for _, m := range months {
 		st.Total.Coin += m.RealisedCoin
 		st.Total.USD += m.RealisedUSD
-		if m.Closes == 0 {
+		if m.HedgeFills > 0 || m.HedgeCoin != 0 {
+			st.Source = IncomeHedgedSource
+		}
+		if !m.traded() {
 			continue
 		}
 		st.ActiveMonths++

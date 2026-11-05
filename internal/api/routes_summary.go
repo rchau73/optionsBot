@@ -23,7 +23,21 @@ func (s *Server) summary(w http.ResponseWriter, _ *http.Request) {
 	if ts, ok := s.events.(TradeSource); ok {
 		trades = ts.Trades(0, 0)
 	}
-	writeJSON(w, BuildSummary(s.strategy.View(), trades, time.Now()))
+	writeJSON(w, BuildHedgedSummary(s.strategy.View(), trades, s.futuresHedge(), time.Now()))
+}
+
+// futuresHedge is the journal's hedge fills and the perpetual open now; empty
+// on a bot without the experiment.
+func (s *Server) futuresHedge() FuturesHedge {
+	var h FuturesHedge
+	if src, ok := s.events.(PerpFillSource); ok {
+		h.Fills = src.PerpFills()
+	}
+	if s.hedge != nil {
+		v := s.hedge.HedgeState()
+		h.SizeUSD, h.AvgPrice, h.FundingCoin = v.PerpUSD, v.PerpAvg, v.FundingCoin
+	}
+	return h
 }
 
 // performance serves /api/performance?range=7d|30d|all (default 30d).
@@ -67,7 +81,8 @@ func (s *Server) income(w http.ResponseWriter, r *http.Request) {
 		trades = ts.Trades(0, 0)
 	}
 	v := s.strategy.View()
-	inc := incomeOfView(v, trades, now)
+	flows := s.futuresHedge().Flows(v.Market.Spot, now)
+	inc := IncomeWithHedge(incomeOfView(v, trades, now), flows)
 	var points []history.Point
 	if src, ok := s.history.(PointSource); ok && len(inc.Months) > 0 {
 		from, _ := time.Parse("2006-01", inc.Months[0].Month)
@@ -80,7 +95,7 @@ func (s *Server) income(w http.ResponseWriter, r *http.Request) {
 	for i, m := range inc.Months {
 		months[i] = m.Month
 	}
-	start := IncomeStartOf(months, trades, points, requested, now)
+	start := IncomeStartOf(months, append(trades, HedgeTrades(flows)...), points, requested, now)
 	inc = IncomeWithHistory(inc, points, now, v.Environment)
 	inc.Start = &start
 	writeJSON(w, inc)
