@@ -46,7 +46,7 @@ export function scenarioRows(summary) {
 export function whyNoScenarios(summary) {
   if (!summary) return "Unknown: no answer from the bot yet.";
   const wc = summary.worst_case;
-  if (!summary.holding?.legs) return "The bot holds nothing right now, so a bad day costs nothing. The table appears once it sells options.";
+  if (!summary.holding?.legs && !wc?.hedge) return "The bot holds nothing right now, so a bad day costs nothing. The table appears once it sells options.";
   if (!wc?.available) return `Unknown: ${wc?.reason || "the bot did not say why"}.`;
   if (!wc.scenarios?.length) return "Unknown: this bot does not report the five scenarios yet.";
   return null;
@@ -60,6 +60,18 @@ export function headlineLoss(summary) {
   if (whyNoScenarios(summary)) return null;
   const { down, up } = summary.worst_case;
   const worse = (up?.loss_usd ?? -Infinity) > (down?.loss_usd ?? -Infinity) ? up : down;
+  if (!worse) return null;
+  return { coin: worse.loss_coin, usd: worse.loss_usd, pct: isNumber(worse.pct_of_equity) ? worse.pct_of_equity : null };
+}
+
+/**
+ * The options alone while a perpetual is open (#665): the same two moves
+ * without the hedge, the worse one as a signed result; null without a hedge.
+ */
+export function optionsOnlyLoss(summary) {
+  const h = summary?.worst_case?.hedge;
+  if (!h) return null;
+  const worse = (h.options_up?.loss_usd ?? -Infinity) > (h.options_down?.loss_usd ?? -Infinity) ? h.options_up : h.options_down;
   if (!worse) return null;
   return { coin: worse.loss_coin, usd: worse.loss_usd, pct: isNumber(worse.pct_of_equity) ? worse.pct_of_equity : null };
 }

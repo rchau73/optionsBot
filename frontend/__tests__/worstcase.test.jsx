@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import WorstCaseReport from "@/components/WorstCaseReport";
 import { WorstCaseScreen } from "@/components/WorstCaseView";
 import { BotSummary } from "@/components/InvestorSummary";
-import { formatMove, headlineLoss, scenarioRows, stopWord, swingWords, whyNoScenarios } from "@/lib/worstcase";
+import { formatMove, headlineLoss, optionsOnlyLoss, scenarioRows, stopWord, swingWords, whyNoScenarios } from "@/lib/worstcase";
 
 // The shape GET /api/summary serves (internal/api/summary.go), worst_case with
 // its five scenarios (#318). Signs: loss_* positive = money lost; result_* + = gain.
@@ -121,6 +121,49 @@ describe("Scenario: no frequency claim", () => {
   test("no row says how often such a day happens", () => {
     const el = page(fixture());
     expect(el).not.toHaveTextContent(/1 day in|once (a|every)|per (year|month)|times a year|\bdays? in \d+|how often|probability|chance/i);
+  });
+});
+
+describe("Scenario: the worst case includes the hedge", () => {
+  const hedged = (overrides = {}) => {
+    const s = fixture(overrides);
+    s.worst_case.hedge = {
+      size_usd: -32310,
+      avg_price: 76650,
+      options_down: { spot: 92150, loss_coin: 0.09, loss_usd: 8293, pct_of_equity: 4.5 },
+      options_up: { spot: 107850, loss_coin: 0.01, loss_usd: 1078, pct_of_equity: 0.5 },
+    };
+    return s;
+  };
+
+  test("the headline stays the hedged figure and the options alone are a second line", () => {
+    page(hedged());
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("0.0500 BTC ($4,607)");
+    expect(screen.getByText(/This includes the futures hedge/)).toHaveTextContent("The options alone: about −0.0900 BTC (−$8,293), 4.5 % of the account.");
+    expect(optionsOnlyLoss(hedged())).toEqual({ coin: 0.09, usd: 8293, pct: 4.5 });
+  });
+
+  test("the working-out names the perpetual's average price", () => {
+    const el = page(hedged());
+    expect(el).toHaveTextContent("the open perpetual's gain or loss at each moved price, from its average price of $76,650");
+  });
+
+  test("options that lose nothing say so, no zero", () => {
+    const s = hedged();
+    s.worst_case.hedge.options_down = { ...s.worst_case.hedge.options_down, loss_coin: -0.01, loss_usd: -900 };
+    s.worst_case.hedge.options_up = { ...s.worst_case.hedge.options_up, loss_coin: -0.01, loss_usd: -1000 };
+    page(s);
+    expect(screen.getByText(/This includes the futures hedge/)).toHaveTextContent("The options alone: no loss on either side.");
+  });
+
+  test("a perpetual left with no option still shows the table", () => {
+    expect(whyNoScenarios(hedged({ holding: { strangles: 0, legs: 0, calls: 0, puts: 0, coin: "BTC" } }))).toBeNull();
+  });
+
+  test("no hedge, no second line", () => {
+    page(fixture());
+    expect(screen.queryByText(/This includes the futures hedge/)).toBeNull();
+    expect(optionsOnlyLoss(fixture())).toBeNull();
   });
 });
 

@@ -106,7 +106,9 @@ A switch changes the amounts between the coin and USD.
 - *Paid to you*: the premium received when the options were sold.
 - *Paid to buy back*: what it cost to close them.
 - *Exchange fees*: Deribit's fees, shown as a negative number.
-- *Result*: paid to you, minus buy-back, minus fees.
+- *Futures hedge*: shown only while a month has one: the perpetual's realised result, minus its fees, with its funding.
+  Its open gain or loss counts when it closes; funding comes from Deribit's reading of the position, so treat it as an estimate.
+- *Result*: paid to you, minus buy-back, minus fees, plus the futures hedge.
 - *Holding alone*: what the same coin would have gained or lost if it had only been held.
   In the coin it is 0 by definition; in USD it is the price change.
 
@@ -140,6 +142,9 @@ It is a model, not a measurement and not a forecast.
 **The five rows** show what different days would do: a very bad fall (−3 daily standard deviations), a bad fall (−2), a quiet day (0), a strong rise (+2) and a very strong rise (+3).
 Each row has the price move in percent, how big that is in typical daily swings, and the result with its sign, in coin and USD.
 A typical daily swing comes from DVOL, the market's own measure of expected volatility.
+
+**With the futures hedge open**, every figure includes the perpetual's gain or loss at the moved price, counted from its average price, so a row can include gain or loss the perpetual already holds.
+A second line under the headline gives the options alone.
 
 No row says how often such a day happens.
 The model understates how large crypto moves can be, and there is no measured figure.

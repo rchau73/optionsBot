@@ -15,7 +15,7 @@ import (
 // coin alone did from that same time, so two environments of different size
 // (stable, mvp) compare. All three figures use one start time:
 //
-//	result %   = closes after the start (journal, net of fees) ÷ B
+//	result %   = closes and futures hedge after the start (journal, net of fees) ÷ B
 //	hold %     = spot at the end ÷ spot at the start − 1
 //	combined % = (B + result) × spot at the end ÷ (B × spot at the start) − 1
 //
@@ -151,7 +151,9 @@ func measure(balance float64, since []history.Point, trades []orders.Trade, at, 
 	for _, t := range trades {
 		if t.Kind == "close" && t.At.After(at) && !t.At.After(to) {
 			r.ResultCoin += t.PnL
-			r.Closes++
+			if t.Reason != HedgeTradeReason {
+				r.Closes++
+			}
 		}
 	}
 	r.ResultPct = ptr(r.ResultCoin / balance * 100)
