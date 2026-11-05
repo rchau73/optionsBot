@@ -13,4 +13,6 @@ go run ./cmd/usdcstudy -dir data/btc,data/eth -from 2026-10-24 -to 2026-11-07   
     and a `Group` writes each underlying's view of that one fetch (`Book`):
     the coin's to `data/market_usdc/`, to compare liquidity, and from the BTC bot only SOL's and XRP's to `data/market_usdc_sol|xrp/` (`ExtraUSDC`, no DVOL → empty `dvol_index`, #356; XRP's `2d5` strikes parse in `ParseOptionName`);
   - `GEXRecorder` (`gexminute.go`, #122) writes every GEX snapshot (one a minute: flip, regime, median flip, GEX sum, DVOL, flip buffer — no Deribit call) as a JSON line to `data/market_gex/YYYY-MM-DD.jsonl.gz`, read by `ReadGEXDir`.
+  - a member reaches a day file whole or not at all (`members.go`, #661: `appendMember` replaces the file by a complete copy; 2026-11-04 a cut-off write left a bare gzip header that made every later hour unreadable);
+    the readers (`readMembers`) drop a damaged stretch, read every complete member after it and warn `recorded day damaged` with the day, `last_good` and `resumes`, so `cmd/datacoverage` and the weekly report show it as a gap.
   Never touches trading; not archived by `--reset-history`.
