@@ -61,7 +61,8 @@ Analytics: `notifications_opened` and `notification_followed` (`kind`)
 ### Positions page (its own page, `/positions?bot=<name>`; #391)
 
 "Positions · <coin>": `app/positions/page.jsx` → `components/PositionsPage.jsx`.
-`hooks/usePayoff.js` polls `/api/strangles/payoff` every `MONITOR_POLL_MS`, no faster than 5 s.
+`hooks/usePayoff.js` polls `/api/strangles/payoff` every `MONITOR_POLL_MS`, no faster than 5 s, and the bot's hedge with it.
+While a hedge is shown (#666), `components/BookPayoffPanel.jsx` (the book for a one-day move, chart and table from the view's `book_scenarios`; the hedge solid, options only dashed) and `components/HedgeCard.jsx` come before the strangle cards, also with nothing else open.
 At the top is a **BTC | ETH** switch.
 It uses `aria-pressed` and 44 px targets, and rewrites `?bot=` (the first bot without it).
 Below it is one card per strangle, ordered by its slot's DTE (`components/PayoffCard.jsx`).
@@ -127,7 +128,10 @@ From top to bottom:
   - P&L in coin ≈ USD, % kept, and spot · DVOL.
 - A line's caret (`aria-expanded`) opens a detail row with the full `plain`, the rule and its numbers (mono), and the greeks + instrument.
 - The filters are All / Opens / Closes, bot and exit reason.
+**Futures hedge** (#666, `components/HedgeRows.jsx`, `id="hedge"`), under Open positions while one is shown: one row per bot, six figures that stack on a phone, the pause in amber, a link to the switch on Account; a read that failed says "hedge state unavailable".
+The section bar gains its link only then.
 **Working orders** and **Not managed by the bot**: one line each when empty, else their tables, the explanation in the title's tooltip.
+`unmanagedPositions` subtracts each hedge's own size from its perpetual, so only the excess is listed, with its share of the figures; on Account too.
 States: skeleton rows while loading, a stale bot's groups dimmed with the age of its last answer, a bot down says so above the table, an empty section is one line, a loss is red and nothing is hidden.
 The bars are `aria-hidden` beside their number; section links, row carets and Close… are all keyboard-focusable.
 Analytics: `details_section_jump` (`section`) and `details_trade_expand`.
@@ -161,11 +165,16 @@ Any signed-in role
 Top to bottom (`components/Monitor.jsx`): **1.
 Status line** (`components/OverviewStatus.jsx`): a dot and "Both trading · updated 14:02" (or each bot's state, e.g. "BTC trading · ETH new trades paused"); below it one amber line per bot that holds something back, in plain words from its `held_legs` and a freeze (e.g. "ETH sells no new puts: negative gamma regime in a bear trend"; `heldBackLines`).
 **2.
-Four tiles** (`components/OverviewTiles.jsx` on `StatTile`, one row from `lg`, 2 columns below):
+Five tiles** (`components/OverviewTiles.jsx` on `StatTile`, one row from `lg`, 2 columns below):
 - *Coins earned this month* (realised, net of fees).
 - *Open now* (unrealised).
 - *Worst case* (one very bad day, with % of each account).
 - *Margin used* (% of limit, a `MarginBar` per bot).
+- *Net delta* (#666, `netDeltaLines`: options + perpetual with both under it; "options only" otherwise, or with "hedge state unavailable" from the payoff's `bot_net_delta`).
+
+Under the tiles, `components/HedgeLine.jsx`: one line per bot while the hedge is on, paused or left with a position, a link (`min-h-11`) to `/details#hedge` (`details_section_jump`, `section: hedge`); off and flat, nothing.
+The phone shows its one bot's line, with the net delta, under the headline.
+States and copy live in `lib/futuresHedge.js`; `fetchBotState` reads the hedge each poll (`hedge`, `hedgeError`).
 
 Each tile has one line per bot in its coin.
 The footer is the ≈ USD sum, and a bot without a figure is named: "· without ETH".

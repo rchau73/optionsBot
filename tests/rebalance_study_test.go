@@ -326,18 +326,24 @@ func TestReplayJournalBalance_StartingBalance(t *testing.T) {
 	}
 }
 
-// Scenario: the replay models rebalancing — at a restart (the startup pass),
-// IM above limit + 1.5 pp is cut to the target, IM within the band is left
-// alone (#123); without a restart nothing is cut (alert only, #166).
-func TestReplayRebalance_StartupPassBand(t *testing.T) {
-	t.Parallel()
+// journalStrangles records a quiet BTC book and starts the replay holding the
+// two journal strangles, 3 lots a leg, so no slot enters.
+func journalStrangles(t *testing.T) ([]recorder.Snapshot, replay.Settings, time.Time) {
+	t.Helper()
 	dir := t.TempDir()
 	start := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
 	record(t, dir, start, 6*24, func(int) float64 { return 100000 })
 	snaps, _ := recorder.ReadDir(dir, time.Time{}, time.Time{})
 	closes, dvol := flatHistory(start)
-	from := start.AddDate(0, 0, 3)
-	q := snaps[3*24].ByName()
+	set := replay.Settings{Cfg: replayConfig(t, "sma"), From: start.AddDate(0, 0, 3), Equity: 1, Closes: closes, DVOL: dvol,
+		Book: strangleBook(t, snaps[3*24], 3)}
+	return snaps, set, start
+}
+
+// strangleBook is the two journal strangles at the snapshot's mids.
+func strangleBook(t *testing.T, snap recorder.Snapshot, qty float64) []replay.StartLeg {
+	t.Helper()
+	q := snap.ByName()
 	var book []replay.StartLeg
 	for _, l := range []struct {
 		dte  int
@@ -346,13 +352,104 @@ func TestReplayRebalance_StartupPassBand(t *testing.T) {
 		if _, ok := q[l.name]; !ok {
 			t.Fatalf("%s not in the recording", l.name)
 		}
-		book = append(book, replay.StartLeg{Slot: config.StrangleSlot{TargetDTE: l.dte, EntryDelta: 0.16}, Instrument: l.name, Qty: 3, Price: q[l.name].LiveMid()})
+		book = append(book, replay.StartLeg{Slot: config.StrangleSlot{TargetDTE: l.dte, EntryDelta: 0.16}, Instrument: l.name, Qty: qty, Price: q[l.name].LiveMid()})
 	}
-	restart := from.Add(36 * time.Hour)
+	return book
+}
+
+// A pass under the limit tops up as the bot does: both sides on the strangle's
+// expiry, or none. The startup pass after a restart runs it on a book well
+// under the limit; each guard of topUps leaves the book as it was.
+func TestReplayRebalance_TopUpsAddBothSidesOrNone(t *testing.T) {
+	t.Parallel()
+	snaps, journal, start := journalStrangles(t)
+	off, err := replay.Run(snaps, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Entries != 0 {
+		t.Fatalf("fixture: %d entries, want the two journal strangles alone", off.Entries)
+	}
+	limit := off.Days[1].IMPct + 15
+	bear, bearSet := liveNegativeBooks(t)
+	for _, c := range []struct {
+		name  string
+		snaps []recorder.Snapshot
+		set   replay.Settings
+		tune  func(*config.Config, *replay.Settings)
+		check func(t *testing.T, r replay.Result)
+	}{
+		{name: "under the limit: a complement on each strangle", snaps: snaps, set: journal, check: func(t *testing.T, r replay.Result) {
+			if r.TopUps == 0 || r.TopUpLots <= 0 || r.TopUpsHeld != 0 || r.Downsizes != 0 || r.Unfilled != 0 {
+				t.Errorf("top-ups %d (%.0f lots), held %d, downsizes %d, unfilled %d; want top-ups alone",
+					r.TopUps, r.TopUpLots, r.TopUpsHeld, r.Downsizes, r.Unfilled)
+			}
+		}},
+		{name: "premium under the floor", snaps: snaps, set: journal,
+			tune: func(cfg *config.Config, _ *replay.Settings) { cfg.MinPremiumBTC = 1 }, check: noTopUp},
+		{name: "the strike's market takes less than a lot", snaps: snaps, set: journal,
+			tune: func(cfg *config.Config, _ *replay.Settings) { cfg.LiquidityCapOIPct = 0.001 }, check: noTopUp},
+		{name: "no strike in reach", snaps: snaps, set: journal,
+			tune: func(cfg *config.Config, _ *replay.Settings) { cfg.DeltaSlippage = 1e-9 }, check: noTopUp},
+		{name: "live negative regime holds a side: held and re-armed", snaps: bear, set: bearSet,
+			tune: func(_ *config.Config, s *replay.Settings) {
+				s.RegimeHold = replay.RegimeHoldLive
+				s.Book = strangleBook(t, bear[3*24], 3)
+			}, check: func(t *testing.T, r replay.Result) {
+				if r.TopUps != 0 || r.TopUpsHeld < 2 {
+					t.Errorf("top-ups %d, held %d; want none sold and the held pass retried", r.TopUps, r.TopUpsHeld)
+				}
+			}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			set := c.set
+			set.Cfg = replayConfig(t, "sma")
+			set.Rebalance = replay.RebalanceProRata
+			set.Limits = []replay.LimitAt{{At: start, LimitPct: limit}}
+			set.Restarts = []time.Time{set.From.Add(36 * time.Hour)}
+			if c.tune != nil {
+				c.tune(set.Cfg, &set)
+			}
+			res, err := replay.Run(c.snaps, set)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.RebalancePasses == 0 {
+				t.Fatal("no pass ran")
+			}
+			c.check(t, res)
+		})
+	}
+}
+
+func noTopUp(t *testing.T, r replay.Result) {
+	t.Helper()
+	if r.TopUps != 0 || r.Downsizes != 0 {
+		t.Errorf("top-ups %d, downsizes %d; want the book left as it was", r.TopUps, r.Downsizes)
+	}
+}
+
+func TestReplayRebalanceStudy_NoConfigAndNothingFreed(t *testing.T) {
+	t.Parallel()
+	if _, err := replay.RebalanceStudy(nil, replay.Settings{}, replay.Rebalances); err == nil {
+		t.Error("no config: want an error")
+	}
+	if got := (replay.RebalanceRow{}).CostPerPP(); got != 0 {
+		t.Errorf("nothing freed: cost per pp %v, want 0", got)
+	}
+}
+
+// Scenario: the replay models rebalancing — at a restart (the startup pass),
+// IM above limit + 1.5 pp is cut to the target, IM within the band is left
+// alone (#123); without a restart nothing is cut (alert only, #166).
+func TestReplayRebalance_StartupPassBand(t *testing.T) {
+	t.Parallel()
+	snaps, journal, start := journalStrangles(t)
+	restart := journal.From.Add(36 * time.Hour)
 	run := func(limit float64, restarts []time.Time) replay.Result {
 		t.Helper()
-		set := replay.Settings{Cfg: replayConfig(t, "sma"), From: from, Equity: 1, Closes: closes, DVOL: dvol, Book: book,
-			Rebalance: replay.RebalanceProRata, Limits: []replay.LimitAt{{At: start, LimitPct: limit}}, Restarts: restarts}
+		set := journal
+		set.Rebalance, set.Limits, set.Restarts = replay.RebalanceProRata, []replay.LimitAt{{At: start, LimitPct: limit}}, restarts
 		res, err := replay.Run(snaps, set)
 		if err != nil {
 			t.Fatal(err)

@@ -16,9 +16,10 @@ export function otherPositionsSummary({ rows, error, reported }) {
 }
 
 /**
- * Positions on the account that no bot manages (bought or sold by hand, a
- * hedge, another instrument kind). No bot closes or sizes them, but Deribit
- * counts them in equity and margin, so they are shown with their margin.
+ * Positions on the account that no bot manages (bought or sold by hand,
+ * another instrument kind, a perpetual beyond the futures hedge's own size).
+ * No bot closes or sizes them, but Deribit counts them in equity and margin,
+ * so they are shown with their margin.
  */
 export default function OtherPositions({ data }) {
   const { rows, error, reported } = data;

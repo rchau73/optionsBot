@@ -17,7 +17,7 @@ export async function fetchMonitorConfig(signal) {
  */
 export async function fetchBotState(name, signal) {
   const base = botUrl(name, "");
-  const [status, positions, orders, account, summary, payoff] = await Promise.all([
+  const [status, positions, orders, account, summary, payoff, hedge] = await Promise.all([
     getJSON(`${base}/status`, signal),
     getJSON(`${base}/positions`, signal),
     getJSON(`${base}/orders`, signal),
@@ -32,6 +32,8 @@ export async function fetchBotState(name, signal) {
       (data) => ({ data, error: null }),
       (e) => ({ data: null, error: e.message }),
     ),
+    // The futures hedge (#666); a failure leaves the options shown alone.
+    fetchHedgeState(name, signal),
   ]);
   return {
     status,
@@ -42,7 +44,17 @@ export async function fetchBotState(name, signal) {
     summaryError: summary.error,
     payoff: payoff.data,
     payoffError: payoff.error,
+    hedge: hedge.hedge,
+    hedgeError: hedge.error,
   };
+}
+
+/** The hedge object of one bot, or the reason it is unknown: { hedge, error }. */
+export async function fetchHedgeState(name, signal) {
+  return fetchBotHedge(name, false, signal).then(
+    (data) => ({ hedge: data?.hedge ?? null, error: null }),
+    (e) => ({ hedge: null, error: e.message }),
+  );
 }
 
 /** The payoff chart of each open strangle of one bot (/api/strangles/payoff, #391). */

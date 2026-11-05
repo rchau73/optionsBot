@@ -64,7 +64,7 @@ var Properties = map[string]Rule{
 	"reason_code": enumOf("value_unclear", "losses", "too_complex", "price", "trust", "switched", "steady_income", "easy_to_follow", "saves_time", "clear_risk", "explains_trades", "trust_numbers", "helpful_answers", "hard_to_find", "missing_feature", "other"),
 	"score":       enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
 	"screen":      enumOf(Screens...),
-	"section":     enumOf("positions", "held", "trades", "orders", "others"),
+	"section":     enumOf("positions", "hedge", "held", "trades", "orders", "others"),
 	"side":        enumOf("call", "put"),
 	"source":      enumOf("bot_api", "account", "pnl_history"),
 	// The in-product surveys (docs/product/analytics/surveys.md, #297; also

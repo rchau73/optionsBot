@@ -60,7 +60,7 @@ export const PROPERTIES = {
   score: enumOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
   // One per page of the menu (lib/menu.js, lib/analytics/screens.js, #424), the sign-in page and the admin Analytics page (#445).
   screen: enumOf("overview", "income", "worst_case", "positions", "how_it_works", "activity", "account", "details", "login", "analytics"),
-  section: enumOf("positions", "held", "trades", "orders", "others"),
+  section: enumOf("positions", "hedge", "held", "trades", "orders", "others"),
   side: enumOf("call", "put"),
   source: enumOf("bot_api", "account", "pnl_history"),
   // The in-product surveys (docs/product/analytics/surveys.md, #297; also

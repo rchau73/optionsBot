@@ -24,7 +24,7 @@ Under it, an amber line appears for each bot that holds something back, in plain
 Example: "ETH sells no new puts: negative gamma regime in a bear trend".
 Amber means the bot is waiting on purpose, not that it is broken.
 
-**The four tiles**:
+**The five tiles**:
 - *Coins earned this month*: the money kept after closes, net of Deribit fees.
   It counts only positions already closed.
 - *Open now*: the profit or loss of positions still open.
@@ -33,6 +33,15 @@ Amber means the bot is waiting on purpose, not that it is broken.
   The Worst case page explains it.
 - *Margin used*: how much of the margin limit the bot has used.
   The bar shows the limit; the footer shows the room left.
+- *Net delta*: the book's direction, in coin.
+  With a futures hedge it is options plus perpetual, with both under it; without one it says "options only".
+  If the hedge cannot be read, it shows the options with "hedge state unavailable".
+
+**The futures hedge line** appears under the tiles, one per bot, while a hedge is on or a position is left open.
+It shows the perpetual's size and delta and its profit and loss net of fees, and links to Details (pro).
+"Futures hedge paused" is amber and gives the reason; the GEX shed protects the book meanwhile.
+With the hedge off and flat, nothing is shown.
+On a phone the line sits under the headline and also gives the net delta.
 
 **The profit and loss chart** has two switches: Coin or USD, and 1 day, 1 week or 1 month.
 The solid line is total profit and loss, including open positions.
@@ -169,6 +178,12 @@ A negative share means the position is at a loss.
 **The delta box** gives the strangle's net delta in coin and in USD for a 1 % move, then each leg's.
 A negative delta means the position gains if the price falls.
 
+**With a futures hedge**, two more blocks come first, for that bot only:
+- *The whole book, for a one-day move*: a chart and a table of the book's result at −10, −5, +5 and +10 %, with the hedge (solid) and the options alone (dashed), coin first.
+  It is a model, not a quote.
+  The hedge takes out the slope (delta), not the curve (gamma): the book still loses on a big move either way.
+- *The hedge card*: the perpetual's size, delta and net delta, average and mark, unrealised and realised results, and funding.
+
 **When something looks wrong**:
 - A card that says a side is missing ("no call held: repair waiting") has one leg only.
   The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, or the margin limit.
@@ -261,7 +276,8 @@ Switching off first shows what it would do: the perpetual bought back or sold at
 If that preview cannot be read, the window says so and the admin can still switch off.
 If the perpetual cannot be closed, the experiment stays on.
 The kill switch closes the perpetual too.
-The perpetual also appears under "Not managed by the bot", because it is not an option.
+The hedge's perpetual is the bot's own position, so "Not managed by the bot" does not list it: only the part beyond what the bot holds.
+The hedge also shows on Overview, Positions and Details (pro).
 <!-- guide: route:POST /api/bots/[bot]/hedge -->
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand.
@@ -288,8 +304,12 @@ Figures come first and graphics are small.
 All figures are in coin first, with USD smaller beside them.
 
 **The top line** counts bots online, orders sent and filled, closes and entries skipped, since a date.
-The **section bar** jumps to Positions, Missing legs, Trades, Working orders and Not managed.
+The **section bar** jumps to Positions, Missing legs, Trades, Working orders and Not managed, and to Futures hedge while one is shown.
 A section is amber when it needs attention.
+
+**Futures hedge**, under Open positions, while a hedge is on or a position is left open: one row per bot with the perpetual's position, its delta and the net delta, average and mark, unrealised, realised less fees, and funding ("left out on testnet" when the benchmark is priced at the index).
+The row says how close the hedge holds the delta and how many orders went out in the last hour, and links to the switch on Account.
+A row whose perpetual was not read for two cycles is dimmed with its age.
 
 **Open positions**: one line per leg, grouped by strangle.
 Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.

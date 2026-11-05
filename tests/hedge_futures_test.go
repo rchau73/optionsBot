@@ -24,6 +24,36 @@ func TestHedgeOrder_LongDeltaSells(t *testing.T) {
 	}
 }
 
+// Scenario: the combined payoff includes the hedge (#666): the issue's −10 %
+// row, and the perpetual's inverse P&L at every move.
+func TestBookScenarios_CombinedPayoffIncludesTheHedge(t *testing.T) {
+	const spot, delta, gamma, perp = 76030.0, 0.4244, -0.00012, -32310.0
+	rows := hedge.BookScenarios(spot, delta, gamma, perp)
+	if len(rows) != len(hedge.ScenarioMoves) {
+		t.Fatalf("%d rows, want %d", len(rows), len(hedge.ScenarioMoves))
+	}
+	if r := rows[0]; r.MovePct != -10 || math.Abs(r.OptionsUSD+6695) > 1 || math.Abs(r.BookUSD+3464) > 1 {
+		t.Errorf("−10 %% row %+v, want about −3,464 with the hedge and −6,695 options only", r)
+	}
+	for _, r := range rows {
+		// A short inverse perpetual gains size × |move| in USD at the moved price.
+		if want := r.OptionsUSD + perp*r.MovePct/100; math.Abs(r.BookUSD-want) > 1e-6 {
+			t.Errorf("%+v: book USD, want %.2f", r, want)
+		}
+		if math.Abs(r.BookCoin*r.Spot-r.BookUSD) > 1e-6 {
+			t.Errorf("%+v: coin and USD disagree at the moved price", r)
+		}
+	}
+	for _, r := range hedge.BookScenarios(spot, delta, gamma, 0) {
+		if r.BookUSD != r.OptionsUSD || r.BookCoin != r.OptionsCoin {
+			t.Errorf("no perpetual: %+v, want the book to be the options", r)
+		}
+	}
+	if got := hedge.BookScenarios(0, delta, gamma, perp); got == nil || len(got) != 0 {
+		t.Errorf("no spot: %v, want an empty list, not null", got)
+	}
+}
+
 // Scenario: short delta is bought back up.
 func TestHedgeOrder_ShortDeltaBuys(t *testing.T) {
 	if usd, side := hedge.HedgeOrder(-0.10, 0, 0.058, 80000, 10); side != hedge.SideBuy || usd != 8000 {

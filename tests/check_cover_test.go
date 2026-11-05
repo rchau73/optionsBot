@@ -128,6 +128,72 @@ func TestCheckCover_FallFailsAndListsPackages(t *testing.T) {
 	}
 }
 
+// Scenarios of #659: the "Coverage summary" step of ci.yml itself, run in a
+// copy of the two scripts as GitHub runs it (bash -e {0}, no pipefail of its
+// own): the pipe into tee must not hide check_cover's FAIL, and the job
+// summary shows the coverage line whatever the verdict.
+func TestCheckCover_CIStep(t *testing.T) {
+	var step string
+	for _, s := range readCIWorkflow(t).Jobs["test"].Steps {
+		if s.Name == "Coverage summary" {
+			step = s.Run
+		}
+	}
+	if step == "" {
+		t.Fatal(`no "Coverage summary" step in the test job of ci.yml`)
+	}
+	for _, c := range []struct {
+		name         string
+		baseline     string
+		strategyHits int // of 400; risk is 500/600 → total = (500 + hits) / 10 %
+		wantFail     bool
+		wantSummary  string
+		wantLog      string
+	}{
+		{"a drop under the floor fails CI", "71.4", 211, true, "FAIL — coverage 71.1%", "optionsbot/internal/strategy"},
+		{"at the floor CI passes", "71.4", 214, false, "### check_cover: coverage 71.4%", "— ok"},
+		{"over the floor CI passes", "71.0", 214, false, "### check_cover: coverage 71.4%", "--update"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			scripts := filepath.Join(dir, "scripts")
+			if err := os.Mkdir(scripts, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range []string{"check_cover.sh", "go_tests.sh"} {
+				writeFile(t, filepath.Join(scripts, f), readFile(t, filepath.Join("..", "scripts", f)))
+			}
+			coverBaseline(t, scripts, c.baseline, coverPackages71)
+			blocks := []coverBlock{
+				{"risk", 500, true}, {"risk", 100, false},
+				{"strategy", c.strategyHits, true}, {"strategy", 400 - c.strategyHits, false},
+			}
+			for _, part := range []string{"coverage-core.out", "coverage-reports.out"} {
+				if err := os.Rename(writeProfile(t, dir, blocks), filepath.Join(dir, part)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			stepFile, summary := filepath.Join(dir, "step.sh"), filepath.Join(dir, "summary.md")
+			writeFile(t, stepFile, step)
+			writeFile(t, summary, "")
+
+			cmd := exec.Command("bash", "-e", stepFile)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "GITHUB_STEP_SUMMARY="+summary)
+			out, err := cmd.CombinedOutput()
+			if failed := err != nil; failed != c.wantFail {
+				t.Fatalf("step failed = %v (%v), want %v:\n%s", failed, err, c.wantFail, out)
+			}
+			if !strings.Contains(string(out), c.wantLog) {
+				t.Errorf("log lacks %q:\n%s", c.wantLog, out)
+			}
+			if got := readFile(t, summary); !strings.Contains(got, c.wantSummary) {
+				t.Errorf("summary = %q, want %q", got, c.wantSummary)
+			}
+		})
+	}
+}
+
 // Within the tolerance (0.2 points) under the baseline still passes; just past
 // it fails — the edge is compared in tenths, not floats.
 func TestCheckCover_Tolerance(t *testing.T) {

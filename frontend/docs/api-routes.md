@@ -147,7 +147,9 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 ### `GET` and `POST /api/bots/<bot>/hedge` (#657)
 
 The futures hedge experiment of one bot (`app/api/bots/[bot]/hedge/route.js`), shown as a card per bot on the Account page (`components/FuturesHedge.jsx`).
-- `GET` forwards to the bot's `GET /api/hedge`: `hedge` (mode, since, by, the perpetual, options and net delta, band, orders in the last hour, `shed_now`, `benchmark` with `pricing` and `pricing_note`, `kill_switch`, and `halted`, `halt_reason`, `recheck_at`, `not_holding` when the hedge cannot trade, #664), `switchable` and, on a live bot, `switch_off_reason`.
+- `GET` forwards to the bot's `GET /api/hedge`: `hedge` (mode, since, by, the perpetual, options and net delta, band, orders in the last hour, `shed_now`, `benchmark` with `pricing` and `pricing_note`, `testnet`, the real perpetual's `realised_coin` and `fees_coin`, `book_scenarios`: the book at −10/−5/+5/+10 % with and without the perpetual (#666),
+  `kill_switch`, and `halted`, `halt_reason`, `recheck_at`, `not_holding` when the hedge cannot trade, #664), `switchable` and, on a live bot, `switch_off_reason`.
+  The monitor reads it on every poll of `fetchBotState`: the Overview's Net delta tile and hedge line, the Details row, and the Positions card and whole-book panel (`hooks/usePayoff.js`) show it.
   `?preview=true` adds `preview` (what switching off would do: the close and its fee, delta and IM/MM now → after, the options' P&L at −10/−5/+5/+10 %, `warnings`) or `preview_error`; it reads the exchange, so it waits up to 25 s.
 - `POST {"enabled": true|false}` forwards to the bot's `POST /api/hedge` with `BOT_ADMIN_TOKEN` and the person as `actor`; admins only, same-origin JSON, audited as `futures_hedge_switched`.
   The bot refuses it live (403) and answers 409 when it refuses (the perpetual could not be closed: the experiment stays on).
