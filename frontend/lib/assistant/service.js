@@ -17,6 +17,7 @@ import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyCheck
 import { HelpIndex, noAnswer } from "./search";
 import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
 import { formatCoin, formatDateTime, formatPct, formatPrice } from "@/lib/format";
+import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 
 export const MAX_QUESTION = 500;
 // Passages of the help sent with a question: enough for an answer, few enough to keep the call small.
@@ -429,6 +430,116 @@ export function pnlPassages(bot, points, max = PNL_POINTS) {
     });
 }
 
+// The bot's performance over the last week and month (#648): its
+// /api/performance?range=7d and ?range=30d, read together for a question
+// about results only (asksAboutResults), kept PERF_CACHE_MS per bot; both
+// passages stay under PERF_TOKENS.
+export const PERF_RANGES = ["7d", "30d"];
+export const PERF_CACHE_MS = 10_000;
+export const PERF_TOKENS = 700;
+
+// A question about the bot's results over a period: only these pay for the
+// performance passages. "next week/month" is not one (a forecast is refused).
+const RESULT_PATTERNS = [
+  /\b(this|last|past|previous|the)\s+(week|month)\b/i,
+  /\b(7|30|seven|thirty)[ -]days?\b/i,
+  /\bworst\s+week\b/i,
+  /\bdrawdowns?\b/i,
+  /\b(vs\.?|versus|against|than|beat|beating|beaten)\s+(just\s+|simply\s+)?hold(ing)?\b/i,
+  /\bhold(ing)?\s+(the|my)\s+coin\b/i,
+  /\b(net\s+of|after)\s+fees\b/i,
+  /\b(my|the\s+bot'?s|its|our)\s+(results?|returns?|performance|p&l|pnl|profits?|loss(es)?)\b/i,
+  /\bhow\s+(did|have|has|am)\s+(i|we|it|the\s+bot)\s+(do|done|doing)\b/i,
+  /\b(am|are|is)\s+(i|we|it|the\s+bot)\s+(up|down)\b/i,
+];
+
+/** Whether a question asks about the bot's results over a period (#648). */
+export function asksAboutResults(question) {
+  const q = String(question ?? "");
+  return RESULT_PATTERNS.some((re) => re.test(q));
+}
+
+const PERF_WINDOWS = { "7d": "Last 7 days", "30d": "Last 30 days" };
+
+/** "−1.3%", "+2.0%": a % as the monitor signs it; "unknown" when it is not a number. */
+const signedPct = (v) => fig(v, (x) => formatSignedPct(x));
+
+/** Net P&L after fees, in coin and in USD at the window's last spot. */
+function perfNet(p, unit) {
+  if (!p.net_pnl_known) return "Net P&L after fees: unknown: no P&L history point in the window.";
+  const usd = isNum(p.net_pnl_usd) ? `${formatSignedUSD(p.net_pnl_usd)} at the window's last spot` : "USD unknown: no spot recorded in the window";
+  return `Net P&L after fees: ${formatCoin(p.net_pnl, unit, 5)} (${usd}).`;
+}
+
+/** Return on equity, or why it is unknown (the route's equity_reason). */
+function perfReturn(p, unit) {
+  if (!p.equity_known || !isNum(p.return_pct)) return `Return on equity: unknown: ${p.equity_reason || "no equity recorded"}.`;
+  return `Return on equity: ${signedPct(p.return_pct)} (equity ${fig(p.equity, (v) => v.toFixed(5))} ${unit} at the start).`;
+}
+
+/** The return of holding the coin over the same window, and the bot's against it. */
+function perfHold(p, unit) {
+  if (!p.hold_known) return "Holding the coin over the same window: unknown: no spot recorded at the window's start and end.";
+  const bot = isNum(p.return_usd_pct)
+    ? ` The bot's return in USD: ${signedPct(p.return_usd_pct)}, ${fig(p.excess_return_pct, (v) => formatSignedPct(v).replace("%", " percentage points"))} against holding.`
+    : ` The bot's return in USD: unknown: ${p.equity_reason || "no equity recorded"}.`;
+  return `Holding the coin over the same window: ${signedPct(p.hold_return_usd_pct)} in USD, ${formatPct(p.hold_return_coin_pct ?? 0)} in ${unit} (a held coin stays one coin).${bot}`;
+}
+
+/** Max drawdown and the worst week, each with its % of equity or why that is unknown. */
+function perfRisk(p, unit) {
+  const ofEquity = (pct, note) => (isNum(pct) ? `${signedPct(pct)} of equity` : `% of equity unknown: ${note || p.equity_reason || "no equity recorded"}`);
+  const dd = p.max_drawdown ?? {};
+  const drawdown = p.net_pnl_known ? `Max drawdown: ${fig(dd.coin, (v) => formatCoin(v, unit, 5))} (${ofEquity(dd.pct)}).` : "Max drawdown: unknown: no P&L history point in the window.";
+  const ww = p.worst_week ?? {};
+  const week = ww.known
+    ? `Worst week: ${day(ww.start)} to ${day(ww.end)}, ${fig(ww.coin, (v) => formatCoin(v, unit, 5))} (${ofEquity(ww.pct, ww.pct_note)}).`
+    : "Worst week: unknown: the window does not hold 7 days of P&L history yet.";
+  return `${drawdown} ${week}`;
+}
+
+/** The days of the window with no P&L history, named, never filled in. */
+function perfMissing(p) {
+  const missing = p.missing_days ?? [];
+  const of = isNum(p.days) ? ` of ${p.days}` : "";
+  if (!missing.length) return `Days with no P&L history: none${of}.`;
+  return `Days with no P&L history: ${missing.length}${of} (${missing.join(", ")}), not filled in.`;
+}
+
+/** One window's /api/performance answer as a citable passage. */
+function perfPassage(bot, range, p, unit) {
+  const label = p.label === "live" ? "live" : "testnet";
+  const text = [
+    `${PERF_WINDOWS[range]} (${day(p.from)} to ${day(p.to)}), ${label} figures, past results, not a forecast.`,
+    perfNet(p, unit),
+    perfReturn(p, unit),
+    perfHold(p, unit),
+    perfRisk(p, unit),
+    perfMissing(p),
+  ].join(" ");
+  return { id: `perf:${bot}/${range}`, source: `perf:${bot}`, title: `${bot} performance, ${PERF_WINDOWS[range].toLowerCase()}`, text };
+}
+
+/**
+ * The bot's performance over the last 7 and 30 days (/api/performance,
+ * #232) as citable passages (#648): "perf:<bot>/7d" and "perf:<bot>/30d",
+ * each the window's dates, its label (live or testnet), net P&L after fees in
+ * coin and USD, return on equity, the return of holding the coin and the
+ * bot's against it, max drawdown, the worst week with its dates and the days
+ * with no history. The route's own figures, signed and with their unit as
+ * the monitor shows them, nothing recomputed; an unknown figure reads
+ * "unknown" with the route's reason. A window not read (null) is left out.
+ * unit: the coin, the bot's name in capitals unless given.
+ */
+export function perfPassages(bot, perf7, perf30, unit = String(bot ?? "").toUpperCase()) {
+  return [
+    ["7d", perf7],
+    ["30d", perf30],
+  ]
+    .filter(([, p]) => p && typeof p === "object")
+    .map(([range, p]) => perfPassage(bot, range, p, unit));
+}
+
 /** The passages of both lists, each id once: the first list's copy wins. */
 export function mergePassages(first, second) {
   const ids = new Set(first.map((p) => p.id));
@@ -548,7 +659,8 @@ function applyRequestCheck(entry, verdict, passages) {
  * index: a HelpIndex; journal: the bot's week of passages from journalPassages
  * plus its held legs' whole history (selectJournal picks what this question
  * sends, #417, #427); live: the bot's page data from livePassages, all sent
- * (#427); reportPassages:
+ * (#427); perf: the bot's 7- and 30-day performance from perfPassages, sent
+ * only when the question asks about results (asksAboutResults, #648); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
@@ -565,6 +677,7 @@ export async function answerQuestion({
   bot = null,
   journal = [],
   live = [],
+  perf = [],
   reportPassages = async () => [],
   takeRetry = () => true,
   user,
@@ -576,7 +689,9 @@ export async function answerQuestion({
 }) {
   const hits = index.search(question, HELP_PASSAGES);
   const facts = selectJournal(question, journal);
-  let passages = [...hits.map((h) => h.passage), ...live, ...facts];
+  // The performance figures go only with a question about results (#648).
+  const results = asksAboutResults(question) ? perf : [];
+  let passages = [...hits.map((h) => h.passage), ...live, ...results, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -604,7 +719,7 @@ export async function answerQuestion({
   // best hits go to the model anyway, so an advice or forecast question gets
   // the refusal, not "I don't know"; the guard checks the answer as any other.
   const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
-  if (!closeEnough && facts.length === 0 && live.length === 0) {
+  if (!closeEnough && facts.length === 0 && live.length === 0 && results.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;
