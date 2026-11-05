@@ -227,6 +227,7 @@ The quotes are Deribit **mainnet** (the GEX poll's book summary), even on testne
 About 0.5 MB a day per coin.
 `--reset-history` does not touch it.
 Log lines: `market snapshot recorded` / `market snapshot not recorded`.
+A block reaches the file whole or not at all (#661); an older file with a damaged block fails `gzip -t`, but `cmd/stress -replay`, `cmd/compare` and the coverage reports read its complete blocks, warn `recorded day damaged` with the day, `last_good` and `resumes`, and show the missing hours as a gap.
 
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot.
 It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it.

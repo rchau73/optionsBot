@@ -98,6 +98,20 @@ func TestGEXRecorder_ReadTornAndMissing(t *testing.T) {
 	if len(recs) != 2 || recs[0].MedianFlip != 0 {
 		t.Errorf("records = %+v, want the 2 complete ones (no median without a window)", recs)
 	}
+
+	// The next write lands after the damage (#661): written whole, it is read.
+	src.snap = &gex.Snapshot{ComputedAt: at.Add(3 * time.Minute), Spot: 75000, Regime: "NEUTRAL"}
+	if _, err := rec.Record(); err != nil {
+		t.Fatal(err)
+	}
+	recs, err = recorder.ReadGEXFile(path)
+	if err != nil {
+		t.Fatalf("records after a damaged member: %v", err)
+	}
+	if len(recs) != 3 || !recs[2].ComputedAt.Equal(at.Add(3*time.Minute)) {
+		t.Errorf("records = %+v, want the 2 before the damage and the one after", recs)
+	}
+
 	none, err := recorder.ReadGEXDir(filepath.Join(dir, "absent"), time.Time{}, time.Time{})
 	if err != nil || len(none) != 0 {
 		t.Errorf("missing folder: %d records, err %v; want none, no error", len(none), err)
