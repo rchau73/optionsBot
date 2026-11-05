@@ -13,8 +13,10 @@ The kit is meant to be followed by a moderator who has never seen the bot. It us
 | Baseline | today's monitor (the main branch as it is) | now, before any E3 UI story |
 | Prototype | the E3 investor-view prototype (ux-designer skill) | after the prototype is approved, before the UI stories go to Ready |
 | Release | the shipped investor view | after the E3 UI stories are deployed |
+| Loss round | how a loss reads: today's monitor on a losing demo scenario — P1, P3 and P5 on `-scenario mixed`, P2 and P4 on `-scenario drawdown`; each participant sees only one scenario | after the baseline round, with 5 more new participants |
 
-Use the same screener, script, tasks, answer key and scoring in all three rounds, so the results compare. Use 5 new participants each round (someone who has seen the monitor once is no longer new). If the demo changes between rounds, update the answer key in the same pull request (the test fails until you do).
+Use the same screener, script, tasks, answer key and scoring in all three rounds, so the results compare.
+The loss round uses the same screener, script and scoring too; only the demo's flag and the answer key change (section 6b). Use 5 new participants each round (someone who has seen the monitor once is no longer new). If the demo changes between rounds, update the answer key in the same pull request (the test fails until you do).
 
 ## 2. Screener: who takes part
 
@@ -58,7 +60,7 @@ BOT_APIS=btc=http://127.0.0.1:8081 npm run dev
 
 The demo moves on its own: spot follows a random walk, marks follow spot, and now and then a leg is bought back and sold again. That is expected; the answer key says which answers stay fixed and which you read off the screen at the moment the participant answers.
 
-The answer key is for the demo **without flags**. To test how losses read, `go run ./cmd/monitor-demo -scenario mixed` (a losing month among winning ones) or `-scenario drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key's fixed answers do not hold for them.
+The answer key is for the demo **without flags**. To test how losses read, `go run ./cmd/monitor-demo -scenario mixed` (a losing month among winning ones) or `-scenario drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key of section 6 does not hold for them: score the loss round with section 6b. In a loss round, restart terminal 1 between participants with the flag of the next participant's scenario (section 1).
 
 ## 4. Moderator script
 
@@ -172,6 +174,55 @@ Count each, even when the question is still scored a success:
 - **Coin:** a figure of another coin read as BTC (e.g. the ETH or USDC line in *Account & collateral*).
 - **Time:** a monthly figure read as total, or "since the journal began" as this month.
 
+In a loss scenario (section 6b) a **sign** error is the main thing to watch: a loss read as a gain is exactly what the loss round is there to find.
+
+## 6b. Answer key: losing scenarios
+
+For the loss round (section 1): `go run ./cmd/monitor-demo -scenario mixed` or `-scenario drawdown`. The header shows DEMO · scenario mixed (or drawdown). Q1 and Q4 are scored with the key of section 6, with the fixed facts below where they differ; Q2 and Q3 with the rules below. **Read it off the screen** means the same as in section 6.
+
+The notes rules of section 8 hold unchanged: participants are only **P1 to P5** in every note, and nothing is recorded (screen, audio or video) without **legal review of the consent text** first; without it, written notes only.
+
+### Mixed (`-scenario mixed`)
+
+Q1 fixed facts are those of section 6: 3 calls and 3 puts, all sold, each **0.3 BTC**, together **1.80 BTC sold**, at the same strikes and expiries.
+
+Q2 fixed facts (*Income per month (realised, net of fees)*):
+
+- Six months of closes. **One full past month is a loss**: **the month two before the current one** (in a November session: September). Every close in it was a stop-loss, so it shows a − sign, in BTC and USD.
+- Every other full past month is **positive** (+ sign). The current month and *Open positions now (not realised)*: **read them off the screen**.
+
+| Score | The answer… |
+|---|---|
+| Success | says it is **making money but lost in one month**, pointing to the monthly income and naming the losing month as a loss; or says it is **losing**, which counts only when the participant points to a loss figure **with its minus sign** (the losing month, or a negative open-position line) |
+| Partial | says "making" or "losing" without pointing to a figure, or "losing" from a colour or a stop-loss close alone (no minus-signed figure); or reads the right figure with the wrong unit (BTC as dollars, or the reverse) |
+| Fail | reads the losing month as a gain (a sign error), or a gained month as a loss; or cannot say |
+
+Q3 is scored as in section 6 (the worst case is two modelled losses, a move of about 7–9 %, "This is a model, not a quote"): a worst case given as a gain is **partial**, as in the profit key.
+
+### Drawdown (`-scenario drawdown`)
+
+Q1 fixed facts: the same 3 calls and 3 puts at the strikes and expiries of section 6, all sold, but each option is **1.5 BTC**, together **9.00 BTC sold**.
+
+Q2 fixed facts (*Income per month (realised, net of fees)* and the **Open positions** table):
+
+- Six months of closes. As in mixed, **the month two before the current one** is a loss (− sign, in BTC and USD). Every other full past month is **positive**.
+- The current month earns little so far, and can turn negative when the demo buys back the stressed put below: **read it off the screen**.
+- **An open loss near its stop:** the 25-day put (strike 90,000) is held at **2.6×** the price it was sold for; its stop-loss buys it back at **3×** (twice its premium lost). Its row shows a loss with a − sign. *Open positions now (not realised)* adds every leg and may still show a gain: **read it off the screen**.
+
+| Score | The answer… |
+|---|---|
+| Success | says it **made money in most months but lost in one, and holds a loss now**, pointing to a minus-signed figure (the losing month or the put's open loss); or says it is **losing**, which counts only when the participant points to a loss figure **with its minus sign** |
+| Partial | says "making" or "losing" without pointing to a figure, or "losing" from a colour alone (no minus-signed figure); or names the right figure with the wrong unit |
+| Fail | reads a loss (the losing month, the put's open loss) as a gain, or a gain as a loss; or cannot say |
+
+Q3 fixed facts (*Worst case now (one day)*): two modelled losses (− sign) for a move of about 7–9 %, "This is a model, not a quote". The worst case is **larger than any month's income** in the table: the book is five times the profit demo's size. **Read the amounts off the screen.**
+
+| Score | The answer… |
+|---|---|
+| Success | gives a loss amount for a big one-day move (either direction) in BTC, USD or % of equity, as a loss, and shows it is an estimate |
+| Partial | a worst case given as a gain is **partial**, as in the profit key; so is the right figure in the wrong unit, as a certain outcome, or "it loses if the price moves a lot" with no figure |
+| Fail | names another number as the worst case (the put's open loss, its stop-loss mark, margin, equity, a past month's loss), says "it can lose everything" or "nothing", or cannot say |
+
 ## 7. Scoring and pass mark
 
 Per participant and question: **success / partial / fail**, the time of the final answer (mm:ss from the start), and the errors.
@@ -189,15 +240,15 @@ Copy these into the private notes folder `data/usability/e3/<round>/` (for examp
 
 ### Results table
 
-Round: baseline / prototype / release · Date (YYYY-MM-DD) · Monitor version (commit)
+Round: baseline / prototype / release / loss round · Date (YYYY-MM-DD) · Monitor version (commit)
 
-| Code | Layout | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | desktop | | | | | | | | | | |
-| P2 | desktop | | | | | | | | | | |
-| P3 | desktop | | | | | | | | | | |
-| P4 | desktop | | | | | | | | | | |
-| P5 | mobile | | | | | | | | | | |
+| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | desktop | | | | | | | | | | | |
+| P2 | desktop | | | | | | | | | | | |
+| P3 | desktop | | | | | | | | | | | |
+| P4 | desktop | | | | | | | | | | | |
+| P5 | mobile | | | | | | | | | | | |
 
 Participants passed: _ of 5 · Round passed (≥ 4 of 5): yes / no
 
