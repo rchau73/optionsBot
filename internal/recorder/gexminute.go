@@ -1,16 +1,11 @@
 package recorder
 
 import (
-	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -114,7 +109,7 @@ func (r *GEXRecorder) Record() (bool, error) {
 		return false, err
 	}
 	path := filepath.Join(r.dir, rec.ComputedAt.Format("2006-01-02")+".jsonl.gz")
-	return true, appendGzip(path, append(line, '\n'))
+	return true, appendMember(path, append(line, '\n'))
 }
 
 // medianFlip keeps snap's flip in the window and returns the window's
@@ -147,26 +142,6 @@ func (r *GEXRecorder) medianFlip(snap *gex.Snapshot) float64 {
 	return (v[n/2-1] + v[n/2]) / 2
 }
 
-// appendGzip appends data to path as one more gzip member (see appendGzipCSV).
-func appendGzip(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	zw := gzip.NewWriter(file)
-	if _, err := zw.Write(data); err != nil {
-		return err
-	}
-	if err := zw.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return file.Sync()
-}
-
 // ReadGEXDir reads every GEX day file in dir from the UTC day of from through
 // the day of to (both included; a zero bound is open), in time order. A
 // missing dir is no records, not an error: the replay then runs hourly.
@@ -195,37 +170,30 @@ func ReadGEXDir(dir string, from, to time.Time) ([]GEXRecord, error) {
 	return out, nil
 }
 
-// ReadGEXFile reads one GEX day file. A torn last member (a crash while
-// appending) is dropped; a bad line in a complete member is an error.
+// ReadGEXFile reads one GEX day file. A damaged member is dropped whole and
+// the members after it are read, with a warning (readMembers); a bad line in a
+// complete member is an error.
 func ReadGEXFile(path string) ([]GEXRecord, error) {
-	f, err := os.Open(path)
+	var out []GEXRecord
+	err := readMembers(path, func(plain []byte) (first, last time.Time, err error) {
+		for _, line := range bytes.Split(plain, []byte("\n")) {
+			if len(bytes.TrimSpace(line)) == 0 {
+				continue
+			}
+			var rec GEXRecord
+			if err := json.Unmarshal(line, &rec); err != nil {
+				return first, last, fmt.Errorf("record %d: %w", len(out)+1, err)
+			}
+			out = append(out, rec)
+			if first.IsZero() {
+				first = rec.ComputedAt
+			}
+			last = rec.ComputedAt
+		}
+		return first, last, nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	defer f.Close()
-	zr, err := gzip.NewReader(bufio.NewReader(f))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	data, err := io.ReadAll(zr) // multistream: every member in turn
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, gzip.ErrChecksum) {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	torn := err != nil
-	var out []GEXRecord
-	lines := bytes.Split(data, []byte("\n"))
-	for i, line := range lines {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		var rec GEXRecord
-		if err := json.Unmarshal(line, &rec); err != nil {
-			if torn && i == len(lines)-1 {
-				break // the torn member's partial line
-			}
-			return nil, fmt.Errorf("read %s: line %d: %w", path, i+1, err)
-		}
-		out = append(out, rec)
 	}
 	return out, nil
 }

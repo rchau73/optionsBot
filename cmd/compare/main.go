@@ -100,11 +100,12 @@ func run(p compare.Paths, sets []compare.Setting, fromStr, toStr string, equity 
 	if p.CSV == "none" {
 		p.CSV = ""
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil))) // the bot's rules log; the report says it all
 	in, err := compare.Load(p, from, to, equity, os.Stderr)
 	if err != nil {
 		return err
 	}
+	// After Load, so a damaged day's warning reaches stderr (#661).
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil))) // the bot's rules log; the report says it all
 	var plan compare.Neighbours
 	if neighbours != "" {
 		if plan, err = compare.PlanNeighbours(in.Proposed, neighbours); err != nil {

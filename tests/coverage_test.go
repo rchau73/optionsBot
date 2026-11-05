@@ -219,6 +219,25 @@ func TestDataCoverage_MinuteGEXAbsentForADay(t *testing.T) {
 	}
 }
 
+// Scenario (#661): a damaged day file is a gap in the coverage report, not a
+// dataset that cannot be read.
+func TestDataCoverage_ADamagedFileIsAGap(t *testing.T) {
+	base := t.TempDir()
+	books := filepath.Join(base, "market")
+	record(t, books, covDay, 6, func(int) float64 { return 100000 })
+	corruptMember(t, filepath.Join(books, covDay.Format(time.DateOnly)+".csv.gz"), 2)
+
+	res, err := coverage.Run(base, covDay, covDay.Add(6*time.Hour), covDay.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatalf("a damaged file must not fail the report: %v", err)
+	}
+	m := res.Datasets[0]
+	wantGap := coverage.Gap{From: covDay.Add(2 * time.Hour), To: covDay.Add(3 * time.Hour), Hours: 1}
+	if !m.Found || m.Records != 5 || m.MissingHours != 1 || len(m.Gaps) != 1 || m.Gaps[0] != wantGap {
+		t.Errorf("market: found %v records %d missing %v h gaps %+v, want true, 5, 1 and [%+v]", m.Found, m.Records, m.MissingHours, m.Gaps, wantGap)
+	}
+}
+
 // The default window never runs past the current hour (still being
 // recorded); no records and no window is an error, not an empty report.
 func TestDataCoverage_DefaultWindowAndNoData(t *testing.T) {
