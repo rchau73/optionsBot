@@ -8,6 +8,13 @@
 // Exit 0: every account valid and its key trade-only; 1: a rule broken or an
 // account blocked; 2: a file could not be read.
 //
+// -json prints the same check as a key-free status document
+// (accounts.StatusDocument, #655) instead of the table; -out <path> also
+// writes it there, atomically and owner-only. Same exit codes; an unreadable
+// file writes nothing.
+//
+//	go run ./cmd/accounts -check -json [-out data/accounts_status.json]
+//
 // The key lifecycle (#625) adds, rotates and revokes an account's key in the
 // key store, with the registry's key_id following; the key is read from an
 // owner-only JSON file or stdin, never an argument, and each action is one
@@ -22,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"optionsbot/internal/accounts"
 	"optionsbot/internal/keystore"
@@ -34,10 +42,13 @@ func main() {
 	check := flag.Bool("check", false, "validate the registry and print one row per account")
 	registry := flag.String("registry", accounts.DefaultPath, "the account registry file")
 	keys := flag.String("keystore", keystore.DefaultPath, "the key store file (read without the master key)")
+	asJSON := flag.Bool("json", false, "with -check: print the status document (JSON, no key id) instead of the table")
+	outPath := flag.String("out", "", "with -check: also write the status document to this file, atomically and owner-only (e.g. "+accounts.DefaultStatusPath+")")
 	flag.Parse()
 	if !*check {
 		fmt.Fprintln(os.Stderr, "accounts: -check, or key add|rotate|revoke --account <id>, is required")
 		os.Exit(accounts.ExitUnreadable)
 	}
-	os.Exit(accounts.Check(os.Stdout, os.Stderr, *registry, *keys))
+	os.Exit(accounts.CheckWith(os.Stdout, os.Stderr, *registry, *keys,
+		accounts.CheckOptions{JSON: *asJSON, OutPath: *outPath, Now: time.Now().UTC()}))
 }
