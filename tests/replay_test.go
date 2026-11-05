@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"io"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +141,205 @@ func TestRecorderReadFile_TornLastSnapshot(t *testing.T) {
 	}
 	if len(snaps) != 2 {
 		t.Errorf("snapshots = %d, want the 2 complete ones", len(snaps))
+	}
+}
+
+// memberStarts returns where each gzip member of a healthy file starts.
+func memberStarts(t *testing.T, data []byte) []int {
+	t.Helper()
+	var starts []int
+	for pos := 0; pos < len(data); {
+		starts = append(starts, pos)
+		br := bytes.NewReader(data[pos:])
+		zr, err := gzip.NewReader(br)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zr.Multistream(false)
+		if _, err := io.Copy(io.Discard, zr); err != nil {
+			t.Fatal(err)
+		}
+		pos = len(data) - br.Len()
+	}
+	return starts
+}
+
+// corruptMember breaks member i of a day file as flate reports on the real
+// file: a reserved block type in its first byte ("corrupt input before offset 1").
+func corruptMember(t *testing.T, path string, i int) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[memberStarts(t, data)[i]+10] |= 0x06
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Scenario: a damaged day does not stop a replay. Given a recorded day whose
+// third gzip member is corrupt, when the replay reads the folder, it uses the
+// rows of the complete members, warns with the day and the last good time, and
+// reads the other days.
+func TestRecorderReadDir_ADamagedDayDoesNotStopAReplay(t *testing.T) {
+	start := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	const hours = 6
+	day := "2026-11-04.csv.gz"
+	cases := []struct {
+		name            string
+		damage          func(t *testing.T, path string)
+		missing         []int // hours of the day not read
+		lastGood, comes string
+	}{
+		{"third member corrupt", func(t *testing.T, path string) { corruptMember(t, path, 2) },
+			[]int{2}, "2026-11-04T01:00:00Z", "2026-11-04T03:00:00Z"},
+		{"bare member header, as on 2026-11-04", func(t *testing.T, path string) {
+			data, _ := os.ReadFile(path)
+			at := memberStarts(t, data)[3]
+			torn := append(append(append([]byte{}, data[:at]...), data[:10]...), data[at:]...)
+			if err := os.WriteFile(path, torn, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, nil, "2026-11-04T02:00:00Z", "2026-11-04T03:00:00Z"},
+		{"first member corrupt, the header with it", func(t *testing.T, path string) { corruptMember(t, path, 0) },
+			[]int{0}, "start of the day", "2026-11-04T01:00:00Z"},
+		{"last member cut", func(t *testing.T, path string) {
+			data, _ := os.ReadFile(path)
+			if err := os.WriteFile(path, data[:len(data)-6], 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, []int{5}, "2026-11-04T04:00:00Z", "not in this file"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			record(t, dir, start, hours, func(int) float64 { return 100000 })
+			record(t, dir, start.AddDate(0, 0, 1), 1, func(int) float64 { return 100000 }) // the other day
+			c.damage(t, filepath.Join(dir, day))
+
+			var logs bytes.Buffer
+			prev := slog.Default()
+			slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+			defer slog.SetDefault(prev)
+			snaps, err := recorder.ReadDir(dir, time.Time{}, time.Time{})
+			if err != nil {
+				t.Fatalf("a damaged day must not stop the replay: %v", err)
+			}
+
+			var want []time.Time
+			for h := 0; h < hours; h++ {
+				if !slices.Contains(c.missing, h) {
+					want = append(want, start.Add(time.Duration(h)*time.Hour))
+				}
+			}
+			want = append(want, start.AddDate(0, 0, 1))
+			var got []time.Time
+			for _, s := range snaps {
+				got = append(got, s.At)
+				if len(s.Quotes) != len(synthBook(s.At, 100000)) {
+					t.Errorf("%s: %d quotes, want a whole snapshot", s.At, len(s.Quotes))
+				}
+			}
+			if !slices.EqualFunc(got, want, time.Time.Equal) {
+				t.Errorf("snapshots at %v, want %v", got, want)
+			}
+			for _, field := range []string{`"day":"2026-11-04"`, `"last_good":"` + c.lastGood + `"`, `"resumes":"` + c.comes + `"`} {
+				if !strings.Contains(logs.String(), field) {
+					t.Errorf("warning lacks %s:\n%s", field, logs.String())
+				}
+			}
+			if n := strings.Count(logs.String(), "recorded day damaged"); n != 1 {
+				t.Errorf("%d warnings, want one for the damaged day:\n%s", n, logs.String())
+			}
+		})
+	}
+
+	t.Run("a whole day warns of nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		record(t, dir, start, 3, func(int) float64 { return 100000 })
+		var logs bytes.Buffer
+		prev := slog.Default()
+		slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+		defer slog.SetDefault(prev)
+		if snaps, err := recorder.ReadDir(dir, time.Time{}, time.Time{}); err != nil || len(snaps) != 3 || logs.Len() != 0 {
+			t.Errorf("%d snapshots, err %v, logs %q; want 3, none, none", len(snaps), err, logs.String())
+		}
+	})
+
+	t.Run("nothing but damage is no snapshot and no error", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, day), []byte("not gzip at all"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if snaps, err := recorder.ReadDir(dir, time.Time{}, time.Time{}); err != nil || len(snaps) != 0 {
+			t.Errorf("%d snapshots, err %v; want none, none", len(snaps), err)
+		}
+	})
+
+	t.Run("a bad row in a complete member is still an error", func(t *testing.T) {
+		dir := t.TempDir()
+		var buf bytes.Buffer
+		zw := gzip.NewWriter(&buf)
+		fmt.Fprintln(zw, "yesterday,BTC-27NOV26-100000-C")
+		zw.Close()
+		if err := os.WriteFile(filepath.Join(dir, day), buf.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := recorder.ReadDir(dir, time.Time{}, time.Time{}); err == nil {
+			t.Error("a complete member with a bad date read without an error")
+		}
+	})
+}
+
+// Scenario: a write cut off cannot corrupt the file: until the new member is
+// complete the day file is untouched, and what a stop left behind is overwritten.
+func TestRecorderSnapshot_ACutOffWriteLeavesTheDayWhole(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 11, 4, 1, 0, 0, 0, time.UTC)
+	record(t, dir, start, 1, func(int) float64 { return 100000 })
+	path := filepath.Join(dir, "2026-11-04.csv.gz")
+	before, _ := os.ReadFile(path)
+
+	src := &fakeSummary{at: start.Add(time.Hour), rows: synthBook(start.Add(time.Hour), 100000)}
+	rec := recorder.New(src, func() float64 { return 50 }, dir, time.Hour)
+	tmp := path + ".tmp"
+	if err := os.Mkdir(tmp, 0o755); err != nil { // the copy cannot be written
+		t.Fatal(err)
+	}
+	if _, err := rec.Snapshot(src.at); err == nil {
+		t.Fatal("a failed write reported no error")
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
+		t.Fatalf("a failed write changed the day file: %d bytes, was %d", len(after), len(before))
+	}
+
+	if err := os.Remove(tmp); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tmp, before[:20], 0o644); err != nil { // a stop in the middle of the copy
+		t.Fatal(err)
+	}
+	if _, err := rec.Snapshot(src.at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("the temporary copy stayed: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	zr, err := gzip.NewReader(bytes.NewReader(data)) // any gzip reader, as gzip -t
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("the day file is not one valid gzip stream: %v", err)
+	}
+	if n := bytes.Count(plain, []byte(recorder.Header[1]+",")); n != 1 {
+		t.Errorf("%d header rows, want one per file", n)
+	}
+	if got, _ := recorder.ReadFile(path); len(got) != 2 {
+		t.Errorf("snapshots = %d, want 2", len(got))
 	}
 }
 

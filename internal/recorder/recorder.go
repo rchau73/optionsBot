@@ -11,9 +11,10 @@
 package recorder
 
 import (
-	"compress/gzip"
+	"bytes"
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -166,24 +167,16 @@ func round(v float64, digits int) float64 {
 
 // appendGzipCSV appends records to path as one more gzip member (a new file
 // starts with the header). Concatenated members read back as one stream with
-// any gzip reader, so each snapshot is a cheap append and a crash can lose at
-// most the snapshot being written.
+// any gzip reader, and a crash can lose at most the snapshot being written
+// (appendMember).
 func appendGzipCSV(path string, records [][]string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	info, err := os.Stat(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	zw := gzip.NewWriter(file)
-	w := csv.NewWriter(zw)
-	if info.Size() == 0 {
+	var plain bytes.Buffer
+	w := csv.NewWriter(&plain)
+	if err != nil || info.Size() == 0 {
 		if err := w.Write(Header); err != nil {
 			return err
 		}
@@ -191,8 +184,5 @@ func appendGzipCSV(path string, records [][]string) error {
 	if err := w.WriteAll(records); err != nil {
 		return err
 	}
-	if err := zw.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return file.Sync()
+	return appendMember(path, plain.Bytes())
 }

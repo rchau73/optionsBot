@@ -42,7 +42,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `/api/summary` (`summary.go`, pure `BuildSummary`, #177) is the investor's four answers from the view and the journal's trades:
   - `holding`, `income` (realised net P&L per UTC month, last 6, from the journal's closes — its one source — plus unrealised),
   - `worst_case` (a labelled model: Black–Scholes on each leg's IV, a one-day ±3 daily σ move from DVOL, loss in coin, USD and % of equity;
-    `scenarios` −3, −2, 0, +2, +3 σ with signed results for the monitor's worst-case page, #318)
+    `scenarios` −3, −2, 0, +2, +3 σ with signed results for the monitor's worst-case page, #318;
+    with a perpetual open every figure adds its inverse P&L from the average price, `hedge` keeps the options alone, #665, `hedgeincome.go`, `BuildHedgedSummary`)
   - and `last_action` (latest open/close in plain words, `PlainReason`);
   - plus `strangle` for the How it works page (#322, `howitworks.go`, pure `HowItWorksOf`:
     the nearest two-legged strangle's strikes, premiums, coin-settled break-evens and each leg's exit line —
@@ -55,6 +56,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `/api/income` (`income.go`, pure `IncomeWithHistory`, #319) is the summary's income completed for the income page:
   - each month's `premium_coin`/`buyback_coin`/`fees_coin` (from the journal's closes, `CloseParts`: buy-back = premium − fees − P&L, so `premium − buyback − fees = realised` always;
     USD at each close's spot, `CloseSpot`; these are in `/api/summary`'s months too),
+  - `hedge_fills`, `hedge_realised_coin`, `hedge_fees_coin`, `hedge_funding_coin`, `hedge_coin`, `hedge_usd` (#665, absent without a hedge), in `realised_coin` and the % of start:
+    realised is rebuilt from the journal's `hedge_fill`/`hedge_closed` lines (`orders.PerpFill`, `FuturesHedge.Flows`), funding is the change of the `funding_coin` reading between lines plus the open position's latest,
   - the month's recorded spot and `hold_usd` (equity at the month's start × spot change),
   - and `summary` (total, average of months with a close, up/down months, worst month, `perf`'s worst week — its `pct` null with `pct_note` when the week began before the first balance — missing days)
   - and `start` (#629, `income_start.go`, pure `IncomeStartOf`): the "% of start" view from the first margin balance at or after `?from=` (default the window's first; `ParseIncomeFrom`, bad → 400)

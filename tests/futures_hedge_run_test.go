@@ -417,7 +417,7 @@ func TestFuturesHedge_KillSwitchFlattensThePerpetual(t *testing.T) {
 // Scenario: switching off previews, then closes the hedge.
 func TestFuturesHedge_SwitchOffPreviewsThenCloses(t *testing.T) {
 	f, _ := newHedgeFixture(t, 0.06, -0.2905, true) // +0.2305, hedged below
-	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, RealizedFunding: -0.0001, Kind: "future"})
 	f.exch.summary.InitialMargin, f.exch.summary.MaintenanceMargin = 0.1, 0.07
 	f.exch.perpIMPerUSD = 0.000002
 	f.startRun()
@@ -457,8 +457,12 @@ func TestFuturesHedge_SwitchOffPreviewsThenCloses(t *testing.T) {
 	if st, _ := hedge.LoadMode(f.hedgeAt); st.Enabled || st.By.User != "tester" {
 		t.Errorf("mode file after the switch: %+v", st)
 	}
-	if len(f.journal.hedgeChanges(orders.HedgeClosed)) != 1 || len(f.journal.hedgeChanges(orders.HedgeModeChanged)) != 1 {
-		t.Error("hedge_closed and hedge_mode_changed journaled")
+	closed := f.journal.hedgeChanges(orders.HedgeClosed)
+	if len(closed) != 1 || len(f.journal.hedgeChanges(orders.HedgeModeChanged)) != 1 {
+		t.Fatal("hedge_closed and hedge_mode_changed journaled")
+	}
+	if closed[0].FundingCoin != -0.0001 {
+		t.Errorf("hedge_closed carries the funding reading, got %v", closed[0].FundingCoin)
 	}
 	time.Sleep(150 * time.Millisecond)
 	if n := len(f.exch.perpOrders()); n != 1 {
