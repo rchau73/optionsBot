@@ -24,8 +24,9 @@ type Logger struct {
 	recent               *recentRing // last events, for the monitor API
 
 	tradesMu sync.RWMutex
-	trades   []Trade   // every open and close since the journal began
-	since    time.Time // first journal event (zero until one is written)
+	trades   []Trade    // every open and close since the journal began
+	fills    []PerpFill // every filled trade of the futures hedge's perpetual
+	since    time.Time  // first journal event (zero until one is written)
 }
 
 // RecentEvents is how many journal events the logger keeps in memory (and a
@@ -273,6 +274,11 @@ func (l *Logger) LogHedge(r HedgeRecord) {
 		r.Timestamp = time.Now()
 	}
 	l.writeJSON(EventHedge, r, slog.Default().With("event", EventHedge, "change", r.Change))
+	if f, ok := perpFillOf(r); ok {
+		l.tradesMu.Lock()
+		l.fills = append(l.fills, f)
+		l.tradesMu.Unlock()
+	}
 }
 
 // LogTrend records a change of the SMA trend.
@@ -321,6 +327,7 @@ func (l *Logger) Restore(rp Replay) {
 	l.tradesMu.Lock()
 	defer l.tradesMu.Unlock()
 	l.trades = append([]Trade(nil), rp.Trades...)
+	l.fills = append([]PerpFill(nil), rp.PerpFills...)
 	l.since = rp.FirstAt
 }
 
@@ -339,6 +346,13 @@ func (l *Logger) Trades(after uint64, limit int) []Trade {
 		}
 	}
 	return out
+}
+
+// PerpFills returns the futures hedge's filled trades, oldest first.
+func (l *Logger) PerpFills() []PerpFill {
+	l.tradesMu.RLock()
+	defer l.tradesMu.RUnlock()
+	return append([]PerpFill(nil), l.fills...)
 }
 
 // HistorySince is when the journal's history begins (zero if empty).

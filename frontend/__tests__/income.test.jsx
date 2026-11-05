@@ -4,7 +4,7 @@ import IncomePage, { IncomeView } from "@/components/IncomePage";
 import { BotSummary } from "@/components/InvestorSummary";
 import { fetchBotIncome } from "@/lib/api/bots";
 import { ALLOWED_ENDPOINTS } from "@/lib/bots";
-import { formatAmount, incomeTableRows, returnLine, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
+import { formatAmount, hasHedgeIncome, incomeTableRows, returnLine, upDownLine, worstMonthMove, worstWeekPct } from "@/lib/income";
 
 // A month as GET /api/income serves it (internal/api/income.go): coin parts,
 // their USD at each close's spot, the recorded spot and holding alone.
@@ -24,6 +24,36 @@ const month = (m, premium, buyback, fees, spot, extra = {}) => ({
   spot_days: 30,
   hold_usd: 0,
   ...extra,
+});
+
+describe("Scenario: income books the hedge", () => {
+  const hedged = (extra) => month("2026-11", 0.02, 0.005, 0.001, 70000, { hedge_fills: 2, hedge_coin: 0.0003, hedge_usd: 21, realised_coin: 0.0143, ...extra });
+
+  it("shows a Futures hedge column with the month's source, inside the result", () => {
+    render(<IncomeView bot="btc" income={fixture({ months: [hedged()] })} />);
+    expect(screen.getByRole("columnheader", { name: "Futures hedge" })).toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /Nov/ });
+    expect(row).toHaveTextContent("+0.00030 BTC");
+    expect(row).toHaveTextContent("+0.01430 BTC");
+    expect(screen.getByText(/open gain or loss is not here/)).toBeInTheDocument();
+  });
+
+  it("gives a month with only hedge activity its figures, not 'no closes'", () => {
+    const rows = incomeTableRows({ months: [hedged({ closes: 0, realised_coin: 0.0003 })] }, "coin");
+    expect(rows[0]).toMatchObject({ closes: 0, traded: true, hedge: 0.0003 });
+    expect(rows[0].loss).toBe(false);
+  });
+
+  it("marks a month the hedge took into a loss", () => {
+    const [row] = incomeTableRows({ months: [hedged({ closes: 0, hedge_fills: 0, hedge_coin: -0.0002, realised_coin: -0.0002 })] }, "coin");
+    expect(row.loss).toBe(true);
+  });
+
+  it("shows no such column without a hedge", () => {
+    render(<IncomeView bot="btc" income={fixture()} />);
+    expect(screen.queryByRole("columnheader", { name: "Futures hedge" })).toBeNull();
+    expect(hasHedgeIncome(fixture())).toBe(false);
+  });
 });
 
 const fixture = (overrides = {}) => ({
