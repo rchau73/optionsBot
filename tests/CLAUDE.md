@@ -8,6 +8,8 @@ Notable files:
 - `restart_invariance_test.go` (#220: boots twice on one book with a held stop, a shed anchor, a shared strike and IM in the startup band, through main's restore paths
   — no order, same slots, holds kept; a new restore path belongs in it),
 - `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
+- `usability_kit_test.go` (#202, #646): the E3 usability kit runs from the file alone, keeps participant data out of its templates, and its answer keys match `cmd/monitor-demo`
+  — the profit key (section 6) against the no-flag demo, the losing-scenario keys (section 6b) against `-scenario mixed` and `-scenario drawdown`, a failure naming the scenario and the fact.
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
 - `docs_line_length_test.go` (#463): no prose line over 400 characters in a tracked `*.md` (tables, code, link targets exempt); files that still have some are listed with a reason and a count that can only go down.
   `scripts/docs/reflow.py write FILE` puts one sentence per line, `compare REF FILE` lists every sentence of the old file missing from the new one (empty = nothing lost).

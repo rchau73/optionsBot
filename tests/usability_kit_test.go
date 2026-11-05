@@ -407,6 +407,152 @@ func TestUsabilityKit_AnswerKeyMatchesTheDemo(t *testing.T) {
 	}
 }
 
+// The loss round (#646): section 6b keys the two losing demo scenarios. Each
+// fixed fact the key states is checked against the demo started with that
+// scenario's flag; a failure names the scenario (the subtest) and the fact.
+func TestUsabilityKit_LossKeysMatchTheDemo(t *testing.T) {
+	doc := readUsabilityKit(t)
+	losing := kitSection(t, doc, "## 6b. Answer key: losing scenarios")
+	for _, sc := range []struct {
+		name    string
+		heading string
+		qty     float64 // BTC per option
+	}{
+		{"mixed", "### Mixed (`-scenario mixed`)", 0.3},
+		{"drawdown", "### Drawdown (`-scenario drawdown`)", 1.5},
+	} {
+		t.Run(sc.name, func(t *testing.T) {
+			key := kitSection(t, losing, sc.heading)
+			fact := func(text string) {
+				t.Helper()
+				if !strings.Contains(key, text) {
+					t.Errorf("%s key: fact %q is not stated", sc.name, text)
+				}
+			}
+			get := demoAPI(t, "-scenario", sc.name)
+			assertDemoMarker(t, get, sc.name)
+
+			// Q1: the same 3 strangles and strikes as the profit demo, sold, at the scenario's size.
+			var positions struct {
+				Strangles []struct {
+					Slot struct {
+						DTE int `json:"dte"`
+					} `json:"slot"`
+					Legs []struct {
+						OptionType    string  `json:"option_type"`
+						Side          string  `json:"side"`
+						Strike        float64 `json:"strike"`
+						DTE           float64 `json:"dte"`
+						Qty           float64 `json:"qty"`
+						EntryPrice    float64 `json:"entry_price"`
+						Mark          float64 `json:"mark"`
+						UnrealisedPnL float64 `json:"unrealised_pnl"`
+						StopLossMark  float64 `json:"stop_loss_mark"`
+					} `json:"legs"`
+				} `json:"strangles"`
+			}
+			get("/api/positions", &positions)
+			strikes := map[int][2]float64{25: {110000, 90000}, 45: {114000, 87000}, 60: {116000, 84000}}
+			if len(positions.Strangles) != 3 {
+				t.Fatalf("%s: %d strangles, the key says 3", sc.name, len(positions.Strangles))
+			}
+			nearStop := false
+			for _, st := range positions.Strangles {
+				want := strikes[st.Slot.DTE]
+				for _, l := range st.Legs {
+					wantStrike := want[0]
+					if l.OptionType == "put" {
+						wantStrike = want[1]
+					}
+					if l.Side != "sell" || math.Abs(l.Qty-sc.qty) > 1e-9 || l.Strike != wantStrike {
+						t.Errorf("%s: DTE %d %s side %s qty %v strike %v, the key says sold %v BTC at %v",
+							sc.name, st.Slot.DTE, l.OptionType, l.Side, l.Qty, l.Strike, sc.qty, wantStrike)
+					}
+					// Drawdown: the 25-day put's mark is held at 2.6× the price it was sold for, its stop at 3×.
+					if l.OptionType == "put" && st.Slot.DTE == 25 && l.StopLossMark > 0 {
+						ratio := l.Mark / l.EntryPrice
+						t.Logf("%s: 25-day put mark %.5f entry %.5f (%.2f×) stop %.5f open P&L %.5f BTC", sc.name, l.Mark, l.EntryPrice, ratio, l.StopLossMark, l.UnrealisedPnL)
+						nearStop = l.UnrealisedPnL < 0 && l.Mark < l.StopLossMark && l.Mark >= 0.8*l.StopLossMark &&
+							math.Abs(ratio-2.6) < 0.05 && math.Abs(l.StopLossMark/l.EntryPrice-3) < 1e-6
+					}
+				}
+			}
+			fact(fmt.Sprintf("**%.1f BTC**", sc.qty))
+			fact(fmt.Sprintf("**%.2f BTC sold**", 6*sc.qty))
+
+			var summary struct {
+				Income struct {
+					Months []struct {
+						Month        string  `json:"month"`
+						RealisedCoin float64 `json:"realised_coin"`
+						RealisedUSD  float64 `json:"realised_usd"`
+						Closes       int     `json:"closes"`
+					} `json:"months"`
+					ThisMonth struct {
+						RealisedCoin float64 `json:"realised_coin"`
+					} `json:"this_month"`
+				} `json:"income"`
+				WorstCase struct {
+					Available bool    `json:"available"`
+					MovePct   float64 `json:"move_pct"`
+					Down      struct {
+						LossCoin float64 `json:"loss_coin"`
+					} `json:"down"`
+					Up struct {
+						LossCoin float64 `json:"loss_coin"`
+					} `json:"up"`
+				} `json:"worst_case"`
+			}
+			get("/api/summary", &summary)
+
+			// Q2: one losing month, two months before the current one; every other full past month positive.
+			months := summary.Income.Months
+			if len(months) != 6 {
+				t.Fatalf("%s: %d months, the key says six", sc.name, len(months))
+			}
+			now := time.Now().UTC()
+			losingMonth := time.Date(now.Year(), now.Month()-2, 1, 0, 0, 0, 0, time.UTC).Format("2006-01")
+			for _, m := range months[:len(months)-1] {
+				t.Logf("%s: month %s %.5f BTC %.0f USD, %d closes", sc.name, m.Month, m.RealisedCoin, m.RealisedUSD, m.Closes)
+				switch {
+				case m.Closes == 0:
+					t.Errorf("%s: month %s has no closes, the key says every past month has some", sc.name, m.Month)
+				case m.Month == losingMonth && (m.RealisedCoin >= 0 || m.RealisedUSD >= 0):
+					t.Errorf("%s: month %s %v BTC %v USD, the key says it is the losing month (two before the current one)", sc.name, m.Month, m.RealisedCoin, m.RealisedUSD)
+				case m.Month != losingMonth && (m.RealisedCoin <= 0 || m.RealisedUSD <= 0):
+					t.Errorf("%s: month %s %v BTC %v USD, the key says every other full past month is positive", sc.name, m.Month, m.RealisedCoin, m.RealisedUSD)
+				}
+			}
+			fact("**the month two before the current one**")
+			fact("Every other full past month is **positive**")
+			fact("only when the participant points to a loss figure **with its minus sign**")
+
+			// Q3: a modelled loss each way; drawdown's is larger than any month's income.
+			wc := summary.WorstCase
+			worst := max(wc.Down.LossCoin, wc.Up.LossCoin)
+			t.Logf("%s: worst case %.5f BTC (move %.2f %%), this month %.5f BTC", sc.name, worst, wc.MovePct, summary.Income.ThisMonth.RealisedCoin)
+			if !wc.Available || wc.Down.LossCoin <= 0 || wc.Up.LossCoin <= 0 {
+				t.Errorf("%s: worst case %+v, the key says a loss each way", sc.name, wc)
+			}
+			fact("a worst case given as a gain is **partial**")
+
+			if sc.name == "drawdown" {
+				if !nearStop {
+					t.Errorf("drawdown: the 25-day put is not an open loss at 2.6× its sale price within 20 %% of its 3× stop, as the key says")
+				}
+				fact("**2.6×**")
+				fact("**3×**")
+				for _, m := range months {
+					if worst <= m.RealisedCoin {
+						t.Errorf("drawdown: worst case %.5f BTC is not larger than %s's income %.5f BTC, as the key says", worst, m.Month, m.RealisedCoin)
+					}
+				}
+				fact("**larger than any month's income**")
+			}
+		})
+	}
+}
+
 // swapWord replaces the first "the <a>" with "the <b>" (call ↔ put in a
 // plain sentence).
 func swapWord(s, a, b string) string {
