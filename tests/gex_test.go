@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"testing"
 	"time"
 
@@ -169,10 +171,11 @@ func TestFindGammaFlip_AllPositive_NoFlip(t *testing.T) {
 }
 
 func TestFindGammaFlip_ZeroAtStrike(t *testing.T) {
-	// GEX is exactly zero at strike 50000 → flip IS 50000 (mirrors Python's curr_g==0 branch)
+	// GEX is exactly zero at strike 50000, which has open interest → flip IS
+	// 50000 (Python's curr_g==0 branch; an empty strike is not, #660)
 	strikes := []gex.WeightedStrike{
 		{Strike: 45000, WeightedGEX: -500},
-		{Strike: 50000, WeightedGEX: 0},
+		{Strike: 50000, WeightedCallOI: 10, WeightedPutOI: 10, WeightedGEX: 0},
 		{Strike: 55000, WeightedGEX: 800},
 	}
 	flip, found := gex.FindGammaFlip(strikes, 50000)
@@ -626,5 +629,122 @@ func TestConsolidateProfiles_WeightsApplied(t *testing.T) {
 	expected := 1000.0*0.5 + (-500.0)*0.25
 	if math.Abs(s.WeightedGEX-expected) > 0.01 {
 		t.Errorf("expected weighted GEX ~%.2f, got %.4f", expected, s.WeightedGEX)
+	}
+}
+
+// ── Empty strikes are not gamma flips (#660) ────────────────────────────────
+
+// emptyStrikeProfile is the shape of BTC on 2026-11-05: negative from 65,000
+// to 77,000 with an empty 67,000 strike (no open interest in any expiry, so
+// its GEX is exactly 0), positive from 77,500. The real flip is between
+// 77,000 and 77,500.
+func emptyStrikeProfile() []gex.WeightedStrike {
+	return []gex.WeightedStrike{
+		{Strike: 65000, WeightedPutOI: 150, WeightedGEX: -2.7e6},
+		{Strike: 67000},
+		{Strike: 68000, WeightedPutOI: 579, WeightedGEX: -5.7e7},
+		{Strike: 74000, WeightedCallOI: 20, WeightedPutOI: 1937, WeightedGEX: -9.3e8},
+		{Strike: 77000, WeightedCallOI: 246, WeightedPutOI: 279, WeightedGEX: -8.108e7},
+		{Strike: 77500, WeightedCallOI: 65, WeightedPutOI: 45, WeightedGEX: 1.972e7},
+		{Strike: 80000, WeightedCallOI: 1339, WeightedPutOI: 255, WeightedGEX: 1.579e8},
+	}
+}
+
+func TestFirstGammaFlip_EmptyStrikeIsNotAFlip(t *testing.T) {
+	flip, found := gex.FirstGammaFlip(emptyStrikeProfile())
+	// 77,000 + 500 × 8.108e7 / (8.108e7 + 1.972e7) ≈ 77,402
+	if !found || flip < 77000 || flip > 77500 {
+		t.Fatalf("flip = %.0f (found %v), want the real crossing between 77,000 and 77,500 — not the empty 67,000 strike", flip, found)
+	}
+}
+
+func TestFindGammaFlip_EmptyStrikeNearSpotIsNotAFlip(t *testing.T) {
+	// The nearest-flip method: an empty strike right at spot must not win
+	// over the real crossing a little further away.
+	strikes := []gex.WeightedStrike{
+		{Strike: 74000, WeightedPutOI: 900, WeightedGEX: -9e8},
+		{Strike: 75000},
+		{Strike: 77000, WeightedPutOI: 280, WeightedGEX: -8e7},
+		{Strike: 77500, WeightedCallOI: 65, WeightedGEX: 2e7},
+	}
+	flip, found := gex.FindGammaFlip(strikes, 75000)
+	if !found || flip < 77000 || flip > 77500 {
+		t.Fatalf("flip = %.0f (found %v), want between 77,000 and 77,500", flip, found)
+	}
+}
+
+func TestFirstGammaFlip_OnlyEmptyStrikesBetweenSameSignIsNoFlip(t *testing.T) {
+	strikes := []gex.WeightedStrike{
+		{Strike: 60000, WeightedPutOI: 10, WeightedGEX: -1e6},
+		{Strike: 61000},
+		{Strike: 62000},
+		{Strike: 63000, WeightedPutOI: 10, WeightedGEX: -2e6},
+	}
+	if flip, found := gex.FirstGammaFlip(strikes); found {
+		t.Errorf("all negative with empty strikes between: no flip, got %.0f", flip)
+	}
+}
+
+func TestFirstGammaFlip_InterpolatesAcrossAnEmptyStrike(t *testing.T) {
+	// The empty strike sits between the two strikes that bracket the sign
+	// change: the crossing is interpolated between them, skipping it.
+	strikes := []gex.WeightedStrike{
+		{Strike: 50000, WeightedPutOI: 10, WeightedGEX: -200},
+		{Strike: 52500},
+		{Strike: 55000, WeightedCallOI: 10, WeightedGEX: 800},
+	}
+	flip, found := gex.FirstGammaFlip(strikes)
+	if !found || math.Abs(flip-51000) > 1 {
+		t.Errorf("flip = %.2f (found %v), want 51,000 (interpolated 50,000 → 55,000)", flip, found)
+	}
+}
+
+// Scenario: an empty strike is not a gamma flip — on the real book summary
+// of 2026-11-05 the script method's flip is the crossing between 77,000 and
+// 77,500, the regime negative.
+func TestGEXBuild_EmptyStrikeOnRealDataIsNotTheFlip(t *testing.T) {
+	data, err := os.ReadFile("testdata/gex_mainnet_btc_empty_strike.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		CapturedAtMS int64            `json:"captured_at_ms"`
+		Summaries    []gex.SummaryRow `json:"summaries"`
+	}
+	if err := json.Unmarshal(data, &fx); err != nil {
+		t.Fatal(err)
+	}
+	snap, _, err := gex.Build(fx.Summaries, time.UnixMilli(fx.CapturedAtMS), gex.Params{Underlying: "BTC", NExpiries: 5, StrikeRangePct: 0.15, Method: gex.MethodScript})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snap.GammaFlipFound || snap.GammaFlip < 77000 || snap.GammaFlip > 77500 {
+		t.Errorf("flip = %.0f, want between 77,000 and 77,500 (the script's empty-strike crossing gave 67,000)", snap.GammaFlip)
+	}
+	if snap.Regime != "NEGATIVE/ACCELERATION" {
+		t.Errorf("regime = %s, want NEGATIVE/ACCELERATION", snap.Regime)
+	}
+	assertFlipNotOnEmptyStrike(t, snap)
+}
+
+// Every built snapshot: a flip that sits exactly on a strike is a strike
+// with open interest (the only way to land exactly on one is a real zero).
+func TestGEXBuild_FlipNeverOnAnEmptyStrike(t *testing.T) {
+	fx := loadGEXFixture(t)
+	for _, m := range []string{gex.MethodScript, gex.MethodNearestFlip} {
+		snap, _, err := gex.Build(fx.Summaries, time.UnixMilli(fx.CapturedAtMS), gex.Params{Underlying: "BTC", NExpiries: 5, StrikeRangePct: 0.15, Method: m})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertFlipNotOnEmptyStrike(t, snap)
+	}
+}
+
+func assertFlipNotOnEmptyStrike(t *testing.T, snap gex.Snapshot) {
+	t.Helper()
+	for _, s := range snap.Strikes {
+		if s.Strike == snap.GammaFlip && s.WeightedCallOI == 0 && s.WeightedPutOI == 0 {
+			t.Errorf("flip %.0f is a strike with no open interest", snap.GammaFlip)
+		}
 	}
 }
