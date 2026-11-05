@@ -221,7 +221,19 @@ func ConsolidateProfiles(profiles []ExpiryProfile) []WeightedStrike {
 // gammaCrossings returns every strike level where weighted_signed_gex
 // changes sign (or is exactly zero), lowest first, interpolated linearly
 // between the two bracketing strikes.
-func gammaCrossings(strikes []WeightedStrike) []float64 {
+//
+// A strike with no open interest is skipped (#660): its GEX is exactly zero
+// because it is empty, not because the exposure changes sign there. The
+// script counts it as a crossing, so an empty strike far below spot became
+// the lowest crossing (BTC 2026-11-05: flip 67,000 instead of ~77,400) and
+// the bias shed every call.
+func gammaCrossings(all []WeightedStrike) []float64 {
+	strikes := make([]WeightedStrike, 0, len(all))
+	for _, s := range all {
+		if !emptyStrike(s) {
+			strikes = append(strikes, s)
+		}
+	}
 	var out []float64
 	for i := 1; i < len(strikes); i++ {
 		prev, curr := strikes[i-1], strikes[i]
@@ -238,8 +250,14 @@ func gammaCrossings(strikes []WeightedStrike) []float64 {
 	return out
 }
 
+// emptyStrike reports a strike with no weighted open interest and no GEX.
+func emptyStrike(s WeightedStrike) bool {
+	return s.WeightedGEX == 0 && s.WeightedCallOI == 0 && s.WeightedPutOI == 0
+}
+
 // FirstGammaFlip returns the lowest crossing, scanning strikes upward —
-// exactly what GestaoCarteira's find_gamma_flip returns.
+// what GestaoCarteira's find_gamma_flip returns, except that an empty
+// strike is not a crossing (#660).
 func FirstGammaFlip(strikes []WeightedStrike) (float64, bool) {
 	c := gammaCrossings(strikes)
 	if len(c) == 0 {
