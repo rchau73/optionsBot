@@ -94,6 +94,7 @@ type Report struct {
 	Live      Live           `json:"live"`
 	Bridge    Bridge         `json:"bridge"`
 	Recon     Reconciliation `json:"reconciliation"`
+	Attr      Attribution    `json:"attribution"`
 	Replay    Replay         `json:"replay"`
 	Gap       Gap            `json:"gap"`
 	Stress    Stress         `json:"stress"`
@@ -236,6 +237,7 @@ func Build(in Inputs) Report {
 	r.Live = buildLive(in)
 	r.Bridge = BuildBridge(in.Points, w.From, w.To, in.History)
 	r.Recon = BuildReconciliation(in.Points, in.Trades, w, in.Account, in.History, in.Journal)
+	r.Attr = buildAttribution(in, r.Live.Realised)
 	r.Hold = buildHold(in, r.Live.Perf)
 	r.Score = buildScoreboard(in, r.Hold)
 	r.Util = Util{Source: in.History, Stats: history.Utilisation(in.Points, w.From, w.To)}

@@ -69,17 +69,17 @@ func WriteTrackMarkdown(w io.Writer, t TrackRecord) error {
 
 	p("## Weeks\n\nOne row per ISO week of the span, read from its weekly report; %% of the margin balance at that week's start. ")
 	p("\"%s\": no weekly report for the week (not recomputed). \"%s\": the report predates the field. \"unknown\": the report has no value (e.g. equity unknown).\n\n", NotReported, NotMeasured)
-	p("| Week | Net %s | Net %% | Net USD %% | Hold %% | Excess pp | Max DD %% | RoM live %% | RoM replay %% | Gap %s | Gap %% | Utilisation %% | Days missing |\n", u, u)
-	p("|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	p("| Week | Net %s | Net %% | Net USD %% | Hold %% | Excess pp | Max DD %% | RoM live %% | RoM replay %% | Gap %s | Gap %% | Utilisation %% | Stops %% of buy-backs | Days missing |\n", u, u)
+	p("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range t.Weeks {
 		if !r.Reported {
-			p("| %s | %s | | | | | | | | | | | |\n", r.Week, NotReported)
+			p("| %s | %s | | | | | | | | | | | | |\n", r.Week, NotReported)
 			continue
 		}
-		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.Week,
+		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.Week,
 			coinCell(r.Net), cell(r, r.NetPct, ""), cell(r, r.NetUSDPct, "hold"), cell(r, r.HoldPct, "hold"), cell(r, r.ExcessPP, "hold"),
 			cell(r, r.MaxDDPct, ""), cell(r, r.ROMLivePct, "rom_live"), cell(r, r.ROMReplPct, "rom_replay"),
-			coinCellOr(r, r.Gap, "gap"), cell(r, r.GapPct, "gap"), unsignedCell(r, r.UtilPct, "utilisation"), daysCell(r.MissingDays))
+			coinCellOr(r, r.Gap, "gap"), cell(r, r.GapPct, "gap"), unsignedCell(r, r.UtilPct, "utilisation"), unsignedCell(r, r.StopShare, "stop_share"), daysCell(r.MissingDays))
 	}
 	p("\n")
 	writeCounts(p, t.Counts, "net in coin")
@@ -110,17 +110,17 @@ func WriteTrendMarkdown(w io.Writer, tr Trend) error {
 		p("**Weeks with no report:** %s (listed, never filled in).\n\n", strings.Join(missing, ", "))
 	}
 	p("\"%s\": the report predates the field. \"unknown\": the report has no value (e.g. equity unknown).\n\n", NotMeasured)
-	p("| Week | Net %% | Net USD %% | RoM live %% | RoM replay %% | Gap (replay − live) %% | Hold %% | Excess pp | Max DD %% | Utilisation %% | Days missing |\n")
-	p("|---|---|---|---|---|---|---|---|---|---|---|\n")
+	p("| Week | Net %% | Net USD %% | RoM live %% | RoM replay %% | Gap (replay − live) %% | Hold %% | Excess pp | Max DD %% | Utilisation %% | Stops %% of buy-backs | Days missing |\n")
+	p("|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range tr.Weeks {
 		if !r.Reported {
-			p("| %s | %s | | | | | | | | | |\n", r.Week, NotReported)
+			p("| %s | %s | | | | | | | | | | |\n", r.Week, NotReported)
 			continue
 		}
-		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.Week,
+		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.Week,
 			cell(r, r.NetPct, ""), cell(r, r.NetUSDPct, "hold"), cell(r, r.ROMLivePct, "rom_live"), cell(r, r.ROMReplPct, "rom_replay"),
 			cell(r, r.GapPct, "gap"), cell(r, r.HoldPct, "hold"), cell(r, r.ExcessPP, "hold"), cell(r, r.MaxDDPct, ""),
-			unsignedCell(r, r.UtilPct, "utilisation"), daysCell(r.MissingDays))
+			unsignedCell(r, r.UtilPct, "utilisation"), unsignedCell(r, r.StopShare, "stop_share"), daysCell(r.MissingDays))
 	}
 	p("\n")
 	writeCounts(p, tr.Counts, "net %")

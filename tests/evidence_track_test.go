@@ -343,8 +343,8 @@ func TestTrend_FieldAbsentInOlderReport(t *testing.T) {
 			line = l
 		}
 	}
-	// RoM live and replay not measured; the gap is unknown (no replay ran), the rest shown.
-	if strings.Count(line, evidence.NotMeasured) != 2 || strings.Count(line, "unknown") != 1 || !strings.Contains(line, fmt.Sprintf("%+.2f", *old.NetPct)) {
+	// RoM live and replay not measured; the gap (no replay ran) and the stop share (no close) are unknown, the rest shown.
+	if strings.Count(line, evidence.NotMeasured) != 2 || strings.Count(line, "unknown") != 2 || !strings.Contains(line, fmt.Sprintf("%+.2f", *old.NetPct)) {
 		t.Fatalf("W41 row %q", line)
 	}
 }

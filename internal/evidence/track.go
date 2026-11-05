@@ -51,7 +51,8 @@ type WeekRow struct {
 	Gap         *float64 `json:"gap,omitempty"` // replay − live, coin
 	GapPct      *float64 `json:"gap_pct"`       // of equity
 	UtilPct     *float64 `json:"utilisation_pct"`
-	MissingDays []string `json:"missing_days"` // UTC days of the week with no P&L history point
+	StopShare   *float64 `json:"stop_share_pct"` // % of the week's buy-back cost from stop-losses (Attribution)
+	MissingDays []string `json:"missing_days"`   // UTC days of the week with no P&L history point
 	NotMeasured []string `json:"not_measured,omitempty"`
 }
 
@@ -253,6 +254,11 @@ func rowFor(monday time.Time, reports map[string]Report) WeekRow {
 		row.NotMeasured = append(row.NotMeasured, "utilisation")
 	} else if r.Util.Stats.MeanPct != nil {
 		row.UtilPct = ptr(*r.Util.Stats.MeanPct)
+	}
+	if r.Attr.Label == "" {
+		row.NotMeasured = append(row.NotMeasured, "stop_share")
+	} else if r.Attr.StopSharePct != nil {
+		row.StopShare = ptr(*r.Attr.StopSharePct)
 	}
 	if r.Missing.HistoryDays != nil {
 		row.MissingDays = r.Missing.HistoryDays
