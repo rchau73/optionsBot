@@ -1,0 +1,2 @@
+{"time":"2026-11-04T03:00:00.000Z","action":"signed_in","username":"alice","prev":"","line_hash":"20f24759303b88b1d54640812455de698c2f3e8c65de0b0ced8242ef7f98bc18"}
+{"time":"2026-11-04T03:10:00.000Z","action":"user_changed","username":"alice","detail":"rôle → manager","prev":"a0276e5c88d319e78f1b4644e74a3c1128c5f3764109a86456f7250e9232f0bf","line_hash":"8c410731e56d6914574340bf653480018fb288a87ad82702ef2c188747766d4a"}

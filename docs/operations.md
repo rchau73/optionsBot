@@ -350,9 +350,11 @@ A failed deploy prunes nothing, and the warning never fails a deploy.
 
 **Backup** (#328).
 The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them).
-Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/`: the request queue (`requests.jsonl`, `requests_status.jsonl`, #409), the assistant's review log, `assistant.jsonl` (#438), and the audit trail, `audit.jsonl` with every archive `audit.<UTC time>.jsonl` (#619, copied as they are).
-The script reads the clone's `data/monitor/`; the deployed monitor keeps these files in its `monitor-auth` Docker volume, so a file there that is not also in the clone's folder is not in the backup.
-Each line of that log must parse (`go run ./cmd/backupcheck -lines <copy>`), so a damaged copy fails the backup.
+Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/` (#650), read from where the deployed monitor keeps them, its `monitor-auth` Docker volume (`/app/data/monitor`), through the running container (`scripts/envctl.sh <env> cp monitor:/app/data/monitor/. <temp>`, read-only).
+When the monitor is not running the script reads the clone's `data/monitor/` instead and the log names which source it used (`monitor files from the monitor-auth volume` or `monitor not running, monitor files from the clone's …`); that alone does not fail the backup.
+Only these files are copied, as they are: the users (`auth.db`: accounts, sign-in lockouts, survey answers; passwords and tokens only as hashes), the analytics events (`events.jsonl`), the request queue (`requests.jsonl`, `requests_status.jsonl`, #409), the assistant's review log, `assistant.jsonl` (#438), and the audit trail, `audit.jsonl` with every archive `audit.<UTC time>.jsonl` (#619).
+Any other file of the volume stays there.
+Every copied `.jsonl` must parse (`go run ./cmd/backupcheck -lines <copy>`) and the audit trail's hash chain must hold on the copy (`go run ./cmd/backupcheck -audit <copy folder>`, the Audit page's "chain intact" check), so a damaged or altered copy fails the backup.
 No `.env` or secret is copied.
 Each copy passes a restore check, `go run ./cmd/backupcheck`: the journal must replay with `orders.ReplayFile` and hold no fewer events than the night before (each copy keeps its result in `check.json`).
 The newest 14 days are kept.
@@ -374,6 +376,22 @@ scripts/envctl.sh stable start bot-btc
 ```
 
 At startup the bot replays the restored journal (realised P&L, trades, stop and shed holds) and reconciles positions with the exchange as always; what happened between the backup and the loss is not in the journal, so check the monitor's positions against Deribit.
+
+**Restore the monitor's files** (#650) into its volume (the monitor must be stopped; what the volume holds is moved to a `before-restore/<UTC time>/` folder in it first, never overwritten):
+
+```bash
+b=~/dev/go/optionsBot-env/history/backups/2026-10-24/stable/monitor   # the newest good one
+go run ./cmd/backupcheck -audit "$b"                                  # the copied audit chain still holds
+scripts/envctl.sh stable stop monitor
+# A one-off container on the same volume moves the current files aside.
+scripts/envctl.sh stable run --rm --no-deps --user root --entrypoint sh monitor -c 'cd /app/data/monitor && d="before-restore/$(date -u +%Y%m%dT%H%M%SZ)" && mkdir -p "$d" && for f in auth.db events.jsonl assistant.jsonl requests.jsonl requests_status.jsonl audit*.jsonl; do [ -f "$f" ] && mv "$f" "$d/"; done; true'
+scripts/envctl.sh stable cp "$b/." monitor:/app/data/monitor/
+scripts/envctl.sh stable run --rm --no-deps --user root --entrypoint sh monitor -c 'chown -R node:node /app/data/monitor && chmod 600 /app/data/monitor/auth.db /app/data/monitor/*.jsonl'
+scripts/envctl.sh stable start monitor
+```
+
+The monitor goes on from the restored files: the audit trail's next line links to the restored last line, so the Audit page shows the chain intact.
+Sign-ins, audit lines and requests made after the backup are only in `before-restore/`; nothing there is deleted.
 
 ## Kill switch
 

@@ -1,0 +1,2 @@
+{"time":"2026-11-04T03:20:00.000Z","action":"signed_out","username":"alice","prev":"541a1a44ed309ff1d591f77db21652c7f0aa1d6716dc6da598236d584fcede85","line_hash":"75a339096d6ff0224c5acf2dbd404c1e6e4f71cb36be55b79dee88aab9cf7139"}
+{"time":"2026-11-05T01:00:00.000Z","action":"signed_in","username":"bob","prev":"6f86860ed7bbb57d8a8b5951c5a198c80d78d8d2f62f1324e959f9fefb8b1fcd","line_hash":"70d0cb8e023a6fd93d629c1679ae4c1f5ae4977340e04106934a226d2794020c"}

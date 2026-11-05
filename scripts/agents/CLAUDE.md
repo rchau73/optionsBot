@@ -131,8 +131,10 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - ledger agent `dora`.
 - Nightly backup (#328, docs/agents/backup.md "Nightly backup"):
   - `backup_data.sh` (from the tick, first tick after 00:00 UTC, `data/agents/backup/<date>.done`, retried once) copies each env × bot's `orders.log`, P&L/regime/direction histories and `data/archive/`
-    and each env's monitor request queue (`data/monitor/requests*.jsonl` → `<date>/<env>/monitor/`, #409) (named files only, never `.env`) to `<envs>/history/backups/<date>/<env>/<bot>/`, keeps 14 days,
+    (named files only, never `.env`) to `<envs>/history/backups/<date>/<env>/<bot>/`, keeps 14 days,
     and checks each copy with `cmd/backupcheck` (`internal/backup.Check`: `orders.ReplayFile` decodes it, no fewer events than the previous good copy's `check.json`);
+  - each env's monitor files → `<date>/<env>/monitor/` (#650): an allow-list (`MONITOR_FILES`: users `auth.db`, events, assistant log, request queue, audit trail and archives) read from the running monitor's volume (`envctl.sh … cp`, read-only),
+    else from the clone's `data/monitor/` (logged); every `.jsonl` must parse (`-lines`) and the audit chain hold (`-audit`, `CheckAuditChain` = the Audit page's `verifyChain`);
   - a failure notifies, keeps `<date>.failed` and prunes nothing; ledger agent `backup`.
 - Assistant requests (#410, docs/agents/requests.md "Assistant requests"):
   - `requests.sh` (each tick; exits at once unless a request in some env's `data/monitor/requests.jsonl` has no status line, or a filed one is open
