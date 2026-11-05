@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,6 +124,123 @@ func TestBackupCheck_ResetHistoryIsNotALoss(t *testing.T) {
 	if _, err := backup.Check(dir, prev, backupNow); err != nil {
 		t.Fatalf("Check after a reset: %v", err)
 	}
+}
+
+// copyAuditFixture copies tests/testdata/audit_chain (an archive with two
+// chained lines, audit.jsonl with two more: written as the monitor writes
+// them, and verified by the Audit page's check in frontend
+// __tests__/audit-chain.test.js) into a temporary folder.
+func copyAuditFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"audit.20261104T031433123Z.jsonl", "audit.jsonl"} {
+		b, err := os.ReadFile(filepath.Join("testdata", "audit_chain", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeBackupFile(t, filepath.Join(dir, name), string(b))
+	}
+	return dir
+}
+
+// sealAuditLine is frontend/lib/auth/auditchain.js sealLine for an entry
+// given as its JSON fields without braces.
+func sealAuditLine(fields, prev string) string {
+	body := "{" + fields + `,"prev":"` + prev + `"}`
+	sum := sha256.Sum256([]byte(body))
+	return body[:len(body)-1] + `,"line_hash":"` + hex.EncodeToString(sum[:]) + `"}`
+}
+
+func sha256Text(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// #650 Scenario: rotated audit archives are included — the chain check on the
+// copy passes across the archive and audit.jsonl; and a damaged audit chain
+// fails the backup, naming the file, the line and the Audit page's reason.
+func TestBackupCheck_AuditChain(t *testing.T) {
+	const archive = "audit.20261104T031433123Z.jsonl"
+	legacy := `{"time":"2026-10-01T00:00:00.000Z","action":"signed_in"}`
+	first := sealAuditLine(`"time":"2026-11-01T00:00:00.000Z","action":"signed_in"`, sha256Text(legacy))
+	cases := []struct {
+		name   string
+		change func(t *testing.T, dir string) // nil = the fixture as it is
+		want   backup.ChainResult
+		broken string // the error's text, "" = intact
+	}{
+		{name: "intact across the archive", want: backup.ChainResult{Checked: 4}},
+		{name: "no trail at all", change: func(t *testing.T, dir string) {
+			os.Remove(filepath.Join(dir, archive))
+			os.Remove(filepath.Join(dir, backup.AuditFile))
+		}},
+		{name: "a line edited", change: func(t *testing.T, dir string) {
+			editAudit(t, filepath.Join(dir, backup.AuditFile), `"username":"bob"`, `"username":"eve"`)
+		}, broken: "audit.jsonl line 2: edited"},
+		{name: "a line removed", change: func(t *testing.T, dir string) {
+			p := filepath.Join(dir, archive)
+			b, _ := os.ReadFile(p)
+			writeBackupFile(t, p, strings.SplitAfter(string(b), "\n")[0])
+		}, broken: "audit.jsonl line 1: link"},
+		{name: "the archive is missing", change: func(t *testing.T, dir string) {
+			os.Remove(filepath.Join(dir, archive))
+		}, broken: "audit.jsonl line 1: link"},
+		{name: "a damaged line", change: func(t *testing.T, dir string) {
+			editAudit(t, filepath.Join(dir, archive), "\n{", "\nnot json\n{")
+		}, broken: archive + " line 2: damaged"},
+		{name: "an unchained line after the chain started", change: func(t *testing.T, dir string) {
+			appendAudit(t, filepath.Join(dir, backup.AuditFile), `{"action":"signed_in"}`+"\n")
+		}, broken: "audit.jsonl line 3: unchained"},
+		{name: "a torn last line is skipped", change: func(t *testing.T, dir string) {
+			appendAudit(t, filepath.Join(dir, backup.AuditFile), `{"time":"2026-11-05T02:00`)
+		}, want: backup.ChainResult{Checked: 4, Skipped: 1}},
+		{name: "a torn line inside an archive is damage", change: func(t *testing.T, dir string) {
+			appendAudit(t, filepath.Join(dir, archive), `{"time":"2026-11-05T02:00`)
+		}, broken: archive + " line 3: damaged"},
+		{name: "legacy lines before the chain", change: func(t *testing.T, dir string) {
+			os.Remove(filepath.Join(dir, archive))
+			writeBackupFile(t, filepath.Join(dir, backup.AuditFile), legacy+"\n\n"+first+"\n")
+		}, want: backup.ChainResult{Checked: 1, Legacy: 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := copyAuditFixture(t)
+			if tc.change != nil {
+				tc.change(t, dir)
+			}
+			got, err := backup.CheckAuditChain(dir)
+			if tc.broken != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.broken) {
+					t.Fatalf("CheckAuditChain = %v, want an error naming %q", err, tc.broken)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CheckAuditChain: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("CheckAuditChain = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func editAudit(t *testing.T, path, old, repl string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), old) {
+		t.Fatalf("%s has no %q (%v)", path, old, err)
+	}
+	writeBackupFile(t, path, strings.Replace(string(b), old, repl, 1))
+}
+
+func appendAudit(t *testing.T, path, text string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBackupFile(t, path, string(b)+text)
 }
 
 // No previous check (the first night, or a previous copy without check.json):

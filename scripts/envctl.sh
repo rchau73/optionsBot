@@ -6,7 +6,7 @@
 #   scripts/envctl.sh <stable|mvp> check     is it set up, and does it share nothing
 #                                           (Deribit account, monitor port) with the other?
 #   scripts/envctl.sh <stable|mvp> up        build and start (after check)
-#   scripts/envctl.sh <stable|mvp> down|ps|logs|restart|stop|start|exec|run …   (docker compose, this stack)
+#   scripts/envctl.sh <stable|mvp> down|ps|logs|restart|stop|start|exec|run|cp …   (docker compose, this stack)
 #   scripts/envctl.sh <stable|mvp> status    version, containers, monitor URL
 #
 # stable moves only with scripts/promote.sh; mvp moves with every merge
@@ -42,7 +42,7 @@ case "$cmd" in
     why="$(env_check "$name")" || { echo "refusing to start $name: $why" >&2; exit 1; }
     env_compose "$name" up -d --build "$@"
     echo "$name $(env_version "$name") → $(env_monitor_url "$name")" ;;
-  down|ps|logs|restart|stop|start|exec|run|config)
+  down|ps|logs|restart|stop|start|exec|run|config|cp)
     # Any other docker compose command, on this environment's stack only.
     env_compose "$name" "$cmd" "$@" ;;
   status)
