@@ -144,6 +144,30 @@ func TestFuturesHedge_ShortDeltaBuysThePerpetual(t *testing.T) {
 	}
 }
 
+// Scenario: a rally hedges too. The hedge follows the book's delta, not the
+// GEX regime: a book inside the band whose call delta then rises (spot up,
+// no shed) is bought back to zero with the perpetual.
+func TestFuturesHedge_RallyBuysThePerpetual(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.19, true) // book delta +0.03, inside the band
+	f.startRun()
+	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
+	time.Sleep(100 * time.Millisecond)
+	if n := len(f.exch.perpOrders()); n != 0 {
+		t.Fatalf("inside the band before the rally: %d perpetual orders, want 0", n)
+	}
+	f.market.setDelta(f.call, 0.28) // under the 0.30 delta exit: the leg stays
+	eventually(t, 2*time.Second, "perpetual bought", func() bool { return len(f.exch.perpOrders()) >= 1 })
+	// coin delta −(0.28 − 0.02) − (−0.15 − 0.02) = −0.09 BTC → buy 9,000 USD
+	if o := f.exch.perpOrders()[0]; o.Direction != orders.DirectionBuy || o.Qty != 9000 || o.LimitPrice != 100010 {
+		t.Fatalf("hedge order %+v, want buy 9,000 USD at the ask 100,010", o)
+	}
+	for _, b := range f.exch.buys() {
+		if b.Instrument == f.call {
+			t.Errorf("the rally hedge keeps the call, got %+v", b)
+		}
+	}
+}
+
 // Scenario: inside the band nothing trades.
 func TestFuturesHedge_InsideTheBandNothingTrades(t *testing.T) {
 	f, _ := newHedgeFixture(t, 0.16, -0.19, true) // book delta +0.03 < 0.0579
