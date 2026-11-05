@@ -19,4 +19,6 @@ Notable files:
   (the one-off "nothing lost" check was retired after it merged).
 - `tips_coverage_test.go` (#492): every `config.Tunables()` key has a tip in `docs/product/education/tips.json` and every glossary term has `short` + `risk_income`;
   no sentence over 25 words, no jargon word without a glossary entry, no promised return; a new tunable needs its tip in the same PR.
+- `personal_data_inventory_test.go` (#647): `frontend/docs/personal-data.md` names every column of `auth.db` (from `store.js`) with a purpose and a retention, no column that is gone, every audit action of `lib/audit.js`;
+  a new column or audit action needs its row in the same PR.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
