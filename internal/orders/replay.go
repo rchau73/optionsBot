@@ -40,6 +40,7 @@ type Trade struct {
 	Theta   float64 `json:"theta"`
 	Vega    float64 `json:"vega"`
 	Premium float64 `json:"premium"`
+	OpenFee float64 `json:"open_fee,omitempty"` // opens only, coin: what the fill was charged
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
 	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
@@ -70,7 +71,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 	}
 	switch rec.Event {
 	case EventFilled:
-		t.Kind, t.Reason = "open", rec.TriggerReason
+		t.Kind, t.Reason, t.OpenFee = "open", rec.TriggerReason, rec.Fee
 	case EventClosed:
 		t.Kind, t.Reason = "close", rec.CloseReason
 		if t.Reason == "" {
