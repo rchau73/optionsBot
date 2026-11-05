@@ -99,7 +99,6 @@ type replayOpts struct {
 }
 
 func runReplay(o replayOpts) error {
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil))) // the bot's rules log; the replay prints
 	cfg, err := config.Load(o.configPath)
 	if err != nil {
 		return err
@@ -149,6 +148,8 @@ func runReplay(o replayOpts) error {
 			return err
 		}
 	}
+	// After the reads, so a damaged day's warning reaches stderr (#661).
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil))) // the bot's rules log; the replay prints
 	set.Closes, set.DVOL = readMarketJSON(filepath.Join(o.inputs, "market.json"))
 	var trades []orders.Trade
 	var recs []orders.RiskRecord
