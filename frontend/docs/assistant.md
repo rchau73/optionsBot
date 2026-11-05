@@ -12,7 +12,7 @@ It answers from the published help, the bot's live page data and the user's own 
   - **The settings' tips** (#621): one passage per tip of `docs/product/education/tips.json`, source `tip:<key>`, titled with the setting's name in words (`helpkb.TipName`: "repair_cooldown_hours" → "repair cooldown"), its text the tip's meaning, risk, income and policy note word for word.
     A question whose words are exactly a tip's name ("what does the repair cooldown do?") gets that tip first (`search.js` and `helpkb.Search`), so the answer says what the tip says; its chip reads "Tip: repair cooldown".
     A tip is edited only in its own file; `go run ./cmd/helpindex` rebuilds the index, and `tests/helpindex_test.go` fails until it does.
-- **Flow** (`lib/assistant/service.js`): the model gets three kinds of passage.
+- **Flow** (`lib/assistant/service.js`): the model gets these kinds of passage.
   - The question's best `HELP_PASSAGES` (6) passages of `content/help-index.json` (`lib/assistant/search.js`, the BM25 of `internal/helpkb`).
   - With `bot`, that bot's journal facts of the last `JOURNAL_DAYS` (7) from its `/api/journal?days=7`.
     - #417: the journal is read back from `orders.log`, with no `pnl` lines, and the bot collapses repeats.
@@ -26,7 +26,9 @@ It answers from the published help, the bot's live page data and the user's own 
     - A fill or a close is followed by the market its line recorded (#427): "Market recorded at 21 Oct 14:30 UTC: spot 84,498, DVOL 37.2, IV percentile 15 %, regime POSITIVE/PINNING."
   - The live page data, below.
 
-  **The sources are the help, the live page data and the journal (7 days + the open positions' whole history)** (#427).
+  - For a question about results, the bot's 7- and 30-day performance, below (#648).
+
+  **The sources are the help, the live page data, the journal (7 days + the open positions' whole history)** (#427) **and, for a results question, the performance** (#648).
   The read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old.
   `selectJournal` sends the history of the held legs the question names first.
   `namedInstruments` matches by instrument, by strike ("75.000", "75,000", "75k") or by side, else every held leg.
@@ -42,6 +44,18 @@ It answers from the published help, the bot's live page data and the user's own 
 
   The text is plain, from the routes' own fields, nothing recomputed, and a missing figure reads "unknown".
   All of them are sent.
+
+  **Performance** (#648, `perfPassages`, `botPerformance` in `lib/assistant/server.js`): with `bot`, a question about results (`asksAboutResults`: "this week", "this month", "worst week", "drawdown", "vs holding", "net of fees", "how did I do", "am I up or down"…) also reads the bot's `/api/performance?range=7d` and `?range=30d` together.
+  They are kept `PERF_CACHE_MS` (10 s) per bot; a failed read is not cached and leaves the other sources (WARN log).
+  Any other question reads nothing more and sends no perf passage; "next week/month" is not a results question (a forecast is refused).
+  They become `perf:<bot>/7d` and `perf:<bot>/30d`, each holding:
+  - the window's dates, the label (live or testnet) and "past results, not a forecast";
+  - net P&L after fees in coin and in USD at the window's last spot, and the return on equity;
+  - holding the coin over the same window (USD, and 0 % in coin) and the bot's USD return against it;
+  - max drawdown, the worst week with its dates, and the days with no P&L history, named, not filled in.
+  Figures are signed and carry their unit as the monitor shows them (`formatCoin`, `formatSignedUSD`, `formatSignedPct`), so a loss reads "−0.00400 BTC" in the same words as a gain.
+  An unknown figure reads "unknown" with the route's reason (`equity_reason`, `pct_note`); nothing is recomputed.
+  Both stay under `PERF_TOKENS` (700).
   A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
   With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
