@@ -104,5 +104,57 @@ class Body(unittest.TestCase):
         self.assertIn("(empty)", deploy_issue.body(SHA, "s", "r", "", "", []))
 
 
+def exit_line(bot, err):
+    return f'{bot}  | {{"time":"t","level":"ERROR","msg":"bot exited with error","err":"{err}"}}'
+
+
+DIAL = "gateway connect: websocket dial wss://test.deribit.com/ws/api/v2: "
+HANDSHAKE_502 = DIAL + "websocket: bad handshake (HTTP 502 Bad Gateway: error code: 502)"
+
+
+class ExchangeOutage(unittest.TestCase):
+    """#631: a health check that failed only because Deribit refused every connect."""
+
+    def test_scenario_testnet_returns_502_on_connect(self):
+        log = "\n".join(["monitor-1  | ✓ Ready in 0ms"] + [exit_line(b, HANDSHAKE_502) for b in ("bot-btc-1", "bot-eth-1", "bot-btc-1")])
+        self.assertEqual(deploy_issue.exchange_outage(log), "Deribit unreachable: HTTP 502 on connect, 3 bot exits")
+
+    def test_network_errors_count_as_an_outage(self):
+        for err in ("dial tcp 1.2.3.4:443: connect: connection refused", "dial tcp: lookup test.deribit.com: no such host",
+                    "dial tcp 1.2.3.4:443: i/o timeout", "websocket: bad handshake (HTTP 503 Service Unavailable)"):
+            with self.subTest(err=err):
+                self.assertTrue(deploy_issue.exchange_outage(exit_line("bot-btc-1", DIAL + err)))
+
+    def test_scenario_any_other_exit_is_the_commit(self):
+        cases = {
+            "no exit at all": "monitor-1  | ready\nbot-btc-1  | starting",
+            "a 4xx handshake": exit_line("bot-btc-1", DIAL + "websocket: bad handshake (HTTP 404 Not Found)"),
+            "another error": exit_line("bot-btc-1", "load config: strike_iv_max_ratio is fixed"),
+            "auth refused": exit_line("bot-btc-1", "gateway connect: authenticate: invalid_credentials"),
+            "one bot fine with exchange, other broken": "\n".join([exit_line("bot-btc-1", HANDSHAKE_502),
+                                                                    exit_line("bot-eth-1", "load config: bad yaml")]),
+            "a panic next to the 502": exit_line("bot-btc-1", HANDSHAKE_502) + "\nbot-eth-1  | panic: nil map",
+        }
+        for name, log in cases.items():
+            with self.subTest(name):
+                self.assertEqual(deploy_issue.exchange_outage(log), "")
+
+    def test_cli_exit_status(self):
+        import io
+        stdin, out = sys.stdin, io.StringIO()
+        try:
+            sys.stdin = io.StringIO(exit_line("bot-btc-1", HANDSHAKE_502))
+            sys.stdout, saved = out, sys.stdout
+            try:
+                self.assertEqual(deploy_issue.main(["deploy_issue.py", "outage"]), 0)
+            finally:
+                sys.stdout = saved
+            self.assertIn("HTTP 502", out.getvalue())
+            sys.stdin = io.StringIO("bot-btc-1  | panic: x")
+            self.assertEqual(deploy_issue.main(["deploy_issue.py", "outage"]), 1)
+        finally:
+            sys.stdin = stdin
+
+
 if __name__ == "__main__":
     unittest.main()
