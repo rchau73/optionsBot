@@ -18,7 +18,8 @@ import (
 // monitor (data/hedge_mode.json). While it is on:
 //   - the GEX shed closes nothing: each leg it would have bought back is
 //     journaled as a shed_hedged skip and kept (entries and repairs still
-//     skip the shed side: Action is unchanged);
+//     skip the shed side: Action is unchanged), unless the hedge cannot trade:
+//     then the shed works as with the mode off (hedge.Health, #664);
 //   - every cycle the book's net delta (options + the coin's perpetual) is
 //     traded back to zero with the perpetual once it reaches the band
 //     (hedge.HedgeOrder), at most FixedFuturesHedgeMaxPerHour orders an hour;
@@ -65,6 +66,10 @@ type futuresHedge struct {
 	perpAt          time.Time // when perp was read (zero: never)
 	band            float64   // the last cycle's band (coin)
 	shedSide        GammaAction
+	health          hedge.Health  // can the real hedge trade? (#664)
+	recheck         time.Duration // how often a halted hedge looks again
+	unavailNoted    bool          // the current hedge_unavailable episode is journaled
+	awayNoted       bool          // the current hedge_price_away wait is journaled
 	dirty           bool
 	savedAt         time.Time
 }
@@ -185,6 +190,7 @@ func (s *Strategy) stepFuturesHedge(ctx context.Context, m marginState, now time
 	}
 	if s.fh.mode.Enabled {
 		s.realHedge(ctx, m, spot, now)
+		s.noteHedgeHealth()
 	} else if s.fh.path != "" {
 		s.paperHedge(ctx, m, spot, now)
 	}
@@ -213,12 +219,14 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	perp, err := s.readPerp(ctx)
 	if err != nil {
 		slog.Warn("futures hedge: cannot read the perpetual position — no hedge this cycle", "err", err)
+		s.fh.health.NotFilled("the perpetual position cannot be read")
 		return
 	}
 	s.adoptPerpDrift(perp, spot)
 	spec, err := s.perpSpec(ctx)
 	if err != nil {
 		slog.Warn("futures hedge: no contract size — no hedge this cycle", "err", err)
+		s.fh.health.NotFilled("the perpetual's contract size cannot be read")
 		return
 	}
 	band := hedgeBand(m, s.cfg.Underlying, spot)
@@ -232,11 +240,16 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	}
 	perpDelta := hedge.PerpDelta(perp.Size, perpMark(perp, spot))
 	usd, side := hedge.HedgeOrder(optDelta, perpDelta, band, spot, spec.ContractSize)
-	if usd == 0 {
-		s.fh.rateNoted = false
+	if s.fh.health.Waiting(now) {
+		return // halted: nothing until the re-check
+	}
+	if usd == 0 && !s.fh.health.Halted() {
+		s.fh.rateNoted, s.fh.awayNoted = false, false
+		s.fh.health.Holding()
 		return
 	}
-	if hedge.RateLimited(s.fh.sent, now, config.FixedFuturesHedgeMaxPerHour) {
+	if usd != 0 && hedge.RateLimited(s.fh.sent, now, config.FixedFuturesHedgeMaxPerHour) {
+		s.fh.health.NotFilled(fmt.Sprintf("%d hedge orders went out in the last hour: the next one waits", config.FixedFuturesHedgeMaxPerHour))
 		if !s.fh.rateNoted {
 			s.fh.rateNoted = true
 			s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeRateLimited, Side: side, AmountUSD: usd,
@@ -250,6 +263,15 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	tk, err := s.futures.GetTicker(ctx, s.perpName())
 	if err != nil {
 		slog.Warn("futures hedge: no perpetual quote — no hedge this cycle", "err", err)
+		s.fh.health.NotFilled("the perpetual's quote cannot be read")
+		return
+	}
+	if hedge.InstrumentClosed(tk.State) {
+		s.haltHedge(fmt.Sprintf("Deribit shows %s as %s, not open", s.perpName(), tk.State), now)
+		return
+	}
+	if usd == 0 {
+		s.fh.health.Resume() // the re-check found it open, and nothing is due
 		return
 	}
 	price := tk.BestBid
@@ -259,8 +281,18 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	if price <= 0 {
 		slog.Warn("futures hedge: the perpetual has no "+map[string]string{hedge.SideBuy: "ask", hedge.SideSell: "bid"}[side]+" — no hedge this cycle",
 			"bid", tk.BestBid, "ask", tk.BestAsk)
+		s.fh.health.NotFilled("the perpetual has no price to trade at")
 		return
 	}
+	index := tk.Index
+	if index <= 0 {
+		index = spot
+	}
+	if s.hedgePricing().Blocks(price, index, config.FixedFuturesHedgeMaxIndexGapPct) {
+		s.hedgePriceAway(side, usd, price, index, optDelta, perpDelta, band)
+		return
+	}
+	s.fh.awayNoted = false
 	order := orders.Order{
 		Instrument: s.perpName(), Direction: side, OrderType: orders.TypeLimit, TimeInForce: orders.TimeInForceIOC,
 		Qty: usd, LimitPrice: price, TickSize: spec.TickSize, TriggerReason: orders.TriggerFuturesHedge,
@@ -272,15 +304,102 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 	fill, err := s.exch.Submit(ctx, order)
 	if err != nil {
 		s.hedgeOrderFailed(ctx, order, err, detail)
+		s.noteHedgeRejection(err, now)
 		return
 	}
-	s.bookPerpFill(side, fill, price)
+	s.fh.health.Resume() // the exchange took the order: whatever halted the hedge has cleared
+	if fill.Qty > 0 {
+		s.fh.health.Holding()
+	} else {
+		s.fh.health.NotFilled("the last hedge orders found nothing to fill")
+	}
+	booked := s.bookPerpFill(side, fill, price, index)
 	s.saveHedge(now, true)
 	s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeFill, Side: side, AmountUSD: usd, FilledUSD: fill.Qty,
-		Price: fill.FillPrice, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID,
+		Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID,
 		OptionsDelta: optDelta, PerpDelta: perpDelta, BandCoin: band, Detail: detail})
 	slog.Info("futures hedge", "side", side, "amount_usd", usd, "filled_usd", fill.Qty, "price", fill.FillPrice,
 		"options_delta", optDelta, "perp_delta", perpDelta, "band", band)
+}
+
+// hedgePricing is what the benchmark books the real perpetual at: the index
+// on testnet, the exchange's own prices on live.
+func (s *Strategy) hedgePricing() hedge.Pricing {
+	if s.cfg.IsLive() {
+		return hedge.PricingExchange
+	}
+	return hedge.PricingIndex
+}
+
+// hedgeKeepsShed reports whether the futures hedge replaces the GEX shed this
+// cycle: the mode is on and the hedge can trade (#664). A hedge that cannot
+// would leave the book with neither.
+func (s *Strategy) hedgeKeepsShed() bool {
+	return s.fh.mode.Enabled && s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles) == ""
+}
+
+// endKeptLeg ends the benchmark's kept leg the shed now buys back: from here
+// it is followed as a real shed, and a later keep starts a new one.
+func (s *Strategy) endKeptLeg(pos *orders.Position) {
+	if s.fh.mode.Ledger.EndKept(pos.Instrument) {
+		s.fh.dirty = true
+	}
+	delete(s.fh.shedNoted, pos.ID)
+}
+
+// noteHedgeRejection sorts a failed hedge order: a reason retrying cannot cure
+// halts the hedge; any other rejection gives the shed back until a fill; an
+// unknown outcome is one more cycle without a fill.
+func (s *Strategy) noteHedgeRejection(err error, now time.Time) {
+	switch why := orders.LastingRejection(err); {
+	case why != "":
+		s.haltHedge(why, now)
+	case orders.MaybePlaced(err):
+		s.fh.health.NotFilled("the last hedge order's outcome is unknown")
+	default:
+		s.fh.health.Rejected(err.Error())
+	}
+}
+
+// haltHedge stops the hedge's orders until the re-check, journaled once per reason.
+func (s *Strategy) haltHedge(reason string, now time.Time) {
+	if !s.fh.health.Halt(reason, now, s.fh.recheck) {
+		return
+	}
+	slog.Error("futures hedge halted", "reason", reason, "recheck_at", s.fh.health.RecheckAt)
+	s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeHalted,
+		Detail: fmt.Sprintf("%s: no hedge orders; looks again every %s", reason, s.fh.recheck)})
+}
+
+// hedgePriceAway holds a due order the price guard stops, journaled once per wait.
+func (s *Strategy) hedgePriceAway(side string, usd, price, index, optDelta, perpDelta, band float64) {
+	s.fh.health.NotFilled("the perpetual's price is too far from the index")
+	if s.fh.awayNoted {
+		return
+	}
+	s.fh.awayNoted = true
+	s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgePriceAway, Side: side, AmountUSD: usd, Price: price,
+		OptionsDelta: optDelta, PerpDelta: perpDelta, BandCoin: band,
+		Detail: fmt.Sprintf("%s %.0f USD due, but %.2f is %.2f %% from the index %.2f (limit %d %%): it waits",
+			side, usd, price, (price/index-1)*100, index, config.FixedFuturesHedgeMaxIndexGapPct)})
+}
+
+// noteHedgeHealth journals once when the hedge stops holding the delta (the
+// shed is back from the next cycle), and once when it holds it again.
+func (s *Strategy) noteHedgeHealth() {
+	why := s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles)
+	switch {
+	case why != "" && !s.fh.unavailNoted:
+		s.fh.unavailNoted = true
+		slog.Warn("futures hedge unavailable: the GEX shed is back", "reason", why)
+		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeUnavailable, OptionsDelta: s.state.TotalCoinDelta(),
+			Detail: why + ": the GEX shed works as with the mode off until the hedge can trade"})
+	case why == "" && s.fh.unavailNoted:
+		s.fh.unavailNoted = false
+		slog.Info("futures hedge available again")
+		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeResumed, OptionsDelta: s.state.TotalCoinDelta(),
+			Detail: "the hedge can trade again: the GEX shed keeps its legs"})
+	}
 }
 
 // hedgeLabel is a unique label for a perpetual order.
@@ -305,26 +424,29 @@ func (s *Strategy) hedgeOrderFailed(ctx context.Context, order orders.Order, err
 		Detail: detail + " — " + why})
 }
 
-// bookPerpFill adds a real perpetual fill to the benchmark's ledger.
-func (s *Strategy) bookPerpFill(side string, fill orders.Fill, price float64) {
+// bookPerpFill adds a real perpetual fill to the benchmark's ledger, at the
+// price its pricing says (index: the index then), and returns that price.
+func (s *Strategy) bookPerpFill(side string, fill orders.Fill, price, index float64) float64 {
 	if fill.Qty <= 0 {
-		return
+		return 0
 	}
 	px := fill.FillPrice
 	if px <= 0 {
 		px = price
 	}
+	px = s.hedgePricing().Book(px, index)
 	usd := fill.Qty
 	if side == hedge.SideSell {
 		usd = -usd
 	}
 	s.fh.mode.Ledger.Real.Book(usd, px, fill.Fee)
 	s.fh.dirty = true
+	return px
 }
 
 // adoptPerpDrift matches the ledger's real perpetual to the exchange: a
 // difference (an unknown order that filled, a hand trade) is booked at the
-// mark, so the benchmark follows what is really held.
+// mark (index pricing: the index), so the benchmark follows what is really held.
 func (s *Strategy) adoptPerpDrift(perp orders.RawPosition, spot float64) {
 	diff := perp.Size - s.fh.mode.Ledger.Real.SizeUSD
 	if math.Abs(diff) < 0.5 {
@@ -332,7 +454,7 @@ func (s *Strategy) adoptPerpDrift(perp orders.RawPosition, spot float64) {
 	}
 	slog.Warn("futures hedge: the perpetual position differs from the ledger — booked at the mark",
 		"exchange_usd", perp.Size, "ledger_usd", s.fh.mode.Ledger.Real.SizeUSD)
-	s.fh.mode.Ledger.Real.Book(diff, perpMark(perp, spot), 0)
+	s.fh.mode.Ledger.Real.Book(diff, s.hedgePricing().Book(perpMark(perp, spot), spot), 0)
 	s.fh.dirty = true
 }
 
@@ -530,10 +652,10 @@ func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts i
 			err = serr
 			continue
 		}
-		s.bookPerpFill(side, fill, perpMark(perp, spot))
+		booked := s.bookPerpFill(side, fill, perpMark(perp, spot), spot)
 		left = perp.Size + map[string]float64{hedge.SideBuy: 1, hedge.SideSell: -1}[side]*fill.Qty
 		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeClosed, Side: side, AmountUSD: order.Qty, FilledUSD: fill.Qty,
-			Price: fill.FillPrice, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID, OptionsDelta: s.state.TotalCoinDelta(),
+			Price: fill.FillPrice, LedgerPrice: booked, FeeCoin: fill.Fee, FundingCoin: perp.RealizedFunding, OrderID: fill.OrderID, OptionsDelta: s.state.TotalCoinDelta(),
 			PerpDelta:    hedge.PerpDelta(perp.Size, perpMark(perp, spot)),
 			RealisedCoin: s.fh.mode.Ledger.Real.Realised - s.fh.mode.Ledger.Real.Fees - before,
 			Detail:       fmt.Sprintf("%s: %s %.0f USD of %s at market (reduce-only), filled %.0f", why, side, order.Qty, s.perpName(), fill.Qty)})
@@ -665,6 +787,7 @@ func (s *Strategy) switchHedge(ctx context.Context, enable bool, by orders.Actor
 		s.fh.mode = prev // a switch that cannot be kept across a restart is not made
 		return res, fmt.Errorf("cannot save the mode: %w", err)
 	}
+	s.fh.health, s.fh.unavailNoted, s.fh.awayNoted = hedge.Health{}, false, false
 	l := &s.fh.mode.Ledger
 	if enable {
 		// The paper hedge was the hedge side while OFF: it ends at today's price.

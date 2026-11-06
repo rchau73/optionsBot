@@ -104,6 +104,53 @@ func (v PerpBook) PnL(mark float64) float64 {
 	return v.Realised + PerpPnL(v.SizeUSD, v.AvgPrice, mark) - v.Fees
 }
 
+// Pricing is what the benchmark books the real perpetual at (#664).
+type Pricing string
+
+const (
+	// PricingIndex (testnet): its perpetual trades about 3.5 % from the index,
+	// a gap mainnet does not have, so fills and marks are booked at the index
+	// and funding is left out. Orders still go out, to test the order path.
+	PricingIndex Pricing = "index"
+	// PricingExchange (live): the exchange's own prices, funding included.
+	PricingExchange Pricing = "exchange"
+)
+
+// Note says in plain words what the benchmark is priced at.
+func (p Pricing) Note() string {
+	if p == PricingIndex {
+		return "benchmark priced at the index (testnet): fills and marks at the index price, funding left out"
+	}
+	return "benchmark priced at the exchange's own fills and marks, funding included"
+}
+
+// Book is the price the ledger books at, for a trade at price while the index
+// is at index.
+func (p Pricing) Book(price, index float64) float64 {
+	if p == PricingIndex && index > 0 {
+		return index
+	}
+	return price
+}
+
+// Blocks reports an order the price guard stops: price more than maxPct %
+// from the index. Only on the exchange's prices: at the index there is no gap
+// to book. Without an index price there is nothing to compare.
+func (p Pricing) Blocks(price, index, maxPct float64) bool {
+	return p == PricingExchange && index > 0 && math.Abs(price-index)*100 > maxPct*index
+}
+
+// Summarise totals the ledger on this pricing: funding and mark as Deribit
+// reports them, index the index price now.
+func (p Pricing) Summarise(l Ledger, funding, mark, index float64) Summary {
+	if p == PricingIndex {
+		funding, mark = 0, p.Book(mark, index)
+	}
+	s := l.Summarise(funding, mark)
+	s.Pricing, s.PricingNote = string(p), p.Note()
+	return s
+}
+
 // Ledger is the benchmark's state, kept in the mode file so a restart (every
 // deploy) does not reset it.
 type Ledger struct {
@@ -145,6 +192,18 @@ func (l Ledger) KeptQty(instrument string) float64 {
 	return total
 }
 
+// EndKept ends the kept legs of instrument, as the shed buys it back after
+// all, and reports whether there were any.
+func (l *Ledger) EndKept(instrument string) bool {
+	ended := false
+	for i := range l.Legs {
+		if c := &l.Legs[i]; c.Mode == CounterHedged && !c.Done && c.Instrument == instrument {
+			c.Done, ended = true, true
+		}
+	}
+	return ended
+}
+
 // Summary is the benchmark as the monitor shows it.
 type Summary struct {
 	Since         time.Time        `json:"since"`
@@ -158,6 +217,8 @@ type Summary struct {
 	VirtualTrades int              `json:"virtual_trades"`
 	Legs          []Counterfactual `json:"legs"`
 	Note          string           `json:"note"`
+	Pricing       string           `json:"pricing"`      // "index" or "exchange"
+	PricingNote   string           `json:"pricing_note"` // the same in plain words
 }
 
 // BenchmarkNote says what the number is, and what it is not.

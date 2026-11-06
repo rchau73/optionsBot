@@ -75,12 +75,14 @@ export function FuturesHedgeView({ bot, data, error, onSwitch }) {
   }
   const unit = h.underlying || bot.toUpperCase();
   const b = h.benchmark ?? {};
-  const why = !h.available ? h.unavailable : h.halted ? "the kill switch has fired" : !data.switchable ? data.switch_off_reason || "the switch is off on this bot" : null;
+  const why = !h.available ? h.unavailable : h.kill_switch ? "the kill switch has fired" : !data.switchable ? data.switch_off_reason || "the switch is off on this bot" : null;
+  const notHolding = h.enabled ? h.not_holding : "";
   return (
     <div className="space-y-2 rounded border border-line p-3 text-sm" data-testid={`hedge-${bot}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">
-          {unit} · Futures hedge (experiment) <Badge tone={h.enabled ? "good" : "muted"}>{h.enabled ? "ON" : "OFF"}</Badge>
+          {unit} · Futures hedge (experiment) <Badge tone={h.enabled ? "good" : "muted"}>{h.enabled ? "ON" : "OFF"}</Badge>{" "}
+          {notHolding ? <Badge tone="warn">{h.halted ? "Paused" : "Not holding"}</Badge> : null}
         </h3>
         <span title={why ?? (h.enabled ? "Preview, then close the perpetual and switch off" : "Switch on: the GEX shed keeps its legs, a future offsets their direction")}>
           <button
@@ -97,11 +99,18 @@ export function FuturesHedgeView({ bot, data, error, onSwitch }) {
         </span>
       </div>
       <p className="text-muted">
-        {h.enabled
-          ? `On since ${formatDateTime(h.since)}${h.by ? ` (by ${h.by})` : ""}: the GEX shed keeps its legs and ${h.instrument} holds the book's direction within ±${formatCoin(h.band_coin, unit, 4)}. Stop-loss, delta exit and the margin cut still close legs.`
-          : "Off: the GEX shed buys the threatened side back, as usual. The hedge below runs on paper only, for the comparison."}
+        {notHolding
+          ? `On since ${formatDateTime(h.since)}${h.by ? ` (by ${h.by})` : ""}, but ${h.instrument} is not holding the book's direction, so the GEX shed buys the threatened side back as usual.`
+          : h.enabled
+            ? `On since ${formatDateTime(h.since)}${h.by ? ` (by ${h.by})` : ""}: the GEX shed keeps its legs and ${h.instrument} holds the book's direction within ±${formatCoin(h.band_coin, unit, 4)}. Stop-loss, delta exit and the margin cut still close legs.`
+            : "Off: the GEX shed buys the threatened side back, as usual. The hedge below runs on paper only, for the comparison."}
         {h.shed_now ? ` The GEX shed is active on ${h.shed_now} now.` : ""}
       </p>
+      {notHolding ? (
+        <p className="rounded bg-warn/10 px-2 py-1 text-warn" data-testid={`hedge-halt-${bot}`}>
+          {h.halted ? `Hedge paused: ${h.halt_reason}. No hedge orders until it clears; the bot looks again at ${formatDateTime(h.recheck_at)} and resumes by itself.` : `Why: ${notHolding}.`}
+        </p>
+      ) : null}
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 tabular-nums sm:grid-cols-4">
         <div>
           <dt className="text-xs text-muted">Options delta</dt>
@@ -148,6 +157,7 @@ export function FuturesHedgeView({ bot, data, error, onSwitch }) {
           </ul>
         ) : null}
         <p className="mt-1 text-xs text-muted">{b.note}</p>
+        {b.pricing_note ? <p className="text-xs text-muted">{b.pricing_note.charAt(0).toUpperCase() + b.pricing_note.slice(1)}.</p> : null}
       </div>
       {error ? <p className="text-xs text-warn">Not updating: {error}.</p> : null}
     </div>
@@ -233,7 +243,7 @@ function SwitchOnText({ hedge }) {
   const unit = hedge?.underlying ?? "";
   return (
     <ul className="mb-3 list-disc space-y-1 pl-5">
-      <li>From the next cycle the GEX shed no longer buys a side back: those legs stay open.</li>
+      <li>From the next cycle the GEX shed no longer buys a side back: those legs stay open. If the hedge cannot trade, the shed works as usual until it can.</li>
       <li>
         The bot trades {hedge?.instrument ?? "the perpetual"} whenever the book&apos;s direction (delta) is beyond ±{formatCoin(hedge?.band_coin, unit, 4)}, to bring
         it back to zero: at most {hedge?.max_orders_per_hour ?? 12} orders an hour, each at the best price on the book.

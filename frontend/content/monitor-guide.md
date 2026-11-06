@@ -268,6 +268,9 @@ Further over, it buys back toward the limit as before.
 Off by default; while it is on, the GEX shed keeps its legs and the bot trades the coin's perpetual future to hold the book's direction (delta) near zero.
 The card shows the options' delta, the perpetual and the net delta, how many hedge orders went out in the last hour, and the comparison with the shed since the experiment started: positive when the hedge did better, negative (in red, with its minus sign) when the shed did.
 The comparison is an estimate: the side that is not trading is followed on paper.
+On testnet the comparison is priced at the index: fills and marks at the index price, funding left out, because the testnet perpetual trades about 3.5 % from the index; the card says "benchmark priced at the index (testnet)".
+If the hedge cannot trade, the GEX shed works as usual until it can, so the book is never left with neither; the card shows "Not holding" with the reason.
+When the exchange will not take its orders for a reason a retry cannot cure, such as scheduled maintenance or too few funds, the card shows "Paused" with the reason: no hedge orders are sent, the bot looks again every 10 minutes and resumes by itself.
 Only an admin may switch it.
 Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
 If that preview cannot be read, the window says so and the admin can still switch off.

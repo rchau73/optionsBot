@@ -223,6 +223,7 @@ type Ticker struct {
 	BestAsk    float64 `json:"best_ask_price"`
 	Mark       float64 `json:"mark_price"`
 	Index      float64 `json:"index_price"`
+	State      string  `json:"state"` // open, or why not (locked, closed…)
 }
 
 // Fill represents an order execution result.

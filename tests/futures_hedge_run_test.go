@@ -25,10 +25,32 @@ type fakeFutures struct {
 	ex       *fakeExchange
 	mu       sync.Mutex
 	bid, ask float64
+	index    float64
+	state    string // the ticker's state ("" = no reading)
 	contract float64
+	tickers  int   // ticker reads
+	posErr   error // the position read fails
+}
+
+func (ff *fakeFutures) set(apply func(*fakeFutures)) {
+	ff.mu.Lock()
+	defer ff.mu.Unlock()
+	apply(ff)
+}
+
+func (ff *fakeFutures) tickerReads() int {
+	ff.mu.Lock()
+	defer ff.mu.Unlock()
+	return ff.tickers
 }
 
 func (ff *fakeFutures) GetFuturePositions(context.Context, string) ([]orders.RawPosition, error) {
+	ff.mu.Lock()
+	err := ff.posErr
+	ff.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	ff.ex.mu.Lock()
 	defer ff.ex.mu.Unlock()
 	var out []orders.RawPosition
@@ -49,7 +71,8 @@ func (ff *fakeFutures) GetInstrumentSpec(_ context.Context, name string) (orders
 func (ff *fakeFutures) GetTicker(_ context.Context, name string) (orders.Ticker, error) {
 	ff.mu.Lock()
 	defer ff.mu.Unlock()
-	return orders.Ticker{Instrument: name, BestBid: ff.bid, BestAsk: ff.ask, Mark: (ff.bid + ff.ask) / 2, Index: 100000}, nil
+	ff.tickers++
+	return orders.Ticker{Instrument: name, BestBid: ff.bid, BestAsk: ff.ask, Mark: (ff.bid + ff.ask) / 2, Index: ff.index, State: ff.state}, nil
 }
 
 // hedgeFills: a perpetual order fills whole (IOC at its limit, market at
@@ -80,7 +103,7 @@ func newHedgeFixture(t *testing.T, callDelta, putDelta float64, enabled bool) (*
 	f.market.instruments[f.call].Greeks.Delta = callDelta
 	f.market.instruments[f.put].Greeks.Delta = putDelta
 	f.exch.positions[0].Delta, f.exch.positions[1].Delta = callDelta, putDelta
-	ff := &fakeFutures{ex: f.exch, bid: 99990, ask: 100010, contract: 10}
+	ff := &fakeFutures{ex: f.exch, bid: 99990, ask: 100010, index: 100000, contract: 10}
 	f.futures = ff
 	f.hedgeAt = filepath.Join(t.TempDir(), "hedge_mode.json")
 	if enabled {

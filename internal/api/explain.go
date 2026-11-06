@@ -111,6 +111,11 @@ var hedgeWords = map[string]string{
 		"On, the GEX shed keeps its legs and a future offsets their direction; off, the shed buys them back again.",
 	orders.HedgeRateLimited: "A futures hedge trade waits: the hourly limit of hedge orders was reached. It is tried again next cycle.",
 	orders.HedgeFailed:      "A futures hedge order did not go through; the next cycle reads the position from the exchange before trying again.",
+	orders.HedgeHalted: "The futures hedge paused: the exchange will not take its orders for a reason a retry cannot cure, such as maintenance. " +
+		"The bot looks again every 10 minutes and resumes by itself.",
+	orders.HedgePriceAway:   "A futures hedge trade waits: the perpetual's price is too far from the index, so the trade would be at a poor price.",
+	orders.HedgeUnavailable: "The futures hedge is not holding the book's direction, so the GEX shed buys the threatened side back as usual until the hedge can trade again.",
+	orders.HedgeResumed:     "The futures hedge can trade and holds the book's direction again: the GEX shed keeps its legs.",
 }
 
 // skipWords explains a journaled skip, by its reason word.

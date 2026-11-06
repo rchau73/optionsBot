@@ -26,6 +26,10 @@ const (
 	HedgeModeChanged = "hedge_mode_changed" // a person switched the experiment on or off
 	HedgeRateLimited = "hedge_rate_limited" // a due hedge waits: 12 orders in the last hour
 	HedgeFailed      = "hedge_failed"       // a hedge order failed or its outcome is unknown (cancelled by label)
+	HedgeHalted      = "hedge_halted"       // a reason retrying cannot cure: no orders until it clears (#664)
+	HedgePriceAway   = "hedge_price_away"   // live: a due hedge waits, the perpetual is too far from the index (#664)
+	HedgeUnavailable = "hedge_unavailable"  // the hedge is not holding the delta: the GEX shed is back (#664)
+	HedgeResumed     = "hedge_resumed"      // the hedge holds the delta again: the shed keeps its legs (#664)
 )
 
 // HedgeRecord is one futures-hedge decision with the figures behind it.
@@ -43,8 +47,10 @@ type HedgeRecord struct {
 	AmountUSD  float64   `json:"amount_usd,omitempty"`
 	FilledUSD  float64   `json:"filled_usd,omitempty"`
 	Price      float64   `json:"price,omitempty"`
-	FeeCoin    float64   `json:"fee_coin,omitempty"`
-	OrderID    string    `json:"order_id,omitempty"`
+	// LedgerPrice is what the benchmark booked: the index on testnet (#664).
+	LedgerPrice float64 `json:"ledger_price,omitempty"`
+	FeeCoin     float64 `json:"fee_coin,omitempty"`
+	OrderID     string  `json:"order_id,omitempty"`
 	// The book around the trade: the options' delta, the perpetual's before
 	// it, the band, and the realised P&L of a close (coin, net of the fee).
 	OptionsDelta float64 `json:"options_delta"`

@@ -18,7 +18,15 @@ type HedgeView struct {
 	Enabled     bool      `json:"enabled"`
 	Since       time.Time `json:"since"`
 	By          string    `json:"by,omitempty"`
+	KillSwitch  bool      `json:"kill_switch"`
+	// Halted: the hedge sends no orders for a reason retrying cannot cure,
+	// until RecheckAt looks again (#664). NotHolding is why the hedge is not
+	// holding the delta now (halted, rejected, unfilled): the shed is back.
 	Halted      bool      `json:"halted"`
+	HaltReason  string    `json:"halt_reason,omitempty"`
+	HaltedAt    time.Time `json:"halted_at"`
+	RecheckAt   time.Time `json:"recheck_at"`
+	NotHolding  string    `json:"not_holding,omitempty"`
 	Underlying  string    `json:"underlying"`
 	Instrument  string    `json:"instrument"`
 	ContractUSD float64   `json:"contract_usd,omitempty"` // 0 until read from Deribit
@@ -38,8 +46,8 @@ type HedgeView struct {
 	OrdersLastHour int       `json:"orders_last_hour"`
 	MaxPerHour     int       `json:"max_orders_per_hour"`
 	// ShedNow is the side the GEX shed closes this cycle ("puts", "calls" or
-	// ""): with the mode on those legs are kept; switched off, they are
-	// bought back on the next cycle.
+	// ""): with the mode on those legs are kept while the hedge can trade;
+	// switched off, they are bought back on the next cycle.
 	ShedNow   string        `json:"shed_now"`
 	Benchmark hedge.Summary `json:"benchmark"`
 	// Testnet: the hedge is only ever on a test account's prices.
@@ -78,7 +86,9 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 		BandCoin: s.fh.band, BandPct: config.FixedFuturesHedgeBandPct,
 		OrdersLastHour: len(pruneHour(append([]time.Time(nil), s.fh.sent...), now)), MaxPerHour: config.FixedFuturesHedgeMaxPerHour,
 		ShedNow:   shedSideWord(s.fh.shedSide),
-		Benchmark: s.fh.mode.Ledger.Summarise(p.RealizedFunding, mark),
+		Benchmark: s.hedgePricing().Summarise(s.fh.mode.Ledger, p.RealizedFunding, mark, spot),
+		Halted:    s.fh.health.Halted(), HaltReason: s.fh.health.HaltReason, HaltedAt: s.fh.health.HaltedAt, RecheckAt: s.fh.health.RecheckAt,
+		NotHolding: s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles),
 	}
 	// The real perpetual is only read while the mode is on; what a failed
 	// close left open still counts.
@@ -108,7 +118,7 @@ func (s *Strategy) HedgeState() HedgeView {
 	s.pub.mu.RLock()
 	defer s.pub.mu.RUnlock()
 	v := s.pub.hedge
-	v.Halted = s.pub.halted
+	v.KillSwitch = s.pub.halted
 	return v
 }
 

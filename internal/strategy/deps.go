@@ -91,6 +91,9 @@ type Deps struct {
 	// benchmark. Either missing leaves the experiment unavailable (OFF).
 	Futures       FuturesTrader
 	HedgeModePath string
+	// HedgeRecheck is how often a halted hedge looks again; 0 is the fixed
+	// rule (config.FixedFuturesHedgeRecheckMinutes). Tests shorten it.
+	HedgeRecheck time.Duration
 }
 
 // DirectionRecorder keeps the direction sources' history (never read by trading).

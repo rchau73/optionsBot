@@ -62,7 +62,9 @@ type fakeExchange struct {
 
 	// loseReply makes Submit put the order on the book but answer with a
 	// lost connection — the reply never reached the bot.
-	loseReply       func(o orders.Order) bool
+	loseReply func(o orders.Order) bool
+	// rejectSubmit, when it returns an error, is Deribit's answer to the order.
+	rejectSubmit    func(o orders.Order) error
 	cancelledLabels []string
 	cancelLabelErr  error
 
@@ -185,6 +187,11 @@ func (f *fakeExchange) Submit(_ context.Context, o orders.Order) (orders.Fill, e
 	f.nextID++
 	id := fmt.Sprintf("o-%d", f.nextID)
 	f.submitted = append(f.submitted, o)
+	if f.rejectSubmit != nil {
+		if err := f.rejectSubmit(o); err != nil {
+			return orders.Fill{}, fmt.Errorf("private/%s: %w", o.Direction, err)
+		}
+	}
 
 	if f.loseReply != nil && f.loseReply(o) {
 		// The order reached the book; only the reply is lost. A market or IOC
@@ -641,25 +648,27 @@ const (
 )
 
 type strategyFixture struct {
-	cfg      *config.Config
-	exch     *fakeExchange
-	market   *fakeMarket
-	state    *orders.StateManager
-	strat    *strategy.Strategy
-	call     string
-	put      string
-	expiry   time.Time
-	gex      strategy.GEXSource         // optional
-	regimes  strategy.RegimeHistory     // optional; set with withConfirmedRegime
-	dirs     strategy.DirectionRecorder // optional
-	oi       strategy.OISource          // optional
-	futures  strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
-	hedgeAt  string                     // optional: its mode file
-	journal  *recordingJournal
-	logger   *orders.Logger // when set, used as the journal instead of the recorder
-	cancel   context.CancelFunc
-	runErr   chan error
-	startRun func()
+	cfg     *config.Config
+	exch    *fakeExchange
+	market  *fakeMarket
+	state   *orders.StateManager
+	strat   *strategy.Strategy
+	call    string
+	put     string
+	expiry  time.Time
+	gex     strategy.GEXSource         // optional
+	regimes strategy.RegimeHistory     // optional; set with withConfirmedRegime
+	dirs    strategy.DirectionRecorder // optional
+	oi      strategy.OISource          // optional
+	futures strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
+	hedgeAt string                     // optional: its mode file
+	// hedgeRecheck, when set, shortens a halted hedge's re-check.
+	hedgeRecheck time.Duration
+	journal      *recordingJournal
+	logger       *orders.Logger // when set, used as the journal instead of the recorder
+	cancel       context.CancelFunc
+	runErr       chan error
+	startRun     func()
 	// beforeRun, when set, runs on the new Strategy just before Run (e.g. RestoreStops).
 	beforeRun func(*strategy.Strategy)
 }
@@ -720,7 +729,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
 			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
-			Futures: f.futures, HedgeModePath: f.hedgeAt,
+			Futures: f.futures, HedgeModePath: f.hedgeAt, HedgeRecheck: f.hedgeRecheck,
 		})
 		if f.beforeRun != nil {
 			f.beforeRun(f.strat)
@@ -1114,6 +1123,21 @@ func (f *strategyFixture) withPutSheddingRegime() {
 		price := 110000.0 + float64(i)*1000
 		if i > 10 {
 			price = 120000 - float64(i-10)*1000
+		}
+		f.exch.dailyCloses = append(f.exch.dailyCloses, orders.DailyClose{Date: start.AddDate(0, 0, i), Close: price})
+	}
+	f.exch.dailyCloses[29].Close = 100000
+	f.gex = fixedGEX{&gex.Snapshot{Regime: "NEGATIVE/ACCELERATION", Spot: 100000, GammaFlip: 120000, GammaFlipFound: true}}
+}
+
+// withCallSheddingRegime is the mirror: a steady rise to today's 100k, still
+// under the flip in a negative regime.
+func (f *strategyFixture) withCallSheddingRegime() {
+	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -30)
+	for i := 0; i < 30; i++ {
+		price := 90000 - float64(i)*1000
+		if i > 10 {
+			price = 80000 + float64(i-10)*1000
 		}
 		f.exch.dailyCloses = append(f.exch.dailyCloses, orders.DailyClose{Date: start.AddDate(0, 0, i), Close: price})
 	}

@@ -113,6 +113,15 @@ Read both before changing a rule.
     Each fill journals `hedge_fill` with the market snapshot.
     A cycle with the margin unknown (band 0) or a leg without greeks (`UnpricedLegs`: it would count as its mark alone) trades nothing, real or paper.
   - An order whose outcome is unknown is cancelled by label and journaled `hedge_failed`; the next cycle reads the position before sending anything.
+  - **A hedge that cannot trade gives the shed back** (`hedge.Health`, in memory, #664; 2026-11-05 mvp: testnet maintenance, 12 `locked_by_admin` rejections an hour, the book with neither shed nor hedge):
+    `hedgeKeepsShed` is false while the hedge is halted, its last order was rejected, or `FixedFuturesHedgeUnfilledCycles` (3) cycles in a row had nothing filled (a hedge due, or the perpetual, its contract or its quote unreadable;
+    margin unknown or a leg without greeks neither count nor reset), and `handleGammaAction` then sheds as with the mode off: `hedge_unavailable` once per episode, `hedge_resumed` when it ends.
+    Such a shed ends the leg's kept counterfactual (`Ledger.EndKept`) and starts a real one.
+  - A rejection a retry cannot cure (`orders.LastingRejection`: `locked_by_admin`, not enough funds, forbidden) or a ticker `state` other than open **halts** the hedge (`hedge_halted`, once per reason): no order and no ticker read until `FixedFuturesHedgeRecheckMinutes` (10);
+    the re-check reads the ticker and, if due, sends one order. An order the exchange takes, or an open ticker with nothing due, clears the halt.
+  - **Pricing** (`hedge.Pricing`, the product owner's decision on #664): on testnet the ledger books fills, closes and drift at the index and leaves funding out (its perpetual trades ~3.5 % away), and the real orders still go out to test the path;
+    on live the exchange's own prices, funding included, and the guard stops an order priced more than `FixedFuturesHedgeMaxIndexGapPct` (1) % from the index (`hedge_price_away` once per wait; it counts as a cycle without a fill). The experiment itself stays testnet-only (#668 lifts that).
+    `GET /api/hedge`'s `benchmark.pricing`/`pricing_note` say which; the preview and `perp_*` fields stay the exchange's.
   - Switching OFF closes the perpetual at market, reduce-only (`closePerp`, `hedge_closed` with its realised coin); if it cannot, the mode stays ON and the request fails.
     The kept legs' holding ends there: the shed acts on them from the next cycle.
   - `HedgePreview` (read-only: a position read, the account summary, one `simulate_portfolio` with the perpetual removed) gives the close's result and fee, delta and IM/MM now → after,
