@@ -114,6 +114,25 @@ describe("Users page", () => {
     expect(JSON.parse(init.body)).toEqual({ password: "a long new password" });
   });
 
+  test.each(["too common", "contains your username"])("a reset and Add user show the server's reason (%s)", async (error) => {
+    mockFetch(reply(400, { error }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Reset password" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("New password"), { target: { value: "a long new password" } });
+    fireEvent.change(within(dialog).getByLabelText("Confirm new password"), { target: { value: "a long new password" } });
+    await clickAndSettle(within(dialog).getByRole("button", { name: "Reset password" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(error);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    const form = screen.getByRole("form", { name: "Add user" });
+    fireEvent.change(within(form).getByLabelText("Username"), { target: { value: "carol" } });
+    fireEvent.change(within(form).getByLabelText("Password"), { target: { value: "a long new password" } });
+    fireEvent.change(within(form).getByLabelText("Confirm password"), { target: { value: "a long new password" } });
+    await clickAndSettle(within(form).getByRole("button", { name: "Add user" }));
+    expect(within(form).getByRole("alert")).toHaveTextContent(error);
+  });
+
   test("sign out everywhere asks first, then POSTs", async () => {
     mockFetch(reply(200, {}));
     render(<UsersAdmin me="admin" />);

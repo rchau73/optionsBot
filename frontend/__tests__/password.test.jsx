@@ -50,6 +50,13 @@ describe("Change password form", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1); // no refresh: not a session 401
   });
 
+  test.each(["too common", "contains your username"])("a refused new password shows the server's reason (%s)", async (error) => {
+    global.fetch = jest.fn(async () => reply(400, { error }));
+    render(<ChangePasswordModal onClose={() => {}} />);
+    fill();
+    expect(await screen.findByRole("alert")).toHaveTextContent(error);
+  });
+
   test("success says this browser stays signed in", async () => {
     global.fetch = jest.fn(async () => reply(200, { user: { username: "ana", role: "user" } }));
     const onClose = jest.fn();
