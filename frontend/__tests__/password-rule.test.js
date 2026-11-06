@@ -19,6 +19,8 @@ const OLD = "the password she has now";
 const GOOD = "violet tractor sings"; // 20 characters, on no list
 const COMMON = "1q2w3e4r5t6y7u"; // 14 characters, on the list as it stands
 const WITH_NAME = "maria-secure-2026";
+// Low entropy on purpose: a test value, not a secret (CI runs gitleaks).
+const BREAKS_RULE = "olga-olga-olga-olga";
 const SECRETS = [OLD, GOOD, COMMON, WITH_NAME];
 
 function req(path, { body = {}, cookie = "" } = {}) {
@@ -162,8 +164,9 @@ describe("Scenario: a good password", () => {
 
 describe("Scenario: existing passwords", () => {
   test("a stored password that breaks the rule still signs in: no forced change", async () => {
-    const old = root.auth.store.createUser({ username: "olga", passwordHash: await hashPassword("olga-1q2w3e4r5t6y7u"), role: "user" });
-    expect((await root.auth.login({ username: old.username, password: "olga-1q2w3e4r5t6y7u" })).ok).toBe(true);
+    const old = root.auth.store.createUser({ username: "olga", passwordHash: await hashPassword(BREAKS_RULE), role: "user" });
+    expect(guessablePasswordProblem(BREAKS_RULE, old.username)).toBe("contains your username");
+    expect((await root.auth.login({ username: old.username, password: BREAKS_RULE })).ok).toBe(true);
   });
 
   test("the first admin keeps the length rule alone (#680 names create, change and reset)", () => {
