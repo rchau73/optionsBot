@@ -12,6 +12,7 @@ import (
 type Paths struct {
 	Journal, History, Market, GEX, Stress, Config string
 	Directions                                    string // data/direction_history.jsonl (#245)
+	HedgeMode                                     string // data/hedge_mode.json (#678)
 	Deploys                                       string // <envs>/history/deploys.tsv, beside the clone (#361)
 	Root                                          string // the clone: its data/evidence/ holds the earlier weekly reports (#537)
 }
@@ -31,6 +32,7 @@ func BotPaths(root, booksRoot, bot string) Paths {
 		Config:  ConfigPath(root, bot),
 
 		Directions: filepath.Join(dir, "data", "direction_history.jsonl"),
+		HedgeMode:  filepath.Join(dir, "data", "hedge_mode.json"),
 		Deploys:    filepath.Join(filepath.Dir(root), "history", "deploys.tsv"),
 		Root:       root,
 	}
