@@ -62,8 +62,11 @@ type Settings struct {
 	// PerpFundingPct is the yearly funding the perp hedge pays, in % of its
 	// notional (MODEL: funding is not recorded), whichever way it faces.
 	PerpFundingPct float64
-	Book           []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace          func(at time.Time, line string) // every action, as it happens (nil = none)
+	// FullStrangle is the rule set of the full-strangle study (fullstrangle.go,
+	// #677): the zero value is today's.
+	FullStrangle FullStrangleVariant
+	Book         []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace        func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -128,13 +131,20 @@ type Result struct {
 	TopUpLots          float64    // lots sold by the complements
 	DownsizeLog        []Downsize // every leg cut, for the journal comparison
 	// The shed study (#637, shed.go).
-	ShedBreaks         int     // negative breaks: decisions where a shed starts after one without
-	ShedPnL            float64 // realised on the GEX shed buy-backs, net of fees
-	HedgePnL           float64 // the perp hedge: its price moves, less fees and funding
-	HedgeTrades        int     // perp orders (opens, re-hedges, unwinds)
-	MaxMMPct           float64 // MM as % of the margin balance, highest over the decisions
-	AvgIM              float64 // IM in the coin, averaged over the decisions
-	MaxGapLossPct      float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
+	ShedBreaks    int     // negative breaks: decisions where a shed starts after one without
+	ShedPnL       float64 // realised on the GEX shed buy-backs, net of fees
+	HedgePnL      float64 // the perp hedge: its price moves, less fees and funding
+	HedgeTrades   int     // perp orders (opens, re-hedges, unwinds)
+	MaxMMPct      float64 // MM as % of the margin balance, highest over the decisions
+	AvgIM         float64 // IM in the coin, averaged over the decisions
+	MaxGapLossPct float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
+	// The full-strangle study (#677, fullstrangle.go).
+	MissingLegHours    float64 // one-legged strangles × hours they were so, every rule set
+	PerpTradedUSD      float64 // the perpetual's turnover, USD
+	MaxPerpUSD         float64 // its largest |position|, USD
+	PerpFees           float64 // its taker fees, coin (part of Fees and HedgePnL)
+	PerpFunding        float64 // the funding it paid, coin (part of HedgePnL)
+	HedgeRateLimited   int     // decisions with a hedge due and the hourly order limit reached
 	MaxDrawdown        float64
 	MaxIMPct, AvgIMPct float64
 	Days               []Day
@@ -192,8 +202,12 @@ type engine struct {
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
 	rb         rebalanceState
-	hedge      perpHedge // the shed study's perp hedge (shed.go)
-	shedding   bool      // the last decision shed (ShedBreaks)
+	hedge      perpHedge   // the shed study's perp hedge (shed.go)
+	shedding   bool        // the last decision shed (ShedBreaks)
+	perpOrders []time.Time // the full-strangle hedge's last orders (its hourly limit)
+
+	lastDecision time.Time // when missingLegs was counted (noteMissingLegs)
+	missingLegs  int
 
 	now  time.Time              // the snapshot being replayed
 	dec  strategy.GammaDecision // its GEX decision
@@ -397,6 +411,7 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	} else if e.set.Rebalance != "" {
 		e.rebalance(at, snap, dec, st, quotes, spot, gexErr == nil, stopsDeferred)
 	}
+	e.holdBookDelta(at, u.MarginBalance, spot)
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.
 	entriesAllowed := !mmBreach && !stopsDeferred && gexErr == nil && !st.Frozen
@@ -407,6 +422,7 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 		}
 	}
 
+	e.noteMissingLegs(at)
 	u = e.usage(spot)
 	e.res.MaxIMPct = math.Max(e.res.MaxIMPct, u.IMPct())
 	e.res.AvgIMPct += u.IMPct()
@@ -609,7 +625,7 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if present == nil {
 			present, missing = s.put, "call"
 		}
-		if present == nil || dec.Sheds(missing) || present.DTEAt(at) <= c.RolloutDTE {
+		if present == nil || e.shedSkips(missing, dec) || present.DTEAt(at) <= c.RolloutDTE {
 			continue
 		}
 		if e.sideHold(missing, dec, st) != "" {
@@ -631,7 +647,7 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			}
 		}
 		if stoppedAt, ok := e.stopped[k]; ok {
-			if strategy.RepairBlockReason(stoppedAt, at, time.Duration(c.RepairCooldownHours)*time.Hour, st) != "" {
+			if e.stopHold(stoppedAt, at, st) != "" {
 				continue
 			}
 		}
@@ -696,7 +712,7 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		var sides []entrySide
 		regimeHeld := false
 		for _, in := range []*marketdata.Instrument{ci, pi} {
-			if dec.Sheds(in.OptionType) {
+			if e.shedSkips(in.OptionType, dec) {
 				continue
 			}
 			if e.sideHold(in.OptionType, dec, st) != "" {

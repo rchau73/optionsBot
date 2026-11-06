@@ -115,6 +115,9 @@ func (e *engine) shed(at time.Time, dec strategy.GammaDecision, st risk.Status, 
 	if dec.Shed == strategy.GammaActionCloseCalls {
 		typ = "call"
 	}
+	if e.set.FullStrangle.Hedged { // as the bot with the hedge on: the perpetual holds the delta
+		return
+	}
 	switch e.set.Shed.mode() {
 	case ShedNone:
 		return
@@ -194,6 +197,7 @@ func (e *engine) markPerp(at time.Time, spot float64) {
 		funding := math.Abs(h.usd) / spot * e.set.PerpFundingPct / 100 * at.Sub(h.at).Hours() / 24 / 365
 		e.cash += pnl - funding
 		e.res.HedgePnL += pnl - funding
+		e.res.PerpFunding += funding
 	}
 	h.price, h.at = spot, at
 }
@@ -264,6 +268,9 @@ func (e *engine) tradePerp(at time.Time, usd float64, why string) {
 	e.res.Fees += fee
 	e.day.Fees += fee
 	e.res.HedgeTrades++
+	e.res.PerpFees += fee
+	e.res.PerpTradedUSD += math.Abs(change)
+	e.res.MaxPerpUSD = math.Max(e.res.MaxPerpUSD, math.Abs(usd))
 	e.day.Trades++
 	h.usd = usd
 	e.act(at, "%s: perp %+.0f USD at %.0f (fee %.5f)", why, usd, h.price, fee)
@@ -373,10 +380,10 @@ func NetUSD(days []Day) float64 {
 const (
 	VerdictBaseline     = "baseline"
 	VerdictCandidate    = "candidate"
-	VerdictWorseWeek    = "not recommended: worst week worse than today's shed"
-	VerdictWorseMM      = "not recommended: max MM above today's shed"
+	VerdictWorseWeek    = "not recommended: worst week worse than today's"
+	VerdictWorseMM      = "not recommended: max MM above today's"
 	VerdictReachesMaxMM = "not recommended: MM reached max_mm_pct"
-	VerdictNoGain       = "no gain on today's shed"
+	VerdictNoGain       = "no gain on today's"
 )
 
 // ShedVerdict judges a variant against the bot's shed on the same books and
