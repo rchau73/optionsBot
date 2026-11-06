@@ -275,7 +275,8 @@ Only an admin may switch it.
 Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
 If that preview cannot be read, the window says so and the admin can still switch off.
 If the perpetual cannot be closed, the experiment stays on.
-The kill switch closes the perpetual too.
+The kill switch closes the perpetual too, but only the size the bot itself holds: a perpetual beyond that, such as one held by hand, stays open for you to close, and the journal says so (`perp_left_open`).
+Without a hedge position the kill switch sends no futures order.
 The hedge's perpetual is the bot's own position, so "Not managed by the bot" does not list it: only the part beyond what the bot holds.
 The hedge also shows on Overview, Positions and Details (pro).
 <!-- guide: route:POST /api/bots/[bot]/hedge -->

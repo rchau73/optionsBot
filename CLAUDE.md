@@ -189,7 +189,7 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   (confirmed negative regime; puts in a bear trend, calls in a bull trend) — the leg the bot no longer sells but may still hold (2026-10-09 BTC: puts re-sold during two minutes of neutral trend).
 - **Kill switch:** cancel all orders for the currency → read back and book what each working entry filled (`settleLeg` + `finalizePending`)
   → flatten at market with retries on a detached context, the book matched to the exchange's shorts before each pass (`syncBookToExchange`, no drift confirmation) and the exchange checked flat at the end
-  → flatten the coin's perpetual too, whatever the hedge mode (`flattenPerp`) → stay idle (don't exit; Docker would restart into trading).
+  → close the bot's own perpetual too: the hedge ledger's size at most, capped by the exchange, the rest left and journaled (`flattenPerp`, `perp_left_open`, #667) → stay idle (don't exit; Docker would restart into trading).
 - **Futures hedge experiment** (`futureshedge.go`, #657; off unless switched from the monitor, `data/hedge_mode.json`, testnet only): while on, the GEX shed closes nothing (`shed_hedged` skip)
   and the perpetual holds the **coin** delta (each leg's delta less its mark in coin, `TotalCoinDelta`: what a coin-margined account's equity moves with)
   within 5 % of the margin balance (`hedge.HedgeOrder`, IOC, ≤ 12 orders/h); stops, exits and the MM cut still close legs (`internal/strategy/CLAUDE.md`).

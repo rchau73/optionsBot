@@ -24,10 +24,11 @@ import (
 //     traded back to zero with the perpetual once it reaches the band
 //     (hedge.HedgeOrder), at most FixedFuturesHedgeMaxPerHour orders an hour;
 //   - the stop-loss, delta exit, MM cut, DTE roll and take-profit still close legs.
-// The kill switch flattens the perpetual too, whatever the mode. Switching
-// off closes the perpetual at market first (reduce-only); the shed works
-// again from the next cycle. A benchmark (hedge.Ledger) compares the two
-// approaches from the first switch on: see internal/hedge/benchmark.go.
+// The kill switch closes the bot's own perpetual too, the ledger's size at
+// most (#667). Switching off closes the perpetual at market first
+// (reduce-only); the shed works again from the next cycle. A benchmark
+// (hedge.Ledger) compares the two approaches from the first switch on: see
+// internal/hedge/benchmark.go.
 
 // FuturesTrader is what the futures hedge asks of the exchange beyond the
 // options (orders go through Exchange.Submit). Optional: nil leaves the
@@ -624,9 +625,12 @@ func (s *Strategy) saveHedge(now time.Time, force bool) error {
 
 // closePerp closes the perpetual at market (reduce-only), up to attempts
 // times, and returns what it realised (coin, net of fees; funding not
-// included) and the size left (USD, signed). reason is the order's trigger.
-func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts int) (realised, left float64, err error) {
+// included) and the size left of what owned gives (USD, signed). owned says
+// how much of the exchange's position this close may touch. reason is the
+// order's trigger.
+func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts int, owned func(exchangeUSD float64) float64) (realised, left float64, err error) {
 	before := s.fh.mode.Ledger.Real.Realised - s.fh.mode.Ledger.Real.Fees
+	beyond := 0.0 // what the exchange holds past owned: never touched
 	for i := 0; i < attempts; i++ {
 		perp, rerr := s.readPerp(ctx)
 		if rerr != nil {
@@ -634,6 +638,9 @@ func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts i
 			continue
 		}
 		spot := s.md.UnderlyingPrice()
+		held := perp.Size
+		perp.Size = owned(held)
+		beyond = held - perp.Size
 		s.adoptPerpDrift(perp, spot)
 		left = perp.Size
 		if math.Abs(perp.Size) < 0.5 {
@@ -667,23 +674,44 @@ func (s *Strategy) closePerp(ctx context.Context, reason, why string, attempts i
 	if err == nil && math.Abs(left) >= 0.5 {
 		err = fmt.Errorf("%.0f USD of %s still open", left, s.perpName())
 	}
-	s.fh.perp.Size = left // the view shows what is left, not the read before the close
+	s.fh.perp.Size = left + beyond // the view shows what is left, not the read before the close
 	s.saveHedge(time.Now(), true)
 	return s.fh.mode.Ledger.Real.Realised - s.fh.mode.Ledger.Real.Fees - before, left, err
 }
 
-// flattenPerp is the kill switch's part: whatever the mode, an open
-// perpetual of the bot's currency is closed at market and checked flat.
+// wholePerp is a close of the whole position (the switch-off).
+func wholePerp(exchangeUSD float64) float64 { return exchangeUSD }
+
+// ownPerp is the part of the exchange's position that is the bot's: the
+// ledger's, and nothing on a live account with the mode off, where the
+// experiment cannot have traded whatever an old mode file says.
+func (s *Strategy) ownPerp(exchangeUSD float64) float64 {
+	if s.cfg.IsLive() && !s.fh.mode.Enabled {
+		return 0
+	}
+	return hedge.OwnPerp(s.fh.mode.Ledger.Real.SizeUSD, exchangeUSD)
+}
+
+// flattenPerp is the kill switch's part: the bot's own perpetual is closed
+// at market and checked flat. Anything beyond it (a position a person holds
+// on purpose, #667) is left alone and journaled once.
 func (s *Strategy) flattenPerp(ctx context.Context) {
 	if s.futures == nil {
 		return
 	}
-	_, left, err := s.closePerp(ctx, orders.TriggerKillSwitch, "kill switch: flattening the perpetual hedge", killSwitchAttempts)
+	ledger := s.fh.mode.Ledger.Real.SizeUSD
+	_, left, err := s.closePerp(ctx, orders.TriggerKillSwitch, "kill switch: closing the bot's perpetual", killSwitchAttempts, s.ownPerp)
 	switch {
 	case err != nil:
-		slog.Error("kill switch: the perpetual is not flat — close it manually", "instrument", s.perpName(), "left_usd", left, "err", err)
+		slog.Error("kill switch: the bot's perpetual is not flat — close it manually", "instrument", s.perpName(), "left_usd", left, "err", err)
 	default:
-		slog.Warn("kill switch: no perpetual position left", "instrument", s.perpName())
+		slog.Warn("kill switch: none of the bot's perpetual left", "instrument", s.perpName())
+	}
+	if beyond := s.fh.perp.Size - left; math.Abs(beyond) >= 0.5 {
+		slog.Warn("kill switch: a perpetual that is not the bot's stays open", "instrument", s.perpName(), "left_usd", beyond, "ledger_usd", ledger)
+		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeLeftOpen, AmountUSD: math.Abs(beyond),
+			OptionsDelta: s.state.TotalCoinDelta(), PerpDelta: hedge.PerpDelta(beyond, perpMark(s.fh.perp, s.md.UnderlyingPrice())),
+			Detail: fmt.Sprintf("kill switch: %+.0f USD of %s left open: beyond the %+.0f USD the bot's ledger held, so not the bot's to close", beyond, s.perpName(), ledger)})
 	}
 }
 
@@ -770,7 +798,7 @@ func (s *Strategy) switchHedge(ctx context.Context, enable bool, by orders.Actor
 		if p, err := s.readPerp(ctx); err == nil {
 			before = p.Size
 		}
-		realised, _, err := s.closePerp(ctx, orders.TriggerFuturesHedgeClose, "futures hedge switched off by "+actor.String(), 2)
+		realised, _, err := s.closePerp(ctx, orders.TriggerFuturesHedgeClose, "futures hedge switched off by "+actor.String(), 2, wholePerp)
 		res.RealisedCoin = realised
 		if err != nil {
 			return res, fmt.Errorf("the perpetual could not be closed (%v): the experiment stays ON", err)

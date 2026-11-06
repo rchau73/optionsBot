@@ -24,6 +24,28 @@ func TestHedgeOrder_LongDeltaSells(t *testing.T) {
 	}
 }
 
+// The bot's part of the exchange's perpetual (#667): the ledger's size at
+// most, in the ledger's direction, never more than the exchange holds.
+func TestOwnPerp(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		ledger, exchange, want float64
+	}{
+		{"a hand-held short beyond the ledger", -20000, -50000, -20000},
+		{"a hand-held long beyond the ledger", 20000, 50000, 20000},
+		{"the ledger is the position", -20000, -20000, -20000},
+		{"the exchange holds less", -20000, -10000, -10000},
+		{"an empty ledger", 0, -50000, 0},
+		{"a flat exchange", -20000, 0, 0},
+		{"opposite directions", -20000, 50000, 0},
+		{"both flat", 0, 0, 0},
+	} {
+		if got := hedge.OwnPerp(tc.ledger, tc.exchange); got != tc.want {
+			t.Errorf("%s: OwnPerp(%.0f, %.0f) = %.0f, want %.0f", tc.name, tc.ledger, tc.exchange, got, tc.want)
+		}
+	}
+}
+
 // Scenario: the combined payoff includes the hedge (#666): the issue's −10 %
 // row, and the perpetual's inverse P&L at every move.
 func TestBookScenarios_CombinedPayoffIncludesTheHedge(t *testing.T) {
