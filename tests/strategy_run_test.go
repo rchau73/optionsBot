@@ -18,6 +18,7 @@ import (
 	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/shadow"
 	"optionsbot/internal/strategy"
 )
 
@@ -662,6 +663,7 @@ type strategyFixture struct {
 	oi      strategy.OISource          // optional
 	futures strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
 	hedgeAt string                     // optional: its mode file
+	shadow  *shadow.Book               // optional: the shadow legs record (#676)
 	// hedgeRecheck, when set, shortens a halted hedge's re-check.
 	hedgeRecheck time.Duration
 	journal      *recordingJournal
@@ -729,7 +731,7 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
 			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
-			Futures: f.futures, HedgeModePath: f.hedgeAt, HedgeRecheck: f.hedgeRecheck,
+			Futures: f.futures, HedgeModePath: f.hedgeAt, HedgeRecheck: f.hedgeRecheck, ShadowLegs: f.shadow,
 		})
 		if f.beforeRun != nil {
 			f.beforeRun(f.strat)
