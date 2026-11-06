@@ -8,6 +8,7 @@ Index of the education material.
   - Core-policy settings say a change needs the product owner.
   - Keys are the catalogue's (`config.Tunables()`), in alphabetical order.
   - Glossary terms are their own tips (`short` and `risk_income` in `frontend/content/glossary.json`).
+  - The futures hedge's terms (coin delta, perpetual, inverse perpetual, hedge band, hedge vs shed, hedge unavailable, kill switch perpetual) are glossary tips; `TestTips_EveryHedgeTermHasATip` (#681) names a hedge term with no tip or no "testnet" in it. A new hedge term goes in its `hedgeTerms` list.
   - `tests/tips_coverage_test.go` fails on a tunable or glossary term with no tip, a sentence over 25 words, a jargon word with no glossary entry, or a promised return; it names the key or term.
   - The monitor serves it since #588: `GET /api/help/tips` (`frontend/docs/api-routes.md`) and `frontend/lib/tips.js`. No screen uses the route yet; the first one comes after the epic's prototype is approved.
   - The monitor image is built from `frontend/` alone, so it reads a copy, `frontend/content/tips.json`.
