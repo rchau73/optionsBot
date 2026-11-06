@@ -477,15 +477,14 @@ func (e *engine) complementHeld(at time.Time, s *strangle, dec strategy.GammaDec
 		return true
 	}
 	for _, typ := range []string{"call", "put"} {
-		if dec.Sheds(typ) || e.sideHold(typ, dec, st) != "" {
+		if e.shedSkips(typ, dec) || e.sideHold(typ, dec, st) != "" {
 			return true
 		}
 		for _, b := range e.book {
 			if b.slot != s.slot {
 				continue
 			}
-			if stoppedAt, ok := e.stopped[key(b, typ)]; ok &&
-				strategy.RepairBlockReason(stoppedAt, at, time.Duration(e.cfg.RepairCooldownHours)*time.Hour, st) != "" {
+			if stoppedAt, ok := e.stopped[key(b, typ)]; ok && e.stopHold(stoppedAt, at, st) != "" {
 				return true
 			}
 		}
