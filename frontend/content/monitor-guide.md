@@ -289,6 +289,8 @@ The kill switch closes the perpetual too, but only the size the bot itself holds
 Without a hedge position the kill switch sends no futures order.
 The hedge's perpetual is the bot's own position, so "Not managed by the bot" does not list it: only the part beyond what the bot holds.
 The hedge also shows on Overview, Positions and Details (pro).
+The terms on the card have a plain-words tip each, in the help: coin delta, perpetual, inverse perpetual, hedge band, hedge vs shed, hedge unavailable and kill switch perpetual.
+A hedge band is how far the coin delta may drift from zero before the hedge trades: 5 % of the margin balance.
 <!-- guide: route:POST /api/bots/[bot]/hedge -->
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand.
