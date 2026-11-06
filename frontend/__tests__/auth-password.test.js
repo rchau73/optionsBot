@@ -16,7 +16,7 @@ jest.setTimeout(60000);
 
 const ORIGIN = "http://localhost:3100";
 const OLD = "ana's first password";
-const NEW = "ana's brand new password";
+const NEW = "a brand new secret phrase";
 
 function req(path, { body, cookie = "", headers = {} } = {}) {
   return new Request(`${ORIGIN}${path}`, {
@@ -150,9 +150,9 @@ describe("Scenario: weak new password", () => {
 
   test("the rule is the sign-in rule, and the form shows the same length", () => {
     expect(MIN_LENGTH).toBe(MIN_PASSWORD_LENGTH);
-    expect(newPasswordProblem(OLD, "y".repeat(MIN_PASSWORD_LENGTH))).toBeNull();
-    expect(newPasswordProblem(OLD, "y".repeat(2000))).toMatch(/^Too long/);
-    expect(newPasswordProblem(OLD, undefined)).toMatch(/^Too short/);
+    expect(newPasswordProblem(OLD, "y".repeat(MIN_PASSWORD_LENGTH), "ana")).toBeNull();
+    expect(newPasswordProblem(OLD, "y".repeat(2000), "ana")).toMatch(/^Too long/);
+    expect(newPasswordProblem(OLD, undefined, "ana")).toMatch(/^Too short/);
   });
 });
 

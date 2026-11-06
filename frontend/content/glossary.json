@@ -180,6 +180,12 @@
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Closes", "Closed"]
   },
+  "coin delta": {
+    "short": "How much the account's coin balance moves when the price moves, counting the options and the perpetual.",
+    "long": "Each option leg has a delta in dollars. Coin delta takes away that leg's value in the coin, which is what an account that holds its margin in the coin really gains or loses. The futures hedge, a testnet experiment, trades the perpetual to keep it small.",
+    "risk_income": "Near zero, a small price move changes the balance little. It does not remove the loss in a big move, and each hedge trade pays a fee.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
   "created": {
     "short": "When the person was added to the monitor.",
     "long": "Users page (admins only). The date and time the person's account was created, by an admin or, for the first admin, at the monitor's first start.",
@@ -414,6 +420,25 @@
     "source": "frontend/docs/menu-and-pages.md#what-you-see",
     "labels": ["Group by"]
   },
+  "hedge band": {
+    "short": "How far the coin delta may drift from zero before the hedge trades: 5 % of the margin balance.",
+    "long": "The futures hedge, a testnet experiment, does nothing while the coin delta is inside the band. Past it, the bot trades the perpetual to bring the delta back, at most 12 orders an hour. The band is fixed, not a setting.",
+    "risk_income": "A wide band means fewer trades and fees but more exposure to price moves.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "hedge unavailable": {
+    "short": "The hedge cannot trade, so the GEX shed protects the book again until it can.",
+    "long": "When the exchange refuses the hedge's orders, or its funds or quotes are missing, the card shows Not holding or Paused with the reason. The bot gives the shed back, so the book is never left with neither. It looks again and resumes by itself. This is a testnet experiment.",
+    "risk_income": "While it lasts, the book is protected by the shed, which gives up one side's income, not by the hedge.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
+  "hedge vs shed": {
+    "short": "Two ways to meet a threatened side: the shed buys the options back; the hedge keeps them and trades the perpetual.",
+    "long": "With the futures hedge off, the GEX shed closes the threatened side. With it on, the shed keeps its options and the perpetual holds the delta near zero. Stops, delta exits and the margin cut still close legs. The hedge is a testnet experiment.",
+    "risk_income": "The hedge keeps the side's income but pays fees and still loses in a big move. The shed gives up that income to cut the risk.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does",
+    "labels": ["Hedge vs shed"]
+  },
   "held": {
     "short": "How many days a position was open before it closed.",
     "long": "The time from the sale of a leg to its buy-back, in days.",
@@ -483,6 +508,12 @@
     "source": "OptionStrategy.md#2-options-in-five-minutes",
     "labels": ["Instrument"]
   },
+  "inverse perpetual": {
+    "short": "A perpetual that is priced in dollars but settled in the coin, so its gain or loss is paid in the coin.",
+    "long": "Deribit's BTC and ETH perpetuals are inverse. A short one gains coin when the price falls and loses coin when it rises. That matches an account that holds its margin in the coin. The futures hedge, a testnet experiment, uses it.",
+    "risk_income": "It offsets the options' direction, not their curve. Funding and fees are paid while it is open, so it lowers income.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
+  },
   "iv percentile": {
     "short": "Where today's DVOL sits compared with the past year, from 0 (lowest) to 100 (highest).",
     "long": "The IV percentile ranks today's DVOL against the past year. 0 means it is the lowest of the year, 100 the highest. The bot uses this rank to choose how much of the account may be used as margin.",
@@ -513,6 +544,12 @@
     "risk_income": "It ends all risk and all income at once, at market prices.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Kill switch"]
+  },
+  "kill switch perpetual": {
+    "short": "The kill switch also closes the bot's own perpetual, up to the size the hedge holds, and leaves the rest.",
+    "long": "The hedge keeps a ledger of the perpetual it opened. The kill switch buys back that size at most, and never more than the exchange holds. Any other perpetual position is left alone and journaled, because it is not the bot's. Without a hedge position it sends no futures order. The hedge is a testnet experiment.",
+    "risk_income": "It ends the hedge's risk and its funding cost at once, at market prices, and leaves positions that are not the bot's.",
+    "source": "OptionStrategy.md#9-market-regimes-and-what-the-bot-does"
   },
   "lapsed": {
     "short": "People who visited in the 4 weeks before and did not visit this week.",

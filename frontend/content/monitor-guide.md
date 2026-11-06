@@ -289,6 +289,8 @@ The kill switch closes the perpetual too, but only the size the bot itself holds
 Without a hedge position the kill switch sends no futures order.
 The hedge's perpetual is the bot's own position, so "Not managed by the bot" does not list it: only the part beyond what the bot holds.
 The hedge also shows on Overview, Positions and Details (pro).
+The terms on the card have a plain-words tip each, in the help: coin delta, perpetual, inverse perpetual, hedge band, hedge vs shed, hedge unavailable and kill switch perpetual.
+A hedge band is how far the coin delta may drift from zero before the hedge trades: 5 % of the margin balance.
 <!-- guide: route:POST /api/bots/[bot]/hedge -->
 
 **Not managed by the bot** lists any other position on the account, for example one bought by hand.
@@ -475,6 +477,11 @@ A session is kept alive while you use the monitor and ends after 14 days or when
 Enter the current password and the new one twice.
 The new one must differ from the current one and be at least 12 characters.
 Your sessions on other devices end when you change it.
+
+**Which passwords are refused**: besides the 12 characters, a new password is refused when it is too common or contains your username, and the form says which.
+Too common means it is on a list of about 1,000 common passwords, even with capitals, with look-alikes such as p@ssw0rd, or with digits or symbols added before or after.
+The rule applies to a new user, a password change and both kinds of reset.
+A password you already have keeps working, and a refused password on a reset link leaves the link usable.
 
 **How to reset a forgotten password**: ask an admin.
 An admin issues a single-use reset link on the Users page.

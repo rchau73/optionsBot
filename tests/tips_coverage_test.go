@@ -223,6 +223,59 @@ func TestTips_FileIsInAlphabeticalOrder(t *testing.T) {
 	}
 }
 
+// hedgeTerms: the glossary terms the hedge card and the hedge's lines use
+// (#681, epic E11). A new hedge term is added here with its tip.
+var hedgeTerms = []string{"coin delta", "futures hedge", "hedge band", "hedge unavailable", "hedge vs shed", "inverse perpetual", "kill switch perpetual", "perpetual", "shed"}
+
+// testnetTerms: the hedge terms whose tip must say it is a testnet experiment
+// (the older entries and the shed, which is not part of the experiment, are not).
+var testnetTerms = map[string]bool{"coin delta": true, "hedge band": true, "hedge unavailable": true, "hedge vs shed": true, "inverse perpetual": true, "kill switch perpetual": true}
+
+// hedgeTipProblems names every hedge term with no tip, or with a tip that
+// lacks its effect on risk and income or does not say it is a testnet experiment.
+func hedgeTipProblems(terms []string, g map[string]glossaryTip, longs map[string]string) []string {
+	var out []string
+	for _, term := range terms {
+		e, ok := g[term]
+		switch {
+		case !ok:
+			out = append(out, "hedge term \""+term+"\" has no tip in frontend/content/glossary.json")
+		case strings.TrimSpace(e.Short) == "" || strings.TrimSpace(e.RiskIncome) == "":
+			out = append(out, "hedge term \""+term+"\" tip lacks what it is or its effect on risk and income")
+		case testnetTerms[term] && !strings.Contains(strings.ToLower(e.Short+" "+longs[term]+" "+e.RiskIncome), "testnet"):
+			out = append(out, "hedge term \""+term+"\" tip does not say it is a testnet experiment")
+		}
+	}
+	return out
+}
+
+// Scenario: each hedge term has a tip; a term without a tip fails the build
+// and the failure names the term.
+func TestTips_EveryHedgeTermHasATip(t *testing.T) {
+	g := loadGlossaryTips(t)
+	var longs map[string]struct {
+		Long string `json:"long"`
+	}
+	if err := json.Unmarshal(readRepoFile(t, "frontend/content/glossary.json"), &longs); err != nil {
+		t.Fatal(err)
+	}
+	long := map[string]string{}
+	for k, v := range longs {
+		long[k] = v.Long
+	}
+	if got := hedgeTipProblems(hedgeTerms, g, long); len(got) > 0 {
+		t.Errorf("hedge tips incomplete:\n%s", strings.Join(got, "\n"))
+	}
+	// Negative: a term with no tip, and one that does not say testnet, are named.
+	bad := map[string]glossaryTip{"hedge band": {Short: "A band.", RiskIncome: "Some effect."}}
+	got := strings.Join(hedgeTipProblems([]string{"hedge band", "coin delta"}, bad, nil), "\n")
+	for _, want := range []string{"\"coin delta\" has no tip", "\"hedge band\" tip does not say it is a testnet"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("want a problem containing %q, got:\n%s", want, got)
+		}
+	}
+}
+
 // Scenario: a new tunable without a tip / a tip uses undefined jargon / no
 // promised returns — each failure names its key or term.
 func TestTips_CoverageFailuresNameTheCulprit(t *testing.T) {
