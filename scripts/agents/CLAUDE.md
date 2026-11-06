@@ -162,4 +162,5 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     no new Claude run for 30 min, then one at a time for an hour (`parallel_max`);
   - each tick, outside a pause, `requeue.sh` (rules in `requeue.py`) puts back in Ready the Blocked cards whose Dev stop was a limit and nobody answered (#237).
 - Setup: `setup_github.sh`; schedule: `install.sh`.
+- A pipe never hides a failure (#683): a script or CI step that pipes a command into a filter sets `pipefail` or carries `# pipe-ok: <why>` on that line or the one before (`tests/pipe_guard_test.go`).
 - Agents never deploy live or trade (release.sh promotes a testnet stable only: `promote.sh` refuses a live one); they merge only policy-free work: the PR gate merges Dev agent PRs reviewed clean, CI green, up to date and policy-free (#468), and the PM merges its own policy-free PRD PRs.
