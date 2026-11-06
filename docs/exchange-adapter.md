@@ -26,7 +26,7 @@ How to read the columns:
 | `public/subscribe` | gateway / `gateway.go` | subscribes channels (below), in chunks; restored after a reconnect | public | non-matching | yes | low | trading | live index, DVOL and tickers |
 | `public/get_instruments` | marketdata / `marketdata.go` | the option chain at start (names, strike, expiry, tick sizes, minimum size) | public | non-matching | yes | low | trading | every instrument: no entry, no mark |
 | `public/get_volatility_index_data` | marketdata / `marketdata.go` | DVOL daily history to seed the IV percentile | public | non-matching | yes | low | trading | the margin band starts at percentile 50 until history builds up |
-| `public/get_book_summary_by_currency` | gex / `manager.go`; recorder / `linear.go` | mainnet open interest and marks for GEX and the liquidity cap (gex, every 60 s); the USDC-settled book for the recorder | public | non-matching | yes | low | market | GEX regime and flip (no new risk: `gex_wait`), the liquidity cap (nothing sent) |
+| `public/get_book_summary_by_currency` | exchange/deribit / `booksummary.go` (`BookReader.BookSummary`, used by `gex.Manager` and `recorder.USDCBooks`) | mainnet open interest and marks for GEX and the liquidity cap (gex, every 60 s); the USDC-settled book for the recorder | public | non-matching | yes | low | market | GEX regime and flip (no new risk: `gex_wait`), the liquidity cap (nothing sent) |
 | `public/get_tradingview_chart_data` | orders / `executor.go` | daily closes of `<COIN>-PERPETUAL` that seed the SMA trend and swings | public | non-matching | yes | low | trading | the trend at startup (it builds from live prices instead) |
 | `public/get_instrument` | orders / `executor.go` | the perpetual's contract size, minimum amount and tick for the futures hedge experiment (`GetInstrumentSpec`, read once, #657) | public | non-matching | yes | low | trading | the futures hedge (no contract size: no hedge order) |
 | `public/ticker` | orders / `executor.go` | the perpetual's best bid and ask for a futures hedge order (`GetTicker`, only when a hedge is due, #657) | public | non-matching | yes | low | trading | the futures hedge (no quote: no hedge order this cycle) |
@@ -58,7 +58,7 @@ The gateway also matches on method prefixes, which the test lists as gateway-onl
 
 Heartbeats arrive as `heartbeat` notifications; `test_request` is answered with `public/test` on the socket (above).
 
-**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 6 packages (gateway, marketdata, gex, recorder, orders, account). None under `internal/strategy`.
+**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 5 packages (gateway, marketdata, exchange/deribit, orders, account). None under `internal/strategy`.
 
 ## 2. Deribit-specific assumptions outside the gateway
 
@@ -100,6 +100,8 @@ package adapter
 import (
 	"context"
 
+	"optionsbot/internal/exchange"
+	"optionsbot/internal/exchange/deribit"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
@@ -144,7 +146,7 @@ type Candles interface {
 }
 
 // BookSummary: open interest and marks of every option of a currency.
-// NEW: today an unexported fetch in gex.Manager and recorder.LinearBook.
+// Today deribit.BookReader (step 3), used by gex.Manager and recorder.USDCBooks.
 type BookSummary interface {
 	BookSummary(ctx context.Context, currency string) ([]gex.SummaryRow, error)
 }
@@ -184,6 +186,7 @@ type MarginSimulator interface {
 // ── Capabilities ─────────────────────────────────────────────────────────────
 // What an exchange may lack. The bot refuses to trade on an adapter missing a
 // capability it has no fallback for; each fallback is a person's decision (§5).
+// In the code as exchange.Capabilities (step 2): a check below keeps them equal.
 
 type Capabilities struct {
 	MarginSimulator     bool // portfolio margin simulation before an order
@@ -196,8 +199,8 @@ type Capabilities struct {
 	MainnetOpenInterest bool // real open interest on the same venue
 }
 
-// Exchange is one adapter. NEW: no type satisfies it yet (Name, Capabilities
-// and BookSummary are new; Deribit's would compose Executor, Manager, Gateway).
+// Exchange is one adapter. NEW: no type satisfies it yet (Deribit's would
+// compose Executor, Manager, Gateway, BookReader, and add Name and Capabilities).
 type Exchange interface {
 	Name() string
 	Capabilities() Capabilities
@@ -218,6 +221,10 @@ var (
 	_ PositionsAndMargin = (*orders.Executor)(nil)
 	_ MarginSimulator    = (*orders.Executor)(nil)
 	_ Candles            = (*orders.Executor)(nil)
+	_ BookSummary        = (*deribit.BookReader)(nil)
+
+	// Same fields, same order, same types as the code's Capabilities.
+	_ = exchange.Capabilities(Capabilities{})
 
 	// The strategy's deps.go asks for exactly these groups, both ways.
 	_ strategy.Exchange = (interface {
@@ -230,17 +237,17 @@ var (
 )
 ```
 
-**Types that change** (none in this PR): `Exchange` and `BookSummary` are new; `GetDailyCloses` moves from the account reader to market data (`Candles`); `Capabilities` is new and Deribit's value is all `true`. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` names the boundary's interfaces as aliases (#182: `Exchange = exchange.Trading`, `MarketData = exchange.MarketData`, `OISource = exchange.OpenInterest`), so a change here is a change to what the strategy asks.
+**Types that change**: `Exchange` is new; `GetDailyCloses` moves from the account reader to market data (`Candles`). `Capabilities` (`exchange.DeribitCapabilities`, all `true`) and `BookSummary` (`deribit.BookReader`) are in the code since #687. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` names the boundary's interfaces as aliases (#182: `Exchange = exchange.Trading`, `MarketData = exchange.MarketData`, `OISource = exchange.OpenInterest`), so a change here is a change to what the strategy asks.
 
-**Deribit's capabilities**: all true. A second exchange's row of this table is the E8 feasibility brief's job (#183).
+**Deribit's capabilities**: all true, pinned by `TestExchange_DeribitCapabilitiesArePinned`. A second exchange's row of this table is the E8 feasibility brief's job (#183).
 
 ## 4. Migration sequence
 
 Each step is one PR that keeps `make check` green and `tests/restart_invariance_test.go` passing, sends the same requests in the same order to Deribit, and changes no order or reconcile behaviour. Order handling and reconcile changes are in §5, not here.
 
-1. **Inventory pinned** (this PR): this document and `tests/exchange_coupling_test.go`.
-2. **Capabilities**: add `Capabilities` to `internal/exchange` with Deribit's value (all true), read by nothing. A test pins Deribit's value.
-3. **One book-summary fetch**: `gex.Manager` and `recorder.LinearBook` call one `BookSummary(ctx, currency)` (the method moves to a Deribit package; same request, same gateway). `public/get_book_summary_by_currency` then has one call site.
+1. **Inventory pinned** (done, #325): this document and `tests/exchange_coupling_test.go`.
+2. **Capabilities** (done, #687): `Capabilities` in `internal/exchange` with Deribit's value (`DeribitCapabilities`, all true), read by nothing. A test pins Deribit's value.
+3. **One book-summary fetch** (done, #687): `gex.Manager` and `recorder.USDCBooks` (behind `LinearBook`) call one `BookSummary(ctx, currency)` on `deribit.BookReader` in `internal/exchange/deribit`; same request, same gateway. `public/get_book_summary_by_currency` has one call site. `SummaryRow` moved with it and `gex.SummaryRow` is an alias, because `internal/exchange` imports `gex`.
 4. **Chain and channels behind the adapter**: `public/get_instruments`, `public/get_volatility_index_data` and the three channel names move from `marketdata.Manager` into a Deribit chain source the manager consumes; `Manager` keeps its methods (it still satisfies `MarketData`).
 5. **Account view**: `account.Poller`'s three calls go through the same Deribit package (monitor only, no trading effect).
 6. **`internal/exchange/deribit`**: an `Adapter` type that composes today's `Gateway`, `Executor` and `Manager` and satisfies `Exchange`; `main` builds `strategy.Deps` from it. No call changes; the coupling test's allowed packages move to `exchange/deribit` as each step lands.
