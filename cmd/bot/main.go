@@ -25,6 +25,7 @@ import (
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
+	"optionsbot/internal/shadow"
 	"optionsbot/internal/strategy"
 )
 
@@ -56,6 +57,9 @@ const regimeHistoryPath = "data/regime_history.jsonl"
 // hedgeModePath keeps the futures hedge experiment's mode and benchmark (#657).
 const hedgeModePath = "data/hedge_mode.json"
 const directionHistoryPath = "data/direction_history.jsonl"
+
+// shadowLegsPath records every held missing leg for the full-strangle study (#676).
+const shadowLegsPath = "data/shadow_legs.jsonl"
 
 func main() {
 	// Flags
@@ -248,6 +252,15 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	}
 	defer directions.Close()
 
+	// A record for a study: the bot trades without it.
+	shadowLegs, err := shadow.Open(shadowLegsPath)
+	if err != nil {
+		slog.Error("shadow legs: not recording", "err", err)
+		shadowLegs = nil
+	} else {
+		defer shadowLegs.Close()
+	}
+
 	strat := strategy.New(cfg, strategy.Deps{
 		Market:   md,
 		Exchange: exec,
@@ -263,6 +276,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		// The futures hedge experiment (#657): off unless switched on from the monitor.
 		Futures:       exec,
 		HedgeModePath: hedgeModePath,
+		ShadowLegs:    shadowLegs,
 	})
 	strat.RestorePnL(replay.Realised, replay.Closed)
 	strat.RestoreStops(replay.Trades) // stopped, hand-closed and GEX-shed sides stay held across the restart
@@ -320,6 +334,8 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		// The futures hedge experiment (#657): readable everywhere, switched
 		// only on testnet with BOT_ADMIN_TOKEN.
 		opts = append(opts, api.WithFuturesHedge(strat, cfg.AdminToken, cfg.IsLive()))
+		// Every held missing leg, for the full-strangle study (#676).
+		opts = append(opts, api.WithShadowLegs(shadowLegsPath))
 		mon := api.New(strat, orderLog, opts...)
 		go func() {
 			if err := mon.ListenAndServe(ctx, cfg.APIAddr); err != nil {

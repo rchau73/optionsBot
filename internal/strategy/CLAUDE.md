@@ -133,6 +133,16 @@ Read both before changing a rule.
     advantage = hedge P&L + Σ (shed price − later price) × qty — an estimate, labelled so on the monitor.
     `shedNoted` is in memory, so after a restart the persisted ledger says what is already followed (`Ledger.KeptQty` per instrument): a kept leg is never counted twice.
     The band, rate and fee have no `cmd/stress` flag: the backtest has no perpetual, funding or re-hedge fills, so the benchmark studies them live.
+- **Shadow legs** (`shadowlegs.go`, `internal/shadow`, #676; the full-strangle study, #677): records only — no order, no rule, no journal line, no new exchange call beyond a ticker per followed leg; both hedge modes, both bots.
+  - Each cycle after repair, every missing leg `heldLegViews` shows as held (the same `repairGate` chain, then repair's own `no_strike` and `premium_floor`) opens one shadow leg: the strike `SelectStrike` picks, the open leg's size, sold at the bid.
+    A one-sided entry is covered once it fills, as its strangle then has a missing leg.
+  - A leg with a repair working or free to sell is not held, nor one in the rollout window (it would roll at once); a hold with no strike to pick is one `no_leg` line, which `coverage_pct` counts against.
+  - It is followed every cycle at its mid, and `EvaluateLeg` ends it: `stop_loss`, `delta_exit` (both exit at the ask, what the real one pays), `dte_roll` (at the mark), never drift or take-profit; an exit's key stays spent until the hold ends, so one held leg is one shadow leg.
+  - The hold ending closes it at the mark: `released` while the open leg is held, `strangle_closed` once it is gone.
+  - The extra perpetual is a model: it holds the leg's coin delta at zero, re-traded every cycle at spot with the hedge's taker fee; `net_pnl_coin` = P&L + its P&L − its fees (option fees left out).
+  - `data/shadow_legs.jsonl`: every line is the leg's whole state (open and close add the market and the book's coin delta; `update` every `shadow.UpdateEvery`, 5 min, or on a change of hold), so a restart restores from the last line.
+    The key is `shadow.LegKey` (open leg's instrument + side): strangle and position IDs change at reconcile (`tests/restart_invariance_test.go`).
+    A file that cannot be opened logs an error and the bot trades without the record.
 - **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency`, load positions, regroup with `GroupPositions`
   - — an expiry may hold several strangles: calls and puts paired by size, then rank from the money;
   - leftovers one-legged, except that an uneven pair's excess is split onto a lone leg of the other type on the same expiry,
