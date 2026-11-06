@@ -249,7 +249,7 @@ function SwitchOnText({ hedge }) {
         it back to zero: at most {hedge?.max_orders_per_hour ?? 12} orders an hour, each at the best price on the book.
       </li>
       <li>The hedge removes direction only: a big move still costs through gamma, and each re-hedge pays a fee and the spread.</li>
-      <li>Stop-loss, delta exit, the margin cut and the kill switch (which also closes the bot's own perpetual) work as before.</li>
+      <li>Stop-loss, delta exit, the margin cut and the kill switch (which also closes the bot&apos;s own perpetual) work as before.</li>
     </ul>
   );
 }
