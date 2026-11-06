@@ -2,7 +2,7 @@
 // administration — the logic behind the /api/auth and /api/admin/users routes,
 // kept free of Next.js so tests call it directly.
 import crypto from "node:crypto";
-import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
+import { guessablePasswordProblem, hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
 import { LOCK_FAILURES, LoginLimiter } from "./limits";
 import { normalizeUsername, ROLES } from "./store";
 import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
@@ -27,12 +27,12 @@ export function shortSessionId(publicId) {
   return String(publicId).slice(0, 8);
 }
 
-/** Why `next` may not replace `current`, in plain words, or null. */
-export function newPasswordProblem(current, next) {
+/** Why `next` may not replace `current` for `username`, in plain words, or null. */
+export function newPasswordProblem(current, next, username) {
   if (typeof next !== "string" || next.length < MIN_PASSWORD_LENGTH) return `Too short: at least ${MIN_PASSWORD_LENGTH} characters`;
   if (next.length > MAX_PASSWORD_LENGTH) return `Too long: at most ${MAX_PASSWORD_LENGTH} characters`;
   if (next === current) return "The new password must differ from the current one";
-  return null;
+  return guessablePasswordProblem(next, username);
 }
 
 export class AuthService {
@@ -107,8 +107,8 @@ export class AuthService {
   /**
    * A signed-in person changes their own password (#212). The session must be
    * live (re-read like a state-changing route). `next` follows the sign-in
-   * rule (≥ 12 characters) and must differ from `current`; a wrong `current`
-   * counts as a failed sign-in of that username, so 5 lock it exactly like
+   * rule (≥ 12 characters, not guessable) and must differ from `current`; a wrong
+   * `current` counts as a failed sign-in of that username, so 5 lock it exactly like
    * the sign-in form. Success ends every session of the user and opens a new
    * one for this browser only.
    * → { ok: true, user, access, refresh } | { ok: false, status, error, retryAfter? }
@@ -120,7 +120,7 @@ export class AuthService {
     if (typeof current !== "string" || typeof next !== "string" || !current || current.length > MAX_PASSWORD_LENGTH) {
       return { ok: false, status: 400, error: "current and new password required" };
     }
-    const weak = newPasswordProblem(current, next);
+    const weak = newPasswordProblem(current, next, user.username);
     if (weak) return { ok: false, status: 400, error: weak };
 
     const locked = this.limiter.lockedUntil(user.username, this.now());
@@ -352,14 +352,14 @@ export class AuthService {
 
   /**
    * An admin adds a person (#306): the sign-in username rule, one of the three
-   * roles, the ≥ 12-character password rule, an optional email.
+   * roles, the ≥ 12-character password rule (not guessable), an optional email.
    * → { ok: true, user } | { ok: false, status (400 rule, 409 username taken), error }
    */
   async createUser(by, { username, password, role, email } = {}) {
     const name = normalizeUsername(username);
     if (!name) return { ok: false, status: 400, error: "username: 3 to 64 of a-z 0-9 . _ -" };
     if (!ROLES.includes(role)) return { ok: false, status: 400, error: `role: one of ${ROLES.join(", ")}` };
-    const weak = passwordProblem(password);
+    const weak = passwordProblem(password) ?? guessablePasswordProblem(password, name);
     if (weak) return { ok: false, status: 400, error: weak };
     if (email != null && typeof email !== "string") return { ok: false, status: 400, error: "email: name@domain" };
     const mail = (email ?? "").trim();
@@ -391,7 +391,7 @@ export class AuthService {
     const target = this.store.userById(targetId);
     if (!target) return { ok: false, status: 404, error: "no such user" };
     if (target.id === by.id) return { ok: false, status: 409, error: "reset your own password with your name ▾ in the menu bar → Change password" };
-    const weak = passwordProblem(password);
+    const weak = passwordProblem(password) ?? guessablePasswordProblem(password, target.username);
     if (weak) return { ok: false, status: 400, error: weak };
     this.store.setPassword(target.id, await hashPassword(password), this.now());
     authLog("INFO", "password reset", { event: "password_reset", by: by.username, username: target.username });
@@ -424,7 +424,8 @@ export class AuthService {
    * Someone with a reset link sets a new password (#307, public like sign-in):
    * under the per-IP sign-in limit (429), `next` follows the sign-in rule (400
    * with the reason, the link stays usable), then the link must be live —
-   * unknown, used, expired or voided all get the one RESET_LINK_INVALID 400.
+   * unknown, used, expired or voided all get the one RESET_LINK_INVALID 400 —
+   * and `next` must not be guessable for its person (400, the link stays usable).
    * Success marks the link used and ends every session of the person; it does
    * not sign anyone in. Lockout is not touched.
    * → { ok: true } | { ok: false, status, error, retryAfter? }
@@ -442,6 +443,15 @@ export class AuthService {
       authLog("WARN", "reset by link refused", { ip, reason: "malformed" });
       return invalid;
     }
+    // The link names the person, so this check reads it without claiming it: a refused password leaves it usable.
+    const holderId = this.store.liveResetTokenUser(hashToken(token), this.now());
+    const holder = holderId === null ? null : this.store.userById(holderId);
+    if (!holder) {
+      authLog("WARN", "reset by link refused", { ip, reason: "unknown, used or expired" });
+      return invalid;
+    }
+    const guessable = guessablePasswordProblem(next, holder.username);
+    if (guessable) return { ok: false, status: 400, error: guessable };
     // The hash is computed before the link is claimed, so the claim and the check are one statement.
     const hash = await hashPassword(next);
     const now = this.now();

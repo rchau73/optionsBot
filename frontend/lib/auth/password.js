@@ -2,6 +2,7 @@
 // Alpine image needs no compiler and no native build).
 import crypto from "node:crypto";
 import { argon2id, argon2Verify } from "hash-wasm";
+import { COMMON_PASSWORDS } from "./commonPasswords";
 
 /** Shortest password a user may have. */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -43,5 +44,35 @@ export function passwordProblem(password) {
     return `password: at least ${MIN_PASSWORD_LENGTH} characters`;
   }
   if (password.length > MAX_PASSWORD_LENGTH) return `password: at most ${MAX_PASSWORD_LENGTH} characters`;
+  return null;
+}
+
+// The look-alikes people type for a letter. 1 stands for i or l, so it gets its own step.
+const LOOK_ALIKES = { "@": "a", 4: "a", 3: "e", "!": "i", 0: "o", $: "s", 5: "s", 7: "t" };
+
+const unmask = (text, one) => text.replace(/[@4!30$57]/g, (c) => LOOK_ALIKES[c]).replaceAll("1", one);
+
+/**
+ * True when the password is on the bundled list (#680), ignoring case, look-alike
+ * characters (p@ssw0rd) and digits or symbols around it (password2026!), which
+ * is how a short common word reaches 12 characters.
+ */
+function passwordIsCommon(password) {
+  const lower = password.toLowerCase();
+  const noTail = lower.replace(/[^a-z]+$/, "");
+  const noEnds = noTail.replace(/^[^a-z]+/, "");
+  return [lower, noTail, noEnds].some(
+    (form) => COMMON_PASSWORDS.has(form) || COMMON_PASSWORDS.has(unmask(form, "i")) || COMMON_PASSWORDS.has(unmask(form, "l")),
+  );
+}
+
+/**
+ * Why a new password is guessable, or null (#680): the one rule beyond length,
+ * for every way a person gets a new password. Takes the username the password
+ * is for; the reason goes to the person as is, and the password to no log.
+ */
+export function guessablePasswordProblem(password, username) {
+  if (passwordIsCommon(password)) return "too common";
+  if (password.toLowerCase().includes(username.toLowerCase())) return "contains your username";
   return null;
 }

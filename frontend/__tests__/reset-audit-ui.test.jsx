@@ -97,6 +97,14 @@ describe("/reset form", () => {
     fill("a long enough password");
     expect(await screen.findByRole("alert")).toHaveTextContent("link expired or already used");
   });
+
+  test.each(["too common", "contains your username"])("a refused password shows the server's reason (%s) and keeps the form", async (error) => {
+    global.fetch = jest.fn(async () => reply(400, { error }));
+    render(<ResetPasswordForm token="tok" />);
+    fill("a long enough password");
+    expect(await screen.findByRole("alert")).toHaveTextContent(error);
+    expect(screen.getByLabelText("New password")).toBeInTheDocument();
+  });
 });
 
 describe("Audit page", () => {
