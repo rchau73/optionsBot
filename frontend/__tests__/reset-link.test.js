@@ -22,8 +22,8 @@ import { signedIn, useTestAuth } from "@/test/auth";
 jest.setTimeout(60000);
 
 const ORIGIN = "http://localhost:3000";
-const ANA_PASSWORD = "ana's first password";
-const NEW_PASSWORD = "ana's chosen password";
+const ANA_PASSWORD = "her first password here";
+const NEW_PASSWORD = "her chosen password here";
 
 function req(p, { method = "POST", body = {}, cookie = "", headers = {} } = {}) {
   return new Request(`${ORIGIN}${p}`, {

@@ -16,8 +16,8 @@ import { signedIn, useTestAuth } from "@/test/auth";
 jest.setTimeout(30000);
 
 const ORIGIN = "http://localhost:3000";
-const BOB_PASSWORD = "bob's first password";
-const NEW_PASSWORD = "bob's reset password";
+const BOB_PASSWORD = "his first password here";
+const NEW_PASSWORD = "his reset password here";
 
 function req(path, { method = "POST", body = {}, cookie = "", headers = {} } = {}) {
   return new Request(`${ORIGIN}${path}`, {
@@ -178,7 +178,7 @@ describe("list and create", () => {
     expect((await auth.login({ username: "bob", password: BOB_PASSWORD })).ok).toBe(true);
 
     const bad = async (body) => create(req("/api/admin/users", { cookie, body }));
-    const good = { username: "carol", password: "carol's password", role: "user" };
+    const good = { username: "carol", password: "a password of her own", role: "user" };
     expect((await bad({ ...good, username: "x" })).status).toBe(400);
     expect((await bad({ ...good, username: "Has Space" })).status).toBe(400);
     expect((await bad({ ...good, password: "short" })).status).toBe(400);

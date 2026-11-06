@@ -16,6 +16,12 @@ Table `users`: username (3–64 of `a-z 0-9 . _ -`, case-insensitive), argon2id 
 ### Passwords
 
 argon2id (`hash-wasm`; 19 MiB, 2 passes), at least 12 characters.
+Creating a user, changing a password and both resets also pass `guessablePasswordProblem` (`lib/auth/password.js`, #680), the one definition of the rule, which answers 400 with a reason in plain words:
+- `too common`: on the bundled list of about 1,000 common passwords (`lib/auth/commonPasswords.js`; public data, not personal data, and no call to an outside service), ignoring case, look-alikes (`p@ssw0rd`) and digits or symbols before or after (`password2026!`);
+- `contains your username`: the username inside the password, in any case.
+The list's source: the words at the top of Mark Burnett's public-domain list of the 10,000 most common passwords, typed in rather than downloaded, plus long keyboard and digit runs.
+Stored passwords are not checked (no forced change), and neither is the first admin's `ADMIN_PASSWORD`, which keeps the length rule alone.
+A refused password is neither logged nor audited.
 An unknown user is checked against a dummy hash, so it takes as long as a wrong password and gets the same 401 `invalid username or password`
 
 ### Access token
@@ -37,7 +43,7 @@ A bot's 401 passed through a proxy route is shown as an error, never a sign-out
 
 `POST /api/auth/password` `{"current", "next"}` (#212), the header's **Account ▾ → Change password** form (current, new, confirm; shows the 12-character rule before sending).
 Live session required (re-read like a state-changing route; no session → 401, the service token never reaches it), same-origin JSON only.
-`next`: at least 12 characters and not `current`, else 400 with the reason (`Too short: at least 12 characters`, …).
+`next`: at least 12 characters, not `current` and not guessable (Passwords, above), else 400 with the reason (`Too short: at least 12 characters`, `too common`, …).
 A wrong `current` → 401 `Current password is wrong` and counts as a failed sign-in of that username (Lockout, below: 5 lock it for sign-in and for this route, which then answers 429).
 Success ends **every** session of the person, then opens a new one for this browser (new access and refresh cookies): other browsers' next refresh fails and they go to `/login`.
 Their access token, being a stateless JWT, still reads the monitor for up to 15 min; their close, rebalance and password change are refused at once (the session is gone)
@@ -75,7 +81,7 @@ A new link voids the person's older ones.
 Deleting the person deletes their links.
 It is not available for your own account (409).
 The person opens `/reset?token=…` (public; `<meta name="referrer" content="no-referrer">`; the token is dropped from the address bar), types the new password twice and sends `POST /api/auth/reset` `{"token", "next"}` (public, same-origin JSON, under the per-IP sign-in limit: 429 with `Retry-After`).
-`next` follows the 12-character rule (400 with the reason, the link stays usable); an unknown, used, expired or replaced link gets the one 400 `link expired or already used` and nothing changes.
+`next` follows the 12-character rule and the guessable-password rule (400 with the reason, the link stays usable: it is read, not claimed, to learn whose username to check); an unknown, used, expired or replaced link gets the one 400 `link expired or already used` and nothing changes.
 Success sets the password, marks the link used and ends **every** session of the person — they then sign in at `/login`; lockout is untouched.
 The admin's direct **Reset password** stays as it was
 

@@ -482,6 +482,12 @@ export class AuthStore {
     ]);
   }
 
+  /** The user id of a live link, or null; unlike useResetToken it leaves the link usable. */
+  liveResetTokenUser(tokenHash, nowMs) {
+    const row = this.one("SELECT user_id FROM reset_tokens WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?", [tokenHash, nowMs]);
+    return row ? row.user_id : null;
+  }
+
   /**
    * Marks a live link used — unknown, used or expired at nowMs is refused —
    * in one statement, so two requests with one link cannot both win.

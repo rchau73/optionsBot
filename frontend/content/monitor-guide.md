@@ -478,6 +478,11 @@ Enter the current password and the new one twice.
 The new one must differ from the current one and be at least 12 characters.
 Your sessions on other devices end when you change it.
 
+**Which passwords are refused**: besides the 12 characters, a new password is refused when it is too common or contains your username, and the form says which.
+Too common means it is on a list of about 1,000 common passwords, even with capitals, with look-alikes such as p@ssw0rd, or with digits or symbols added before or after.
+The rule applies to a new user, a password change and both kinds of reset.
+A password you already have keeps working, and a refused password on a reset link leaves the link usable.
+
 **How to reset a forgotten password**: ask an admin.
 An admin issues a single-use reset link on the Users page.
 Open the link, choose a new password and sign in with it.
