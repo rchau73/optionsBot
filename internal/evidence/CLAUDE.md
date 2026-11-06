@@ -34,6 +34,11 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - `SharpeRatio` = mean ÷ sample sd, nil under 2 values or an sd ≤ 1e-9; status `meets` / `fails` / `not enough weeks` / `no spread`, ISO weeks missing from the first counted week on;
     - ratios, counts and weeks only (no amount, live or not); a -from/-to report says why it has none;
     - `scripts/product/go_no_go.py` row 3 is the same calculation, pinned by `tests/testdata/scoreboard/cases.json` (a change of the measure changes both).
+  - the futures hedge trial (`hedgetrial.go`, #678, `Report.Hedge`): pure `BuildHedgeTrial` as of `HedgeInputs.Now` over `data/hedge_mode.json` (`LoadHedge`), through `hedge.PricingIndex.Summarise`, never recomputed;
+    - cumulative since the ledger began, as read, not over the week; marked at the P&L history's last spot (`spotAt`), funding left out as the ledger's testnet pricing does;
+    - never switched on (`ModeState.Since` zero, even with a paper ledger) → `not started`; under `HedgeTrialMinDays` (7) → `not enough days`, the days missing, no figure; no spot → no figure;
+    - `worst_day` = the UTC day of shed decisions with the lowest Σ `Counterfactual.Value`: the ledger keeps no daily series;
+    - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one.
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,
