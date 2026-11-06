@@ -123,6 +123,7 @@ data/btc/
   hedge_report.json   delta-hedge suggestion, when written
   data/pnl_history.jsonl     P&L history for the monitor chart
   data/regime_history.jsonl  gamma regime per daily close (margin policy)
+  data/shadow_legs.jsonl     every held missing leg and what it did, for the full-strangle study (never read by trading)
   data/market/        recorded mainnet books (stable only), read by the backtest, stress and replay tools
   data/market_gex/    every GEX snapshot (one a minute), read by the replay
   data/market_usdc/   recorded USDC-settled books, to compare liquidity
@@ -350,7 +351,7 @@ A failed deploy prunes nothing, and the warning never fails a deploy.
 ### Nightly backup and restore
 
 **Backup** (#328).
-The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them).
+The first tick after 00:00 UTC runs `scripts/agents/backup_data.sh`: for stable and mvp, each bot's `orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl`, `data/shadow_legs.jsonl` and `data/archive/` are copied to `~/dev/go/optionsBot-env/history/backups/<YYYY-MM-DD>/<env>/<bot>/` (outside both clones, so a lost clone or a bad deploy keeps them).
 Each environment's monitor files go to `<YYYY-MM-DD>/<env>/monitor/` (#650), read from where the deployed monitor keeps them, its `monitor-auth` Docker volume (`/app/data/monitor`), through the running container (`scripts/envctl.sh <env> cp monitor:/app/data/monitor/. <temp>`, read-only).
 When the monitor is not running the script reads the clone's `data/monitor/` instead and the log names which source it used (`monitor files from the monitor-auth volume` or `monitor not running, monitor files from the clone's …`); that alone does not fail the backup.
 Only these files are copied, as they are: the users (`auth.db`: accounts, sign-in lockouts, survey answers; passwords and tokens only as hashes), the analytics events (`events.jsonl`), the request queue (`requests.jsonl`, `requests_status.jsonl`, #409), the assistant's review log, `assistant.jsonl` (#438), and the audit trail, `audit.jsonl` with every archive `audit.<UTC time>.jsonl` (#619).

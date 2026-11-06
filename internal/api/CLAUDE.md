@@ -17,6 +17,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `GET /api/hedge[?preview=true]` (`routes_hedge.go`, #657) is the futures hedge experiment: `Strategy.HedgeState` (mode, the perpetual, net delta, band, benchmark with its `pricing`, `kill_switch`,
   `book_scenarios` for the Positions page (#666), and #664's `halted`, `halt_reason`, `recheck_at`, `not_holding`), `switchable`,
   and with `preview` `Strategy.HedgePreview` (exchange reads, cached 10 s; an error is `preview_error`).
+  `GET /api/shadow-legs` (`routes_shadow.go`, #676) is `shadow.Summarize` over `data/shadow_legs.jsonl`, read on each request (nothing polls it): legs by rule and ISO week, closes by reason, P&L, coverage, the open legs; no monitor page yet.
   The state-changing routes are `POST /api/positions/close` (manual close, below: testnet only), `POST /api/rebalance` (manual rebalance, below: live and testnet)
   and `POST /api/hedge` (`{"enabled": bool, "actor"}`, the futures hedge switch: testnet only, 403 live, 409 when the strategy refuses — the perpetual not closed, the mode unchanged):
   - bearer `BOT_ADMIN_TOKEN`, audited in the bot log and journaled; the monitor's server-side proxies add the token and refuse cross-origin requests.

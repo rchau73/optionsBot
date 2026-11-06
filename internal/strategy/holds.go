@@ -89,6 +89,7 @@ type HeldLegView struct {
 	Slot       orders.SlotRef `json:"slot"`
 	Missing    string         `json:"missing"`  // call | put
 	OpenLeg    string         `json:"open_leg"` // the leg still held
+	OpenQty    float64        `json:"open_qty"` // its size: what repair would sell
 	Expiry     time.Time      `json:"expiry"`
 	Rule       string         `json:"rule"` // Hold* constant; "" = repair may sell it this cycle
 	Reason     string         `json:"reason"`
@@ -139,7 +140,7 @@ func (s *Strategy) heldLegViews(dec GammaDecision, m marginState, now time.Time)
 		}
 		hv := HeldLegView{
 			StrangleID: st.ID, Slot: orders.SlotRef{DTE: st.TargetDTE, Delta: st.EntryDelta},
-			Missing: missing, OpenLeg: present.Instrument, Expiry: present.Expiry,
+			Missing: missing, OpenLeg: present.Instrument, OpenQty: present.Qty, Expiry: present.Expiry,
 			Trend: dec.Trend, SMATrend: dec.SMATrend, Bias: dec.Bias, ConfirmedNegative: m.status.RegimeUsed && m.status.RegimeNegative,
 			LiveRegime: dec.Regime, Spot: dec.Spot, BufferPct: dec.FlipBufferPct,
 		}
@@ -179,10 +180,12 @@ func (s *Strategy) heldLegViews(dec GammaDecision, m marginState, now time.Time)
 	return out
 }
 
-// recordHeldLegs publishes heldLegViews for the monitor. Call on the Run goroutine.
-func (s *Strategy) recordHeldLegs(dec GammaDecision, m marginState) {
+// recordHeldLegs publishes heldLegViews for the monitor and returns them.
+// Call on the Run goroutine.
+func (s *Strategy) recordHeldLegs(dec GammaDecision, m marginState) []HeldLegView {
 	held := s.heldLegViews(dec, m, time.Now())
 	s.pub.mu.Lock()
 	defer s.pub.mu.Unlock()
 	s.pub.held = held
+	return held
 }
