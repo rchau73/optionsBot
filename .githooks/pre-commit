@@ -14,7 +14,9 @@ done
 
 # 2. No real secret value from the local .env in any added line.
 if [ -f .env ]; then
-  added=$(git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++')
+  # Two steps, not a pipe: sh may have no pipefail, and an unread diff is no pass (#683).
+  staged=$(git diff --cached -U0 --no-color) || { echo "pre-commit: cannot read the staged changes"; exit 1; }
+  added=$(printf '%s\n' "$staged" | grep '^+' | grep -v '^+++')
   grep -E '^[A-Z0-9_]*(SECRET|TOKEN|CLIENT_ID|KEY|PASSWORD|SALT)[A-Z0-9_]*=' .env | while IFS='=' read -r name value; do
     value=$(printf '%s' "$value" | sed 's/[[:space:]]#.*//; s/^["'\'']//; s/["'\'']$//' | tr -d '[:space:]')
     [ ${#value} -ge 6 ] || continue
