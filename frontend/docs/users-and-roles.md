@@ -74,7 +74,7 @@ Your own row cannot be deleted or reset (use **Change password**).
 
 **Does:** `AuthService.createUser` → 201 `{"user"}`; audited `user_created`
 
-**Refusals:** 400 username rule (3–64 of `a-z 0-9 . _ -`), password under 12 characters, unknown role, malformed email · 409 username taken
+**Refusals:** 400 username rule (3–64 of `a-z 0-9 . _ -`), password under 12 characters, `too common` or `contains your username`, unknown role, malformed email · 409 username taken
 
 #### `PATCH /api/admin/users/<id>` `{"role"}`
 
@@ -86,7 +86,7 @@ Your own row cannot be deleted or reset (use **Change password**).
 
 **Does:** `resetPassword`: sets it and ends every session of that user (each browser's next request that re-reads the session, and its refresh, answer 401); audited `password_reset`
 
-**Refusals:** 400 under 12 characters · 404 · 409 yourself
+**Refusals:** 400 under 12 characters, `too common` or `contains your username` · 404 · 409 yourself
 
 #### `POST /api/admin/users/<id>/reset-link` `{}`
 
