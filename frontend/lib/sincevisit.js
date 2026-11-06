@@ -1,9 +1,11 @@
 // "Since you last looked" (#618, epic E3): what changed for each bot between
 // this browser's last visit and now — the closes with their reasons, their
-// result net of fees, the worst case then vs now and a warning that began
-// meanwhile. Pure: every function takes `now` and the stored visit. The visit
-// is kept only in this browser (localStorage); nothing here is sent anywhere.
+// result net of fees, the futures hedge's lines (#679), the worst case then vs
+// now and a warning that began meanwhile. Pure: every function takes `now` and
+// the stored visit. The visit is kept only in this browser (localStorage);
+// nothing here is sent anywhere.
 import { formatAge, isNumber } from "./format";
+import { hedgeResult, hedgeSentence, isHedgeRisk } from "./hedgeWords";
 import { coinOf, worstCaseLine } from "./overview";
 import { closeLabel } from "./trades";
 
@@ -106,12 +108,28 @@ export function compareWorst(then, now) {
 }
 
 /**
- * One bot's summary since its last visit at `now`:
- *   { coin, from, capped, unknown, loading, closes, shown, more, opens, result, worst, pointers, nothing }.
- * from: the window's start (ms; at most MAX_WINDOW_DAYS back, capped says so); closes newest first;
- * result { coin, usd } net of fees, null without a close (never a 0); loading: the closes are not all in yet.
+ * The hedge's journal lines after `from` in plain words: { rows, shown, more }.
+ * A line that changes the book's protection comes first, so a run of trades
+ * never pushes it off the card; then newest first. A row: { seq, at, text,
+ * risk, result } (result in coin, a close's only).
  */
-export function sinceLastVisit({ bot, trades, tradesComplete = true, visit, now }) {
+export function hedgeSince(events, from, coin) {
+  const rows = events
+    .filter((ev) => Date.parse(ev.at) > from)
+    .map((ev) => ({ seq: ev.seq, at: ev.at, text: hedgeSentence(ev, coin) ?? ev.plain, risk: isHedgeRisk(ev), result: hedgeResult(ev.data) }))
+    .filter((r) => r.text)
+    .sort((x, y) => y.risk - x.risk || Date.parse(y.at) - Date.parse(x.at) || y.seq - x.seq);
+  return { rows, shown: rows.slice(0, MAX_ROWS), more: Math.max(0, rows.length - MAX_ROWS) };
+}
+
+/**
+ * One bot's summary since its last visit at `now`:
+ *   { coin, from, capped, unknown, loading, closes, shown, more, opens, result, worst, pointers, hedge, nothing }.
+ * from: the window's start (ms; at most MAX_WINDOW_DAYS back, capped says so); closes newest first;
+ * result { coin, usd } net of fees, null without a close (never a 0); loading: the closes are not all in yet;
+ * hedge: hedgeSince's, from hedgeEvents (useMonitor's: the journal lines the bot keeps).
+ */
+export function sinceLastVisit({ bot, trades, tradesComplete = true, hedgeEvents = [], visit, now }) {
   const coin = coinOf(bot);
   const earliest = now - MAX_WINDOW_DAYS * DAY_MS;
   const capped = visit.at < earliest;
@@ -119,7 +137,8 @@ export function sinceLastVisit({ bot, trades, tradesComplete = true, visit, now 
   const pointers = warningsOf(bot)
     .filter((w) => !visit.warnings.includes(w))
     .map((w) => ({ chip: w, words: WARNING_WORDS[w] }));
-  const base = { coin, from, capped, pointers, worst: compareWorst(visit.worst, worstNow(bot)) };
+  const hedge = hedgeSince(hedgeEvents, from, coin);
+  const base = { coin, from, capped, pointers, hedge, worst: compareWorst(visit.worst, worstNow(bot)) };
   if (!bot.summary && (bot.summaryError ?? bot.error)) return { ...base, unknown: bot.summaryError ?? bot.error };
   if (!Array.isArray(trades) || !tradesComplete) return { ...base, loading: true };
   const after = trades.filter((t) => Date.parse(t.at) > from);
@@ -137,7 +156,7 @@ export function sinceLastVisit({ bot, trades, tradesComplete = true, visit, now 
     more: Math.max(0, closes.length - MAX_ROWS),
     opens,
     result,
-    nothing: !closes.length && !opens && !pointers.length,
+    nothing: !closes.length && !opens && !pointers.length && !hedge.rows.length,
   };
 }
 

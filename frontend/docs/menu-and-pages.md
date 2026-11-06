@@ -140,6 +140,7 @@ Any signed-in role (Close… for a manager or an admin, as before)
 ### Activity page (its own page, `/activity?bot=<name>`; #385, E3 prototype screen 4)
 
 "What the bot did, and why · <coin>": `app/activity/page.jsx` → `components/ActivityPage.jsx`, data from `/api/events` (the last 500 the bot keeps) and every open and close of `/api/trades` (`hooks/useActivity.js`, every 30 s), helpers in `lib/activity.js`.
+The futures hedge's lines read from `lib/hedgeWords.js` (#679): one sentence per `orders.Hedge*` change and `shed_hedged`, with the numbers of the journal line; the bot's `plain` stays the fallback, and `__tests__/hedge-words.test.jsx` fails on a Go constant without a sentence.
 There are four filters (`aria-pressed`):
 - **Everything**.
 - **Money in or out**: opens and closes.
@@ -219,6 +220,7 @@ A stale bot's band is dimmed with its age; a bot that is down says so; no strang
 - One block per bot:
   - the result of the closes since then, net of fees, in coin and USD (a loss with its minus sign and "▼ loss", as large as a gain);
   - each close with its reason in plain words (take profit, time roll, exit line, stop-loss; at most 5 rows, then "and n more" and "All in Activity →");
+  - the futures hedge's lines (`hedgeSince`, #679; `useMonitor`'s `hedgeEvents`, from the 500 events the bot keeps): at most 5 rows, those that change the book's protection first with ⚠, a close of the perpetual with its result;
   - the legs sold, and the worst case (3 σ day) then vs now: larger, smaller or about the same (within 10 %), with both figures.
 - A header warning (HALTED, OFFLINE, STALE, IM over limit) that began since the last visit gets a one-line pointer; the chip stays in the header.
 - States:
