@@ -4,8 +4,8 @@
 # (UTC) done-marker exists, so the first tick after 00:00 UTC runs it:
 #   for each environment (stable, mvp) and bot (BACKUP_BOTS, "btc eth") whose
 #   folder <clone>/data/<bot> exists, copy orders.log, data/pnl_history.jsonl,
-#   data/regime_history.jsonl, data/direction_history.jsonl and data/archive/
-#   to <envs>/history/backups/<date>/<env>/<bot>/ (orders.log, the three
+#   data/regime_history.jsonl, data/direction_history.jsonl, data/shadow_legs.jsonl and data/archive/
+#   to <envs>/history/backups/<date>/<env>/<bot>/ (orders.log, the four
 #   .jsonl files, archive/) — named files only: no .env, no secret; and each
 #   environment's monitor files to <date>/<env>/monitor/ (#650): users
 #   (auth.db), analytics events, the assistant's review log (#438), request
@@ -98,7 +98,7 @@ while read -r env bot; do
   fi
   mkdir -p "$dst"
   [[ ! -f "$src/orders.log" ]] || cp -p "$src/orders.log" "$dst/"
-  for f in pnl_history.jsonl regime_history.jsonl direction_history.jsonl; do
+  for f in pnl_history.jsonl regime_history.jsonl direction_history.jsonl shadow_legs.jsonl; do
     [[ ! -f "$src/data/$f" ]] || cp -p "$src/data/$f" "$dst/"
   done
   [[ ! -d "$src/data/archive" ]] || cp -Rp "$src/data/archive" "$dst/archive"

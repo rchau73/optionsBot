@@ -53,6 +53,9 @@ func LiveRegimeSideBlockReason(hold, optType string, dec strategy.GammaDecision,
 
 // sideHold is the regime-side rule the replay runs (Settings.RegimeHold).
 func (e *engine) sideHold(optType string, dec strategy.GammaDecision, st risk.Status) string {
+	if e.set.FullStrangle.Hedged {
+		return ""
+	}
 	return LiveRegimeSideBlockReason(e.set.RegimeHold, optType, dec, st)
 }
 
