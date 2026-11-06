@@ -144,6 +144,8 @@ go run ./cmd/evidence -env mvp -books-root ~/dev/go/optionsBot-env/stable   # mv
 
 It prints the two files written per bot and, on stderr, every input it could not read (a missing journal, history, books, `market.json`); the report then lists the days or sections that lack them.
 Its **account reconciliation** (#566) sets the margin balance's change over the week beside the P&L the journal booked, net of fees, and flags a gap over 1 % of the starting balance with its possible causes (a transfer, unrealised P&L not yet booked, funding or fees not journaled, a position the book missed) — measured on the account; a week with under two balance points says "not enough history".
+Its **futures hedge trial** (#678) reads the benchmark's ledger in `data/hedge_mode.json`: the mode now, the advantage in coin (positive: the hedge did better than the shed), hedge P&L net of fees, real and paper trades, fees, the worst day of shed decisions and the counterfactual legs still open, with the days measured beside each.
+The figures are testnet and shadow-based, cumulative since the ledger began and not a result; a bot never switched on says "not started", under 7 days it says "not enough days" with the days missing, and a live account shows days and counts only.
 The amounts stay in `data/` — never paste them into an issue of the public repository.
 Scheduled since #244: the agents' first tick of a Monday (UTC) does both steps for stable and mvp through `scripts/agents/evidence.sh` and posts a summary on the E2 epic (percentages only for a live account; docs/agents/evidence.md "Weekly evidence report").
 The commands above remain for a re-run by hand.

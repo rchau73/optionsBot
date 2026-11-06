@@ -81,6 +81,9 @@ type Inputs struct {
 	// scoreboard (#537); nil = none read.
 	Earlier      []Report
 	WeeklySource string
+
+	// The futures hedge's mode file, for the trial's section (#678).
+	Hedge HedgeInputs
 }
 
 // Report is the weekly evidence of one bot. Amounts are coin unless named
@@ -106,6 +109,7 @@ type Report struct {
 	Coverage  Coverage       `json:"coverage"`
 	RVL       ReplayVsLive   `json:"replay_vs_live"`
 	Score     Scoreboard     `json:"scoreboard"`
+	Hedge     HedgeTrial     `json:"hedge_trial"`
 	Equity    float64        `json:"equity"` // coin, at the start (0 = unknown)
 	EquitySrc string         `json:"equity_source"`
 }
@@ -256,6 +260,7 @@ func Build(in Inputs) Report {
 	r.ROM = buildROM(in, r.Replay)
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
 	r.RVL = buildReplayVsLive(in, r, days)
+	r.Hedge = BuildHedgeTrial(in.Hedge, in.Points, in.Account)
 	return r
 }
 

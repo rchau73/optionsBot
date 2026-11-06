@@ -188,6 +188,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	p("\n\n")
 
 	writeReliability(p, r.E1)
+	writeHedgeTrial(p, r.Hedge, u)
 
 	_, err := io.WriteString(w, b.String())
 	return err

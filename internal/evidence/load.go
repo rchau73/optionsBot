@@ -82,6 +82,10 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 		in.EquitySource = acct + " (margin balance when captured)"
 	}
 	loadEarlier(&in, p, bot, note)
+	in.Hedge = LoadHedge(p.HedgeMode, time.Now().UTC())
+	if in.Hedge.Err != "" {
+		note("hedge mode file not read: %s", in.Hedge.Err)
+	}
 	return in
 }
 
