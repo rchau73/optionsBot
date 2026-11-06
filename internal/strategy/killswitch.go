@@ -67,8 +67,8 @@ func (s *Strategy) killSwitch(ctx context.Context) error {
 		}
 	}
 
-	// The perpetual hedge too, whatever the mode (#657): flat options with an
-	// open future would be a naked directional position.
+	// The bot's perpetual too (#657): flat options with the hedge still open
+	// would be a naked directional position. Only the bot's own (#667).
 	s.flattenPerp(kctx)
 
 	if err := s.syncBookToExchange(kctx); err != nil {

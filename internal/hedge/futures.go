@@ -57,6 +57,16 @@ func HedgeOrder(optionsDelta, hedgeDelta, bandCoin, spot, contractUSD float64) (
 	return usd, SideBuy
 }
 
+// OwnPerp is the part of the exchange's perpetual position the bot's ledger
+// answers for (both signed USD): the ledger's size at most, and only in the
+// ledger's direction. The rest of the position is not the bot's to close.
+func OwnPerp(ledgerUSD, exchangeUSD float64) float64 {
+	if ledgerUSD == 0 || (ledgerUSD > 0) != (exchangeUSD > 0) {
+		return 0
+	}
+	return math.Copysign(math.Min(math.Abs(ledgerUSD), math.Abs(exchangeUSD)), exchangeUSD)
+}
+
 // PerpPnL is the coin P&L of an inverse perpetual position of sizeUSD
 // (signed) opened at avg and valued at mark: size × (1/avg − 1/mark).
 func PerpPnL(sizeUSD, avg, mark float64) float64 {

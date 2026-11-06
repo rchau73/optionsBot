@@ -12,6 +12,7 @@ import (
 
 	"optionsbot/internal/hedge"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/strategy"
 )
 
 // The futures hedge experiment end to end (#657): Strategy.Run against the
@@ -412,28 +413,150 @@ func TestFuturesHedge_OffRealShedIsACounterfactual(t *testing.T) {
 	})
 }
 
-// Scenario: the kill switch leaves nothing open — the perpetual included,
-// whatever the mode.
-func TestFuturesHedge_KillSwitchFlattensThePerpetual(t *testing.T) {
-	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
-	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+// withPerpLedger holds a perpetual of exchangeUSD on the account, ledgerUSD of
+// it in the bot's ledger. The mode stays off: with it on, a cycle would match
+// the ledger to the exchange.
+func withPerpLedger(t *testing.T, f *strategyFixture, exchangeUSD, ledgerUSD float64) {
+	t.Helper()
+	dir := "sell"
+	if exchangeUSD > 0 {
+		dir = "buy"
+	}
+	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: exchangeUSD, Direction: dir, AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+	st := hedge.ModeState{Ledger: hedge.Ledger{Real: hedge.PerpBook{SizeUSD: ledgerUSD, AvgPrice: 100000}}}
+	if err := hedge.SaveMode(f.hedgeAt, st); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fireKillSwitch runs the bot to a reconciled book and fires the kill switch.
+func fireKillSwitch(t *testing.T, f *strategyFixture) {
+	t.Helper()
 	f.startRun()
 	eventually(t, 2*time.Second, "positions reconciled", func() bool { return len(f.state.AllPositions()) == 2 })
 	if p := f.position(testPerp); p != nil {
 		t.Fatal("the perpetual must never be adopted into the options book")
 	}
 	f.strat.KillSwitch()
-	eventually(t, 2*time.Second, "everything flat", func() bool { return len(f.state.AllPositions()) == 0 && f.exch.perpSize() == 0 })
-	var closes []orders.Order
-	for _, o := range f.exch.perpOrders() {
-		closes = append(closes, o)
+	eventually(t, 2*time.Second, "options flat", func() bool { return len(f.state.AllPositions()) == 0 })
+}
+
+// wantLeftOpen waits for the one perp_left_open line naming usd.
+func wantLeftOpen(t *testing.T, f *strategyFixture, usd float64) {
+	t.Helper()
+	eventually(t, 2*time.Second, "perp_left_open", func() bool { return len(f.journal.hedgeChanges(orders.HedgeLeftOpen)) > 0 })
+	left := f.journal.hedgeChanges(orders.HedgeLeftOpen)
+	if len(left) != 1 || left[0].AmountUSD != usd || !strings.Contains(left[0].Detail, "left open") {
+		t.Errorf("perp_left_open %+v, want one line naming %.0f USD", left, usd)
 	}
+}
+
+// The kill switch closes the bot's own perpetual whole.
+func TestFuturesHedge_KillSwitchFlattensThePerpetual(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+	withPerpLedger(t, f, -23050, -23050)
+	fireKillSwitch(t, f)
+	eventually(t, 2*time.Second, "hedge_closed", func() bool { return len(f.journal.hedgeChanges(orders.HedgeClosed)) == 1 })
+	closes := f.exch.perpOrders()
 	if len(closes) != 1 || closes[0].Direction != orders.DirectionBuy || closes[0].Qty != 23050 || !closes[0].ReduceOnly ||
 		closes[0].OrderType != orders.TypeMarket || closes[0].TriggerReason != orders.TriggerKillSwitch {
 		t.Errorf("kill switch perpetual close %+v, want one reduce-only market buy of 23,050", closes)
 	}
-	if len(f.journal.hedgeChanges(orders.HedgeClosed)) != 1 {
-		t.Error("hedge_closed journaled")
+	if f.exch.perpSize() != 0 {
+		t.Errorf("perpetual %.0f, want flat", f.exch.perpSize())
+	}
+	if n := len(f.journal.hedgeChanges(orders.HedgeLeftOpen)); n != 0 {
+		t.Errorf("%d perp_left_open lines, want none: nothing is left", n)
+	}
+}
+
+// Scenario: a hand-held perpetual survives the kill switch (#667).
+func TestFuturesHedge_KillSwitchLeavesAHandHeldPerpetual(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+	withPerpLedger(t, f, -50000, -20000)
+	fireKillSwitch(t, f)
+	wantLeftOpen(t, f, 30000)
+	closes := f.exch.perpOrders()
+	if len(closes) != 1 || closes[0].Direction != orders.DirectionBuy || closes[0].Qty != 20000 || !closes[0].ReduceOnly {
+		t.Fatalf("kill switch perpetual close %+v, want one reduce-only buy of 20,000", closes)
+	}
+	if got := f.exch.perpSize(); got != -30000 {
+		t.Errorf("perpetual %.0f, want the hand-held -30,000", got)
+	}
+	eventually(t, 2*time.Second, "the view shows what is left", func() bool { return f.strat.HedgeState().PerpUSD == -30000 })
+	if st, _ := hedge.LoadMode(f.hedgeAt); st.Ledger.Real.SizeUSD != 0 {
+		t.Errorf("ledger after the close: %+v, want flat", st.Ledger.Real)
+	}
+}
+
+// Scenario: no hedge, no futures order (#667): the ledger holds nothing or
+// opposes the position, or an old file gives a live account a ledger.
+func TestFuturesHedge_KillSwitchNoHedgeNoFuturesOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		exchange, ledger float64
+		live             bool
+	}{
+		{name: "never switched on", exchange: -50000},
+		{name: "never switched on, long", exchange: 50000},
+		{name: "live, never switched on", exchange: -50000, live: true},
+		{name: "live, an old ledger in the mode file", exchange: -50000, ledger: -20000, live: true},
+		{name: "the ledger is short, the account long", exchange: 50000, ledger: -20000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+			withPerpLedger(t, f, tc.exchange, tc.ledger)
+			if tc.live {
+				f.beforeRun = func(*strategy.Strategy) { f.cfg.Environment = "live" }
+			}
+			fireKillSwitch(t, f)
+			wantLeftOpen(t, f, math.Abs(tc.exchange))
+			if o := f.exch.perpOrders(); len(o) != 0 {
+				t.Errorf("futures orders %+v, want none", o)
+			}
+		})
+	}
+}
+
+// The exchange holds less than the ledger (a hand close): only what is there
+// is bought back, and the ledger comes down with it (#667).
+func TestFuturesHedge_KillSwitchCappedByTheExchange(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+	withPerpLedger(t, f, -10000, -20000)
+	fireKillSwitch(t, f)
+	eventually(t, 2*time.Second, "ledger flat", func() bool {
+		st, _ := hedge.LoadMode(f.hedgeAt)
+		return st.Ledger.Real.SizeUSD == 0
+	})
+	if o := f.exch.perpOrders(); len(o) != 1 || o[0].Qty != 10000 {
+		t.Fatalf("kill switch perpetual close %+v, want one buy of 10,000", o)
+	}
+	if f.exch.perpSize() != 0 {
+		t.Errorf("perpetual %.0f, want flat", f.exch.perpSize())
+	}
+}
+
+// A close that never fills retries and leaves the hand-held part alone: the
+// kill switch's check counts only the bot's size (#667).
+func TestFuturesHedge_KillSwitchUnfilledCloseStaysWithinTheLedger(t *testing.T) {
+	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
+	withPerpLedger(t, f, -50000, -20000)
+	f.exch.onSubmit = func(o orders.Order, id string) orders.Fill {
+		if o.Instrument == testPerp {
+			return orders.Fill{OrderID: id} // never fills
+		}
+		return hedgeFills(o, id)
+	}
+	fireKillSwitch(t, f)
+	wantLeftOpen(t, f, 30000)
+	closes := f.exch.perpOrders()
+	if len(closes) == 0 {
+		t.Fatal("no close sent")
+	}
+	for _, o := range closes {
+		if o.Qty != 20000 {
+			t.Errorf("close of %.0f, want the ledger's 20,000 each attempt", o.Qty)
+		}
 	}
 }
 
@@ -459,7 +582,7 @@ func TestFuturesHedge_ViewPricesTheBook(t *testing.T) {
 // mode off (#666): it is on the account, whatever the mode.
 func TestFuturesHedge_ViewCountsWhatIsLeftOpenWhileOff(t *testing.T) {
 	f, _ := newHedgeFixture(t, 0.16, -0.16, false)
-	f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: -23050, Direction: "sell", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+	withPerpLedger(t, f, -23050, -23050)
 	f.exch.onSubmit = func(o orders.Order, id string) orders.Fill {
 		if o.Instrument == testPerp {
 			return orders.Fill{OrderID: id} // never fills

@@ -99,7 +99,9 @@ Read both before changing a rule.
   - The request runs on the Run goroutine (`manualCh`), re-checks the rule, records the leg like a stop (repair held by `RepairBlockReason`) and closes with `TriggerManualClose`;
     a request the loop has not taken within 25 s is dropped unexecuted.
 - **Kill switch:** 2026-10-09: pending entries were dropped unread and 100 filled lots stayed short.
-  It also closes the coin's perpetual at market, reduce-only, retried and checked (`flattenPerp`, #657), whether the futures hedge is on or off.
+  It also closes the bot's perpetual at market, reduce-only, retried and checked (`flattenPerp`, #657): the ledger's real size at most, in the direction that reduces it, capped by the exchange (`hedge.OwnPerp`, #667).
+  Anything beyond it is left alone and journaled once (`perp_left_open`); the ledger follows the exchange down, never up, in this close.
+  A live account with the mode off sends no futures order, whatever a mode file's ledger says.
 - **Futures hedge experiment** (`futureshedge.go`, `futureshedgeview.go`, #657; the product owner's go on the issue, 2026-11-05):
   - The mode lives in `data/hedge_mode.json` (`hedge.ModeState`: on/off, since, by, the benchmark's ledger); missing or unreadable → OFF.
     It is switched only by `POST /api/hedge` (admins, testnet), on the Run goroutine (`hedgeCh`), journaled `hedge_mode_changed` with the person.

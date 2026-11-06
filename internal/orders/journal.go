@@ -22,7 +22,7 @@ const (
 // Futures hedge changes journaled as EventHedge (#657).
 const (
 	HedgeFill        = "hedge_fill"         // a perpetual trade filled (in part or whole)
-	HedgeClosed      = "hedge_closed"       // the perpetual closed at market: switched off, or the kill switch
+	HedgeClosed      = "hedge_closed"       // the perpetual closed at market: switched off, or the kill switch (its own part)
 	HedgeModeChanged = "hedge_mode_changed" // a person switched the experiment on or off
 	HedgeRateLimited = "hedge_rate_limited" // a due hedge waits: 12 orders in the last hour
 	HedgeFailed      = "hedge_failed"       // a hedge order failed or its outcome is unknown (cancelled by label)
@@ -30,6 +30,7 @@ const (
 	HedgePriceAway   = "hedge_price_away"   // live: a due hedge waits, the perpetual is too far from the index (#664)
 	HedgeUnavailable = "hedge_unavailable"  // the hedge is not holding the delta: the GEX shed is back (#664)
 	HedgeResumed     = "hedge_resumed"      // the hedge holds the delta again: the shed keeps its legs (#664)
+	HedgeLeftOpen    = "perp_left_open"     // the kill switch left a perpetual beyond the bot's ledger alone (#667)
 )
 
 // HedgeRecord is one futures-hedge decision with the figures behind it.
