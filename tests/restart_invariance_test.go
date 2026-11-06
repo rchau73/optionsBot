@@ -15,6 +15,7 @@ import (
 	"optionsbot/internal/history"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/shadow"
 	"optionsbot/internal/strategy"
 )
 
@@ -60,6 +61,7 @@ type restartBook struct {
 	legs           []restartLeg
 	journal        string // orders.log
 	regimes        string // regime_history.jsonl
+	shadow         string // shadow_legs.jsonl
 }
 
 // newRestartBook sets the fixture's slots, config, instruments, exchange
@@ -93,6 +95,7 @@ func newRestartBook(t *testing.T, f *strategyFixture) *restartBook {
 		shedCall: name(e3, 118000, "C"), shedPut: name(e3, 85000, "P"),
 		journal: filepath.Join(t.TempDir(), "orders.log"),
 		regimes: filepath.Join(t.TempDir(), "regime_history.jsonl"),
+		shadow:  filepath.Join(t.TempDir(), "shadow_legs.jsonl"),
 	}
 	c95, c93 := name(e2, 95000, "C"), name(e2, 93000, "C")
 	p72, p73 := name(e2, 72000, "P"), name(e2, 73000, "P")
@@ -217,11 +220,16 @@ func bootAndRun(t *testing.T, f *strategyFixture, b *restartBook, restoreStops b
 		t.Fatal(err)
 	}
 	defer regimes.Close()
+	legs, err := shadow.Open(b.shadow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legs.Close()
 
 	state := orders.NewStateManager()
 	strat := strategy.New(f.cfg, strategy.Deps{
 		Market: f.market, Exchange: f.exch, State: state, Journal: logger, Hedge: nopHedge{},
-		GEX: f.gex, Regimes: regimes,
+		GEX: f.gex, Regimes: regimes, ShadowLegs: legs,
 	})
 	strat.RestorePnL(replay.Realised, replay.Closed)
 	if restoreStops {
@@ -364,6 +372,10 @@ func TestRestartInvariance_RestartOnAnUnchangedBook(t *testing.T) {
 	if p := bookProblems(f, b, run1, slots); len(p) > 0 {
 		t.Fatalf("run 1 book:\n  %s", strings.Join(p, "\n  "))
 	}
+	opened := shadowOpens(t, b)
+	if opened[b.stopPut] != 1 || opened[b.shedPut] != 1 {
+		t.Errorf("run 1: one shadow leg for each held put, got %v", opened)
+	}
 
 	run2 := bootAndRun(t, f, b, true)
 	if fx := sideEffects(f, 2); len(fx) > 0 {
@@ -371,6 +383,10 @@ func TestRestartInvariance_RestartOnAnUnchangedBook(t *testing.T) {
 	}
 	if p := bookProblems(f, b, run2, slots); len(p) > 0 {
 		t.Errorf("the restarted book:\n  %s", strings.Join(p, "\n  "))
+	}
+	// Scenario (#676): a restart does not duplicate shadow legs.
+	if again := shadowOpens(t, b); fmt.Sprint(again) != fmt.Sprint(opened) {
+		t.Errorf("shadow legs after the restart: %v, was %v", again, opened)
 	}
 }
 
@@ -396,6 +412,22 @@ func TestRestartInvariance_GuardsRestoreStops(t *testing.T) {
 	if !sold[b.stopPut] || !sold[b.shedPut] {
 		t.Errorf("without RestoreStops the stopped and shed puts are re-sold; sells: %v", fx)
 	}
+}
+
+// shadowOpens counts the shadow legs opened, by instrument, over every boot.
+func shadowOpens(t *testing.T, b *restartBook) map[string]int {
+	t.Helper()
+	recs, _, err := shadow.Read(b.shadow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]int{}
+	for _, r := range recs {
+		if r.Event == shadow.EventOpen {
+			out[r.Instrument]++
+		}
+	}
+	return out
 }
 
 func sortedKeys(m map[string]int) []string {
