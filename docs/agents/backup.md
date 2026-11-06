@@ -4,7 +4,7 @@ Part of [Agentic development](../../AGENTIC.md).
 
 The journal is the bots' only history, so the tick copies it every night (#328, epic E6).
 On the first tick after 00:00 UTC, [`backup_data.sh`](../../scripts/agents/backup_data.sh) copies, for each environment (stable, mvp) and bot (`BACKUP_BOTS`, default `btc eth`) whose folder exists,
-`orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl` and `data/archive/`
+`orders.log`, `data/pnl_history.jsonl`, `data/regime_history.jsonl`, `data/direction_history.jsonl`, `data/shadow_legs.jsonl` and `data/archive/`
 to `<envs>/history/backups/<date>/<env>/<bot>/`.
 Each environment's monitor files go to `<date>/<env>/monitor/` (#650), read from the running monitor's `monitor-auth` volume through `scripts/envctl.sh <env> cp monitor:/app/data/monitor/. <temp>` (read-only), else — the monitor not running, the log naming the source — from the clone's `data/monitor/`.
 The monitor's allow-list (`MONITOR_FILES` in the script, pinned by `test_backup.py`): `auth.db` (users), `events.jsonl` (analytics), `assistant.jsonl` (#438), `requests.jsonl` and `requests_status.jsonl` (#409), `audit.jsonl` and its archives `audit.<UTC time>.jsonl` (#619); plain files only, nothing else of the volume.
