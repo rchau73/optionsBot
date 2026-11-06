@@ -1,0 +1,5 @@
+# Findings of CI's gitleaks that are false positives, one exact fingerprint each (commit:file:rule:line).
+# A pushed commit stays in the scan's range, so a later commit that removes the value does not clear it.
+# Add a line only for a value you have read and know is fake; a real secret is rotated, never listed here.
+# #680: a made-up test password in a jest test, replaced by a low-entropy value in the next commit.
+29f9cc4480b78cc4ea1a2a1f8835787707fdcbc4:frontend/__tests__/password-rule.test.js:generic-api-key:166
