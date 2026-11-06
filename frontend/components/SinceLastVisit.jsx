@@ -2,15 +2,16 @@
 
 import Link from "next/link";
 import { Signed } from "./InvestorSummary";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, isNumber } from "@/lib/format";
 import { MAX_WINDOW_DAYS, agoText, sinceLastVisit } from "@/lib/sincevisit";
 import { formatSignedUSD, toneOf } from "@/lib/summary";
 import { fmtCoin } from "@/lib/tiles";
 
 // "Since you last looked" (#618, epic E3): under the four answers, one block
 // per bot comparing this browser's last visit with now — the closes and their
-// reasons, their result net of fees, the worst case then vs now, a warning
-// that began meanwhile. No stored visit: one line saying what it will show.
+// reasons, their result net of fees, the futures hedge's lines (#679), the
+// worst case then vs now, a warning that began meanwhile. No stored visit: one
+// line saying what it will show.
 // Helpers in lib/sincevisit.js; the visit is kept by hooks/useLastVisit.js.
 
 export const FIRST_VISIT = "Next time you come back, this shows what changed since this visit.";
@@ -33,10 +34,10 @@ function Result({ value, children }) {
 }
 
 /**
- * bots: the bots shown; trades/tradesComplete: useMonitor's; visit: useLastVisit's
+ * bots: the bots shown; trades/tradesComplete/hedgeEvents: useMonitor's; visit: useLastVisit's
  * { previous, loaded, dismissed, dismiss }; now: the time to compare with (the last poll's).
  */
-export default function SinceLastVisit({ bots, trades = {}, tradesComplete, visit, now }) {
+export default function SinceLastVisit({ bots, trades = {}, tradesComplete, hedgeEvents = {}, visit, now }) {
   if (!visit?.loaded || visit.dismissed || !bots?.length || !now) return null;
   const known = bots.filter((b) => visit.previous[b.name]);
   if (!known.length) {
@@ -48,7 +49,14 @@ export default function SinceLastVisit({ bots, trades = {}, tradesComplete, visi
   }
   const views = known.map((b) => ({
     bot: b,
-    view: sinceLastVisit({ bot: b, trades: trades[b.name], tradesComplete: tradesComplete?.[b.name] ?? Array.isArray(trades[b.name]), visit: visit.previous[b.name], now }),
+    view: sinceLastVisit({
+      bot: b,
+      trades: trades[b.name],
+      tradesComplete: tradesComplete?.[b.name] ?? Array.isArray(trades[b.name]),
+      hedgeEvents: hedgeEvents[b.name],
+      visit: visit.previous[b.name],
+      now,
+    }),
   }));
   return (
     <section aria-label="Since you last looked" className="min-w-0 space-y-3 rounded-lg border border-line bg-panel/40 p-3">
@@ -82,6 +90,7 @@ function BotSince({ bot, view: v, now }) {
           ⚠ {p.chip} began since then: {p.words}. See the header.
         </p>
       ))}
+      <HedgeSince hedge={v.hedge} coin={v.coin} />
       {v.unknown ? (
         <p className="text-warn">Closes unknown: {v.unknown}.</p>
       ) : v.loading ? (
@@ -93,6 +102,31 @@ function BotSince({ bot, view: v, now }) {
       )}
       <WorstLine coin={v.coin} worst={v.worst} />
     </section>
+  );
+}
+
+/** The hedge's lines: one that changes the book's protection carries ⚠, so colour is never the only cue. */
+function HedgeSince({ hedge, coin }) {
+  if (!hedge.rows.length) return null;
+  return (
+    <>
+      <p>Futures hedge:</p>
+      <ul className="space-y-1" data-testid="since-hedge">
+        {hedge.shown.map((r) => (
+          <li key={r.seq} className="min-w-0 break-words">
+            <span className="tabular-nums text-muted">{formatDateTime(r.at)}</span>{" "}
+            <span className={r.risk ? "text-warn" : undefined}>{r.risk ? `⚠ ${r.text}` : r.text}</span>
+            {isNumber(r.result) ? (
+              <>
+                {" "}
+                <Result value={r.result}>{fmtCoin(r.result, coin)}</Result>
+              </>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {hedge.more ? <p className="text-muted">and {hedge.more} more.</p> : null}
+    </>
   );
 }
 

@@ -4,6 +4,7 @@
 // sorted into the page's four filters and grouped by day in the display zone.
 import { describeEvent } from "./monitor";
 import { isNumber } from "./format";
+import { hedgeFilters, hedgeResult, hedgeSentence } from "./hedgeWords";
 import { DISPLAY_TZ, localDate } from "./time";
 
 /** The filter buttons, in order: [key, label]. */
@@ -55,15 +56,17 @@ const skipWord = (reason) => (reason ?? "").split(/[:\s]/)[0];
  * fields: { money, protection, waiting, person }. A value the mapping does
  * not know belongs to none (Everything only, never dropped).
  */
-export function activityGroups({ event, closeReason, trigger, change, skipReason, actor }) {
+export function activityGroups({ event, closeReason, trigger, change, skipReason, actor, filledUSD }) {
+  const hedge = event === "hedge" ? hedgeFilters(change, filledUSD) : [];
   const person = Boolean(actor?.user) || closeReason === "manual_close" || change === "rebalance_manual";
-  const money = event === "filled" || event === "closed";
+  const money = event === "filled" || event === "closed" || hedge.includes("money");
   const protection =
     person ||
     (event === "closed" && PROTECTION_CLOSES.has(closeReason)) ||
     (event === "cancelled" && PROTECTION_CANCELS.has(trigger)) ||
-    (event === "risk_limit" && PROTECTION_RISK.has(change));
-  const waiting = event === "skipped" && Boolean(skipWord(skipReason));
+    (event === "risk_limit" && PROTECTION_RISK.has(change)) ||
+    hedge.includes("protection");
+  const waiting = (event === "skipped" && Boolean(skipWord(skipReason))) || hedge.includes("waiting");
   return { money, protection, waiting, person };
 }
 
@@ -80,8 +83,10 @@ function iconOf(event, groups) {
 /**
  * The entry's amount: "Paid to you" for an open, "Result" for a close (both
  * in coin, signed); value null when the journal has no figure (never a 0).
+ * A hedge line shows one only for a close of the perpetual.
  */
-function amountOf(event, { premium, pnl }) {
+function amountOf(event, { premium, pnl, hedge }) {
+  if (event === "hedge") return isNumber(hedge) ? { label: "Result", value: hedge } : null;
   if (event === "filled") return { label: "Paid to you", value: isNumber(premium) ? premium : null };
   if (event === "closed") return { label: "Result", value: isNumber(pnl) ? pnl : null };
   return null;
@@ -109,7 +114,7 @@ function entry({ seq, at, event, instrument, plain, fallback, fields, amount }) 
 export function activityFromEvent(ev, unit) {
   if (!ev || HIDDEN_EVENTS.has(ev.event)) return null;
   const d = ev.data ?? {};
-  const plain = typeof ev.plain === "string" && ev.plain.trim() ? ev.plain : null;
+  const plain = hedgeSentence(ev, unit) ?? (typeof ev.plain === "string" && ev.plain.trim() ? ev.plain : null);
   return entry({
     seq: ev.seq,
     at: ev.at,
@@ -117,9 +122,9 @@ export function activityFromEvent(ev, unit) {
     instrument: d.instrument,
     plain,
     fallback: plain ? null : describeEvent(unit.toLowerCase(), ev, unit)?.text,
-    fields: { closeReason: d.close_reason, trigger: d.trigger_reason, change: d.change, skipReason: d.skip_reason, actor: d.actor },
+    fields: { closeReason: d.close_reason, trigger: d.trigger_reason, change: d.change, skipReason: d.skip_reason, actor: d.actor, filledUSD: d.filled_usd },
     // A close's pnl is omitted from the journal when it is exactly 0.
-    amount: { premium: d.premium_received ?? (isNumber(d.fill_price) && isNumber(d.qty) ? d.fill_price * d.qty : null), pnl: d.pnl ?? 0 },
+    amount: { premium: d.premium_received ?? (isNumber(d.fill_price) && isNumber(d.qty) ? d.fill_price * d.qty : null), pnl: d.pnl ?? 0, hedge: hedgeResult(d) },
   });
 }
 

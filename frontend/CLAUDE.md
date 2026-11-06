@@ -20,5 +20,7 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
 - **The Overview's four answers** (#489, epic E3): `__tests__/overview-four-answers.test.jsx` renders the desktop Overview on four fixtures (profit, loss, nothing held, stale)
   and fails when a redesign drops one answer: the positions per strangle, the month net of fees in coin and USD (a loss as prominent as a gain),
   the worst case in money, and the last trade's one-click Why? (`LastTrade`, from `/api/summary`'s `last_action`).
+- **The hedge's lines in plain words** (#679, epic E3): `lib/hedgeWords.js` has one sentence per `orders.Hedge*` change and `shed_hedged`, for the Activity page and "Since you last looked";
+  a new hedge change needs its sentence there (`__tests__/hedge-words.test.jsx` reads the Go constants), besides the bot's own in `internal/api/explain.go`.
 - **Losses as visible as gains** (#582, epic E3): `__tests__/loss-visibility.test.jsx` renders Income, Details (pro), the phone overview, Worst case and Positions on the shared fixtures of `test/resultFixtures.js` (profit, loss, nothing held)
   and fails, naming the page, on a loss without its minus sign and unit, smaller or lighter than the gain, folded away, or a 0 shown for nothing held; a new page that shows a result gets its row in `PAGES`.

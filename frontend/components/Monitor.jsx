@@ -28,7 +28,7 @@ import { DISPLAY_TZ_LABEL } from "@/lib/time";
  * Details (pro).
  */
 export default function Monitor({ bot = null }) {
-  const { names, bots, trades, tradesComplete, error, pollMs, polledAt } = useMonitor();
+  const { names, bots, trades, tradesComplete, hedgeEvents, error, pollMs, polledAt } = useMonitor();
   const visit = useLastVisit(bots);
   // The payoff modal (#391): { bot, strangleId, opener } — opener gets the focus back on close.
   const [chart, setChart] = useState(null);
@@ -51,7 +51,7 @@ export default function Monitor({ bot = null }) {
       <div className="sm:hidden">
         <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} now={polledAt} />
         <div className="px-3 pb-3">
-          <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />
+          <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} hedgeEvents={hedgeEvents} visit={visit} now={polledAt} />
         </div>
       </div>
       <div className="hidden sm:block" data-testid="desktop-monitor">
@@ -67,7 +67,7 @@ export default function Monitor({ bot = null }) {
           <HedgeLines bots={bots} now={polledAt} />
           <OverviewPnl names={names} units={units} />
           <BotDashboards bots={bots} onOpen={openChart} />
-          <SinceLastVisit bots={bots} trades={trades} tradesComplete={tradesComplete} visit={visit} now={polledAt} />
+          <SinceLastVisit bots={bots} trades={trades} tradesComplete={tradesComplete} hedgeEvents={hedgeEvents} visit={visit} now={polledAt} />
           <p>
             <Link
               href="/details"

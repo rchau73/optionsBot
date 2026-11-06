@@ -68,7 +68,9 @@ It compares your last visit in this browser with now, for each bot: the result o
 each close with its reason in plain words (take profit, time roll, exit line, stop-loss), up to five, the rest on the Activity page;
 and the worst case of one very bad day then and now, said as larger, smaller or about the same.
 A warning in the header that began while you were away (HALTED, OFFLINE, STALE, IM over limit) gets one line pointing at it.
-When nothing was closed or sold it says "Nothing happened since" and the time.
+With a futures hedge, the hedge's lines are listed in the same plain words as the Activity page, up to five; a line that changes the book's protection comes first with ⚠, such as a hedge that cannot trade, so the GEX shed is back on.
+They come from the last 500 journal lines the bot keeps, so an older one may be missing after a long time away.
+When nothing was closed or sold and the hedge did nothing it says "Nothing happened since" and the time.
 The time of your visit stays in this browser only: it is not sent anywhere, so another browser or phone keeps its own.
 It counts after the page has been open for 10 seconds, so a quick reload keeps the summary.
 Away more than 30 days, it covers the last 30 days.
@@ -222,9 +224,9 @@ Entries are grouped by day (Today, Yesterday, then dates), and the time is in 24
 
 **The filters**:
 - *Everything*.
-- *Money in or out*: opens and closes.
-- *Protection*: stop-loss, delta exit, GEX shed, maintenance-margin cut, kill switch, manual close, freezes and every action by a person.
-- *Waiting*: skips and holds, such as waiting for fresh GEX, a repair held after a stop, or no free expiry.
+- *Money in or out*: opens and closes, and the futures hedge's trades.
+- *Protection*: stop-loss, delta exit, GEX shed, maintenance-margin cut, kill switch, manual close, freezes and every action by a person; also a futures hedge trade, and a hedge that stopped holding the book.
+- *Waiting*: skips and holds, such as waiting for fresh GEX, a repair held after a stop, no free expiry, or a futures hedge order that waits or found nothing to fill.
 
 **Each entry** has a time, an icon with a text name, a bold first line and the rest of the sentence.
 An arrow down is money in (an option sold).
@@ -233,6 +235,14 @@ A shield is protection.
 A clock is waiting.
 A person is an action by a person, with their name and role.
 Opens show *Paid to you*; closes show *Result*, both in coin, signed.
+
+**The futures hedge's lines** say what the hedge did and why, with their numbers.
+A trade names its side and size in USD of the perpetual, and the book's coin delta before and after against its band: "Sold 30,000 USD of the perpetual to bring the book's coin delta back inside its band (it was +0.4200 BTC, about +0.0200 BTC after; the band is ±0.3000 BTC)."
+The delta after is an estimate from the fill's size and price.
+An order that filled in part or not at all says so.
+Closing the hedge shows its *Result* net of its fee, a loss with its minus sign.
+When the hedge cannot trade, the line says so and that the GEX shed is back on.
+A leg the shed would have bought back and the hedge kept has its own line.
 
 **When something looks wrong**: a long run of Waiting entries means a rule is holding the bot back; the sentence names it.
 "Show earlier days" adds three more days.

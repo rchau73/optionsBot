@@ -64,7 +64,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
 	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "shed": true, "sheds": true, "costs": true, "perpfunding": true,
-	"rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
+	"fullstrangle": true, "rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -89,6 +89,7 @@ type replayOpts struct {
 	regimeHolds                                       string // the regime-hold study's rules (e.g. "confirmed,live"); "" = one replay
 	shed                                              string // what a GEX shed does in one replay (#637): today (the bot) | none | partial:K | delta:D | hedge
 	sheds, costs                                      string // the shed study's variants ("all" = the issue's) and cost multiples; "" = one replay
+	fullStrangle                                      string // the full-strangle study's rule sets (e.g. "today,hedged", #677); "" = one replay
 	rebalance                                         string // the rebalance model's downsize rule (#638): off | prorata (the bot) | cheapest | winners
 	rebalances                                        string // the downsize study's rules (e.g. "prorata,cheapest,winners"); "" = one replay
 	limits                                            string // the IM limit, freeze and restarts: replay (rebuilt) | journal (the bot's risk_limit lines)
@@ -219,13 +220,19 @@ func runReplay(o replayOpts) error {
 		changed = append(changed, "-shed="+set.Shed.String())
 	}
 	studies := 0
-	for _, s := range []string{o.liqCaps, o.regimeHolds, o.sheds, o.rebalances} {
+	for _, s := range []string{o.liqCaps, o.regimeHolds, o.sheds, o.rebalances, o.fullStrangle} {
 		if s != "" {
 			studies++
 		}
 	}
 	if studies > 1 {
-		return fmt.Errorf("-liqcaps, -regimeholds, -sheds and -rebalances are four studies: run one at a time")
+		return fmt.Errorf("-liqcaps, -regimeholds, -sheds, -rebalances and -fullstrangle are five studies: run one at a time")
+	}
+	if o.trace {
+		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
+	}
+	if o.fullStrangle != "" {
+		return runFullStrangleStudy(snaps, set, o, changed)
 	}
 	if o.rebalances != "" {
 		return runRebalanceStudy(snaps, set, o, changed, trades, balances)
@@ -238,9 +245,6 @@ func runReplay(o replayOpts) error {
 	}
 	if o.sheds != "" {
 		return runShedStudy(snaps, set, o, changed)
-	}
-	if o.trace {
-		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
 	}
 	res, err := replay.Run(snaps, set)
 	if err != nil {
@@ -475,13 +479,9 @@ func runShedStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, 
 	if err != nil {
 		return err
 	}
-	var costs []float64
-	for _, f := range strings.Split(o.costs, ",") {
-		m, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
-		if err != nil || m < 1 {
-			return fmt.Errorf("-costs %q: want multiples of 1 or more, comma-separated", o.costs)
-		}
-		costs = append(costs, m)
+	costs, err := parseCosts(o.costs)
+	if err != nil {
+		return err
 	}
 	rows, err := replay.ShedStudy(snaps, set, variants, costs)
 	if err != nil {
@@ -494,6 +494,50 @@ func runShedStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, 
 	fmt.Printf(". Entries and repairs skip the shed side under every variant; stops, delta exits and the MM cut run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid by the hedge, re-hedged outside ±%.2f Δ per option; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
 		replay.PerpFeeRate*100, set.PerpFundingPct, replay.HedgeBand, (1-replay.GapMove)*100, replay.GapIVMultiple)
 	fmt.Print(replay.ShedStudyMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
+	return nil
+}
+
+// parseCosts reads "1,2": multiples of the recorded costs.
+func parseCosts(v string) ([]float64, error) {
+	var costs []float64
+	for _, f := range strings.Split(v, ",") {
+		m, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
+		if err != nil || m < 1 {
+			return nil, fmt.Errorf("-costs %q: want multiples of 1 or more, comma-separated", v)
+		}
+		costs = append(costs, m)
+	}
+	return costs, nil
+}
+
+// runFullStrangleStudy is -fullstrangle (#677): one replay per rule set and
+// cost multiple on the same books and settings, printed as one table.
+func runFullStrangleStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string) error {
+	for _, name := range []string{"shed", "regimehold"} {
+		if _, ok := o.set[name]; ok {
+			return fmt.Errorf("-fullstrangle sets the rules itself: drop -%s", name)
+		}
+	}
+	variants, err := replay.ParseFullStrangles(o.fullStrangle)
+	if err != nil {
+		return err
+	}
+	costs, err := parseCosts(o.costs)
+	if err != nil {
+		return err
+	}
+	rows, err := replay.FullStrangleStudy(snaps, set, variants, costs)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Full-strangle study (#677), %s, direction %s, start %s", set.Cfg.Underlying, set.Cfg.GEXDirection, o.start)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Printf(". today = the bot, no perpetual. hedged = the perpetual holds the book's coin delta within %d %% of the balance (at most %d orders/h), the shed closes nothing, neither the regime side nor the shed signal holds a leg, a stopped leg waits %d h, frozen or not (hedged:H = H h); the hedge is assumed to hold throughout. Stops, delta exits, the MM cut, the limits and the entry freeze run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
+		config.FixedFuturesHedgeBandPct, config.FixedFuturesHedgeMaxPerHour, replay.DefaultHedgedCooldownHours,
+		replay.PerpFeeRate*100, set.PerpFundingPct, (1-replay.GapMove)*100, replay.GapIVMultiple)
+	fmt.Print(replay.FullStrangleMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
 	return nil
 }
 

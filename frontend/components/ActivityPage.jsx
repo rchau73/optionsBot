@@ -127,8 +127,8 @@ function Entry({ entry: e, coin, bot }) {
       <span className="w-12 shrink-0 pt-0.5 font-mono text-sm text-muted">{clockOf(e.at)}</span>
       <Icon kind={e.icon} />
       <div className="min-w-0 flex-1">
-        <p className="text-base font-semibold">{e.headline}</p>
-        <p className="text-base text-slate-200">
+        <p className="break-words text-base font-semibold">{e.headline}</p>
+        <p className="break-words text-base text-slate-200">
           {e.actor ? <span>By {e.actor}. </span> : null}
           {e.why}
           {e.amount ? <Amount amount={e.amount} coin={coin} /> : null}

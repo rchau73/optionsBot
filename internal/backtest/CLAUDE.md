@@ -23,6 +23,9 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
     net, entries opened without the held side, side holds, legs sold into a live negative regime on the trend's side, worst week (`docs/studies/regime-hold.md`); `-regimehold live` runs one replay so.
   - `-sheds all` (study, #637, `replay/shed.go`): one replay per GEX shed variant (today, none, `partial:K`, `delta:D`, a perp `hedge`) at each `-costs` multiple (1,2), one table:
     net (coin, USD), shed closes per break, the named windows 9–17 Oct and 29 Oct–4 Nov, worst day/week, max MM, a −20 % gap on the held book, stops, MM cuts, a verdict against today's shed (`docs/studies/shed-variants.md`); `-shed hedge` runs one replay so.
+  - `-fullstrangle today,hedged` (study, #677, `replay/fullstrangle.go`): today's rules vs the perpetual holding the book's coin delta (the bot's band and order limit) with the rules that leave a leg missing relaxed; `hedged:H` = a stopped leg waits H hours;
+    at each `-costs` multiple, one table: net (coin, USD), legs missing, perpetual traded and fees, the named windows, worst day/week, avg IM, max MM, a −20 % gap, stops, MM cuts, a verdict; `-trace` prints each row's actions (`docs/studies/full-strangle-hedge.md`).
+    Run it with `-start journal -limits journal -rebalance prorata`: from an empty book a variant can run a far smaller book, which the verdict refuses to compare.
   - `-rebalance prorata` (#638, `replay/rebalance.go`; default `off`, so earlier replays are unchanged): the bot's rebalance — a pass on a confirmed limit change (cuts to the exact limit),
     retries of a held or short top-up (cut only above limit + 1.5 pp, `DownsizeDue`), top-ups as `rebalancePositions`; `-limits journal` takes the limit, freeze and starts from the journal's `risk_limit` lines
     (each start a startup pass with the ±1.5 pp band), and with `-journal` the bot's downsizes are listed beside the replay's per day and side.
