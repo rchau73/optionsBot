@@ -1,15 +1,21 @@
 package tests
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"optionsbot/internal/exchange"
+	"optionsbot/internal/exchange/deribit"
 	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/recorder"
 	"optionsbot/internal/strategy"
 )
 
@@ -138,4 +144,118 @@ func TestExchange_DeribitFunctions(t *testing.T) {
 func approxEq(a, b float64) bool {
 	d := a - b
 	return d < 1e-12 && d > -1e-12
+}
+
+// capabilityDiffs names each field where got and want differ.
+func capabilityDiffs(got, want exchange.Capabilities) []string {
+	var diffs []string
+	g, w := reflect.ValueOf(got), reflect.ValueOf(want)
+	for i := 0; i < g.NumField(); i++ {
+		if g.Field(i).Bool() != w.Field(i).Bool() {
+			diffs = append(diffs, g.Type().Field(i).Name)
+		}
+	}
+	return diffs
+}
+
+// Scenario (#687): Deribit's capabilities are pinned. The pin is a literal of
+// its own, so a change to the value needs a change here; the document's copy of
+// the type is held to this one by TestExchangeCoupling_ProposedInterfaceCompiles.
+func TestExchange_DeribitCapabilitiesArePinned(t *testing.T) {
+	pinned := exchange.Capabilities{
+		MarginSimulator:     true,
+		VolIndex:            true,
+		CancelByLabel:       true,
+		AmendInPlace:        true,
+		CancelAllByCurrency: true,
+		PortfolioMargin:     true,
+		InverseSettlement:   true,
+		MainnetOpenInterest: true,
+	}
+	for _, field := range capabilityDiffs(exchange.DeribitCapabilities, pinned) {
+		t.Errorf("Deribit capability %s changed: update the pin if that is deliberate", field)
+	}
+
+	// Every field is covered: flipping any one is reported by its own name.
+	typ := reflect.TypeOf(pinned)
+	for i := 0; i < typ.NumField(); i++ {
+		changed := pinned
+		reflect.ValueOf(&changed).Elem().Field(i).SetBool(false)
+		if got := capabilityDiffs(changed, pinned); !reflect.DeepEqual(got, []string{typ.Field(i).Name}) {
+			t.Errorf("changed %s reported as %v", typ.Field(i).Name, got)
+		}
+	}
+}
+
+// bookCall records the book-summary requests that reach the connection.
+type bookCall struct {
+	calls  []string // method and params as sent on the wire
+	ctxs   []context.Context
+	result string
+	err    error
+}
+
+func (c *bookCall) Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error) {
+	wire, err := json.Marshal(params)
+	if err != nil {
+		return gateway.JSONRPCResponse{}, err
+	}
+	line := method + " " + string(wire)
+	if priority != gateway.PriorityLow {
+		line += " NOT LOW PRIORITY"
+	}
+	c.calls = append(c.calls, line)
+	c.ctxs = append(c.ctxs, ctx)
+	return gateway.JSONRPCResponse{Result: json.RawMessage(c.result)}, c.err
+}
+
+// Scenario (#687): one call site for the book summary — the GEX manager and
+// the market recorder send the same request as before, byte for byte, on the
+// low-priority lane, and get the rows back.
+func TestExchange_OneCallSiteForTheBookSummary(t *testing.T) {
+	want := func(currency string) []string {
+		return []string{`public/get_book_summary_by_currency {"currency":"` + currency + `","kind":"option"}`}
+	}
+
+	gexGW := &bookCall{result: `[{"instrument_name":"BTC-27DEC30-90000-P","open_interest":42,"bid_price":0.1}]`}
+	mgr := gex.NewManager(gexGW, gex.Params{Underlying: "BTC"}, 0)
+	if err := mgr.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gexGW.calls, want("BTC")) {
+		t.Errorf("GEX manager sent %q", gexGW.calls)
+	}
+	if rows, _ := mgr.LatestSummary(); len(rows) != 1 || rows[0].OpenInterest != 42 || rows[0].BidPrice != 0.1 {
+		t.Errorf("GEX manager's rows = %+v", rows)
+	}
+
+	recGW := &bookCall{result: `[{"instrument_name":"BTC_USDC-27DEC30-90000-P","open_interest":2}]`}
+	books := recorder.NewUSDCBooks(recGW)
+	if err := books.FetchSummary(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(recGW.calls, want("USDC")) {
+		t.Errorf("recorder sent %q", recGW.calls)
+	}
+	if _, ok := recGW.ctxs[0].Deadline(); !ok {
+		t.Error("the recorder's fetch lost its timeout")
+	}
+	if rows, _ := books.Book("BTC").LatestSummary(); len(rows) != 1 || rows[0].OpenInterest != 2 {
+		t.Errorf("recorder's rows = %+v", rows)
+	}
+}
+
+// A refused call comes back as it is, so a caller can still read the gateway's
+// error, and a reply that is not rows names the currency.
+func TestExchange_BookSummaryFailures(t *testing.T) {
+	down := errors.New("down")
+	if _, err := deribit.NewBookReader(&bookCall{err: down}).BookSummary(context.Background(), "BTC"); !errors.Is(err, down) {
+		t.Errorf("refused call: err = %v", err)
+	}
+	for _, reply := range []string{`{"not":"a list"}`, ``} {
+		rows, err := deribit.NewBookReader(&bookCall{result: reply}).BookSummary(context.Background(), "USDC")
+		if err == nil || rows != nil || !strings.Contains(err.Error(), "decode USDC book summary") {
+			t.Errorf("reply %q: rows %v, err %v", reply, rows, err)
+		}
+	}
 }
