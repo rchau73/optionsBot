@@ -89,6 +89,7 @@ type Server struct {
 	hedge        HedgeController  // nil → no futures hedge routes (#657)
 	hedgeLive    bool             // a live bot: the hedge switch is refused
 	hedgePreview previewCache
+	shadowLegs   string                      // the shadow legs record; "" → no route (#676)
 	connections  map[string]ConnectionSource // by gateway name; empty → {}
 	token        string
 	started      time.Time
@@ -167,6 +168,7 @@ func New(src StrategySource, events EventSource, opts ...Option) *Server {
 	s.routesJournal(s.mux)
 	s.routesActions(s.mux)
 	s.routesHedge(s.mux)
+	s.routesShadow(s.mux)
 	return s
 }
 

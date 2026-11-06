@@ -7,6 +7,7 @@ import (
 	"optionsbot/internal/gex"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
+	"optionsbot/internal/shadow"
 )
 
 // The strategy talks to the outside world only through the small interfaces
@@ -94,6 +95,8 @@ type Deps struct {
 	// HedgeRecheck is how often a halted hedge looks again; 0 is the fixed
 	// rule (config.FixedFuturesHedgeRecheckMinutes). Tests shorten it.
 	HedgeRecheck time.Duration
+	// ShadowLegs records every held missing leg (#676); nil records nothing.
+	ShadowLegs *shadow.Book
 }
 
 // DirectionRecorder keeps the direction sources' history (never read by trading).

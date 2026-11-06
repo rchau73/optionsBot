@@ -15,6 +15,7 @@ import (
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
+	"optionsbot/internal/shadow"
 )
 
 // authBackoff is how long the strategy pauses after Deribit answers
@@ -50,6 +51,7 @@ type Strategy struct {
 	history      PnLRecorder   // may be nil
 	futures      FuturesTrader // may be nil: no futures hedge (#657)
 	fh           futuresHedge  // the futures hedge experiment (futureshedge.go; decision loop only)
+	shadow       *shadow.Book  // may be nil: no shadow legs (shadowlegs.go, #676; decision loop only)
 	pnl          *pnlBook
 
 	lastSkip  map[slotKey]string // last skip reason journaled per slot (decision loop only)
@@ -188,6 +190,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		rebalanceCh:      make(chan rebalanceReq, 1),
 		hedgeCh:          make(chan hedgeReq, 1),
 		futures:          d.Futures,
+		shadow:           d.ShadowLegs,
 		pendingStrangles: make(map[string]*pendingStrangle),
 	}
 	s.loadHedgeMode(d.HedgeModePath)
@@ -348,7 +351,8 @@ func (s *Strategy) evaluate(ctx context.Context) {
 	if !m.mmBreached() && !s.stopsDeferred && m.gexWait == "" {
 		s.repairIncompleteStrangles(ctx, gammaDec, m)
 	}
-	s.recordHeldLegs(gammaDec, m) // what holds each missing leg, for the monitor
+	held := s.recordHeldLegs(gammaDec, m) // what holds each missing leg, for the monitor
+	s.stepShadowLegs(held, time.Now())    // records only, never an order (#676)
 
 	s.hedge.MaybeReport(s.state.TotalNetDelta(), underlyingPrice, s.suggestedHedgeInst())
 
@@ -369,6 +373,7 @@ func (s *Strategy) trackPositions(ctx context.Context) {
 		names = append(names, pos.Instrument)
 	}
 	names = append(names, s.counterfactualInstruments()...) // the benchmark follows shed legs (#657)
+	names = append(names, s.shadowInstruments()...)         // the shadow legs follow held legs (#676)
 	if err := s.md.Track(ctx, names); err != nil {
 		slog.Warn("cannot subscribe to held instruments", "err", err)
 	}
