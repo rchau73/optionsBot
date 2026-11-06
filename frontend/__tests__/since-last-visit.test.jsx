@@ -46,8 +46,8 @@ const open = (seq, hoursAgo) => ({ seq, at: iso(NOW - hoursAgo * HOUR), kind: "o
 const storeVisit = (hoursAgo, extra = {}) =>
   window.localStorage.setItem(visitKey("btc"), JSON.stringify({ at: iso(NOW - hoursAgo * HOUR), worst: { coin: 0.03, usd: 2961 }, warnings: [], ...extra }));
 
-function renderOverview({ bot = makeBot(), trades = [] } = {}) {
-  useMonitor.mockReturnValue({ names: [bot.name], bots: [bot], feed: [], history: [], trades: { btc: trades }, tradesComplete: { btc: true }, error: null, pollMs: 1000, polledAt: NOW });
+function renderOverview({ bot = makeBot(), trades = [], hedgeEvents = [] } = {}) {
+  useMonitor.mockReturnValue({ names: [bot.name], bots: [bot], feed: [], history: [], trades: { btc: trades }, tradesComplete: { btc: true }, hedgeEvents: { btc: hedgeEvents }, error: null, pollMs: 1000, polledAt: NOW });
   render(<Monitor />);
   return screen.getByTestId("desktop-monitor");
 }
@@ -101,6 +101,61 @@ describe("Scenario: a loss is as visible as a gain", () => {
     expect(sizeAndWeight(loss)).toEqual(gainLook);
     expect(within(loss.parentElement).getByLabelText("loss")).toHaveTextContent("▼ loss");
     expect(c).toHaveTextContent("Closed since then, net of fees: ▼ loss−0.00400 BTC · ▼ loss−$400");
+  });
+});
+
+describe("the futures hedge's lines (#679)", () => {
+  const hedgeLine = (seq, hoursAgo, data) => ({ seq, event: "hedge", at: iso(NOW - hoursAgo * HOUR), data, plain: "The bot's own sentence." });
+  const fill = (seq, hoursAgo) => hedgeLine(seq, hoursAgo, { change: "hedge_fill", side: "sell", amount_usd: 300, filled_usd: 300, price: 75000, options_delta: 0.5, perp_delta: -0.08, band_coin: 0.3 });
+  const unavailable = (seq, hoursAgo) => hedgeLine(seq, hoursAgo, { change: "hedge_unavailable", options_delta: 0.4 });
+  const rows = (c) => within(within(c).getByTestId("since-hedge")).getAllByRole("listitem");
+
+  test("Scenario: hedge unavailable: the card says the hedge cannot trade and the GEX shed is back, marked by more than colour", () => {
+    storeVisit(5);
+    const c = card(renderOverview({ hedgeEvents: [unavailable(1, 2)] }));
+    expect(c).toHaveTextContent("Futures hedge:");
+    expect(c).toHaveTextContent("⚠ The futures hedge cannot trade, so the GEX shed is back on");
+    expect(c).not.toHaveTextContent("Nothing happened");
+  });
+
+  test("a fill reads as the Activity page does, and a line before the visit is not listed", () => {
+    storeVisit(5);
+    const c = card(renderOverview({ hedgeEvents: [fill(1, 6), fill(2, 1)] }));
+    expect(rows(c)).toHaveLength(1);
+    expect(rows(c)[0]).toHaveTextContent("Sold 300 USD of the perpetual to bring the book's coin delta back inside its band");
+    expect(rows(c)[0]).not.toHaveTextContent("⚠");
+  });
+
+  test("a close of the perpetual shows its result, a loss with its mark", () => {
+    storeVisit(5);
+    const closed = hedgeLine(1, 1, { change: "hedge_closed", side: "buy", amount_usd: 300, filled_usd: 300, price: 75000, realised_coin: -0.0012 });
+    const row = rows(card(renderOverview({ hedgeEvents: [closed] })))[0];
+    expect(row).toHaveTextContent("▼ loss−0.00120 BTC");
+    expect(within(row).getByText("−0.00120 BTC")).toHaveClass("text-loss");
+  });
+
+  test("a change of protection stays on the card under a run of trades; the rest are counted", () => {
+    storeVisit(20);
+    const c = card(renderOverview({ hedgeEvents: [unavailable(1, 10), ...[2, 3, 4, 5, 6, 7].map((i) => fill(i, 9 - i))] }));
+    expect(rows(c)).toHaveLength(5);
+    expect(rows(c)[0]).toHaveTextContent("⚠ The futures hedge cannot trade");
+    expect(c).toHaveTextContent("and 2 more.");
+  });
+
+  test("a line of a change the monitor does not know keeps the bot's sentence", () => {
+    storeVisit(5);
+    const c = card(renderOverview({ hedgeEvents: [hedgeLine(1, 1, { change: "hedge_new" })] }));
+    expect(rows(c)[0]).toHaveTextContent("The bot's own sentence.");
+  });
+
+  test("the lines show while the closes load, and stay readable on a phone", () => {
+    storeVisit(5);
+    useMonitor.mockReturnValue({ names: ["btc"], bots: [makeBot()], trades: { btc: [] }, tradesComplete: { btc: false }, hedgeEvents: { btc: [unavailable(1, 1)] }, error: null, pollMs: 1000, polledAt: NOW });
+    const { container } = render(<Monitor />);
+    const c = within(container.querySelector(".sm\\:hidden")).getByRole("region", { name: "Since you last looked" });
+    expect(c).toHaveTextContent("Loading the closes…");
+    expect(rows(c)[0]).toHaveClass("min-w-0", "break-words");
+    expect(c.outerHTML).not.toMatch(/w-\[\d+px\]|whitespace-nowrap/);
   });
 });
 
