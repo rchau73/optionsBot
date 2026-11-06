@@ -112,9 +112,11 @@ func TestFuturesHedge_ResumesWhenTheLockLifts(t *testing.T) {
 	ff.set(func(ff *fakeFutures) { ff.state = "open" })
 	eventually(t, 2*time.Second, "hedged", func() bool { return f.exch.perpSize() == -23050 })
 	eventually(t, 2*time.Second, "resumed", func() bool { return len(f.journal.hedgeChanges(orders.HedgeResumed)) == 1 })
-	if v := f.strat.HedgeState(); v.Halted || v.NotHolding != "" {
-		t.Errorf("no halt left: %+v", v)
-	}
+	// The journal line comes mid-cycle; the view is published when the cycle ends (#690).
+	eventually(t, 2*time.Second, "no halt left", func() bool {
+		v := f.strat.HedgeState()
+		return !v.Halted && v.NotHolding == ""
+	})
 	if n := len(f.journal.hedgeChanges(orders.HedgeHalted)); n != 1 {
 		t.Errorf("hedge_halted %d times, want once per reason", n)
 	}
