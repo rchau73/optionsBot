@@ -31,7 +31,7 @@ var deribitMethods = map[string][]string{
 	"public/subscribe":                    {"gateway"},
 	"public/get_instruments":              {"marketdata"},
 	"public/get_volatility_index_data":    {"marketdata"},
-	"public/get_book_summary_by_currency": {"gex", "recorder"},
+	"public/get_book_summary_by_currency": {"exchange/deribit"},
 	"public/get_tradingview_chart_data":   {"orders"},
 	"public/get_instrument":               {"orders"},
 	"public/ticker":                       {"orders"},
@@ -190,6 +190,20 @@ func TestExchangeCoupling_EachMethodHasOneRow(t *testing.T) {
 		if rows[method] != 1 {
 			t.Errorf("%s: %q has %d rows in the inventory table, want 1", couplingDoc, method, rows[method])
 		}
+	}
+}
+
+// Scenario (#687): one call site for the book summary — the coupling test
+// finds the method in exactly one package, once.
+func TestExchangeCoupling_OneCallSiteForTheBookSummary(t *testing.T) {
+	var found []rpcUse
+	for _, u := range scanRPCLiterals(t, "../internal") {
+		if u.method == "public/get_book_summary_by_currency" {
+			found = append(found, u)
+		}
+	}
+	if len(found) != 1 || found[0].pkg != "exchange/deribit" {
+		t.Errorf("want one literal in exchange/deribit, found %v", found)
 	}
 }
 

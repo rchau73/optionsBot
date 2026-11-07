@@ -3,8 +3,12 @@
 Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 
 - **`internal/exchange`** — the exchange boundary for E8 (#181):
-  - interfaces only, with compile-time checks in `deribit.go` that today's Deribit types (`orders.Executor`, `marketdata.Manager`, `gex.Manager`, `gateway.Gateway`, `ParseOptionName`, `IsMatchingEngine`, `OptionFee`) satisfy them;
-  - Deribit is the only adapter; `Deribit`/`Names` are the exchange keys data uses (the account registry, #585).
+  - interfaces, with compile-time checks in `deribit.go` that today's Deribit types (`orders.Executor`, `marketdata.Manager`, `gex.Manager`, `gateway.Gateway`, `ParseOptionName`, `IsMatchingEngine`, `OptionFee`) satisfy them;
+  - Deribit is the only adapter; `Deribit`/`Names` are the exchange keys data uses (the account registry, #585);
+  - `Capabilities` says what an exchange can do, as data: `DeribitCapabilities` is pinned by `tests/exchange_test.go` and read by nothing yet (#687).
+  `internal/exchange/deribit` holds Deribit's calls as they leave their callers (#687; it grows into the adapter at step 6 of the migration):
+  - `BookReader.BookSummary` is the one book-summary fetch, for `gex.Manager` and `recorder.USDCBooks`;
+  - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`.
   The strategy depends on it (#182):
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
   `marketdata` and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).

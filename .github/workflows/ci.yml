@@ -39,6 +39,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -o pipefail # tee's status must not hide a failing checkfail.py (#683)
           if [ "$EVENT" = "pull_request" ]; then
             git diff --name-only "$BASE...$HEAD" > files.txt
             cat files.txt

@@ -2,21 +2,19 @@ package gex
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
-	"optionsbot/internal/gateway"
+	"optionsbot/internal/exchange/deribit"
+	"optionsbot/internal/exchange/transport"
 )
 
-// rpcCaller is the slice of the gateway the manager uses.
-type rpcCaller interface {
-	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
-}
+// rpcCaller is the slice of the exchange connection the manager uses.
+type rpcCaller = transport.Caller
 
-// Manager polls public/get_book_summary_by_currency and recomputes the GEX
+// Manager polls the book summary (deribit.BookReader) and recomputes the GEX
 // snapshot (see Build) on each Refresh. In production the caller wires it
 // to a mainnet connection: open interest only means something on the real
 // market, whatever environment the bot trades in.
@@ -24,7 +22,7 @@ type rpcCaller interface {
 // Refresh runs on a background timer, not on every tick, because the book
 // summary counts against the non-matching rate limit.
 type Manager struct {
-	gw      rpcCaller
+	books   *deribit.BookReader
 	params  Params
 	bandPct float64 // hysteresis band around the flip (MethodNearestFlip only); 0 disables
 
@@ -44,7 +42,7 @@ func NewManager(gw rpcCaller, params Params, bandPct float64) *Manager {
 	if params.Method == "" {
 		params.Method = MethodScript
 	}
-	return &Manager{gw: gw, params: params, bandPct: bandPct}
+	return &Manager{books: deribit.NewBookReader(gw), params: params, bandPct: bandPct}
 }
 
 // Snapshot returns the most recent computed GEX snapshot, or nil if Refresh
@@ -82,7 +80,7 @@ func (m *Manager) OpenInterest() *OISnapshot {
 // Refresh fetches the current book summary, recomputes GEX across the
 // nearest expiries and publishes the snapshot and the open interest.
 func (m *Manager) Refresh(ctx context.Context) error {
-	rows, err := m.fetchBookSummary(ctx)
+	rows, err := m.books.BookSummary(ctx, m.params.Underlying)
 	if err != nil {
 		return fmt.Errorf("gex refresh: %w", err)
 	}
@@ -159,22 +157,4 @@ func (m *Manager) StartBackground(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}()
-}
-
-// ── book summary fetch ────────────────────────────────────────────────────────
-
-func (m *Manager) fetchBookSummary(ctx context.Context) ([]SummaryRow, error) {
-	resp, err := m.gw.Call(ctx, "public/get_book_summary_by_currency", map[string]any{
-		"currency": m.params.Underlying,
-		"kind":     "option",
-	}, gateway.PriorityLow)
-	if err != nil {
-		return nil, err
-	}
-
-	var rows []SummaryRow
-	if err := json.Unmarshal(resp.Result, &rows); err != nil {
-		return nil, fmt.Errorf("decode book summary: %w", err)
-	}
-	return rows, nil
 }

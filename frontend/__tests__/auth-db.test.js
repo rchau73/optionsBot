@@ -13,6 +13,19 @@ import { TEST_SECRET } from "@/test/auth";
 
 jest.setTimeout(30000);
 
+// Counts the argon2id verifications; a plain wrapper, so restoreAllMocks leaves it working.
+let mockArgon2Verifies = 0;
+jest.mock("hash-wasm", () => {
+  const actual = jest.requireActual("hash-wasm");
+  return {
+    ...actual,
+    argon2Verify: (args) => {
+      mockArgon2Verifies++;
+      return actual.argon2Verify(args);
+    },
+  };
+});
+
 const ADMIN = { ADMIN_USERNAME: "Admin", ADMIN_PASSWORD: "correct horse battery", ADMIN_EMAIL: "owner@example.com" };
 
 /** A service on an in-memory database with a movable clock, the first admin created. */
@@ -81,25 +94,37 @@ describe("Scenario: same answer for a wrong user or a wrong password", () => {
     return { r, ms: Number(process.hrtime.bigint() - t0) / 1e6 };
   }
 
-  test("both answer 401 'invalid username or password' in about the same time", async () => {
+  test("Scenario: same work on both paths: each refusal runs exactly one argon2id verification", async () => {
     const { auth } = await setup();
+    // Admin six times: five wrong passwords lock the username, the sixth is refused locked.
+    const usernames = ["nobody", "x y", ...Array(6).fill("admin")];
+    for (const username of usernames) {
+      mockArgon2Verifies = 0;
+      const r = await auth.login({ username, password: "wrong password" });
+      expect(r).toEqual({ ok: false, status: 401, error: INVALID_LOGIN });
+      expect(mockArgon2Verifies).toBe(1);
+    }
+    expect(logs.some((l) => l.includes("username locked"))).toBe(true);
+  });
+
+  test("Scenario: stable under load: an unknown user answers in the time of a wrong password", async () => {
+    const { auth, clock } = await setup();
     await timed(auth, "nobody", "warm up the dummy hash");
     await timed(auth, "admin", "warm up the real hash");
     const unknown = [];
     const wrong = [];
     for (let i = 0; i < 7; i++) {
+      clock.t += LOCK_WINDOW_MS; // every try stays on its own path: admin never locks
       unknown.push(await timed(auth, `nobody${i}`, "wrong password"));
       wrong.push(await timed(auth, "admin", "wrong password"));
     }
     for (const { r } of [...unknown, ...wrong]) expect(r).toEqual({ ok: false, status: 401, error: INVALID_LOGIN });
-    // The fastest of 7 interleaved tries per path: load only ever adds time, so
-    // the minimum is each path's own cost even on a busy machine (a median of 3
-    // measured 7x apart under load, 2026-10-27), while a path that skipped the
-    // argon2id verification would still be many times faster.
+    // A sanity check only: the test above proves the same work, and a ratio of 3
+    // broke under parallel jest runs (3.18, #698). The fastest try per path is
+    // its own cost, and a path that skipped argon2id would be over 10x faster.
     const fastest = (xs) => Math.min(...xs.map((x) => x.ms));
     const [a, b] = [fastest(unknown), fastest(wrong)];
-    // Both paths run exactly one argon2id verification (~tens of ms each).
-    expect(Math.max(a, b) / Math.min(a, b)).toBeLessThan(3);
+    expect(Math.max(a, b) / Math.min(a, b)).toBeLessThan(10);
   });
 
   test("malformed usernames and empty fields get no hint either", async () => {

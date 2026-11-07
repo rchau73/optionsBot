@@ -283,13 +283,15 @@ What the strategy asks of an exchange, and the Deribit call behind each:
 | `PortfolioSimulator.SimulatePortfolio`, `SimulateAlone` | `private/simulate_portfolio` (≤ 1 call/s, `add_positions`): entry and top-up sizing, the size cap | **yes**: without it, sizing needs a local margin model the bot does not have |
 | `OptionChain` (`UnderlyingPrice`, `GetInstrument`, `AllInstruments`, `Track`) | `public/get_instruments`; subscriptions `deribit_price_index.*`, `ticker.<name>.100ms` | channel names and ticker greeks are Deribit's |
 | `VolIndex` (`DVOL`, `IVPercentile`, `DVOLDaily`) | `public/get_volatility_index_data`; subscription `deribit_volatility_index.*` | **yes** (DVOL); elsewhere read it from Deribit over a public connection, or use a substitute |
-| `OpenInterest` | `public/get_book_summary_by_currency` on a **mainnet** public connection (`gex.Manager`, which also builds the GEX) | open interest is universal; the GEX method is ours |
+| `OpenInterest` | `public/get_book_summary_by_currency` on a **mainnet** public connection (`gex.Manager`, which also builds the GEX; the one call site is `BookReader.BookSummary` in `internal/exchange/deribit`, shared with the recorder) | open interest is universal; the GEX method is ours |
 | `Transport` (`Call`, `Subscribe`, `Notifications`, `Fatal`, `ConnStats`) | `gateway.Gateway`: one WebSocket, JSON-RPC 2.0, `public/auth`, `public/set_heartbeat`, priority lanes, retries, circuit breaker, reconnect | the wire format is Deribit's; every adapter keeps invariant 1 (all I/O through its one transport) |
 | `RateLimitPool` | `gateway.IsMatchingEngine`: two credit pools, matching engine (buy/sell/edit/cancel) and everything else | pool layout and limits differ per exchange |
 | `OptionNameParser` | `marketdata.ParseOptionName` (`BTC-4OCT26-60000-P`) | **yes**: instrument naming |
 | `FeeModel` | `orders.OptionFee`: 0.03 % of the underlying, capped at 12.5 % of the price (backtest and stress; live books the fee Deribit reports) | **yes**: each exchange has its own schedule |
 
 The full inventory — every Deribit method and subscription with its package, access, rate-limit pool, retry and lane, the Deribit-specific assumptions outside the gateway, the proposed four-group adapter interface with its capability list, and the migration steps — is [exchange-adapter.md](exchange-adapter.md) (#325, #253); `tests/exchange_coupling_test.go` fails when a `"public/…"`/`"private/…"` literal under `internal/` is missing from it or appears under `internal/strategy`.
+
+`exchange.Capabilities` says what an exchange can do, as data (`DeribitCapabilities`: all true, pinned by a test, read by nothing yet).
 
 Order handling, reconcile and the trading rules do not change with this boundary.
 A change that a new exchange needs (e.g. no portfolio simulation, no amend) is a person's decision.

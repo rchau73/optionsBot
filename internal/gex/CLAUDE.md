@@ -8,4 +8,5 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - — `tests/gex_parity_test.go` checks it against the script's own output on captured mainnet data;
   - one intended divergence (#660): a strike with no open interest is not a zero crossing — the script counts it, and on 2026-11-05 an empty 67,000 strike became BTC's flip (real ≈ 77,400) and shed every call; `tests/gex_test.go` pins it on that day's book.
   - `nearest_flip` is the original rule (crossing nearest spot, regime = spot vs flip, hysteresis `gamma_regime_band_pct`).
+  The book summary comes from `deribit.BookReader` (`internal/exchange/deribit`, #687), the one fetch it shares with the recorder.
   Option names are parsed with `marketdata.ParseOptionName` (daily expiries have one-digit days, e.g. `4OCT26`).

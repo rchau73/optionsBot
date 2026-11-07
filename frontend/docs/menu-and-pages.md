@@ -479,12 +479,16 @@ Any signed-in role
 
 ### How it works (its own page, `/how-it-works?bot=<name>`; #322, E3 prototype screen 7)
 
-linked from the investor summary's "What it holds" answer ("How it works: a strangle in three pictures →"); `app/how-it-works/page.jsx` → `components/HowItWorksView.jsx` (polls `/api/summary` with `hooks/useBotSummary.js`) → `components/HowItWorks.jsx`, helpers in `lib/howitworks.js`.
-Header: views nav **← Overview · How it works** (current), the bot, its TESTNET / LIVE badge. h1 "How your <coin> earns, in three pictures".
+linked from the investor summary's "What it holds" answer ("How it works: a strangle in four pictures →"); `app/how-it-works/page.jsx` → `components/HowItWorksView.jsx` (polls `/api/summary` with `hooks/useBotSummary.js` and the hedge with `hooks/useBotHedge.js`) → `components/HowItWorks.jsx`, `components/HowItWorksHedge.jsx`, helpers in `lib/howitworks.js` and `lib/howitworksHedge.js`.
+Header: views nav **← Overview · How it works** (current), the bot, its TESTNET / LIVE badge. h1 "How your <coin> earns, in four pictures"; the intro adds one sentence on the perpetual while `hedgeShown`.
 **1 · One position, two legs**: the put (the floor) and the call (the ceiling) of `strangle` — strike, what it promises on the expiry date, "paid now" in coin — with today's price between them and the total paid.
 **2 · What you end with on <expiry>**: an SVG of the coin-settled payoff at expiry (keep all the payment between the strikes, zero at the break-evens, a hatched "loss grows" zone beyond; dashed line at today's price), a legend *you earn* / *you lose (hatched)*, the break-evens in text and a full `aria-label`.
-**3 · How the bot defends you**: a price line (floor, ceiling, today, the exit lines when `exit_lines`; otherwise "exit lines move with the market (unknown: <reason>)"), then four cards — take profit, exit line, stop-loss ("twice" from `stop_loss_multiple`), wait then repair (days from `repair_cooldown_hours`).
-**Words you'll see in Details (pro)**: leg, strike, premium, delta (+ "The exit line is a delta of <`delta_exit_threshold`>"), expiry, margin — each card's text is the glossary's `short` (`content/glossary.json`, one source of words).
+**3 · How the bot defends you**: a price line (floor, ceiling, today, the exit lines when `exit_lines`; otherwise "exit lines move with the market (unknown: <reason>)").
+Then five cards: take profit, exit line, stop-loss ("twice" from `stop_loss_multiple`), wait then repair (days from `repair_cooldown_hours`), Market turns (`marketTurnsWords`: on, paused or not holding, off, kill switch, unknown).
+**4 · The safety net: a futures hedge** (#696): the state's badge (`hedgeStory`) and "testnet experiment"; an SVG of the options' delta and the perpetual's as bars, the net as a dot and the hedge band shaded, with the same numbers in its `aria-label` and the line under it (`deltaWords`).
+No position → no perpetual bar; nothing held → says so instead of the picture; a failed poll drops the figures ("Live figures unavailable: …"); an old perpetual reading says "Not updating".
+The four cards and the testnet-only note always read; the band and the order cap are the API's, plain words without them.
+**Words you'll see in Details (pro)**: leg, strike, premium, delta (+ "The exit line is a delta of <`delta_exit_threshold`>"), expiry, margin, perpetual, hedge band, coin delta — each card's text is the glossary's `short` (`content/glossary.json`, one source of words).
 No two-legged strangle held (`strangle` null) → the same page under "Example: a BTC (an ETH) strangle like the ones the bot sells" with fixed example figures and why, never zeros.
 Loading → "Not yet"; a failed poll keeps the last figures under "Not updating: …".
 No `?bot=` → links to each bot's page.

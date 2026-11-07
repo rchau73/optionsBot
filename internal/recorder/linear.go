@@ -2,21 +2,18 @@ package recorder
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
-	"optionsbot/internal/gateway"
+	"optionsbot/internal/exchange/deribit"
+	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gex"
 )
 
-// rpcCaller is the slice of the gateway USDCBooks uses.
-type rpcCaller interface {
-	Call(ctx context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error)
-}
+// rpcCaller is the slice of the exchange connection USDCBooks uses.
+type rpcCaller = transport.Caller
 
 // Fetcher is a Source that fetches its summary on demand: Run calls
 // FetchSummary before each snapshot. (The GEX manager refreshes itself and
@@ -46,7 +43,7 @@ func USDCDataset(underlying string, own bool) string {
 // it (#356: SOL and XRP add no call); Book gives each underlying's rows.
 // Trading never reads it.
 type USDCBooks struct {
-	gw rpcCaller
+	reader *deribit.BookReader
 
 	mu  sync.Mutex
 	all []gex.SummaryRow
@@ -55,22 +52,15 @@ type USDCBooks struct {
 
 // NewUSDCBooks reads the USDC options' book summary through gw (the mainnet
 // public gateway, never the trading one).
-func NewUSDCBooks(gw rpcCaller) *USDCBooks { return &USDCBooks{gw: gw} }
+func NewUSDCBooks(gw rpcCaller) *USDCBooks { return &USDCBooks{reader: deribit.NewBookReader(gw)} }
 
 // FetchSummary reads the USDC options' book summary once.
 func (b *USDCBooks) FetchSummary(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	resp, err := b.gw.Call(ctx, "public/get_book_summary_by_currency", map[string]any{
-		"currency": "USDC",
-		"kind":     "option",
-	}, gateway.PriorityLow)
+	all, err := b.reader.BookSummary(ctx, "USDC")
 	if err != nil {
 		return err
-	}
-	var all []gex.SummaryRow
-	if err := json.Unmarshal(resp.Result, &all); err != nil {
-		return fmt.Errorf("decode USDC book summary: %w", err)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()

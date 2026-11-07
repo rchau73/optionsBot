@@ -1,4 +1,4 @@
-// Pure helpers for the "How it works" page (#322): a short strangle in three
+// Pure helpers for the "How it works" page (#322): a short strangle in
 // pictures, from the bot's nearest strangle (/api/summary → strangle) or, when
 // it holds none, from a labelled example. Every live number comes from the API.
 import { formatDate, isNumber } from "./format";
