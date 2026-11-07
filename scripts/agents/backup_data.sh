@@ -157,6 +157,13 @@ for env in $ENV_NAMES; do
     fi
   done
   rm -rf "$vol"
+  # The review's closures (#704) are a person's record, kept only in the clone
+  # beside the review files: the weekly job cannot rebuild them.
+  closures="$(env_dir "$env")/data/monitor/assistant_reviews/closures.jsonl"
+  if [[ -f "$closures" && ! -L "$closures" ]]; then
+    mkdir -p "$mdst"
+    cp -p "$closures" "$mdst/"
+  fi
   [[ -d "$mdst" && -z "$failed" ]] || continue
   for f in "$mdst"/*.jsonl; do
     [[ -f "$f" ]] || continue

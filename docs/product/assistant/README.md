@@ -108,6 +108,7 @@ The monitor logs every answer, every "this answer is wrong" flag and every "Help
 
 ```bash
 go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/2026-W44.*
+go run ./cmd/assistantreview close -id <answer id> -how help_fix -ref "#123"    # records how a row was closed (#704)
 ```
 
 **Metrics** (questions asked Monday 00:00 UTC to the next Monday):
@@ -124,9 +125,10 @@ go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   
 
 | File | Holds | Shared? |
 |---|---|---|
-| `<week>.md`, `<week>.json` | the metrics, the **review list** (every flagged and every `dont_know` answer: id, time, kind, sources given, citations, guard verdict, the question, the answer shown, flag notes) and the **gap candidates** (those questions grouped by the nearest help passage, `helpkb.Search`, at least 25 % of the question's weight, else "no passage close") | no: private, personal data |
-| `<week>.summary.json` | `Summary(report)`: counts and percentages only, plus kinds and reasons from the fixed lists | yes |
-| `<week>.golden_candidates.jsonl` | each review question once, in the format of `golden.jsonl` with `category`, `expected_behaviour` and `expected_sources` empty | no |
+| `<week>.md`, `<week>.json` | the metrics, the **review list** (every flagged and every `dont_know` answer: id, time, kind, sources given, citations, guard verdict, the question, the answer shown, flag notes, and "closed (how)" or "open N days") and the **gap candidates** (those questions grouped by the nearest help passage, `helpkb.Search`, at least 25 % of the question's weight, else "no passage close") | no: private, personal data |
+| `<week>.summary.json` | `Summary(report)`: counts and percentages only, plus kinds and reasons from the fixed lists. `flagged_total` (the review list's rows, flagged and `dont_know`) = `closed` + `open`; `overdue`; `closed_by_how` (`help_fix`, `golden_case`, `answer_was_right`) | yes |
+| `<week>.golden_candidates.jsonl` | each review question once, in the format of `golden.jsonl` with `category`, `expected_behaviour` and `expected_sources` empty. A carried row and a question whose answer was closed as `golden_case` are left out, so the same question is not offered twice | no |
+| `closures.jsonl` | one line per closure, across all weeks: `{answer_id, closed_at, how, ref}` | no: private, in the nightly backup (14 days) |
 
 Nothing is added to `golden.jsonl` automatically.
 
@@ -136,6 +138,31 @@ Nothing is added to `golden.jsonl` automatically.
 2. a golden-set case (copy the candidate into `golden.jsonl`, give it a named id and fill in its category, behaviour and sources);
 3. a recorded "answer was right", with the reason.
 
-**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log. It posts the summary's counts and percentages on the E10 epic, percentages only for a live account. A week with no answers posts nothing and writes no marker (docs/agents/usage.md "Weekly usage report"). The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse.
+**Recording a closure** (#704): `go run ./cmd/assistantreview close -id <answer id> -how <how> -ref "..."`, run on the host with the same `-log` and `-out` as the review, appends one line to `closures.jsonl`:
+
+| `how` | `ref` |
+|---|---|
+| `help_fix` | the help passage, or the PR or issue number |
+| `golden_case` | the golden id |
+| `answer_was_right` | a short reason, no personal data |
+
+It refuses, with a plain message and nothing written, an unknown id (no flagged or `dont_know` answer has it), an unknown `how`, an empty `ref` and a second closure of the same id.
+It reads the log and never writes it.
+
+**What the review does with it:**
+
+- a row with a closure reads "closed (how)". Any other reads "open N days": whole days since its first flag, or since the answer for an unflagged `dont_know`;
+- a row open more than 7 whole days is **overdue** and listed first. "Open 7 days" is not overdue yet; "open 8 days" is;
+- a row of an earlier week not closed before this one stays on the list, marked `carried`. One closed during or after the week shows once more as closed, then leaves. Carried rows are not counted in the week's answers or gap candidates;
+- each closed row's date and `how` go to the run's log, `data/agents/assistant_review/<week>/<env>.log`. No new analytics event.
+
+The first review after #704 carries every unclosed flagged and `dont_know` answer of the log, most of them overdue: the backlog the rule never tracked.
+
+**Closure rate**, the follow-up to the guardrail: `closed` ÷ `flagged_total`, target 100 %. A row closed in time never reaches `overdue`, so `overdue` > 0 means the rule was missed.
+
+**Every Monday by itself:** `scripts/agents/usage.sh` runs `scripts/agents/assistant_review.sh` in each environment that has a non-empty log.
+It posts the summary's counts and percentages on the E10 epic, percentages only for a live account: the overdue count, and a line asking a person to read the private review list when it is above 0.
+A week with no answers and no open rows posts nothing and writes no marker (docs/agents/usage.md "Weekly usage report").
+The log is in the nightly backup (`<date>/<env>/monitor/assistant.jsonl`, 14 days), and each line of the copy must parse; so is `closures.jsonl`, copied from the clone.
 
 **Needs legal review** (L11/L12 in `docs/product/legal-brief.md`): the review files hold question text, which is personal data. Until counsel answers on retention, they stay local, gitignored and in the 14-day backup only. Nothing of them goes to GitHub.
