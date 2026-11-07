@@ -100,6 +100,11 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
 - `GET /api/strangles/payoff` (#391; in the proxy allow-list, any signed-in role; the [Positions page](menu-and-pages.md#what-you-see), the overview's strangle cards and the payoff modal) is the payoff chart of every open strangle (`internal/api/payoff.go`, pure `PayoffOf(view, now)`, from the strategy's view — never a Deribit call).
   Coin amounts in `underlying`, prices and USD at today's `spot`:
   - `as_of`, `underlying`, `spot`, `dvol`, `model` (the label to show: "Black–Scholes on each leg's IV, zero rate"), `delta_exit_threshold`, `stop_loss_multiple`, `bot_net_delta` (the bot's net delta from the view, coin, short-signed) and `bot_net_delta_usd_per_1pct` (× spot ÷ 100), and `strangles` (ordered by slot DTE, then expiry; `[]` when nothing is held).
+  - `hedge` (#695; null without a perpetual) is `perp_usd`, `perp_delta_coin`, `options_delta_coin` (the sum of the strangles' `coin_delta`), `band_coin`, `avg_price` (what the curves count from: the ledger's on index pricing, testnet, else the exchange's), `split` and `not_split_reason`.
+  - With `split` true each strangle has `hedge_share_usd` and `hedge_share_delta_coin` (signed; they add up to the perpetual), `coin_delta` (each leg's delta less its mark in coin, the hedge's own measure) and `net_delta_with_hedge_coin`.
+    It also has `unrealised_with_hedge_coin`, `unrealised_with_hedge_usd` and `hedged_break_evens` (where the hedged expiry curve crosses zero on the chart), and each point has `today_hedged_pnl` and `expiry_hedged_pnl`.
+    `hedge_moves` is `move_pct` ±5/±10/±20, `spot`, `options_coin`, `options_usd`, `hedged_coin` and `hedged_usd`, null without a today curve.
+    All of them are null otherwise: no perpetual, the options' delta inside the band, the band unknown or a leg without greeks.
   - Each strangle has `strangle_id`, `slot` `{dte, delta}`, `expiry`, `dte` (fractional days) and `spot`.
   - Its `legs` are the short legs, put first.
     - `position_id`, `instrument`, `option_type`, `strike`, `qty` and `premium_coin`.

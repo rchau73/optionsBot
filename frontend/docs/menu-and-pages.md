@@ -80,7 +80,13 @@ Below it is one card per strangle, ordered by its slot's DTE (`components/Payoff
   - Each line is labelled, and each kind is toggled by its legend button (`aria-pressed`, 44 px).
 - The **delta box** is beside the chart (below it on a phone).
   It shows the strangle's net delta, "Δ −0.12 BTC · −$99 per +1 %" (short-signed), each leg's, and the whole bot's.
-The chart's `aria-label` is its text alternative (the expiry payoff, where today's curve gains and loses, the current point).
+- **With a hedge share** (#695, `components/PayoffHedge.jsx`; the numbers come from the API's `hedge_*` fields) the chart opens on the hedged curves: today solid sky, at expiry dashed light sky, today's options-only curve faint.
+  - The hatched and gain areas and the now dot follow the hedged today curve.
+  - The two-button switch "With its hedge share / Options only" (`aria-pressed`) is on the full card and the modal; the compact card draws the hedged curves without it.
+  - The delta box adds this strangle · its hedge share · net, in the hedge's own coin delta; below the chart is the moves table and the copy on the hedge being drawn as held now.
+  - Break-evens, exit lines and stop levels stay the options'; the legend lists the hedged curve's zeros.
+- **Perpetual held, not split** (`hedge.split` false): the card shows the options alone and "Hedge counted on the whole book (short X BTC) → see Positions", a link to the book panel (`#book-payoff`).
+The chart's `aria-label` is its text alternative (the expiry payoff, where today's curve gains and loses, both curves with a hedge share, the current point).
 A missing IV, spot or curve says "unknown: <reason>" and draws no today curve, never zeros.
 **On the overview** each strangle is a compact row (`components/StrangleRow.jsx`, #404; the mini payoff charts are on this page only), a button that opens the **modal**.
 **Modal** (`components/PayoffModal.jsx`): the full card for one strangle, opened from a compact card, the instrument of a row in Open positions or the open leg of a row in Missing legs (each a button, `aria-haspopup="dialog"`); `role="dialog"`, Esc or × closes it, Tab stays inside, focus returns to what opened it; full screen on a phone.

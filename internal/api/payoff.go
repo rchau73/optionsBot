@@ -46,6 +46,9 @@ type PayoffReport struct {
 	BotNetDelta           float64          `json:"bot_net_delta"`
 	BotNetDeltaUSDPer1Pct float64          `json:"bot_net_delta_usd_per_1pct"`
 	Strangles             []StranglePayoff `json:"strangles"` // by slot DTE, then expiry
+	// Hedge is the perpetual behind each strangle's share (#695, payoffhedge.go);
+	// null when the bot holds none.
+	Hedge *PayoffHedge `json:"hedge"`
 }
 
 // StranglePayoff is one strangle's chart.
@@ -76,6 +79,19 @@ type StranglePayoff struct {
 	Today       bool          `json:"today"`
 	TodayReason string        `json:"today_reason,omitempty"`
 	Points      []PayoffPoint `json:"points"` // ascending price
+	// The strangle's share of the futures hedge (#695), null without one:
+	// its USD and delta (signed), CoinDelta (each leg's delta less its mark in
+	// coin, the measure of the share), the net of the two, the result now,
+	// where the hedged expiry curve crosses zero, and the moves' table (null
+	// without a today curve).
+	HedgeShareUSD           *float64     `json:"hedge_share_usd"`
+	HedgeShareDeltaCoin     *float64     `json:"hedge_share_delta_coin"`
+	CoinDelta               *float64     `json:"coin_delta"`
+	NetDeltaWithHedgeCoin   *float64     `json:"net_delta_with_hedge_coin"`
+	UnrealisedWithHedgeCoin *float64     `json:"unrealised_with_hedge_coin"`
+	UnrealisedWithHedgeUSD  *float64     `json:"unrealised_with_hedge_usd"`
+	HedgedBreakEvens        []float64    `json:"hedged_break_evens"`
+	HedgeMoves              []PayoffMove `json:"hedge_moves"`
 }
 
 // PayoffLeg is one short leg of the chart.
@@ -109,11 +125,14 @@ type MissingLeg struct {
 }
 
 // PayoffPoint is one price of the curves, in coin. TodayPnL is null when the
-// today curve is not computed (Today false).
+// today curve is not computed (Today false); the hedged curves are the same
+// with the strangle's hedge share, null without one (#695).
 type PayoffPoint struct {
-	Price     float64  `json:"price"`
-	ExpiryPnL float64  `json:"expiry_pnl"`
-	TodayPnL  *float64 `json:"today_pnl"`
+	Price           float64  `json:"price"`
+	ExpiryPnL       float64  `json:"expiry_pnl"`
+	TodayPnL        *float64 `json:"today_pnl"`
+	TodayHedgedPnL  *float64 `json:"today_hedged_pnl"`
+	ExpiryHedgedPnL *float64 `json:"expiry_hedged_pnl"`
 }
 
 // PayoffOf is the pure core of /api/strangles/payoff.
