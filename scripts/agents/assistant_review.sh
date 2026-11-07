@@ -8,15 +8,16 @@
 #       -out <clone>/data/monitor/assistant_reviews
 #     → <week>.md|json (private: questions and answers, never posted),
 #       <week>.summary.json (counts and percentages only) and
-#       <week>.golden_candidates.jsonl;
+#       <week>.golden_candidates.jsonl, reading a person's closures.jsonl
+#       there (#704); each closed row's date and how go to the run's log;
 #   one comment on the E10 epic (usage_week.py assistant-comment: the
-#   summaries' named count and percentage fields, percentages only for a
-#   live env).
-# An env with no answer in the week is skipped; when none has one nothing is
-# posted and no marker is written (looked at again at most hourly). A comment
-# that could not be posted is tried once more, then the week is marked done:
-# data/agents/assistant_review/<week>.done. Reads the monitors' review logs
-# only, never writes them. No Claude call, no model, no Deribit call.
+#   summaries' named count and percentage fields, the overdue rows too,
+#   percentages only for a live env).
+# An env with no answer in the week and no open row is skipped; when every one
+# is, nothing is posted and no marker is written (looked at again at most
+# hourly). A comment that could not be posted is tried once more, then the week
+# is marked done: data/agents/assistant_review/<week>.done. Reads the monitors'
+# review logs only, never writes them. No Claude call, no model, no Deribit call.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -48,10 +49,11 @@ for env in $ENV_NAMES; do
     log "assistant review: $env: cmd/assistantreview failed (log $dir/$env.log), skipped"; continue
   fi
   n="$(python3 "$US_PY" assistant-answers "$ENVS_DIR" "$env" "$week")"
-  if [[ "$n" == "0" ]]; then
-    log "assistant review: $env: no answer in $week, skipped"; continue
+  open="$(python3 "$US_PY" assistant-open "$ENVS_DIR" "$env" "$week")"
+  if [[ "$n" == "0" && "$open" == "0" ]]; then
+    log "assistant review: $env: no answer in $week and no open row, skipped"; continue
   fi
-  log "assistant review: $env: $n answers in $week, review $root/data/monitor/assistant_reviews/$week.md"
+  log "assistant review: $env: $n answers in $week, $open open, review $root/data/monitor/assistant_reviews/$week.md"
   envs_csv="${envs_csv:+$envs_csv,}$env"
 done
 if [[ -z "$envs_csv" ]]; then

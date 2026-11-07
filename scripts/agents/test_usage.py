@@ -251,6 +251,8 @@ AR_SUMMARY = {
     "guard_reasons": [{"reason": "advice", "answers": 1}, {"reason": "forecast", "answers": 0},
                       {"reason": "secret question text", "answers": 7}],
     "review_items": 3, "late_flags": 0, "gap_groups": 1, "no_passage_close": 1,
+    "flagged_total": 4, "closed": 1, "open": 3, "overdue": 1,
+    "closed_by_how": {"help_fix": 1, "golden_case": 0, "answer_was_right": 0},
     "question": "What did alice ask about 0.5 BTC?", "user": "alice",
 }
 
@@ -268,9 +270,27 @@ class AssistantComment(unittest.TestCase):
         self.put("mvp", AR_SUMMARY)
         c = usage_week.assistant_comment(WEEK, self.tmp)
         self.assertIn(f"Assistant quality review** — week {WEEK}", c)
-        self.assertIn("| mvp | 10 | 6 (60 %) | 2 (20 %) | 2 (20 %) | 1 (10 %) | 1 (10 %) | 3 | 1 |", c)
+        self.assertIn("| mvp | 10 | 6 (60 %) | 2 (20 %) | 2 (20 %) | 1 (10 %) | 1 (10 %) | 3 | 1 | 1 |", c)
         self.assertIn("- mvp: advice 1", c)
         self.assertIn("flag rate by kind: answered 17 %, dont_know 50 %", c)
+
+    def test_scenario_overdue_rows_ask_a_person_to_read_the_private_list(self):
+        """#704: the overdue count is in the row, and a line appears only when there are some."""
+        self.put("mvp", AR_SUMMARY)
+        self.assertIn("**Overdue in mvp:**", usage_week.assistant_comment(WEEK, self.tmp))
+        self.assertIn("A person reads the private review list", usage_week.assistant_comment(WEEK, self.tmp))
+        self.put("mvp", dict(AR_SUMMARY, overdue=0))
+        c = usage_week.assistant_comment(WEEK, self.tmp)
+        self.assertIn("| 3 | 1 | 0 |", c)
+        self.assertNotIn("Overdue in", c)
+
+    def test_scenario_a_week_without_answers_still_shows_open_rows(self):
+        """#704: an open row never drops out because nobody asked anything."""
+        self.put("mvp", {"answers": 0, "flagged_total": 2, "open": 2, "overdue": 1})
+        c = usage_week.assistant_comment(WEEK, self.tmp)
+        self.assertIn("| mvp | 0 |", c)
+        self.assertIn("**Overdue in mvp:**", c)
+        self.assertEqual(usage_week.assistant_open(usage_week.assistant_summary(self.tmp, "mvp", WEEK)), 2)
 
     def test_scenario_no_free_text_reaches_the_comment(self):
         """Only named fields and the fixed kinds and reasons are read: a stray text field never reaches GitHub."""
@@ -282,12 +302,13 @@ class AssistantComment(unittest.TestCase):
     def test_live_env_shows_percentages_only(self):
         self.put("stable", AR_SUMMARY, dotenv="DERIBIT_ENV=live\n")
         c = usage_week.assistant_comment(WEEK, self.tmp)
-        self.assertIn("| stable (live) | — | 60 % | 20 % | 20 % | 10 % | 10 % | — | — |", c)
+        self.assertIn("| stable (live) | — | 60 % | 20 % | 20 % | 10 % | 10 % | — | — | 25 % |", c)
         self.assertIn("advice 10 %", c)
         self.assertIn("percentages only", c)
+        self.assertIn("**Overdue in stable:**", c)
 
-    def test_env_without_answers_is_left_out(self):
-        self.put("mvp", dict(AR_SUMMARY, answers=0))
+    def test_env_without_answers_or_open_rows_is_left_out(self):
+        self.put("mvp", dict(AR_SUMMARY, answers=0, open=0))
         self.assertNotIn("| mvp |", usage_week.assistant_comment(WEEK, self.tmp))
         self.assertEqual(usage_week.assistant_answers(usage_week.assistant_summary(self.tmp, "stable", WEEK)), 0)
 
@@ -301,7 +322,9 @@ if [[ "$*" == *cmd/assistantreview* ]]; then
     shift
   done
   mkdir -p "$out"
-  if grep -q OLD "$alog"; then echo '{"answers": 0}' > "$out/$week.summary.json"; else cp "$US_TEST_DIR/ar_summary.json" "$out/$week.summary.json"; fi
+  if grep -q OLD "$alog"; then echo '{"answers": 0}' > "$out/$week.summary.json"
+  elif grep -q CARRIED "$alog"; then echo '{"answers": 0, "flagged_total": 1, "open": 1, "overdue": 1}' > "$out/$week.summary.json"
+  else cp "$US_TEST_DIR/ar_summary.json" "$out/$week.summary.json"; fi
   exit 0
 fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
@@ -506,6 +529,15 @@ class UsageScript(unittest.TestCase):
         self.assertEqual(self.files("comment-"), [])
         self.assertFalse(self.ar_done())
         self.assertEqual([r["outcome"] for r in self.ledger() if r["event"] == "end"], ["skipped"])
+
+    def test_scenario_a_week_with_no_answers_but_open_rows_still_posts(self):
+        """#704: only no answers and no open rows stay quiet."""
+        self.assistant_log("mvp", "CARRIED\n")
+        self.run_script()
+        comments = self.files("comment-")
+        self.assertEqual(len(comments), 1, self.output)
+        self.assertIn("**Overdue in mvp:**", comments[0])
+        self.assertTrue(self.ar_done())
 
     def test_no_assistant_log_runs_nothing(self):
         self.events("mvp")
