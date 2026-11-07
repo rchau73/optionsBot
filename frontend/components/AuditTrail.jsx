@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AuditExport from "./AuditExport";
 import Panel from "./Panel";
 import { fetchAudit } from "@/lib/api/admin";
 import { AUDIT_ACTIONS, auditDetail, auditQueryString } from "@/lib/audit";
@@ -15,7 +16,8 @@ const EMPTY = { user: "", action: "", from: "", to: "" };
  * The Audit page (#308, #249; admins only — GET /api/admin/audit enforces
  * it): who did what, newest first, filtered by person, action and UTC day,
  * 100 lines at a time with "Older" for the next page. Read-only. `chain`
- * (the page's AuditChainStatus, #619) is shown under the filters.
+ * (the page's AuditChainStatus, #619) is shown under the filters; AuditExport
+ * (#702) downloads the lines of the filters applied.
  */
 export default function AuditTrail({ chain = null }) {
   const [form, setForm] = useState(EMPTY); // the filters being typed
@@ -99,6 +101,7 @@ export default function AuditTrail({ chain = null }) {
           >
             Clear
           </button>
+          <AuditExport key={auditQueryString(filters)} filters={filters} loaded={page !== null} off={page?.off === true} />
         </form>
       </Panel>
 
