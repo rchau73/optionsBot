@@ -27,6 +27,22 @@ export async function fetchAudit(query, signal) {
   return getJSON(`/api/admin/audit${query ? `?${query}` : ""}`, signal);
 }
 
+/**
+ * The lines matching `query` as a CSV file (admins only, #702) →
+ * { blob, filename, lines, cut, skipped }; throws with the server's reason.
+ */
+export async function downloadAudit(query) {
+  const res = await apiFetch(`/api/admin/audit/export${query ? `?${query}` : ""}`, { cache: "no-store" });
+  if (!res.ok) throw new Error((await jsonOrNull(res))?.error ?? `${res.status}`);
+  return {
+    blob: await res.blob(),
+    filename: res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] ?? "audit-trail.csv",
+    lines: Number(res.headers.get("x-audit-lines")),
+    cut: res.headers.get("x-audit-cut") === "true",
+    skipped: Number(res.headers.get("x-audit-skipped")),
+  };
+}
+
 /** The audit trail's hash-chain check (admins only, #619) → { off, ok, checked, legacy, legacy_before, first_break }. */
 export async function fetchAuditChain(signal) {
   return getJSON("/api/admin/audit/verify", signal);
