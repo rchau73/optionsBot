@@ -36,9 +36,9 @@ const fixture = (overrides = {}) => ({
 const picture = (name) => screen.getByRole("region", { name });
 
 describe("Scenario: live numbers", () => {
-  test("the three pictures use that strangle's strikes, premiums, expiry and today's price", () => {
+  test("the first three pictures use that strangle's strikes, premiums, expiry and today's price", () => {
     render(<HowItWorks summary={fixture()} />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How your BTC earns, in three pictures");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("How your BTC earns, in four pictures");
     expect(screen.queryByText(/^Example:/)).toBeNull();
 
     const legs = picture("One position, two legs");
@@ -149,11 +149,11 @@ describe("Scenario: accessible pictures", () => {
 });
 
 describe("the glossary", () => {
-  test("six cards from the monitor's glossary (one source of words)", () => {
+  test("nine cards from the monitor's glossary (one source of words)", () => {
     render(<HowItWorks summary={fixture()} />);
     const words = screen.getByRole("region", { name: "Words you'll see in Details (pro)" });
     const terms = within(words).getAllByRole("term").map((t) => t.textContent);
-    expect(terms).toEqual(["leg", "strike", "premium", "delta", "expiry", "margin"]);
+    expect(terms).toEqual(["leg", "strike", "premium", "delta", "expiry", "margin", "perpetual", "hedge band", "coin delta"]);
     for (const t of terms) expect(words).toHaveTextContent(findTerm(t).short);
     expect(words).toHaveTextContent("The exit line is a delta of 0.30.");
   });

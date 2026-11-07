@@ -196,8 +196,9 @@ Learn more: glossary terms *strangle*, *break-even*, *exit line*, *delta*, *stop
 
 ## How it works
 
-The bot's method in three pictures, using the strangle you hold.
+The bot's method in four pictures, using the strangle you hold.
 If none is held, an example is shown and is labelled as an example.
+While a futures hedge is on or holds a position, the introduction says so in one sentence.
 
 **1. One position, two legs**: the put (the floor) and the call (the ceiling), each with its strike, what it commits to on the expiry date and the premium paid now, in coin.
 
@@ -206,16 +207,27 @@ Between the strikes, all the premium is kept.
 Beyond a break-even, a loss grows; that zone is hatched.
 The dashed line is today's price.
 
-**3. How the bot defends the position**: four cards, in the order the rules are applied:
+**3. How the bot defends the position**: five cards, the first four in the order the rules are applied:
 - *Take profit*: buy back when enough of the premium has been kept.
 - *Exit line*: buy back when a leg's delta reaches the delta-exit threshold, because the move looks real.
 - *Stop-loss*: buy back at market when the price of the option reaches the stop multiple.
 - *Wait, then repair*: after a stop, the bot waits the repair cooldown before it sells that side again.
+- *Market turns*: this card follows the futures hedge.
+  On, the bot keeps both legs and the perpetual cancels the lean.
+  Paused or not holding, the GEX shed protects the book until the hedge can trade.
+  Off, it is the GEX shed, and the hedge can be turned on in Account.
+
+**4. The safety net: a futures hedge**: a testnet experiment, with its state beside the title: ON, PAUSED, NOT HOLDING or OFF.
+A picture shows the options' delta and the perpetual's delta as bars, the net as a dot and the hedge band shaded, from the bot's live figures, with the same numbers in words under it.
+With the hedge off and flat there is no perpetual bar.
+Four cards say what it does, what it replaces, what it does not do and where you see it.
+The hedge removes the lean, not the curve: a big move still costs money.
+If the hedge cannot be read, the page says the live figures are unavailable and keeps the explanation without numbers.
 
 **When something looks wrong**: "exit lines move with the market (unknown …)" means the model has no volatility figure at the moment.
 The explanations are the same words as the glossary.
 
-Learn more: glossary terms *premium*, *delta*, *strike*, *expiry*, *margin*; OptionStrategy.md sections 1 to 4.
+Learn more: glossary terms *premium*, *delta*, *strike*, *expiry*, *margin*, *perpetual*, *hedge band*, *coin delta*; OptionStrategy.md sections 1 to 4.
 
 ## Activity
 
