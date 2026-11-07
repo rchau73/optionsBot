@@ -571,6 +571,15 @@ No screen shows it yet.
 
 <!-- guide: route:POST /api/lab/requests -->
 
+**Can I see what confirming a comparison run would change?** Managers and admins can ask for a preview of a finished run.
+It shows each setting with its current value and the proposed one, the account, your username and the run's numbers, labelled "backtested, not a forecast", with any fragile spots the run found.
+If the setting is a core policy, the preview says a product owner must approve it.
+If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
+In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
+The audit trail records one line with your username, the account, the run and both values.
+The preview changes nothing: no config file or bot setting is touched, and confirming a change is not built yet.
+No screen shows it yet.
+
 Each environment has its own people and roles.
 
 Learn more: "Sign-in and password" and "For admins" in this guide.
