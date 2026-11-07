@@ -4,8 +4,12 @@
 // one "feedback" line each time the person who asked says it helped or not,
 // frontend/lib/assistant/log.js), and reports how the week's questions were
 // answered, which answers were flagged, which questions the help could not
-// answer and the help passage nearest each of them. Pure apart from Load and
-// Write: no model, no network, and the log is only read.
+// answer and the help passage nearest each of them. Pure apart from the Load
+// functions, Close and Write: no model, no network, and the log is only read.
+//
+// Each answer of the review list is closed by a person (#704, closure.go): one
+// line in the private closures.jsonl, and the review shows it closed or how many
+// days it has been open.
 //
 // The full report holds question and answer text and stays in the private
 // data/monitor/assistant_reviews/; only Summary (counts and percentages) may

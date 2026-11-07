@@ -21,14 +21,20 @@ type Candidate struct {
 	AnswerID string `json:"answer_id"`
 }
 
-// Candidates are the review list's questions, each once (by its words, case
-// and spacing aside), in the review's order.
+// questionKey is a question's words, case and spacing aside.
+func questionKey(q string) string {
+	return strings.ToLower(strings.Join(strings.Fields(q), " "))
+}
+
+// Candidates are the review list's questions, each once, in the review's order.
+// A carried row was offered in its own week, and a question whose answer was
+// closed as golden_case is already a golden case (#704): neither is offered.
 func Candidates(r Report) []Candidate {
 	seen := map[string]bool{}
 	out := []Candidate{}
 	for _, it := range r.Review {
-		key := strings.ToLower(strings.Join(strings.Fields(it.Question), " "))
-		if key == "" || seen[key] {
+		key := questionKey(it.Question)
+		if key == "" || seen[key] || it.Carried || r.goldenDone[key] {
 			continue
 		}
 		seen[key] = true

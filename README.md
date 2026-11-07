@@ -544,6 +544,7 @@ The question text the assistant could not answer, or that people flagged, is rev
 
 ```bash
 go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/<week>.md|json, .summary.json, .golden_candidates.jsonl
+go run ./cmd/assistantreview close -id <answer id> -how help_fix -ref "#123"    # records how a flagged answer was closed → assistant_reviews/closures.jsonl
 ```
 
 It reports answers by kind, guard reasons and flag rates.

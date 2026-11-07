@@ -63,12 +63,19 @@ type Report struct {
 	// Feedback is the week's "Helped"/"Didn't help" answers (#579): the
 	// person's opinion, never a measure of correctness.
 	Feedback
-	// Review lists every flagged and every dont_know answer of the week, and
-	// every answer of an earlier week flagged during this one (Late).
+	// Review lists every flagged and every dont_know answer of the week, every
+	// answer of an earlier week flagged during this one (Late) and the rows of
+	// earlier weeks not closed before this one (Carried). Overdue rows first.
 	Review []ReviewItem `json:"review"`
 	// Gaps groups the review's dont_know and flagged questions by the help
-	// passage nearest each; the NoPassage group last.
+	// passage nearest each; the NoPassage group last. Carried rows are left out:
+	// they were grouped in their own week.
 	Gaps []Gap `json:"gaps"`
+	// ClosuresSkipped counts the closure lines that could not be used.
+	ClosuresSkipped int `json:"closures_skipped_lines"`
+	// goldenDone holds the questions (questionKey) of the answers closed as
+	// golden_case, which Candidates never offers again.
+	goldenDone map[string]bool
 }
 
 // KindCount is one answer kind: how many, how many flagged, and its feedback.
@@ -123,18 +130,25 @@ type ReasonCount struct {
 
 // ReviewItem is one answer a person must look at.
 type ReviewItem struct {
-	ID        string    `json:"id"`
-	Time      time.Time `json:"time"`
-	Kind      string    `json:"kind"`
-	Bot       string    `json:"bot,omitempty"`
-	Flagged   bool      `json:"flagged"`
-	Late      bool      `json:"late,omitempty"` // asked before the week, flagged in it
-	Question  string    `json:"question"`
-	Answer    string    `json:"answer"`
-	Sources   []string  `json:"sources"`
-	Citations []string  `json:"citations"`
-	Verdict   []string  `json:"verdict,omitempty"`
-	Notes     []string  `json:"flag_notes,omitempty"`
+	ID      string    `json:"id"`
+	Time    time.Time `json:"time"`
+	Kind    string    `json:"kind"`
+	Bot     string    `json:"bot,omitempty"`
+	Flagged bool      `json:"flagged"`
+	Late    bool      `json:"late,omitempty"`    // asked before the week, flagged in it
+	Carried bool      `json:"carried,omitempty"` // on an earlier week's list, not closed before this week
+	// Closure is how the row was closed; OpenDays, on a row with none, is the
+	// whole days since the first flag, or since the answer for an unflagged
+	// dont_know. Overdue = OpenDays over OverdueDays.
+	Closure   *Closure `json:"closure,omitempty"`
+	OpenDays  *int     `json:"open_days,omitempty"`
+	Overdue   bool     `json:"overdue,omitempty"`
+	Question  string   `json:"question"`
+	Answer    string   `json:"answer"`
+	Sources   []string `json:"sources"`
+	Citations []string `json:"citations"`
+	Verdict   []string `json:"verdict,omitempty"`
+	Notes     []string `json:"flag_notes,omitempty"`
 }
 
 // Gap is the questions nearest one help passage.
@@ -156,17 +170,21 @@ type GapQuestion struct {
 // Build reports the answers asked in [from, to). Flags are read from the
 // whole log, so an answer of the week flagged later counts as flagged; a flag
 // placed in the week on an earlier answer puts that answer in the review list
-// too (Late), so no flag waits for a week that was already reported. index
-// may be nil: every gap question is then NoPassage.
-func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report {
-	r := Report{Week: label, From: from, To: to, Skipped: lg.Skipped}
+// too (Late), so no flag waits for a week that was already reported. Rows of
+// earlier weeks stay on the list until the week after their closure (Carried),
+// so a closure shows once and an open row is never lost. now only dates the open
+// rows: pure, the caller passes it. index may be nil: every gap question is then
+// NoPassage.
+func Build(lg Log, closures Closures, from, to, now time.Time, label string, index *helpkb.Index) Report {
+	r := Report{Week: label, From: from, To: to, Skipped: lg.Skipped, ClosuresSkipped: closures.Skipped, goldenDone: map[string]bool{}}
 	in := func(t time.Time) bool { return !t.Before(from) && t.Before(to) }
 
 	answers := map[string]Entry{}
 	var order []string
 	notes := map[string][]string{}
-	flaggedIn := map[string]bool{} // flagged by a flag line placed in the week
-	helped := map[string]*bool{}   // the last feedback choice per answer, from the whole log
+	flaggedIn := map[string]bool{}      // flagged by a flag line placed in the week
+	firstFlag := map[string]time.Time{} // the earliest flag per answer, from the whole log
+	helped := map[string]*bool{}        // the last feedback choice per answer, from the whole log
 	for _, e := range lg.Entries {
 		switch e.Kind {
 		case KindAnswer:
@@ -182,6 +200,9 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 			}
 			if in(e.TS) {
 				flaggedIn[e.ID] = true
+			}
+			if t, ok := firstFlag[e.ID]; !ok || e.TS.Before(t) {
+				firstFlag[e.ID] = e.TS
 			}
 		case KindFeedback:
 			if e.Helped != nil {
@@ -201,6 +222,10 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 		if !in(a.TS) {
 			if flagged && flaggedIn[id] && a.TS.Before(from) {
 				r.Review = append(r.Review, reviewItem(a, true, notes[id], true))
+			} else if carries(a, firstFlag, closures, from) {
+				it := reviewItem(a, flagged, notes[id], false)
+				it.Carried = true
+				r.Review = append(r.Review, it)
 			}
 			continue
 		}
@@ -233,9 +258,51 @@ func Build(lg Log, from, to time.Time, label string, index *helpkb.Index) Report
 	r.FlagPct = pct(r.Flagged, r.Answers)
 	r.Feedback.shares()
 	r.AnsweredPct = pct(kinds[OutcomeAnswered].Answers, r.Answers)
-	sort.SliceStable(r.Review, func(i, j int) bool { return r.Review[i].Time.Before(r.Review[j].Time) })
+	for i := range r.Review {
+		r.Review[i].track(closures, firstFlag, now)
+	}
+	sort.SliceStable(r.Review, func(i, j int) bool {
+		a, b := r.Review[i], r.Review[j]
+		if a.Overdue != b.Overdue {
+			return a.Overdue
+		}
+		return a.Time.Before(b.Time)
+	})
 	r.Gaps = gaps(r.Review, index)
+	for id, c := range closures.ByID {
+		if a, ok := answers[id]; ok && c.How == HowGoldenCase {
+			r.goldenDone[questionKey(a.Question)] = true
+		}
+	}
 	return r
+}
+
+// carries says whether an answer asked before the week stays on the list: it was
+// on an earlier list (a dont_know, or flagged before the week) and was not closed
+// before the week. One closed since then stays once, to show how.
+func carries(a Entry, firstFlag map[string]time.Time, closures Closures, from time.Time) bool {
+	flaggedAt, flagged := firstFlag[a.ID]
+	listed := kindOf(a.Outcome) == OutcomeDontKnow || (flagged && flaggedAt.Before(from))
+	if !a.TS.Before(from) || !listed {
+		return false
+	}
+	c, closed := closures.ByID[a.ID]
+	return !closed || !c.ClosedAt.Before(from)
+}
+
+// track fills the row's closure, or the days it has been open.
+func (it *ReviewItem) track(closures Closures, firstFlag map[string]time.Time, now time.Time) {
+	if c, closed := closures.ByID[it.ID]; closed {
+		it.Closure = &c
+		return
+	}
+	since := it.Time
+	if t, flagged := firstFlag[it.ID]; flagged {
+		since = t
+	}
+	days := max(0, int(now.Sub(since)/(24*time.Hour)))
+	it.OpenDays = &days
+	it.Overdue = days > OverdueDays
 }
 
 func reviewItem(a Entry, flagged bool, notes []string, late bool) ReviewItem {
@@ -278,7 +345,7 @@ func gaps(items []ReviewItem, index *helpkb.Index) []Gap {
 	groups := map[string]*Gap{}
 	var keys []string
 	for _, it := range items {
-		if strings.TrimSpace(it.Question) == "" {
+		if it.Carried || strings.TrimSpace(it.Question) == "" {
 			continue
 		}
 		key, title, coverage := NoPassage, "", 0.0
