@@ -147,6 +147,18 @@ Manager or admin (`ROLE_GUARDED_READS` in `lib/auth/routeRoles.js`, called as ev
 
 **Refusals:** 404 an id that is not a folder time (`../secrets`, a slash, …; the disk is not touched) or no run · 500 unreadable or malformed JSON (a log line with the id, never the content) · 401/403 as above
 
+#### `GET /api/lab/runs/<id>/preview` (#682)
+
+**Does:** says what confirming a finished run would change (`lib/labpreview.js`); it changes no config and applies nothing, and the apply itself is not built.
+Answer: `run_id`, `time`, `person`, `account` (`underlying`, `config`) and `changes`, each with `key`, `title`, `tip`, `current` (the account's value, from `content/lab-settings.json`), `base` (the value the run started from), `proposed`, `core_policy` and `policy_note`.
+It also carries `backtested` (`label` "backtested, not a forecast", `backtest`, `replay`, `stress_ran`, `windows`), `fragility` (`checked`, `key`, `cliffs`, or a `note` when the check was not run) and `analysis`, withheld behind `L10_ANALYSIS_GATE_OPEN` like the run's.
+Last come `needs_product_owner`, `stale`, `confirmable`, `reasons` (plain words, `[]` when confirmable), `confirm_token`, `audit_line` and `applied`.
+`needs_product_owner` is true for a core policy or a key the catalogue refuses; `stale` for a run over 7 days old, a value the run started from that is not the account's, an account's value that cannot be read, or a proposed value now refused.
+Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown, which nothing accepts yet.
+Manager or admin (`ROLE_GUARDED_READS`, called as every caller by the role-matrix test); each answered preview writes one audit line, `parameter_change_previewed`, with the person, the account, the run and both values.
+
+**Refusals (no audit line):** 404 an id that is not a folder time, or no run · 409 a run that changed no setting · 500 unreadable or malformed JSON · 401/403 as above
+
 #### `POST /api/lab/requests` `{"settings": [{"key", "value"}], "underlying"?}` (#641)
 
 **Does:** asks for a comparison run of the shipped config of that underlying (BTC by default) against the same config with these values (`lib/labrequests.js`).

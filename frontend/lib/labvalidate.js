@@ -18,6 +18,9 @@ const DEFAULT_UNDERLYING = "BTC";
 // A value off the step by less than this is on it (0.1 + 0.2 is 0.30000000000000004).
 const STEP_TOLERANCE = 1e-9;
 
+/** A key as a report or a request writes it (dte_delta_matrix[0].dte) as the catalogue's ("[]" = every element). */
+export const catalogueKey = (key) => key.replace(/\[\d+\]/g, "[]");
+
 const fmt = (v) => String(Number.isInteger(v) ? v : Number(v.toPrecision(10)));
 
 /** The reasons a value breaks the setting's own range, step or kind. */

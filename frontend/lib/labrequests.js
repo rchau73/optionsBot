@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { validateProposal } from "@/lib/labvalidate";
+import { catalogueKey, validateProposal } from "@/lib/labvalidate";
 
 /** The statuses a request goes through (internal/compare/requests.go). */
 export const STATUS = { queued: "queued", running: "running", done: "done", failed: "failed", expired: "expired" };
@@ -56,7 +56,7 @@ export function checkRequest(body) {
     }
     if (seen.has(s.key)) return { status: 400, body: { error: `${s.key} is listed twice`, key: s.key } };
     seen.add(s.key);
-    const { status, body: answer } = validateProposal({ key: s.key.replace(/\[\d+\]/g, "[]"), value: s.value, underlying: body.underlying });
+    const { status, body: answer } = validateProposal({ key: catalogueKey(s.key), value: s.value, underlying: body.underlying });
     if (status !== 200) return { status, body: { error: answer.error, key: s.key } };
     if (!answer.valid) {
       return { status: 400, body: { error: `${s.key}: ${answer.reasons.join("; ")}`, key: s.key, reasons: answer.reasons } };

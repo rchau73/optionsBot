@@ -58,12 +58,14 @@ export const STATE_CHANGING_ROUTES = [
 /**
  * Read-only routes that only some roles (or only a live session, #584) may call (#539): the matrix test
  * calls each as every caller too, and checks the route file exports GET only.
+ * audit: the audit.jsonl action an allowed read writes (#682), when it writes one.
  */
 export const ROLE_GUARDED_READS = [
   { route: "GET /api/admin/audit/verify", roles: ADMINS },
   { route: "GET /api/auth/sessions", roles: SIGNED_IN },
   { route: "GET /api/lab/runs", roles: MANAGERS },
   { route: "GET /api/lab/runs/[id]", roles: MANAGERS },
+  { route: "GET /api/lab/runs/[id]/preview", roles: MANAGERS, audit: "parameter_change_previewed" },
 ];
 
 /** The table's route for an app/api route file and method: "app/api/consent/route.js", "POST" → "POST /api/consent". */

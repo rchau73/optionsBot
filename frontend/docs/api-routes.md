@@ -176,6 +176,16 @@ Any signed-in role; 401 without a session.
 - `lib/videos.js`: `findVideo(id)`, `videosForTip(tipKey)`, `allVideos()`.
 - No screen uses it yet.
 
+### `GET /api/lab/runs/<id>/preview` (#682)
+
+Says what confirming a finished lab run would change, on the monitor's own server (`app/api/lab/runs/[id]/preview/route.js`, `lib/labpreview.js`); no bot call, no config written, nothing applied.
+Managers and admins.
+- Each setting's current and proposed value, the account, the person, the numbers labelled as backtested, the fragility flags and the text of the audit line.
+- `confirm_token` is null when `needs_product_owner` or `stale` is true, or the run has no numbers for the proposal; `reasons` says why.
+- Each answered preview writes one audit line, `parameter_change_previewed`; a refusal writes none.
+- The full answer and refusals: `users-and-roles.md` "`GET /api/lab/runs/<id>/preview`".
+- No screen uses it yet.
+
 ### `POST /api/lab/requests` (#641)
 
 Asks for a comparison run of the shipped config against proposed values, on the monitor's own server (`app/api/lab/requests/route.js`, `lib/labrequests.js`); no bot call, no config written, nothing applied.
