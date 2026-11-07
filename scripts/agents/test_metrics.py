@@ -333,6 +333,229 @@ class StuckSection(unittest.TestCase):
         self.assertIn("## Stuck cards\n\n- no stuck-card check recorded", out)
 
 
+def merged_pr(number, issue, merged, created="2026-09-01T00:00:00Z"):
+    return {"number": number, "headRefName": f"agent/issue-{issue}", "createdAt": created,
+            "mergedAt": merged, "closedAt": merged, "state": "MERGED", "reviews": []}
+
+
+def merged_in(monday, how_many, first=100):
+    """how_many merged PRs on the given Monday (a 2026 day), numbered from first."""
+    return [merged_pr(first + k, 900 + first + k, f"{monday}T10:00:00Z", f"{monday}T09:00:00Z") for k in range(how_many)]
+
+
+W39, W40, W41, W42 = "2026-09-21", "2026-09-28", "2026-10-05", "2026-10-12"
+
+
+def section(out, title):
+    """The text of one ## section."""
+    return out.split(f"## {title}")[1].split("\n## ")[0]
+
+
+def row(text, label):
+    return next(l for l in text.splitlines() if l.startswith(f"| {label} |"))
+
+
+class TrendSection(unittest.TestCase):
+    """#707: the week beside the three before it."""
+
+    def trend(self, prs):
+        # cycle times are per issue: each agent PR gets its issue in the dump
+        issues = [{"number": int(p["headRefName"].split("-")[1]), "createdAt": p["createdAt"]} for p in prs
+                  if p["headRefName"].startswith("agent/")]
+        out = metrics.report("2026-W42", write_dir(issues, prs), runs_file="", stuck_file="")
+        return section(out, "Trend (last 4 weeks)")
+
+    # Scenario: Trend against the previous three weeks
+    def test_trend_against_the_previous_three_weeks(self):
+        out = self.trend(merged_in(W39, 4, 100) + merged_in(W40, 5, 200) + merged_in(W41, 6, 300) + merged_in(W42, 2, 400))
+        self.assertIn("| | 2026-W39 | 2026-W40 | 2026-W41 | 2026-W42 | against the earlier weeks |", out)
+        self.assertEqual(row(out, "merged"), "| merged | 4 | 5 | 6 | 2 | ↓ worse than mean 5.0 |")
+
+    def test_more_of_what_should_fall_is_worse_and_a_good_week_has_no_arrow(self):
+        out = self.trend(merged_in(W39, 2, 100) + merged_in(W40, 2, 200) + merged_in(W41, 2, 300) + merged_in(W42, 3, 400))
+        self.assertEqual(row(out, "merged"), "| merged | 2 | 2 | 2 | 3 | mean 2.0 |")  # at or better than the mean
+        # each PR took 1 h to merge; this week 9 h
+        prs = merged_in(W39, 1, 100) + merged_in(W40, 1, 200) + merged_in(W41, 1, 300)
+        prs += [merged_pr(400, 500, f"{W42}T10:00:00Z", f"{W42}T01:00:00Z")]
+        self.assertEqual(row(self.trend(prs), "PR → merge median"),
+                         "| PR → merge median | 1.0 h | 1.0 h | 1.0 h | 9.0 h | ↑ worse than mean 1.0 |")
+
+    def test_equal_to_the_mean_is_not_worse(self):
+        self.assertEqual(metrics.trend_verdict(5, [(4, 4), (6, 6)], -1), "mean 5.0")
+        self.assertEqual(metrics.trend_verdict(5, [(4, 4), (6, 6)], 1), "mean 5.0")
+
+    def test_sme_filed_is_never_judged(self):
+        self.assertEqual(metrics.trend_verdict(1, [(9, 9)], 0), "mean 9.0")
+        self.assertEqual(metrics.trend_verdict(20, [(9, 9)], 0), "mean 9.0")
+
+    # Scenario: Too few samples is not judged
+    def test_too_few_samples_is_not_judged(self):
+        quiet = [{"number": n, "headRefName": "feature/x", "createdAt": f"{day}T09:00:00Z"} for n, day in ((8, W41), (9, W42))]
+        out = self.trend(merged_in(W39, 1, 100) + merged_in(W40, 1, 200) + quiet)
+        self.assertEqual(row(out, "merged"), "| merged | 1 | 1 | 0 | 0 | too few to judge |")
+
+    def test_a_base_of_three_is_judged(self):
+        self.assertEqual(metrics.trend_verdict(0, [(1, 1), (1, 1), (1, 1)], -1), "↓ worse than mean 1.0")
+        self.assertEqual(metrics.trend_verdict(0, [(1, 1), (1, 1)], -1), metrics.TOO_FEW)
+
+    def test_a_median_is_judged_on_its_samples_not_its_value(self):
+        # 30 h and 40 h are two samples: too few, however large the hours
+        self.assertEqual(metrics.trend_verdict(50.0, [(30.0, 1), (40.0, 1)], 1), metrics.TOO_FEW)
+
+    # Scenario: A week without data is a dash, not zero
+    def test_a_week_without_data_is_a_dash_not_zero(self):
+        out = self.trend(merged_in(W39, 4, 100) + merged_in(W41, 6, 300) + merged_in(W42, 2, 400))
+        self.assertEqual(row(out, "merged"), "| merged | 4 | – | 6 | 2 | ↓ worse than mean 5.0 |")  # (4 + 6) ÷ 2, not ÷ 3
+        self.assertEqual(row(out, "Reverts on main"), "| Reverts on main | 0 | – | 0 | 0 | too few to judge |")
+
+    def test_a_week_with_data_shows_a_real_zero_but_a_median_without_samples_a_dash(self):
+        out = self.trend(merged_in(W39, 1, 100) + merged_in(W40, 1, 200) + merged_in(W41, 1, 300))
+        self.assertEqual(row(out, "merged"), "| merged | 1 | 1 | 1 | – | – |")  # this week has no data at all
+        out = self.trend(merged_in(W39, 3, 100) + [{"number": 9, "headRefName": "feature/x", "createdAt": f"{W42}T09:00:00Z"}])
+        self.assertEqual(row(out, "merged"), "| merged | 3 | – | – | 0 | ↓ worse than mean 3.0 |")
+        self.assertEqual(row(out, "PR → merge median"), "| PR → merge median | 1.0 h | – | – | – | – |")
+
+    def test_every_listed_row_and_nothing_else(self):
+        out = self.trend(merged_in(W42, 1))
+        rows = [l.split(" | ")[0][2:] for l in out.splitlines() if l.startswith("| ") and not l.startswith("| |")]
+        self.assertEqual(rows, [label for label, _, _ in metrics.TREND_ROWS])
+
+    def test_reverts_and_the_year_boundary(self):
+        out = metrics.report("2026-W01", write_dir(prs=merged_in("2025-12-08", 1), gitlog="2025-12-08T10:00:00Z\tRevert \"x\""),
+                             runs_file="", stuck_file="")
+        self.assertIn("| | 2025-W50 | 2025-W51 | 2025-W52 | 2026-W01 | against the earlier weeks |", out)
+        self.assertEqual(row(out, "Reverts on main"), "| Reverts on main | 1 | – | – | – | too few to judge |")
+
+    def test_the_rest_of_the_report_is_the_week_alone(self):
+        out = metrics.report("2026-W42", write_dir(prs=merged_in(W41, 3) + merged_in(W42, 1, 400)), runs_file="", stuck_file="")
+        self.assertIn("| 0 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0 |", out)  # the Stages table
+
+
+def e(*names):
+    return lab("E6", *names)
+
+
+def filed(number, comments=(), labels=None, at="2026-10-12T00:00:00Z", **rest):
+    return {"number": number, "title": "SECRETTITLE", "body": "SECRETBODY", "labels": e() if labels is None else labels,
+            "createdAt": at, "comments": list(comments), "state": "OPEN", **rest}
+
+
+TRIAGE = "🧭 **PM agent** — epic **E6** · stays in **Triage**: why"
+DEPLOY = "🚀 Deployed to **mvp** (testnet) in abc (x)."
+FIXED = "**SME verification (2026-10-16): fixed**\n\nok"
+
+
+def at(hour):
+    """Hours after the fixtures' filing time, Monday 00:00."""
+    return f"2026-10-{12 + hour // 24:02d}T{hour % 24:02d}:00:00Z"
+
+
+FUNNEL_ISSUES = [
+    filed(1, [c(at(1), READY), c(at(2), PICKUP.format(1)), c(at(9), DEPLOY)]),   # deployed
+    filed(2, [c(at(3), READY), c(at(4), PICKUP.format(2)), c(at(11), DEPLOY)]),  # deployed
+    filed(3, [c(at(5), READY), c(at(6), PICKUP.format(3))]),                     # merged, waits for a deploy
+    filed(4, [c(at(7), READY)]),                                                 # waits for a PR
+    filed(5, [c(at(2), TRIAGE)]),                                                # waits for Ready
+    filed(6),                                                                    # waits for triage
+]
+FUNNEL_PRS = [merged_pr(11, 1, at(7), at(3)), merged_pr(12, 2, at(9), at(5)), merged_pr(13, 3, at(10), at(8))]
+
+
+def funnel(issues, prs=()):
+    out = metrics.report("2026-W42", write_dir(issues, prs), runs_file="", stuck_file="")
+    return section(out, "Funnel (issues filed in the week)")
+
+
+class FunnelSection(unittest.TestCase):
+    """#707: the issues filed in the week, followed through the loop."""
+
+    # Scenario: Funnel follows the issues filed in the week
+    def test_funnel_follows_the_issues_filed_in_the_week(self):
+        out = funnel(FUNNEL_ISSUES, FUNNEL_PRS)
+        self.assertEqual(row(out, "reached"), "| reached | 6 | 5 | 4 | 3 | 3 | 2 | – |")
+        # triaged 1, 3, 5, 7, 2 · Ready 1, 3, 5, 7 · PR 3, 5, 8 · merged 7, 9, 10 · deployed 9, 11
+        self.assertEqual(row(out, "median from filing"),
+                         "| median from filing | – | 3.0 h | 4.0 h | 5.0 h | 9.0 h | 10.0 h | – |")
+        self.assertIn("- Waiting for PM triage: 1 — #6\n- Waiting for Ready: 1 — #5\n- Waiting for a PR: 1 — #4\n"
+                      "- Waiting for a deploy: 1 — #3\n", out)
+        self.assertNotIn("#1,", out)
+        self.assertNotIn("#2", out)
+
+    def test_the_cohort_is_this_weeks_issues_in_an_epic(self):
+        out = funnel([filed(1), filed(2, at="2026-10-11T23:59:59Z"), filed(3, at="2026-10-19T00:00:00Z"),  # other weeks
+                      filed(4, labels=[]), filed(5, labels=lab("bug")),                                    # in no epic
+                      filed(6, labels=lab("epic", "E6"))])                                                 # an epic itself
+        self.assertEqual(row(out, "reached"), "| reached | 1 | 0 | 0 | 0 | 0 | 0 | – |")
+        self.assertIn("- Waiting for PM triage: 1 — #1\n", out)
+
+    def test_an_sme_issue_runs_on_to_verified_fixed(self):
+        out = funnel([filed(1, [c(at(1), READY), c(at(9), DEPLOY), c(at(20), FIXED)], labels=e("agent:sme")),
+                      filed(2, [c(at(1), READY), c(at(9), DEPLOY)], labels=e("agent:sme")),
+                      filed(3, [c(at(1), READY), c(at(9), DEPLOY), c(at(20), "**SME verification (2026-10-16): not_fixed**")],
+                            labels=e("agent:sme")),
+                      filed(4, [c(at(1), READY), c(at(9), DEPLOY)])],                                       # the loop ends at deployed
+                     [merged_pr(11, 1, at(8), at(3))])
+        self.assertEqual(row(out, "reached"), "| reached | 4 | 4 | 4 | 4 | 4 | 4 | 1 of 3 |")
+        self.assertTrue(row(out, "median from filing").endswith("| 20.0 h |"))
+        self.assertIn("- Waiting for SME verification: 2 — #2, #3\n", out)
+        self.assertNotIn("#4", out)
+
+    def test_a_later_stage_proves_the_ones_before_it(self):
+        # filed by the PM's planning: no PM comment, picked up straight away
+        out = funnel([filed(1, [c(at(4), PICKUP.format(1))])], [merged_pr(11, 1, at(9), at(5))])
+        self.assertEqual(row(out, "reached"), "| reached | 1 | 1 | 1 | 1 | 1 | 0 | – |")
+        self.assertIn("| 4.0 h | 4.0 h | 5.0 h | 9.0 h | – | – |", out)
+        self.assertIn("- Waiting for a deploy: 1 — #1\n", out)
+
+    def test_a_pr_closed_unmerged_still_waits_for_merge(self):
+        out = funnel([filed(1, [c(at(1), READY)])], [pr(11, 1, [], closed=at(5))])
+        self.assertIn("- Waiting for merge: 1 — #1\n", out)
+
+    # Scenario: An issue closed as not planned is not stuck
+    def test_an_issue_closed_as_not_planned_is_not_stuck(self):
+        out = funnel([filed(1), filed(2, [c(at(1), READY)], state="CLOSED", stateReason="NOT_PLANNED")])
+        self.assertEqual(row(out, "reached"), "| reached | 1 | 0 | 0 | 0 | 0 | 0 | – |")
+        self.assertIn("- Closed as not planned, left out above: 1 — #2", out)
+        self.assertNotIn("Waiting for Ready", out)
+        self.assertEqual(out.count("#2"), 1)
+
+    def test_an_issue_closed_as_done_without_a_merge_is_not_stuck(self):
+        out = funnel([filed(1, [c(at(1), READY)], state="CLOSED", stateReason="COMPLETED")])
+        self.assertIn("- Nothing waiting", out)
+        self.assertIn("- Closed as done with no merged agent PR, not waiting: 1 — #1", out)
+
+    def test_a_merged_issue_closed_by_its_pr_still_waits_for_the_deploy(self):
+        out = funnel([filed(1, [c(at(1), READY)], state="CLOSED", stateReason="COMPLETED")], [merged_pr(11, 1, at(5), at(2))])
+        self.assertIn("- Waiting for a deploy: 1 — #1\n", out)
+
+    def test_an_empty_week(self):
+        out = funnel([])
+        self.assertEqual(row(out, "reached"), "| reached | 0 | 0 | 0 | 0 | 0 | 0 | – |")
+        self.assertEqual(row(out, "median from filing"), "| median from filing | – | – | – | – | – | – | – |")
+        self.assertIn("- Nothing waiting\n- Closed as not planned, left out above: 0", out)
+
+    # Scenario: Nothing private reaches the comment
+    def test_nothing_private_reaches_the_comment(self):
+        issues = [filed(1, [{"createdAt": at(1), "body": READY + "\n\nSECRETCOMMENT 1,234 USD", "author": {"login": "SECRETUSER"}}],
+                        labels=e("agent:sme"))]
+        out = metrics.report("2026-W42", write_dir(issues, FUNNEL_PRS), runs_file="", stuck_file="", repo="o/r")
+        new = section(out, "Trend (last 4 weeks)") + section(out, "Funnel (issues filed in the week)")
+        for private in ("SECRET", "USD", "rchau73", "1,234"):
+            self.assertNotIn(private, new)
+
+
+class WeekCommand(unittest.TestCase):
+    """metrics.sh reads the week, its Monday and how far back the dumps must reach."""
+
+    def test_the_dumps_reach_back_to_the_trends_first_week(self):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            metrics.main(["metrics.py", "week", "2026-10-19"])
+        self.assertEqual(buf.getvalue().split(), ["2026-W42", "2026-10-12", "2026-09-21"])
+
+
 class EmptyWeek(unittest.TestCase):
     def test_no_data_renders_dashes_not_zeros(self):
         d = tempfile.mkdtemp()
