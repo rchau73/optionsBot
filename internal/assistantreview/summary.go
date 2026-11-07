@@ -25,6 +25,31 @@ type Shareable struct {
 	// NoPassageClose how many questions no passage is close to.
 	GapGroups      int `json:"gap_groups"`
 	NoPassageClose int `json:"no_passage_close"`
+	// FlaggedTotal is the rows of the review list, flagged and dont_know, late
+	// and carried (#704) = Closed + Open; Overdue those of Open past OverdueDays.
+	FlaggedTotal int         `json:"flagged_total"`
+	Closed       int         `json:"closed"`
+	Open         int         `json:"open"`
+	Overdue      int         `json:"overdue"`
+	ClosedByHow  ClosedByHow `json:"closed_by_how"`
+}
+
+// ClosedByHow counts the closed rows by each of Hows.
+type ClosedByHow struct {
+	HelpFix        int `json:"help_fix"`
+	GoldenCase     int `json:"golden_case"`
+	AnswerWasRight int `json:"answer_was_right"`
+}
+
+func (c *ClosedByHow) count(how string) {
+	switch how {
+	case HowHelpFix:
+		c.HelpFix++
+	case HowGoldenCase:
+		c.GoldenCase++
+	case HowAnswerWasRight:
+		c.AnswerWasRight++
+	}
 }
 
 // Summary is the shareable part of a report.
@@ -39,6 +64,16 @@ func Summary(r Report) Shareable {
 		s.ReviewItems++
 		if it.Late {
 			s.LateFlags++
+		}
+		s.FlaggedTotal++
+		if it.Closure != nil {
+			s.Closed++
+			s.ClosedByHow.count(it.Closure.How)
+		} else {
+			s.Open++
+		}
+		if it.Overdue {
+			s.Overdue++
 		}
 	}
 	for _, g := range r.Gaps {
