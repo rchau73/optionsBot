@@ -344,13 +344,21 @@ class DirectionTrial(unittest.TestCase):
 GO = """#!/usr/bin/env bash
 # go run ./cmd/evidence -env E -root R [-books-root B] -bot b -week W → R/data/evidence/W/b.{md,json}
 # go run ./cmd/evidence -compare-direction -bot btc -week W -stable-root S -mvp-root M → S/data/evidence/direction/W.{md,json}
+# go run ./cmd/evidence -env E -root R -bot b -track-record -trend -pack → R/data/evidence/pack/b.{md,json}
 echo "$*" >> "$EV_TEST_DIR/go.log"
-compare=""
+compare=""; pack=""
 while [[ $# -gt 0 ]]; do
   case "$1" in -env) env="$2"; shift ;; -root) root="$2"; shift ;; -bot) bot="$2"; shift ;; -week) week="$2"; shift ;;
-    -compare-direction) compare=1 ;; -stable-root) root="$2"; shift ;; esac
+    -compare-direction) compare=1 ;; -pack) pack=1 ;; -stable-root) root="$2"; shift ;; esac
   shift
 done
+if [[ -n "$pack" ]]; then
+  [[ -f "$EV_TEST_DIR/pack_fails" ]] && { echo "pack: broken"; exit 1; }
+  mkdir -p "$root/data/evidence/pack"
+  echo "# pack" > "$root/data/evidence/pack/$bot.md"
+  echo '{}' > "$root/data/evidence/pack/$bot.json"
+  exit 0
+fi
 if [[ -n "$compare" ]]; then
   [[ -f "$EV_TEST_DIR/direction_fails" ]] && { echo "direction: no recorded book"; exit 1; }
   mkdir -p "$root/data/evidence/direction"
@@ -449,6 +457,9 @@ class EvidenceScript(unittest.TestCase):
         except FileNotFoundError:
             return ""
 
+    def weekly_runs(self):
+        return [l for l in self.read("go.log").splitlines() if "-compare-direction" not in l and "-pack" not in l]
+
     def comments(self):
         return [self.read(n) for n in sorted(os.listdir(self.tmp)) if n.startswith("comment-")]
 
@@ -462,7 +473,7 @@ class EvidenceScript(unittest.TestCase):
                 for ext in ("md", "json"):
                     self.assertTrue(os.path.exists(self.t("envs", env, "data", "evidence", self.week, f"{bot}.{ext}")),
                                     f"{env} {bot}.{ext}\n{self.output}")
-        go = [l for l in self.read("go.log").splitlines() if "-compare-direction" not in l]
+        go = self.weekly_runs()
         self.assertEqual(len(go), 4)
         self.assertTrue(all(f"-week {self.week}" in l for l in go))
         self.assertTrue(all("-books-root " + self.t("envs", "stable") in l for l in go if "-env mvp" in l))
@@ -479,6 +490,26 @@ class EvidenceScript(unittest.TestCase):
             for bot in ("btc", "eth"):
                 self.assertIn(f"| {env} | {bot} | +0.0123 {bot.upper()}", comments[0])
         self.assertIn("GEX all 7", comments[0])
+        self.assertTrue(self.done())
+
+    def test_the_pack_follows_the_weekly_report_of_every_bot(self):
+        self.run_script()
+        lines = self.read("go.log").splitlines()
+        for env in ("stable", "mvp"):
+            for bot in ("btc", "eth"):
+                root = self.t("envs", env)
+                self.assertTrue(os.path.exists(self.t("envs", env, "data", "evidence", "pack", f"{bot}.md")))
+                report = next(i for i, l in enumerate(lines) if f"-env {env} " in l and f"-bot {bot} -week" in l)
+                pack = next(i for i, l in enumerate(lines) if l.endswith(f"-env {env} -root {root} -bot {bot} -track-record -trend -pack"))
+                self.assertLess(report, pack)
+
+    def test_a_failed_pack_is_listed_and_the_rest_goes_on(self):
+        write(self.t("pack_fails"), "")
+        self.run_script()
+        comment = self.comments()[0]
+        self.assertIn("- stable btc: evidence pack — `pack: broken`", comment)
+        self.assertIn("- mvp eth: evidence pack", comment)
+        self.assertIn("| stable | btc | +0.0123 BTC", comment)
         self.assertTrue(self.done())
 
     def test_a_recorder_gap_is_posted_and_notified(self):
@@ -540,8 +571,7 @@ class EvidenceScript(unittest.TestCase):
         self.run_script()
         self.assertTrue(self.done())
         self.run_script()  # a third tick: nothing more
-        go = [l for l in self.read("go.log").splitlines() if "-compare-direction" not in l]
-        self.assertEqual(len(go), 8)
+        self.assertEqual(len(self.weekly_runs()), 8)
 
     def created(self):
         return self.read("created.txt").splitlines()
