@@ -339,6 +339,10 @@ def assistant_answers(summary):
     return num((summary or {}).get("answers")) or 0
 
 
+def assistant_open(summary):
+    return num((summary or {}).get("open")) or 0
+
+
 def _by(items, key, allowed):
     """{name: item} for the items whose key is one of the fixed names (never free text)."""
     return {i.get(key): i for i in items or [] if isinstance(i, dict) and i.get(key) in allowed}
@@ -347,18 +351,19 @@ def _by(items, key, allowed):
 def assistant_comment(week, envs_dir, envs=("stable", "mvp")):
     """The E10 epic comment from each env's summary (#438): named count and
     percentage fields only, kinds and reasons from the fixed lists; a live env
-    gets percentages only. No question, answer or user can be in it: the
-    summary has none, and nothing else is read."""
+    gets percentages only. No question, answer, user or answer id can be in it:
+    the summary has none, and nothing else is read. An env with no answer in
+    the week still shows while it has open rows (#704)."""
     out = [f"{ASSISTANT_HEADER} — week {week} (`scripts/agents/usage.sh`, #438)", "",
            "From `cmd/assistantreview` over each environment's `data/monitor/assistant.jsonl` "
            "(docs/product/assistant/README.md \"Weekly quality review\"). Counts and percentages only: "
            "the questions and answers stay in the private review file.", "",
-           "| env | answers | answered | flagged | dont_know | refused | guard rejected (fallback / no citation) | review list | no passage close | review file |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
-    live_envs, reasons = [], []
+           "| env | answers | answered | flagged | dont_know | refused | guard rejected (fallback / no citation) | review list | no passage close | overdue | review file |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
+    live_envs, reasons, overdue_envs = [], [], []
     for env in envs:
         s = assistant_summary(envs_dir, env, week)
-        if assistant_answers(s) == 0:
+        if assistant_answers(s) == 0 and assistant_open(s) == 0:
             continue
         live = is_live(os.path.join(envs_dir, env))
         if live:
@@ -373,12 +378,16 @@ def assistant_comment(week, envs_dir, envs=("stable", "mvp")):
             c = num((kinds.get(k) or {}).get("answers")) or 0
             return cell(c, share(c, n))
 
+        overdue = num(s.get("overdue")) or 0
+        if overdue:
+            overdue_envs.append(env)
         rejected = sum(num((kinds.get(k) or {}).get("answers")) or 0 for k in ("rejected", "no_citation"))
         cells = ["—" if live else str(n), cell(num(kinds.get("answered", {}).get("answers")) or 0, num(s.get("answered_pct"))),
                  cell(num(s.get("flagged")) or 0, num(s.get("flag_pct"))), kind_cell("dont_know"), kind_cell("refused"),
                  cell(rejected, share(rejected, n)),
                  "—" if live else str(num(s.get("review_items")) or 0),
                  "—" if live else str(num(s.get("no_passage_close")) or 0),
+                 pct(share(overdue, num(s.get("flagged_total")))) if live else str(overdue),
                  f"`{env}/data/monitor/assistant_reviews/{week}.md`"]
         out.append("| " + " | ".join([env + (" (live)" if live else "")] + cells) + " |")
         hit = [(r, num(i.get("answers")) or 0) for r, i in _by(s.get("guard_reasons"), "reason", GUARD_REASONS).items()]
@@ -392,6 +401,9 @@ def assistant_comment(week, envs_dir, envs=("stable", "mvp")):
     if reasons:
         out += ["", "**Guard reasons and flags:**", ""] + reasons
     out += ["", "Every flagged answer ends as a help-source fix, a golden-set case or a recorded \"answer was right\" within 7 days."]
+    if overdue_envs:
+        out += ["", f"**Overdue in {', '.join(overdue_envs)}:** answers open more than 7 days. "
+                    "A person reads the private review list and closes them; nothing of it is posted here."]
     if live_envs:
         out += ["", f"_{', '.join(live_envs)}: live account — percentages only; counts are in the review files._"]
     return "\n".join(out) + "\n"
@@ -401,6 +413,9 @@ def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
     if cmd == "assistant-answers" and len(argv) == 5:
         print(assistant_answers(assistant_summary(argv[2], argv[3], argv[4])))
+        return
+    if cmd == "assistant-open" and len(argv) == 5:
+        print(assistant_open(assistant_summary(argv[2], argv[3], argv[4])))
         return
     if cmd == "assistant-comment" and len(argv) in (4, 5):
         envs = tuple(argv[4].split(",")) if len(argv) == 5 else ("stable", "mvp")

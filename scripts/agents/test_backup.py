@@ -192,6 +192,15 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(os.listdir(dst), ["assistant.jsonl"])
         self.assertIn("mvp assistant.jsonl ok — lines=2 skipped=0", self.output)
 
+    def test_scenario_the_review_closures_are_backed_up_from_the_clone(self):
+        """#704: closures.jsonl, a person's record in the clone, joins the env's monitor files and its lines are checked."""
+        self.write("mvp/data/monitor/assistant_reviews/closures.jsonl", '{"answer_id":"a","how":"help_fix"}\n')
+        self.write("mvp/data/monitor/assistant_reviews/2026-W44.md", "private question text\n")
+        self.assertEqual(self.run_backup(), 0, self.output)
+        dst = os.path.join(self.backups, today(), "mvp", "monitor")
+        self.assertEqual(os.listdir(dst), ["closures.jsonl"])
+        self.assertIn("mvp closures.jsonl ok — lines=1 skipped=0", self.output)
+
     def test_scenario_an_unparseable_assistant_log_fails_the_check(self):
         self.write("stable/data/monitor/assistant.jsonl", '{"kind":"answer","id":"a"}\nnot json\n{"kind":"flag","id":"a"}\n')
         self.assertNotEqual(self.run_backup(), 0, self.output)
