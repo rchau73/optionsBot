@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useId, useState } from "react";
-import { LINE_KINDS, chartGeometry, chartLines, coin4, nowLabel, price0, textAlternative, todayAtSpot } from "@/lib/payoff";
+import { LINE_KINDS, chartGeometry, chartLines, coin4, hedgedBreakEvensLine, nowLabel, price0, textAlternative, todayAtSpot } from "@/lib/payoff";
 import { formatSignedUSD } from "@/lib/summary";
 import { isNumber } from "@/lib/format";
 
@@ -10,6 +10,8 @@ import { isNumber } from "@/lib/format";
 // (solid, Black–Scholes on each leg's IV) with the area between it and zero
 // filled — gain solid, loss hatched — the spot marker, and the strikes,
 // break-evens, exit lines and stop levels, each kind toggled from the legend.
+// With a hedge share (#695) the two curves are the hedged ones, in sky, and
+// today's options-only curve stays as a faint line; the lines stay the options'.
 // The bot computes every number; this only draws them.
 
 const LINE_CLASS = {
@@ -31,17 +33,18 @@ const pick = (map, line) => (typeof map[line.kind] === "string" ? map[line.kind]
 /**
  * sp: one strangle of /api/strangles/payoff; coin: its underlying.
  * compact: the overview's card (no legend, no line labels, shorter).
+ * hedged: draw the curves with the strangle's hedge share.
  */
-export default function PayoffChart({ sp, coin, compact = false }) {
+export default function PayoffChart({ sp, coin, compact = false, hedged = false }) {
   const id = useId().replace(/:/g, "");
   const [hidden, setHidden] = useState(() => new Set());
   const width = 640;
   const height = compact ? 220 : 300;
-  const g = chartGeometry(sp, { width, height });
+  const g = chartGeometry(sp, { width, height, hedged });
   if (!g) return <p className="text-base text-warn">Chart unknown: the bot sent no curve for this strangle.</p>;
 
   const lines = chartLines(sp).filter((l) => !hidden.has(l.kind) && l.price >= g.lo && l.price <= g.hi);
-  const atSpot = todayAtSpot(sp);
+  const atSpot = todayAtSpot(sp, hedged);
   const spotIn = isNumber(sp.spot) && sp.spot >= g.lo && sp.spot <= g.hi;
   const sx = spotIn ? g.x(sp.spot) : null;
   const toggle = (kind) =>
@@ -54,7 +57,7 @@ export default function PayoffChart({ sp, coin, compact = false }) {
 
   return (
     <figure className="space-y-2">
-      <svg role="img" aria-label={textAlternative(sp, coin)} viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" data-testid="payoff-chart">
+      <svg role="img" aria-label={textAlternative(sp, coin, hedged)} viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" data-testid="payoff-chart">
         <defs>
           <pattern id={`${id}-hatch`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1="0" y1="0" x2="0" y2="6" className="stroke-loss" strokeWidth="2" />
@@ -83,14 +86,15 @@ export default function PayoffChart({ sp, coin, compact = false }) {
             )}
           </g>
         ))}
-        <polyline points={g.expiry} fill="none" className="stroke-slate-300" strokeWidth="2" strokeDasharray="6 4" data-curve="expiry" />
-        {g.today ? <polyline points={g.today} fill="none" className="stroke-white" strokeWidth="2.5" data-curve="today" /> : null}
+        {g.optionsToday ? <polyline points={g.optionsToday} fill="none" className="stroke-slate-400/50" strokeWidth="1.5" data-curve="today-options" /> : null}
+        <polyline points={g.expiry} fill="none" className={hedged ? "stroke-sky-200" : "stroke-slate-300"} strokeWidth="2" strokeDasharray="6 4" data-curve={hedged ? "expiry-hedged" : "expiry"} />
+        {g.today ? <polyline points={g.today} fill="none" className={hedged ? "stroke-sky-400" : "stroke-white"} strokeWidth="2.5" data-curve={hedged ? "today-hedged" : "today"} /> : null}
         {spotIn ? (
           <g data-marker="spot">
             <line x1={sx} x2={sx} y1={g.top - 6} y2={g.bottom} className="stroke-testnet" strokeWidth="1.5" />
             {atSpot != null ? <circle cx={sx} cy={g.y(atSpot)} r="5" className="fill-testnet stroke-panel" strokeWidth="2" /> : null}
             <text x={sx} y={g.top - 10} textAnchor={sx < width * 0.25 ? "start" : sx > width * 0.75 ? "end" : "middle"} className="fill-testnet text-[12px] font-semibold">
-              {nowLabel(sp, coin)}
+              {nowLabel(sp, coin, hedged)}
             </text>
           </g>
         ) : null}
@@ -98,24 +102,44 @@ export default function PayoffChart({ sp, coin, compact = false }) {
       {sp.today ? null : (
         <p className="text-sm text-warn">Today&apos;s curve, exit lines and stop levels: {sp.today_reason || "unknown"}.</p>
       )}
-      {compact ? null : <Legend hidden={hidden} onToggle={toggle} sp={sp} coin={coin} />}
+      {compact ? null : <Legend hidden={hidden} onToggle={toggle} sp={sp} coin={coin} hedged={hedged} />}
     </figure>
   );
 }
 
 /** The curves' key and a toggle per kind of line (aria-pressed: shown). */
-function Legend({ hidden, onToggle, sp, coin }) {
+function Legend({ hidden, onToggle, sp, coin, hedged }) {
+  const usdNow = hedged ? sp.unrealised_with_hedge_usd : sp.unrealised_usd;
   return (
     <figcaption className="space-y-2 text-sm">
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-muted">
-        <li>
-          <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-2 border-dashed border-slate-300 align-middle" />
-          at expiry (keeps up to {coin4(sp.premium_coin, coin)})
-        </li>
-        <li>
-          <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-[3px] border-white align-middle" />
-          bought back today
-        </li>
+        {hedged ? (
+          <>
+            <li>
+              <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-2 border-dashed border-sky-200 align-middle" />
+              at expiry, with its hedge share ({hedgedBreakEvensLine(sp)})
+            </li>
+            <li>
+              <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-[3px] border-sky-400 align-middle" />
+              bought back today, with its hedge share
+            </li>
+            <li>
+              <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-2 border-slate-400/50 align-middle" />
+              options only, today
+            </li>
+          </>
+        ) : (
+          <>
+            <li>
+              <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-2 border-dashed border-slate-300 align-middle" />
+              at expiry (keeps up to {coin4(sp.premium_coin, coin)})
+            </li>
+            <li>
+              <span aria-hidden="true" className="mr-1 inline-block w-6 border-t-[3px] border-white align-middle" />
+              bought back today
+            </li>
+          </>
+        )}
         <li>
           <span aria-hidden="true" className="mr-1 inline-block h-3 w-4 bg-profit/30 align-middle" /> gain
         </li>
@@ -124,7 +148,7 @@ function Legend({ hidden, onToggle, sp, coin }) {
         </li>
         <li>
           <span aria-hidden="true" className="mr-1 inline-block h-3 w-0.5 bg-testnet align-middle" /> now
-          {isNumber(sp.unrealised_usd) ? ` (${formatSignedUSD(sp.unrealised_usd)})` : ""}
+          {isNumber(usdNow) ? ` (${formatSignedUSD(usdNow)})` : ""}
         </li>
       </ul>
       <div className="flex flex-wrap gap-1" role="group" aria-label="Lines shown">
