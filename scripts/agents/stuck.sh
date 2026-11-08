@@ -17,6 +17,7 @@ mkdir -p "$state/marks"
 python3 "$STUCK_PY" due "$state" || exit 0
 require_tools gh python3 || exit 1
 take_lock stuck || exit 0
+run_begin stuck "" "" "$state" # the run ledger (lib.sh): every exit below ends it
 slug="$(repo_slug)"
 tmp="$(mktemp -d)"; on_exit_remove "$tmp"
 board_json > "$tmp/board.json"
@@ -36,3 +37,4 @@ while IFS= read -r line; do
   fi
 done < "$tmp/faults.jsonl"
 log "stuck: check done, $n card(s) to report (all found: $state/reports.jsonl)"
+run_end checked "$n card(s) to report"

@@ -88,10 +88,13 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - a person (an admin) escalates: `promote.sh <tag> --commit <sha> --escalate "<reason>"` skips the soak — still a commit that ran in mvp, still no `sme:not-fixed`;
   - every healthy release is a `stable … release <tag> <trigger> <who> <why>` line in `deploys.tsv` (trigger `manual | weekly | hotfix | escalation`, who = `PROMOTE_BY` else the git user, `agent:release` for the agent).
 - Run ledger (#206, docs/agents/run-ledger.md "Run ledger"):
-  - every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-hunt, usage-report and backup run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
+  - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
+  - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
+    and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
   - `runs.py --issue N | --agent | --date | --open` queries it;
   - each tick `sweep_runs.sh` (`runs.py --sweep`, #291) closes open runs whose pid is gone as `abandoned` and notifies once of a live run past its agent's `TIME_LIMIT_MIN` (never kills).
 - Stuck cards (#329, docs/agents/stuck-cards.md "Stuck cards"):
