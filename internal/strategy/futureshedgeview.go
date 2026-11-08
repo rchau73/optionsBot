@@ -32,10 +32,13 @@ type HedgeView struct {
 	ContractUSD float64   `json:"contract_usd,omitempty"` // 0 until read from Deribit
 	// The perpetual as last read from the exchange (PerpAsOf zero: not read
 	// yet; the bot reads it every cycle while the mode is on).
-	PerpUSD        float64   `json:"perp_usd"`
-	PerpDeltaCoin  float64   `json:"perp_delta_coin"`
-	PerpAvg        float64   `json:"perp_avg_price"`
-	PerpMark       float64   `json:"perp_mark_price"`
+	PerpUSD       float64 `json:"perp_usd"`
+	PerpDeltaCoin float64 `json:"perp_delta_coin"`
+	PerpAvg       float64 `json:"perp_avg_price"`
+	PerpMark      float64 `json:"perp_mark_price"`
+	// LedgerAvg is the perpetual's average price in the benchmark's ledger:
+	// the index on index pricing (#664), for the payoff charts (#695).
+	LedgerAvg      float64   `json:"ledger_avg_price"`
 	UnrealisedCoin float64   `json:"unrealised_coin"`
 	FundingCoin    float64   `json:"funding_coin"`
 	PerpAsOf       time.Time `json:"perp_as_of"`
@@ -80,7 +83,7 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 	v := HedgeView{
 		Available: s.futures != nil && s.fh.path != "", Enabled: s.fh.mode.Enabled, Since: s.fh.mode.Since,
 		By: s.fh.mode.By.User, Underlying: s.cfg.Underlying, Instrument: s.perpName(), ContractUSD: s.fh.spec.ContractSize,
-		PerpUSD: p.Size, PerpDeltaCoin: perpDelta, PerpAvg: p.AveragePrice, PerpMark: mark,
+		PerpUSD: p.Size, PerpDeltaCoin: perpDelta, PerpAvg: p.AveragePrice, PerpMark: mark, LedgerAvg: s.fh.mode.Ledger.Real.AvgPrice,
 		UnrealisedCoin: p.FloatingPnL, FundingCoin: p.RealizedFunding, PerpAsOf: s.fh.perpAt,
 		OptionsDelta: optDelta, NetDelta: optDelta + perpDelta,
 		BandCoin: s.fh.band, BandPct: config.FixedFuturesHedgeBandPct,

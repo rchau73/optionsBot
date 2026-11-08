@@ -186,6 +186,20 @@ A negative delta means the position gains if the price falls.
   The hedge takes out the slope (delta), not the curve (gamma): the book still loses on a big move either way.
 - *The hedge card*: the perpetual's size, delta and net delta, average and mark, unrealised and realised results, and funding.
 
+**Each strangle's hedge share**: while the bot holds a perpetual, every payoff chart includes that strangle's part of it, here, on the overview cards and in the window that opens from a leg.
+A strangle's share is the perpetual × its part of the options' net delta, so the shares add up to the whole perpetual.
+- The chart opens with its hedge share: the solid blue curve is bought back today, the dashed light blue curve is at expiry, and the faint line is the options alone today.
+- Two buttons switch between *With its hedge share* and *Options only*; the compact overview card has no buttons.
+- The delta box adds this strangle's delta, its hedge share and the net.
+- A table gives the result at −20, −10, −5, +5, +10 and +20 %, options only and with its hedge share, coin first, USD at the moved price.
+- Break-evens, exit lines and stop levels stay the options' own, because they are option rules; the legend lists where the hedged curve at expiry crosses zero.
+The hedge is drawn as held now.
+The bot re-hedges each time the book's delta leaves its band, so a real move lands near the solid blue curve, minus fees.
+
+When the options' net delta is inside the hedge band, the shares would blow up, so the hedge is not split.
+Each card then shows the options alone with the line "Hedge counted on the whole book" and a link to the whole-book block.
+With the hedge off and no perpetual, the card is the same as without a hedge.
+
 **When something looks wrong**:
 - A card that says a side is missing ("no call held: repair waiting") has one leg only.
   The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, or the margin limit.
