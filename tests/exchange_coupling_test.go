@@ -29,8 +29,8 @@ var deribitMethods = map[string][]string{
 	"public/set_heartbeat":                {"gateway"},
 	"public/test":                         {"gateway"},
 	"public/subscribe":                    {"gateway"},
-	"public/get_instruments":              {"marketdata"},
-	"public/get_volatility_index_data":    {"marketdata"},
+	"public/get_instruments":              {"exchange/deribit"},
+	"public/get_volatility_index_data":    {"exchange/deribit"},
 	"public/get_book_summary_by_currency": {"exchange/deribit"},
 	"public/get_tradingview_chart_data":   {"orders"},
 	"public/get_instrument":               {"orders"},
@@ -195,15 +195,46 @@ func TestExchangeCoupling_EachMethodHasOneRow(t *testing.T) {
 
 // Scenario (#687): one call site for the book summary — the coupling test
 // finds the method in exactly one package, once.
-func TestExchangeCoupling_OneCallSiteForTheBookSummary(t *testing.T) {
-	var found []rpcUse
-	for _, u := range scanRPCLiterals(t, "../internal") {
-		if u.method == "public/get_book_summary_by_currency" {
-			found = append(found, u)
+// Scenario (#710): the calls have one home — likewise the chain and the
+// volatility history.
+func TestExchangeCoupling_OneCallSiteForTheMovedReads(t *testing.T) {
+	uses := scanRPCLiterals(t, "../internal")
+	for _, method := range []string{
+		"public/get_book_summary_by_currency",
+		"public/get_instruments",
+		"public/get_volatility_index_data",
+	} {
+		var found []rpcUse
+		for _, u := range uses {
+			if u.method == method {
+				found = append(found, u)
+			}
+		}
+		if len(found) != 1 || found[0].pkg != "exchange/deribit" {
+			t.Errorf("%s: want one literal in exchange/deribit, found %v", method, found)
 		}
 	}
-	if len(found) != 1 || found[0].pkg != "exchange/deribit" {
-		t.Errorf("want one literal in exchange/deribit, found %v", found)
+}
+
+// Scenario (#710): marketdata stays free of the exchange package, directly
+// or through any package it imports. Its transport subpackage is allowed: it
+// imports the gateway's wire types only.
+func TestExchangeCoupling_MarketDataDoesNotImportTheExchange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs go list")
+	}
+	out, err := exec.Command("go", "list", "-deps", "../internal/marketdata").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	deps := strings.Fields(string(out))
+	if !slices.Contains(deps, "optionsbot/internal/marketdata") {
+		t.Fatalf("go list named no marketdata package: %s", out)
+	}
+	for _, banned := range []string{"optionsbot/internal/exchange", "optionsbot/internal/exchange/deribit"} {
+		if slices.Contains(deps, banned) {
+			t.Errorf("internal/marketdata imports %s", banned)
+		}
 	}
 }
 

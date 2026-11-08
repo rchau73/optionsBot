@@ -17,6 +17,7 @@ import (
 	"optionsbot/internal/api"
 	"optionsbot/internal/backtest"
 	"optionsbot/internal/config"
+	"optionsbot/internal/exchange/deribit"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/hedge"
@@ -174,7 +175,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		}
 	}()
 
-	md := marketdata.New(cfg, gw)
+	md := marketdata.New(cfg, gw, deribit.NewChainSource(gw))
 	if err := md.Start(ctx); err != nil {
 		return fmt.Errorf("marketdata start: %w", err)
 	}
