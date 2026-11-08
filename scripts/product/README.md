@@ -23,6 +23,16 @@ python3 scripts/product/survey_tally.py data/product/interviews/export.csv -json
 
 **Private data stays private.** Free text (Q4, F2), the F1 e-mail and answers that match no option are never printed — only how many there were. `-out` refuses any path outside `data/product/interviews/` (gitignored). The tests build a synthetic CSV inside the test; no real answer is in the repository.
 
+## Comprehension scorer (`comprehension_score.py`, #718)
+
+Scores an E11 comprehension round (`docs/product/education/comprehension-test.md`, section 6a): pass or fail per tip against `PASS_BAR_PCT` (80 %, an assumption), `not enough people` under 5, the change since the previous round and the tips to rewrite with their video id.
+
+```bash
+python3 scripts/product/comprehension_score.py docs/product/education/comprehension-example.csv --out-dir data/product/comprehension/example
+```
+
+Participant codes only (`P01`…); a column other than `participant`, `key`, `answer`, `seconds`, `round` is refused by name. Results go to the gitignored `data/product/comprehension/<round>/`. Tests: `test_comprehension_score.py`.
+
 ## Competitor map (`competitors.py`, #304)
 
 Checks the private competitor entries — one YAML per competitor in the gitignored `data/product/competitors/` — and prints the positioning gaps. Method, categories and fields: `docs/product/competitors/README.md`.
