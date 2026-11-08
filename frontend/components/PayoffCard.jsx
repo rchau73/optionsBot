@@ -1,14 +1,17 @@
 "use client";
 
 import clsx from "clsx";
+import { useState } from "react";
 import PayoffChart from "./PayoffChart";
+import { HedgeDeltaRows, HedgeMovesTable, HedgeViewToggle, WholeBookNote } from "./PayoffHedge";
 import { formatTime } from "@/lib/format";
-import { cardTitle, deltaLine, earnedBar, earnedLine, legDeltaLines, missingLine } from "@/lib/payoff";
+import { cardTitle, deltaLine, earnedBar, earnedLine, hasHedgeShare, legDeltaLines, missingLine } from "@/lib/payoff";
 
 // One strangle's card (#391): title, the "premium earned so far" bar, the
 // payoff chart and the delta box. Full on the Positions page and in the
 // modal (the delta box beside the chart, below it on a phone); compact on the
-// overview (a button that opens the modal, the delta box as one line).
+// overview (a button that opens the modal, the delta box as one line). With a
+// hedge share (#695) the chart opens with it; the compact card has no toggle.
 
 /**
  * sp: one strangle of /api/strangles/payoff; report: the whole answer
@@ -19,6 +22,9 @@ export default function PayoffCard({ sp, report, compact = false, onOpen, headin
   const coin = report?.underlying || "";
   const Heading = headingLevel;
   const title = cardTitle(coin, sp);
+  const [optionsOnly, setOptionsOnly] = useState(false);
+  const shared = hasHedgeShare(sp);
+  const hedged = shared && (compact || !optionsOnly);
   return (
     <section
       aria-label={title}
@@ -55,14 +61,20 @@ export default function PayoffCard({ sp, report, compact = false, onOpen, headin
       ))}
       {compact ? (
         <>
-          <PayoffChart sp={sp} coin={coin} compact />
+          <PayoffChart sp={sp} coin={coin} compact hedged={hedged} />
+          <WholeBookNote report={report} coin={coin} />
           <p className="text-sm tabular-nums">{deltaLine(sp.net_delta_coin, sp.net_delta_usd_per_1pct, coin)}</p>
         </>
       ) : (
-        <div className="grid gap-3 lg:grid-cols-[1fr_16rem]">
-          <PayoffChart sp={sp} coin={coin} />
-          <DeltaBox sp={sp} report={report} coin={coin} />
-        </div>
+        <>
+          {shared ? <HedgeViewToggle hedged={hedged} onChange={(h) => setOptionsOnly(!h)} /> : null}
+          <WholeBookNote report={report} coin={coin} />
+          <div className="grid gap-3 lg:grid-cols-[1fr_16rem]">
+            <PayoffChart sp={sp} coin={coin} hedged={hedged} />
+            <DeltaBox sp={sp} report={report} coin={coin} />
+          </div>
+          {shared ? <HedgeMovesTable sp={sp} coin={coin} /> : null}
+        </>
       )}
       {compact ? null : <p className="text-xs text-muted">Model: {report?.model || "unknown"}. A model, not a quote; the dot is the book&apos;s P&L now.</p>}
     </section>
@@ -95,6 +107,7 @@ function DeltaBox({ sp, report, coin }) {
           </li>
         ))}
       </ul>
+      {hasHedgeShare(sp) ? <HedgeDeltaRows sp={sp} coin={coin} /> : null}
       <p className="text-muted">Whole bot: {deltaLine(report?.bot_net_delta, report?.bot_net_delta_usd_per_1pct, coin)}</p>
     </aside>
   );

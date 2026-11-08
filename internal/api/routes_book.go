@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"time"
+
+	"optionsbot/internal/strategy"
 )
 
 // routesBook registers the open book: strangles, working orders, P&L by
@@ -29,7 +31,12 @@ func (s *Server) pnl(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"as_of": v.AsOf, "strategy_id": v.StrategyID, "spot": v.Market.Spot, "pnl": v.PnL})
 }
 
-// payoff serves GET /api/strangles/payoff.
+// payoff serves GET /api/strangles/payoff, each chart with its share of the
+// futures hedge when the bot holds a perpetual (#695).
 func (s *Server) payoff(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, PayoffOf(s.strategy.View(), time.Now()))
+	var h strategy.HedgeView
+	if s.hedge != nil {
+		h = s.hedge.HedgeState()
+	}
+	writeJSON(w, PayoffWithHedge(s.strategy.View(), h, time.Now()))
 }

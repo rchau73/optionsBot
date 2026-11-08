@@ -58,7 +58,7 @@ function Amount({ coin, usd, unit }) {
 export default function BookPayoffPanel({ h, coin }) {
   const scenarios = h.book_scenarios ?? [];
   return (
-    <section aria-label="The whole book for a one-day move" className="w-full space-y-2 rounded-lg border border-line bg-panel p-3" data-testid="book-payoff">
+    <section id="book-payoff" aria-label="The whole book for a one-day move" className="w-full scroll-mt-4 space-y-2 rounded-lg border border-line bg-panel p-3" data-testid="book-payoff">
       <h2 className="text-base font-semibold">The whole book, for a one-day move</h2>
       {scenarios.length ? (
         <>
