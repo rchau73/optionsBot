@@ -337,7 +337,13 @@ The row says how close the hedge holds the delta and how many orders went out in
 A row whose perpetual was not read for two cycles is dimmed with its age.
 
 **Open positions**: one line per leg, grouped by strangle.
-Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.
+Columns include quantity, entry and mark prices, *premium kept*, profit and loss, *Position Δ*, *|Δ| per contract → exit* (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.
+*Position Δ*: the delta of what you hold (one contract's Δ × the size, sign of the short), in coin, then in USD for a +1 % move.
+The legs add up to the strangle, the strangles to the book; the foot rows add the futures hedge.
+Example: a put at Δ −0.227, 0.2 sold, is +0.045 BTC; with a call at Δ +0.088, 0.2 sold (−0.018 BTC), the strangle's net is +0.028 BTC.
+*|Δ| per contract → exit* is one contract's delta, the number the delta exit checks — don't add it up.
+Under the last strangle of each bot, *All options* sums its position Δ, and while a futures hedge is shown, *Futures hedge* gives the perpetual's delta and *Book* the two together.
+The Book row's note gives the coin delta the hedge holds flat, which also counts the options' own value moving with the price, and whether it is inside the hedge band.
 *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
 
 *Opened* is when the bot sold the leg, with its age.

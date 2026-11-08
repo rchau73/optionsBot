@@ -12,7 +12,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$AGENT_REPO_DIR"
 METRICS_PY="$AGENT_REPO_DIR/scripts/agents/metrics.py"
-read -r week since < <(python3 "$METRICS_PY" week)
+read -r week _ since < <(python3 "$METRICS_PY" week)
 out_dir="$AGENT_STATE_DIR/metrics"
 report="$out_dir/$week.md"
 [[ -f "$report" ]] && exit 0
@@ -20,8 +20,9 @@ take_lock metrics || exit 0
 slug="$(repo_slug)"
 tmp="$AGENT_STATE_DIR/metrics-$$"; mkdir -p "$tmp" "$out_dir"; on_exit_remove "$tmp"
 
-# Everything touched since the week began: an issue or PR with an event in the
-# week was updated in it (each carries all its comments and reviews).
+# Everything touched since three weeks before the week began, for the Trend
+# section: an issue or PR with an event in a week was updated in it or later
+# (each carries all its comments and reviews).
 gh issue list -R "$slug" --state all -L 1000 --search "updated:>=$since" \
   --json number,title,labels,createdAt,closedAt,state,stateReason,comments > "$tmp/issues.json"
 gh pr list -R "$slug" --state all -L 500 --search "updated:>=$since" \
@@ -31,7 +32,7 @@ gh api "repos/$slug/issues/events" --paginate \
   -q '.[] | select(.event == "labeled" or .event == "unlabeled") | {event, label: .label.name, created_at, issue: .issue.number}' \
   > "$tmp/events.json"
 git_locked fetch -q origin
-git log origin/main --max-count=1000 --format='%cI%x09%s' > "$tmp/gitlog.txt" # metrics.py keeps the week
+git log origin/main --max-count=3000 --format='%cI%x09%s' > "$tmp/gitlog.txt" # metrics.py keeps the weeks
 
 # The run ledger (#290) and the stuck-card log (#329): a missing file only
 # says so in its section.
