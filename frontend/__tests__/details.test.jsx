@@ -1,15 +1,22 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import DetailsPage from "@/components/DetailsPage";
 import DotStrip, { MAX_DOTS, dotsOf } from "@/components/DotStrip";
 import MicroBar from "@/components/MicroBar";
 import PositionsTable, { DeltaExitCell, heldFor } from "@/components/PositionsTable";
 import TradeHistory from "@/components/TradeHistory";
 import { useMonitor } from "@/hooks/useMonitor";
+import { hedgeShown } from "@/lib/futuresHedge";
 import {
   approxUSD,
+  bookDelta,
   coinDigits,
   countsLine,
   deltaExitRatio,
+  deltaSideWords,
+  netPositionDelta,
+  positionDelta,
+  positionDeltaTip,
+  usdPerPct,
   expiryLabel,
   firstSentence,
   flipBarGeometry,
@@ -138,7 +145,7 @@ describe("Scenario: an open leg is one line, coin first, its |Δ| bar amber from
     expect(call.querySelectorAll("div")).toHaveLength(0); // nothing stacked under a value
     const head = within(group).getAllByRole("row")[0];
     expect(head).toHaveTextContent("+0.00050 BTC ≈ +$50");
-    expect(head).toHaveTextContent("net Δ 0.002"); // −(0.12 × 0.1) − (−0.14 × 0.1)
+    expect(head).toHaveTextContent("net +0.002 BTC"); // −(0.12 × 0.1) − (−0.14 × 0.1)
     expect(head).toHaveTextContent("2.5"); // Θ sum: −(−12 − 13) × 0.1
   });
 
@@ -190,6 +197,111 @@ describe("Scenario: an open leg is one line, coin first, its |Δ| bar amber from
     expect(group).toHaveTextContent("stale · last answer 30s ago");
     rerender(<PositionsTable groups={groups} health={{ btc: { stale: true, error: "unreachable" } }} />);
     expect(screen.getByTestId(`group-${groups[0].key}`)).toHaveTextContent("bot down: unreachable");
+  });
+});
+
+// #715: the mvp BTC book of 2026-11-07, a 25-day strangle of 0.2 BTC a leg at spot 75,000.
+function issueBot({ callDelta = 0.088, putDelta = -0.227, hedge = null, hedgeError = null } = {}) {
+  const leg = (id, type, strike, delta) => ({
+    ...positions.strangles[0].legs[0], position_id: id, instrument: `BTC-27NOV26-${strike}-${type === "call" ? "C" : "P"}`, option_type: type, strike, dte: 19.5, qty: 0.2,
+    greeks: delta == null ? undefined : { delta, gamma: 0.00001, theta: -10, vega: 20 },
+  });
+  return withExit({
+    ...bot({ status: { ...status, market: { ...status.market, spot: 75000 } } }),
+    positions: { ...positions, strangles: [{ id: "st-1", slot: { dte: 25, delta: 0.16 }, legs: [leg("p-1", "call", 86000, callDelta), leg("p-2", "put", 71000, putDelta)] }] },
+    hedge,
+    hedgeError,
+  });
+}
+
+const hedgeOn = { enabled: true, halted: false, instrument: "BTC-PERPETUAL", perp_usd: -4770, perp_delta_coin: -0.063, options_delta_coin: 0.056, net_delta_coin: -0.007, band_coin: 0.025 };
+
+describe("Scenario: leg rows add up to the strangle's delta (#715)", () => {
+  const renderBook = (b) => {
+    const rows = consolidateRows(legRows([b]));
+    return render(<PositionsTable groups={groupRows(rows, "strangle")} books={[bookDelta(b, rows, hedgeShown)]} />);
+  };
+  const legCell = (strike) => within(screen.getByTestId(new RegExp(`^leg-.*-${strike}-`))).getByTestId("position-delta");
+
+  test("the call row shows −0.018 BTC, the put row +0.045 BTC and the group's net +0.028 BTC", () => {
+    renderBook(issueBot());
+    expect(legCell(86000)).toHaveTextContent("−0.018 BTC −$13");
+    expect(legCell(71000)).toHaveTextContent("+0.045 BTC +$34");
+    const head = within(screen.getByTestId(/^group-/)).getAllByRole("row")[0];
+    expect(head).toHaveTextContent("net +0.028 BTC · +$21 per +1 %");
+    expect(head).not.toHaveTextContent("net Δ"); // moved into the Position Δ column
+    expect(legCell(86000)).not.toHaveClass("text-profit");
+    expect(legCell(71000).closest(".text-profit")).toBeNull(); // neutral colour, never gain/loss
+  });
+
+  test("the Position Δ header's tooltip takes its example from the page's first put", () => {
+    renderBook(issueBot());
+    const th = screen.getByRole("columnheader", { name: "Position Δ" });
+    expect(th.getAttribute("title")).toMatch(/one contract's Δ × the size, negative for a short call, positive for a short put/);
+    expect(th.getAttribute("title")).toMatch(/Example: the 71,000 put, Δ −0\.227, 0\.2 sold → \+0\.045 BTC: BTC −1 % costs about \$34\./);
+    expect(positionDeltaTip([])).not.toMatch(/Example/);
+  });
+
+  test("Scenario: the book rows add the hedge", () => {
+    renderBook(issueBot({ putDelta: -0.318, hedge: hedgeOn })); // options: −0.0176 + 0.0636 = +0.046
+    expect(within(screen.getByTestId("book-options-btc")).getByTestId("position-delta")).toHaveTextContent("+0.046 BTC +$35 per +1 %");
+    expect(screen.getByTestId("book-options-btc")).toHaveTextContent("long: the book loses if BTC falls");
+    const perp = screen.getByTestId("book-hedge-btc");
+    expect(perp).toHaveTextContent("Futures hedge · BTC-PERPETUAL short $4,770");
+    expect(perp).toHaveTextContent("−0.063 BTC");
+    expect(perp).toHaveTextContent("gains if BTC falls");
+    const book = screen.getByTestId("book-total-btc");
+    expect(book).toHaveTextContent("−0.017 BTC");
+    expect(book).toHaveTextContent("BTC count held flat: in coin −0.007 BTC, inside the hedge band ±0.025");
+    expect(within(book).getByTitle(/\+0\.0460 \+ 0\.0100 = \+0\.0560 BTC in coin, less the hedge's 0\.0630 = −0\.0070 BTC\. It trades again at ±0\.0250\./)).toBeInTheDocument();
+  });
+
+  test("the hedge off and flat shows only All options; unavailable says so", () => {
+    renderBook(issueBot({ hedge: { ...hedgeOn, enabled: false, perp_usd: 0 } }));
+    expect(screen.getByTestId("book-options-btc")).toBeInTheDocument();
+    expect(screen.queryByTestId("book-hedge-btc")).toBeNull();
+    expect(screen.queryByTestId("book-total-btc")).toBeNull();
+    cleanup();
+    renderBook(issueBot({ hedgeError: "timeout" }));
+    expect(screen.getByTestId("book-options-btc")).toHaveTextContent("hedge state unavailable");
+    expect(screen.queryByTestId("book-total-btc")).toBeNull();
+  });
+
+  test("Scenario: a leg without greeks — its Position Δ and its strangle's net show —", () => {
+    renderBook(issueBot({ callDelta: null }));
+    expect(legCell(86000)).toHaveTextContent(/^—$/);
+    expect(within(within(screen.getByTestId(/^group-/)).getAllByRole("row")[0]).getByTestId("position-delta")).toHaveTextContent(/^net —$/);
+    expect(within(screen.getByTestId("book-options-btc")).getByTestId("position-delta")).toHaveTextContent(/^—$/);
+  });
+
+  test("the pure helpers: sign of a short and a long, flat, and no partial sums", () => {
+    expect(positionDelta({ delta: 0.088, qty: 0.2, side: "sell" })).toBeCloseTo(-0.0176);
+    expect(positionDelta({ delta: 0.088, qty: 0.2, side: "buy" })).toBeCloseTo(0.0176);
+    expect(positionDelta({ qty: 0.2 })).toBeNull();
+    expect(netPositionDelta([])).toBeNull();
+    expect(netPositionDelta([{ delta: 0.1, qty: 1 }, { qty: 1 }])).toBeNull();
+    expect(usdPerPct(0.0454, 75000)).toBeCloseTo(34.05);
+    expect(usdPerPct(0.0454, null)).toBeNull();
+    expect(deltaSideWords(0.0004, "BTC")).toBe("flat");
+    expect(deltaSideWords(-0.01, "ETH")).toBe("short: the book loses if ETH rises");
+    expect(bookDelta({ name: "eth", hedge: { ...hedgeOn, net_delta_coin: 0.03 } }, [], hedgeShown).hedge).toMatchObject({ inside: false, book: null });
+  });
+});
+
+describe("Scenario: the exit column says it is per contract (#715)", () => {
+  test("its tooltip says one contract's delta checked against the delta exit, not the position's", () => {
+    const b = issueBot();
+    render(<PositionsTable groups={groupRows(consolidateRows(legRows([b])), "strangle")} />);
+    const th = screen.getByRole("columnheader", { name: "|Δ| per contract → exit" });
+    expect(th.getAttribute("title")).toBe(
+      "One contract's delta, without its sign: the number the delta exit (0.30) is checked on. Amber from 80 % of it. It is not the position's delta: don't add it up — use Position Δ.",
+    );
+  });
+
+  test("Details passes every leg's book to the table, whatever the filter", () => {
+    mockMonitor([issueBot({ hedge: hedgeOn })]);
+    render(<DetailsPage />);
+    expect(screen.getByTestId("book-total-btc")).toBeInTheDocument();
   });
 });
 
