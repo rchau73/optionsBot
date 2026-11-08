@@ -92,6 +92,19 @@ The first round sets the baseline; if everyone passes or no one does, the bar is
 - **Only the aggregate** goes to the E11 epic issue: number of participants per segment, share of tasks scored 2 per task, the median time for T1-T4, the self-service share, and the pass bar result. No quote that could identify a person.
 - A task that most participants scored under 2 becomes a story on the board (a tip, a video or a wording to fix), not an edit made during the round.
 
+## 6a. Scoring a round with the script (#718)
+
+`scripts/product/comprehension_score.py` turns the round's table into a pass or fail per tip and the list of tips to rewrite.
+- **Input:** a CSV or JSON table, one row per participant and tip key: `participant` (`P01`…), `key` (a tip key of `tips.json` or a glossary term), `answer` (`correct`, `partly` or `wrong`), `seconds` (optional) and `round`. `comprehension-example.csv` is a synthetic example.
+- **Refused:** a column it does not know (a name, an e-mail, free text; the error names the column), an unknown key (named), a participant that is not a code, the same person twice for one key. Nothing is written.
+- **Output:** `score.md` and `score.json` in `data/product/comprehension/<round>/` (gitignored; `--out-dir` refuses anywhere else): per key the people asked, the share correct, `pass` or `fail`, `not enough people` under 5 (counted as neither), the change since the round before (up, down or flat), then the tips to rewrite, most wrong first, with their video id.
+- **The bar** is `PASS_BAR_PCT` (80 %) at the top of the script, the assumption of section 5: confirm it after the first round and edit that one line.
+
+```bash
+python3 scripts/product/comprehension_score.py data/product/comprehension/results.csv            # the latest round in the file
+python3 scripts/product/comprehension_score.py results.json --round 2026-R2 -json
+```
+
 ## 7. Running a round (checklist)
 
 1. Check the setup (section 1) and print the prompts of the segment.
