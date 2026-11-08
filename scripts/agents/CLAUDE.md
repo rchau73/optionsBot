@@ -100,7 +100,9 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
 - Weekly agent metrics (#180, docs/agents/metrics.md "Agent metrics"):
   - `metrics.sh` (from the tick, first tick of a Monday UTC) → `data/agents/metrics/<week>.md` and a comment on the E6 epic;
   - pure `metrics.py` reads stages from the agents' comment markers (a changed comment wording needs its marker there too),
-    plus the Runs table from the ledger (#290), what a person overruled (#292) and the stuck cards.
+    plus the Runs table from the ledger (#290), what a person overruled (#292) and the stuck cards;
+  - its Trend section (#707) puts the week beside the 3 before it from the same dumps (`metrics.sh` fetches 4 weeks): an arrow when worse than their mean, a base under 3 "too few to judge", a week with no data "–";
+  - its Funnel section follows the issues filed in the week with an `E#` label through to verified fixed: numbers and counts only.
 - Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;
