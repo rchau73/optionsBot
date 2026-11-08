@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -15,25 +14,12 @@ import (
 	"optionsbot/internal/gateway"
 )
 
-// gatewayClient is the slice of the exchange connection the manager uses
-// (the Deribit gateway in production).
-type gatewayClient interface {
-	transport.Caller
-	transport.Streamer
-}
-
-// Channel prefixes of the subscription pushes the manager handles.
-const (
-	dvolChannelPrefix   = "deribit_volatility_index."
-	indexChannelPrefix  = "deribit_price_index."
-	tickerChannelPrefix = "ticker."
-)
-
 // Manager keeps the latest option chain snapshot, index price and DVOL for
 // one underlying, fed by Deribit subscription pushes. Readers get copies.
 type Manager struct {
 	cfg             *config.Config
-	gw              gatewayClient
+	gw              transport.Streamer
+	chain           ChainSource
 	dvol            *DVOLTracker
 	mu              sync.RWMutex
 	instruments     map[string]*Instrument
@@ -43,10 +29,13 @@ type Manager struct {
 	subscribed map[string]bool // instruments with a ticker subscription
 }
 
-func New(cfg *config.Config, gw gatewayClient) *Manager {
+// New builds a manager fed by gw's pushes; chain names their channels and
+// reads the chain and the volatility history.
+func New(cfg *config.Config, gw transport.Streamer, chain ChainSource) *Manager {
 	return &Manager{
 		cfg:         cfg,
 		gw:          gw,
+		chain:       chain,
 		dvol:        NewDVOLTracker(cfg.IVPercentileWindow),
 		instruments: make(map[string]*Instrument),
 		subscribed:  make(map[string]bool),
@@ -77,7 +66,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 	m.subMu.Lock()
 	for _, ch := range channels {
-		if name, ok := tickerInstrument(ch); ok {
+		if name, ok := m.chain.TickerInstrument(ch); ok {
 			m.subscribed[name] = true
 		}
 	}
@@ -102,7 +91,7 @@ func (m *Manager) Track(ctx context.Context, instruments []string) error {
 			continue
 		}
 		names = append(names, name)
-		channels = append(channels, tickerChannelPrefix+name+".100ms")
+		channels = append(channels, m.chain.TickerChannel(name))
 	}
 	if len(channels) == 0 {
 		return nil
@@ -117,29 +106,15 @@ func (m *Manager) Track(ctx context.Context, instruments []string) error {
 	return nil
 }
 
-// tickerInstrument extracts the instrument from "ticker.<name>.100ms".
-func tickerInstrument(channel string) (string, bool) {
-	if !strings.HasPrefix(channel, tickerChannelPrefix) {
-		return "", false
-	}
-	rest := strings.TrimPrefix(channel, tickerChannelPrefix)
-	i := strings.LastIndex(rest, ".")
-	if i <= 0 {
-		return "", false
-	}
-	return rest[:i], true
-}
-
 // subscriptionChannels lists the index and DVOL channels plus one ticker per
 // instrument of a relevant expiry. Subscribing to the whole chain (1,000+
 // instruments) hits testnet subscription limits and starves the expiries
 // the strategy actually needs.
 func (m *Manager) subscriptionChannels(now time.Time) []string {
-	u := strings.ToLower(m.cfg.Underlying)
 	channels := []string{
-		dvolChannelPrefix + u + "_usd",
+		m.chain.VolIndexChannel(m.cfg.Underlying),
 		// The index price is reliable even when options have no quotes (testnet).
-		indexChannelPrefix + u + "_usd",
+		m.chain.IndexChannel(m.cfg.Underlying),
 	}
 	relevant := m.selectRelevantExpiries(now)
 	slog.Info("relevant expiries for subscription", "count", len(relevant), "slots", len(m.cfg.Slots()))
@@ -154,71 +129,24 @@ func (m *Manager) subscriptionChannels(now time.Time) []string {
 	}
 	sort.Strings(names) // deterministic order for logs and tests
 	for _, name := range names {
-		channels = append(channels, tickerChannelPrefix+name+".100ms")
+		channels = append(channels, m.chain.TickerChannel(name))
 	}
 	return channels
 }
 
-// instrumentInfo is the subset of public/get_instruments we use.
-type instrumentInfo struct {
-	InstrumentName string  `json:"instrument_name"`
-	Strike         float64 `json:"strike"`
-	ExpirationTS   int64   `json:"expiration_timestamp"`
-	OptionType     string  `json:"option_type"`
-	TickSize       float64 `json:"tick_size"`
-	MinTradeAmount float64 `json:"min_trade_amount"`
-	TickSizeSteps  []struct {
-		AbovePrice float64 `json:"above_price"`
-		TickSize   float64 `json:"tick_size"`
-	} `json:"tick_size_steps"`
-}
-
 func (m *Manager) fetchOptionsChain(ctx context.Context) error {
-	resp, err := m.gw.Call(ctx, "public/get_instruments", map[string]any{
-		"currency": m.cfg.Underlying,
-		"kind":     "option",
-		"expired":  false,
-	}, gateway.PriorityLow)
+	instruments, err := m.chain.Instruments(ctx, m.cfg.Underlying)
 	if err != nil {
 		return err
-	}
-	var infos []instrumentInfo
-	if err := json.Unmarshal(resp.Result, &infos); err != nil {
-		return fmt.Errorf("decode instruments: %w", err)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, info := range infos {
-		m.instruments[info.InstrumentName] = m.newInstrument(info)
+	for _, inst := range instruments {
+		m.instruments[inst.Name] = inst
 	}
-	slog.Info("options chain loaded", "underlying", m.cfg.Underlying, "instruments", len(infos))
+	slog.Info("options chain loaded", "underlying", m.cfg.Underlying, "instruments", len(instruments))
 	return nil
-}
-
-func (m *Manager) newInstrument(info instrumentInfo) *Instrument {
-	tickSize := info.TickSize
-	if tickSize <= 0 {
-		tickSize = 0.0001
-	}
-	minTA := info.MinTradeAmount
-	if minTA <= 0 {
-		minTA = 0.1 // Deribit default for BTC/ETH options
-	}
-	steps := make([]TickSizeStep, len(info.TickSizeSteps))
-	for i, s := range info.TickSizeSteps {
-		steps[i] = TickSizeStep{AbovePrice: s.AbovePrice, TickSize: s.TickSize}
-	}
-	return &Instrument{
-		Name:           info.InstrumentName,
-		Underlying:     m.cfg.Underlying,
-		Strike:         info.Strike,
-		Expiry:         time.UnixMilli(info.ExpirationTS),
-		OptionType:     info.OptionType,
-		TickSize:       tickSize,
-		TickSizeSteps:  steps,
-		MinTradeAmount: minTA,
-	}
 }
 
 // seedDVOLHistory loads one daily DVOL close per day for the percentile
@@ -229,28 +157,14 @@ func (m *Manager) seedDVOLHistory(ctx context.Context, now time.Time) error {
 		return nil
 	}
 	days := m.cfg.IVPercentileWindow + DVOLHistoryExtraDays
-	resp, err := m.gw.Call(ctx, "public/get_volatility_index_data", map[string]any{
-		"currency":        m.cfg.Underlying,
-		"start_timestamp": now.AddDate(0, 0, -days-1).UnixMilli(),
-		"end_timestamp":   now.UnixMilli(),
-		"resolution":      "1D",
-	}, gateway.PriorityLow)
+	closes, err := m.chain.VolHistory(ctx, m.cfg.Underlying, now.AddDate(0, 0, -days-1), now)
 	if err != nil {
 		return err
 	}
-	var result struct {
-		Data [][]float64 `json:"data"` // [timestamp, open, high, low, close]
+	for _, c := range closes {
+		m.dvol.Record(c.At, c.Close)
 	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return fmt.Errorf("decode volatility index data: %w", err)
-	}
-	for _, candle := range result.Data {
-		if len(candle) < 5 {
-			continue
-		}
-		m.dvol.Record(time.UnixMilli(int64(candle[0])), candle[4])
-	}
-	slog.Info("DVOL history seeded", "days", len(result.Data), "iv_percentile", m.dvol.Percentile())
+	slog.Info("DVOL history seeded", "days", len(closes), "iv_percentile", m.dvol.Percentile())
 	return nil
 }
 
@@ -306,8 +220,8 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse, now time.Tim
 	}
 	ch, data := notif.Params.Channel, []byte(notif.Params.Data)
 
-	switch {
-	case strings.HasPrefix(ch, dvolChannelPrefix):
+	switch m.chain.ChannelKind(ch) {
+	case ChannelVolIndex:
 		var d struct {
 			Volatility float64 `json:"volatility"`
 		}
@@ -315,7 +229,7 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse, now time.Tim
 			m.dvol.Record(now, d.Volatility)
 		}
 
-	case strings.HasPrefix(ch, indexChannelPrefix):
+	case ChannelIndex:
 		var d struct {
 			Price float64 `json:"price"`
 		}
@@ -325,7 +239,7 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse, now time.Tim
 			m.mu.Unlock()
 		}
 
-	case strings.HasPrefix(ch, tickerChannelPrefix):
+	case ChannelTicker:
 		m.handleTicker(ch, data, now)
 	}
 }

@@ -8,10 +8,11 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `Capabilities` says what an exchange can do, as data: `DeribitCapabilities` is pinned by `tests/exchange_test.go` and read by nothing yet (#687).
   `internal/exchange/deribit` holds Deribit's calls as they leave their callers (#687; it grows into the adapter at step 6 of the migration):
   - `BookReader.BookSummary` is the one book-summary fetch, for `gex.Manager` and `recorder.USDCBooks`;
+  - `ChainSource` (`chain.go`, #710) is the option chain, the DVOL history and the three channel names, for `marketdata.Manager`: it implements `marketdata.ChainSource`, so it imports `marketdata`, never the reverse;
   - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`.
   The strategy depends on it (#182):
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
-  `marketdata` and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
+  `marketdata` (`Streamer` only) and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
   Method → Deribit call map and what is Deribit-specific: `docs/architecture.md` §15.
   The full inventory, the proposed adapter interface and its migration steps: `docs/exchange-adapter.md` (#325)
   - — `tests/exchange_coupling_test.go` fails when a `"public/…"`/`"private/…"` literal under `internal/` is not in its table (`deribitMethods`, method → allowed packages) and the doc's §1, or appears under `internal/strategy`:
