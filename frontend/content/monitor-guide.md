@@ -383,6 +383,12 @@ A loss is shown with its minus sign, in the same words as a gain.
 A figure the bot could not measure, such as the return when no balance was recorded, is called unknown with the reason; days with no records are named, never filled in.
 These are past results: a question about future results, such as "will I make money next month?", is refused.
 
+**Why is nothing open, or why is my margin unused?**: ask, such as "why is nothing open right now?" or "why isn't it opening more trades?", and the answer reads the bot's book as it is now.
+It says whether the bot may open trades and, if not, why: waiting for a fresh reading of the market makers' positioning (GEX), new trades frozen by the margin policy, or the kill switch.
+It gives the margin in use against its limit as percentages, how many slots hold a strangle, the latest reason each empty slot recorded, and a repair held for its cooldown.
+When every slot is full and the margin is near its limit, it says so; whether to change a limit is your decision, and the assistant does not advise it.
+When the bot does not answer, the reason is called unknown, never guessed.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
