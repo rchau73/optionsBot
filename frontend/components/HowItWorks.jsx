@@ -1,26 +1,36 @@
 import { useId } from "react";
+import HedgePicture from "./HowItWorksHedge";
+import { Card, PAD_X, Picture, W } from "./HowItWorksParts";
 import { formatCoin, formatUSD, isNumber } from "@/lib/format";
+import { hedgeShown } from "@/lib/futuresHedge";
 import { findTerm } from "@/lib/glossary";
 import { cooldownWords, exampleLabel, payoffPoints, stopWord, strangleFigures } from "@/lib/howitworks";
+import { marketTurnsWords } from "@/lib/howitworksHedge";
 
-// "How it works" (#322, E3 prototype screen 7): a short strangle in three
-// pictures — two legs, the payoff at expiry, the bot's defences — and the
-// words of Details, with the bot's nearest strangle or a labelled example.
+// "How it works" (#322, E3 prototype screen 7): a short strangle in four
+// pictures — two legs, the payoff at expiry, the bot's defences, the futures
+// hedge (#696) — and the words of Details, with the bot's nearest strangle or
+// a labelled example.
 
-const GLOSSARY_TERMS = ["leg", "strike", "premium", "delta", "expiry", "margin"];
+const GLOSSARY_TERMS = ["leg", "strike", "premium", "delta", "expiry", "margin", "perpetual", "hedge band", "coin delta"];
 
-/** The page body for one bot's /api/summary (null → the example). */
-export default function HowItWorks({ summary }) {
+/**
+ * The page body for one bot's /api/summary (null → the example). `hedge` is
+ * useBotHedge's { hedge, error, at }; absent, the hedge's figures are not yet read.
+ */
+export default function HowItWorks({ summary, hedge: reading }) {
+  const { hedge = null, error: hedgeError = null, at = null } = reading ?? {};
   const fig = strangleFigures(summary);
   const coin = fig.coin;
   const threshold = isNumber(summary?.delta_exit_threshold) && summary.delta_exit_threshold > 0 ? summary.delta_exit_threshold : null;
   return (
     <article aria-label="How it works" className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">How your {summary?.underlying || coin} earns, in three pictures</h1>
+        <h1 className="text-2xl font-bold">How your {summary?.underlying || coin} earns, in four pictures</h1>
         <p className="text-base">
           The bot runs one strategy, called a <strong>short strangle</strong>. In plain words: it gets paid now for promising to buy {coin} if it
           falls a lot, and to sell {coin} if it rises a lot, before a date. Two minutes to read.
+          {hedgeShown(hedge) ? " On this account it also uses a perpetual, a future that offsets the options' direction (picture 4)." : ""}
         </p>
         {fig.live ? null : (
           <p className="rounded border border-warn/60 px-3 py-2 text-base text-warn">
@@ -30,21 +40,16 @@ export default function HowItWorks({ summary }) {
       </div>
       <TwoLegs fig={fig} />
       <Payoff fig={fig} />
-      <Defences fig={fig} threshold={threshold} stop={stopWord(summary?.stop_loss_multiple)} cooldown={cooldownWords(summary?.repair_cooldown_hours)} />
+      <Defences
+        fig={fig}
+        threshold={threshold}
+        stop={stopWord(summary?.stop_loss_multiple)}
+        cooldown={cooldownWords(summary?.repair_cooldown_hours)}
+        marketTurns={marketTurnsWords(hedge)}
+      />
+      <HedgePicture hedge={hedge} error={hedgeError} at={at} coin={summary?.underlying || coin} />
       <Words threshold={threshold} />
     </article>
-  );
-}
-
-function Picture({ n, title, children }) {
-  return (
-    <section aria-label={title} className="space-y-3 rounded-lg border border-line bg-panel p-4">
-      <h2 className="text-lg font-semibold">
-        <span className="text-muted">{n} · </span>
-        {title}
-      </h2>
-      {children}
-    </section>
   );
 }
 
@@ -89,10 +94,6 @@ function TwoLegs({ fig }) {
     </Picture>
   );
 }
-
-// SVG geometry shared by pictures 2 and 3.
-const W = 360;
-const PAD_X = 12;
 
 function Payoff({ fig }) {
   const id = useId().replace(/:/g, "");
@@ -182,7 +183,7 @@ function Payoff({ fig }) {
   );
 }
 
-function Defences({ fig, threshold, stop, cooldown }) {
+function Defences({ fig, threshold, stop, cooldown, marketTurns }) {
   const id = useId().replace(/:/g, "");
   const { coin } = fig;
   const exits = fig.exitLines && isNumber(fig.put.exit) && isNumber(fig.call.exit);
@@ -255,6 +256,7 @@ function Defences({ fig, threshold, stop, cooldown }) {
           The bot doesn&apos;t sell into the move: it waits ({cooldown ? `${cooldown} after a stop` : "a set time after a stop"}), then sells a new leg further
           away to rebuild the position.
         </Card>
+        <Card title="Market turns">{marketTurns}</Card>
       </div>
     </Picture>
   );
@@ -276,22 +278,6 @@ function Mark({ x, y, cls, text, above = false, dashed = false, small = false })
         {text}
       </text>
     </g>
-  );
-}
-
-function Card({ title, children, loss = false }) {
-  return (
-    <div className="space-y-1 rounded border border-line p-3">
-      <h3 className="text-base font-semibold">
-        {title}
-        {loss ? (
-          <span className="ml-2 text-sm text-loss" aria-label="loss">
-            ▼
-          </span>
-        ) : null}
-      </h3>
-      <p className="text-base">{children}</p>
-    </div>
   );
 }
 

@@ -125,6 +125,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - after the assistant quality review (`assistant_review.sh`, #438) it runs `assistant_golden.sh` (#536): in `ASSISTANT_GOLDEN_ENV` (mvp) when its `.env` has `ANTHROPIC_API_KEY`,
     `scripts/product/assistant_run.sh` asks the real assistant every golden question (a test run: its own log, `test_run`), grades it against `golden_baseline.json`
     and posts counts and % per category on the E10 epic (`<week>.done`, ledger agent `assistant_golden`; a regression is reported, not a failure).
+  - `assistant_review.sh` also posts for a week with no answers while a row is open, with the overdue count and, above 0, a line that a person reads the private review list (#704: `closures.jsonl`, never on GitHub).
 - Daily delivery report (#470, docs/agents/dora.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);
@@ -136,7 +137,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     (named files only, never `.env`) to `<envs>/history/backups/<date>/<env>/<bot>/`, keeps 14 days,
     and checks each copy with `cmd/backupcheck` (`internal/backup.Check`: `orders.ReplayFile` decodes it, no fewer events than the previous good copy's `check.json`);
   - each env's monitor files → `<date>/<env>/monitor/` (#650): an allow-list (`MONITOR_FILES`: users `auth.db`, events, assistant log, request queue, audit trail and archives) read from the running monitor's volume (`envctl.sh … cp`, read-only),
-    else from the clone's `data/monitor/` (logged); every `.jsonl` must parse (`-lines`) and the audit chain hold (`-audit`, `CheckAuditChain` = the Audit page's `verifyChain`);
+    else from the clone's `data/monitor/` (logged), plus the clone's `assistant_reviews/closures.jsonl` (#704); every `.jsonl` must parse (`-lines`) and the audit chain hold (`-audit`, `CheckAuditChain` = the Audit page's `verifyChain`);
   - a failure notifies, keeps `<date>.failed` and prunes nothing; ledger agent `backup`.
 - Assistant requests (#410, docs/agents/requests.md "Assistant requests"):
   - `requests.sh` (each tick; exits at once unless a request in some env's `data/monitor/requests.jsonl` has no status line, or a filed one is open

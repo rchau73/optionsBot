@@ -18,8 +18,14 @@ func Markdown(w io.Writer, r Report) error {
 	p("- Answers: %d — answered %s, flagged %d (%s)\n", r.Answers, fmtPct(r.AnsweredPct), r.Flagged, fmtPct(r.FlagPct))
 	p("- Did it help? (the person's opinion, not a measure of correctness): helped %d, didn't help %d, no feedback %d — helped share %s, response rate %s\n",
 		r.Helped, r.NotHelped, r.NoFeedback, helpedShare(r.Feedback), fmtPct(r.ResponsePct))
+	s := Summary(r)
+	p("- Review list: %d rows — closed %d (help fix %d, golden case %d, answer was right %d), open %d, overdue %d\n",
+		s.FlaggedTotal, s.Closed, s.ClosedByHow.HelpFix, s.ClosedByHow.GoldenCase, s.ClosedByHow.AnswerWasRight, s.Open, s.Overdue)
 	if r.Skipped > 0 {
 		p("- Unreadable log lines skipped: %d\n", r.Skipped)
+	}
+	if r.ClosuresSkipped > 0 {
+		p("- Unreadable closure lines skipped: %d (their answers show as open)\n", r.ClosuresSkipped)
 	}
 	p("\n## Answers by kind\n\n| kind | answers | flagged | flag rate |\n|---|---|---|---|\n")
 	for _, k := range r.ByOutcome {
@@ -35,7 +41,8 @@ func Markdown(w io.Writer, r Report) error {
 		p("| %s | %d |\n", g.Reason, g.Answers)
 	}
 
-	p("\n## Review list\n\nEvery flagged and every `dont_know` answer. Each ends as a help-source fix, a golden-set case or a recorded \"answer was right\".\n\n")
+	p("\n## Review list\n\nEvery flagged and every `dont_know` answer, overdue rows first (open more than %d days), with the unclosed rows of earlier weeks carried. Each ends within %d days as a help-source fix, a golden-set case or a recorded \"answer was right\": `go run ./cmd/assistantreview close -id <answer id> -how %s -ref \"...\"`.\n\n",
+		OverdueDays, OverdueDays, strings.Join(Hows, "|"))
 	if len(r.Review) == 0 {
 		p("Nothing to review.\n")
 	}
@@ -47,7 +54,13 @@ func Markdown(w io.Writer, r Report) error {
 		if it.Late {
 			tags += ", asked before the week"
 		}
-		p("### %s — %s (%s)\n\n", it.Time.UTC().Format("2006-01-02 15:04"), it.ID, tags)
+		if it.Carried {
+			tags += ", carried"
+		}
+		p("### %s — %s (%s) — %s\n\n", it.Time.UTC().Format("2006-01-02 15:04"), it.ID, tags, it.status())
+		if it.Closure != nil {
+			p("- Closed: %s, %s, ref %s\n", it.Closure.ClosedAt.UTC().Format(time.DateOnly), it.Closure.How, oneLine(it.Closure.Ref))
+		}
 		p("- **Question:** %s\n", oneLine(it.Question))
 		p("- **Answer shown:** %s\n", oneLine(it.Answer))
 		p("- Sources given: %s\n", list(it.Sources))

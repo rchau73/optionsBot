@@ -196,8 +196,9 @@ Learn more: glossary terms *strangle*, *break-even*, *exit line*, *delta*, *stop
 
 ## How it works
 
-The bot's method in three pictures, using the strangle you hold.
+The bot's method in four pictures, using the strangle you hold.
 If none is held, an example is shown and is labelled as an example.
+While a futures hedge is on or holds a position, the introduction says so in one sentence.
 
 **1. One position, two legs**: the put (the floor) and the call (the ceiling), each with its strike, what it commits to on the expiry date and the premium paid now, in coin.
 
@@ -206,16 +207,27 @@ Between the strikes, all the premium is kept.
 Beyond a break-even, a loss grows; that zone is hatched.
 The dashed line is today's price.
 
-**3. How the bot defends the position**: four cards, in the order the rules are applied:
+**3. How the bot defends the position**: five cards, the first four in the order the rules are applied:
 - *Take profit*: buy back when enough of the premium has been kept.
 - *Exit line*: buy back when a leg's delta reaches the delta-exit threshold, because the move looks real.
 - *Stop-loss*: buy back at market when the price of the option reaches the stop multiple.
 - *Wait, then repair*: after a stop, the bot waits the repair cooldown before it sells that side again.
+- *Market turns*: this card follows the futures hedge.
+  On, the bot keeps both legs and the perpetual cancels the lean.
+  Paused or not holding, the GEX shed protects the book until the hedge can trade.
+  Off, it is the GEX shed, and the hedge can be turned on in Account.
+
+**4. The safety net: a futures hedge**: a testnet experiment, with its state beside the title: ON, PAUSED, NOT HOLDING or OFF.
+A picture shows the options' delta and the perpetual's delta as bars, the net as a dot and the hedge band shaded, from the bot's live figures, with the same numbers in words under it.
+With the hedge off and flat there is no perpetual bar.
+Four cards say what it does, what it replaces, what it does not do and where you see it.
+The hedge removes the lean, not the curve: a big move still costs money.
+If the hedge cannot be read, the page says the live figures are unavailable and keeps the explanation without numbers.
 
 **When something looks wrong**: "exit lines move with the market (unknown …)" means the model has no volatility figure at the moment.
 The explanations are the same words as the glossary.
 
-Learn more: glossary terms *premium*, *delta*, *strike*, *expiry*, *margin*; OptionStrategy.md sections 1 to 4.
+Learn more: glossary terms *premium*, *delta*, *strike*, *expiry*, *margin*, *perpetual*, *hedge band*, *coin delta*; OptionStrategy.md sections 1 to 4.
 
 ## Activity
 
@@ -538,6 +550,7 @@ There are three roles.
 A **user** may see every page.
 A **manager** may do what a user does and also close a leg by hand and rebalance by hand, including the dry run.
 An **admin** may do what a manager does and also use the admin pages: Users, Audit and Analytics.
+Only an admin may export the audit trail.
 
 **Who can rebalance?** Managers and admins.
 Closing a leg by hand is the same.
@@ -634,6 +647,15 @@ There is always at least one admin, and you cannot delete yourself.
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.
 <!-- guide: page:/admin/audit -->
+
+**Audit export**: Export CSV, next to the filters, downloads the lines that match the filters you applied, newest first, for example one person's lines for one week.
+The columns are time (UTC), person, role, action, target and detail; the chain's fingerprints are left out, as on the page.
+A value a spreadsheet would run as a formula starts with an apostrophe, so it is read as text.
+One file holds the newest 50,000 lines at most; when there are more, the page says the export was cut, and narrower filters get the older ones.
+Only an admin may export, and the file is a copy of personal data, so keep it as carefully as the trail.
+Each export is recorded in the trail itself as audit_exported, with your username, the filters and the number of lines, never the lines.
+When the monitor keeps its users in memory, the button is disabled because the trail is off.
+<!-- guide: route:GET /api/admin/audit/export -->
 
 **Audit chain**: each line of the audit trail carries a fingerprint of the line before it, so a line changed or removed by hand shows.
 Under the filters the Audit page says "Chain intact" with how many lines were checked, or "Chain broken at line N" with its time and why: a line before it was removed, reordered or edited, or this line was edited or is damaged.

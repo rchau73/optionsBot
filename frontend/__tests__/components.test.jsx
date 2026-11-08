@@ -5,7 +5,7 @@ import PositionsTable from "@/components/PositionsTable";
 import PendingOrders from "@/components/PendingOrders";
 import ActivityFeed from "@/components/ActivityFeed";
 import { groupRows, legRows, summarise } from "@/lib/monitor";
-import { bot, status } from "@/test/fixtures";
+import { bot, orders, status } from "@/test/fixtures";
 
 describe("Header", () => {
   test("shows environment, freshness and market per bot", () => {
@@ -106,10 +106,12 @@ describe("PositionsTable", () => {
 
 describe("PendingOrders", () => {
   test("lists working orders with fill progress", () => {
+    const now = jest.spyOn(Date, "now").mockReturnValue(Date.parse(orders.pending[0].timeout_at) - 75_000); // the fixture is built at import, seconds ago on a busy runner
     render(<PendingOrders bots={[bot()]} />);
+    now.mockRestore();
     expect(screen.getByText("BTC-30OCT26-110000-C")).toBeInTheDocument();
     expect(screen.getByText("0/0.1")).toBeInTheDocument();
-    expect(screen.getByText(/^in 1m 1[45]s$/)).toBeInTheDocument(); // time left before the fill timeout
+    expect(screen.getByText("in 1m 15s")).toBeInTheDocument(); // time left before the fill timeout
   });
 
   test("empty state", () => {
