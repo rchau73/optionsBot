@@ -232,6 +232,17 @@ Per participant and question: **success / partial / fail**, the time of the fina
 
 Partial counts as not passed. Score right after each session, from your notes and this key only.
 
+`scripts/product/score_usability.py` applies these rules to the results table of section 8, so a round is scored the same way every time.
+Copy the table to `data/usability/e3/<round>/results.md` with no other notes in the file, and write each error in the Errors column as its question and type, for example `Q2 sign, Q3 unit` (one entry per error; empty or `none` when there were none).
+
+```bash
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md   # two rounds, side by side
+```
+
+It prints the summary and writes it to `summary.md` beside the table, with the synthesis of section 8 to fill in; a `summary.md` already there stays unless you pass `--force`.
+It refuses a file with anything the template does not allow (an e-mail, a phone number, a name, a code other than P1 to P5): it names the line number, never the content, and writes nothing.
+
 ## 8. Templates
 
 Copy these into the private notes folder `data/usability/e3/<round>/` (for example `data/usability/e3/baseline/`). It is gitignored: nothing about participants goes into the public repository. Use participant codes only; never write a name, e-mail, phone number, employer, location, or anything the participant says about their own holdings or money. Quotes are kept only after removing anything that identifies the person.

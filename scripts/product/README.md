@@ -148,3 +148,18 @@ python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stab
 ```
 
 Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date. A missing input stays `missing`. **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's. Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
+
+## Usability round scorer (`score_usability.py`, #701)
+
+Scores an E3 round from its results table by the rules of `docs/usability/e3-investor-monitor-test.md` section 7: a participant passes with four successes and the fourth answer before 5:00, a round at 4 of 5.
+
+```bash
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md
+```
+
+- **In:** section 8's table, copied to `data/usability/e3/<round>/results.md` (private, gitignored); the round's name is the folder's. Errors are written `Q2 sign, Q3 unit`.
+- **Out:** pass/fail, the failing questions and the errors by type per question, a sign error in a loss scenario first. It is printed and written to `summary.md` beside the table, with section 8's synthesis skeleton; an existing `summary.md` stays unless `--force`.
+- **Two rounds:** also the change in passes and in each error type, in `comparison.md` beside the later round.
+- **Participant codes only:** every cell must be a value the template allows and every other line a line of the template, so a name, an e-mail or a phone number stops the run. It prints the line number, never the content, and writes nothing.
+- **Exit:** 0 when scored (a failed round too), 2 when refused or unreadable. Tests: `test_score_usability.py`.

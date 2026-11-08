@@ -10,6 +10,7 @@ Notable files:
 - `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
 - `usability_kit_test.go` (#202, #646): the E3 usability kit runs from the file alone, keeps participant data out of its templates, and its answer keys match `cmd/monitor-demo`
   — the profit key (section 6) against the no-flag demo, the losing-scenario keys (section 6b) against `-scenario mixed` and `-scenario drawdown`, a failure naming the scenario and the fact.
+  The round scorer's own tests, `scripts/product/test_score_usability.py` (#701), read the kit's template, so a changed table fails there.
 - `accounts_json_test.go` (#655): `cmd/accounts -check -json`/`-out` — decoded with unknown fields refused, no key material, key id, client id or scope string in it, the status file owner-only and atomic.
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
 - `docs_line_length_test.go` (#463): no prose line over 400 characters in a tracked `*.md` (tables, code, link targets exempt); files that still have some are listed with a reason and a count that can only go down.
