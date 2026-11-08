@@ -550,6 +550,7 @@ There are three roles.
 A **user** may see every page.
 A **manager** may do what a user does and also close a leg by hand and rebalance by hand, including the dry run.
 An **admin** may do what a manager does and also use the admin pages: Users, Audit and Analytics.
+Only an admin may export the audit trail.
 
 **Who can rebalance?** Managers and admins.
 Closing a leg by hand is the same.
@@ -655,6 +656,15 @@ There is always at least one admin, and you cannot delete yourself.
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.
 <!-- guide: page:/admin/audit -->
+
+**Audit export**: Export CSV, next to the filters, downloads the lines that match the filters you applied, newest first, for example one person's lines for one week.
+The columns are time (UTC), person, role, action, target and detail; the chain's fingerprints are left out, as on the page.
+A value a spreadsheet would run as a formula starts with an apostrophe, so it is read as text.
+One file holds the newest 50,000 lines at most; when there are more, the page says the export was cut, and narrower filters get the older ones.
+Only an admin may export, and the file is a copy of personal data, so keep it as carefully as the trail.
+Each export is recorded in the trail itself as audit_exported, with your username, the filters and the number of lines, never the lines.
+When the monitor keeps its users in memory, the button is disabled because the trail is off.
+<!-- guide: route:GET /api/admin/audit/export -->
 
 **Audit chain**: each line of the audit trail carries a fingerprint of the line before it, so a line changed or removed by hand shows.
 Under the filters the Audit page says "Chain intact" with how many lines were checked, or "Chain broken at line N" with its time and why: a line before it was removed, reordered or edited, or this line was edited or is damaged.

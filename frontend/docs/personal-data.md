@@ -104,6 +104,10 @@ State of the notification bell, per person.
 
 `data/monitor/audit.jsonl` beside the database: one JSON line per action with the time, the action, the username and role of the actor and fields of the action; append-only, owner-only, hash-chained (`prev`, `line_hash`, hashes of lines only).
 Admins read it on the Audit page; nothing edits or deletes a line.
+An admin, and nobody else, may also take a copy: **Export CSV** on that page (#702, [Audit](audit.md)) downloads the lines of the filters applied, at most 50,000.
+The file is a copy of personal data that leaves the monitor: usernames, roles, actions and the fields of each line.
+Once downloaded it is the admin's to keep safe, and this inventory's retention, deletion and hash chain no longer reach it.
+Each export leaves an `audit_exported` line with the admin, the filters (which can name the person looked up) and the count, never the lines.
 Never a password, hash, token or reset link; the survey and analytics lines carry counts and ids, never an answer or an event.
 `ip` is set only on `password_reset_by_link`.
 
@@ -115,6 +119,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
+- the trail itself: `audit_exported`;
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The monitor's JSON logs
@@ -145,3 +150,4 @@ The self-delete (#543) and an admin's deletion run the same steps:
 4. L14: the `email` column is optional and unused; keep, or stop collecting it?
 5. L16: may survey answers stay linked to an account, and for how long?
 6. L22: the breach duties for the user database and the audit trail, and the minimum security the terms promise.
+7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it. **Fallback in place**: only admins may export, and every export is an audit line.

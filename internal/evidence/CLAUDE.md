@@ -6,6 +6,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 go run ./cmd/evidence -env stable -week 2026-W42   # weekly evidence per bot → <clone>/data/evidence/<week>/<bot>.md|.json: live, replay, gap, stress, hold (README "Evidence report")
 go run ./cmd/evidence -compare-direction -week 2026-W43   # direction trial scorecard: stable BTC (bias) vs mvp BTC (sma), live and replayed both ways on the same books, % only → <stable>/data/evidence/direction/<week>.md|.json (README "Replay of recorded books"; decision rule in docs/direction-trial.md, #324)
 go run ./cmd/evidence -env stable -track-record -trend   # the whole P&L history + one row per ISO week from data/evidence/<week>/<bot>.json → data/evidence/track-record/<bot>.md|json (#279); the weeks side by side, % only → data/evidence/trend/<bot>.md|json (#323) (README "Track record and trend")
+go run ./cmd/evidence -env stable -track-record -trend -pack   # refresh both, then one document joining them and the latest weekly report's scoreboard, replay vs live and hedge trial → data/evidence/pack/<bot>.md|json, internal until counsel approves (#700, README "Evidence pack")
 go run ./cmd/idlemargin -journal data/btc/orders.log -history data/btc/pnl_history.jsonl -days 7   # why approved margin went unused: per slot (occupied, skip reason, frozen, not measured) and book state (README "Idle-margin attribution")
 go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.log -config config_btc.mvp.yaml -deploys ~/dev/go/optionsBot-env/history/deploys.tsv -days 3   # what each startup sent in its first 30 min, by trigger: neutral | expected | restart-made, counts and lots only (#219, docs/operations.md "Soak check: deploy effect")
 ```
@@ -47,3 +48,8 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - and `BuildTrend` (#323: the same rows first → last report, amounts dropped, % only);
   - `ReadWeekly` reads only ISO-week folders.
   A new weekly figure worth following needs a `WeekRow` field and its column in `track_markdown.go`.
+- The evidence pack (`pack.go`, `pack_markdown.go`, #700): pure `BuildPack(PackInputs)` copies figures from the track record, the trend (the weeks only, when the track record has none) and the latest weekly report, recomputing none;
+  - a missing file or section (empty `Label`) reads `not reported`; `LoadPack` lists a file that does not parse;
+  - every `PackFigure` carries its source (clone-relative), window and caveat, and every section the replay-vs-live label; risks are rows of the same table, and nothing in a table is bold;
+  - live when the clone, the track record or the report says so (`packAccount`) → no coin row, and the caveat says live: the ticket's "testnet" would be false there;
+  - `evidence.sh` runs `-track-record -trend -pack` after each weekly report.

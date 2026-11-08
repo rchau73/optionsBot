@@ -1,10 +1,10 @@
 // Server-side only: reads the audit trail (audit.jsonl, lib/auth/audit.js)
-// for GET /api/admin/audit (#308, #249) and GET /api/admin/audit/verify
-// (#619). Read-only. The trail is the archives (rotated files, oldest first)
-// then the current file, seen as one sequence of bytes: a cursor is an offset
-// into that sequence, which rotation never moves. The files can grow, so they
-// are read in chunks — never loaded whole — and a page stops once it is full
-// or the lines are older than `from`.
+// for GET /api/admin/audit (#308, #249), GET /api/admin/audit/verify (#619)
+// and the export (#702, lib/auth/auditexport.js). Read-only. The trail is the
+// archives (rotated files, oldest first) then the current file, seen as one
+// sequence of bytes: a cursor is an offset into that sequence, which rotation
+// never moves. The files can grow, so they are read in chunks — never loaded
+// whole — and a page stops once it is full or the lines are older than `from`.
 import fs from "node:fs";
 import path from "node:path";
 import { auditMatches } from "../audit";
@@ -109,6 +109,45 @@ async function* trailFromStart(file) {
   }
 }
 
+/** The size of the whole trail in bytes: the offset just past its last line, which later lines and rotation never move. */
+export async function trailSize(file) {
+  let total = 0;
+  for (const f of trailFiles(file)) {
+    const fh = await openOrNull(f.path);
+    if (!fh) continue;
+    try {
+      total += (await fh.stat()).size;
+    } finally {
+      await fh.close();
+    }
+  }
+  return total;
+}
+
+/**
+ * The lines before the trail offset `query.before` (null = all) that pass
+ * `query`, newest first: { offset, entry }, or { damaged: true } for a line
+ * that is not a JSON object. Stops at the first line older than `query.from`.
+ */
+export async function* trailEntries(file, query) {
+  for await (const { offset, text } of trailFromEnd(file, query.before)) {
+    if (!text.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(text);
+    } catch {
+      entry = null;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      yield { damaged: true };
+      continue;
+    }
+    // Lines are appended in time order: past `from`, nothing older can match.
+    if (query.from && typeof entry.time === "string" && entry.time.slice(0, 10) < query.from) return;
+    if (auditMatches(entry, query)) yield { offset, entry };
+  }
+}
+
 /**
  * One page of the audit trail, newest first, filtered by `query` (parsed by
  * lib/audit.js parseAuditQuery), the current file then its archives newest
@@ -121,21 +160,11 @@ export async function readAudit(file, query) {
   const entries = [];
   let skipped = 0;
   let nextBefore = null;
-  for await (const { offset, text } of trailFromEnd(file, query.before)) {
-    if (!text.trim()) continue;
-    let entry;
-    try {
-      entry = JSON.parse(text);
-    } catch {
-      entry = null;
-    }
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+  for await (const { offset, entry, damaged } of trailEntries(file, query)) {
+    if (damaged) {
       skipped++;
       continue;
     }
-    // Lines are appended in time order: past `from`, nothing older can match.
-    if (query.from && typeof entry.time === "string" && entry.time.slice(0, 10) < query.from) break;
-    if (!auditMatches(entry, query)) continue;
     if (entries.length === query.limit) {
       // One more match exists: the next page starts below the last line listed.
       nextBefore = entries.at(-1).offset;

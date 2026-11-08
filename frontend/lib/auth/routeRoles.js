@@ -61,6 +61,7 @@ export const STATE_CHANGING_ROUTES = [
  * audit: the audit.jsonl action an allowed read writes (#682), when it writes one.
  */
 export const ROLE_GUARDED_READS = [
+  { route: "GET /api/admin/audit/export", roles: ADMINS },
   { route: "GET /api/admin/audit/verify", roles: ADMINS },
   { route: "GET /api/auth/sessions", roles: SIGNED_IN },
   { route: "GET /api/lab/runs", roles: MANAGERS },

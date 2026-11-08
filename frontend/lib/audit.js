@@ -23,6 +23,7 @@ export const AUDIT_ACTIONS = [
   "manual_close",
   "manual_rebalance",
   "futures_hedge_switched",
+  "audit_exported",
   "events_pruned",
   "events_prune_failed",
   "events_deleted",
@@ -39,6 +40,9 @@ export const AUDIT_ACTIONS = [
 /** Lines a page lists unless `limit` says otherwise, and the most it may say. */
 export const AUDIT_PAGE = 100;
 export const AUDIT_MAX = 1000;
+
+/** The most lines one CSV export holds (#702): the newest ones. */
+export const AUDIT_EXPORT_MAX = 50000;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** True for a real calendar day YYYY-MM-DD (2026-02-30 is not). */
@@ -108,6 +112,56 @@ export function auditDetail(entry) {
     .filter(([k]) => !NOT_DETAIL.has(k))
     .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
     .join(" ");
+}
+
+/** The columns of the CSV export (#702): the page's, the hash chain's fields left out as there. */
+export const AUDIT_CSV_COLUMNS = ["time", "person", "role", "action", "target", "detail"];
+
+// A spreadsheet runs a cell starting with one of these as a formula; tab and
+// carriage return count too, because a spreadsheet may strip them first.
+const FORMULA_START = /^[=+\-@\t\r]/;
+const AS_TEXT = "'"; // spreadsheets read a cell starting with an apostrophe as text
+
+function quoted(text) {
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+/** One CSV cell: missing is empty, a formula is prefixed so it is read as text, quoted when it must be. */
+export function auditCsvCell(value) {
+  let text = "";
+  if (typeof value === "string") text = value;
+  else if (value !== null && value !== undefined) text = JSON.stringify(value);
+  return quoted(FORMULA_START.test(text) ? AS_TEXT + text : text);
+}
+
+/**
+ * The detail cell: the fields as one JSON object. It starts with "{", which no
+ * spreadsheet runs, but a value starting like a formula prefixes the cell too:
+ * whoever splits the JSON into columns later gets the warning with it.
+ */
+function detailCell(fields) {
+  const json = JSON.stringify(fields);
+  const formula = Object.values(fields).some((v) => typeof v === "string" && FORMULA_START.test(v));
+  return quoted(formula ? AS_TEXT + json : json);
+}
+
+/** One line of the CSV file with its line end; `prev` and `line_hash` left out, as on the page. */
+export function auditCsvRow(entry) {
+  const detail = Object.fromEntries(Object.entries(entry).filter(([k]) => !NOT_DETAIL.has(k)));
+  // The target column shows the bot when there is no target, as the page does; both kept when there are both.
+  if (entry.target != null && entry.bot != null) detail.bot = entry.bot;
+  const cells = [entry.time, entry.username, entry.role, entry.action, entry.target ?? entry.bot].map(auditCsvCell);
+  return `${[...cells, detailCell(detail)].join(",")}\r\n`;
+}
+
+/** What the Audit page says after an export → { cut (true when lines were left out), text }. */
+export function auditExportSummary({ lines, cut, skipped }) {
+  const n = (k, one, many) => `${k.toLocaleString("en-US")} ${k === 1 ? one : many}`;
+  const said = cut
+    ? `The export was cut: the file holds the newest ${n(lines, "line", "lines")}. Narrow the filters to export the older ones.`
+    : `Exported ${n(lines, "line", "lines")}.`;
+  const damaged = skipped > 0 ? ` ${n(skipped, "damaged line was", "damaged lines were")} skipped.` : "";
+  return { cut, text: said + damaged };
 }
 
 // What each break reason of GET /api/admin/audit/verify means, in words.
