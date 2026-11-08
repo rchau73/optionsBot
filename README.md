@@ -358,6 +358,7 @@ It reads one bot's files only (no Deribit call, nothing written) and prints coun
 go run ./cmd/datacoverage -dir data/btc                                   # first → last recorded day
 go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a replay's window (-to day included)
 go run ./cmd/datacoverage -dir data/eth -json
+go run ./cmd/datacoverage -dir data/btc -yesterday                        # the daily recording check (#716): yesterday's books and GEX against the 90 % floor
 ```
 
 `-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory.

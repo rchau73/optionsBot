@@ -26,6 +26,10 @@
 #   - dora.sh, which writes the delivery report (DORA metrics, each PR's time
 #     live on mvp and stable) once a UTC day and posts last week's four
 #     numbers on the E6 epic once (#470), else exits at once;
+#   - recording_check.sh, which checks yesterday's (UTC) market recordings
+#     of every recording env × bot against the weekly report's floor and,
+#     when one is short, notifies once and comments on the E2 epic (#716),
+#     else exits at once;
 #   - requests.sh, which judges the assistant's private request queue with one
 #     PM agent run and files the accepted ones as redacted issues (#410), else
 #     exits at once;
@@ -90,6 +94,7 @@ start usage.sh 1 # weekly: exits at once once last week's done-marker exists (or
 start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-marker exists
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
+start recording_check.sh 1 # daily: exits at once once yesterday's (UTC) done-marker exists
 start requests.sh 1 # exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget)
 # Only after a healthy deploy step (#471): weekly, or a hotfix live 1 h on mvp.
 if [[ $deploy_ok -eq 1 ]]; then start release.sh 1; else echo "release step skipped: the deploy step failed"; fi

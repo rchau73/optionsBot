@@ -38,3 +38,22 @@ A failed step (stress inputs, a report, a scorecard) is listed in the comment an
 `data/agents/evidence/<week>.done` marks the week done once the comment is posted; a week whose comment could not be posted is tried once more on a later tick and then marked done whatever happened.
 Logs of each step: `data/agents/evidence/<week>/`.
 Tests: `test_evidence.py` (the comment, and `evidence.sh` end to end on throwaway clones with stub `go`/`gh`/`curl`).
+
+## Daily recording check
+
+A short recorded day is told the next morning, not in the weekly report (#716).
+On the first tick of each UTC day, [`recording_check.sh`](../../scripts/agents/recording_check.sh) checks **yesterday** for every environment that records the market (its `deploy.env` without `BOT_RECORD_MARKET=0`: stable) and bot (`RECORDING_BOTS`, default `btc eth`) whose folder exists.
+It makes no Claude call and no Deribit call, and writes nothing in a clone.
+
+1. `go run ./cmd/datacoverage -dir <clone>/data/<bot> -yesterday -json` (`evidence.CheckYesterday`, the reader of `cmd/datacoverage` and of the weekly coverage section) gives, per market recording (the books and the minute GEX; not the P&L history), the covered hours of the previous UTC day out of its 24 market hours, the share, the longest gap and each gap over `LongGapHours` (3 h).
+   A dataset is short under `ReplayFullCoveragePct` (90 %), the floor under which the weekly report labels the replay partial, or with a gap over 3 h.
+   A folder without the day's file is 0 %; a folder that does not exist is `not recorded` (the bot never records it) and never short; a damaged stretch of a day file is a gap (#661).
+2. Every dataset at the floor → one log line, nothing sent, nothing posted.
+3. Otherwise [`recording_day.py`](../../scripts/agents/recording_day.py) builds one notification — the bot, the dataset, the day, the covered share and the longest gap with its start, `+n more` — and one comment on the E2 epic (`🤖 **Recording check**`, marker `<!-- agent:recording day=<day> -->`) with every short dataset, its gaps over 3 h and a table of every recorded dataset.
+   Hours and percentages only, so the text is the same for a live bot.
+   A check that could not run is named the same way.
+
+`data/agents/recording/<day>.done` marks the day done once the comment is posted (or there is no open E2 epic); a comment that could not be posted is retried on a later tick, the notification is sent once (`<day>/notified`).
+Run ledger: agent `recording`, outcome `complete`, `short` or `posted`.
+Files: `data/agents/recording/<day>/` (`<env>-<bot>.json`, `.err`, `comment.md`).
+Tests: `test_recording.py` (the message, and the script end to end with the real `cmd/datacoverage` and a fake `gh`) and `tests/evidence_daily_test.go` (the check, one test per scenario, the floor pinned to the weekly constant).
