@@ -8,6 +8,7 @@ On the first tick after 00:00 UTC, [`backup_data.sh`](../../scripts/agents/backu
 to `<envs>/history/backups/<date>/<env>/<bot>/`.
 Each environment's monitor files go to `<date>/<env>/monitor/` (#650), read from the running monitor's `monitor-auth` volume through `scripts/envctl.sh <env> cp monitor:/app/data/monitor/. <temp>` (read-only), else — the monitor not running, the log naming the source — from the clone's `data/monitor/`.
 The monitor's allow-list (`MONITOR_FILES` in the script, pinned by `test_backup.py`): `auth.db` (users), `events.jsonl` (analytics), `assistant.jsonl` (#438), `requests.jsonl` and `requests_status.jsonl` (#409), `audit.jsonl` and its archives `audit.<UTC time>.jsonl` (#619); plain files only, nothing else of the volume.
+The assistant review's `closures.jsonl` (#704) joins them from the clone's `data/monitor/assistant_reviews/`: a person's record, which the weekly job cannot rebuild.
 Every copied `.jsonl` must parse (`backupcheck -lines`; a torn last line is allowed) and the audit trail's hash chain must hold on the copy (`backupcheck -audit`, `internal/backup.CheckAuditChain`: the Audit page's `verifyChain`, both tested on `tests/testdata/audit_chain/`).
 Named files only: no `.env`, no secret (an `.env*` found in the archive is dropped).
 It reads the live files and never writes to them or to the volume.

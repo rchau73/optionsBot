@@ -57,7 +57,46 @@ func arBuild(t *testing.T, log string, ix *helpkb.Index) assistantreview.Report 
 		t.Fatal(err)
 	}
 	w := arWeek(t)
-	return assistantreview.Build(lg, w.From, w.To, w.Label, ix)
+	return assistantreview.Build(lg, assistantreview.Closures{}, w.From, w.To, w.To, w.Label, ix)
+}
+
+// arClosed builds the week on these closure lines, at now.
+func arClosed(t *testing.T, log, closures string, now time.Time) assistantreview.Report {
+	t.Helper()
+	lg, err := assistantreview.Parse(strings.NewReader(log))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := assistantreview.ParseClosures(strings.NewReader(closures))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := arWeek(t)
+	return assistantreview.Build(lg, cs, w.From, w.To, now, w.Label, nil)
+}
+
+func arClosure(t *testing.T, id, how string, at time.Time) string {
+	return arLine(t, map[string]any{"answer_id": id, "closed_at": at.Format(time.RFC3339Nano), "how": how, "ref": "a ref"})
+}
+
+func arMarkdown(t *testing.T, r assistantreview.Report) string {
+	t.Helper()
+	var md bytes.Buffer
+	if err := assistantreview.Markdown(&md, r); err != nil {
+		t.Fatal(err)
+	}
+	return md.String()
+}
+
+// arFiles writes a log holding log and returns its path and the closure file's.
+func arFiles(t *testing.T, log string) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "assistant.jsonl")
+	if err := os.WriteFile(logPath, []byte(log), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return logPath, filepath.Join(dir, "assistant_reviews", assistantreview.ClosuresFile)
 }
 
 func arKind(r assistantreview.Report, kind string) assistantreview.KindCount {

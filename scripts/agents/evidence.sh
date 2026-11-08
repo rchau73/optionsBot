@@ -7,7 +7,9 @@
 #       environment's monitor and read-only MONITOR_API_TOKEN), then
 #     go run ./cmd/evidence -env <env> -root <env clone> -bot <bot> -week <week>
 #       (mvp records no books: -books-root = stable's clone)
-#     → <env clone>/data/evidence/<week>/<bot>.md and .json;
+#     → <env clone>/data/evidence/<week>/<bot>.md and .json, then
+#     go run ./cmd/evidence -env <env> -root <env clone> -bot <bot> -track-record -trend -pack
+#     → data/evidence/track-record, trend and pack/<bot>.md|json (#700, internal);
 #   one comment on the E2 epic: a row per env × bot and every failed step
 #   (evidence_week.py, offline and tested; percentages only for a live env),
 #   with one line per recorded dataset that missed more than 3 h in the week
@@ -68,6 +70,10 @@ for env in $ENV_NAMES; do
     go run ./cmd/evidence -env "$env" -root "$root" ${books[@]+"${books[@]}"} -bot "$bot" -week "$week" \
       > "$out-evidence.log" 2>&1 ||
       fail "$env" "$bot" "cmd/evidence" "$out-evidence.log"
+    # The pack joins the reports above; one that failed reads "not reported".
+    go run ./cmd/evidence -env "$env" -root "$root" -bot "$bot" -track-record -trend -pack \
+      > "$out-pack.log" 2>&1 ||
+      fail "$env" "$bot" "evidence pack" "$out-pack.log"
   done
 done
 

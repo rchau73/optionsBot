@@ -3,19 +3,21 @@
 import Link from "next/link";
 import Badge from "./Badge";
 import HowItWorks from "./HowItWorks";
+import { useBotHedge } from "@/hooks/useBotHedge";
 import { useBotSummary } from "@/hooks/useBotSummary";
 
 /** The "How it works" page's shell (#322): header nav, environment badge, the page, the footer. */
 export default function HowItWorksView({ bot }) {
   const { names, summary, error } = useBotSummary(bot);
-  return <HowItWorksScreen bot={bot} names={names} summary={summary} error={error} />;
+  const hedge = useBotHedge(bot);
+  return <HowItWorksScreen bot={bot} names={names} summary={summary} error={error} hedge={hedge} />;
 }
 
 const linkClass =
   "inline-flex min-h-11 items-center rounded px-2 text-sm text-muted hover:text-white focus-visible:outline focus-visible:outline-testnet";
 
 /** Pure render of the page, for tests: no polling. */
-export function HowItWorksScreen({ bot, names, summary, error }) {
+export function HowItWorksScreen({ bot, names, summary, error, hedge }) {
   const env = summary?.environment;
   return (
     <div className="min-h-screen">
@@ -44,7 +46,7 @@ export function HowItWorksScreen({ bot, names, summary, error }) {
                 Not updating: {error}. The figures below are from the last answer.
               </p>
             ) : null}
-            <HowItWorks summary={summary} />
+            <HowItWorks summary={summary} hedge={hedge} />
           </>
         ) : error ? (
           <p role="alert" className="text-base text-warn">

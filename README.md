@@ -484,7 +484,27 @@ go run ./cmd/evidence -env stable -track-record -trend        # both bots; -bot 
 Both outputs are deterministic: the same files give byte-identical JSON.
 Amounts in the track record stay in `data/` (gitignored).
 The header names the account (`live` when the clone's `.env` says `DERIBIT_ENV=live`, else testnet).
-Nothing is posted: `evidence.sh` does not run them yet.
+`evidence.sh` runs them every week, before the evidence pack; nothing is posted.
+
+### Evidence pack
+
+`-pack` (#700) joins what is already written into one document a sceptical reader (or counsel) can read end to end, labelled "internal, not for external use before counsel approves (legal brief)":
+
+```bash
+go run ./cmd/evidence -env stable -track-record -trend -pack  # refresh both, then write the pack; -pack alone reads them as they stand
+```
+
+It writes `data/evidence/pack/<bot>.md|.json` from `data/evidence/track-record/<bot>.json`, `data/evidence/trend/<bot>.json` and the latest weekly report's `scoreboard`, `replay_vs_live` and `hedge_trial`.
+No figure is recomputed, and a source that is missing, or an older report without the section, reads "not reported".
+
+- **Order:** the headline (the weeks it covers, net return in coin and %, holding the coin over the same window, the worst 7 days and worst ISO week, max drawdown), the twelve-week scoreboard, replay vs live, the weeks missing, the hedge trial.
+- **Every figure** sits next to its source file, its window and "testnet, past result, not a forecast"; a live account's says "live account, past result, not a forecast", since its figures are not testnet.
+  Every section also shows the replay-vs-live label: `comparable`, `partial`, `not comparable` or `not reported`.
+- **Risks** are rows of the same table as the figures, and nothing in a table is bold, so a loss reads exactly like a gain: its minus sign and unit, same size and weight.
+- **Live accounts** show percentages, ratios and counts only, when the clone's `.env`, the track record or the weekly report says `live`.
+- Paths are relative to the clone and the output is deterministic: the same files give the same JSON.
+  The current ISO week is listed as "not reported" until its report exists.
+  The pack makes no promise of returns (a test fails on one) and stays in `data/` until counsel approves any external use.
 
 ## Usage report
 
@@ -544,6 +564,7 @@ The question text the assistant could not answer, or that people flagged, is rev
 
 ```bash
 go run ./cmd/assistantreview -log data/monitor/assistant.jsonl -week 2026-W44   # → data/monitor/assistant_reviews/<week>.md|json, .summary.json, .golden_candidates.jsonl
+go run ./cmd/assistantreview close -id <answer id> -how help_fix -ref "#123"    # records how a flagged answer was closed → assistant_reviews/closures.jsonl
 ```
 
 It reports answers by kind, guard reasons and flag rates.

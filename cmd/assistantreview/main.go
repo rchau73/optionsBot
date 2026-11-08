@@ -9,7 +9,14 @@
 //
 // → <out>/<week>.md|json (private: questions and answers), <week>.summary.json
 // (counts and percentages only, what scripts/agents/usage.sh posts) and
-// <week>.golden_candidates.jsonl. Prints one RESULT line.
+// <week>.golden_candidates.jsonl. Prints one line per closed row (its date and
+// how, for the run's log) and one RESULT line.
+//
+// The subcommand close records how a person closed an answer of the review list
+// (#704), one line in <out>/closures.jsonl, and refuses an unknown id, an unknown
+// how, an empty ref or a second closure of one id:
+//
+//	go run ./cmd/assistantreview close -id <answer id> -how help_fix|golden_case|answer_was_right -ref "..."
 package main
 
 import (
@@ -18,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"optionsbot/internal/assistantreview"
@@ -26,22 +34,56 @@ import (
 )
 
 func main() {
-	logPath := flag.String("log", "data/monitor/assistant.jsonl", "the monitor's assistant review log")
-	week := flag.String("week", "", "ISO week, e.g. 2026-W44 (default: the last complete week)")
-	out := flag.String("out", "", "folder for the report (default: assistant_reviews/ beside the log)")
-	index := flag.String("index", "frontend/content/help-index.json", "the help index the gap candidates are matched against")
-	flag.Parse()
-	if *out == "" {
-		*out = filepath.Join(filepath.Dir(*logPath), "assistant_reviews")
+	var err error
+	if len(os.Args) > 1 && os.Args[1] == "close" {
+		err = closeAnswer(os.Args[2:])
+	} else {
+		logPath := flag.String("log", defaultLog, "the monitor's assistant review log")
+		week := flag.String("week", "", "ISO week, e.g. 2026-W44 (default: the last complete week)")
+		out := flag.String("out", "", "folder for the report (default: assistant_reviews/ beside the log)")
+		index := flag.String("index", "frontend/content/help-index.json", "the help index the gap candidates are matched against")
+		flag.Parse()
+		err = run(*logPath, *week, reviewDir(*out, *logPath), *index)
 	}
-	if err := run(*logPath, *week, *out, *index); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "assistantreview:", err)
 		os.Exit(1)
 	}
 }
 
+const defaultLog = "data/monitor/assistant.jsonl"
+
+// reviewDir is the -out folder, by default assistant_reviews/ beside the log.
+func reviewDir(out, logPath string) string {
+	if out != "" {
+		return out
+	}
+	return filepath.Join(filepath.Dir(logPath), "assistant_reviews")
+}
+
+// closeAnswer is the close subcommand.
+func closeAnswer(args []string) error {
+	fs := flag.NewFlagSet("close", flag.ExitOnError)
+	id := fs.String("id", "", "the answer's id in the review list")
+	how := fs.String("how", "", strings.Join(assistantreview.Hows, ", "))
+	ref := fs.String("ref", "", "the help passage or PR/issue number, the golden id, or a short reason (no personal data)")
+	logPath := fs.String("log", defaultLog, "the monitor's assistant review log")
+	out := fs.String("out", "", "the review folder (default: assistant_reviews/ beside the log)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	path := filepath.Join(reviewDir(*out, *logPath), assistantreview.ClosuresFile)
+	c, err := assistantreview.Close(*logPath, path, *id, *how, *ref, time.Now())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("closed %s as %s in %s\n", c.AnswerID, c.How, path)
+	return nil
+}
+
 func run(logPath, week, out, indexPath string) error {
-	w := evidence.LastWeek(time.Now())
+	now := time.Now()
+	w := evidence.LastWeek(now)
 	if week != "" {
 		var err error
 		if w, err = evidence.ParseWeek(week); err != nil {
@@ -56,7 +98,11 @@ func run(logPath, week, out, indexPath string) error {
 	if err != nil {
 		return err
 	}
-	r := assistantreview.Build(lg, w.From, w.To, w.Label, ix)
+	closures, err := assistantreview.LoadClosures(filepath.Join(out, assistantreview.ClosuresFile))
+	if err != nil {
+		return err
+	}
+	r := assistantreview.Build(lg, closures, w.From, w.To, now, w.Label, ix)
 	paths, err := assistantreview.Write(out, r)
 	if err != nil {
 		return err
@@ -64,8 +110,12 @@ func run(logPath, week, out, indexPath string) error {
 	for _, p := range paths {
 		fmt.Println("wrote", p)
 	}
+	for _, line := range assistantreview.ClosureAudit(r) {
+		fmt.Println(line)
+	}
 	s := assistantreview.Summary(r)
-	fmt.Printf("RESULT week=%s answers=%d flagged=%d review=%d skipped=%d\n", w.Label, s.Answers, s.Flagged, s.ReviewItems, s.Skipped)
+	fmt.Printf("RESULT week=%s answers=%d flagged=%d review=%d skipped=%d closed=%d open=%d overdue=%d\n",
+		w.Label, s.Answers, s.Flagged, s.ReviewItems, s.Skipped, s.Closed, s.Open, s.Overdue)
 	return nil
 }
 
