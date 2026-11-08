@@ -69,7 +69,10 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `/api/strangles/payoff` (`payoff.go`, pure `PayoffOf(view, now)`, #391) is each strangle's payoff chart for the monitor's Positions page, overview cards and modal:
   - ~121 points of `expiry_pnl` (coin-settled, as `BreakEvens`)
     and `today_pnl` (the book's unrealised P&L moved by Black–Scholes on each leg's IV, so it equals `unrealised_coin` at spot; null with `today_reason` when an IV is missing),
-  - break-evens, each leg's exit line (`ExitLinePrice`) and stop level (modelled mark = `stop_loss_mark`, bisection), earned share, net delta (coin, USD per 1 %) and the missing side from `held_legs`.
+  - break-evens, each leg's exit line (`ExitLinePrice`) and stop level (modelled mark = `stop_loss_mark`, bisection), earned share, net delta (coin, USD per 1 %) and the missing side from `held_legs`;
+  - each strangle's share of the futures hedge (`payoffhedge.go`, pure `PayoffWithHedge(view, hedge, now)`, #695): the perpetual × its part of the options' coin delta, so the shares add up;
+    the hedged curves, moves and delta in `hedge_*`, counted from the average price (the ledger's on index pricing), so at spot they carry the share of the perpetual's unrealised.
+    The break-evens and lines stay the options'; inside the band, with the band unknown or a leg without greeks nothing is split (`hedge.split` false), and without a perpetual every hedged field is null.
   `/api/explain?seq=|trade=` (`explanation.go`, pure `BuildExplanation(event, window)`, #314) is the facts behind one journal event for "why did the bot do that":
   - the event with `plain`, `rule`, `detail`, the journaled `market` (spot, DVOL, regime, flip, trend) and `related` (same instrument or slot within ±30 min), `source: "journal"`,
     read from the in-memory recent events only — an event that left them is 404 `not in recent history`, never reconstructed.
