@@ -122,6 +122,17 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - the trail itself: `audit_exported`;
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
+## The security digest and alerts
+
+The weekly security digest and the same-day alerts (#717, [Sign-in](sign-in.md) "Security digest") are built on the agents' host from a copy of the audit trail, which is removed once read.
+They hold counts only: no username, IP address, password, token or reset link; a locked-out username appears only on the Audit page, for an admin.
+
+| Store | Purpose | Retention |
+| --- | --- | --- |
+| Digest files, `data/agents/security/<week>/<env>/digest.md` and `.json` | The week's counts, the chain check and the date of the last admin-role change; the md is also the usage report's "Security" section | as long as the host keeps the agents' state; nothing deletes them today |
+| Alert IDs raised, `data/agents/security/<env>.alerts` | So one pattern never alerts twice: the rule, the UTC day or time and, for failed sign-ins and a promotion, a 12-character SHA-256 prefix of the username (a pseudonym: whoever holds the user list can match it), never the name | same; grows by one line per alert |
+| Notifications | The digest's one-line headline and each alert's text, shown on the Mac that runs the agents | the Mac's notification centre |
+
 ## The monitor's JSON logs
 
 One line on stdout per sign-in, failure, lockout, rate limit, sign-out, user change, reset, password change and refused action, with the username and the IP; the list is in [Sign-in](sign-in.md) "Logs".
