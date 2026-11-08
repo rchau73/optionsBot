@@ -16,7 +16,7 @@ import { useMonitor } from "@/hooks/useMonitor";
 import { heldRows } from "@/lib/held";
 import { consolidateRows, filterRows, groupRows, legRows, summarise, withOpened } from "@/lib/monitor";
 import { pickAccount, unmanagedPositions } from "@/lib/account";
-import { countsLine, sectionCounts, stuckOrders, workingOrderCount } from "@/lib/details";
+import { bookDelta, countsLine, sectionCounts, stuckOrders, workingOrderCount } from "@/lib/details";
 import { hedgeShown, hedgeState } from "@/lib/futuresHedge";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
 import { track } from "@/lib/track";
@@ -107,6 +107,8 @@ export default function DetailsPage() {
   const rows = useMemo(() => withOpened(consolidateRows(legRows(bots)), trades), [bots, trades]);
   const groups = useMemo(() => groupRows(filterRows(rows, filters), filters.groupBy), [rows, filters]);
   const options = useMemo(() => ({ bots: bots.map((b) => b.name), strategies: [...new Set(rows.map((r) => r.strategyId))] }), [bots, rows]);
+  // The foot rows per bot (#715) read every leg, not the filtered ones, so the book is whole.
+  const books = bots.filter((b) => rows.some((r) => r.bot === b.name)).map((b) => bookDelta(b, rows.filter((r) => r.bot === b.name), hedgeShown));
   const held = heldRows(bots);
   const heldByStrangle = {};
   for (const h of held) (heldByStrangle[`${h.bot}:${h.strangle_id}`] ??= []).push(h);
@@ -162,7 +164,7 @@ export default function DetailsPage() {
         {loading ? (
           <Skeleton rows={8} />
         ) : (
-          <PositionsTable groups={groups} statuses={statuses} onOpenChart={openChart} held={filters.groupBy === "strangle" ? heldByStrangle : {}} health={health} />
+          <PositionsTable groups={groups} statuses={statuses} onOpenChart={openChart} held={filters.groupBy === "strangle" ? heldByStrangle : {}} health={health} books={books} />
         )}
       </Panel>
 
