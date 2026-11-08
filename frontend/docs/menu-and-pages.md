@@ -104,16 +104,19 @@ From top to bottom:
   A link is amber when its section needs attention (a missing leg, a working order past its fill timeout, a position no bot manages).
 - **Open positions** (`components/PositionsTable.jsx`, sticky header, scrolls inside its box).
   - It is grouped by strangle by default.
-    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, net Δ, Θ sum, Vega sum and Γ ×10⁻⁵.
+    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, "net +0.028 BTC · +$21 per +1 %" in the Position Δ column (the sum of its legs, "—" while a leg has no greeks), Θ sum, Vega sum and Γ ×10⁻⁵.
   - There is one line per leg:
     - a call/put chip and the strike (mono; the full instrument in its `title`, a click opens the strangle's payoff modal);
     - qty, and entry → mark;
     - **premium kept**: a 64 px diverging bar around 0, −100..+100 % (`components/MicroBar.jsx`), and the %;
     - P&L in coin ≈ USD;
-    - **|Δ| → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30);
+    - **Position Δ** (#715): `positionDelta` (`lib/details.js`) = Δ × qty, negative for a short call, positive for a short put, "−0.018 BTC" then the USD per +1 % muted; neutral colour;
+    - **|Δ| per contract → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30); its tooltip says it is one contract's delta, not to be added up;
     - OTM %, stop at, Θ/day, Vega and Γ ×10⁻⁵;
     - **Close…** (outlined red, the bot's reason in its tooltip) only where the manual-close rule allows it, otherwise the cell is empty.
   - A missing leg is its own row "not held: <hold>" linking to Missing legs.
+  - The table's foot has rows per bot (`bookDelta`, from every leg, not the filtered ones): *All options* (Σ position Δ and long/short/flat in words; "hedge state unavailable" when `/api/hedge` failed);
+    while `hedgeShown`, *Futures hedge · <perpetual> short $…* (`perp_delta_coin`) and *Book* (the two added; its note the `net_delta_coin` inside or outside ±`band_coin`, the sum in its tooltip).
   - The filters (bot, strategy, type, moneyness, group by) are in the panel header.
 
 **Missing legs** (`components/HeldLegs.jsx`) has one row each:

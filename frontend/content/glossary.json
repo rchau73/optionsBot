@@ -202,10 +202,10 @@
   },
   "delta": {
     "short": "Roughly the chance an option ends up paying out, from 0 to 1.",
-    "long": "Delta shows how much an option's price moves when the coin moves by 1. It is also a rough guess of the chance the option pays out at expiry. A 0.16-delta option pays out about 16 times in 100. When the price moves toward a strike, that leg's delta grows.",
+    "long": "Delta shows how much an option's price moves when the coin moves by 1. It is also a rough guess of the chance the option pays out at expiry. A 0.16-delta option pays out about 16 times in 100. When the price moves toward a strike, that leg's delta grows. Per contract vs per position: the delta of one contract times the size held, with the sign flipped for a sold option, is the position's delta. A put at delta −0.227, 0.2 sold, holds +0.045 BTC.",
     "risk_income": "Selling at a higher delta brings more premium and a higher chance of a loss.",
     "source": "OptionStrategy.md#2-options-in-five-minutes",
-    "labels": ["Δ", "Options delta", "Net delta"]
+    "labels": ["Δ", "Options delta", "Net delta", "Position Δ", "Book"]
   },
   "delta drift": {
     "short": "Buying back a leg whose delta fell below 0.10: far from the price, little premium left.",
@@ -219,7 +219,7 @@
     "long": "When the price moves toward a sold strike, that leg's delta grows. At 0.30 the bot buys the leg back before it reaches the 2 times stop-loss. Afterwards the side is held like after a stop-loss.",
     "risk_income": "It takes smaller losses earlier, and more of them, instead of fewer larger stop-losses.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
-    "labels": ["Delta exit", "|Δ| → exit"]
+    "labels": ["Delta exit", "|Δ| per contract → exit"]
   },
   "delta_drift_threshold": {
     "short": "Setting: buy back a leg whose delta falls below this (0.10 shipped) and sell a fresh one.",

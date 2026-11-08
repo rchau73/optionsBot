@@ -21,6 +21,13 @@
 // percentages side by side → <root>/data/evidence/track-record/ and trend/.
 //
 //	go run ./cmd/evidence -env stable -track-record -trend
+//
+// -pack (#700) joins those files and the latest weekly report into one
+// document, internal until counsel approves, every figure as read, with its
+// source, window and caveat → <root>/data/evidence/pack/<bot>.md and .json.
+// With -track-record -trend they are written first.
+//
+//	go run ./cmd/evidence -env stable -track-record -trend -pack
 package main
 
 import (
@@ -51,6 +58,7 @@ func main() {
 	mvpRoot := flag.String("mvp-root", "", "with -compare-direction: the mvp clone (default ~/dev/go/optionsBot-env/mvp)")
 	track := flag.Bool("track-record", false, "the track record (#279): the whole P&L history and one row per ISO week from the weekly reports → <root>/data/evidence/track-record/<bot>.md|.json")
 	trend := flag.Bool("trend", false, "the evidence trend (#323): the weekly reports week by week, percentages only → <root>/data/evidence/trend/<bot>.md|.json")
+	pack := flag.Bool("pack", false, "the evidence pack (#700): the track record, the trend and the latest weekly report's scoreboard, replay vs live and hedge trial as read → <root>/data/evidence/pack/<bot>.md|.json")
 	flag.Parse()
 
 	if *track || *trend {
@@ -58,6 +66,14 @@ func main() {
 			fmt.Fprintln(os.Stderr, "evidence:", err)
 			os.Exit(1)
 		}
+	}
+	if *pack {
+		if err := runPack(*env, *root, *bots); err != nil {
+			fmt.Fprintln(os.Stderr, "evidence:", err)
+			os.Exit(1)
+		}
+	}
+	if *track || *trend || *pack {
 		return
 	}
 	if *compare {
@@ -137,6 +153,27 @@ func runTrack(env, root, bots string, track, trend bool) error {
 			}
 			fmt.Printf("%s %s trend: %s, %s\n", env, bot, md, js)
 		}
+	}
+	return nil
+}
+
+// runPack writes each bot's evidence pack from the reports already in the
+// clone.
+func runPack(env, root, bots string) error {
+	if env != "stable" && env != "mvp" {
+		return fmt.Errorf("-env %q: stable | mvp", env)
+	}
+	root, err := envRoot(root, env)
+	if err != nil {
+		return err
+	}
+	for _, bot := range strings.Split(bots, ",") {
+		bot = strings.ToLower(strings.TrimSpace(bot))
+		md, js := evidence.PackOutPaths(root, bot)
+		if err := evidence.WritePack(evidence.BuildPack(evidence.LoadPack(env, bot, root, os.Stderr)), md, js); err != nil {
+			return err
+		}
+		fmt.Printf("%s %s pack: %s, %s\n", env, bot, md, js)
 	}
 	return nil
 }
