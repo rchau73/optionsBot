@@ -2,7 +2,8 @@
 """metrics.py — the weekly report of the agentic loop (#180): throughput and
 quality, so E6's outcome ("no human toil except approvals") is measured.
 
-    metrics.py week [<YYYY-MM-DD>]   → the ISO week before that day (today) and its Monday: 2026-W42 2026-10-12
+    metrics.py week [<YYYY-MM-DD>]   → the ISO week before that day (today), its Monday and the Monday the
+                                       dumps must reach for the Trend section: 2026-W42 2026-10-12 2026-09-21
     metrics.py report <week> <dir> [--runs F] [--stuck F] [--repo OWNER/NAME]
                                      → the report (Markdown) on stdout
 
@@ -56,6 +57,23 @@ RUN_LIMIT = "skipped_limit"
 PM_LABEL = re.compile(r"^(E\d+|P[0-3]|pm:waiting)$")  # labels only the PM agent sets
 PM_NEAR = dt.timedelta(minutes=2)
 REVERT_REF = re.compile(r"#(\d+)\b|agent/issue-(\d+)\b")
+EPIC_LABEL = re.compile(r"^E\d+$")
+TREND_WEEKS = 3  # the earlier weeks of the Trend section
+TREND_MIN_BASE = 3  # a smaller base in those weeks is "too few to judge" (the cut of internal/usage/drops.go)
+TOO_FEW = "too few to judge"
+# Trend rows, a fixed list so the E6 comment stays small: (label, figure, the way that is worse: +1 up, -1 down, 0 neither).
+# SME filed is the loop's input: more findings is neither faster nor slower.
+TREND_ROWS = (("SME filed", "sme", 0), ("PM triaged", "triaged", -1), ("→ Ready", "ready", -1),
+              ("Dev picked up", "pickup", -1), ("PR opened", "pr", -1), ("merged", "merged", -1),
+              ("deployed (mvp)", "deployed", -1), ("SME verified fixed", "fixed", -1), ("SME reopened", "reopened", 1),
+              ("Ready → PR median", "ready_pr", 1), ("PR → merge median", "pr_merge", 1),
+              ("merge → deploy median", "merge_deploy", 1), ("Reviewer rounds median", "rounds", 1),
+              ("PRs closed unmerged", "unmerged", 1), ("Reverts on main", "reverts", 1))
+TREND_HOURS = ("ready_pr", "pr_merge", "merge_deploy")
+# Funnel stages, in order; each with what an issue stopped before it is waiting for. The last is for agent:sme issues only.
+FUNNEL = (("PM triaged", "PM triage"), ("→ Ready", "Ready"), ("PR opened", "a PR"), ("merged", "merge"),
+          ("deployed (mvp)", "a deploy"), ("SME verified fixed", "SME verification"))
+FUNNEL_MERGED = 3  # index of "merged" in FUNNEL
 
 
 def ts(s):
@@ -319,15 +337,14 @@ def stuck_section(start, end, path, repo):
         for n, r in sorted(worst.items()))]
 
 
-def report(week, d, runs_file=None, stuck_file=None, repo=None):
+def hours_text(x):
+    return "–" if x is None else f"{x:.1f} h"
+
+
+def week_figures(week, by, prs, gitlog):
+    """The figures of one week: the stage counts, the cycle-time spans, the rounds, what was undone."""
     start, end = week_bounds(week)
     inside = lambda t: t is not None and start <= t < end  # noqa: E731
-    issues = json.load(open(os.path.join(d, "issues.json")))
-    prs = json.load(open(os.path.join(d, "prs.json")))
-    events = load_events(os.path.join(d, "events.json"))
-    gitlog = [l.split("\t", 1) for l in open(os.path.join(d, "gitlog.txt")).read().splitlines() if "\t" in l]
-    by = stages(issues, prs)
-
     count = {k: 0 for k in ("sme", "triaged", "ready", "pickup", "pr", "merged", "deployed", "fixed", "reopened")}
     ready_pr, pr_merge, merge_deploy, blocks = [], [], [], []
     for n, st in by.items():
@@ -364,6 +381,126 @@ def report(week, d, runs_file=None, stuck_file=None, repo=None):
         if not p.get("mergedAt"):
             unmerged.append(p["number"])
     reverts = [s for t, s in gitlog if inside(ts(t)) and s.startswith("Revert ")]
+    return {"count": count, "ready_pr": ready_pr, "pr_merge": pr_merge, "merge_deploy": merge_deploy,
+            "blocks": blocks, "rounds": rounds, "unmerged": unmerged, "reverts": reverts}
+
+
+def week_has_data(week, issues, prs):
+    """Whether anything in the issue or PR dumps falls in the week. The events and the git log reach
+    further back than those two, so they cannot say the dumps cover it."""
+    start, end = week_bounds(week)
+    stamps = [i["createdAt"] for i in issues] + [c["createdAt"] for i in issues for c in i.get("comments", [])]
+    stamps += [p[k] for p in prs for k in ("createdAt", "mergedAt", "closedAt") if p.get(k)]
+    return any(start <= ts(s) < end for s in stamps)
+
+
+def trend_figures(fig):
+    """{figure: (value, samples)}. The samples are what a base is counted in: a count is its own."""
+    out = {k: (n, n) for k, n in fig["count"].items()}
+    out.update({k: (median(fig[k]), len(fig[k])) for k in TREND_HOURS})
+    out["rounds"] = (median([r for _, r, _ in fig["rounds"]]), len(fig["rounds"]))
+    out.update({k: (len(fig[k]), len(fig[k])) for k in ("unmerged", "reverts")})
+    return out
+
+
+def trend_text(key, value):
+    if value is None:
+        return "–"
+    return hours_text(value) if key in TREND_HOURS else f"{value:g}"
+
+
+def trend_verdict(now, earlier, worse):
+    """The last column: earlier is the [(value, samples)] of the weeks with a value."""
+    if sum(n for _, n in earlier) < TREND_MIN_BASE:
+        return TOO_FEW
+    if now is None:
+        return "–"
+    mean = statistics.mean(v for v, _ in earlier)
+    arrow = {1: "↑", -1: "↓"}.get(worse)
+    return f"{arrow} worse than mean {mean:.1f}" if worse * (now - mean) > 0 else f"mean {mean:.1f}"
+
+
+def trend_section(week, by, issues, prs, gitlog):
+    """## Trend: the week beside the TREND_WEEKS before it. A week with no data is "–" and in no mean."""
+    weeks = [week]
+    for _ in range(TREND_WEEKS):
+        weeks.insert(0, previous_week(week_bounds(weeks[0])[0].date()))
+    figures = [trend_figures(week_figures(w, by, prs, gitlog)) if week_has_data(w, issues, prs) else None for w in weeks]
+    out = ["", f"## Trend (last {len(weeks)} weeks)", "",
+           "| | " + " | ".join(weeks) + " | against the earlier weeks |", "|---" * (len(weeks) + 2) + "|"]
+    for label, key, worse in TREND_ROWS:
+        row = [(None, 0) if fig is None else fig[key] for fig in figures]
+        earlier = [(v, n) for v, n in row[:-1] if v is not None]
+        out.append(f"| {label} | " + " | ".join(trend_text(key, v) for v, _ in row)
+                   + f" | {trend_verdict(row[-1][0], earlier, worse)} |")
+    return out
+
+
+def stage_times(st):
+    """The first time an issue reached each FUNNEL stage, None if it has not. A later stage proves
+    the ones before it: a card moved on by a person or by the PM's planning left no comment there."""
+    times = [min(st["triaged"], default=None), min(st["ready"] + st["pickup"], default=None),
+             min((ts(p["createdAt"]) for p in st["prs"]), default=None),
+             min((ts(p["mergedAt"]) for p in st["prs"] if p.get("mergedAt")), default=None),
+             min(st["deployed"], default=None),
+             min((t for t, v in st["verified"] if v == "fixed"), default=None) if st["sme"] else None]
+    for k in reversed(range(len(times) - 1)):
+        times[k] = times[k] or times[k + 1]
+    return times
+
+
+def funnel_section(start, end, issues, by):
+    """## Funnel: the issues created in the week that carry an epic's label, followed to the dumps' end.
+    Numbers and counts only: the repository is public."""
+    reached = [[] for _ in FUNNEL]
+    waiting = [[] for _ in FUNNEL]
+    filed, sme, not_planned, closed_done = 0, 0, [], []
+    for i in issues:
+        n, labels, st = i["number"], {l["name"] for l in i.get("labels", [])}, by[i["number"]]
+        if not start <= st["created"] < end or "epic" in labels or not any(EPIC_LABEL.match(l) for l in labels):
+            continue
+        closed = i.get("state") == "CLOSED"
+        if closed and (i.get("stateReason") or "").lower() == "not_planned":
+            not_planned.append(n)
+            continue
+        filed += 1
+        sme += st["sme"]
+        times = stage_times(st)
+        for k, t in enumerate(times):
+            if t:
+                reached[k].append(hours(st["created"], t))
+        next_stage = 1 + max((k for k, t in enumerate(times) if t), default=-1)
+        if closed and not times[FUNNEL_MERGED]:
+            closed_done.append(n)  # done by other means (a person's PR, research): nothing more will come
+        elif next_stage < len(FUNNEL) - (not st["sme"]):
+            waiting[next_stage].append(n)
+
+    numbers = lambda xs: ", ".join(f"#{n}" for n in sorted(xs))  # noqa: E731
+    counts = [str(filed)] + [str(len(xs)) for xs in reached[:-1]] + [f"{len(reached[-1])} of {sme}" if sme else "–"]
+    medians = ["–"] + [hours_text(median(xs)) for xs in reached]
+    out = ["", "## Funnel (issues filed in the week)", "",
+           "| | filed | " + " | ".join(name for name, _ in FUNNEL) + " |", "|---" * (len(FUNNEL) + 2) + "|",
+           "| reached | " + " | ".join(counts) + " |", "| median from filing | " + " | ".join(medians) + " |", ""]
+    out += [f"- Waiting for {what}: {len(ns)} — {numbers(ns)}" for (_, what), ns in zip(FUNNEL, waiting) if ns]
+    if not any(waiting):
+        out.append("- Nothing waiting")
+    out.append(f"- Closed as not planned, left out above: {len(not_planned)}"
+               + (" — " + numbers(not_planned) if not_planned else ""))
+    if closed_done:
+        out.append(f"- Closed as done with no merged agent PR, not waiting: {len(closed_done)} — {numbers(closed_done)}")
+    return out
+
+
+def report(week, d, runs_file=None, stuck_file=None, repo=None):
+    start, end = week_bounds(week)
+    inside = lambda t: t is not None and start <= t < end  # noqa: E731
+    issues = json.load(open(os.path.join(d, "issues.json")))
+    prs = json.load(open(os.path.join(d, "prs.json")))
+    events = load_events(os.path.join(d, "events.json"))
+    gitlog = [l.split("\t", 1) for l in open(os.path.join(d, "gitlog.txt")).read().splitlines() if "\t" in l]
+    by = stages(issues, prs)
+    fig = week_figures(week, by, prs, gitlog)
+    count, blocks, rounds, unmerged, reverts = (fig[k] for k in ("count", "blocks", "rounds", "unmerged", "reverts"))
 
     waits_done, waits_open, wait_hours = [], [], {l: 0.0 for l in WAIT_LABELS}
     for n, lab, s, e in label_waits(events, end):
@@ -376,7 +513,7 @@ def report(week, d, runs_file=None, stuck_file=None, repo=None):
         elif inside(e):
             waits_done.append(hours(s, e))
 
-    f = lambda x: "–" if x is None else f"{x:.1f} h"  # noqa: E731
+    f = hours_text
     out = [f"# Agent metrics {week} ({start:%Y-%m-%d} → {end - dt.timedelta(days=1):%Y-%m-%d})", "",
            "## Stages (events in the week)", "",
            "| SME filed | PM triaged | → Ready | Dev picked up | PR opened | merged | deployed (mvp) | SME verified fixed | SME reopened |",
@@ -384,7 +521,7 @@ def report(week, d, runs_file=None, stuck_file=None, repo=None):
            "| " + " | ".join(str(count[k]) for k in ("sme", "triaged", "ready", "pickup", "pr", "merged", "deployed", "fixed", "reopened")) + " |",
            "", "## Cycle time (ended in the week)", "",
            "| | n | median | p90 |", "|---|---|---|---|"]
-    for name, xs in (("Ready → PR", ready_pr), ("PR → merge", pr_merge), ("merge → deploy", merge_deploy)):
+    for name, xs in (("Ready → PR", fig["ready_pr"]), ("PR → merge", fig["pr_merge"]), ("merge → deploy", fig["merge_deploy"])):
         out.append(f"| {name} | {len(xs)} | {f(median(xs))} | {f(p90(xs))} |")
     if rounds:
         rs = [r for _, r, _ in rounds]
@@ -402,6 +539,8 @@ def report(week, d, runs_file=None, stuck_file=None, repo=None):
             f"- Waits that ended in the week: {len(waits_done)}, median {f(median(waits_done))}, p90 {f(p90(waits_done))}",
             f"- Still waiting at the week's end: {len(waits_open)}" + "".join(
                 f"\n  - #{n} `{lab}` for {h:.1f} h" for n, lab, h in sorted(waits_open, key=lambda w: -w[2]))]
+    out += trend_section(week, by, issues, prs, gitlog)
+    out += funnel_section(start, end, issues, by)
     out += runs_section(start, end, runs.default_file() if runs_file is None else runs_file)
     out += overruled_section(start, end, issues, prs, events, gitlog, repo)
     out += stuck_section(start, end, default_stuck_file() if stuck_file is None else stuck_file, repo)
@@ -412,7 +551,8 @@ def main(argv):
     if len(argv) >= 2 and argv[1] == "week":
         day = dt.date.fromisoformat(argv[2]) if len(argv) > 2 else dt.datetime.now(dt.timezone.utc).date()
         week = previous_week(day)
-        print(week, f"{week_bounds(week)[0]:%Y-%m-%d}")
+        monday = week_bounds(week)[0]
+        print(week, f"{monday:%Y-%m-%d}", f"{monday - dt.timedelta(days=7 * TREND_WEEKS):%Y-%m-%d}")
     elif len(argv) >= 4 and argv[1] == "report":
         opts, rest = {"--runs": None, "--stuck": None, "--repo": None}, argv[4:]
         while rest:

@@ -23,5 +23,6 @@ Notable files:
 - `personal_data_inventory_test.go` (#647): `frontend/docs/personal-data.md` names every column of `auth.db` (from `store.js`) with a purpose and a retention, no column that is gone, every audit action of `lib/audit.js`;
   a new column or audit action needs its row in the same PR.
 - `evidence_hedgetrial_test.go` (#678): the weekly report's futures hedge trial — one test per ticket scenario, the 7-day boundary and the live account's counts-only section.
+- `evidence_pack_test.go` (#700): the evidence pack equals its source files; a loss's headline matches a gain's with the numbers masked; a live account has no amount; no output holds a promised return.
 - `pipe_guard_test.go` (#683): no workflow step, script or git hook pipes a failing command into a filter (`tee`, `head`, `grep`, …) without `pipefail`, unless its left side only prints or `# pipe-ok: <why>` explains it.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).

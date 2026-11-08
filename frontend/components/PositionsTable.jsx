@@ -3,8 +3,22 @@ import clsx from "clsx";
 import Badge from "./Badge";
 import MicroBar from "./MicroBar";
 import { CloseButton, ConfirmCloseModal } from "./ManualClose";
-import { ageSeconds, formatAge, formatDate, formatDateTime, formatNumber, formatPct, formatPrice, isNumber } from "@/lib/format";
-import { DELTA_EXIT_WARN, approxUSD, deltaExitRatio, formatCoinFirst } from "@/lib/details";
+import { ageSeconds, formatAge, formatDate, formatDateTime, formatNumber, formatPct, formatPrice, formatUSD, isNumber } from "@/lib/format";
+import {
+  DELTA_EXIT_WARN,
+  approxUSD,
+  bookTip,
+  deltaExitRatio,
+  deltaSideWords,
+  formatCoinFirst,
+  formatPositionDelta,
+  hedgeGainWords,
+  netPositionDelta,
+  positionDelta,
+  positionDeltaTip,
+  usdPerPct,
+} from "@/lib/details";
+import { formatSignedUSD } from "@/lib/summary";
 import { holdRule } from "@/lib/held";
 import { STALE_AFTER_SEC } from "@/lib/monitor";
 
@@ -44,7 +58,80 @@ function CoinPnl({ value, unit, usd }) {
   );
 }
 
-/** "|Δ| → exit": a bar up to the delta exit with an amber tick at its end; amber from 80 % of it. */
+/** "Position Δ" (#715): the leg's (or a sum's) delta in coin, then what a +1 % move does in USD, muted; neutral colour. */
+export function PositionDeltaCell({ delta, unit, spot, prefix = "", suffix = "" }) {
+  return (
+    <span className="tabular-nums" data-testid="position-delta">
+      {prefix}
+      {formatPositionDelta(delta, unit)}
+      {delta != null ? (
+        <span className="text-[11px] text-muted">
+          {" "}
+          {prefix ? "· " : ""}
+          {formatSignedUSD(usdPerPct(delta, spot))}
+          {suffix}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** One foot row of a bot's book: its label, the delta in the Position Δ column and a note after it. */
+function BookRow({ label, delta, unit, spot, note, title, testId }) {
+  return (
+    <tr className="text-xs" data-testid={testId}>
+      <td colSpan={6} className="px-2 py-1 font-semibold">
+        {label}
+      </td>
+      <td className="px-2 py-1 text-right">
+        <PositionDeltaCell delta={delta} unit={unit} spot={spot} suffix=" per +1 %" />
+      </td>
+      <td colSpan={7} className="px-2 py-1 text-muted" title={title}>
+        {note}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * The foot rows of one bot (#715): All options (Σ position Δ), and while a
+ * futures hedge is shown the perpetual and the Book with it, the coin delta
+ * the hedge holds flat in the note. b: lib/details bookDelta.
+ */
+function BookRows({ b, dim }) {
+  const coin = (v) => formatPositionDelta(v, b.unit);
+  const side = deltaSideWords(b.options, b.unit);
+  const optionsNote = [side, b.unavailable ? "hedge state unavailable" : null].filter(Boolean).join(" · ");
+  const h = b.hedge;
+  return (
+    <tbody className={clsx("border-b border-line", dim && "opacity-60")} data-testid={`book-${b.bot}`}>
+      <BookRow label={`${b.unit} · All options`} delta={b.options} unit={b.unit} spot={b.spot} note={optionsNote} testId={`book-options-${b.bot}`} />
+      {h ? (
+        <>
+          <BookRow
+            label={`Futures hedge · ${h.instrument} ${h.perpUsd < 0 ? "short" : "long"} ${formatUSD(Math.abs(h.perpUsd ?? 0))}`}
+            delta={h.perpDelta}
+            unit={b.unit}
+            spot={b.spot}
+            note={hedgeGainWords(h.perpDelta, b.unit)}
+            testId={`book-hedge-${b.bot}`}
+          />
+          <BookRow
+            label="Book"
+            delta={h.book}
+            unit={b.unit}
+            spot={b.spot}
+            note={`${b.unit} count held flat: in coin ${coin(h.netCoin)}, ${h.inside ? "inside" : "outside"} the hedge band ±${h.band.toFixed(3)}`}
+            title={bookTip(b.options, h, b.unit)}
+            testId={`book-total-${b.bot}`}
+          />
+        </>
+      ) : null}
+    </tbody>
+  );
+}
+
+/** "|Δ| per contract → exit": a bar up to the delta exit with an amber tick at its end; amber from 80 % of it. */
 export function DeltaExitCell({ delta, threshold }) {
   const ratio = deltaExitRatio(delta, threshold);
   const warn = ratio != null && ratio >= DELTA_EXIT_WARN;
@@ -112,16 +199,21 @@ function botNote(health) {
  * instrument in its title; a click opens the strangle's payoff chart with
  * onOpenChart(bot, strangleId, element), #391), opened (date and age, #614),
  * qty, entry → mark, premium
- * kept, P&L in coin ≈ USD, |Δ| → exit, OTM %, stop, Θ/day, Vega, Γ ×10⁻⁵ and
- * Close… only where the bot allows a manual close. held: missing legs by
- * "<bot>:<strangle id>" (heldRows), each shown as its own row in its strangle.
- * health: per bot { stale, error, ageSec, status } for dimmed or down groups.
+ * kept, P&L in coin ≈ USD, position Δ (#715), |Δ| per contract → exit, OTM %,
+ * stop, Θ/day, Vega, Γ ×10⁻⁵ and Close… only where the bot allows a manual
+ * close. held: missing legs by "<bot>:<strangle id>" (heldRows), each shown as
+ * its own row in its strangle. health: per bot { stale, error, ageSec, status }
+ * for dimmed or down groups. books: per bot lib/details bookDelta, the foot
+ * rows (all options, the futures hedge, the book).
  */
-export default function PositionsTable({ groups, statuses = {}, onOpenChart, held = {}, health = {} }) {
+export default function PositionsTable({ groups, statuses = {}, onOpenChart, held = {}, health = {}, books = [] }) {
   const [closing, setClosing] = useState(null); // the row whose close is being confirmed
   if (!groups.length) {
     return <p className="px-1 py-2 text-sm text-muted">No open positions match the filters.</p>;
   }
+  const allRows = groups.flatMap((g) => g.rows);
+  const threshold = allRows.find((r) => isNumber(r.deltaExit))?.deltaExit;
+  const exitTip = `One contract's delta, without its sign: the number the delta exit${isNumber(threshold) ? ` (${threshold.toFixed(2)})` : ""} is checked on. Amber from 80 % of it. It is not the position's delta: don't add it up — use Position Δ.`;
   return (
     <div className="max-h-[70vh] overflow-auto">
       <table className="w-full whitespace-nowrap text-sm">
@@ -141,8 +233,11 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
             <th className="px-2 py-1 text-right" title="Net: premium received minus the cost to buy back at the mark and the fees paid to open; in the bot's coin, ≈ USD at spot">
               Unrealized P&L
             </th>
-            <th className={TD} title="The leg's |Δ| against the delta exit: the bot closes the leg once |Δ| reaches it; amber from 80 % of it">
-              |Δ| → exit
+            <th className="px-2 py-1 text-right" title={positionDeltaTip(allRows)}>
+              Position Δ
+            </th>
+            <th className={TD} title={exitTip}>
+              |Δ| per contract → exit
             </th>
             <th className="px-2 py-1 text-right">OTM %</th>
             <th className="px-2 py-1 text-right" title="Mark at which the stop-loss fires">
@@ -179,10 +274,10 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
                       ))
                     : "—"}
                 </td>
-                <td className="px-2 py-1 text-xs tabular-nums" title="Position greeks of the group: each leg's greek × qty, negative for shorts">
-                  net Δ {formatNumber(g.greeks.delta, 3)}
+                <td className="px-2 py-1 text-right text-xs" title="The sum of the legs' position Δ: each leg's Δ × qty, negative for a short call, positive for a short put">
+                  <PositionDeltaCell delta={g.unit ? netPositionDelta(g.rows) : null} unit={g.unit} spot={g.rows[0].spot} prefix="net " suffix=" per +1 %" />
                 </td>
-                <td colSpan={2} />
+                <td colSpan={3} />
                 <td className={clsx(NUM, "font-semibold")} title="Θ of the group: each leg's × qty, negative for shorts">
                   {formatNumber(g.greeks.theta, 1)}
                 </td>
@@ -234,6 +329,9 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
                       <CoinPnl value={r.pnl} unit={r.unit} usd={r.pnlUsd} />
                     </Live>
                   </td>
+                  <td className={NUM}>
+                    <PositionDeltaCell delta={positionDelta(r)} unit={r.unit} spot={r.spot} />
+                  </td>
                   <td className={TD}>
                     <DeltaExitCell delta={r.delta} threshold={r.deltaExit} />
                   </td>
@@ -252,7 +350,7 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
               ))}
               {missing.map((m) => (
                 <tr key={m.key} className="text-muted" data-testid={`missing-${m.key}`}>
-                  <td colSpan={13} className="px-2 py-1 text-xs">
+                  <td colSpan={14} className="px-2 py-1 text-xs">
                     <Badge tone={m.missing === "call" ? "call" : "put"}>{m.missing}</Badge> not held: {holdRule(m.rule).label} ·{" "}
                     <a href="#held" className="underline underline-offset-2 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet">
                       Missing legs
@@ -263,6 +361,9 @@ export default function PositionsTable({ groups, statuses = {}, onOpenChart, hel
             </tbody>
           );
         })}
+        {books.map((b) => (
+          <BookRows key={b.bot} b={b} dim={Boolean(health[b.bot]?.stale)} />
+        ))}
       </table>
       {closing ? (
         <ConfirmCloseModal row={closing} status={statuses[closing.bot]} onCancel={() => setClosing(null)} onDone={() => setClosing(null)} />

@@ -55,7 +55,7 @@ export default function FirstDayPanel({ bot, headingLevel = 2 }) {
           href={`/how-it-works?bot=${encodeURIComponent(bot.name)}`}
           className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-testnet"
         >
-          How it works: a strangle in three pictures →
+          How it works: a strangle in four pictures →
         </Link>
       </div>
     </section>

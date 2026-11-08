@@ -30,7 +30,8 @@ Tests: `test_usage.py` (the comment, the privacy rule, the dedup, and `usage.sh`
 **Assistant quality review** (#438): before its own report, `usage.sh` runs [`assistant_review.sh`](../../scripts/agents/assistant_review.sh).
 In each environment with a non-empty `data/monitor/assistant.jsonl` it runs `go run ./cmd/assistantreview` (the private review files go to `<clone>/data/monitor/assistant_reviews/`) and posts `usage_week.py assistant-comment` on the E10 epic.
 The comment holds the `<week>.summary.json` named counts and percentages only, percentages only for a live env.
-A week with no answers posts nothing and writes no marker (looked at again hourly).
+Its table has the overdue rows (#704: open more than 7 days), as a share of the review list for a live env, and when any env has some a line says a person reads the private review list.
+A week with no answers and no open rows posts nothing and writes no marker (looked at again hourly).
 A comment that fails to post is retried once.
 Done marker: `data/agents/assistant_review/<week>.done`.
 Ledger agent: `assistant_review`.

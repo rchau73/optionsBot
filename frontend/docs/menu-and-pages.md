@@ -98,16 +98,19 @@ From top to bottom:
   A link is amber when its section needs attention (a missing leg, a working order past its fill timeout, a position no bot manages).
 - **Open positions** (`components/PositionsTable.jsx`, sticky header, scrolls inside its box).
   - It is grouped by strangle by default.
-    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, net Δ, Θ sum, Vega sum and Γ ×10⁻⁵.
+    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, "net +0.028 BTC · +$21 per +1 %" in the Position Δ column (the sum of its legs, "—" while a leg has no greeks), Θ sum, Vega sum and Γ ×10⁻⁵.
   - There is one line per leg:
     - a call/put chip and the strike (mono; the full instrument in its `title`, a click opens the strangle's payoff modal);
     - qty, and entry → mark;
     - **premium kept**: a 64 px diverging bar around 0, −100..+100 % (`components/MicroBar.jsx`), and the %;
     - P&L in coin ≈ USD;
-    - **|Δ| → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30);
+    - **Position Δ** (#715): `positionDelta` (`lib/details.js`) = Δ × qty, negative for a short call, positive for a short put, "−0.018 BTC" then the USD per +1 % muted; neutral colour;
+    - **|Δ| per contract → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30); its tooltip says it is one contract's delta, not to be added up;
     - OTM %, stop at, Θ/day, Vega and Γ ×10⁻⁵;
     - **Close…** (outlined red, the bot's reason in its tooltip) only where the manual-close rule allows it, otherwise the cell is empty.
   - A missing leg is its own row "not held: <hold>" linking to Missing legs.
+  - The table's foot has rows per bot (`bookDelta`, from every leg, not the filtered ones): *All options* (Σ position Δ and long/short/flat in words; "hedge state unavailable" when `/api/hedge` failed);
+    while `hedgeShown`, *Futures hedge · <perpetual> short $…* (`perp_delta_coin`) and *Book* (the two added; its note the `net_delta_coin` inside or outside ±`band_coin`, the sum in its tooltip).
   - The filters (bot, strategy, type, moneyness, group by) are in the panel header.
 
 **Missing legs** (`components/HeldLegs.jsx`) has one row each:
@@ -473,12 +476,16 @@ Any signed-in role
 
 ### How it works (its own page, `/how-it-works?bot=<name>`; #322, E3 prototype screen 7)
 
-linked from the investor summary's "What it holds" answer ("How it works: a strangle in three pictures →"); `app/how-it-works/page.jsx` → `components/HowItWorksView.jsx` (polls `/api/summary` with `hooks/useBotSummary.js`) → `components/HowItWorks.jsx`, helpers in `lib/howitworks.js`.
-Header: views nav **← Overview · How it works** (current), the bot, its TESTNET / LIVE badge. h1 "How your <coin> earns, in three pictures".
+linked from the investor summary's "What it holds" answer ("How it works: a strangle in four pictures →"); `app/how-it-works/page.jsx` → `components/HowItWorksView.jsx` (polls `/api/summary` with `hooks/useBotSummary.js` and the hedge with `hooks/useBotHedge.js`) → `components/HowItWorks.jsx`, `components/HowItWorksHedge.jsx`, helpers in `lib/howitworks.js` and `lib/howitworksHedge.js`.
+Header: views nav **← Overview · How it works** (current), the bot, its TESTNET / LIVE badge. h1 "How your <coin> earns, in four pictures"; the intro adds one sentence on the perpetual while `hedgeShown`.
 **1 · One position, two legs**: the put (the floor) and the call (the ceiling) of `strangle` — strike, what it promises on the expiry date, "paid now" in coin — with today's price between them and the total paid.
 **2 · What you end with on <expiry>**: an SVG of the coin-settled payoff at expiry (keep all the payment between the strikes, zero at the break-evens, a hatched "loss grows" zone beyond; dashed line at today's price), a legend *you earn* / *you lose (hatched)*, the break-evens in text and a full `aria-label`.
-**3 · How the bot defends you**: a price line (floor, ceiling, today, the exit lines when `exit_lines`; otherwise "exit lines move with the market (unknown: <reason>)"), then four cards — take profit, exit line, stop-loss ("twice" from `stop_loss_multiple`), wait then repair (days from `repair_cooldown_hours`).
-**Words you'll see in Details (pro)**: leg, strike, premium, delta (+ "The exit line is a delta of <`delta_exit_threshold`>"), expiry, margin — each card's text is the glossary's `short` (`content/glossary.json`, one source of words).
+**3 · How the bot defends you**: a price line (floor, ceiling, today, the exit lines when `exit_lines`; otherwise "exit lines move with the market (unknown: <reason>)").
+Then five cards: take profit, exit line, stop-loss ("twice" from `stop_loss_multiple`), wait then repair (days from `repair_cooldown_hours`), Market turns (`marketTurnsWords`: on, paused or not holding, off, kill switch, unknown).
+**4 · The safety net: a futures hedge** (#696): the state's badge (`hedgeStory`) and "testnet experiment"; an SVG of the options' delta and the perpetual's as bars, the net as a dot and the hedge band shaded, with the same numbers in its `aria-label` and the line under it (`deltaWords`).
+No position → no perpetual bar; nothing held → says so instead of the picture; a failed poll drops the figures ("Live figures unavailable: …"); an old perpetual reading says "Not updating".
+The four cards and the testnet-only note always read; the band and the order cap are the API's, plain words without them.
+**Words you'll see in Details (pro)**: leg, strike, premium, delta (+ "The exit line is a delta of <`delta_exit_threshold`>"), expiry, margin, perpetual, hedge band, coin delta — each card's text is the glossary's `short` (`content/glossary.json`, one source of words).
 No two-legged strangle held (`strangle` null) → the same page under "Example: a BTC (an ETH) strangle like the ones the bot sells" with fixed example figures and why, never zeros.
 Loading → "Not yet"; a failed poll keeps the last figures under "Not updating: …".
 No `?bot=` → links to each bot's page.
