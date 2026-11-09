@@ -11,6 +11,8 @@ Notable files:
 - `usability_kit_test.go` (#202, #646): the E3 usability kit runs from the file alone, keeps participant data out of its templates, and its answer keys match `cmd/monitor-demo`
   — the profit key (section 6) against the no-flag demo, the losing-scenario keys (section 6b) against `-scenario mixed` and `-scenario drawdown`, a failure naming the scenario and the fact.
   The round scorer's own tests, `scripts/product/test_score_usability.py` (#701), read the kit's template, so a changed table fails there.
+- `usability_keys_test.go` (#727): every figure in the kit's fenced `key` blocks equals `cmd/monitor-demo`'s value, per scenario and question; a stale key fails naming both.
+  `usability_round_test.go` runs `scripts/usability_round.sh` on a copy of the layout with stub `go`, `npm`, `npx` and `curl`.
 - `accounts_json_test.go` (#655): `cmd/accounts -check -json`/`-out` — decoded with unknown fields refused, no key material, key id, client id or scope string in it, the status file owner-only and atomic.
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
 - `docs_line_length_test.go` (#463): no prose line over 400 characters in a tracked `*.md` (tables, code, link targets exempt); files that still have some are listed with a reason and a count that can only go down.
