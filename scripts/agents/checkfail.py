@@ -73,8 +73,8 @@ GO_READS = (
     "frontend/Dockerfile", "frontend/README.md", "frontend/app/api/", "frontend/content/", "frontend/docs/",
     "frontend/lib/analytics/", "frontend/lib/assistant/", "frontend/lib/audit.js", "frontend/lib/auth/store.js",
     "frontend/lib/menu.js", "frontend/package.json",
-    "scripts/product/README.md", "tests/",
-)
+    "scripts/agents/", "scripts/product/README.md", "tests/",
+)  # scripts/agents/: ledger_coverage_test.go reads the folder's scripts (#722)
 # Docs of frontend/ and files outside it the frontend tests open; other
 # non-doc paths under frontend/ always run them.
 FRONTEND_READS = (
