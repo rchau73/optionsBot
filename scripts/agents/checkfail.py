@@ -84,8 +84,8 @@ FRONTEND_READS = (
 )  # internal/api/: role-matrix.test.js checks every bot POST route is in the monitor's role table (#490)
 # cmd/labrun, internal/compare/requests.go, scripts/lab_runner.sh: lab-requests.test.js checks none writes a config (#641)
 # What the scripts job tests (shellcheck, the Python unit tests) and what those tests read.
-SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/", "go.mod", "go.sum",
-                 "internal/", "scripts/")
+SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/", "docs/usability/", "go.mod",
+                 "go.sum", "internal/", "scripts/")
 DOCKER_READS = ("Dockerfile", ".dockerignore", "cmd/", "frontend/", "go.mod", "go.sum", "internal/")
 VULN_READS = ("frontend/package-lock.json", "go.mod", "go.sum")
 SUITES = ("go", "go_lint", "frontend", "docs", "scripts", "docker", "vuln")

@@ -11,16 +11,25 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/exchange/deribit"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/marketdata"
 )
 
 // ── Fake gateway for the market-data manager ─────────────────────────────────
 
+// feedCall is one request the fake gateway received.
+type feedCall struct {
+	method   string
+	params   any
+	priority int
+}
+
 type fakeFeedGateway struct {
 	mu         sync.Mutex
 	results    map[string]string // method → raw JSON result
 	errs       map[string]error
+	calls      []feedCall
 	subscribed []string
 	notify     chan gateway.JSONRPCResponse
 }
@@ -33,9 +42,10 @@ func newFakeFeedGateway() *fakeFeedGateway {
 	}
 }
 
-func (g *fakeFeedGateway) Call(_ context.Context, method string, _ any, _ int) (gateway.JSONRPCResponse, error) {
+func (g *fakeFeedGateway) Call(_ context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.calls = append(g.calls, feedCall{method, params, priority})
 	if err := g.errs[method]; err != nil {
 		return gateway.JSONRPCResponse{}, err
 	}
@@ -87,11 +97,16 @@ func newMarketCfg() *config.Config {
 	}
 }
 
+// newFeedManager wires a manager the way main does.
+func newFeedManager(cfg *config.Config, gw *fakeFeedGateway) *marketdata.Manager {
+	return marketdata.New(cfg, gw, deribit.NewChainSource(gw))
+}
+
 func startManager(t *testing.T, gw *fakeFeedGateway) *marketdata.Manager {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	m := marketdata.New(newMarketCfg(), gw)
+	m := newFeedManager(newMarketCfg(), gw)
 	if err := m.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -212,7 +227,7 @@ func TestMarketData_SeedsDVOLHistory(t *testing.T) {
 func TestMarketData_StartFailsWhenChainUnavailable(t *testing.T) {
 	gw := newFakeFeedGateway()
 	gw.errs["public/get_instruments"] = errors.New("boom")
-	if err := marketdata.New(newMarketCfg(), gw).Start(context.Background()); err == nil {
+	if err := newFeedManager(newMarketCfg(), gw).Start(context.Background()); err == nil {
 		t.Fatal("Start must fail without an option chain")
 	}
 }

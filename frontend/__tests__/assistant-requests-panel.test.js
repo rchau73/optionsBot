@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, configure, fireEvent, render, screen, within } from "@testing-library/react";
 import AssistantProvider, { useAssistant } from "@/components/AssistantProvider";
 import { MenuNav } from "@/components/MenuBar";
 import { CHECKLIST, DRAFT_HEADING, DRAFT_NOTICE, DRAFT_TEXT, NEEDS_INFO_TEXT, sentText } from "@/lib/assistantRequests";
@@ -8,6 +8,9 @@ import { CHECKLIST, DRAFT_HEADING, DRAFT_NOTICE, DRAFT_TEXT, NEEDS_INFO_TEXT, se
 // fake fetch of the monitor's own routes. Nothing is sent without the click.
 
 jest.mock("@/lib/track", () => ({ track: jest.fn() }));
+
+// Room for a loaded runner, as in assistant-panel.test.js (#729): 5 s for each findBy (default 1 s).
+configure({ asyncUtilTimeout: 5_000 });
 
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => body });
 
