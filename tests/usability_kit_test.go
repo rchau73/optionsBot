@@ -55,12 +55,7 @@ func TestUsabilityKit_RunsWithoutTheAuthor(t *testing.T) {
 	doc := readUsabilityKit(t)
 	for _, want := range []string{
 		"go run ./cmd/monitor-demo",
-		"BOT_APIS=btc=http://127.0.0.1:8081 npm run dev",
-		"npm ci",
-		"AUTH_SECRET=",
-		// A fresh user database per run: the first admin is created only
-		// when the database is empty (frontend/lib/auth/service.js).
-		`export AUTH_DB_PATH="$(mktemp -d)/auth.db"`,
+		"scripts/usability_round.sh",
 		"1440 × 900",
 		"390 × 844",
 		"**The moderator must not:**",
