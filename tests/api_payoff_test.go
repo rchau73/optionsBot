@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -286,6 +288,263 @@ func TestPayoff_OneLeggedNamesTheMissingSide(t *testing.T) {
 	if m := api.PayoffOf(v, now).Strangles[0].Missing; len(m) != 1 || !strings.HasPrefix(m[0].Reason, "unknown:") {
 		t.Errorf("missing without a hold %+v", m)
 	}
+}
+
+// hedgedView: two strangles whose coin deltas are a and b, the second one
+// expiring later, no mark in either delta.
+func hedgedView(now time.Time, a, b float64) strategy.View {
+	st := func(id string, dte int, d float64) strategy.StrangleView {
+		s := payoffStrangle(id, dte, now.Add(time.Duration(dte)*24*time.Hour), now, payoffSpot)
+		// The put (Legs[1]) sets the net: coin delta = −(Δ − mark) × qty over both legs.
+		s.Legs[0].Greeks.Delta = s.Legs[0].Mark + 0.2
+		s.Legs[1].Greeks.Delta = s.Legs[1].Mark - 0.2 - d
+		return s
+	}
+	return payoffView(st("a", 25, a), st("b", 50, b))
+}
+
+// perpHeld is a perpetual held at the index, nothing unrealised, in a band of 0.05.
+func perpHeld(usd float64) strategy.HedgeView {
+	return strategy.HedgeView{PerpUSD: usd, PerpDeltaCoin: usd / payoffSpot, PerpAvg: payoffSpot, BandCoin: 0.05}
+}
+
+// Scenario: a strangle chart includes its hedge share.
+func TestPayoff_AStrangleChartIncludesItsHedgeShare(t *testing.T) {
+	now := time.Now().UTC()
+	const optionsDelta, aDelta = 0.3861, 0.18723
+	rep := api.PayoffWithHedge(hedgedView(now, aDelta, optionsDelta-aDelta), perpHeld(-29400), now)
+	sp := rep.Strangles[0]
+	if sp.StrangleID != "a" || sp.HedgeShareUSD == nil || math.Round(*sp.HedgeShareUSD) != -14257 {
+		t.Fatalf("%s: share %v, want 14,257 USD short", sp.StrangleID, sp.HedgeShareUSD)
+	}
+	share := -*sp.HedgeShareUSD
+	for _, pt := range sp.Points {
+		want := share * (1/pt.Price - 1/payoffSpot)
+		if pt.TodayHedgedPnL == nil || math.Abs(*pt.TodayHedgedPnL-*pt.TodayPnL-want) > 1e-12 {
+			t.Fatalf("today hedged at %v: %v, options %v, perpetual %v", pt.Price, pt.TodayHedgedPnL, *pt.TodayPnL, want)
+		}
+		if pt.ExpiryHedgedPnL == nil || math.Abs(*pt.ExpiryHedgedPnL-pt.ExpiryPnL-want) > 1e-12 {
+			t.Fatalf("expiry hedged at %v: %v, options %v, perpetual %v", pt.Price, pt.ExpiryHedgedPnL, pt.ExpiryPnL, want)
+		}
+	}
+	if d := *sp.HedgeShareDeltaCoin; math.Abs(d-(-share/payoffSpot)) > 1e-9 || math.Abs(*sp.NetDeltaWithHedgeCoin-(aDelta+d)) > 1e-9 || math.Abs(*sp.CoinDelta-aDelta) > 1e-12 {
+		t.Errorf("delta share %v, coin delta %v, net %v", d, *sp.CoinDelta, *sp.NetDeltaWithHedgeCoin)
+	}
+	// The hedged curve at expiry crosses zero where the break-evens say.
+	if len(sp.HedgedBreakEvens) == 0 {
+		t.Fatal("no hedged break-even")
+	}
+	// The break-evens and the lines stay the options' own.
+	plain := api.PayoffOf(hedgedView(now, aDelta, optionsDelta-aDelta), now).Strangles[0]
+	if *sp.BreakEvenLow != *plain.BreakEvenLow || *sp.Legs[0].ExitLine != *plain.Legs[0].ExitLine || *sp.Legs[0].StopLevel != *plain.Legs[0].StopLevel {
+		t.Error("break-evens, exit lines and stop levels are the options' own")
+	}
+	// The moves: a short share gains on a fall and loses on a rise.
+	if len(sp.HedgeMoves) != len(api.PayoffHedgeMoves) {
+		t.Fatalf("moves %+v", sp.HedgeMoves)
+	}
+	for _, m := range sp.HedgeMoves {
+		want := share * (1/m.Spot - 1/payoffSpot)
+		if (m.MovePct < 0) != (want > 0) || math.Abs(m.HedgedCoin-m.OptionsCoin-want) > 1e-12 || math.Abs(m.HedgedUSD-m.HedgedCoin*m.Spot) > 1e-6 {
+			t.Errorf("move %+v, perpetual %v", m, want)
+		}
+	}
+}
+
+// Metric: the hedged P&L at spot is the strangle's unrealised plus its share
+// of the perpetual's unrealised. On testnet the ledger's index-priced average
+// counts, never the exchange's fill ~3.5 % away (#664).
+func TestPayoff_HedgedAtSpotEqualsBookPlusItsShare(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		name    string
+		pricing string
+		avg     float64 // the one the curve must use
+	}{{"exchange", "exchange", 84000}, {"index", "index", 83000}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := perpHeld(-20000)
+			h.PerpAvg, h.LedgerAvg = 84000, 83000
+			h.Benchmark.Pricing = tc.pricing
+			rep := api.PayoffWithHedge(hedgedView(now, 0.3, 0.1), h, now)
+			var sum float64
+			for _, sp := range rep.Strangles {
+				frac := *sp.CoinDelta / 0.4
+				want := sp.UnrealisedCoin + frac*(-20000)*(1/tc.avg-1/payoffSpot)
+				if got := *pointAt(t, sp, payoffSpot).TodayHedgedPnL; math.Abs(got-want) > 1e-12 {
+					t.Errorf("%s: hedged at spot %v, want %v", sp.StrangleID, got, want)
+				}
+				if math.Abs(*sp.UnrealisedWithHedgeCoin-want) > 1e-12 || math.Abs(*sp.UnrealisedWithHedgeUSD-want*payoffSpot) > 1e-6 {
+					t.Errorf("%s: now %v / %v USD", sp.StrangleID, *sp.UnrealisedWithHedgeCoin, *sp.UnrealisedWithHedgeUSD)
+				}
+				sum += *sp.UnrealisedWithHedgeCoin - sp.UnrealisedCoin
+			}
+			if whole := -20000 * (1/tc.avg - 1/payoffSpot); math.Abs(sum-whole) > 1e-12 {
+				t.Errorf("shares of the perpetual's result %v, whole %v", sum, whole)
+			}
+		})
+	}
+}
+
+// Scenario: hedge shares sum to the whole perpetual — also when one strangle
+// leans against the book, so its share has the other sign.
+func TestPayoff_HedgeSharesSumToTheWholePerpetual(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct{ a, b, perp float64 }{{0.3, 0.1, -30000}, {0.5, -0.2, -24000}, {-0.3, -0.1, 30000}} {
+		rep := api.PayoffWithHedge(hedgedView(now, tc.a, tc.b), perpHeld(tc.perp), now)
+		var usd, delta float64
+		for _, sp := range rep.Strangles {
+			usd += *sp.HedgeShareUSD
+			delta += *sp.HedgeShareDeltaCoin
+		}
+		if math.Abs(usd-tc.perp) > 1e-6 || math.Abs(delta-tc.perp/payoffSpot) > 1e-9 {
+			t.Errorf("%+v: shares %v USD, %v coin", tc, usd, delta)
+		}
+		if rep.Hedge == nil || !rep.Hedge.Split || math.Abs(rep.Hedge.OptionsDeltaCoin-(tc.a+tc.b)) > 1e-12 {
+			t.Errorf("%+v: hedge %+v", tc, rep.Hedge)
+		}
+	}
+}
+
+// noShares fails on any hedged field of a strangle or its points.
+func noShares(t *testing.T, rep api.PayoffReport) {
+	t.Helper()
+	for _, sp := range rep.Strangles {
+		if sp.HedgeShareUSD != nil || sp.HedgeShareDeltaCoin != nil || sp.NetDeltaWithHedgeCoin != nil || sp.CoinDelta != nil ||
+			sp.UnrealisedWithHedgeCoin != nil || sp.HedgedBreakEvens != nil || sp.HedgeMoves != nil {
+			t.Errorf("%s: hedged fields %+v", sp.StrangleID, sp)
+		}
+		for _, pt := range sp.Points {
+			if pt.TodayHedgedPnL != nil || pt.ExpiryHedgedPnL != nil {
+				t.Fatalf("%s: hedged point %+v", sp.StrangleID, pt)
+			}
+		}
+	}
+}
+
+// Scenario: options' delta near zero — nor when the band or a leg's greeks are unknown.
+func TestPayoff_OptionsDeltaNearZeroGivesNoShare(t *testing.T) {
+	now := time.Now().UTC()
+	band0 := perpHeld(-500)
+	band0.BandCoin = 0
+	unpriced := hedgedView(now, 0.3, 0.1)
+	unpriced.Strangles[1].Legs[0].Greeks = orders.Greeks{}
+	for _, tc := range []struct {
+		name   string
+		v      strategy.View
+		h      strategy.HedgeView
+		reason string
+	}{
+		{"inside the band", hedgedView(now, 0.03, 0.01), perpHeld(-500), "inside the hedge band"},
+		{"one tick under the band", hedgedView(now, 0.03, 0.0199), perpHeld(-500), "inside the hedge band"},
+		{"exactly zero", hedgedView(now, 0.2, -0.2), perpHeld(-500), "inside the hedge band"},
+		{"band unknown", hedgedView(now, 0.3, 0.1), band0, "inside the hedge band"},
+		{"a leg without greeks", unpriced, perpHeld(-500), "no greeks"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep := api.PayoffWithHedge(tc.v, tc.h, now)
+			noShares(t, rep)
+			if rep.Hedge == nil || rep.Hedge.Split || !strings.Contains(rep.Hedge.NotSplitReason, tc.reason) || rep.Hedge.PerpUSD != -500 {
+				t.Errorf("hedge %+v", rep.Hedge)
+			}
+		})
+	}
+	// Just past the band the share is stable.
+	if rep := api.PayoffWithHedge(hedgedView(now, 0.03, 0.0201), perpHeld(-500), now); !rep.Hedge.Split {
+		t.Errorf("|delta| past the band splits: %+v", rep.Hedge)
+	}
+}
+
+// A one-legged strangle with no IV has no today curve: its hedged today curve
+// and moves are null, the hedged expiry curve is still drawn.
+func TestPayoff_NoTodayCurveKeepsTheHedgedExpiryCurve(t *testing.T) {
+	now := time.Now().UTC()
+	v := hedgedView(now, 0.3, 0.1)
+	v.Strangles[0].Legs[0].Greeks.IV = 0
+	sp := api.PayoffWithHedge(v, perpHeld(-20000), now).Strangles[0]
+	if sp.Today || sp.HedgeMoves != nil || sp.HedgeShareUSD == nil {
+		t.Fatalf("today %v moves %v share %v", sp.Today, sp.HedgeMoves, sp.HedgeShareUSD)
+	}
+	pt := pointAt(t, sp, payoffSpot)
+	if pt.TodayHedgedPnL != nil || pt.ExpiryHedgedPnL == nil {
+		t.Errorf("today %v expiry %v", pt.TodayHedgedPnL, pt.ExpiryHedgedPnL)
+	}
+}
+
+// The route counts the hedge when it is wired, and a bot without it still answers.
+func TestPayoff_RouteReadsTheHedge(t *testing.T) {
+	now := time.Now().UTC()
+	v := hedgedView(now, 0.3, 0.1)
+	srv := api.New(staticView{v}, summaryLogger(), api.WithFuturesHedge(&openHedge{view: perpHeld(-20000)}, "", false))
+	_, body := getJSON(t, srv.Handler(), "/api/strangles/payoff")
+	if body["hedge"] == nil {
+		t.Fatalf("hedge %v", body["hedge"])
+	}
+	if st := body["strangles"].([]any)[0].(map[string]any); st["hedge_share_usd"] == nil {
+		t.Errorf("share %v", st["hedge_share_usd"])
+	}
+	_, plain := getJSON(t, api.New(staticView{v}, summaryLogger()).Handler(), "/api/strangles/payoff")
+	if plain["hedge"] != nil || plain["strangles"].([]any)[0].(map[string]any)["hedge_share_usd"] != nil {
+		t.Errorf("no hedge wired: %v", plain["hedge"])
+	}
+}
+
+// Scenario: no perpetual, no change — the hedge off, or dust under the
+// strategy's flat test; the golden pins the options-only answer to the digit.
+func TestPayoff_NoPerpetualNoChange(t *testing.T) {
+	now := time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
+	v := payoffView(payoffStrangle("s", 25, now.Add(25*24*time.Hour), now, payoffSpot))
+	want, _ := json.Marshal(api.PayoffOf(v, now))
+	for _, h := range []strategy.HedgeView{{}, {PerpUSD: 0.4, BandCoin: 0.05}} {
+		rep := api.PayoffWithHedge(v, h, now)
+		noShares(t, rep)
+		got, _ := json.Marshal(rep)
+		if rep.Hedge != nil || string(got) != string(want) {
+			t.Errorf("hedge %+v changed the answer", h)
+		}
+	}
+
+	var out any
+	if err := json.Unmarshal(want, &out); err != nil {
+		t.Fatal(err)
+	}
+	rep := out.(map[string]any)
+	st := rep["strangles"].([]any)[0].(map[string]any)
+	pts := st["points"].([]any)
+	st["points"] = []any{pts[0], pts[len(pts)/2], pts[len(pts)-1]} // a small file
+	got, err := json.MarshalIndent(roundFloats(out), "", " ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "testdata/payoff_no_perpetual.json"
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	golden, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(golden)) != strings.TrimSpace(string(got)) {
+		t.Errorf("/api/strangles/payoff without a perpetual changed:\n%s", got)
+	}
+}
+
+// roundFloats keeps six decimals: the last bits differ between CPUs (FMA).
+func roundFloats(v any) any {
+	switch x := v.(type) {
+	case float64:
+		return math.Round(x*1e6) / 1e6
+	case []any:
+		for i := range x {
+			x[i] = roundFloats(x[i])
+		}
+	case map[string]any:
+		for k := range x {
+			x[k] = roundFloats(x[k])
+		}
+	}
+	return v
 }
 
 // Nothing held: an empty list, never null.
