@@ -10,6 +10,8 @@ import { viewer } from "@/lib/auth/viewer";
 
 jest.mock("@/lib/auth/viewer", () => ({ viewer: jest.fn() }));
 
+jest.setTimeout(20_000); // every reply is a resolved mock, nothing waits; the role queries over the Users table passed 5 s under a full parallel run (#731)
+
 const reply = (status, body = {}) => ({ ok: status < 300, status, headers: new Headers(), json: async () => body });
 const realFetch = global.fetch;
 afterEach(() => {
