@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AuditPage from "@/app/admin/audit/page";
 import AuditTrail from "@/components/AuditTrail";
 import ResetPasswordForm from "@/components/ResetPasswordForm";
@@ -9,6 +9,11 @@ import { viewer } from "@/lib/auth/viewer";
 // #307 (+#214) the reset link on the Users page and the /reset form; #308 (+#249) the Audit page.
 
 jest.mock("@/lib/auth/viewer", () => ({ viewer: jest.fn() }));
+
+// #732: these tests take milliseconds, but in a full run the worker can stall for seconds behind
+// the password-hashing suites; a refusal that never shows still fails, only later.
+jest.setTimeout(30_000);
+configure({ asyncUtilTimeout: 10_000 });
 
 const reply = (status, body = {}) => ({ ok: status < 300, status, headers: new Headers(), json: async () => body });
 const realFetch = global.fetch;
