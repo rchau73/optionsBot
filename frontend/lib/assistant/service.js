@@ -16,7 +16,9 @@ import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
 import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyChecklist, looksLikeReport } from "./request";
 import { HelpIndex, noAnswer } from "./search";
 import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
-import { formatCoin, formatDateTime, formatPct, formatPrice } from "@/lib/format";
+import { formatAge, formatCoin, formatDateTime, formatPct, formatPrice } from "@/lib/format";
+import { plainFreeze } from "@/lib/overview";
+import { gexFreshness } from "@/lib/regime";
 import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 
 export const MAX_QUESTION = 500;
@@ -112,6 +114,9 @@ export function journalPassages(bot, items, held = []) {
         text,
         trade: TRADE_EVENTS.has(e.event),
         reason: typeof e.reason === "string" ? e.reason : "",
+        event: e.event,
+        slot: e.slot ?? null,
+        lastAt: e.last ?? e.at,
         instrument,
         held: instrument !== "" && holds.has(instrument),
         seq: Number(e.seq),
@@ -212,6 +217,129 @@ export function livePassages(bot, { status = null, positions = null, payoff = nu
     }
   }
   return out;
+}
+
+// A question about the present book: why nothing is open, why the margin is
+// not used, why no more trades (#719). Only these pay for the book passage.
+const IDLE_PATTERNS = [
+  /\bnothing\s+(is\s+)?(open|opened|held|happening|sold|trading)\b/i,
+  /\b(no|zero)\s+(open\s+)?(trades?|positions?|strangles?)\b/i,
+  /(\bnot|n't)\s+(being\s+)?(open(ing)?|trad(e|ing)|sell(ing)?|enter(ing)?|doing\s+anything|used|using)\b/i,
+  /\bmargin\b.*\b(unused|idle|not\s+(being\s+)?used|so\s+low|spare)\b/i,
+  /\b(unused|idle|spare)\s+(margin|slots?)\b/i,
+  /\b(empty|idle)\s+(bot|book|slots?)\b/i,
+  /\bmore\s+(trades|strangles|positions)\b/i,
+  /\bvacant\b/i,
+  /\bwhy\b.*\b(waiting|frozen|paused|stuck)\b/i,
+];
+
+/** Whether a question asks why the bot holds little or nothing now (#719). */
+export function asksAboutIdle(question) {
+  const q = String(question ?? "");
+  return IDLE_PATTERNS.some((re) => re.test(q));
+}
+
+const slotKey = (s) => `${s.dte}/${s.delta}`;
+const slotWords = (s) => `${s.dte}-day ${s.delta} delta`;
+
+/** Whether entries may open now, and why not, in the monitor's words. */
+function entriesLine(status) {
+  if (status.halted) return "Entries: stopped: the kill switch fired, so the bot opens nothing until a person restarts it.";
+  // The GEX age on the bot's own clock (its as_of), as the Regime page reads it.
+  const asOf = Date.parse(status.as_of ?? "");
+  if (!Number.isNaN(asOf)) {
+    const gex = gexFreshness(status, asOf);
+    if (gex.ageSec == null) return "Entries: waiting for the first fresh GEX reading: the bot sells nothing before it knows the market's gamma regime and trend.";
+    if (gex.stale) return `Entries: waiting for a fresh GEX reading (the last one was read ${formatAge(gex.ageSec)}, more than 5 minutes): the bot sells nothing on an old reading.`;
+  }
+  const risk = status.risk ?? {};
+  const policy = risk.status;
+  if (policy?.frozen) {
+    const why = plainFreeze(policy.freeze_reason).replace(/^waiting: /, "");
+    return `Entries: frozen by the margin policy: ${why}${policy.freeze_reason ? ` (${policy.freeze_reason})` : ""}. Exits, rolls and repairs continue.`;
+  }
+  if (risk.error) return `Entries: blocked: the margin figures are unknown this cycle (${risk.error}), and the bot adds no risk without them.`;
+  if (risk.entries_allowed === true) return "Entries: allowed.";
+  if (risk.entries_allowed === false) return "Entries: held this cycle; each vacant slot's latest reason is below.";
+  return "Entries: unknown: the status does not say.";
+}
+
+/** IM against its limit, its alerts and its 7-day use, as percentages only. */
+function marginLine(status) {
+  const risk = status.risk ?? {};
+  if (risk.error) return `IM: unknown: ${risk.error}.`;
+  const parts = [`IM ${fig(risk.im_pct, grouped(1))} % of margin balance, limit ${fig(risk.status?.limit_im_pct, grouped(1))} %.`];
+  if (risk.im_over_limit) parts.push("IM is over its limit.");
+  if (risk.im_under_use) parts.push("IM has stayed well under its limit while entries were allowed (the under-use alert).");
+  const u = status.utilisation_7d;
+  if (u && isNum(u.mean_pct) && isNum(u.allowed_share)) {
+    parts.push(`Over the last 7 days IM averaged ${grouped(0)(u.mean_pct)} % of its limit while entries were allowed, which they were ${grouped(0)(u.allowed_share * 100)} % of the time.`);
+  }
+  return parts.join(" ");
+}
+
+/** The latest skip the journal read holds for each slot: slot key → passage. */
+function latestSkips(journal) {
+  const out = new Map();
+  for (const p of journal ?? []) {
+    if (p.event !== "skipped" || !p.slot) continue;
+    const k = slotKey(p.slot);
+    if (!out.has(k) || out.get(k).seq < p.seq) out.set(k, p);
+  }
+  return out;
+}
+
+/** The slots held against the matrix, and each vacant slot's latest skip. */
+function slotLines(status, positions, journal) {
+  const slots = (status.pnl ?? []).filter((r) => r?.slot && !r.retired).map((r) => r.slot);
+  const working = isNum(status.pending) && status.pending > 0 ?` ${status.pending} entry or repair order${status.pending === 1 ? "" : "s"} working.` : "";
+  if (!slots.length) return [`Slots: unknown: the status lists no slot.${working}`];
+  if (!positions) {
+    return [`Slots: ${fig(status.open_strangles, String)} open strangles for ${slots.length} slots; which slots are vacant is unknown: the positions route did not answer.${working}`];
+  }
+  const held = new Set((positions.strangles ?? []).filter((s) => s.slot).map((s) => slotKey(s.slot)));
+  const vacant = slots.filter((s) => !held.has(slotKey(s)));
+  if (!vacant.length) return [`Slots: all ${slots.length} hold an open strangle, so the bot opens a new one only when one of them frees.${working}`];
+  const skips = latestSkips(journal);
+  return [
+    `Slots: ${slots.length - vacant.length} of ${slots.length} hold an open strangle, ${vacant.length} vacant.${working}`,
+    ...vacant.map((s) => {
+      const p = skips.get(slotKey(s));
+      if (!p) return `Vacant slot ${slotWords(s)}: no skip for it in the journal of the last ${JOURNAL_DAYS} days.`;
+      return `Vacant slot ${slotWords(s)}: latest skip (${shortTime(p.lastAt)} UTC): ${p.text.replace(/\.$/, "")}.`;
+    }),
+  ];
+}
+
+/** Each one-legged strangle's missing leg and what holds its repair. */
+function heldLines(status) {
+  return (status.held_legs ?? [])
+    .filter((h) => h?.rule)
+    .map((h) => `One-legged strangle in slot ${h.slot ? slotWords(h.slot) : UNKNOWN}: its ${h.missing || UNKNOWN} is not sold again yet: ${h.reason || UNKNOWN}.`);
+}
+
+/**
+ * Why the bot holds what it holds now (#719), as the citable passage
+ * "live:<bot>/book": whether entries may open and why not (halted, waiting
+ * for a fresh GEX reading, frozen by the margin policy in the monitor's
+ * words, margin unknown), IM against its limit with its alerts and 7-day use,
+ * the open strangles against the slots, each vacant slot's latest skip from
+ * the journal read (its plain words) and each held repair. Percentages and
+ * counts only: no amount, no account detail. status, positions: the routes'
+ * JSON; journal: journalPassages; error: why status could not be read, which
+ * makes the whole passage "unknown: <error>".
+ */
+export function bookPassage(bot, { status = null, positions = null, journal = [], error = "" } = {}) {
+  const base = { id: `live:${bot}/book`, source: `live:${bot}`, title: `${bot} book now`, live: true };
+  if (!status) return { ...base, text: `Book now: unknown: ${error || "the bot's status could not be read"}. Why nothing is open, or why the margin is unused, cannot be said now.` };
+  const lines = [
+    `Book now (${status.as_of ? `${shortTime(status.as_of)} UTC` : "time unknown"}):`,
+    entriesLine(status),
+    marginLine(status),
+    ...slotLines(status, positions, journal),
+    ...heldLines(status),
+  ];
+  return { ...base, title: `${base.title}${status.as_of ? ` at ${status.as_of}` : ""}`, text: lines.join(" ") };
 }
 
 /** "BTC-27NOV26-75000-P" → { name, strike: 75000, type: "put" } (XRP's "2d5" strike = 2.5). */
@@ -660,7 +788,9 @@ function applyRequestCheck(entry, verdict, passages) {
  * plus its held legs' whole history (selectJournal picks what this question
  * sends, #417, #427); live: the bot's page data from livePassages, all sent
  * (#427); perf: the bot's 7- and 30-day performance from perfPassages, sent
- * only when the question asks about results (asksAboutResults, #648); reportPassages:
+ * only when the question asks about results (asksAboutResults, #648); book:
+ * the bot's book now from bookPassage, sent only when the question asks why
+ * little or nothing is open (asksAboutIdle, #719); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
@@ -678,6 +808,7 @@ export async function answerQuestion({
   journal = [],
   live = [],
   perf = [],
+  book = [],
   reportPassages = async () => [],
   takeRetry = () => true,
   user,
@@ -691,7 +822,9 @@ export async function answerQuestion({
   const facts = selectJournal(question, journal);
   // The performance figures go only with a question about results (#648).
   const results = asksAboutResults(question) ? perf : [];
-  let passages = [...hits.map((h) => h.passage), ...live, ...results, ...facts];
+  // The book now goes only with a question about an idle book or unused margin (#719).
+  const present = asksAboutIdle(question) ? book : [];
+  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...results, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -719,7 +852,7 @@ export async function answerQuestion({
   // best hits go to the model anyway, so an advice or forecast question gets
   // the refusal, not "I don't know"; the guard checks the answer as any other.
   const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
-  if (!closeEnough && facts.length === 0 && live.length === 0 && results.length === 0) {
+  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && results.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;
