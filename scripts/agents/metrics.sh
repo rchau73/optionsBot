@@ -17,6 +17,7 @@ out_dir="$AGENT_STATE_DIR/metrics"
 report="$out_dir/$week.md"
 [[ -f "$report" ]] && exit 0
 take_lock metrics || exit 0
+run_begin metrics "" "" "$out_dir" # the run ledger (lib.sh): every exit below ends it
 slug="$(repo_slug)"
 tmp="$AGENT_STATE_DIR/metrics-$$"; mkdir -p "$tmp" "$out_dir"; on_exit_remove "$tmp"
 
@@ -43,7 +44,12 @@ log "metrics: wrote $report"
 
 epic="$(gh issue list -R "$slug" --label epic --state open -L 200 --json number,title \
   -q '.[] | select(.title | startswith("Epic E6 ")) | .number' | head -1)"
-if [[ -z "$epic" ]]; then log "metrics: no open E6 epic, report not posted"; exit 0; fi
+if [[ -z "$epic" ]]; then
+  log "metrics: no open E6 epic, report not posted"; run_end written "report in $report; no E6 epic"; exit 0
+fi
 { echo "🤖 **Agent metrics** — week $week (\`scripts/agents/metrics.sh\`, #180)"; echo; sed 1d "$report"; } > "$tmp/comment.md"
-gh issue comment "$epic" -R "$slug" --body-file "$tmp/comment.md" >/dev/null &&
-  log "metrics: posted $week on #$epic" || log "metrics: could not comment on #$epic"
+if gh issue comment "$epic" -R "$slug" --body-file "$tmp/comment.md" >/dev/null; then
+  log "metrics: posted $week on #$epic"; run_end posted "report in $report; $week on #$epic"
+else
+  log "metrics: could not comment on #$epic"; run_end written "report in $report; comment not posted"
+fi
