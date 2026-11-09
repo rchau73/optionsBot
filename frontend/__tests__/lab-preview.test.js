@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import * as previewModule from "@/app/api/lab/runs/[id]/preview/route";
 import { ANALYSIS_WITHHELD, LAB_LABEL, readRun } from "@/lib/lab";
-import { buildPreview, confirmToken, NOTHING_APPLIED, PREVIEW_MAX_AGE_DAYS } from "@/lib/labpreview";
+import { AUDIT_ACTIONS, parseAuditQuery } from "@/lib/audit";
+import { buildPreview, confirmToken, NOTHING_APPLIED, PREVIEW_AUDIT_ACTION, PREVIEW_MAX_AGE_DAYS } from "@/lib/labpreview";
 import { signedIn, useTestAuth } from "@/test/auth";
 
 // #682: the apply preview, read-only on the configuration.
@@ -224,6 +225,12 @@ describe("Scenario: audit", () => {
     });
     expect(JSON.stringify(record.mock.calls)).not.toContain(body.confirm_token);
     expect(logs.join("\n")).toContain("lab apply previewed");
+  });
+
+  test("the Audit page knows the action: listed and accepted as a filter", () => {
+    expect(AUDIT_ACTIONS).toContain(PREVIEW_AUDIT_ACTION);
+    const parsed = parseAuditQuery(new URLSearchParams({ action: PREVIEW_AUDIT_ACTION }));
+    expect(parsed).toMatchObject({ ok: true, query: { action: PREVIEW_AUDIT_ACTION } });
   });
 
   test.each([
