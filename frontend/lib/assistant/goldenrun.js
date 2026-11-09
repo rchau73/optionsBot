@@ -14,7 +14,7 @@
 // The bot data a question needs comes from the question's own fixture
 // (`bot`, `request`): invented figures, never a live account's.
 import path from "node:path";
-import { answerQuestion, explainPassages, journalPassages, livePassages, mergePassages, perfPassages } from "./service";
+import { answerQuestion, bookPassage, explainPassages, journalPassages, livePassages, mergePassages, perfPassages } from "./service";
 
 // The fixtures name one bot (their ids read "live:btc/…", "journal:btc/…").
 export const GOLDEN_BOT = "btc";
@@ -52,7 +52,7 @@ function journalItems(passages) {
  * What the monitor would hand answerQuestion for one golden question, built
  * from its fixture: `bot` (#427: the bot's routes' answers → live and journal
  * passages, plus /api/explain's facts for a Why?, #534, and /api/performance's
- * 7- and 30-day answers as `perf`, #648) or `request` (#409:
+ * 7- and 30-day answers as `perf`, #648, and the book now as `book`, #719) or `request` (#409:
  * journal facts and P&L history points); none → a question with no bot.
  */
 export function goldenInputs(q) {
@@ -61,14 +61,16 @@ export function goldenInputs(q) {
     let journal = journalPassages(GOLDEN_BOT, b.journal?.items, b.journal?.held);
     if (b.explain) journal = mergePassages(explainPassages(GOLDEN_BOT, b.explain), journal);
     const perf = perfPassages(GOLDEN_BOT, b.perf?.["7d"] ?? null, b.perf?.["30d"] ?? null);
-    return { bot: GOLDEN_BOT, live: livePassages(GOLDEN_BOT, b), journal, perf, reportPassages: async () => [] };
+    // A fixture whose status is null is a bot whose status route did not answer (#719).
+    const book = [bookPassage(GOLDEN_BOT, { status: b.status ?? null, positions: b.positions ?? null, journal, error: b.status ? "" : "the bot's status route did not answer" })];
+    return { bot: GOLDEN_BOT, live: livePassages(GOLDEN_BOT, b), journal, perf, book, reportPassages: async () => [] };
   }
   const passages = q.request?.passages ?? [];
   if (passages.length) {
     const pnl = passages.filter((p) => p.source.startsWith("pnl:"));
-    return { bot: GOLDEN_BOT, live: [], journal: journalPassages(GOLDEN_BOT, journalItems(passages)), perf: [], reportPassages: async () => pnl };
+    return { bot: GOLDEN_BOT, live: [], journal: journalPassages(GOLDEN_BOT, journalItems(passages)), perf: [], book: [], reportPassages: async () => pnl };
   }
-  return { bot: null, live: [], journal: [], perf: [], reportPassages: async () => [] };
+  return { bot: null, live: [], journal: [], perf: [], book: [], reportPassages: async () => [] };
 }
 
 /** One answers.jsonl line, as assistant_grade.py reads it: { id, text, citations, outcome }. */

@@ -22,6 +22,7 @@ Notable files:
   (the one-off "nothing lost" check was retired after it merged).
 - `tips_coverage_test.go` (#492): every `config.Tunables()` key has a tip in `docs/product/education/tips.json` and every glossary term has `short` + `risk_income`;
   no sentence over 25 words, no jargon word without a glossary entry, no promised return; a new tunable needs its tip in the same PR.
+- `tip_placement_test.go` (#728): `docs/product/education/tip-placement.md` has a section per menu page, every term and setting in it has a tip, every video id is in `videos.json`, keys are in order and nothing is dropped (placed or listed with a reason); a problem names the page and the key.
 - `personal_data_inventory_test.go` (#647): `frontend/docs/personal-data.md` names every column of `auth.db` (from `store.js`) with a purpose and a retention, no column that is gone, every audit action of `lib/audit.js`;
   a new column or audit action needs its row in the same PR.
 - `evidence_hedgetrial_test.go` (#678): the weekly report's futures hedge trial — one test per ticket scenario, the 7-day boundary and the live account's counts-only section.

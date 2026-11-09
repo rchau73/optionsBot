@@ -21,6 +21,10 @@ Index of the education material.
   - The monitor serves it: `GET /api/help/videos` (`frontend/docs/api-routes.md`) and `frontend/lib/videos.js`. No screen uses it yet.
   - The image reads a copy: after editing run `cp docs/product/education/videos.json frontend/content/videos.json`; `frontend/__tests__/videos-route.test.js` fails on a stale copy.
 
+- `tip-placement.md` (#728): per monitor page, the glossary terms and settings it shows, the tip key and video for each and the spot; the roles that see the page; the terms and settings on no page, each with a reason.
+  - `tests/tip_placement_test.go` fails, naming the page and the key, on a menu page with no section, a term or setting with no tip, a video id missing from `videos.json`, a key out of alphabetical order, and a term or setting neither placed nor listed.
+  - A new menu page, glossary term or tunable needs its row there in the same PR. No screen uses the map yet.
+
 ## Measuring use (#642)
 
 The events `tip_opened`, `video_played`, `video_completed` and `help_resolved` (analytics event plan §2) carry catalogue ids only, never an amount or text, and follow the E13 consent: with analytics off nothing is sent.
