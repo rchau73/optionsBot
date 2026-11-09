@@ -262,6 +262,7 @@ E8 (PRD "Multi-customer, multi-account, multi-exchange") adds exchanges behind o
 Today's Deribit types satisfy them as they are (compile-time checks in `internal/exchange/deribit.go`) and are the only adapter.
 Since #182 the strategy depends on the boundary itself: `internal/strategy/deps.go` names `Exchange = exchange.Trading`, `MarketData = exchange.MarketData` and `OISource = exchange.OpenInterest` (type aliases, so there is one definition), and `tests/exchange_test.go` checks that `Deps` carries exactly those types.
 `marketdata` and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; `exchange.Transport` is built from them) — a subpackage because `marketdata` cannot import `internal/exchange`, which names `marketdata.Instrument`.
+`marketdata.Manager` reads the chain and the DVOL history and names its channels through `deribit.ChainSource` (#710), behind an interface declared in `marketdata`.
 A second exchange is an adapter that satisfies these interfaces and converts to the bot's own types (`orders.Order`, `orders.AccountSummary`, `marketdata.Instrument`, …).
 Moving the Deribit code behind an adapter is a later step.
 
@@ -281,8 +282,8 @@ What the strategy asks of an exchange, and the Deribit call behind each:
 | `AccountReader.GetMargins` | `private/get_margins` | margin per order is not universal |
 | `AccountReader.GetDailyCloses` | `public/get_tradingview_chart_data` (daily candles for the SMA trend — closes; with the open, high and low for the monitor's regime chart, `/api/status` `sma.candles`, #394) | no |
 | `PortfolioSimulator.SimulatePortfolio`, `SimulateAlone` | `private/simulate_portfolio` (≤ 1 call/s, `add_positions`): entry and top-up sizing, the size cap | **yes**: without it, sizing needs a local margin model the bot does not have |
-| `OptionChain` (`UnderlyingPrice`, `GetInstrument`, `AllInstruments`, `Track`) | `public/get_instruments`; subscriptions `deribit_price_index.*`, `ticker.<name>.100ms` | channel names and ticker greeks are Deribit's |
-| `VolIndex` (`DVOL`, `IVPercentile`, `DVOLDaily`) | `public/get_volatility_index_data`; subscription `deribit_volatility_index.*` | **yes** (DVOL); elsewhere read it from Deribit over a public connection, or use a substitute |
+| `OptionChain` (`UnderlyingPrice`, `GetInstrument`, `AllInstruments`, `Track`) | `public/get_instruments`; subscriptions `deribit_price_index.*`, `ticker.<name>.100ms` (all in `ChainSource`, `internal/exchange/deribit`) | channel names and ticker greeks are Deribit's |
+| `VolIndex` (`DVOL`, `IVPercentile`, `DVOLDaily`) | `public/get_volatility_index_data`; subscription `deribit_volatility_index.*` (both in `ChainSource`) | **yes** (DVOL); elsewhere read it from Deribit over a public connection, or use a substitute |
 | `OpenInterest` | `public/get_book_summary_by_currency` on a **mainnet** public connection (`gex.Manager`, which also builds the GEX; the one call site is `BookReader.BookSummary` in `internal/exchange/deribit`, shared with the recorder) | open interest is universal; the GEX method is ours |
 | `Transport` (`Call`, `Subscribe`, `Notifications`, `Fatal`, `ConnStats`) | `gateway.Gateway`: one WebSocket, JSON-RPC 2.0, `public/auth`, `public/set_heartbeat`, priority lanes, retries, circuit breaker, reconnect | the wire format is Deribit's; every adapter keeps invariant 1 (all I/O through its one transport) |
 | `RateLimitPool` | `gateway.IsMatchingEngine`: two credit pools, matching engine (buy/sell/edit/cancel) and everything else | pool layout and limits differ per exchange |

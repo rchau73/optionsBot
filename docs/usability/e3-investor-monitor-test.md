@@ -34,33 +34,25 @@ Give each participant a code, **P1 to P5**. Use only the code in every note. Nam
 You need Go, Node.js 24+ and a terminal, from the repository root.
 
 ```bash
-# Terminal 1 — the demo bot API: simulated BTC strategy, no exchange connection
-go run ./cmd/monitor-demo
-
-# Terminal 2 — the monitor, showing only the demo BTC bot
-cd frontend
-npm ci
-# A fresh, throw-away user database for this round: the monitor creates the
-# first admin only when its user database is empty, so a reused one would
-# reject the new password. Nothing is written to .env.local (yours is kept;
-# these variables take precedence over it).
-export AUTH_DB_PATH="$(mktemp -d)/auth.db"
-export AUTH_SECRET="$(openssl rand -base64 48)"
-export ADMIN_USERNAME=moderator
-export ADMIN_PASSWORD="$(openssl rand -base64 18)"
-echo "$ADMIN_PASSWORD"                # the password to sign in with
-BOT_APIS=btc=http://127.0.0.1:8081 npm run dev
+scripts/usability_round.sh            # the demo without flags (section 6)
+scripts/usability_round.sh mixed      # or drawdown: a loss round (section 6b)
 ```
 
-1. Open <http://localhost:3000> and sign in as `moderator` with the password printed above. Sign in **before** the participant sits down: signing in is not part of the test. Run terminal 2's commands again, in a new terminal, at the start of every round (and whenever terminal 2 was closed): each run gets its own empty user database, so the printed password always works.
+The script builds and starts the demo bot API (simulated BTC strategy, no exchange connection) and the monitor showing only that demo bot, on a fresh, throw-away user database: the monitor creates the first admin only when its user database is empty, so a reused one would reject the new password.
+Nothing is written to `.env.local` (yours is kept; the script's variables take precedence over it), and the real monitor tokens are blanked for the round.
+It prints the scenario in use, the demo API, monitor and sign-in URLs, and the password.
+It refuses to start when port 8081 or 3000 is already in use.
+Ctrl-C ends the round and deletes its user database.
+
+1. Open <http://localhost:3000> and sign in as `moderator` with the password the script printed. Sign in **before** the participant sits down: signing in is not part of the test. Run the script again at the start of every round: each run gets its own empty user database, so the printed password always works.
 2. **Desktop run:** a browser window of **1440 × 900** (Chrome: DevTools → device toolbar → Responsive → 1440 × 900, then close DevTools). Zoom 100 %. Scroll to the top.
 3. **Phone run (E12):** one of the 5 sessions — P5 — uses a phone layout: Chrome DevTools device toolbar, **iPhone 12 Pro (390 × 844)**, or a real phone on the same network. Write "mobile" as its layout in the results table.
-4. Check the page shows the **BTC · investor summary** block with four parts: *What it holds*, *Income per month*, *Worst case now*, *Last action*. If it says "Summary unavailable", restart terminal 1. At phone width (under 640 px) the page is the phone overview instead (#320): the month's result as the headline and four cards (*What it holds*, *Making or losing*, *Worst case right now*, *Last action*); the full monitor is under the menu's *Details*.
-5. Restart `go run ./cmd/monitor-demo` (terminal 1) between participants, so each one starts from the same demo state. Reload the page after the restart.
+4. Check the page shows the **BTC · investor summary** block with four parts: *What it holds*, *Income per month*, *Worst case now*, *Last action*. If it says "Summary unavailable", press Enter in the script's terminal to restart the demo. At phone width (under 640 px) the page is the phone overview instead (#320): the month's result as the headline and four cards (*What it holds*, *Making or losing*, *Worst case right now*, *Last action*); the full monitor is under the menu's *Details*.
+5. Press Enter in the script's terminal between participants: the demo restarts, so each one starts from the same demo state. Reload the page after the restart.
 
 The demo moves on its own: spot follows a random walk, marks follow spot, and now and then a leg is bought back and sold again. That is expected; the answer key says which answers stay fixed and which you read off the screen at the moment the participant answers.
 
-The answer key is for the demo **without flags**. To test how losses read, `go run ./cmd/monitor-demo -scenario mixed` (a losing month among winning ones) or `-scenario drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key of section 6 does not hold for them: score the loss round with section 6b. In a loss round, restart terminal 1 between participants with the flag of the next participant's scenario (section 1).
+The answer key is for the demo **without flags**. To test how losses read, `scripts/usability_round.sh mixed` (a losing month among winning ones) or `scripts/usability_round.sh drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key of section 6 does not hold for them: score the loss round with section 6b. In a loss round, type the next participant's scenario in the script's terminal between participants (section 1).
 
 ## 4. Moderator script
 
@@ -105,6 +97,7 @@ Then answer the participant's questions, thank them and close the browser tab.
 
 `go run ./cmd/monitor-demo` with no flags: BTC, simulated, testnet (demo). **Fixed** answers are the same in every session. **Read it off the screen** means: write down the value the page shows at the moment the participant answers, and score against that.
 The Overview's "Since you last looked" card (#618) is not part of this 4-question answer key: moderators ignore it in round 2 unless the PO decides otherwise.
+The fenced `key` blocks quote each fixed figure for `tests/usability_keys_test.go` (#727): change one when the demo changes, together with the sentence that quotes it.
 
 ### Q1 — what does it hold
 
@@ -121,6 +114,19 @@ Fixed facts (*What it holds*, and the **Open positions** table):
 | Partial | gets the count or size right but not that they are sold (e.g. "it owns 1.8 BTC", "it bought 6 options"), or says "options" with no count or size |
 | Fail | says it holds coins, cash or nothing; or no answer within the time |
 
+```key
+scenario: default
+question: Q1
+strangles: 3
+open_legs: 6
+calls: 3
+puts: 3
+side: sell
+qty_per_option: 0.3
+notional_coin: 1.8
+strikes: 25=110000/90000 45=114000/87000 60=116000/84000
+```
+
 ### Q2 — making or losing money
 
 Fixed facts (*Income per month (realised, net of fees)*):
@@ -134,6 +140,14 @@ Fixed facts (*Income per month (realised, net of fees)*):
 | Partial | says "making money" without being able to point to a figure, or reads the right figure with the wrong unit (BTC as dollars, or the reverse) |
 | Fail | says it is losing money (e.g. from a negative open-position line alone, or a red stop-loss close), or cannot say |
 
+```key
+scenario: default
+question: Q2
+months: 6
+result_sign: positive
+losing_months_ago: none
+```
+
 ### Q3 — the worst case right now
 
 Fixed facts (*Worst case now (one day)*):
@@ -146,6 +160,13 @@ Fixed facts (*Worst case now (one day)*):
 | Success | gives a loss amount for a big one-day move (either direction) in BTC, USD or % of equity, as a loss, and shows it is an estimate (e.g. "about", "if the price moves", "the model says") |
 | Partial | gives the right figure but as a gain, or in the wrong unit, or as a certain outcome ("it will lose…"); or says only "it loses if the price moves a lot" with no figure |
 | Fail | names another number (the stop-loss mark, margin, equity, a past loss) as the worst case, says "it can lose everything" or "nothing", or cannot say |
+
+```key
+scenario: default
+question: Q3
+worst_case_sign: loss
+worst_case_move_pct: 7-9
+```
 
 ### Q4 — the last thing it did, and why
 
@@ -164,6 +185,13 @@ The *Last action* block shows a plain sentence, a time, "sold" or "bought back",
 | Success | says **what** it did (sold / bought back a call or put) **and why**, in their own words matching the sentence shown (e.g. "it sold a call to earn the fee"; "it bought back a put because it had already made most of the money") |
 | Partial | says what but not why, or why but not what |
 | Fail | describes a different event (an order sent, a skipped entry, a trend change in the Activity feed), the wrong side (sold vs bought back), or cannot say |
+
+```key
+scenario: default
+question: Q4
+last_action_kinds: open | close
+last_action_reason_in_q4_table: true
+```
 
 ### Errors to count (any question)
 
@@ -199,6 +227,41 @@ Q2 fixed facts (*Income per month (realised, net of fees)*):
 
 Q3 is scored as in section 6 (the worst case is two modelled losses, a move of about 7–9 %, "This is a model, not a quote"): a worst case given as a gain is **partial**, as in the profit key.
 
+```key
+scenario: mixed
+question: Q1
+strangles: 3
+open_legs: 6
+calls: 3
+puts: 3
+side: sell
+qty_per_option: 0.3
+notional_coin: 1.8
+strikes: 25=110000/90000 45=114000/87000 60=116000/84000
+```
+
+```key
+scenario: mixed
+question: Q2
+months: 6
+result_sign: 1_losing_month
+losing_months_ago: 2
+```
+
+```key
+scenario: mixed
+question: Q3
+worst_case_sign: loss
+worst_case_move_pct: 7-9
+```
+
+```key
+scenario: mixed
+question: Q4
+last_action_kinds: open | close
+last_action_reason_in_q4_table: true
+```
+
 ### Drawdown (`-scenario drawdown`)
 
 Q1 fixed facts: the same 3 calls and 3 puts at the strikes and expiries of section 6, all sold, but each option is **1.5 BTC**, together **9.00 BTC sold**.
@@ -223,6 +286,45 @@ Q3 fixed facts (*Worst case now (one day)*): two modelled losses (− sign) for 
 | Partial | a worst case given as a gain is **partial**, as in the profit key; so is the right figure in the wrong unit, as a certain outcome, or "it loses if the price moves a lot" with no figure |
 | Fail | names another number as the worst case (the put's open loss, its stop-loss mark, margin, equity, a past month's loss), says "it can lose everything" or "nothing", or cannot say |
 
+```key
+scenario: drawdown
+question: Q1
+strangles: 3
+open_legs: 6
+calls: 3
+puts: 3
+side: sell
+qty_per_option: 1.5
+notional_coin: 9
+strikes: 25=110000/90000 45=114000/87000 60=116000/84000
+```
+
+```key
+scenario: drawdown
+question: Q2
+months: 6
+result_sign: 1_losing_month
+losing_months_ago: 2
+open_loss_leg: 25d put 90000
+open_loss_mark_multiple: 2.6
+open_loss_stop_multiple: 3
+```
+
+```key
+scenario: drawdown
+question: Q3
+worst_case_sign: loss
+worst_case_move_pct: 7-9
+worst_case_exceeds_monthly_income: true
+```
+
+```key
+scenario: drawdown
+question: Q4
+last_action_kinds: open | close
+last_action_reason_in_q4_table: true
+```
+
 ## 7. Scoring and pass mark
 
 Per participant and question: **success / partial / fail**, the time of the final answer (mm:ss from the start), and the errors.
@@ -231,6 +333,17 @@ Per participant and question: **success / partial / fail**, the time of the fina
 - **The round passes when at least 4 of the 5 participants pass.**
 
 Partial counts as not passed. Score right after each session, from your notes and this key only.
+
+`scripts/product/score_usability.py` applies these rules to the results table of section 8, so a round is scored the same way every time.
+Copy the table to `data/usability/e3/<round>/results.md` with no other notes in the file, and write each error in the Errors column as its question and type, for example `Q2 sign, Q3 unit` (one entry per error; empty or `none` when there were none).
+
+```bash
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md   # two rounds, side by side
+```
+
+It prints the summary and writes it to `summary.md` beside the table, with the synthesis of section 8 to fill in; a `summary.md` already there stays unless you pass `--force`.
+It refuses a file with anything the template does not allow (an e-mail, a phone number, a name, a code other than P1 to P5): it names the line number, never the content, and writes nothing.
 
 ## 8. Templates
 
