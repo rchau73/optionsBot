@@ -3,6 +3,7 @@
 Index of the education material.
 - `video-storyboards.md`: the how-to videos, one `video.<id>` section each.
 - `comprehension-test.md`: the protocol that measures whether the tips and videos work.
+  - `comprehension-example.csv` is a synthetic results table; `scripts/product/comprehension_score.py` scores a round from one (how: `comprehension-test.md` section 6a, #718).
 - `empty-states.md`: the copy of every monitor panel with no data.
 - `tips.json`: a plain-words tip for every tunable setting (#492): meaning, unit, what raising it does to risk and to income, a video id where one fits.
   - Core-policy settings say a change needs the product owner.

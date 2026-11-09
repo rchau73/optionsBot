@@ -24,8 +24,8 @@ How to read the columns:
 | `public/set_heartbeat` | gateway / `gateway.go` | asks Deribit to send heartbeats | public | non-matching | yes | low | both | early detection of a dead socket (falls back to its own ping) |
 | `public/test` | gateway / `gateway.go` | answer to Deribit's `test_request` (written on the socket, outside the queue) and the gateway's own keep-alive ping | public | non-matching | yes | low | both | the connection (Deribit closes it, code 4000) |
 | `public/subscribe` | gateway / `gateway.go` | subscribes channels (below), in chunks; restored after a reconnect | public | non-matching | yes | low | trading | live index, DVOL and tickers |
-| `public/get_instruments` | marketdata / `marketdata.go` | the option chain at start (names, strike, expiry, tick sizes, minimum size) | public | non-matching | yes | low | trading | every instrument: no entry, no mark |
-| `public/get_volatility_index_data` | marketdata / `marketdata.go` | DVOL daily history to seed the IV percentile | public | non-matching | yes | low | trading | the margin band starts at percentile 50 until history builds up |
+| `public/get_instruments` | exchange/deribit / `chain.go` (`ChainSource.Instruments`, used by `marketdata.Manager`) | the option chain at start (names, strike, expiry, tick sizes, minimum size) | public | non-matching | yes | low | trading | every instrument: no entry, no mark |
+| `public/get_volatility_index_data` | exchange/deribit / `chain.go` (`ChainSource.VolHistory`, used by `marketdata.Manager`) | DVOL daily history to seed the IV percentile | public | non-matching | yes | low | trading | the margin band starts at percentile 50 until history builds up |
 | `public/get_book_summary_by_currency` | exchange/deribit / `booksummary.go` (`BookReader.BookSummary`, used by `gex.Manager` and `recorder.USDCBooks`) | mainnet open interest and marks for GEX and the liquidity cap (gex, every 60 s); the USDC-settled book for the recorder | public | non-matching | yes | low | market | GEX regime and flip (no new risk: `gex_wait`), the liquidity cap (nothing sent) |
 | `public/get_tradingview_chart_data` | orders / `executor.go` | daily closes of `<COIN>-PERPETUAL` that seed the SMA trend and swings | public | non-matching | yes | low | trading | the trend at startup (it builds from live prices instead) |
 | `public/get_instrument` | orders / `executor.go` | the perpetual's contract size, minimum amount and tick for the futures hedge experiment (`GetInstrumentSpec`, read once, #657) | public | non-matching | yes | low | trading | the futures hedge (no contract size: no hedge order) |
@@ -52,13 +52,13 @@ The gateway also matches on method prefixes, which the test lists as gateway-onl
 
 | Channel | Package / file | Purpose | Connection |
 |---|---|---|---|
-| `deribit_price_index.<coin>_usd` | marketdata / `marketdata.go` | the underlying price (reliable on testnet where options are unquoted) | trading |
-| `deribit_volatility_index.<coin>_usd` | marketdata / `marketdata.go` | DVOL: margin bands, flip buffer, `sma9_band_sd` | trading |
-| `ticker.<instrument>.100ms` | marketdata / `marketdata.go` | bid, ask, mark, greeks of every tradable expiry and of held instruments (`Track`) | trading |
+| `deribit_price_index.<coin>_usd` | exchange/deribit / `chain.go` (named there; `marketdata.Manager` subscribes) | the underlying price (reliable on testnet where options are unquoted) | trading |
+| `deribit_volatility_index.<coin>_usd` | exchange/deribit / `chain.go` (named there; `marketdata.Manager` subscribes) | DVOL: margin bands, flip buffer, `sma9_band_sd` | trading |
+| `ticker.<instrument>.100ms` | exchange/deribit / `chain.go` (named there; `marketdata.Manager` subscribes) | bid, ask, mark, greeks of every tradable expiry and of held instruments (`Track`) | trading |
 
 Heartbeats arrive as `heartbeat` notifications; `test_request` is answered with `public/test` on the socket (above).
 
-**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 5 packages (gateway, marketdata, exchange/deribit, orders, account). None under `internal/strategy`.
+**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 4 packages (gateway, exchange/deribit, orders, account). None under `internal/strategy`.
 
 ## 2. Deribit-specific assumptions outside the gateway
 
@@ -75,9 +75,9 @@ Each row is marked: **adapter** (moves into the adapter), **stays** (exchange-ne
 | Tick sizes: `Instrument.TickSize`/`TickSizeSteps` from the chain, and the executor's fallback `tickSize = 0.0001` (`RoundToTick`, used by `AmendOrder`) | `marketdata/types.go`, `orders/executor.go`, `strategy/pricing.go` | partly (the instrument travels through `MarketData`) | instrument ticks **stay** (adapter fills them); the 0.0001 fallback → [§5](#5-proposals-for-a-person-order-handling-and-reconcile) |
 | `MinTradeAmount` lots (0.1 BTC, 1 ETH) | `marketdata.Instrument`, strategy sizing | yes (instrument) | **stays** (adapter fills it) |
 | Fee formula 0.03 % of the underlying, cap 12.5 % of the price | `orders.OptionFee` (backtest, stress); live books `get_user_trades_by_order` | live: yes (`OrderFee`); model: no | **adapter** (`FeeModel` per exchange) |
-| Index and DVOL names `deribit_price_index.<coin>_usd`, `deribit_volatility_index.<coin>_usd` | `marketdata.go` | yes (`MarketData`) | **adapter** |
+| Index and DVOL names `deribit_price_index.<coin>_usd`, `deribit_volatility_index.<coin>_usd` | `exchange/deribit/chain.go` (done, step 4) | yes (`marketdata.ChainSource`) | **adapter** |
 | DVOL as the volatility index (margin bands, flip buffer, worst case) | `marketdata.DVOLTracker`, `risk`, `gamma.go`, `api/summary.go` | yes (`VolIndex`) | **adapter** + capability `VolIndex`; without one, read Deribit's DVOL over a public connection (**settle later**) |
-| Ticker interval `100ms` (only `100ms` and `raw` valid) | `marketdata.go` | yes | **adapter** |
+| Ticker interval `100ms` (only `100ms` and `raw` valid) | `exchange/deribit/chain.go` (done, step 4) | yes (`marketdata.ChainSource`) | **adapter** |
 | Greeks from the ticker; position greeks size-weighted (`strategy.PerOptionGreeks`) | `marketdata`, `strategy/reconcile.go` | partly | ticker greeks **adapter**; `PerOptionGreeks` is reconcile → [§5](#5-proposals-for-a-person-order-handling-and-reconcile) |
 | A strike shared by two strangles comes back as one position (#156 split) | `strategy` `GroupPositions` | no | reconcile → [§5](#5-proposals-for-a-person-order-handling-and-reconcile) |
 | Currency-scoped cancel-all at startup and kill switch | `orders.CancelAllOrders`, `strategy` reconcile, `killswitch.go` | yes | **adapter**, plus capability `CancelAllByCurrency`; another scope → [§5](#5-proposals-for-a-person-order-handling-and-reconcile) |
@@ -237,7 +237,7 @@ var (
 )
 ```
 
-**Types that change**: `Exchange` is new; `GetDailyCloses` moves from the account reader to market data (`Candles`). `Capabilities` (`exchange.DeribitCapabilities`, all `true`) and `BookSummary` (`deribit.BookReader`) are in the code since #687. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` names the boundary's interfaces as aliases (#182: `Exchange = exchange.Trading`, `MarketData = exchange.MarketData`, `OISource = exchange.OpenInterest`), so a change here is a change to what the strategy asks.
+**Types that change**: `Exchange` is new; `GetDailyCloses` moves from the account reader to market data (`Candles`). `Capabilities` (`exchange.DeribitCapabilities`, all `true`) and `BookSummary` (`deribit.BookReader`) are in the code since #687. `marketdata.ChainSource` (#710, implemented by `deribit.ChainSource`) is what `Manager` asks of an exchange below `MarketData`; it is declared in `marketdata`, with its `ChannelKind` and `VolClose`, so `marketdata` never imports the adapter's package. `internal/exchange` keeps its current names until step 6 renames or aliases them to these groups; `strategy/deps.go` names the boundary's interfaces as aliases (#182: `Exchange = exchange.Trading`, `MarketData = exchange.MarketData`, `OISource = exchange.OpenInterest`), so a change here is a change to what the strategy asks.
 
 **Deribit's capabilities**: all true, pinned by `TestExchange_DeribitCapabilitiesArePinned`. A second exchange's row of this table is the E8 feasibility brief's job (#183).
 
@@ -248,7 +248,9 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
 1. **Inventory pinned** (done, #325): this document and `tests/exchange_coupling_test.go`.
 2. **Capabilities** (done, #687): `Capabilities` in `internal/exchange` with Deribit's value (`DeribitCapabilities`, all true), read by nothing. A test pins Deribit's value.
 3. **One book-summary fetch** (done, #687): `gex.Manager` and `recorder.USDCBooks` (behind `LinearBook`) call one `BookSummary(ctx, currency)` on `deribit.BookReader` in `internal/exchange/deribit`; same request, same gateway. `public/get_book_summary_by_currency` has one call site. `SummaryRow` moved with it and `gex.SummaryRow` is an alias, because `internal/exchange` imports `gex`.
-4. **Chain and channels behind the adapter**: `public/get_instruments`, `public/get_volatility_index_data` and the three channel names move from `marketdata.Manager` into a Deribit chain source the manager consumes; `Manager` keeps its methods (it still satisfies `MarketData`).
+4. **Chain and channels behind the adapter** (done, #710): `public/get_instruments`, `public/get_volatility_index_data` and the three channel names moved from `marketdata.Manager` into `deribit.ChainSource` (`internal/exchange/deribit/chain.go`), which the manager consumes through its own `marketdata.ChainSource` interface; same requests, same gateway.
+   `Manager` keeps its methods (it still satisfies `MarketData`).
+   The ticker's payload is still decoded in `marketdata`.
 5. **Account view**: `account.Poller`'s three calls go through the same Deribit package (monitor only, no trading effect).
 6. **`internal/exchange/deribit`**: an `Adapter` type that composes today's `Gateway`, `Executor` and `Manager` and satisfies `Exchange`; `main` builds `strategy.Deps` from it. No call changes; the coupling test's allowed packages move to `exchange/deribit` as each step lands.
 7. **Instrument fields instead of name parsing in the strategy**: `orphans.go`, `pending.go`, `shed.go`, `stopped.go` read `Instrument.Expiry/Strike/OptionType` (from the chain or the journal) instead of `ParseOptionName`; research tools keep the parser for recorded Deribit files. Restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).

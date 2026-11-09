@@ -140,7 +140,7 @@ func TestMarketData_SubscribesTheStretch(t *testing.T) {
 		cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 25, Deltas: []float64{0.16}}, {DTE: 120, Deltas: []float64{0.16}}}
 		cfg.ExpiryStretch = c.stretch
 		ctx, cancel := context.WithCancel(context.Background())
-		m := marketdata.New(cfg, gw)
+		m := newFeedManager(cfg, gw)
 		if err := m.Start(ctx); err != nil {
 			t.Fatal(err)
 		}

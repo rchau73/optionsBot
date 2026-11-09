@@ -2,11 +2,12 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import DetailsPage from "@/components/DetailsPage";
 import Monitor from "@/components/Monitor";
 import PayoffCard from "@/components/PayoffCard";
+import PayoffModal from "@/components/PayoffModal";
 import { PositionsScreen } from "@/components/PositionsPage";
 import { useMonitor } from "@/hooks/useMonitor";
 import { fetchBotState } from "@/lib/api/bots";
 import { ALLOWED_ENDPOINTS } from "@/lib/bots";
-import { cardTitle, chartGeometry, chartLines, deltaLine, earnedLine, missingLine, nowLabel, textAlternative, todayZones } from "@/lib/payoff";
+import { cardTitle, chartGeometry, chartLines, deltaLine, earnedLine, hedgedBreakEvensLine, missingLine, nowLabel, textAlternative, todayZones, wholeBookLine } from "@/lib/payoff";
 
 // The payoff charts (#391): the Positions page, the overview's cards and the
 // modal opened from a leg. The poller is mocked: Monitor reads its bots from
@@ -308,6 +309,172 @@ describe("lib/payoff", () => {
     expect(chartGeometry({ points: [] })).toBeNull();
     render(<PayoffCard sp={strangle("a", 25, { points: [] })} report={report([])} />);
     expect(screen.getByText(/Chart unknown: the bot sent no curve/)).toBeInTheDocument();
+  });
+});
+
+// #695: the shapes of a strangle with its share of the perpetual.
+function hedgedStrangle(extra = {}) {
+  const base = strangle("a", 25);
+  const gain = (s) => 14257 * (1 / s - 1 / 82400);
+  return {
+    ...base,
+    points: base.points.map((p) => ({ ...p, today_hedged_pnl: p.today_pnl + gain(p.price), expiry_hedged_pnl: p.expiry_pnl + gain(p.price) })),
+    hedge_share_usd: -14257,
+    hedge_share_delta_coin: -0.173,
+    coin_delta: 0.1872,
+    net_delta_with_hedge_coin: 0.0142,
+    unrealised_with_hedge_coin: 0.0071,
+    unrealised_with_hedge_usd: 585.04,
+    hedged_break_evens: [70100, 95300],
+    hedge_moves: [-20, -10, -5, 5, 10, 20].map((m) => ({
+      move_pct: m,
+      spot: 82400 * (1 + m / 100),
+      options_coin: m === -10 ? -0.0661 : 0.001,
+      options_usd: m === -10 ? -4902 : 80,
+      hedged_coin: m === -10 ? -0.0453 : 0.002,
+      hedged_usd: m === -10 ? -3360 : 160,
+    })),
+    ...extra,
+  };
+}
+
+const heldPerp = (extra = {}) => ({ perp_usd: -29400, perp_delta_coin: -0.3568, options_delta_coin: 0.3861, band_coin: 0.05, avg_price: 82400, split: true, ...extra });
+
+describe("Scenario: a strangle chart includes its hedge share", () => {
+  test("the chart opens with it: hedged curves in sky, today's options-only curve faint, the dot on the hedged curve", () => {
+    const sp = hedgedStrangle();
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
+    const chart = screen.getByTestId("payoff-chart");
+    expect(chart.querySelector('[data-curve="today-hedged"]')).toHaveClass("stroke-sky-400");
+    expect(chart.querySelector('[data-curve="expiry-hedged"]')).toHaveClass("stroke-sky-200");
+    expect(chart.querySelector('[data-curve="expiry-hedged"]')).toHaveAttribute("stroke-dasharray", "6 4");
+    expect(chart.querySelector('[data-curve="today-options"]')).toHaveClass("stroke-slate-400/50");
+    expect(chart.querySelector('[data-curve="today"]')).toBeNull();
+    expect(chart).toHaveTextContent("now 82,400 · +0.0071 BTC (+$585)");
+    const g = chartGeometry(sp, { width: 640, height: 300, hedged: true });
+    expect(Number(chart.querySelector('[data-marker="spot"] circle').getAttribute("cy"))).toBeCloseTo(g.y(0.0071), 5);
+    expect(screen.getByRole("button", { name: "With its hedge share" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("the lines stay the options' own and the legend lists the hedged break-evens", () => {
+    const sp = hedgedStrangle();
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
+    expect(screen.getByTestId("payoff-chart")).toHaveTextContent("break-even 74,300");
+    expect(screen.getByText(/at expiry, with its hedge share \(zero at 70,100 and 95,300\)/)).toBeInTheDocument();
+  });
+
+  test("the delta box: this strangle, its hedge share, net", () => {
+    const sp = hedgedStrangle();
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
+    const rows = within(screen.getByRole("complementary", { name: "Delta" })).getAllByRole("definition").map((d) => d.textContent);
+    expect(rows).toEqual(["+0.19 BTC", "−0.17 BTC", "+0.01 BTC"]);
+  });
+
+  test("the moves table: options only against with its hedge share, coin first, a loss with its sign and the copy under it", () => {
+    const sp = hedgedStrangle();
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
+    expect(screen.getAllByRole("row")).toHaveLength(7);
+    const row = screen.getByTestId("hedge-move--10");
+    expect(row).toHaveTextContent("−10 %");
+    expect(row).toHaveTextContent("−0.0661 BTC (−$4,902)");
+    expect(row).toHaveTextContent("−0.0453 BTC (−$3,360)");
+    expect(screen.getByText(/drawn as held now.*near the solid blue curve, minus fees/)).toBeInTheDocument();
+  });
+
+  test("the text alternative names both curves", () => {
+    const text = textAlternative(hedgedStrangle(), "BTC", true);
+    expect(text).toMatch(/With its hedge share of −\$14,257, at expiry: zero at 70,100 and 95,300\./);
+    expect(text).toMatch(/Bought back today with its hedge share: .*\. Options only, bought back today: /);
+    expect(text).toContain("now 82,400 · +0.0071 BTC (+$585), in the gain area.");
+  });
+
+  test("the compact card draws the hedged curves, with no toggle and no table", () => {
+    const sp = hedgedStrangle();
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} compact />);
+    expect(screen.getByTestId("payoff-chart").querySelector('[data-curve="today-hedged"]')).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "Curves shown" })).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  test("no today curve: the hedged expiry curve stays and the moves say unknown", () => {
+    const sp = hedgedStrangle({ today: false, today_reason: "unknown: no implied volatility", hedge_moves: null });
+    sp.points = sp.points.map((p) => ({ ...p, today_pnl: null, today_hedged_pnl: null }));
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
+    const chart = screen.getByTestId("payoff-chart");
+    expect(chart.querySelector('[data-curve="expiry-hedged"]')).not.toBeNull();
+    expect(chart.querySelector('[data-curve="today-hedged"]')).toBeNull();
+    expect(chart.querySelector('[data-curve="today-options"]')).toBeNull();
+    expect(screen.getByText(/Moves unknown/)).toBeInTheDocument();
+  });
+
+  test("a hedged curve with no zero on the chart says so", () => {
+    expect(hedgedBreakEvensLine({ hedged_break_evens: [] })).toBe("no zero on this chart");
+  });
+});
+
+describe("Scenario: toggle", () => {
+  test('pressing "Options only" in the modal draws the options-only curves and presses that button', () => {
+    const sp = hedgedStrangle();
+    render(<PayoffModal report={report([sp], { hedge: heldPerp() })} strangleId="a" onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog");
+    const options = within(dialog).getByRole("button", { name: "Options only" });
+    expect(options).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(options);
+    expect(options).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByRole("button", { name: "With its hedge share" })).toHaveAttribute("aria-pressed", "false");
+    const chart = within(dialog).getByTestId("payoff-chart");
+    expect(chart.querySelector('[data-curve="today"]')).toHaveClass("stroke-white");
+    expect(chart.querySelector('[data-curve="expiry"]')).not.toBeNull();
+    expect(chart.querySelector('[data-curve="today-hedged"]')).toBeNull();
+    expect(chart.querySelector('[data-curve="today-options"]')).toBeNull();
+    expect(chart).toHaveTextContent("now 82,400 · +0.0058 BTC (+$478)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "With its hedge share" }));
+    expect(chart.querySelector('[data-curve="today-hedged"]')).not.toBeNull();
+  });
+});
+
+describe("Scenario: no perpetual, no change", () => {
+  test("null hedged fields render the card as before", () => {
+    const sp = strangle("a", 25, { hedge_share_usd: null, hedge_moves: null, hedged_break_evens: null });
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: null })} />);
+    const chart = screen.getByTestId("payoff-chart");
+    expect(chart.querySelector('[data-curve="today"]')).not.toBeNull();
+    expect(chart.querySelector('[data-curve="today-options"]')).toBeNull();
+    expect(screen.queryByRole("group", { name: "Curves shown" })).toBeNull();
+    expect(screen.queryByTestId("hedge-whole-book")).toBeNull();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.queryByText(/hedge/i)).toBeNull();
+  });
+});
+
+describe("Scenario: options' delta near zero", () => {
+  const unsplit = heldPerp({ split: false, not_split_reason: "the options' net delta is inside the hedge band" });
+
+  test("the card shows the options alone and points to the book panel", () => {
+    const sp = strangle("a", 25);
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: unsplit })} />);
+    expect(screen.getByTestId("payoff-chart").querySelector('[data-curve="today"]')).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "Curves shown" })).toBeNull();
+    const note = screen.getByTestId("hedge-whole-book");
+    expect(note).toHaveTextContent("Hedge counted on the whole book (short 0.3568 BTC) → see Positions");
+    expect(within(note).getByRole("link", { name: "see Positions" })).toHaveAttribute("href", "/positions?bot=btc#book-payoff");
+  });
+
+  test("on the compact card the link stays above the card's button", () => {
+    const sp = strangle("a", 25);
+    render(<PayoffCard sp={sp} report={report([sp], { hedge: unsplit })} compact />);
+    expect(screen.getByTestId("hedge-whole-book")).toHaveClass("relative", "z-10");
+  });
+
+  test("a long perpetual reads long", () => {
+    expect(wholeBookLine({ hedge: heldPerp({ split: false, perp_usd: 900, perp_delta_coin: 0.0109 }) }, "BTC")).toBe("Hedge counted on the whole book (long 0.0109 BTC)");
+    expect(wholeBookLine({ hedge: heldPerp() }, "BTC")).toBeNull();
+    expect(wholeBookLine({ hedge: null }, "BTC")).toBeNull();
+  });
+
+  test("the book panel is the link's target", () => {
+    render(<PositionsScreen names={["btc"]} bot="btc" payoff={report([])} hedge={{ enabled: true, perp_usd: -29400, book_scenarios: [] }} />);
+    expect(screen.getByTestId("book-payoff")).toHaveAttribute("id", "book-payoff");
   });
 });
 
