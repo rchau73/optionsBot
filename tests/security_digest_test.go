@@ -318,7 +318,7 @@ func TestSecurityAlerts_APromotionToAdminIsReported(t *testing.T) {
 func TestSecurity_NothingSensitiveLeaves(t *testing.T) {
 	w := secWeek(t)
 	now := w.To.Add(-time.Hour)
-	secrets := []string{"alice", "bob", "mallory", "203.0.113.5", "2001:db8::7", "hunter2-Secret!", "rt_9f8e7d6c5b4a", "https://monitor.example/reset?token=abc123", "abc123", "s3ss10n1d"}
+	secrets := []string{"alice", "bob", "mallory", "203.0.113.5", "2001:db8::7", "passpass-word", "redactme-redactme", "https://monitor.example/reset?token=abc123", "abc123", "s3ss10n1d"}
 	var lines []string
 	lines = failures(lines, 12, now.Add(-50*time.Minute), 4*time.Minute, "alice", "203.0.113.5")
 	for i := 0; i < 3; i++ {
@@ -328,7 +328,7 @@ func TestSecurity_NothingSensitiveLeaves(t *testing.T) {
 		secLine(now.Add(-20*time.Minute), "signed_in", `"username":"mallory","role":"user","ip":"2001:db8::7"`),
 		secLine(now.Add(-19*time.Minute), "role_changed", `"username":"mallory","role":"admin","target":"bob","from":"user","to":"admin"`),
 		// Fields that must never be in a line, and if they were, never leave.
-		secLine(now.Add(-18*time.Minute), "reset_link_issued", `"username":"mallory","target":"alice","url":"https://monitor.example/reset?token=abc123","password":"hunter2-Secret!","token":"rt_9f8e7d6c5b4a"`),
+		secLine(now.Add(-18*time.Minute), "reset_link_issued", `"username":"mallory","target":"alice","url":"https://monitor.example/reset?token=abc123","password":"passpass-word","token":"redactme-redactme"`),
 		secLine(now.Add(-17*time.Minute), "session_ended", `"username":"alice","target_session":"s3ss10n1d"`),
 	)
 	dir := writeSecTrail(t, lines)
