@@ -8,7 +8,7 @@ import { configuredBots } from "@/lib/bots";
 import { QuestionLimiter } from "./limit";
 import { anthropicClient } from "./model";
 import { HelpIndex } from "./search";
-import { JOURNAL_CACHE_MS, JOURNAL_DAYS, LIVE_CACHE_MS, PERF_CACHE_MS, explainPassages, journalPassages, livePassages, perfPassages, pnlPassages } from "./service";
+import { JOURNAL_CACHE_MS, JOURNAL_DAYS, LIVE_CACHE_MS, PERF_CACHE_MS, bookPassage, explainPassages, journalPassages, livePassages, perfPassages, pnlPassages } from "./service";
 
 const KEY = Symbol.for("optionsbot.monitor.assistant");
 // A week of orders.log is read back by the bot: allow it more than a ring read.
@@ -55,19 +55,19 @@ async function readBot(target, path) {
 }
 
 /**
- * A configured bot's live page data (#427) as passages (livePassages): its
- * /api/status, /api/positions and /api/strangles/payoff, read together and
- * kept LIVE_CACHE_MS per bot. Without the payoff the exit lines read
- * "unknown"; without status or positions the bot is down → [] with a WARN
- * (not cached: the help and the journal still answer). null for a bot that is
+ * A configured bot's page routes (#427): its /api/status, /api/positions and
+ * /api/strangles/payoff, read together and kept LIVE_CACHE_MS per bot — the
+ * live passages and the book passage (#719) read the same answers. Without
+ * the payoff it is null; without status or positions → { error } with a
+ * WARN (not cached: the next question tries again). null for a bot that is
  * not configured.
  */
-export async function botLive(bot, nowMs = Date.now()) {
+async function botPages(bot, nowMs) {
   const target = configuredBots().find((b) => b.name === bot);
   if (!target) return null;
   const s = shared();
   const cached = s.lives.get(bot);
-  if (cached && nowMs - cached.at < LIVE_CACHE_MS) return cached.passages;
+  if (cached && nowMs - cached.at < LIVE_CACHE_MS) return cached.pages;
   try {
     const [status, positions, payoff] = await Promise.all([
       readBot(target, "/api/status"),
@@ -77,13 +77,41 @@ export async function botLive(bot, nowMs = Date.now()) {
         return null;
       }),
     ]);
-    const passages = livePassages(bot, { status, positions, payoff });
-    s.lives.set(bot, { at: nowMs, passages });
-    return passages;
+    const pages = { status, positions, payoff };
+    s.lives.set(bot, { at: nowMs, pages });
+    return pages;
   } catch (err) {
     authLog("WARN", "assistant: bot live data unavailable", { component: "assistant", bot, error: err.message });
-    return [];
+    return { error: err.message };
   }
+}
+
+/**
+ * A configured bot's live page data (#427) as passages (livePassages), from
+ * botPages. Without the payoff the exit lines read "unknown"; without status
+ * or positions the bot is down → [] (the help and the journal still answer).
+ * null for a bot that is not configured.
+ */
+export async function botLive(bot, nowMs = Date.now()) {
+  const pages = await botPages(bot, nowMs);
+  if (!pages) return null;
+  if (pages.error) return [];
+  // Built once per read, so a cached read hands back the same passages.
+  pages.live ??= livePassages(bot, pages);
+  return pages.live;
+}
+
+/**
+ * A configured bot's book now (#719) as one passage (bookPassage), from
+ * botPages and the journal passages of the same question (botJournal): a bot
+ * that does not answer gets the passage that says its book is unknown and
+ * why, so the answer invents no reason. null for a bot that is not configured.
+ */
+export async function botBook(bot, journal = [], nowMs = Date.now()) {
+  const pages = await botPages(bot, nowMs);
+  if (!pages) return null;
+  if (pages.error) return [bookPassage(bot, { error: "the bot's status route did not answer" })];
+  return [bookPassage(bot, { status: pages.status, positions: pages.positions, journal })];
 }
 
 /**
