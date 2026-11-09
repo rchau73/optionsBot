@@ -31,10 +31,14 @@ for n in $nums; do
 done
 echo "}" >> "$tmp/comments.json"
 
-python3 "$rq" select "$tmp/board.json" "$tmp/comments.json" "$runs" | while read -r item n; do
+# A run in the ledger (lib.sh) only when a card moves: one per card.
+python3 "$rq" select "$tmp/board.json" "$tmp/comments.json" "$runs" > "$tmp/selected.txt"
+while read -r item n; do
   [[ -n "$n" ]] || continue
+  run_begin requeue "$n"
   gh issue edit "$n" -R "$slug" --remove-label agent:needs-human >/dev/null
   set_status "$item" "Ready"
   gh issue comment "$n" -R "$slug" --body "🤖 Re-queued: the earlier stop was a usage limit, not a question." >/dev/null
   log "requeue: #$n → Ready (its Dev stop was a usage limit)"
-done
+  run_end requeued "Blocked → Ready: the Dev stop was a usage limit"
+done < "$tmp/selected.txt"
