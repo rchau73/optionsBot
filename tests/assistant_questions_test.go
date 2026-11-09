@@ -91,6 +91,7 @@ var goldenMinimum = map[string]int{
 	"unknown":         5,
 	"request":         3, // vague → needs_info, consistent figures → answered, evidence → draft
 	"results":         4, // a month, the worst week, against holding, a negative week (#648)
+	"idle":            4, // waiting for GEX, frozen, fully used, status unknown (#719)
 }
 
 var goldenBehaviour = map[string]string{
@@ -103,6 +104,7 @@ var goldenBehaviour = map[string]string{
 	"refuse_forecast": "refuse",
 	"unknown":         "dont_know",
 	"results":         "answer",
+	"idle":            "answer",
 }
 
 // journalEvent names the catalogue event of a journal fixture's kind.
@@ -230,6 +232,10 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		}
 		if (q.Category == "results") != (q.Bot != nil && len(q.Bot.Perf) > 0) {
 			t.Errorf("%s: a performance fixture belongs to results questions only, and each has one", q.ID)
+		}
+		// An idle case (#719) answers from its bot's book now: the monitor builds live:<bot>/book from the fixture.
+		if q.Category == "idle" && (q.Bot == nil || !slices.Contains(q.Bot.Answer.Citations, "live:btc/book")) {
+			t.Errorf("%s: an idle case needs a bot fixture and an answer citing live:btc/book", q.ID)
 		}
 	}
 	for cat, min := range goldenMinimum {
