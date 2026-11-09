@@ -80,7 +80,13 @@ Below it is one card per strangle, ordered by its slot's DTE (`components/Payoff
   - Each line is labelled, and each kind is toggled by its legend button (`aria-pressed`, 44 px).
 - The **delta box** is beside the chart (below it on a phone).
   It shows the strangle's net delta, "Δ −0.12 BTC · −$99 per +1 %" (short-signed), each leg's, and the whole bot's.
-The chart's `aria-label` is its text alternative (the expiry payoff, where today's curve gains and loses, the current point).
+- **With a hedge share** (#695, `components/PayoffHedge.jsx`; the numbers come from the API's `hedge_*` fields) the chart opens on the hedged curves: today solid sky, at expiry dashed light sky, today's options-only curve faint.
+  - The hatched and gain areas and the now dot follow the hedged today curve.
+  - The two-button switch "With its hedge share / Options only" (`aria-pressed`) is on the full card and the modal; the compact card draws the hedged curves without it.
+  - The delta box adds this strangle · its hedge share · net, in the hedge's own coin delta; below the chart is the moves table and the copy on the hedge being drawn as held now.
+  - Break-evens, exit lines and stop levels stay the options'; the legend lists the hedged curve's zeros.
+- **Perpetual held, not split** (`hedge.split` false): the card shows the options alone and "Hedge counted on the whole book (short X BTC) → see Positions", a link to the book panel (`#book-payoff`).
+The chart's `aria-label` is its text alternative (the expiry payoff, where today's curve gains and loses, both curves with a hedge share, the current point).
 A missing IV, spot or curve says "unknown: <reason>" and draws no today curve, never zeros.
 **On the overview** each strangle is a compact row (`components/StrangleRow.jsx`, #404; the mini payoff charts are on this page only), a button that opens the **modal**.
 **Modal** (`components/PayoffModal.jsx`): the full card for one strangle, opened from a compact card, the instrument of a row in Open positions or the open leg of a row in Missing legs (each a button, `aria-haspopup="dialog"`); `role="dialog"`, Esc or × closes it, Tab stays inside, focus returns to what opened it; full screen on a phone.
@@ -98,16 +104,19 @@ From top to bottom:
   A link is amber when its section needs attention (a missing leg, a working order past its fill timeout, a position no bot manages).
 - **Open positions** (`components/PositionsTable.jsx`, sticky header, scrolls inside its box).
   - It is grouped by strangle by default.
-    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, net Δ, Θ sum, Vega sum and Γ ×10⁻⁵.
+    A group reads "BTC · 25-day slot · expires 13 Nov · 16 days" with the group's P&L in coin ≈ USD, "net +0.028 BTC · +$21 per +1 %" in the Position Δ column (the sum of its legs, "—" while a leg has no greeks), Θ sum, Vega sum and Γ ×10⁻⁵.
   - There is one line per leg:
     - a call/put chip and the strike (mono; the full instrument in its `title`, a click opens the strangle's payoff modal);
     - qty, and entry → mark;
     - **premium kept**: a 64 px diverging bar around 0, −100..+100 % (`components/MicroBar.jsx`), and the %;
     - P&L in coin ≈ USD;
-    - **|Δ| → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30);
+    - **Position Δ** (#715): `positionDelta` (`lib/details.js`) = Δ × qty, negative for a short call, positive for a short put, "−0.018 BTC" then the USD per +1 % muted; neutral colour;
+    - **|Δ| per contract → exit**: a 64 px bar up to `delta_exit_threshold` with an amber tick at its end, amber from 80 % of it (0.24 for 0.30); its tooltip says it is one contract's delta, not to be added up;
     - OTM %, stop at, Θ/day, Vega and Γ ×10⁻⁵;
     - **Close…** (outlined red, the bot's reason in its tooltip) only where the manual-close rule allows it, otherwise the cell is empty.
   - A missing leg is its own row "not held: <hold>" linking to Missing legs.
+  - The table's foot has rows per bot (`bookDelta`, from every leg, not the filtered ones): *All options* (Σ position Δ and long/short/flat in words; "hedge state unavailable" when `/api/hedge` failed);
+    while `hedgeShown`, *Futures hedge · <perpetual> short $…* (`perp_delta_coin`) and *Book* (the two added; its note the `net_delta_coin` inside or outside ±`band_coin`, the sum in its tooltip).
   - The filters (bot, strategy, type, moneyness, group by) are in the panel header.
 
 **Missing legs** (`components/HeldLegs.jsx`) has one row each:

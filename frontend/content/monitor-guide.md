@@ -186,6 +186,20 @@ A negative delta means the position gains if the price falls.
   The hedge takes out the slope (delta), not the curve (gamma): the book still loses on a big move either way.
 - *The hedge card*: the perpetual's size, delta and net delta, average and mark, unrealised and realised results, and funding.
 
+**Each strangle's hedge share**: while the bot holds a perpetual, every payoff chart includes that strangle's part of it, here, on the overview cards and in the window that opens from a leg.
+A strangle's share is the perpetual × its part of the options' net delta, so the shares add up to the whole perpetual.
+- The chart opens with its hedge share: the solid blue curve is bought back today, the dashed light blue curve is at expiry, and the faint line is the options alone today.
+- Two buttons switch between *With its hedge share* and *Options only*; the compact overview card has no buttons.
+- The delta box adds this strangle's delta, its hedge share and the net.
+- A table gives the result at −20, −10, −5, +5, +10 and +20 %, options only and with its hedge share, coin first, USD at the moved price.
+- Break-evens, exit lines and stop levels stay the options' own, because they are option rules; the legend lists where the hedged curve at expiry crosses zero.
+The hedge is drawn as held now.
+The bot re-hedges each time the book's delta leaves its band, so a real move lands near the solid blue curve, minus fees.
+
+When the options' net delta is inside the hedge band, the shares would blow up, so the hedge is not split.
+Each card then shows the options alone with the line "Hedge counted on the whole book" and a link to the whole-book block.
+With the hedge off and no perpetual, the card is the same as without a hedge.
+
 **When something looks wrong**:
 - A card that says a side is missing ("no call held: repair waiting") has one leg only.
   The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, or the margin limit.
@@ -337,7 +351,13 @@ The row says how close the hedge holds the delta and how many orders went out in
 A row whose perpetual was not read for two cycles is dimmed with its age.
 
 **Open positions**: one line per leg, grouped by strangle.
-Columns include quantity, entry and mark prices, *premium kept*, profit and loss, |Δ| against the exit line (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.
+Columns include quantity, entry and mark prices, *premium kept*, profit and loss, *Position Δ*, *|Δ| per contract → exit* (amber from 80 % of the threshold), distance out of the money, the stop level and the greeks.
+*Position Δ*: the delta of what you hold (one contract's Δ × the size, sign of the short), in coin, then in USD for a +1 % move.
+The legs add up to the strangle, the strangles to the book; the foot rows add the futures hedge.
+Example: a put at Δ −0.227, 0.2 sold, is +0.045 BTC; with a call at Δ +0.088, 0.2 sold (−0.018 BTC), the strangle's net is +0.028 BTC.
+*|Δ| per contract → exit* is one contract's delta, the number the delta exit checks — don't add it up.
+Under the last strangle of each bot, *All options* sums its position Δ, and while a futures hedge is shown, *Futures hedge* gives the perpetual's delta and *Book* the two together.
+The Book row's note gives the coin delta the hedge holds flat, which also counts the options' own value moving with the price, and whether it is inside the hedge band.
 *Close…* appears only where the manual-close rule allows it: a leg on the side the confirmed regime blocks.
 
 *Opened* is when the bot sold the leg, with its age.

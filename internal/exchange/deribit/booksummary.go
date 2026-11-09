@@ -1,7 +1,7 @@
 // Package deribit holds Deribit's calls behind the exchange boundary (E8,
 // docs/exchange-adapter.md §4; step 6 grows it into the adapter). It imports
-// the connection's parts only, never internal/exchange, so gex and recorder
-// can use it: internal/exchange names gex.Manager.
+// the connection's parts and marketdata's types, never internal/exchange, so
+// gex and recorder can use it: internal/exchange names gex.Manager.
 package deribit
 
 import (
