@@ -8,6 +8,11 @@ import { ACCESS_COOKIE, authKey, signAccess } from "@/lib/auth/tokens";
 // Low entropy on purpose: a test value, not a secret (CI runs gitleaks).
 export const TEST_SECRET = "a".repeat(40);
 
+// useTestAuth makes each test open a new database and hash the first admin's
+// password with argon2id (WebAssembly, 19 MiB): under a loaded parallel run
+// that passed Jest's default 5 s (#730). A file may still set a longer one.
+jest.setTimeout(30000);
+
 /** Points the shared AuthService at a fresh in-memory database. */
 export function useTestAuth() {
   process.env.AUTH_SECRET = TEST_SECRET;
