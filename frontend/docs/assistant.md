@@ -28,6 +28,7 @@ It answers from the published help, the bot's live page data and the user's own 
 
   - For a question about results, the bot's 7- and 30-day performance, below (#648).
   - For a question about an idle book or unused margin, the bot's book now, below (#719).
+  - For a manager's or an admin's question about a comparison run, the lab's latest comparisons, below (#742).
 
   **The sources are the help, the live page data, the journal (7 days + the open positions' whole history)** (#427), **for a results question the performance** (#648) **and for an idle question the book now** (#719).
   The read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old.
@@ -68,6 +69,16 @@ It answers from the published help, the bot's live page data and the user's own 
   Percentages and counts only: no amount, no account detail, because a bot may run live and the review log is a file.
   A status that cannot be read makes it "Book now: unknown: the bot's status route did not answer…", so the answer says why it cannot tell and invents no reason.
   Any other question sends no book passage.
+
+  **The lab's comparisons** (#742, `labPassages`, `labRuns` in `lib/assistant/server.js`): a question about a comparison run (`asksAboutLab`: "comparison", "the lab", "proposed", "my last run", "apply this change", "does the change help"…), with or without `bot`, also gets the lab's latest comparisons — for a manager or an admin only, the roles of `/api/lab/runs`.
+  For anyone else `labRuns` reads nothing and sends nothing, so no run figure reaches the answer or the review log; the help answers that the lab is for managers.
+  The run list and the requests not run yet are read from `COMPARE_DIR` as `/api/lab/runs` reads them (`listRuns`, `pendingRequests`), kept `LAB_CACHE_MS` (10 s); a failed read sends nothing (WARN log, not cached).
+  They become these passages:
+  - one `lab:<run id>/headline` per run, the latest `LAB_RUNS` (3): what changed, then for the backtest and the replay the return, worst week, max drawdown and fees of the current and the proposed settings, in percentages only as `lib/lab.js` gives them, labelled "backtested, not a forecast", with the worst week and the drawdown named as the risk beside each return;
+  - one `lab:<request id>/status` per request not run yet, the latest `LAB_REQUESTS` (3): queued, running, failed with its reason or expired, and "It has no figures";
+  - the newest of all says "the newest comparison listed"; with none, `lab:none`: "unknown: no comparison has been run".
+  The written analysis (`analysis.json`) is never read or quoted: while the L10 gate is closed the passage says "The written analysis is not available yet."
+  The answer guard still refuses advice: "should I apply it?" gets the refusal, with the run's figures and their risks beside it when the model cites them.
   A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
   With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
