@@ -27,25 +27,30 @@ take_lock go_no_go || exit 0
 dir="$state/$week"
 mkdir -p "$dir"
 run_begin go_no_go "" "" "$dir" # the run ledger (lib.sh): every exit below ends it
-rm -rf "$dir/alert"
-if ! python3 "$GNG_PY" --evidence-root "$(env_dir stable)" --bot btc --alert-dir "$dir/alert" > "$dir/reading.log" 2>&1; then
-  log "go_no_go: the reading failed (log $dir/reading.log)"
-  run_end failed "scorecard failed"; exit 1
-fi
-# The line is in the history now: the week is done whatever happens to the issue.
-date -u +%Y-%m-%dT%H:%M:%SZ > "$done_marker"
+# An alert whose issue could not be filed stays in $dir/alert and is retried before
+# the week is done: the next reading's baseline is the new one, so the change
+# would never alert again, and the scorecard must not run (and append) twice.
 if [[ ! -f "$dir/alert/title.txt" ]]; then
+  rm -rf "$dir/alert"
+  if ! python3 "$GNG_PY" --evidence-root "$(env_dir stable)" --bot btc --alert-dir "$dir/alert" > "$dir/reading.log" 2>&1; then
+    log "go_no_go: the reading failed (log $dir/reading.log)"
+    run_end failed "scorecard failed"; exit 1
+  fi
+fi
+if [[ ! -f "$dir/alert/title.txt" ]]; then
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$done_marker"
   log "go_no_go: $week read, nothing changed that needs a person"
   run_end written "$week read, no change"; exit 0
 fi
-slug="$(repo_slug)"
-if url="$(gh issue create -R "$slug" --label agent:pm --label agent:needs-human \
+if url="$(gh issue create -R "$(repo_slug)" --label agent:pm --label agent:needs-human \
     --title "$(cat "$dir/alert/title.txt")" --body-file "$dir/alert/body.md")"; then
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$done_marker"
   add_to_board "$url" "Triage" >/dev/null || log "go_no_go: $url filed but not put on the board"
   log "go_no_go: filed $url"
   notify "Go / no-go reading ($week)" "$(cat "$dir/alert/title.txt")"
   run_end posted "$week read, issue filed"
 else
-  log "go_no_go: could not file the issue for $week; the reading is in the history"
-  run_end written "$week read, issue not filed"
+  log "go_no_go: could not file the issue for $week; retrying next tick (alert kept in $dir/alert)"
+  notify "Go / no-go reading: issue not filed" "$(cat "$dir/alert/title.txt")"
+  run_end failed "$week read, issue not filed (retried next tick)"
 fi

@@ -222,6 +222,13 @@ When `audit.jsonl` reaches `AUDIT_MAX_BYTES` (`.env`, default 20 MB), the next a
 The Audit page reads the current file, then the archives newest first; the app deletes nothing — how long audit data is kept is a data protection question for counsel (PRD §11).
 One process writes each line whole (read the last line, link, append in one synchronous step); `scripts/analytics-user.mjs`, run by hand in another process, appends to the same file, so do not run it during heavy use.
 
+**Security digest and alerts (#717).** The agents' host reads each environment's audit trail (`scripts/agents/security.sh`, from the tick).
+At most every 30 minutes it checks the alert rules (10 failed sign-ins for one username within an hour, 3 lockouts in a day, any role change to admin outside the first-admin setup) and shows each new alert as a Mac notification.
+After each week it notifies a one-line digest and adds a "Security" section to the usage report (`data/monitor/reports/<week>.md`).
+Counts only, never a name or an address; the Audit page names who.
+A digest that opens with "Audit chain BROKEN" is handled as a broken chain above.
+To build a digest by hand: `go run ./cmd/security -audit-dir <folder with audit.jsonl> -week 2026-W45 -out /tmp/digest` (files: `data/agents/security/`; rules: `frontend/docs/sign-in.md` "Security digest").
+
 ## Watch the logs
 
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole).

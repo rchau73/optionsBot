@@ -27,6 +27,14 @@ Logs: `data/agents/usage/<week>/`.
 Run ledger agent `usage`, outcomes `posted`, `skipped` or `failed`.
 Tests: `test_usage.py` (the comment, the privacy rule, the dedup, and `usage.sh` end to end on throwaway clones with stub `go`/`gh`) and `tests/usage_test.go` (the drop rules on a six-week fixture).
 
+**Security digest and alerts** (#717): [`security.sh`](../../scripts/agents/security.sh), started by the tick on its own, reads each environment's audit trail (the running monitor's volume through `envctl.sh … cp`, only the audit files kept; else the clone's `data/monitor/`) and runs `go run ./cmd/security` (pure rules in `internal/security`; what they count and the alert rules: [frontend/docs/sign-in.md](../../frontend/docs/sign-in.md) "Security digest").
+At most every 30 minutes (`SECURITY_ALERT_MIN`) it runs the alert check: each new alert is one Mac notification and one log line, its ID kept in `data/agents/security/<env>.alerts` so it is never raised twice.
+On the first tick after a week ends it writes `data/agents/security/<week>/<env>/digest.md|json`, notifies its one-line headline per environment, and appends `digest.md` as the "Security" section of that environment's usage report `<week>.md`; `usage.sh` appends it too when it writes the report after the digest, and a report that has the section is left alone (`lib.sh` `security_section`).
+A failed environment is retried once on a later tick, then `<week>.done` marks the week done.
+Nothing of it is posted on GitHub (the repository is public): the digest and the alerts stay in the notifications and the local files.
+Ledger agent `security`: a run per digest (`notified` or `failed`) and per check that raised an alert (`notified`, "N alert(s)").
+Tests: `test_security.py` (`security.sh` end to end with the real `cmd/security`, a fake docker and osascript) and `tests/security_digest_test.go` (one test per scenario of #717).
+
 **Assistant quality review** (#438): before its own report, `usage.sh` runs [`assistant_review.sh`](../../scripts/agents/assistant_review.sh).
 In each environment with a non-empty `data/monitor/assistant.jsonl` it runs `go run ./cmd/assistantreview` (the private review files go to `<clone>/data/monitor/assistant_reviews/`) and posts `usage_week.py assistant-comment` on the E10 epic.
 The comment holds the `<week>.summary.json` named counts and percentages only, percentages only for a live env.
