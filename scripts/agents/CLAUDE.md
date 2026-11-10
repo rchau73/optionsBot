@@ -91,7 +91,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
-  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`;
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`, `security`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
     and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
@@ -129,6 +129,12 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     `scripts/product/assistant_run.sh` asks the real assistant every golden question (a test run: its own log, `test_run`), grades it against `golden_baseline.json`
     and posts counts and % per category on the E10 epic (`<week>.done`, ledger agent `assistant_golden`; a regression is reported, not a failure).
   - `assistant_review.sh` also posts for a week with no answers while a row is open, with the overdue count and, above 0, a line that a person reads the private review list (#704: `closures.jsonl`, never on GitHub).
+- Security digest and alerts (#717, docs/agents/usage.md "Weekly usage report"):
+  - `security.sh` (from the tick, no Claude, no GitHub) reads each env's audit trail (the running monitor's volume, audit files only, else the clone's) and runs `cmd/security` (pure `internal/security`);
+  - alerts at most every 30 min (`SECURITY_ALERT_MIN`): 10 failed sign-ins for one username within an hour, 3 lockouts in a UTC day, a role change to admin outside the first-admin setup — one notify each, IDs in `data/agents/security/<env>.alerts` (never twice);
+  - the weekly digest (`<week>.done`, retried once): counts this week vs the week before, the chain check first, "No data yet" for an empty trail
+    → `data/agents/security/<week>/<env>/digest.md|json`, one notify, the usage report's "Security" section (`lib.sh security_section`, also called by `usage.sh`);
+  - counts only, never a name, IP, password, token or reset link; ledger agent `security`.
 - Daily delivery report (#470, docs/agents/dora.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);

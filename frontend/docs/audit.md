@@ -8,6 +8,8 @@ Part of the [monitor README](../README.md).
 Filters: person (who acted: the line's `username`), action (the known list, `lib/audit.js` `AUDIT_ACTIONS`), from / to (UTC days, inclusive).
 A table of time (BRT, `lib/time.js`), person, role, action, target or bot, and detail (every other field as stored, e.g. a close's `position_ids` and `status`, a rebalance's `dry_run`), newest first, 100 lines at a time with **Older** for the next page.
 Read-only: nothing on the page or the route edits or deletes a line.
+The page is where an admin looks after the weekly security digest or a same-day alert (#717, [Sign-in](sign-in.md) "Security digest"), which hold counts only: the digest and the alerts name no one, the page does.
+They read this trail and its chain the same way the page does and never write a line.
 
 ### Export CSV (#702)
 
