@@ -119,6 +119,8 @@ function Income({ income, bot }) {
                 <th scope="row" className="py-0.5 pr-2 text-left font-normal">
                   {m.label}
                   {m.current ? <span className="text-muted"> (this month)</span> : null}
+                  {/* A losing month in words, as on the Income page: colour and sign are not enough (#743). */}
+                  {m.closes && m.coin < 0 ? <span className="font-semibold text-loss"> · loss</span> : null}
                 </th>
                 {m.closes ? (
                   <>

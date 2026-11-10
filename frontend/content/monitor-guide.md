@@ -80,6 +80,7 @@ On your first visit there is no card, only a line saying what it will show next 
 **When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
 
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
+In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.
 
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.

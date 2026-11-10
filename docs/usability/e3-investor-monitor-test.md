@@ -54,6 +54,8 @@ The demo moves on its own: spot follows a random walk, marks follow spot, and no
 
 The answer key is for the demo **without flags**. To test how losses read, `scripts/usability_round.sh mixed` (a losing month among winning ones) or `scripts/usability_round.sh drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key of section 6 does not hold for them: score the loss round with section 6b. In a loss round, type the next participant's scenario in the script's terminal between participants (section 1).
 
+Before a round, the build already guards this first screen: `frontend/__tests__/scenario-answers.test.jsx` (#743) fails, naming the scenario, the layout and the question, when the investor summary or the phone overview no longer answers one of the four questions on the demo data of baseline, mixed or drawdown.
+
 ## 4. Moderator script
 
 Read the text in quotes word for word. Do not add to it.

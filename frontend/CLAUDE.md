@@ -26,3 +26,6 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   a new hedge change needs its sentence there (`__tests__/hedge-words.test.jsx` reads the Go constants), besides the bot's own in `internal/api/explain.go`.
 - **Losses as visible as gains** (#582, epic E3): `__tests__/loss-visibility.test.jsx` renders Income, Details (pro), the phone overview, Worst case and Positions on the shared fixtures of `test/resultFixtures.js` (profit, loss, nothing held)
   and fails, naming the page, on a loss without its minus sign and unit, smaller or lighter than the gain, folded away, or a 0 shown for nothing held; a new page that shows a result gets its row in `PAGES`.
+  Its checks live in `test/lossVisibility.js`.
+- **The four answers on the demo scenarios** (#743, epic E3): `__tests__/scenario-answers.test.jsx` renders the investor summary and the phone overview on `test/demoScenarios.json` (the demo's data for baseline, mixed, drawdown)
+  and fails, naming the scenario, the layout and the question, when the first screen stops answering a question of the usability kit's key (docs/usability/e3-investor-monitor-test.md).

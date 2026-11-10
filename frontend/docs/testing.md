@@ -34,6 +34,15 @@ Worst case shows one estimate on both fixtures, so its gain is the calm day and 
 A result inside a closed `<details>`, a `hidden` block or screen-reader-only text fails, naming the page; so does one dropped from the page.
 On the nothing-held fixture each page says so in words and shows no 0.00000 or $0 standing for "nothing".
 A new page that shows a result gets its row in the test's `PAGES` table.
+Its checks (size and weight, folded away) are in `test/lossVisibility.js`, shared with the scenario test below.
+
+## The four answers on the demo scenarios
+
+**The four answers on the demo scenarios (#743).** `__tests__/scenario-answers.test.jsx` renders the desktop investor summary and the phone overview on the demo's own data for each usability scenario (baseline, mixed, drawdown), from `test/demoScenarios.json`.
+It checks, from the rendered text, one answer per question of the usability kit's answer key: what is held, making or losing (each month's sign, a losing month named "· loss" on desktop and "down" in the phone's month bars), the worst case in money with its unit, and the last action with its reason.
+In drawdown each loss must be in the same element, place and size as the baseline's gain, and not folded away; in mixed the open positions stay apart from the month's result.
+A failure names the scenario, the layout (desktop or phone) and the question.
+`test/demoScenarios.json` is what `cmd/monitor-demo` serves on `/api/positions`, `/api/status` and `/api/summary`; `tests/usability_keys_test.go` checks it against the kit's keys and rewrites it with `go test ./tests -run TestUsabilityKeys_FrontendScenariosAnswerTheKeys -args -update-scenarios` when the demo changes.
 
 ## Accessibility baseline
 
