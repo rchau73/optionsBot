@@ -347,13 +347,14 @@ const READ_FIXTURES = {
   "GET /api/auth/sessions": { path: "/api/auth/sessions", params: {} },
   "GET /api/lab/runs": { path: "/api/lab/runs", params: {} },
   "GET /api/lab/runs/[id]": { path: `/api/lab/runs/${RUN_ID}`, params: { id: RUN_ID } },
+  "GET /api/lab/runs/[id]/preview": { path: `/api/lab/runs/${RUN_ID}/preview`, params: { id: RUN_ID } },
 };
 
 describe("Scenario: a role-guarded read (#539)", () => {
   beforeEach(() => {
     process.env.COMPARE_DIR = path.join(dir, "compare");
     fs.mkdirSync(path.join(process.env.COMPARE_DIR, RUN_ID), { recursive: true });
-    fs.writeFileSync(path.join(process.env.COMPARE_DIR, RUN_ID, "report.json"), JSON.stringify({ underlying: "BTC", diffs: [] }));
+    fs.writeFileSync(path.join(process.env.COMPARE_DIR, RUN_ID, "report.json"), JSON.stringify({ underlying: "BTC", diffs: [{ key: "backtest.slippage_pct", base: "0.001", proposed: "0.002" }] }));
   });
   afterEach(() => delete process.env.COMPARE_DIR);
 
@@ -371,10 +372,17 @@ describe("Scenario: a role-guarded read (#539)", () => {
     const { path: p, params } = READ_FIXTURES[entry.route];
     for (const name of CALLERS) {
       const { person: who, headers } = await caller(name);
+      const before = auditLines().length;
       const res = await sendGet(GET, p, params, headers);
       const where = `${entry.route} as ${name}`;
-      if (callerAllowed(entry, name)) expect([where, res.status]).toEqual([where, 200]);
-      else expect([where, res.status]).toEqual([where, who ? 403 : 401]);
+      const added = auditLines().slice(before).filter((l) => l.action === entry.audit);
+      if (callerAllowed(entry, name)) {
+        expect([where, res.status]).toEqual([where, 200]);
+        if (entry.audit) expect([where, added.map((l) => l.username)]).toEqual([where, [who.user.username]]);
+      } else {
+        expect([where, res.status]).toEqual([where, who ? 403 : 401]);
+        expect([where, added]).toEqual([where, []]);
+      }
     }
   });
 });

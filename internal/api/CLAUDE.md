@@ -28,7 +28,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     `frontend/__tests__/role-matrix.test.js` calls each as admin, manager, user, no session, the read-only `MONITOR_API_TOKEN` and an expired session,
     and fails on a route file, or a non-GET route registered here, that the table does not list (`bot` names the route here a monitor route forwards to).
   - Read-only routes that only some roles may see are monitor routes too, listed in `ROLE_GUARDED_READS` of the same file:
-    the strategy-change lab's `GET /api/lab/runs` and `GET /api/lab/runs/<id>` (#539, managers and admins) read `data/compare/` in the monitor, not here, and `POST /api/lab/validate` (#586) checks a proposed value there too — the bot has no roles (`frontend/docs/users-and-roles.md`).
+    the strategy-change lab's `GET /api/lab/runs` and `GET /api/lab/runs/<id>` (#539, managers and admins) read `data/compare/` in the monitor, not here, and `POST /api/lab/validate` (#586) checks a proposed value there too — the bot has no roles (`frontend/docs/users-and-roles.md`);
+    `GET /api/lab/runs/<id>/preview` (#682) says there what a confirm would change and applies nothing, its audit line written by the monitor.
   Never add other endpoints that change trading state without auth + confirmation + audit.
   `cmd/monitor-demo` serves it with simulated data.
   `/api/account` serves `internal/account` (cached `private/get_account_summaries` plus `private/get_positions` for each held currency, all kinds

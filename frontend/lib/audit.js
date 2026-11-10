@@ -24,6 +24,7 @@ export const AUDIT_ACTIONS = [
   "manual_rebalance",
   "futures_hedge_switched",
   "audit_exported",
+  "parameter_change_previewed",
   "events_pruned",
   "events_prune_failed",
   "events_deleted",

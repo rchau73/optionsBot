@@ -25,6 +25,16 @@ A manager's parameter change is studied offline before anyone decides on it:
    Run the runner from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`), by hand or from cron.
    Metrics from the queue files alone (ids and times, no values): the share of requests that end `done`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per week.
 
+6. `GET /api/lab/runs/<id>/preview` (#682, managers and admins) says what confirming a finished run would change, and applies nothing: each setting with its title and tip, the account's value and the proposed one, the account (one at a time, decision of 2026-10-20), the person, the numbers labelled "backtested, not a forecast", the fragility flags, and the text of the audit line.
+   `needs_product_owner: true` (a core policy, or a key the catalogue does not know) or `stale: true` (the run is over 7 days old, the value it started from is not the account's, the account's value cannot be read, or the proposed value is now refused) gives `confirm_token: null`, and so does a run with no numbers for the proposal; `reasons` says why in plain words.
+   The 7 days are `PREVIEW_MAX_AGE_DAYS` (`frontend/lib/labpreview.js`): the runner compares the last 7 days, so an older run has no day in common with the week after it.
+   "The account's value" is the shipped config in `frontend/content/lab-settings.json` until E8's tenancy gives a real one; mvp's BTC runs `config_btc.mvp.yaml`, which differs only in `gex_direction`, a core policy that never gets a token.
+   The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account and both values, so the future apply can recompute it and see that what is confirmed is what was shown; nothing accepts it yet.
+   Reading a preview writes one audit line, `parameter_change_previewed`, naming the person, the account, the run and both values; a refused call writes none.
+
+   **The apply is not built.** It touches the live configuration, so it waits for a person's decision, E8's tenancy (accounts, links of managers to accounts) and the legal answer on advisers (PRD §11, L10).
+   When it is built, a confirm must re-check the token, the role and the staleness on the server, and it writes its own audit line, `parameter_change_applied`, with the person, the account, the run, both values and the bot's answer.
+
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
 - [`example-analysis.md`](example-analysis.md) — a saved `analysis.md` (percentages and counts only), kept passing the checker by `tests/aianalysis_generate_test.go`.
