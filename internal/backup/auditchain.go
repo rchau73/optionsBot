@@ -39,7 +39,7 @@ type ChainResult struct {
 // CheckLines. No trail at all checks nothing.
 func CheckAuditChain(dir string) (ChainResult, error) {
 	var res ChainResult
-	files, err := auditTrailFiles(dir)
+	files, err := AuditTrailFiles(dir)
 	if err != nil {
 		return res, err
 	}
@@ -117,9 +117,9 @@ func chainBreak(line []byte, isObject, chained bool, rawPrev json.RawMessage, pr
 	return ""
 }
 
-// auditTrailFiles lists dir's audit archives oldest first (the UTC time in the
-// name sorts as text), then audit.jsonl.
-func auditTrailFiles(dir string) ([]string, error) {
+// AuditTrailFiles lists dir's audit archives oldest first (the UTC time in the
+// name sorts as text), then audit.jsonl (which may not exist); a missing dir is none.
+func AuditTrailFiles(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil

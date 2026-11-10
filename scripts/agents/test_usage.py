@@ -545,6 +545,16 @@ class UsageScript(unittest.TestCase):
         self.assertEqual(self.read("ar.log"), "")
         self.assertNotIn("assistant_review", [r["agent"] for r in self.ledger()])
 
+    def test_scenario_the_security_digest_is_the_reports_security_section(self):
+        """#717: security.sh's digest of the week is appended to the env's report, once."""
+        self.events("mvp")
+        write(self.t("repo", "data", "agents", "security", self.week, "mvp", "digest.md"), "## Security\n\nAudit chain intact — 3 lines checked.\n")
+        self.run_script()
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertTrue(md.startswith(f"# usage {self.week}\n"), md)
+        self.assertEqual(md.count("## Security"), 1, md)
+        self.assertIn("Audit chain intact", md)
+
     def test_tick_starts_usage(self):
         with open(os.path.join(SCRIPTS, "agents", "tick.sh")) as f:
             self.assertIn("start usage.sh 1", f.read())

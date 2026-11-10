@@ -144,3 +144,23 @@ Admins read it on the Audit page (below)
 
 The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`; later starts never touch existing users.
 The server exits at start (`instrumentation-node.js`) when `AUTH_SECRET` is missing or shorter than 32 bytes, or the database cannot be opened.
+
+### Security digest
+
+An admin hears about password guessing and odd account changes from a weekly digest and a same-day alert (#717), not by reading the audit trail.
+Both come from the agents' host (`scripts/agents/security.sh`, `go run ./cmd/security`, pure rules in `internal/security`), as Mac notifications; the monitor has no new page or route for them.
+They read the audit trail (above) and its archives, never write it, and hold counts only: never a password, token, reset link, IP address or a person's name.
+They read the trail rather than `login_failures`, because failures there are deleted after 15 minutes and a weekly count needs the history.
+The weekly digest of the last ISO week (Monday to Sunday, UTC), per environment:
+- the audit chain first: "Audit chain intact — N lines checked." or "Audit chain BROKEN: <file, line and reason>", which opens the digest before any count;
+- for failed sign-ins, lockouts, failed password changes, passwords set by an admin, reset links issued, passwords reset with a link, role changes, users created, users deleted by an admin, accounts deleted by their owner, sessions ended and signed out everywhere: the count this week and the week before;
+- usernames locked out this week, and distinct sources (IP addresses) signing in this week, as counts;
+- the date of the last change of the admin role (any line that gave or took it, the first-admin setup included);
+- "No data yet" when the trail has no line.
+It is one notification per environment ("Security 2026-W45: chain intact; 12 failed sign-ins (3 the week before), 2 lockouts (0), 0 role changes (0).") and the "Security" section of that week's usage report.
+The alert rules, fixed values in `internal/security/alerts.go`, not settings:
+- at least 10 failed sign-ins for one username within any hour: one alert per username and UTC day, with the most in any hour;
+- 3 or more lockouts in one UTC day: one alert per day;
+- any role change to admin outside the first-admin setup (a `role_changed` to admin, or an admin creating another admin; the first start's own admin is the setup): one alert per change, with its date and time.
+The check runs at most every 30 minutes over the last 48 hours of lines, so an alert reaches the admin the same day.
+Its text states the count and the rule that fired and says the Audit page names it; the IDs of alerts raised are kept (with a hash of the username, never the name), so one pattern never alerts twice.
