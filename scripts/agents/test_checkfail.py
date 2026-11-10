@@ -31,8 +31,19 @@ class Suites(unittest.TestCase):
         self.check(["docs/README.md", "frontend/e2e/README.md"], ["docs"])
         self.check(["docs/seq_entry.mmd", "docs/seq_entry.png"], [])
 
-    def test_frontend_code_runs_the_frontend_and_docker_not_go(self):
-        self.check(["frontend/components/StatTile.jsx"], ["frontend", "docker"])
+    def test_frontend_code_runs_the_frontend_docker_and_phone_not_go(self):
+        self.check(["frontend/components/StatTile.jsx"], ["frontend", "docker", "phone"])
+
+    def test_a_pull_request_that_touches_the_monitor_runs_the_phone_check(self):
+        # #739: the monitor's code, its baseline, the demo it measures and the API that serves it.
+        for f in ("frontend/app/income/page.jsx", "frontend/e2e/phone-baseline.json", "cmd/monitor-demo/main.go",
+                  "internal/api/api.go", ".github/workflows/ci.yml"):
+            self.assertIn("phone", checkfail.suites_for(f), f)
+
+    def test_a_pull_request_outside_the_monitor_skips_the_phone_check(self):
+        for f in ("internal/strategy/entry.go", "internal/risk/margin.go", "scripts/agents/tick.sh",
+                  "frontend/docs/testing.md", "frontend/README.md", "OptionStrategy.md", "frontend/CLAUDE.md"):
+            self.assertNotIn("phone", checkfail.suites_for(f), f)
 
     def test_frontend_files_the_go_tests_read_run_go_too(self):
         for f in ("frontend/lib/menu.js", "frontend/app/api/x/route.js", "frontend/content/glossary.json"):
@@ -46,7 +57,7 @@ class Suites(unittest.TestCase):
         self.check(["docs/operations.md"], ["go", "docs"])
 
     def test_go_code_runs_go_lint_scripts_and_docker(self):
-        self.check(["internal/strategy/entry.go"], ["go", "go_lint", "scripts", "docker"])
+        self.check(["internal/strategy/entry.go"], ["go", "go_lint", "scripts", "docker"])  # no phone (#739)
 
     def test_a_scripts_only_change_skips_go_vet_and_docker(self):
         self.check(["scripts/agents/tick.sh"], ["go", "scripts"])

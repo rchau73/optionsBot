@@ -4,12 +4,13 @@
 // docs/responsive-measured.json and screenshots under test-results/phone/
 // (both git-ignored), and fails only when something is worse than
 // e2e/phone-baseline.json, naming page, viewport and element.
-// UPDATE_PHONE_BASELINE=1 (re)records the baseline.
+// UPDATE_PHONE_BASELINE=1 (re)records the baseline, locally only: CI refuses
+// to (recordRefusal, #739) and prints what the baseline could drop.
 import fs from "node:fs";
 import path from "node:path";
 import { demoLoaded, expect, test } from "./fixtures.js";
 import { measureDialog, measurePage } from "./measure.js";
-import { DIALOG_VIEWPORTS, WIDTHS, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
+import { DIALOG_VIEWPORTS, WIDTHS, baselineNotes, baselineOf, baselineSlack, compareToBaseline, recordRefusal, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
 
 const FRONTEND = process.env.PHONE_FRONTEND_DIR;
 const REPORT = path.join(FRONTEND, "docs", "responsive-measured.json");
@@ -128,6 +129,8 @@ test("every menu page and the assistant: measured on demo data, no worse than th
     }
   }
 
+  const refusal = recordRefusal(process.env, fs.existsSync(BASELINE));
+  expect(refusal, refusal).toBe("");
   if (process.env.UPDATE_PHONE_BASELINE === "1" || !fs.existsSync(BASELINE)) {
     const baseline = baselineOf(report);
     fs.writeFileSync(BASELINE, `${JSON.stringify(baseline, null, 2)}\n`);
@@ -136,6 +139,9 @@ test("every menu page and the assistant: measured on demo data, no worse than th
     console.log(`Baseline entries (follow-ups):\n${baselineNotes(baseline).join("\n")}`);
     return;
   }
-  const problems = compareToBaseline(JSON.parse(fs.readFileSync(BASELINE, "utf8")), report);
+  const baseline = JSON.parse(fs.readFileSync(BASELINE, "utf8"));
+  const slack = baselineSlack(baseline, report);
+  if (slack.length) console.log(`Better than e2e/phone-baseline.json (${slack.length}): the baseline can be tightened with UPDATE_PHONE_BASELINE=1, locally:\n${slack.join("\n")}`);
+  const problems = compareToBaseline(baseline, report);
   expect(problems, `worse than e2e/phone-baseline.json:\n${problems.join("\n")}`).toEqual([]);
 });

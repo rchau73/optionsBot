@@ -215,6 +215,50 @@ export function compareToBaseline(baseline, report) {
 }
 
 /**
+ * What the baseline accepts that `report` no longer shows, one line each
+ * naming page, viewport and element: the check passes, and these say the
+ * baseline can be tightened (a local, reviewed UPDATE_PHONE_BASELINE=1 run,
+ * #739). A recorded page no longer measured is listed once.
+ */
+export function baselineSlack(baseline, report) {
+  const slack = [];
+  const tighten = "gone: the baseline can be tightened";
+  for (const [page, recorded] of Object.entries(baseline.pages ?? {})) {
+    const measured = report.pages?.[page];
+    if (!measured) {
+      slack.push(`${page}: in the baseline but no longer measured: the baseline can be tightened`);
+      continue;
+    }
+    for (const [name, base] of Object.entries(recorded.widths ?? {})) {
+      const w = measured.widths?.[name];
+      if (!w) continue;
+      const at = `${page} ${name} px`;
+      const causes = new Set(w.overflow.causes.map(causeKey));
+      for (const c of base.overflow_causes ?? []) if (!causes.has(c)) slack.push(`${at}: page overflow caused by ${c} ${tighten}`);
+      for (const limit of [TARGET_AA, TARGET_AAA]) {
+        const now = new Set(w.controls[`under_${limit}_kinds`].map((k) => k.key));
+        for (const k of base[`under_${limit}`] ?? []) if (!now.has(k)) slack.push(`${at}: control under ${limit} px ${k} ${tighten}`);
+      }
+      const titles = new Set(w.title_only.kinds);
+      for (const t of base.title_only ?? []) if (!titles.has(t)) slack.push(`${at}: hover-only explanation (title) ${t} ${tighten}`);
+    }
+  }
+  return slack;
+}
+
+/**
+ * Why this run may not write the baseline, or "" when it may: CI never
+ * records it (#739), so a missing baseline or UPDATE_PHONE_BASELINE=1 there
+ * fails instead of turning today's measurements into the new baseline.
+ */
+export function recordRefusal(env, baselineExists) {
+  const wants = env.UPDATE_PHONE_BASELINE === "1" || !baselineExists;
+  if (!wants || !env.CI) return "";
+  const why = baselineExists ? "UPDATE_PHONE_BASELINE=1 is set" : "e2e/phone-baseline.json is missing";
+  return `${why} in CI: the baseline is recorded only locally (UPDATE_PHONE_BASELINE=1 npm run test:phone) and committed in a reviewed PR`;
+}
+
+/**
  * The baseline's overflows and controls under 24 px, one line each naming
  * page, viewport and element: the follow-up notes of the PR that records it
  * (#425). The spec prints them after recording.

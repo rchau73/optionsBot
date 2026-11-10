@@ -17,8 +17,19 @@ Results: `docs/responsive-measured.json` and screenshots `test-results/phone/<pa
 A page not yet in the baseline is held to what the recorded pages accept at that width (the shared header and menu).
 `UPDATE_PHONE_BASELINE=1 npm run test:phone` records a new baseline (also when the file is missing) and prints its entries one per line — the follow-up notes of the PR that commits it; commit it with the fix, never to hide a new overflow.
 What it measures and why: [`docs/responsive-audit.md`](responsive-audit.md) "Measured in a browser".
-Not part of `npm test` (Jest only) nor of CI yet (the browser download).
+Not part of `npm test` (Jest only).
 `__tests__/phone-check.test.jsx` covers its measuring and comparing code in Jest.
+
+### In CI
+
+**The CI job (#739).** CI's "Phone viewport check" job (`.github/workflows/ci.yml`, `phone`) sets up Go and Node, runs `npx playwright install --with-deps chromium`, then `npm run test:phone`, the full set of widths (Chromium only).
+It runs on a pull request whose files need it (`scripts/agents/checkfail.py suites`, the `phone` suite): any non-doc file under `frontend/`, `cmd/monitor-demo/`, `internal/api/` (the API the demo serves) and `ci.yml`; a push to main, the nightly run and a manual run always run it.
+A pull request that changes only strategy code, scripts or docs skips it, and a skipped job counts as passed for the required check.
+**Reading a failure:** the log's `worse than e2e/phone-baseline.json:` lists one line per problem in the check's own words, page, viewport and element, e.g. `income 360 px: page overflow now caused by Income › table (540 px wide)`.
+The screenshots (`test-results/phone/`) and `docs/responsive-measured.json` are attached to the run as the `phone-check` artifact when it fails.
+**CI never records the baseline:** `recordRefusal` (`e2e/phone.js`) fails the run when the baseline is missing or `UPDATE_PHONE_BASELINE=1` is set under `CI`, and the job's last step fails if `e2e/phone-baseline.json` changed.
+Recording stays a local step, committed in a reviewed PR.
+A run better than the baseline passes and prints `Better than e2e/phone-baseline.json (n): the baseline can be tightened…`, one line per entry gone (`baselineSlack`).
 
 ## The Overview's four answers
 
