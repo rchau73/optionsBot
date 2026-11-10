@@ -10,8 +10,9 @@ import { viewer } from "@/lib/auth/viewer";
 
 jest.mock("@/lib/auth/viewer", () => ({ viewer: jest.fn() }));
 
-// #732: these tests take milliseconds, but in a full run the worker can stall for seconds behind
-// the password-hashing suites; a refusal that never shows still fails, only later.
+// Every reply is a resolved mock, so these tests take milliseconds; in a full parallel run the worker can
+// stall for seconds behind the password-hashing suites — the role queries over the Users table (#731) and
+// the refusal's find (#732) passed 5 s. A refusal that never shows still fails, only later.
 jest.setTimeout(30_000);
 configure({ asyncUtilTimeout: 10_000 });
 

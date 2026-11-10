@@ -35,10 +35,12 @@ done_marker="$state/$week.done"
 [[ -f "$done_marker" ]] && exit 0
 require_tools go gh curl python3 || exit 0
 take_lock evidence || exit 0
+run_begin evidence "" "" "$state/$week" # the run ledger (lib.sh): every exit below ends it
 mkdir -p "$state/$week"
 attempts="$(cat "$state/$week.attempts" 2>/dev/null || echo 0)"
 if [[ $attempts -ge 2 ]]; then # the second attempt died before its end
-  log "evidence: $week already tried twice, giving up"; date -u +%Y-%m-%dT%H:%M:%SZ > "$done_marker"; exit 0
+  log "evidence: $week already tried twice, giving up"; date -u +%Y-%m-%dT%H:%M:%SZ > "$done_marker"
+  run_end failed "$week tried twice, week marked done"; exit 0
 fi
 attempt=$((attempts + 1))
 echo "$attempt" > "$state/$week.attempts"
@@ -142,3 +144,5 @@ if [[ $posted -eq 1 || $attempt -ge 2 ]]; then
 else
   log "evidence: $week will be retried once on a later tick"
 fi
+n_failed="$(wc -l < "$failures" | tr -d ' ')"
+run_end "$([[ $posted -eq 1 ]] && echo posted || echo written)" "$week on ${epic:+#}${epic:-no epic}; $n_failed failed step(s)"

@@ -27,8 +27,9 @@ It answers from the published help, the bot's live page data and the user's own 
   - The live page data, below.
 
   - For a question about results, the bot's 7- and 30-day performance, below (#648).
+  - For a question about an idle book or unused margin, the bot's book now, below (#719).
 
-  **The sources are the help, the live page data, the journal (7 days + the open positions' whole history)** (#427) **and, for a results question, the performance** (#648).
+  **The sources are the help, the live page data, the journal (7 days + the open positions' whole history)** (#427), **for a results question the performance** (#648) **and for an idle question the book now** (#719).
   The read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old.
   `selectJournal` sends the history of the held legs the question names first.
   `namedInstruments` matches by instrument, by strike ("75.000", "75,000", "75k") or by side, else every held leg.
@@ -56,6 +57,17 @@ It answers from the published help, the bot's live page data and the user's own 
   Figures are signed and carry their unit as the monitor shows them (`formatCoin`, `formatSignedUSD`, `formatSignedPct`), so a loss reads "−0.00400 BTC" in the same words as a gain.
   An unknown figure reads "unknown" with the route's reason (`equity_reason`, `pct_note`); nothing is recomputed.
   Both stay under `PERF_TOKENS` (700).
+
+  **Book now** (#719, `bookPassage`, `botBook` in `lib/assistant/server.js`): with `bot`, a question about why little or nothing is open (`asksAboutIdle`: "nothing open", "not trading", "margin not being used", "unused margin", "more trades", "no positions", "why … waiting"…) also gets one passage, `live:<bot>/book`.
+  It reads nothing new: the same `/api/status` and `/api/positions` answers as the live page data (one cached read per bot, `LIVE_CACHE_MS`) and the question's journal passages.
+  It holds, in this order:
+  - whether entries may open, and why not: the kill switch, waiting for the first or a fresh GEX reading (the GEX age on the bot's own `as_of`, as the Regime page's `gexFreshness`), frozen by the margin policy in the monitor's words (`plainFreeze`) with the policy's reason, the margin unknown, or held this cycle;
+  - IM % of margin balance and the limit, the over-limit and under-use alerts, and the 7-day utilisation (`utilisation_7d`) as percentages;
+  - the open strangles against the slots (the status's per-slot P&L rows name the slots), and each vacant slot's latest `skipped` line in the journal read, its plain words and time;
+  - each one-legged strangle whose repair is held, with its reason (`held_legs`).
+  Percentages and counts only: no amount, no account detail, because a bot may run live and the review log is a file.
+  A status that cannot be read makes it "Book now: unknown: the bot's status route did not answer…", so the answer says why it cannot tell and invents no reason.
+  Any other question sends no book passage.
   A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
   With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).

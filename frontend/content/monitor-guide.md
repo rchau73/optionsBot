@@ -403,6 +403,12 @@ A loss is shown with its minus sign, in the same words as a gain.
 A figure the bot could not measure, such as the return when no balance was recorded, is called unknown with the reason; days with no records are named, never filled in.
 These are past results: a question about future results, such as "will I make money next month?", is refused.
 
+**Why is nothing open, or why is my margin unused?**: ask, such as "why is nothing open right now?" or "why isn't it opening more trades?", and the answer reads the bot's book as it is now.
+It says whether the bot may open trades and, if not, why: waiting for a fresh reading of the market makers' positioning (GEX), new trades frozen by the margin policy, or the kill switch.
+It gives the margin in use against its limit as percentages, how many slots hold a strangle, the latest reason each empty slot recorded, and a repair held for its cooldown.
+When every slot is full and the margin is near its limit, it says so; whether to change a limit is your decision, and the assistant does not advise it.
+When the bot does not answer, the reason is called unknown, never guessed.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
@@ -603,6 +609,15 @@ The request changes nothing: no config file or bot setting is touched, and a cha
 No screen shows it yet.
 
 <!-- guide: route:POST /api/lab/requests -->
+
+**Can I see what confirming a comparison run would change?** Managers and admins can ask for a preview of a finished run.
+It shows each setting with its current value and the proposed one, the account, your username and the run's numbers, labelled "backtested, not a forecast", with any fragile spots the run found.
+If the setting is a core policy, the preview says a product owner must approve it.
+If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
+In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
+The audit trail records one line with your username, the account, the run and both values.
+The preview changes nothing: no config file or bot setting is touched, and confirming a change is not built yet.
+No screen shows it yet.
 
 Each environment has its own people and roles.
 
