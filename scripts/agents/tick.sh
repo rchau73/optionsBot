@@ -86,6 +86,7 @@ fi
 start pm_agent.sh 1 # its board passes need no Claude; triage and planning check the budget
 start metrics.sh 1 # weekly: exits at once unless last week's report is missing
 start evidence.sh 1 # weekly: exits at once once last week's done-marker exists
+start go_no_go.sh 1 # weekly: exits at once once this week's done-marker exists, or before the evidence report is in
 start usage.sh 1 # weekly: exits at once once last week's done-marker exists (or no events file)
 start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-marker exists
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
