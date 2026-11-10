@@ -136,7 +136,8 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `manual_close` and `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
 - `audit_exported` (an admin downloaded the trail as CSV, #702: `filters`, `lines`, `cut`, `skipped` and `complete`, never an exported line);
 - `futures_hedge_switched` (bot, `enabled` true or false and the bot's status; #657, admins only);
-- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token).
+- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token);
+- `parameter_change_recorded` (#741, a manager confirmed a lab run's change and it was recorded, nothing applied: `run_id`, `underlying`, `config`, `changes` with each `key`, `old` and `new`, `token_id` (a hash prefix, never the token), `applied: false` and `line`).
 Every line ends with two fields of the hash chain (#619, `lib/auth/auditchain.js`): `prev`, the SHA-256 of the previous line's exact bytes (`""` for the first line of the trail), and `line_hash`, the SHA-256 of the line itself up to `,"line_hash"`.
 Both are hashes of audit lines, never of a password or a token; the Audit page leaves them out of the detail column and the export out of the file.
 Never a password, hash or token (nor a reset link).

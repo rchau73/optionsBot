@@ -191,6 +191,16 @@ Managers and admins.
 - The full answer and refusals: `users-and-roles.md` "`GET /api/lab/runs/<id>/preview`".
 - No screen uses it yet.
 
+### `POST /api/lab/runs/<id>/apply` (#741)
+
+Records the change a manager confirms with the preview's token, on the monitor's own server (`app/api/lab/runs/[id]/apply/route.js`, `lib/labapply.js`); no bot call, no config written, nothing applied.
+Managers and admins, same-origin JSON `{"confirm_token"}`.
+- The server recomputes the preview and refuses a token that does not match it or is over 15 minutes old, a core policy (the product owner approves those), a stale or out-of-range value, a run not done and a run already recorded.
+- Success is `COMPARE_DIR/applied/<id>.json`, written once, and 201 `applied: false, recorded: true` with the numbers labelled as backtested and the risks beside them.
+- Each recorded change writes one audit line, `parameter_change_recorded`; a refusal writes none.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/apply`".
+- No screen uses it yet.
+
 ### `POST /api/lab/requests` (#641)
 
 Asks for a comparison run of the shipped config against proposed values, on the monitor's own server (`app/api/lab/requests/route.js`, `lib/labrequests.js`); no bot call, no config written, nothing applied.

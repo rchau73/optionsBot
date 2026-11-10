@@ -21,6 +21,10 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: — (403)
+- Confirm a lab run's previewed change, which records it and applies nothing (`POST /api/lab/runs/<id>/apply`, #741; a core policy needs the product owner)
+  - admin: ✓
+  - manager: ✓ (every account, until E8's tenancy links managers to accounts)
+  - user: — (403)
 - Create, edit and delete users; reset a password or issue a reset link (Users page, `/api/admin/users`)
   - admin: ✓
   - manager: — (403)
@@ -154,10 +158,28 @@ Answer: `run_id`, `time`, `person`, `account` (`underlying`, `config`) and `chan
 It also carries `backtested` (`label` "backtested, not a forecast", `backtest`, `replay`, `stress_ran`, `windows`), `fragility` (`checked`, `key`, `cliffs`, or a `note` when the check was not run) and `analysis`, withheld behind `L10_ANALYSIS_GATE_OPEN` like the run's.
 Last come `needs_product_owner`, `stale`, `confirmable`, `reasons` (plain words, `[]` when confirmable), `confirm_token`, `audit_line` and `applied`.
 `needs_product_owner` is true for a core policy or a key the catalogue refuses; `stale` for a run over 7 days old, a value the run started from that is not the account's, an account's value that cannot be read, or a proposed value now refused.
-Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown, which nothing accepts yet.
+Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown and of the 5-minute window it was issued in, which `POST /api/lab/runs/<id>/apply` accepts for at most 15 minutes.
 Manager or admin (`ROLE_GUARDED_READS`, called as every caller by the role-matrix test); each answered preview writes one audit line, `parameter_change_previewed`, with the person, the account, the run and both values.
 
 **Refusals (no audit line):** 404 an id that is not a folder time, or no run · 409 a run that changed no setting · 500 unreadable or malformed JSON · 401/403 as above
+
+#### `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741)
+
+**Does:** records the change a manager confirms (`lib/labapply.js`); it writes no config, restarts no bot and places no order.
+The server recomputes the preview of the run now, for the person asking, and checks the token against it: the same run, person, account and values, issued at most 15 minutes ago (`CONFIRM_TOKEN_MINUTES`, at least 10), compared in constant time.
+It then re-checks everything the preview checks: the role (re-read from the database), the range and cross rules, the account's value, the run's age and numbers, and the core-policy block.
+On success it writes `COMPARE_DIR/applied/<id>.json` once (mode 0600, created exclusively, so a second confirm, or two at once, records one) with `run_id`, `recorded_at`, `person`, `role`, `account`, `changes` (`key`, `title`, `old`, `new`), `token_id` (the first 16 hex of the token's SHA-256, never the token), `applied: false` and `recorded: true`.
+201 with that record, `message` (what was recorded, that the result was backtested, not a forecast, and that nothing was applied to a running bot), `next_step`, `backtested`, `risks` (worst week, drawdown and fees in %, the fragility check, "past data only") and `audit_line`.
+How a recorded change reaches the running bot is not decided yet (a reviewed config PR and a restart, or a later hot-reload): until then the record is the whole effect.
+Manager or admin (`STATE_CHANGING_ROUTES`); one audit line, `parameter_change_recorded`, with the person, the account, the run, each `key` with `old` and `new`, and `token_id`.
+Until E8's tenancy links managers to accounts, a manager may confirm for every account; a token works only for the person it was shown to.
+
+**Refusals (every one answers `applied: false, recorded: false`, writes no record and no audit line):**
+- 400 no `confirm_token` or malformed JSON.
+- 409 a token that does not match (another run, person or value, a changed character) or is older than 15 minutes ("open the preview again").
+- 409 a run already recorded ("a confirm is used once"), a run whose request is not done, a run that changed no setting, or one the preview would not confirm (stale, out of range, no numbers; `reasons`).
+- 409 a core policy: "a new default needs the product owner, not a manager's confirm", with `approver`.
+- 404 an id that is not a folder time, or no run · 403 cross-origin · 413 a body over 1 KB · 415 not JSON · 500 an unreadable report or a record that could not be written · 401/403 as above.
 
 #### `POST /api/lab/requests` `{"settings": [{"key", "value"}], "underlying"?}` (#641)
 

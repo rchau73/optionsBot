@@ -120,7 +120,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - the trail itself: `audit_exported`;
-- the lab: `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
+- the lab: `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file), and `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The monitor's JSON logs

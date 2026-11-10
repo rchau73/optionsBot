@@ -18,6 +18,8 @@ import { getAuth, resetAuth } from "@/lib/auth/server";
 import { hashPassword } from "@/lib/auth/password";
 import { hashToken } from "@/lib/auth/service";
 import { ACCESS_COOKIE, authKey, REFRESH_COOKIE, signAccess } from "@/lib/auth/tokens";
+import { readRun } from "@/lib/lab";
+import { buildPreview, confirmToken } from "@/lib/labpreview";
 import { OPTIONAL_KINDS } from "@/lib/notifications";
 import { CALLERS, callerAllowed, ROLE_GUARDED_READS, routeKey, STATE_CHANGING_ROUTES, STATE_METHODS, unlistedRoutes } from "@/lib/auth/routeRoles";
 import { TEST_SECRET, useTestAuth } from "@/test/auth";
@@ -158,6 +160,21 @@ const FIXTURES = {
   "POST /api/lab/requests": async ({ who }) => {
     process.env.COMPARE_DIR = path.join(dir, "compare"); // the queue in the test's folder, never the clone's data/
     return { path: "/api/lab/requests", body: { settings: [{ key: "gamma_flip_buffer_sd", value: 1.2 }] }, actor: who?.user.username };
+  },
+  "POST /api/lab/runs/[id]/apply": async ({ who }) => {
+    // A fresh run per caller (one confirm records a run once), and the token its preview gives this person.
+    process.env.COMPARE_DIR = path.join(dir, "compare");
+    const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    fs.mkdirSync(path.join(process.env.COMPARE_DIR, id), { recursive: true });
+    const figures = { return_pct: 1, worst_week_pct: -1, max_drawdown_pct: 1, fees_usd: 10 };
+    const report = {
+      underlying: "BTC",
+      diffs: [{ key: "backtest.slippage_pct", base: "0.001", proposed: "0.002" }],
+      backtest: { ran: true, equity_usd: 100000, base: figures, proposed: figures },
+    };
+    fs.writeFileSync(path.join(process.env.COMPARE_DIR, id, "report.json"), JSON.stringify(report));
+    const preview = buildPreview(readRun(process.env.COMPARE_DIR, id).run, who?.user.username ?? "nobody", Date.now());
+    return { path: `/api/lab/runs/${id}/apply`, params: { id }, body: { confirm_token: confirmToken(preview, authKey(TEST_SECRET), Date.now()) }, actor: who?.user.username };
   },
   "POST /api/lab/validate": async ({ who }) => ({ path: "/api/lab/validate", body: { key: "delta_drift_threshold", value: 0.05 }, actor: who?.user.username }),
   "POST /api/events": async ({ who }) => {

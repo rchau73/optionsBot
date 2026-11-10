@@ -48,6 +48,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/consent", roles: SIGNED_IN, audit: "analytics_consent_changed" },
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/lab/requests", roles: MANAGERS, audit: "lab_request" },
+  { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded" },
   { route: "POST /api/lab/validate", roles: MANAGERS, audit: "lab_validate" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },

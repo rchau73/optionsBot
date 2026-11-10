@@ -29,11 +29,14 @@ A manager's parameter change is studied offline before anyone decides on it:
    `needs_product_owner: true` (a core policy, or a key the catalogue does not know) or `stale: true` (the run is over 7 days old, the value it started from is not the account's, the account's value cannot be read, or the proposed value is now refused) gives `confirm_token: null`, and so does a run with no numbers for the proposal; `reasons` says why in plain words.
    The 7 days are `PREVIEW_MAX_AGE_DAYS` (`frontend/lib/labpreview.js`): the runner compares the last 7 days, so an older run has no day in common with the week after it.
    "The account's value" is the shipped config in `frontend/content/lab-settings.json` until E8's tenancy gives a real one; mvp's BTC runs `config_btc.mvp.yaml`, which differs only in `gex_direction`, a core policy that never gets a token.
-   The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account and both values, so the future apply can recompute it and see that what is confirmed is what was shown; nothing accepts it yet.
+   The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account, both values and the 5-minute window it was issued in, so the confirm can recompute it and see that what is confirmed is what was shown.
    Reading a preview writes one audit line, `parameter_change_previewed`, naming the person, the account, the run and both values; a refused call writes none.
 
-   **The apply is not built.** It touches the live configuration, so it waits for a person's decision, E8's tenancy (accounts, links of managers to accounts) and the legal answer on advisers (PRD §11, L10).
-   When it is built, a confirm must re-check the token, the role and the staleness on the server, and it writes its own audit line, `parameter_change_applied`, with the person, the account, the run, both values and the bot's answer.
+7. `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741, managers and admins) records the confirmed change, and applies nothing.
+   The server recomputes the preview and refuses a token for another run, person or value, one over 15 minutes old (`CONFIRM_TOKEN_MINUTES`), a core policy (it names the product owner as the approver), a stale or out-of-range value, a run whose request is not done and a run already recorded (a token is used once).
+   Success writes `data/compare/applied/<id>.json` once and one audit line, `parameter_change_recorded` (the person, the account, the run, old → new, the token's id), and answers `applied: false, recorded: true`, with the numbers labelled "backtested, not a forecast" and the risks beside them.
+   **How a recorded change reaches the running bot is not decided** (a reviewed config PR and a restart, or a later hot-reload story): it needs a person's decision, with E8's tenancy (links of managers to accounts; until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
+   Until then the record is the whole effect: no config file is written, no bot restarted, no order placed.
 
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
