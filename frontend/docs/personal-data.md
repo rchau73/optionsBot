@@ -120,7 +120,9 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - the trail itself: `audit_exported`;
-- the lab: `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file), and `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
+- the lab:
+  - `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
+  - `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The security digest and alerts
@@ -157,9 +159,11 @@ The self-delete (#543) and an admin's deletion run the same steps:
 ## Questions for counsel
 
 1. L13: the lawful basis of each store above (account, sessions, audit, logs), and which need consent.
-2. L14: how long may the audit archives and logs keep lines that name a person who deleted their account? **Proposal**: keep the lines, never the account row; or replace the name by a neutral id at deletion.
+2. L14: how long may the audit archives and logs keep lines that name a person who deleted their account?
+   **Proposal**: keep the lines, never the account row; or replace the name by a neutral id at deletion.
 3. L14: a retention period for audit archives and for the Docker logs (today none for the archives).
 4. L14: the `email` column is optional and unused; keep, or stop collecting it?
 5. L16: may survey answers stay linked to an account, and for how long?
 6. L22: the breach duties for the user database and the audit trail, and the minimum security the terms promise.
-7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it. **Fallback in place**: only admins may export, and every export is an audit line.
+7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it.
+   **Fallback in place**: only admins may export, and every export is an audit line.
