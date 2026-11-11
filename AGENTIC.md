@@ -39,7 +39,7 @@ Everything happens in the open on GitHub, so each step can be audited: the [proj
 | [docs/agents/stuck-cards.md](docs/agents/stuck-cards.md) | Stuck cards: In progress or In review with nothing working on them |
 | [docs/agents/metrics.md](docs/agents/metrics.md) | Agent metrics: the weekly report on the loop |
 | [docs/agents/dora.md](docs/agents/dora.md) | Delivery report (DORA) |
-| [docs/agents/evidence.md](docs/agents/evidence.md) | Weekly evidence report and the direction trial |
+| [docs/agents/evidence.md](docs/agents/evidence.md) | Weekly evidence report, the direction trial and the daily recording check |
 | [docs/agents/usage.md](docs/agents/usage.md) | Weekly usage report and the assistant quality review |
 | [docs/agents/backup.md](docs/agents/backup.md) | Nightly backup and its restore check |
 | [docs/agents/flaky.md](docs/agents/flaky.md) | Nightly flaky-test hunt |
