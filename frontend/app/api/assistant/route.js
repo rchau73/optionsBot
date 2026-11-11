@@ -2,8 +2,8 @@ import { authDbPath, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { assistantLogPath } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
-import { assistantIndex, assistantLimiter, assistantModel, botBook, botExplain, botJournal, botLive, botPerformance, botPnl } from "@/lib/assistant/server";
-import { answerQuestion, asksAboutIdle, asksAboutResults, mergePassages, validQuestion } from "@/lib/assistant/service";
+import { assistantIndex, assistantLimiter, assistantModel, botBook, botExplain, botJournal, botLive, botPerformance, botPnl, labRuns } from "@/lib/assistant/server";
+import { answerQuestion, asksAboutIdle, asksAboutLab, asksAboutResults, mergePassages, validQuestion } from "@/lib/assistant/service";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +39,9 @@ export async function GET(request) {
  * bot's live page data (#427: open legs, the market now) and its journal
  * facts (the last week and its held legs' whole history), and for a question
  * about results its 7- and 30-day performance (#648), for a question about
- * an idle book or unused margin its book now (#719); with "seq" too (the panel's "Why?" on a trade,
+ * an idle book or unused margin its book now (#719); for a manager's or an
+ * admin's question about a comparison, with or without "bot", the lab's
+ * latest runs and requests (#742, percentages only); with "seq" too (the panel's "Why?" on a trade,
  * #408) also the facts the journal recorded about that event
  * (GET /api/explain). The answer must cite them, else it is replaced by
  * "I don't know" (no citation) or the fallback reply (advice, forecast, a
@@ -104,6 +106,8 @@ export async function POST(request) {
     if (asksAboutIdle(valid.question)) book = (await botBook(bot, journal)) ?? [];
     if (seq !== null) journal = mergePassages(await botExplain(bot, seq), journal);
   }
+  // The lab's comparisons, only for a question about one and only for a manager or an admin (#742): labRuns reads nothing for anyone else.
+  const lab = asksAboutLab(valid.question) ? labRuns(user) : [];
 
   const { status, body: out } = await answerQuestion({
     question: valid.question,
@@ -112,6 +116,7 @@ export async function POST(request) {
     live: live ?? [],
     perf: perf ?? [],
     book,
+    lab,
     reportPassages: async () => (bot !== null ? botPnl(bot) : []),
     // The one more try of a rejected answer is a model call too (#534): it counts, and is skipped when the hour's budget is spent.
     takeRetry: () => limiter.take(user.id, Date.now()) === 0,
