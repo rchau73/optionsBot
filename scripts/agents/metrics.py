@@ -2,8 +2,9 @@
 """metrics.py — the weekly report of the agentic loop (#180): throughput and
 quality, so E6's outcome ("no human toil except approvals") is measured.
 
-    metrics.py week [<YYYY-MM-DD>]   → the ISO week before that day (today), its Monday and the Monday the
-                                       dumps must reach for the Trend section: 2026-W42 2026-10-12 2026-09-21
+    metrics.py week [<YYYY-MM-DD>]   → the ISO week before that day (today), its Monday and the day the
+                                       dumps must reach for the Trend section and the flaky repeat
+                                       offenders' 30 days: 2026-W42 2026-10-12 2026-09-19
     metrics.py report <week> <dir> [--runs F] [--stuck F] [--repo OWNER/NAME]
                                      → the report (Markdown) on stdout
 
@@ -38,6 +39,7 @@ import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import flaky  # noqa: E402
 import runs  # noqa: E402
 from pm_board import PM_COMMENT, is_agent_comment  # noqa: E402
 
@@ -59,6 +61,7 @@ PM_NEAR = dt.timedelta(minutes=2)
 REVERT_REF = re.compile(r"#(\d+)\b|agent/issue-(\d+)\b")
 EPIC_LABEL = re.compile(r"^E\d+$")
 TREND_WEEKS = 3  # the earlier weeks of the Trend section
+FLAKY_REPEAT_MIN = 2  # a test file with this many flaky issues in flaky.REPEAT_DAYS is listed (#747)
 TREND_MIN_BASE = 3  # a smaller base in those weeks is "too few to judge" (the cut of internal/usage/drops.go)
 TOO_FEW = "too few to judge"
 # Trend rows, a fixed list so the E6 comment stays small: (label, figure, the way that is worse: +1 up, -1 down, 0 neither).
@@ -491,6 +494,19 @@ def funnel_section(start, end, issues, by):
     return out
 
 
+def flaky_section(end, issues, repo):
+    """## Flaky repeat offenders: each test file with FLAKY_REPEAT_MIN or more flaky-test
+    issues open, or closed in the 30 days before the week's end (#747)."""
+    files = {f: ns for f, ns in flaky.repeat_offenders(issues, end).items() if len(ns) >= FLAKY_REPEAT_MIN}
+    out = ["", f"## Flaky repeat offenders ({flaky.REPEAT_DAYS} days)", ""]
+    if not files:
+        return out + ["none"]
+    out += ["| file | issues | numbers |", "|---|---|---|"]
+    for f, ns in sorted(files.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        out.append(f"| `{f}` | {len(ns)} | " + ", ".join(ref(repo, "issues", n) for n in ns) + " |")
+    return out
+
+
 def report(week, d, runs_file=None, stuck_file=None, repo=None):
     start, end = week_bounds(week)
     inside = lambda t: t is not None and start <= t < end  # noqa: E731
@@ -541,6 +557,7 @@ def report(week, d, runs_file=None, stuck_file=None, repo=None):
                 f"\n  - #{n} `{lab}` for {h:.1f} h" for n, lab, h in sorted(waits_open, key=lambda w: -w[2]))]
     out += trend_section(week, by, issues, prs, gitlog)
     out += funnel_section(start, end, issues, by)
+    out += flaky_section(end, issues, repo)
     out += runs_section(start, end, runs.default_file() if runs_file is None else runs_file)
     out += overruled_section(start, end, issues, prs, events, gitlog, repo)
     out += stuck_section(start, end, default_stuck_file() if stuck_file is None else stuck_file, repo)
@@ -552,7 +569,9 @@ def main(argv):
         day = dt.date.fromisoformat(argv[2]) if len(argv) > 2 else dt.datetime.now(dt.timezone.utc).date()
         week = previous_week(day)
         monday = week_bounds(week)[0]
-        print(week, f"{monday:%Y-%m-%d}", f"{monday - dt.timedelta(days=7 * TREND_WEEKS):%Y-%m-%d}")
+        # The dumps reach the Trend's first week and the flaky window before the week's end.
+        since = min(monday - dt.timedelta(days=7 * TREND_WEEKS), monday + dt.timedelta(days=7 - flaky.REPEAT_DAYS))
+        print(week, f"{monday:%Y-%m-%d}", f"{since:%Y-%m-%d}")
     elif len(argv) >= 4 and argv[1] == "report":
         opts, rest = {"--runs": None, "--stuck": None, "--repo": None}, argv[4:]
         while rest:

@@ -106,6 +106,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     plus the Runs table from the ledger (#290), what a person overruled (#292) and the stuck cards;
   - its Trend section (#707) puts the week beside the 3 before it from the same dumps (`metrics.sh` fetches 4 weeks): an arrow when worse than their mean, a base under 3 "too few to judge", a week with no data "–";
   - its Funnel section follows the issues filed in the week with an `E#` label through to verified fixed: numbers and counts only.
+  - its "Flaky repeat offenders (30 days)" section (#747) lists each test file with 2 or more flaky issues (`flaky.repeat_offenders`; the dumps reach 30 days before the week's end), else "none".
 - Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;
@@ -123,6 +124,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     and files one `bug` `[E6] Flaky test: <name>` in Triage per test that both passed and failed
     (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged);
   - a jest timeout that fired over a minute late is `stalled` (the process was frozen: the Mac slept, #587), logged and not counted; `caffeinate -is` keeps the Mac awake during the hunt.
+  - repeat offenders (#747, `repeat_offenders`): flaky issues open or closed in 30 days grouped by test file (jest: before ` › `; Go: the top-level `Test…`);
+    the metrics report lists files with 2 or more, and a new issue of a file reaching 3 carries a "fix the shared cause" line (body only).
 - Weekly usage report (#340, #341, #252, docs/agents/usage.md "Weekly usage report"):
   - `usage.sh` (from the tick, first tick of a Monday UTC, `data/agents/usage/<week>.done`, no Claude) runs `cmd/usage -alert` in each env with a non-empty `data/monitor/events.jsonl`
     (none with events in the week → nothing posted, no marker, re-looked at hourly),

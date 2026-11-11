@@ -202,6 +202,62 @@ class Plan(unittest.TestCase):
         self.assertEqual((lines, filings), (["no test failed"], []))
 
 
+def flaky_issue(n, name, state="OPEN", closed=None):
+    return {"number": n, "title": f"[E6] Flaky test: {name}", "state": state, "closedAt": closed}
+
+
+RESET = "__tests__/reset-audit-ui.test.jsx"
+
+
+class RepeatOffenders(unittest.TestCase):
+    """#747: flaky-test issues grouped by test file over 30 days."""
+
+    def test_scenario_a_go_test_and_a_jest_test_are_grouped_by_their_own_file_key(self):
+        self.assertEqual(flaky.file_key("TestFuturesHedge_ResumesWhenTheLockLifts"), "TestFuturesHedge_ResumesWhenTheLockLifts")
+        self.assertEqual(flaky.file_key("TestFuturesHedge_ResumesWhenTheLockLifts/sub_case"), "TestFuturesHedge_ResumesWhenTheLockLifts")
+        self.assertEqual(flaky.file_key(f"{RESET} › reset › shows a/b"), RESET)
+        self.assertEqual(flaky.file_key(RESET), RESET)  # a suite that did not load
+        got = flaky.repeat_offenders([flaky_issue(1, "TestFuturesHedge_ResumesWhenTheLockLifts"),
+                                      flaky_issue(2, f"{RESET} › A")], NOW)
+        self.assertEqual(got, {"TestFuturesHedge_ResumesWhenTheLockLifts": [1], RESET: [2]})
+
+    def test_open_and_recently_closed_count_older_and_other_titles_do_not(self):
+        issues = [flaky_issue(1, f"{RESET} › A"),
+                  flaky_issue(2, f"{RESET} › B", "CLOSED", "2026-10-01T00:00:00Z"),   # 22 days
+                  flaky_issue(3, f"{RESET} › C", "CLOSED", "2026-09-08T00:00:00Z"),   # 45 days
+                  flaky_issue(4, f"{RESET} › D", "CLOSED", None),                     # no date: not counted
+                  {"number": 5, "title": "[E6] Engagement drop: x", "state": "OPEN"},
+                  dict(flaky_issue(6, f"{RESET} › E"), createdAt="2026-10-24T00:00:00Z")]  # after now
+        self.assertEqual(flaky.repeat_offenders(issues, NOW), {RESET: [1, 2]})
+
+    def test_scenario_a_third_issue_for_a_file_carries_the_hint(self):
+        r = flaky.Result(f"{RESET} › C", flaky.JEST_SUITE, RESET)
+        r.passes, r.fails, r.output = 2, 1, "boom"
+        issues = [flaky_issue(731, f"{RESET} › A"), flaky_issue(732, f"{RESET} › B", "CLOSED", "2026-10-20T00:00:00Z")]
+        _, filings = flaky.plan({r.name: r}, issues, SHA, [], NOW)
+        self.assertEqual(filings[0][0], f"[E6] Flaky test: {r.name}")  # title unchanged
+        self.assertIn("This file has 3 flaky issues in 30 days: fix the shared cause in the file "
+                      "(timers, shared state, ordering), not only this test.", filings[0][1])
+
+    def test_a_second_issue_has_no_hint_and_tonights_filings_count(self):
+        a = flaky.Result(f"{RESET} › A", flaky.JEST_SUITE, RESET)
+        b = flaky.Result(f"{RESET} › B", flaky.JEST_SUITE, RESET)
+        for r in (a, b):
+            r.passes, r.fails = 2, 1
+        _, filings = flaky.plan({a.name: a, b.name: b}, [flaky_issue(1, "TestOther")], SHA, [], NOW)
+        self.assertNotIn("shared cause", filings[0][1])  # 1st of the file
+        self.assertNotIn("shared cause", filings[1][1])  # 2nd
+        _, filings = flaky.plan({a.name: a, b.name: b}, [flaky_issue(1, f"{RESET} › Z")], SHA, [], NOW)
+        self.assertNotIn("shared cause", filings[0][1])  # 2nd
+        self.assertIn("This file has 3 flaky issues", filings[1][1])  # 3rd, filed the same night
+
+    def test_dedup_is_unchanged_by_the_count(self):
+        r = flaky.Result(f"{RESET} › A", flaky.JEST_SUITE, RESET)
+        r.passes, r.fails = 2, 1
+        issues = [flaky_issue(1, f"{RESET} › A"), flaky_issue(2, f"{RESET} › B"), flaky_issue(3, f"{RESET} › C")]
+        self.assertEqual(flaky.plan({r.name: r}, issues, SHA, [], NOW)[1], [])
+
+
 class Run(unittest.TestCase):
     def test_kills_the_command_at_the_deadline(self):
         with tempfile.TemporaryDirectory() as d:
