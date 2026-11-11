@@ -117,10 +117,15 @@ The first one that applies wins.
 |---|---|---|---|
 | 1 | **Stop-loss** | the leg's loss reaches **2× the premium** received for it | buys it back **at market**, immediately, ahead of all other traffic; if the book is empty (ask more than 20 % above mid) it waits up to 5 minutes for the spread, re-checking each cycle |
 | 2 | **Time roll** | **15 days** or fewer left | buys the leg back; once both legs are gone the slot reopens further out |
-| 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; repair re-sells a fresh leg at the target delta, same expiry |
-| 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; repair re-sells a fresh leg |
+| 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; from 25 days to expiry repair re-sells a fresh leg at the target delta, same expiry; under 25 days *close only* (below) |
+| 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; from 25 days to expiry repair re-sells a fresh leg; under 25 days *close only* (below) |
 | — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one and a half normal days' move (1.5σ) below the gamma flip, on two snapshots in a row | closes the threatened side at market; it is sold again only once the price is back above the flip it was shed at (plus 1.5σ), or dealer gamma has been non-negative for a day |
 | — | **Kill switch** | operator signal | cancels everything, buys back everything at market, then stops trading |
+
+**Close only under 25 days** (#753): between 25 days and the time roll, a leg that meets the drift or take-profit threshold is bought back the same way, journaled "close only: < 25 DTE", and not sold again on that expiry — a fresh leg there would be time-rolled within days, paying the spread twice.
+The other leg of the strangle stays under its own rules.
+Once the strangle has no leg left, the slot is empty and opens a new strangle through the normal entry rules, but never on the expiry it just closed: that expiry counts as taken for the slot until it expires, so the slot uses the next free expiry or waits (`no_free_expiry`).
+The 25 is fixed in code; `cmd/stress -closeonly` varies it (0 = the rule before: nothing under 25 days).
 
 How each exit buys back (#239):
 
@@ -280,7 +285,8 @@ Every rule that opens, closes or holds a position, by market state.
 | **Rolls** (take-profit, delta drift, DTE) | ✅ · rest at the mid for 90 s, then the rest at the ask; any urgent exit cancels the resting order first | ✅ | ✅ | ✅ | ✅ |
 | **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots; with the futures hedge experiment on, ⛔ the legs are kept (`shed_hedged`) and the perpetual holds the delta instead, unless the hedge cannot trade (halted, last order rejected, or 3 cycles due without a fill): then ✅ as usual (`hedge_unavailable`) | ✅ |
 | **Futures hedge experiment** (off by default; testnet; switched by an admin from the monitor, #657) | while on: the coin's perpetual is traded so the book's delta stays within 5 % of the margin balance (IOC at the best price, at most 12 orders an hour); a rejection a retry cannot cure (maintenance lock, instrument not open, not enough funds) halts its orders, re-checked every 10 minutes (`hedge_halted`); live only, no order more than 1 % from the index (`hedge_price_away`); on testnet the benchmark is priced at the index, without funding; stops, delta exits, rolls and the MM cut still close legs; the kill switch closes only the perpetual size the bot's ledger holds and journals the rest (`perp_left_open`) | ✅ runs (it only reduces direction) | ✅ | ✅ instead of the shed's close | ✅ |
-| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`; a working repair of that side is cancelled when the trend turns) | ⛔ for the shed side | ⛔ |
+| **Repair after a take-profit or drift close under 25 days to expiry** (#753) | ⛔ not on that expiry (`repair_held`: close only); the slot re-enters on another expiry once its strangle has no leg | same | same | same | same |
+| **Repair after a take-profit or drift roll** (25 days or more to expiry) | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`; a working repair of that side is cancelled when the trend turns) | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
 | **Top-up while a slot's leg is held after a stop-loss or manual close** | ⛔ that slot's top-up waits until the repair may run (`repair_held`: top-up held); a strangle missing a leg is never topped up, repair completes it | same | same | same | same |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1.5σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |

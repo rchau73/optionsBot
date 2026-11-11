@@ -69,6 +69,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	}
 	share := EntryShare(headroom, SlotShare(m.status.LimitIMPct, m.usage.MarginBalance, len(slots)), needsOpen)
 	instruments := s.md.AllInstruments()
+	s.closedExpiries.Prune(time.Now())
 
 	for _, slot := range slots {
 		if occupied[makeSlotKey(slot.TargetDTE, slot.EntryDelta)] {
@@ -79,7 +80,9 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 
-		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, s.heldExpiries())
+		// An expiry a close-only exit left counts as held for this slot (#753).
+		held := s.closedExpiries.WithHeld(s.heldExpiries(), instruments, slot.TargetDTE, slot.EntryDelta)
+		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, held)
 		switch pick {
 		case marketdata.PickNone:
 			slog.Info("skip slot: no suitable expiry available",
@@ -90,10 +93,10 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			hi := marketdata.StretchHi(slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.ExpiryStretch)
 			slog.Info("skip slot: its expiry is held by another slot and no free one up to the stretch",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "max_dte", hi)
-			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoFreeExpiry, fmt.Sprintf("every expiry up to %d DTE is held by another slot", hi))
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoFreeExpiry, fmt.Sprintf("every expiry up to %d DTE is held by another slot or was closed under the close-only floor", hi))
 			continue
 		case marketdata.PickStretched:
-			slog.Info("slot: own expiry held by another slot, using the next free one",
+			slog.Info("slot: own expiry held by another slot (or closed under the close-only floor), using the next free one",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"expiry", expiry.Format("2006-01-02"), "dte", marketdata.DaysToExpiry(expiry, time.Now()))
 		}

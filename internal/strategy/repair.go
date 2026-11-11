@@ -21,10 +21,13 @@ import (
 // A leg that was stopped out is only re-sold once the market has calmed
 // (RepairBlockReason); a leg shed by GEX once spot is back above the flip it
 // was shed at (ShedRepairBlockReason); a leg closed by a take-profit or
-// delta-drift roll is reopened at once — that is how the strategy rolls.
+// delta-drift roll is reopened at once — that is how the strategy rolls —
+// except under the close-only floor (closeonly.go, #753), where it is not
+// re-sold on that expiry.
 func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec GammaDecision, m marginState) {
 	instruments := s.md.AllInstruments()
 	s.dropStaleAnchors()
+	s.pruneCloseOnly(time.Now())
 	if s.cfg.GEXDirection == DirectionBias {
 		// Every snapshot counts toward a shed leg's bias release, even while
 		// another rule (the regime-side block) holds the leg, so a bias that
@@ -47,6 +50,9 @@ func (s *Strategy) repairIncompleteStrangles(ctx context.Context, gammaDec Gamma
 			continue
 		case HoldGEXShed:
 			s.noteRepairHeld(st, missingType, reason, missingType+" "+reason, "repair held: leg was shed by GEX")
+			continue
+		case HoldCloseOnly:
+			s.noteRepairHeld(st, missingType, reason, missingType+" "+reason, "repair held: leg closed only under the close-only floor")
 			continue
 		case HoldStopped:
 			s.noteRepairHeld(st, missingType, reason, missingType+" stopped out, "+reason, "repair held: leg was stopped out")

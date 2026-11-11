@@ -7,6 +7,7 @@ export const HOLD_RULES = {
   "": { label: "repairing", tone: "good" },
   regime_side: { label: "regime side", tone: "warn" },
   stopped: { label: "stop hold", tone: "warn" },
+  close_only: { label: "close only", tone: "muted" },
   gex_shed: { label: "GEX anchor", tone: "warn" },
   gex_shedding: { label: "GEX shedding", tone: "bad" },
   mm_breach: { label: "MM limit", tone: "bad" },

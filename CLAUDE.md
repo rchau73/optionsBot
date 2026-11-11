@@ -143,8 +143,8 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   - after `order_fill_timeout_sec` cancel, read back the final fill and **book filled legs** (one-legged strangles are completed by repair).
 - **Marks:** `refreshMarks` copies a quote onto a position only when the instrument `HasQuote()`, which sets `Position.MarkLive`; otherwise the last known mark stays (from the exchange at reconcile).
   Reconcile converts Deribit's size-weighted position greeks to per-option greeks (`PerOptionGreeks`).
-- **Exit priority** (`EvaluateLeg`): stop-loss → DTE roll → **delta exit** → delta drift → ROI take-profit.
-  The delta exit closes a short leg whose |Δ| reaches `delta_exit_threshold` (0.30) — the move is real — before the 2× stop.
+- **Exit priority** (`EvaluateLeg`): stop-loss → DTE roll → **delta exit** → delta drift → ROI take-profit (under 25 DTE these two only close: `closeonly.go`).
+  The delta exit closes a short leg whose |Δ| reaches `delta_exit_threshold` (0.30) before the 2× stop.
   Delta exit, drift and take-profit act only on a `MarkLive` position; stop-loss and the DTE roll always act (on the last known mark).
   Stop-loss = market buy, high priority — except while the leg's book is empty:
   - `StopDeferReason` (`stopguard.go`, pure) defers it while the ask is more than `stop_spread_guard_pct` (20) above the mid (or there is no bid),

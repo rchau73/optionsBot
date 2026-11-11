@@ -59,6 +59,7 @@ Roles: user, manager, admin (the Close… button is for a manager or an admin).
 | Open positions, call chip | term | call | - |
 | Working orders, state | term | cancelled | - |
 | Trades log, open/close chip | term | close | - |
+| Missing legs, held-by chip | term | close only | - |
 | Futures hedge row | term | coin delta | - |
 | Open positions, Position Δ column | term | delta | - |
 | By exit reason, "Roll (delta drift)" | term | delta drift | - |

@@ -33,6 +33,12 @@ Read both before changing a rule.
   - 2026-10-15: ETH sent 1,454 on a strike whose OI was 164 and filled 152; mvp's 2–12 % of OI filled whole.
   - `cmd/stress -replay … -liqcap N` studies it.
 - **Sizing:** The backtest has no simulator: `backtest.ApproxIMLimitPct` (premium as margin, DVOL band only) is a labelled approximation.
+- **Exit priority** — close only under 25 DTE (`closeonly.go`, #753, the product owner's decision 2026-11-10):
+  - from `config.FixedCloseOnlyBelowDTE` (25) up, drift and take-profit roll (`ActionRollSameLeg`, repair re-sells on the same expiry);
+    under it, down to the time roll, they return `ActionClose`: the same resting close, the detail ending "close only: < 25 DTE …" (`CloseOnlyMarker`).
+  - `noteCloseOnly` (before the close) holds that side's repair (`HoldCloseOnly`, journaled `repair_held`) and the expiry for the slot (`ClosedExpiries`, added to `heldExpiries` for that slot only) until it expires,
+    so the 25-DTE slot, whose window is 16–35 DTE, re-enters on the next free expiry or waits (`no_free_expiry`) instead of re-selling the expiry the time roll closes days later.
+  - In memory, rebuilt at startup from the journal's close details (`CloseOnlyFromTrades` → `applyJournalCloseOnly`); the backtest, the replay and `cmd/stress` (`-closeonly`, 0 = the rule before: nothing under 25) apply the same rule.
 - **Exit priority** — resting closes:
   - **Take-profit, delta drift and the DTE roll rest first** (`restingclose.go`, #239, the product owner's option B):
     a GTC buy limit at the mid rounded down a tick (`RestingClosePrice`; no bid or no tick of room under the ask → IOC at the ask at once) for `order_fill_timeout_sec`,

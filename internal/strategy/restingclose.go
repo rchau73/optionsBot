@@ -33,10 +33,11 @@ const (
 )
 
 // RestsAtMid reports whether an exit decision first rests at the mid: the
-// take-profit and the delta drift (ActionRollSameLeg) and the DTE roll.
+// take-profit and the delta drift (ActionRollSameLeg, or ActionClose under
+// the close-only floor) and the DTE roll.
 // Stop-loss and delta exit cross at once — getting out matters more there.
 func RestsAtMid(a RolloutAction) bool {
-	return a == ActionRollSameLeg || a == ActionRollNextMonth
+	return a == ActionRollSameLeg || a == ActionClose || a == ActionRollNextMonth
 }
 
 // RestingClosePrice is the buy limit a non-urgent exit rests at: the mid of

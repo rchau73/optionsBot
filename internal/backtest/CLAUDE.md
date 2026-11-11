@@ -9,7 +9,7 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
 
 - **`internal/backtest`** — CSV feed, `SimExecutor`, day-loop `Engine` using the pure rules at the simulated date, sweep (scenarios applied as slot matrices),
   ladder sweep (`ladder.go`: DTE ladders with/without weeklies → slot occupancy from `occupancy.go`, return on margin, worst week), walk-forward.
-  As live, a DTE roll only closes (the slot re-enters); other exits are repaired on the same strangle and expiry.
+  As live, a DTE roll only closes (the slot re-enters); other exits are repaired on the same strangle and expiry, except a close-only exit under 25 DTE (#753: not repaired, its expiry held for the slot).
 - **`cmd/stress`** — research tool, not the bot: replays the live book (snapshot from `scripts/stress_inputs.sh`) through scripted shocks with the bot's pure rules and modelled prices/fills/fees.
   Keep its defaults equal to today's bot when a rule changes, and re-run it to compare rule changes on the same paths.
   Its trend is the bot's own (`strategy.SMALevelsOf`, which `GammaMonitor.SMALevels`/`detectTrend` call — swings included).

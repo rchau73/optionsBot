@@ -202,7 +202,7 @@ With the hedge off and no perpetual, the card is the same as without a hedge.
 
 **When something looks wrong**:
 - A card that says a side is missing ("no call held: repair waiting") has one leg only.
-  The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, or the margin limit.
+  The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, the margin limit, or "close only" — the leg was bought back under 25 days to expiry and is not sold again on that expiry.
 - "Unknown" in the today curve means an implied volatility was missing for a leg.
   The expiry curve is still drawn.
 
@@ -223,6 +223,7 @@ The dashed line is today's price.
 
 **3. How the bot defends the position**: five cards, the first four in the order the rules are applied:
 - *Take profit*: buy back when enough of the premium has been kept.
+  From 25 days to expiry the leg is sold again on the same expiry; under 25 it is only bought back, and once the strangle has no leg left the slot opens a new one on another expiry.
 - *Exit line*: buy back when a leg's delta reaches the delta-exit threshold, because the move looks real.
 - *Stop-loss*: buy back at market when the price of the option reaches the stop multiple.
 - *Wait, then repair*: after a stop, the bot waits the repair cooldown before it sells that side again.
@@ -365,7 +366,7 @@ A roll or a repair opens a new leg on another strike, so a leg that showed a lar
 <!-- guide: route:POST /api/bots/[bot]/close -->
 
 **Missing legs**: one row for each one-legged strangle.
-It shows who holds the repair (a stop, a GEX shed, the regime side), the market now and when the hold ends.
+It shows who holds the repair (a stop, a GEX shed, the regime side, or "close only": not sold again on that expiry), the market now and when the hold ends.
 
 **Trades and results**: realised profit and loss per coin, the win rate, average win against average loss, results by exit reason and by slot, and one line per trade.
 A caret opens the rule and its numbers.

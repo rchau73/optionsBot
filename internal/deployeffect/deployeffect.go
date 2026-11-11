@@ -114,6 +114,7 @@ type Rules struct {
 	ROITakeProfit       float64
 	StopLossMultiplier  float64
 	DeltaExitThreshold  float64
+	CloseOnlyBelowDTE   int
 	RepairCooldown      time.Duration
 }
 
@@ -125,6 +126,7 @@ func RulesFrom(c *config.Config) Rules {
 		ROITakeProfit:       c.ROITakeProfit,
 		StopLossMultiplier:  c.StopLossMultiplier,
 		DeltaExitThreshold:  c.DeltaExitThreshold,
+		CloseOnlyBelowDTE:   c.CloseOnlyBelowDTE,
 		RepairCooldown:      time.Duration(c.RepairCooldownHours) * time.Hour,
 	}
 }
@@ -432,7 +434,7 @@ func classifyExit(o Line, st *startup, rules Rules) (class, why string) {
 		pos.PremiumReceived = pos.EntryPrice * pos.Qty
 	}
 	d := strategy.EvaluateLeg(pos, st.At, rules.RolloutDTE, rules.DeltaDriftThreshold,
-		rules.ROITakeProfit, rules.StopLossMultiplier, rules.DeltaExitThreshold)
+		rules.ROITakeProfit, rules.StopLossMultiplier, rules.DeltaExitThreshold, rules.CloseOnlyBelowDTE)
 	if d.Action != strategy.ActionNone {
 		// The rule's name only: its detail carries prices.
 		return Expected, "due on the mark at the restart: " + d.Reason

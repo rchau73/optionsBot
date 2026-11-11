@@ -143,7 +143,11 @@ type Config struct {
 	DeltaSlippage float64 `yaml:"-"`
 	// StrikeIVMaxRatio: a strike whose mark IV is more than this many times
 	// (or under 1/this of) its expiry's ATM IV is not picked (#553; 0 = off).
-	StrikeIVMaxRatio    float64 `yaml:"-"`
+	StrikeIVMaxRatio float64 `yaml:"-"`
+	// CloseOnlyBelowDTE: under this DTE, delta drift and take-profit buy the
+	// leg back without re-selling it on that expiry (#753; 0 = the rule
+	// before: the roll from 25 DTE, nothing under it).
+	CloseOnlyBelowDTE   int     `yaml:"-"`
 	MinTradeAmount      float64 `yaml:"-"`
 	MinPremiumBTC       float64 `yaml:"min_premium"`
 	OrderFillTimeoutSec int     `yaml:"-"`

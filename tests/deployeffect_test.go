@@ -19,7 +19,7 @@ var (
 	// The shipped BTC settings (config_btc.yaml); TestDeployEffect_RulesFromConfig pins them.
 	deRules = deployeffect.Rules{
 		RolloutDTE: 15, DeltaDriftThreshold: 0.10, ROITakeProfit: 0.50,
-		StopLossMultiplier: 2.0, DeltaExitThreshold: 0.30, RepairCooldown: 72 * time.Hour,
+		StopLossMultiplier: 2.0, DeltaExitThreshold: 0.30, CloseOnlyBelowDTE: 25, RepairCooldown: 72 * time.Hour,
 	}
 )
 

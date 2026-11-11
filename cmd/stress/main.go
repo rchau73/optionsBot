@@ -86,6 +86,7 @@ type strangle struct {
 	shedBuf           map[string]float64   // the buffer (%) then
 	shedCross         map[string]int       // consecutive steps spot has been back past the anchor
 	capped            map[string]capOrder  // PROPOSED -stopcap: resting buy-back limit per leg type
+	closeOnly         map[string]bool      // legs closed under the close-only floor: not repaired (#753)
 	deferSince        map[string]time.Time // -stopslip: when the leg's stop was first deferred (the bot's spread guard)
 }
 
@@ -355,6 +356,8 @@ type book struct {
 	imScale, mmRatio         float64
 	appliedLimit             float64
 	stops, gex, rolls, wings int
+	closeOnly                int                     // drifts and take-profits closed only under the floor (#753)
+	closed                   strategy.ClosedExpiries // their expiries, held per slot
 }
 
 func (st *strangle) all() []*leg {
@@ -651,6 +654,8 @@ func main() {
 	slotsFlag := flag.String("slots", "", "comma-separated slot DTEs (e.g. 45,60,90); empty = BTC's 25/50 (ETH: 30,50)")
 	slotDelta := flag.Float64("slotdelta", 0.16, "with -slots: entry delta of every slot")
 	scaled := flag.Bool("scaled", false, "drift and delta-exit thresholds scale with each slot's entry delta (today's ratios: 0.10 and 0.30 at 0.16)")
+	closeOnlyDTE := flag.Int("closeonly", config.FixedCloseOnlyBelowDTE, "under this DTE, delta drift and take-profit buy the leg back without re-selling it on that expiry, and the slot re-enters on another (the bot: 25, #753; 0 = the rule before: the roll from 25 DTE, nothing under it)")
+	closeOnlyEntry := flag.String("closeonlyentry", "held", "with -closeonly: how the slot re-enters after a close-only exit — held (the bot: that expiry counts as held for the slot until it expires) | floor (STUDY, #753's alternative: while the slot holds one, its window starts at the close-only floor instead)")
 	distinct := flag.String("distinct", "farther-wait", "expiry per slot: farther-wait (the bot: nearest free expiry up to 1.5× target, else wait) | farther-share | wait | off")
 	flat := flag.Bool("flat", false, "start with no positions (same equity)")
 	days := flag.Int("days", 28, "length of normal paths")
@@ -836,7 +841,7 @@ func main() {
 	flip0 := s0 * *flipRatio // MODEL: the flip starts this far from spot
 	jumpRng := rand.New(rand.NewSource(7))
 	jump, jumpUntil := 0.0, time.Time{} // MODEL: current flip jump and when it ends
-	b := &book{appliedLimit: math.NaN()}
+	b := &book{appliedLimit: math.NaN(), closed: strategy.ClosedExpiries{}}
 	for _, st := range pos.Strangles {
 		s := &strangle{slot: slot{st.Slot.DTE, st.Slot.Delta}}
 		for _, l := range st.Legs {
@@ -1366,7 +1371,7 @@ func main() {
 				if *scaled {
 					legDrift, legBreach = s.slot.delta*0.10/0.16, s.slot.delta*0.30/0.16
 				}
-				dec := strategy.EvaluateLeg(l, m.now, rolloutDTE, legDrift, roiTP, stop, legBreach)
+				dec := strategy.EvaluateLeg(l, m.now, rolloutDTE, legDrift, roiTP, stop, legBreach, *closeOnlyDTE)
 				if dec.Action != strategy.ActionStopLoss {
 					delete(s.deferSince, l.OptionType) // the stop no longer applies
 				}
@@ -1446,6 +1451,15 @@ func main() {
 				case strategy.ActionRollSameLeg:
 					act("%s %s (%+.4f)", map[string]string{orders.TriggerRolloutDelta: "drift roll", orders.TriggerRolloutROI: "take-profit"}[dec.Reason], short(l), b.closeAll(l, m)+b.closeAll(pair.wing, m))
 					b.rolls++
+				case strategy.ActionClose: // under the close-only floor: no repair, the slot re-enters elsewhere (#753)
+					if s.closeOnly == nil {
+						s.closeOnly = map[string]bool{}
+					}
+					s.closeOnly[l.OptionType] = true
+					b.closed.Hold(s.slot.dte, s.slot.delta, l.Expiry)
+					act("%s %s close only (%+.4f)", map[string]string{orders.TriggerRolloutDelta: "drift", orders.TriggerRolloutROI: "take-profit"}[dec.Reason], short(l), b.closeAll(l, m)+b.closeAll(pair.wing, m))
+					b.rolls++
+					b.closeOnly++
 				}
 			}
 		}
@@ -1487,6 +1501,9 @@ func main() {
 				}
 				if (missing == "put" && gexAct == strategy.GammaActionClosePuts) || (missing == "call" && gexAct == strategy.GammaActionCloseCalls) {
 					continue
+				}
+				if s.closeOnly[missing] {
+					continue // closed under the close-only floor: not re-sold on this expiry (#753)
 				}
 				if trendBlocks(missing) {
 					continue
@@ -1581,7 +1598,16 @@ func main() {
 				}
 				u := b.usage(m)
 				share := strategy.EntryShare(u.Headroom(st.LimitIMPct), strategy.SlotShare(st.LimitIMPct, u.MarginBalance, len(slots)), vacant)
-				exp, ok := strategy.SelectExpiry(insts, m.now, sl.dte, 10, rolloutDTE)
+				b.closed.Prune(m.now)
+				lowRoll := rolloutDTE
+				if *closeOnlyEntry == "floor" && b.closed.HasAny(sl.dte, sl.delta) {
+					lowRoll = max(rolloutDTE, *closeOnlyDTE-1) // the window starts at the floor
+				}
+				exp, ok := strategy.SelectExpiry(insts, m.now, sl.dte, 10, lowRoll)
+				heldClosed := *closeOnlyEntry != "floor" // with floor, the window alone guards the re-entry
+				if *distinct == "off" && ok && heldClosed && b.closed.Held(sl.dte, sl.delta, exp) {
+					ok = false // the slot's close-only expiry: wait (#753)
+				}
 				if *distinct != "off" {
 					held := map[time.Time]bool{}
 					for _, o := range b.strangles {
@@ -1591,10 +1617,13 @@ func main() {
 							}
 						}
 					}
+					if heldClosed {
+						held = b.closed.WithHeld(held, insts, sl.dte, sl.delta) // the slot's close-only expiries (#753)
+					}
 					if ok && held[exp] {
 						alt, found := time.Time{}, false
 						if *distinct != "wait" { // the nearest later free expiry, up to 1.5× the target DTE
-							lo, _ := marketdata.ExpiryWindow(sl.dte, 10, rolloutDTE)
+							lo, _ := marketdata.ExpiryWindow(sl.dte, 10, lowRoll)
 							alt, found = marketdata.NearestExpiry(insts, m.now, lo, sl.dte*3/2, held)
 						}
 						switch {
@@ -1769,11 +1798,11 @@ func main() {
 		100*float64(shared)/float64(max(held, 1)), float64(held)/float64(max(nIM, 1)), sheds, resells, negReleases)
 	u := underlying
 	usd0, usd1, hold1 := eq0USD, eq*m.spot, b.mb0*m.spot
-	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · avg |net Δ| %.2f %s · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days\n",
+	fmt.Printf("\n**%s, %s:** **vs holding the coin: %+.4f %s · $%+.0f** (worst %s $%+.0f) · %s: %.4f → %.4f (%+.1f%%) · USD: $%.0f → $%.0f (%+.1f%%), holding → $%.0f (%+.1f%%) · %s %.0f → %.0f (%+.1f%%) · realised %+.4f %s net (fees paid %.4f) · wings bought %d (cost %.4f %s) · stops %d · GEX sheds %d · rolls %d · avg |net Δ| %.2f %s · max IM %.1f%% · max MM %.1f%% · worst day $%+.0f on %s · squeeze trigger on %d days · close-only exits %d\n",
 		mode, *name, eq-b.mb0, u, (eq-b.mb0)*m.spot, worstVsDay, worstVsHold,
 		u, b.mb0, eq, (eq/b.mb0-1)*100, usd0, usd1, (usd1/usd0-1)*100, hold1, (hold1/usd0-1)*100,
 		u, s0, m.spot, (m.spot/s0-1)*100,
-		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, sumAbsDelta/float64(max(nDays, 1)), u, maxIM, maxMM, worstUSD, worstDay, triggerDays)
+		b.realised, u, b.fees, b.wings, b.wingCost, u, b.stops, b.gex, b.rolls, sumAbsDelta/float64(max(nDays, 1)), u, maxIM, maxMM, worstUSD, worstDay, triggerDays, b.closeOnly)
 }
 
 type flipAt struct {

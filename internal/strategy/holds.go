@@ -22,6 +22,7 @@ const (
 	HoldRegimeSide    = "regime_side"       // confirmed negative regime, side of the trend
 	HoldGEXShed       = "gex_shed"          // shed by GEX, waiting on its anchor
 	HoldStopped       = "stopped"           // stopped out or closed by hand, RepairBlockReason
+	HoldCloseOnly     = "close_only"        // drift or take-profit under 25 DTE closed it: not re-sold on that expiry (#753)
 )
 
 // repairGate returns the first rule holding the repair of st's missing leg,
@@ -43,6 +44,9 @@ func (s *Strategy) repairGate(st *orders.Strangle, present *orders.Position, mis
 		return HoldGEXShedding, "GEX is shedding " + missing + "s"
 	case present.DTE() <= s.cfg.RolloutDTE:
 		return HoldRolloutWindow, "the open leg is inside the rollout window"
+	}
+	if reason := s.closeOnlyHold(st, missing); reason != "" {
+		return HoldCloseOnly, reason
 	}
 	if reason := RegimeSideBlockReason(missing, dec.TrendDir, m.status); reason != "" {
 		return HoldRegimeSide, reason

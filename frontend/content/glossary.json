@@ -180,6 +180,13 @@
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Closes", "Closed"]
   },
+  "close only": {
+    "short": "Under 25 days to expiry, a take-profit or delta drift buys the leg back and does not sell it again on that expiry.",
+    "long": "From 25 days to expiry the bot sells a fresh leg on the same expiry after a take-profit or a delta drift. Under 25 days that leg would be closed by the time roll within days, so it is only bought back. Once the strangle has no leg left, the slot opens a new strangle on another expiry.",
+    "risk_income": "It stops carrying the last of the premium and its risk, and puts the margin back to work on a later expiry.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["close only"]
+  },
   "coin delta": {
     "short": "How much the account's coin balance moves when the price moves, counting the options and the perpetual.",
     "long": "Each option leg has a delta in dollars. Coin delta takes away that leg's value in the coin, which is what an account that holds its margin in the coin really gains or loses. The futures hedge, a testnet experiment, trades the perpetual to keep it small.",

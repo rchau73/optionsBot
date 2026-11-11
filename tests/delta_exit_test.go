@@ -31,7 +31,7 @@ func TestEvaluateLeg_DeltaExit(t *testing.T) {
 		{"the DTE roll wins inside the window", makePos("call", 15, 100, 160, 0.45), 0.30, strategy.ActionRollNextMonth, orders.TriggerRollout19DTE},
 	}
 	for _, c := range cases {
-		dec := strategy.EvaluateLeg(c.pos, time.Now(), 19, 0.10, 0.50, 2.0, c.exit)
+		dec := strategy.EvaluateLeg(c.pos, time.Now(), 19, 0.10, 0.50, 2.0, c.exit, 0)
 		if dec.Action != c.want || dec.Reason != c.label {
 			t.Errorf("%s: got %v %q, want %v %q", c.name, dec.Action, dec.Reason, c.want, c.label)
 		}
@@ -41,7 +41,7 @@ func TestEvaluateLeg_DeltaExit(t *testing.T) {
 func TestEvaluateLeg_DeltaExitNeedsALiveMark(t *testing.T) {
 	pos := makePos("call", 30, 100, 160, 0.45)
 	pos.MarkLive = false // last known greeks only
-	if dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0.30); dec.Action != strategy.ActionNone {
+	if dec := strategy.EvaluateLeg(pos, time.Now(), 19, 0.10, 0.50, 2.0, 0.30, 0); dec.Action != strategy.ActionNone {
 		t.Errorf("no delta exit on a stale delta: %v", dec.Action)
 	}
 }

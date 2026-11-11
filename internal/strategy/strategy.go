@@ -71,6 +71,12 @@ type Strategy struct {
 	// the journal (RestoreStops); the startup regrouping prefers it.
 	journalSlots OpenSlots
 	repairHeld   map[string]string
+	// Close-only exits (closeonly.go, #753), decision loop only: the strangle
+	// sides not repaired (by stopKey, their expiry), the expiries held per
+	// slot, and the journal's records applied at startup.
+	closeOnlySides   map[string]time.Time
+	closedExpiries   ClosedExpiries
+	journalCloseOnly JournalCloseOnly
 	// Legs shed by GEX, by strangle and type: the flip they were shed at
 	// (shed.go). In memory like stopped, and rebuilt from the journal at
 	// startup the same way (applyJournalSheds).
@@ -174,6 +180,8 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		noQuote:          make(map[string]bool),
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
+		closeOnlySides:   make(map[string]time.Time),
+		closedExpiries:   ClosedExpiries{},
 		shedAnchors:      make(map[string]*ShedAnchor),
 		stopDefer:        make(map[string]time.Time),
 		unconfirmed:      make(map[string]unconfirmedOrder),
@@ -209,6 +217,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 	s.reconcilePositions(ctx)
 	s.applyJournalStops()
 	s.applyJournalSheds()
+	s.applyJournalCloseOnly()
 	s.trackPositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
 
@@ -528,5 +537,6 @@ func (s *Strategy) evaluateLeg(pos *orders.Position) RolloutDecision {
 		s.cfg.ROITakeProfit,
 		s.cfg.StopLossMultiplier,
 		s.cfg.DeltaExitThreshold,
+		s.cfg.CloseOnlyBelowDTE,
 	)
 }

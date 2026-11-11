@@ -142,6 +142,7 @@ func (s *Strategy) RestoreStops(trades []orders.Trade) {
 	s.journalStops = StopsFromTrades(trades)
 	s.journalSheds = ShedsFromTrades(trades)
 	s.journalSlots = OpenSlotsFromTrades(trades)
+	s.journalCloseOnly = CloseOnlyFromTrades(trades, time.Now())
 }
 
 // applyJournalStops records a stop for every reconciled strangle missing a

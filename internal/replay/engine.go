@@ -103,6 +103,7 @@ type Result struct {
 	Entries, Repairs  int
 	Sheds, Stops      int
 	DeltaExits, Rolls int // rolls: DTE rolls, take-profits and delta drifts (legs)
+	CloseOnly         int // of the rolls, drifts and take-profits closed only under the close-only floor (#753)
 	MMCuts, Unfilled  int // Unfilled: orders that found an empty side of the book and waited
 	LiquidityCapped   int // entry legs cut (or blocked) by the liquidity cap
 	// The liquidity-cap study (#487, liqcap.go).
@@ -199,6 +200,8 @@ type engine struct {
 	book       []*strangle
 	nextID     int
 	stopped    map[string]time.Time // strangle/side → when a stop, delta exit or MM cut closed it
+	closeOnly  map[string]bool      // strangle/side closed under the close-only floor: not repaired (#753)
+	closed     strategy.ClosedExpiries
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
 	rb         rebalanceState
@@ -233,6 +236,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 		dvol:    marketdata.NewDVOLTracker(cfg.IVPercentileWindow),
 		policy:  cfg.RiskPolicy(true),
 		stopped: map[string]time.Time{}, anchors: map[string]*strategy.ShedAnchor{}, deferSince: map[string]time.Time{},
+		closeOnly: map[string]bool{}, closed: strategy.ClosedExpiries{},
 		cash: set.Equity}
 	if !strings.EqualFold(cfg.Underlying, "BTC") {
 		e.lot = 1 // Deribit's minimum: 0.1 BTC, 1 ETH
@@ -541,7 +545,7 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 			if p.Qty <= 0 {
 				continue
 			}
-			d := strategy.EvaluateLeg(p, at, c.RolloutDTE, c.DeltaDriftThreshold, c.ROITakeProfit, c.StopLossMultiplier, c.DeltaExitThreshold)
+			d := strategy.EvaluateLeg(p, at, c.RolloutDTE, c.DeltaDriftThreshold, c.ROITakeProfit, c.StopLossMultiplier, c.DeltaExitThreshold, c.CloseOnlyBelowDTE)
 			if d.Action != strategy.ActionStopLoss {
 				delete(e.deferSince, p.ID)
 			}
@@ -577,6 +581,14 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 				what := map[string]string{orders.TriggerRolloutDelta: "drift roll", orders.TriggerRolloutROI: "take-profit"}[d.Reason]
 				if e.buyBack(at, s, p, p.Qty, quotes, what) {
 					e.res.Rolls++
+				}
+			case strategy.ActionClose: // under the close-only floor (#753): no repair, the slot re-enters elsewhere
+				what := map[string]string{orders.TriggerRolloutDelta: "drift close only", orders.TriggerRolloutROI: "take-profit close only"}[d.Reason]
+				e.closeOnly[key(s, p.OptionType)] = true
+				e.closed.Hold(s.slot.TargetDTE, s.slot.EntryDelta, p.Expiry)
+				if e.buyBack(at, s, p, p.Qty, quotes, what) {
+					e.res.Rolls++
+					e.res.CloseOnly++
 				}
 			}
 		}
@@ -628,11 +640,14 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if present == nil || e.shedSkips(missing, dec) || present.DTEAt(at) <= c.RolloutDTE {
 			continue
 		}
+		k := key(s, missing)
+		if e.closeOnly[k] {
+			continue // closed under the close-only floor: not re-sold on this expiry (#753)
+		}
 		if e.sideHold(missing, dec, st) != "" {
 			e.res.RegimeSideHolds++
 			continue
 		}
-		k := key(s, missing)
 		if a, ok := e.anchors[k]; ok {
 			if bias {
 				if strategy.BiasRepairBlockReason(a, missing, at, time.Duration(c.GEXBiasRepairCooldownHours)*time.Hour, c.GEXRepairConfirmSnapshots) != "" {
@@ -701,7 +716,9 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if occupied[sl] {
 			continue
 		}
-		exp, _ := strategy.SelectSlotExpiry(insts, at, sl.TargetDTE, c.MaxDTEDeviation, c.RolloutDTE, c.ExpiryStretch, held)
+		e.closed.Prune(at)
+		exp, _ := strategy.SelectSlotExpiry(insts, at, sl.TargetDTE, c.MaxDTEDeviation, c.RolloutDTE, c.ExpiryStretch,
+			e.closed.WithHeld(held, insts, sl.TargetDTE, sl.EntryDelta))
 		if exp.IsZero() {
 			continue
 		}
@@ -913,6 +930,7 @@ func (e *engine) prune() {
 		for _, typ := range []string{"call", "put"} { // the slot re-enters: its records go
 			delete(e.anchors, key(s, typ))
 			delete(e.stopped, key(s, typ))
+			delete(e.closeOnly, key(s, typ))
 		}
 	}
 	e.book = keep
