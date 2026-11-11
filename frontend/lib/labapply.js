@@ -125,6 +125,11 @@ export function writeRecord(dir, record) {
   fs.writeFileSync(path.join(dir, `${record.run_id}.json`), `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600, flag: "wx" });
 }
 
+/** Removes a run's record: its audit line could not be written, so the confirm did not happen and may be retried. */
+export function removeRecord(dir, runId) {
+  fs.rmSync(path.join(dir, `${runId}.json`), { force: true });
+}
+
 /** The answer of a recorded change: what was recorded, the numbers labelled as backtested and the risks next to them. */
 export function recordedAnswer(record, preview) {
   const values = record.changes.map((c) => `${c.key} from ${c.old} to ${c.new}`).join(", ");

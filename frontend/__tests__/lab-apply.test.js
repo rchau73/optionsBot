@@ -167,6 +167,22 @@ describe("Scenario: A token is used once", () => {
     expect(() => writeRecord(recordsDir(dir), { ...rec, person: "other" })).toThrow(expect.objectContaining({ code: "EEXIST" }));
     expect(JSON.parse(fs.readFileSync(recordFile(rec.run_id), "utf8")).person).toBe("mgr");
   });
+
+  test("an audit line that cannot be written takes the record back, so the confirm can be retried", async () => {
+    const id = newRun();
+    const { cookie, record } = await manager();
+    const token = tokenOf(id);
+    record.mockImplementationOnce(() => {
+      throw new Error("disk full");
+    });
+    const res = await post(cookie, id, { confirm_token: token });
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ applied: false, recorded: false });
+    expect(records()).toEqual([]);
+    expect(logs.join("\n")).toContain(tokenId(token));
+    expect((await post(cookie, id, { confirm_token: token })).status).toBe(201);
+    expect(records()).toEqual([`${id}.json`]);
+  });
 });
 
 describe("Scenario: A core policy is blocked", () => {

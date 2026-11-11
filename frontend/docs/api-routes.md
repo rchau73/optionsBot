@@ -198,6 +198,7 @@ Managers and admins, same-origin JSON `{"confirm_token"}`.
 - The server recomputes the preview and refuses a token that does not match it or is over 15 minutes old, a core policy (the product owner approves those), a stale or out-of-range value, a run not done and a run already recorded.
 - Success is `COMPARE_DIR/applied/<id>.json`, written once, and 201 `applied: false, recorded: true` with the numbers labelled as backtested and the risks beside them.
 - Each recorded change writes one audit line, `parameter_change_recorded`; a refusal writes none.
+- A record never stands without its audit line: when the audit line cannot be written, the record is removed and the answer is 500, so the manager can confirm again.
 - The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/apply`".
 - No screen uses it yet.
 

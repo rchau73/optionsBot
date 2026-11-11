@@ -3,7 +3,7 @@ import { authLog } from "@/lib/auth/log";
 import { authKey } from "@/lib/auth/tokens";
 import { compareDir, validId } from "@/lib/compare";
 import { readRun } from "@/lib/lab";
-import { buildRecord, checkConfirm, readRecord, RECORD_AUDIT_ACTION, recordedAnswer, recordsDir, writeRecord } from "@/lib/labapply";
+import { buildRecord, checkConfirm, readRecord, RECORD_AUDIT_ACTION, recordedAnswer, recordsDir, removeRecord, writeRecord } from "@/lib/labapply";
 import { queueDir, readRequests } from "@/lib/labrequests";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,8 @@ const MAX_BODY = 1024;
  * (COMPARE_DIR/applied/<id>.json) and one audit line
  * (parameter_change_recorded) and answers 201 `applied: false, recorded: true`:
  * it writes no config, restarts no bot and places no order. Managers and
- * admins, same-origin JSON; a refusal writes no record and no audit line.
+ * admins, same-origin JSON; a refusal writes no record and no audit line, and
+ * an audit line that cannot be written takes the record back (500).
  */
 export async function POST(request, { params }) {
   const { auth, user, response } = await requireRole(request, "manager");
@@ -78,15 +79,22 @@ export async function POST(request, { params }) {
     authLog("ERROR", "lab change not recorded", { component: "lab", username: user.username, id });
     return Response.json({ error: "the change could not be recorded: see the monitor's logs", applied: false, recorded: false }, { status: 500, headers: NO_STORE });
   }
+  try {
+    auth.recordAction(user, RECORD_AUDIT_ACTION, {
+      run_id: id,
+      underlying: record.account.underlying,
+      config: record.account.config,
+      changes: record.changes.map((c) => ({ key: c.key, old: c.old, new: c.new })),
+      token_id: record.token_id,
+      applied: false,
+      line: record.line,
+    });
+  } catch {
+    // A record never stands without its audit line: take it back, so the run is not marked recorded and the manager can confirm again.
+    removeRecord(records, id);
+    authLog("ERROR", "lab change not recorded: audit line failed", { component: "lab", username: user.username, id, token_id: record.token_id });
+    return Response.json({ error: "the change could not be recorded: see the monitor's logs", applied: false, recorded: false }, { status: 500, headers: NO_STORE });
+  }
   authLog("INFO", "lab change recorded", { component: "lab", username: user.username, id, keys: record.changes.map((c) => c.key), token_id: record.token_id });
-  auth.recordAction(user, RECORD_AUDIT_ACTION, {
-    run_id: id,
-    underlying: record.account.underlying,
-    config: record.account.config,
-    changes: record.changes.map((c) => ({ key: c.key, old: c.old, new: c.new })),
-    token_id: record.token_id,
-    applied: false,
-    line: record.line,
-  });
   return Response.json(recordedAnswer(record, checked.preview), { status: 201, headers: NO_STORE });
 }
