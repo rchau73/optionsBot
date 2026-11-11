@@ -9,6 +9,9 @@ export const LOCK_FAILURES = 5;
 export const LOCK_WINDOW_MS = 15 * 60 * 1000;
 export const IP_ATTEMPTS = 20;
 export const IP_WINDOW_MS = 60 * 1000;
+// "Download my data" (#750): a person may download 3 times an hour.
+export const MY_DATA_DOWNLOADS = 3;
+export const MY_DATA_WINDOW_MS = 60 * 60 * 1000;
 // Past this many IPs, stale ones are swept before adding another.
 const SWEEP_AT = 10000;
 
@@ -22,6 +25,27 @@ function recent(map, key, windowMs, now) {
 function sweep(map, windowMs, now) {
   if (map.size < SWEEP_AT) return;
   for (const key of [...map.keys()]) recent(map, key, windowMs, now);
+}
+
+/**
+ * At most `max` uses per key within `windowMs` (e.g. "Download my data", 3 an
+ * hour per person, #750). In memory: a restart forgets the count.
+ */
+export class WindowLimiter {
+  constructor(max, windowMs) {
+    this.max = max;
+    this.windowMs = windowMs;
+    this.uses = new Map(); // key → use times
+  }
+
+  /** Counts a use of `key`; returns 0 when allowed, else the seconds to wait (not counted). */
+  take(key, now) {
+    const times = recent(this.uses, key, this.windowMs, now);
+    if (times.length >= this.max) return Math.max(1, Math.ceil((times[0] + this.windowMs - now) / 1000));
+    sweep(this.uses, this.windowMs, now);
+    this.uses.set(key, [...times, now]);
+    return 0;
+  }
 }
 
 export class LoginLimiter {
