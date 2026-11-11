@@ -1,4 +1,4 @@
-// Package account polls the Deribit account Summary — collateral per asset,
+// Package account polls the exchange account Summary — collateral per asset,
 // margin model and initial/maintenance margin — and caches it for the
 // monitor. Every margin figure is Deribit's own; the only values computed
 // here are IM % and MM % of margin balance, as Deribit's UI shows them.
@@ -6,20 +6,25 @@ package account
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
 	"time"
-
-	"optionsbot/internal/exchange/transport"
-	"optionsbot/internal/gateway"
 )
 
-// rpcCaller is the slice of the exchange connection the poller uses (the
-// Deribit gateway in production).
-type rpcCaller = transport.Caller
+// Source is what the poller asks of an exchange (deribit.AccountSource in
+// production, #746). Every read is read-only and the source names the
+// exchange's methods, so this package names none.
+type Source interface {
+	// Summaries returns every currency's summary in one call.
+	Summaries(ctx context.Context) ([]Summary, error)
+	// Summary returns one currency's summary (the fallback when Summaries
+	// is unavailable).
+	Summary(ctx context.Context, currency string) (Summary, error)
+	// Positions returns every position of currency, all kinds.
+	Positions(ctx context.Context, currency string) ([]PositionRow, error)
+}
 
 // Asset is the collateral and margin of one currency, as Deribit reports it.
 // Amounts are in that currency.
@@ -68,7 +73,8 @@ type Position struct {
 	MaintenanceMargin float64 `json:"maintenance_margin"`
 }
 
-// PositionRow is the subset of private/get_positions we read.
+// PositionRow is the subset of an exchange's position row we read (Deribit's
+// field names, decoded by its source).
 type PositionRow struct {
 	InstrumentName    string  `json:"instrument_name"`
 	Kind              string  `json:"kind"`
@@ -133,7 +139,7 @@ var fallbackCurrencies = []string{"BTC", "ETH", "USDC", "USDT"}
 
 // Poller refreshes the account snapshot on an interval. Safe for concurrent use.
 type Poller struct {
-	gw rpcCaller
+	src Source
 
 	mu        sync.RWMutex
 	snap      *Snapshot
@@ -142,7 +148,7 @@ type Poller struct {
 	useLegacy bool // the account-wide method failed; use per-currency calls
 }
 
-func NewPoller(gw rpcCaller) *Poller { return &Poller{gw: gw} }
+func NewPoller(src Source) *Poller { return &Poller{src: src} }
 
 // Status returns the latest snapshot and the last error, if any.
 func (p *Poller) Status() Status {
@@ -190,14 +196,9 @@ func (p *Poller) Refresh(ctx context.Context) {
 func (p *Poller) attachPositions(ctx context.Context, snap *Snapshot) {
 	positions := []Position{}
 	for _, a := range snap.Assets {
-		resp, err := p.gw.Call(ctx, "private/get_positions", map[string]any{"currency": a.Currency}, gateway.PriorityLow)
+		rows, err := p.src.Positions(ctx, a.Currency)
 		if err != nil {
-			snap.PositionsError = fmt.Sprintf("get_positions %s: %v", a.Currency, err)
-			return
-		}
-		var rows []PositionRow
-		if err := json.Unmarshal(resp.Result, &rows); err != nil {
-			snap.PositionsError = fmt.Sprintf("decode positions %s: %v", a.Currency, err)
+			snap.PositionsError = err.Error()
 			return
 		}
 		positions = append(positions, BuildPositions(a.Currency, rows)...)
@@ -236,7 +237,7 @@ func (p *Poller) fetch(ctx context.Context) (*Snapshot, error) {
 		if ctx.Err() != nil {
 			return nil, err
 		}
-		slog.Warn("private/get_account_summaries unavailable; falling back to per-currency summaries", "err", err)
+		slog.Warn("account-wide summaries unavailable; falling back to per-currency summaries", "err", err)
 		p.mu.Lock()
 		p.useLegacy = true
 		p.mu.Unlock()
@@ -248,19 +249,13 @@ func (p *Poller) fetch(ctx context.Context) (*Snapshot, error) {
 	return snap, err
 }
 
-// fetchAll uses private/get_account_summaries: every currency in one call.
+// fetchAll reads every currency in one call.
 func (p *Poller) fetchAll(ctx context.Context) (*Snapshot, error) {
-	resp, err := p.gw.Call(ctx, "private/get_account_summaries", map[string]any{"extended": true}, gateway.PriorityLow)
+	rows, err := p.src.Summaries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get_account_summaries: %w", err)
+		return nil, err
 	}
-	var result struct {
-		Summaries []Summary `json:"summaries"`
-	}
-	if err := json.Unmarshal(resp.Result, &result); err != nil {
-		return nil, fmt.Errorf("decode account summaries: %w", err)
-	}
-	return Build(result.Summaries, "get_account_summaries", time.Now()), nil
+	return Build(rows, "get_account_summaries", time.Now()), nil
 }
 
 // fetchEach queries the fallback currencies one by one; currencies the
@@ -269,13 +264,8 @@ func (p *Poller) fetchEach(ctx context.Context) (*Snapshot, error) {
 	var rows []Summary
 	var lastErr error
 	for _, c := range fallbackCurrencies {
-		resp, err := p.gw.Call(ctx, "private/get_account_summary", map[string]any{"currency": c, "extended": true}, gateway.PriorityLow)
+		s, err := p.src.Summary(ctx, c)
 		if err != nil {
-			lastErr = err
-			continue
-		}
-		var s Summary
-		if err := json.Unmarshal(resp.Result, &s); err != nil {
 			lastErr = err
 			continue
 		}

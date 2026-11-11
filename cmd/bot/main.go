@@ -307,7 +307,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	if cfg.APIAddr != "" {
 		// Account/collateral summary for the monitor, cached: one read-only
 		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
-		acct := account.NewPoller(gw)
+		acct := account.NewPoller(deribit.NewAccountSource(gw))
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
 		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw),
 			api.WithDeployment(cfg.Deployment, cfg.Version), api.WithConfig(settings.Fingerprint, settings.Since),
