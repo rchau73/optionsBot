@@ -49,7 +49,24 @@ type goldenQuestion struct {
 	// (live:<bot>/…, journal:<bot>/…); the monitor's
 	// __tests__/assistant-live.test.js builds them and checks that answer.
 	Bot *goldenBot `json:"bot,omitempty"`
+	// Lab is a question about the lab's comparisons (#742): /api/lab/runs's
+	// runs and requests and a correct answer citing the lab:<id>/… passages
+	// the monitor builds from them (__tests__/assistant-lab.test.js).
+	Lab *goldenLab `json:"lab,omitempty"`
 }
+
+type goldenLab struct {
+	Runs     json.RawMessage `json:"runs"`
+	Requests json.RawMessage `json:"requests"`
+	Answer   struct {
+		Text      string   `json:"text"`
+		Citations []string `json:"citations"`
+	} `json:"answer"`
+}
+
+// labSource says whether a source names one of the lab's comparisons (#742),
+// which a question's lab fixture provides, never the help index.
+func labSource(s string) bool { return strings.HasPrefix(s, "lab:") }
 
 type goldenBot struct {
 	Status    json.RawMessage `json:"status"`
@@ -92,6 +109,7 @@ var goldenMinimum = map[string]int{
 	"request":         3, // vague → needs_info, consistent figures → answered, evidence → draft
 	"results":         4, // a month, the worst week, against holding, a negative week (#648)
 	"idle":            4, // waiting for GEX, frozen, fully used, status unknown (#719)
+	"lab":             4, // the last run, the analysis withheld, no run, a failed request (#742)
 }
 
 var goldenBehaviour = map[string]string{
@@ -105,6 +123,7 @@ var goldenBehaviour = map[string]string{
 	"unknown":         "dont_know",
 	"results":         "answer",
 	"idle":            "answer",
+	"lab":             "answer",
 }
 
 // journalEvent names the catalogue event of a journal fixture's kind.
@@ -158,7 +177,7 @@ func unresolvedSources(qs []goldenQuestion, strategy []byte, index helpkb.File) 
 	var out []string
 	for _, q := range qs {
 		for _, s := range q.ExpectedSources {
-			ok := inIndex[s] || (q.Bot != nil && botSource(s))
+			ok := inIndex[s] || (q.Bot != nil && botSource(s)) || (q.Lab != nil && labSource(s))
 			if a, isStrategy := strings.CutPrefix(s, helpkb.StrategyFile+"#"); isStrategy {
 				ok = anchors[a]
 			}
@@ -236,6 +255,13 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		// An idle case (#719) answers from its bot's book now: the monitor builds live:<bot>/book from the fixture.
 		if q.Category == "idle" && (q.Bot == nil || !slices.Contains(q.Bot.Answer.Citations, "live:btc/book")) {
 			t.Errorf("%s: an idle case needs a bot fixture and an answer citing live:btc/book", q.ID)
+		}
+		// A lab case (#742) answers from the lab's comparisons: the monitor builds lab:<id>/… from the fixture.
+		if (q.Category == "lab") != (q.Lab != nil) {
+			t.Errorf("%s: a lab fixture belongs to lab cases only, and each has one", q.ID)
+		}
+		if q.Lab != nil && !slices.ContainsFunc(q.Lab.Answer.Citations, labSource) {
+			t.Errorf("%s: a lab case needs an answer citing a lab: passage", q.ID)
 		}
 	}
 	for cat, min := range goldenMinimum {
@@ -342,8 +368,15 @@ func TestAssistantQuestions_MustSayComesFromSources(t *testing.T) {
 			// A question about the bot's own data (#427): what its correct
 			// answer reads from the cited figures ("price fell"), checked by
 			// the monitor's guard against the passages built from them.
-			if q.Bot != nil {
-				if !strings.Contains(normText(q.Bot.Answer.Text), normText(phrase)) {
+			// A lab case likewise, from the lab's figures (#742).
+			if q.Bot != nil || q.Lab != nil {
+				answer := ""
+				if q.Bot != nil {
+					answer = q.Bot.Answer.Text
+				} else {
+					answer = q.Lab.Answer.Text
+				}
+				if !strings.Contains(normText(answer), normText(phrase)) {
 					t.Errorf("%s: must_say %q is not in the fixture's answer", q.ID, phrase)
 				}
 				continue

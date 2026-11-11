@@ -262,6 +262,7 @@ func TestLedgerCoverage_IdleTicksWriteNoRun(t *testing.T) {
 	for script, before := range map[string][]string{
 		"metrics.sh":  {`[[ -f "$report" ]] && exit 0`, "take_lock metrics || exit 0"},
 		"evidence.sh": {`[[ -f "$done_marker" ]] && exit 0`, "take_lock evidence || exit 0"},
+		"go_no_go.sh": {`[[ -f "$done_marker" ]] && exit 0`, "take_lock go_no_go || exit 0"},
 		"stuck.sh":    {`python3 "$STUCK_PY" due "$state" || exit 0`, "take_lock stuck || exit 0"},
 		"requeue.sh":  {"take_lock requeue || exit 0", `[[ -n "$nums" ]] || exit 0`, `[[ -n "$n" ]] || continue`},
 	} {

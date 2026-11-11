@@ -631,6 +631,13 @@ No screen shows it yet.
 
 <!-- guide: route:POST /api/lab/runs/[id]/apply -->
 
+**Can the assistant tell me what a comparison run showed?** Managers and admins can ask it, for example "what did my last comparison show?".
+It answers from the lab's latest runs: the return, the worst week, the drawdown and the fees of the current and the proposed settings, in percentages only, labelled backtested, with the worst week and the drawdown beside each return, and it names the run it read.
+A request still queued or running, or one that failed or expired, is answered with its status and its reason; with no run at all the answer is that it is unknown.
+The written analysis of a run is not available yet, so the assistant does not quote it.
+It does not advise whether to apply a change.
+A user who asks gets no run figure.
+
 Each environment has its own people and roles.
 
 Learn more: "Sign-in and password" and "For admins" in this guide.
