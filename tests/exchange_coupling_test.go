@@ -45,9 +45,9 @@ var deribitMethods = map[string][]string{
 	"private/cancel_all_by_instrument":    {"orders"},
 	"private/get_order_state":             {"orders"},
 	"private/get_user_trades_by_order":    {"orders"},
-	"private/get_positions":               {"orders", "account"},
-	"private/get_account_summary":         {"orders", "account"},
-	"private/get_account_summaries":       {"account"},
+	"private/get_positions":               {"orders", "exchange/deribit"},
+	"private/get_account_summary":         {"orders", "exchange/deribit"},
+	"private/get_account_summaries":       {"exchange/deribit"},
 	"private/simulate_portfolio":          {"orders"},
 	"private/get_margins":                 {"orders"},
 	"public/":                             {"gateway"},
@@ -213,6 +213,32 @@ func TestExchangeCoupling_OneCallSiteForTheMovedReads(t *testing.T) {
 		if len(found) != 1 || found[0].pkg != "exchange/deribit" {
 			t.Errorf("%s: want one literal in exchange/deribit, found %v", method, found)
 		}
+	}
+}
+
+// Scenario (#746): no Deribit method name is left in the account package —
+// its three reads are allowed under exchange/deribit, and account does not
+// import the adapter (the adapter imports account).
+func TestExchangeCoupling_AccountNamesNoDeribitMethod(t *testing.T) {
+	for _, u := range scanRPCLiterals(t, "../internal") {
+		if u.pkg == "account" {
+			t.Errorf("%s: Deribit method %q in the account package", u.file, u.method)
+		}
+	}
+	for _, method := range []string{"private/get_positions", "private/get_account_summary", "private/get_account_summaries"} {
+		if !slices.Contains(deribitMethods[method], "exchange/deribit") || slices.Contains(deribitMethods[method], "account") {
+			t.Errorf("%s: allowed packages %v, want exchange/deribit and not account", method, deribitMethods[method])
+		}
+	}
+	if testing.Short() {
+		return
+	}
+	out, err := exec.Command("go", "list", "-deps", "../internal/account").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	if slices.Contains(strings.Fields(string(out)), "optionsbot/internal/exchange/deribit") {
+		t.Error("internal/account imports internal/exchange/deribit")
 	}
 }
 
