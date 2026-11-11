@@ -39,9 +39,9 @@ How to read the columns:
 | `private/cancel_all_by_instrument` | orders / `executor.go` | `Executor.CancelAll` — **not called** by any package today | private | matching | no | high | trading | nothing |
 | `private/get_order_state` | orders / `executor.go` | fill tracking of resting orders, read-back after cancel | private | non-matching | yes | low | trading | fills of resting orders |
 | `private/get_user_trades_by_order` | orders / `executor.go` | the fees of an order's fills (`OrderFee`), booked into net P&L | private | non-matching | yes | low | trading | net P&L (gross only) |
-| `private/get_positions` | orders / `executor.go`; account / `account.go` | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
-| `private/get_account_summary` | orders / `executor.go`; account / `account.go` | IM, MM, margin balance (`extended`) for the margin policy; per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
-| `private/get_account_summaries` | account / `account.go` | every currency's summary at once for `/api/account` (monitor only) | private | non-matching | yes | low | trading | nothing in trading (monitor only) |
+| `private/get_positions` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
+| `private/get_account_summary` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | IM, MM, margin balance (`extended`) for the margin policy; per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
+| `private/get_account_summaries` | exchange/deribit / `account.go` (for `account.Poller`) | every currency's summary at once for `/api/account` (monitor only) | private | non-matching | yes | low | trading | nothing in trading (monitor only) |
 | `private/simulate_portfolio` | orders / `executor.go` | sizing of entries and top-ups and the size cap (`SimulatePortfolio`, `SimulateAlone`, ≤ 1 call/s spaced in the executor) | private | non-matching | no (not `get_`) | low | trading | every entry and top-up (a failed simulation → no new risk) |
 | `private/close_position` | gateway / `ratelimiter.go` | named only in the matching-pool list (`IsMatchingEngine`) — **not called** by any package today | private | matching | no | — | — | nothing |
 | `private/get_margins` | orders / `executor.go` | margin of one order (`GetMargins`) — in the strategy's `AccountReader` but **not called** today | private | non-matching | yes | low | trading | nothing today |
@@ -58,7 +58,7 @@ The gateway also matches on method prefixes, which the test lists as gateway-onl
 
 Heartbeats arrive as `heartbeat` notifications; `test_request` is answered with `public/test` on the socket (above).
 
-**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 4 packages (gateway, exchange/deribit, orders, account). None under `internal/strategy`.
+**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 3 packages (gateway, exchange/deribit, orders; `account` left at step 5, #746). None under `internal/strategy`.
 
 ## 2. Deribit-specific assumptions outside the gateway
 
@@ -251,7 +251,8 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
 4. **Chain and channels behind the adapter** (done, #710): `public/get_instruments`, `public/get_volatility_index_data` and the three channel names moved from `marketdata.Manager` into `deribit.ChainSource` (`internal/exchange/deribit/chain.go`), which the manager consumes through its own `marketdata.ChainSource` interface; same requests, same gateway.
    `Manager` keeps its methods (it still satisfies `MarketData`).
    The ticker's payload is still decoded in `marketdata`.
-5. **Account view**: `account.Poller`'s three calls go through the same Deribit package (monitor only, no trading effect).
+5. **Account view** (done, #746): `private/get_account_summaries`, `private/get_account_summary` and `private/get_positions` of `account.Poller` moved into `deribit.AccountSource` (`internal/exchange/deribit/account.go`), which the poller consumes through its own `account.Source` interface; same requests, same gateway, same low-priority lane, and `/api/account` byte for byte the same (monitor only, no trading effect).
+   `orders.Executor`'s own `get_positions` and `get_account_summary` (reconcile, the margin policy) stay where they are.
 6. **`internal/exchange/deribit`**: an `Adapter` type that composes today's `Gateway`, `Executor` and `Manager` and satisfies `Exchange`; `main` builds `strategy.Deps` from it. No call changes; the coupling test's allowed packages move to `exchange/deribit` as each step lands.
 7. **Instrument fields instead of name parsing in the strategy**: `orphans.go`, `pending.go`, `shed.go`, `stopped.go` read `Instrument.Expiry/Strike/OptionType` (from the chain or the journal) instead of `ParseOptionName`; research tools keep the parser for recorded Deribit files. Restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
 8. **Name-free strategy literals**: `suggestedHedgeInst` (`<COIN>-PERPETUAL`) and the daily-close instrument come from the adapter.

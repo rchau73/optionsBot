@@ -141,7 +141,7 @@ var fallbackCurrencies = []string{"BTC", "ETH", "USDC", "USDT"}
 type Poller struct {
 	src Source
 
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	snap      *Snapshot
 	err       string
 	errAt     time.Time
