@@ -7,6 +7,9 @@ quality, so E6's outcome ("no human toil except approvals") is measured.
                                        offenders' 30 days: 2026-W42 2026-10-12 2026-09-19
     metrics.py report <week> <dir> [--runs F] [--stuck F] [--repo OWNER/NAME]
                                      → the report (Markdown) on stdout
+    metrics.py health <week> <out> [--runs F] [--issues F] [--link URL]
+                                     → the agent-health issues to file (#755): <out>/<n>.title and
+                                       <n>.body, none already among --issues (gh issue list --json title)
 
 <dir> holds what metrics.sh fetched (offline, so tests run on fixtures):
   issues.json  gh issue list --state all --json number,title,labels,createdAt,closedAt,state,stateReason,comments
@@ -56,6 +59,15 @@ REVIEW_SHA = re.compile(r"<!-- agent-review sha=([0-9a-f]*) verdict=([a-z]+)(?: 
 OUTCOME = re.compile(r"^[a-z_]+$")  # fixed outcome names only: nothing else of a ledger line is shown
 RUN_FAILED = ("failed", "abandoned")  # abandoned: the run sweep closed it, its process gone (#291)
 RUN_LIMIT = "skipped_limit"
+RUN_ID = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")  # lib.sh's <agent>-<UTC time>-<pid>-<n>: anything else is not shown
+# Agent health (#755): an agent whose runs fail or hit the plan limit this often gets a bug in Triage.
+# Assumptions to tune from the weeks' figures: one run in four failing is no longer noise for a
+# scripted agent, and under 4 runs one bad run already reads 25 % (the Trend's small-base cut, #707).
+HEALTH_PCT = 25
+HEALTH_MIN_RUNS = 4
+HEALTH_MAX_ISSUES = 3  # more crossings in a week go in one combined issue, so a bad week cannot flood Triage
+HEALTH_METRICS = (("failed %", RUN_FAILED), ("limit %", (RUN_LIMIT,)))
+HEALTH_TITLE = "[E6] Agent health:"
 PM_LABEL = re.compile(r"^(E\d+|P[0-3]|pm:waiting)$")  # labels only the PM agent sets
 PM_NEAR = dt.timedelta(minutes=2)
 REVERT_REF = re.compile(r"#(\d+)\b|agent/issue-(\d+)\b")
@@ -199,23 +211,24 @@ def minutes_text(x):
     return "–" if x is None else f"{x:.1f} min"
 
 
-def runs_section(start, end, path):
-    """## Runs: per agent, the runs started in the week (#290)."""
-    out = ["", "## Runs (run ledger, started in the week)", ""]
+def week_runs(start, end, path):
+    """Per agent, the runs the ledger at path started in the week: (by, bad lines, None),
+    or (None, 0, why) when the ledger cannot be read. by[agent] = {"n", "outcomes": {name: k},
+    "ids": {name: [run ids]}, "minutes", "open"}."""
     if not path or not os.path.isfile(path):
         # the file's name only: the report is posted on a public repository
-        return out + [f"- ledger unavailable: {os.path.basename(path) if path else 'no path'} not found"]
+        return None, 0, f"{os.path.basename(path) if path else 'no path'} not found"
     try:
         records, bad = runs.read(path)
     except (OSError, UnicodeDecodeError) as e:
-        return out + [f"- ledger unavailable: {getattr(e, 'strerror', None) or type(e).__name__}"]
+        return None, 0, getattr(e, "strerror", None) or type(e).__name__
     by = {}
     for r in runs.runs(records):
         began = runs.parse_ts(r["start"])
         if began is None or not start <= began < end:
             continue
         agent = r["agent"] if OUTCOME.match(r["agent"] or "") else "other"
-        a = by.setdefault(agent, {"n": 0, "outcomes": {}, "minutes": [], "open": 0})
+        a = by.setdefault(agent, {"n": 0, "outcomes": {}, "ids": {}, "minutes": [], "open": 0})
         a["n"] += 1
         ended = runs.parse_ts(r["end"])
         if ended is None or ended >= end:
@@ -223,7 +236,91 @@ def runs_section(start, end, path):
             continue
         name = r["outcome"] if OUTCOME.match(r["outcome"] or "") else "other"
         a["outcomes"][name] = a["outcomes"].get(name, 0) + 1
+        if RUN_ID.match(str(r["run_id"])):
+            a["ids"].setdefault(name, []).append(r["run_id"])
         a["minutes"].append((ended - began).total_seconds() / 60)
+    return by, bad, None
+
+
+def health(by):
+    """Agent health (#755): (crossings, too few) — the (agent, metric) pairs whose share of the
+    week's runs reached HEALTH_PCT, from agents with HEALTH_MIN_RUNS runs or more; too few holds
+    the pairs that reached it on a smaller base. Each item: {"agent", "metric", "k", "n", "ids"}."""
+    crossings, too_few = [], []
+    for agent in sorted(by):
+        a = by[agent]
+        for metric, outcomes in HEALTH_METRICS:
+            k = sum(a["outcomes"].get(o, 0) for o in outcomes)
+            if k == 0 or 100 * k < HEALTH_PCT * a["n"]:
+                continue
+            item = {"agent": agent, "metric": metric, "k": k, "n": a["n"],
+                    "ids": [i for o in outcomes for i in a["ids"].get(o, [])]}
+            (crossings if a["n"] >= HEALTH_MIN_RUNS else too_few).append(item)
+    return crossings, too_few
+
+
+def health_text(c):
+    return f"{c['agent']} {c['metric']} {pct(c['k'], c['n'])} ({c['k']} of {c['n']} runs)"
+
+
+def health_lines(by):
+    """The Runs section's agent-health lines: who crossed, or that none did."""
+    crossings, too_few = health(by)
+    rule = (f"failed % or limit % ≥ {HEALTH_PCT} % of {HEALTH_MIN_RUNS} runs or more, "
+            f"an issue in Triage, #755")
+    out = [f"- Agent health ({rule}): " + (", ".join(health_text(c) for c in crossings) if crossings
+                                           else "no agent crossed a threshold")]
+    if too_few:
+        out.append(f"- Agent health, base too small to judge (under {HEALTH_MIN_RUNS} runs): "
+                   + ", ".join(health_text(c) for c in too_few))
+    return out
+
+
+def health_title(week, c):
+    return f"{HEALTH_TITLE} {c['agent']} {c['metric']} {week}"
+
+
+def health_issues(week, crossings, existing, link):
+    """The issues to file for the week's crossings (#755): [(title, body)]. One per crossing, or one
+    combined issue when more than HEALTH_MAX_ISSUES cross, so a bad week cannot flood Triage.
+    existing: the titles of the issues already filed (any state); a title there is not filed again."""
+    if not crossings:
+        return []
+    have = {t.strip() for t in existing}
+    combined = f"{HEALTH_TITLE} {len(crossings)} crossings {week}"
+    if any(t.startswith(HEALTH_TITLE) and t.endswith(" " + week) and " crossings " in t for t in have):
+        return []  # the week's combined issue is filed: it holds them all
+    rule = (f"**Rule** (`scripts/agents/metrics.py`, #755): failed % (`failed` + `abandoned`) or limit % "
+            f"(`skipped_limit`) of the runs an agent started in the week reached {HEALTH_PCT} %, with "
+            f"{HEALTH_MIN_RUNS} runs or more. Both numbers are assumptions; adjust them there.")
+    report = f"The week's report: {link}" if link else f"The week's report: `data/agents/metrics/{week}.md`."
+
+    def block(c):
+        ids = ", ".join(f"`{i}`" for i in c["ids"]) or "none recorded"
+        return [f"- **{health_text(c)}**", f"  - run ids: {ids}"]
+
+    def body(items):
+        lines = [f"🩺 **Agent health** — week {week}: the weekly agent metrics (`scripts/agents/metrics.sh`) found", ""]
+        for c in items:
+            lines += block(c)
+        lines += ["", rule, "", report, "",
+                  "Look at the runs' logs (`python3 scripts/agents/runs.py --agent <agent>`): a broken script, "
+                  "a starved budget or a plan limit.", "",
+                  "Filed by `scripts/agents/metrics.sh`. Counts and run ids only.",
+                  f"<!-- agent-health: {week} -->"]
+        return "\n".join(lines) + "\n"
+
+    if len(crossings) > HEALTH_MAX_ISSUES:
+        return [(combined, body(crossings))]
+    return [(health_title(week, c), body([c])) for c in crossings if health_title(week, c) not in have]
+
+
+def runs_section(start, end, path):
+    """## Runs: per agent, the runs started in the week (#290)."""
+    out = ["", "## Runs (run ledger, started in the week)", ""]
+    by, bad, why = week_runs(start, end, path)
+    if by is None:
+        return out + [f"- ledger unavailable: {why}"]
     if not by:
         out.append("- no run started in the week")
     else:
@@ -237,6 +334,7 @@ def runs_section(start, end, path):
             out.append(f"| {name} | {a['n']} | {oc} | {pct(failed, a['n'])} | "
                        f"{pct(a['outcomes'].get(RUN_LIMIT, 0), a['n'])} | {minutes_text(median(a['minutes']))} | "
                        f"{minutes_text(p90(a['minutes']))} | {a['open']} |")
+    out += health_lines(by)
     if bad:
         out.append(f"- {bad} ledger line(s) skipped: not ledger records")
     return out
@@ -579,8 +677,36 @@ def main(argv):
                 raise SystemExit(__doc__)
             opts[rest[0]], rest = rest[1], rest[2:]
         sys.stdout.write(report(argv[2], argv[3], opts["--runs"], opts["--stuck"], opts["--repo"]))
+    elif len(argv) >= 4 and argv[1] == "health":
+        opts, rest = {"--runs": None, "--issues": None, "--link": ""}, argv[4:]
+        while rest:
+            if len(rest) < 2 or rest[0] not in opts:
+                raise SystemExit(__doc__)
+            opts[rest[0]], rest = rest[1], rest[2:]
+        for line in health_files(argv[2], argv[3], opts["--runs"], opts["--issues"], opts["--link"]):
+            print(line)
     else:
         raise SystemExit(__doc__)
+
+
+def health_files(week, out_dir, runs_file, issues_file, link):
+    """Writes <out_dir>/<n>.title and <n>.body for each health issue to file; → log lines."""
+    start, end = week_bounds(week)
+    by, _, why = week_runs(start, end, runs.default_file() if runs_file is None else runs_file)
+    if by is None:
+        return [f"agent health {week}: ledger unavailable ({why}), nothing filed"]
+    crossings, too_few = health(by)
+    existing = [i.get("title") or "" for i in json.load(open(issues_file))] if issues_file else []
+    todo = health_issues(week, crossings, existing, link)
+    os.makedirs(out_dir, exist_ok=True)
+    for n, (title, body) in enumerate(todo, 1):
+        open(os.path.join(out_dir, f"{n}.title"), "w").write(title + "\n")
+        open(os.path.join(out_dir, f"{n}.body"), "w").write(body)
+    lines = [f"agent health {week}: {len(crossings)} crossing(s), {len(too_few)} on too small a base, "
+             f"{len(todo)} issue(s) to file"]
+    if crossings and not todo:
+        lines.append(f"agent health {week}: already filed, nothing new")
+    return lines
 
 
 if __name__ == "__main__":
