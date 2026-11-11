@@ -553,7 +553,59 @@ class WeekCommand(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stdout(buf):
             metrics.main(["metrics.py", "week", "2026-10-19"])
-        self.assertEqual(buf.getvalue().split(), ["2026-W42", "2026-10-12", "2026-09-21"])
+        # 30 days before the week's end (2026-10-19) is earlier than the Trend's first Monday (2026-09-21).
+        self.assertEqual(buf.getvalue().split(), ["2026-W42", "2026-10-12", "2026-09-19"])
+
+
+def flaky_issue(n, name, state="OPEN", closed=None, created="2026-10-01T00:00:00Z"):
+    return {"number": n, "title": f"[E6] Flaky test: {name}", "labels": lab("bug"), "createdAt": created,
+            "closedAt": closed, "state": state, "comments": []}
+
+
+RESET = "__tests__/reset-audit-ui.test.jsx"
+CARD = "__tests__/answers-card.test.jsx"
+FLAKY_HEAD = "## Flaky repeat offenders (30 days)"
+
+
+class FlakyRepeatOffenders(unittest.TestCase):
+    """#747: the week's end (2026-10-19 00:00) is the count's now."""
+
+    def section(self, issues):
+        out = metrics.report("2026-W42", write_dir(issues), runs_file="", stuck_file="", repo="o/r")
+        return out.split(FLAKY_HEAD, 1)[1].split("\n## ", 1)[0]
+
+    def test_scenario_a_file_with_two_flaky_issues_in_30_days_is_listed(self):
+        got = self.section([flaky_issue(731, f"{RESET} › A"),
+                            flaky_issue(732, f"{RESET} › B", "CLOSED", "2026-10-10T00:00:00Z")])
+        self.assertIn(f"| `{RESET}` | 2 | [#731](https://github.com/o/r/issues/731), [#732](https://github.com/o/r/issues/732) |", got)
+
+    def test_scenario_a_file_with_one_issue_is_not_listed(self):
+        got = self.section([flaky_issue(731, f"{RESET} › A"), flaky_issue(732, f"{RESET} › B"),
+                            flaky_issue(587, f"{CARD} › X")])
+        self.assertIn(RESET, got)
+        self.assertNotIn(CARD, got)
+
+    def test_scenario_an_issue_older_than_30_days_does_not_count(self):
+        got = self.section([flaky_issue(1, f"{CARD} › A", created="2026-08-01T00:00:00Z"),
+                            flaky_issue(2, f"{CARD} › B", "CLOSED", "2026-09-04T00:00:00Z",  # 45 days
+                                        created="2026-08-01T00:00:00Z")])
+        self.assertNotIn(CARD, got)
+        self.assertEqual(got.strip(), "none")
+
+    def test_scenario_no_repeats_says_none(self):
+        self.assertEqual(self.section([]).strip(), "none")
+        self.assertEqual(self.section([flaky_issue(1, "TestA"), flaky_issue(2, f"{CARD} › A")]).strip(), "none")
+
+    def test_scenario_a_go_test_and_a_jest_test_never_share_a_group(self):
+        got = self.section([flaky_issue(1, "TestFuturesHedge_ResumesWhenTheLockLifts"),
+                            flaky_issue(2, "TestFuturesHedge_ResumesWhenTheLockLifts/sub"),
+                            flaky_issue(3, f"{CARD} › A")])
+        self.assertIn("| `TestFuturesHedge_ResumesWhenTheLockLifts` | 2 | [#1](https://github.com/o/r/issues/1), [#2](https://github.com/o/r/issues/2) |", got)
+        self.assertNotIn(CARD, got)
+
+    def test_an_issue_filed_after_the_week_does_not_count(self):
+        got = self.section([flaky_issue(1, f"{CARD} › A"), flaky_issue(2, f"{CARD} › B", created="2026-10-20T00:00:00Z")])
+        self.assertEqual(got.strip(), "none")
 
 
 class EmptyWeek(unittest.TestCase):
