@@ -149,6 +149,16 @@ python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stab
 
 Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date. A missing input stays `missing`. **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's. Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
 
+### Weekly reading (`go_no_go_week.py`, #738)
+
+```bash
+python3 scripts/product/go_no_go_week.py --evidence-root ~/dev/go/optionsBot-env/stable --bot btc --alert-dir /tmp/alert
+```
+
+Runs the scorecard above (`-json`, no copied calculation) on the newest tally and fake-door files under `data/product/` and appends one line to the gitignored `data/product/go_no_go_history.jsonl`: date, overall line, and per row status, value, threshold, source and date (shares and ratios only; an amount becomes "—").
+When a row changed status since the last line, or the overall line became `kill criterion met` / `no kill criterion met`, it writes `title.txt` and `body.md` (PM header, old and new reading, source file, `<!-- agent:pm -->`) to `--alert-dir`; `scripts/agents/go_no_go.sh` (weekly, from the agents' tick) files them as an `agent:pm` + `agent:needs-human` issue.
+Tests: `test_go_no_go_week.py`.
+
 ## Usability round scorer (`score_usability.py`, #701)
 
 Scores an E3 round from its results table by the rules of `docs/usability/e3-investor-monitor-test.md` section 7: a participant passes with four successes and the fourth answer before 5:00, a round at 4 of 5.

@@ -59,6 +59,14 @@ python3 scripts/product/go_no_go.py --tally data/product/interviews/tally.json \
 python3 scripts/product/go_no_go.py -json
 ```
 
+**Weekly reading (#738).**
+`scripts/agents/go_no_go.sh` (the agents' tick, first tick of a Monday UTC after the evidence report, else from Wednesday; ledger agent `go_no_go`) runs `scripts/product/go_no_go_week.py`.
+It calls `go_no_go.py -json` on stable's clone (`--bot btc`) and the newest tally and fake-door files under `data/product/`, and appends one dated line to the gitignored `data/product/go_no_go_history.jsonl`: the overall line and, per row, status, value, threshold, source and date.
+Shares and ratios only: a value that carries a coin or USD amount is written as "—", and a source is a repo- or clone-relative name.
+A missing input stays `missing`; a checkout with no `data/product/` writes a reading with every row `missing` and opens nothing.
+When a row changes status since the last line, or the overall line becomes `kill criterion met` or `no kill criterion met`, one `agent:pm` + `agent:needs-human` issue goes to Triage with the old and new reading and the source file.
+It applies PRD §6's own kill rule and recommends nothing else; no change, no issue.
+
 Related: the survey's verdict section `discovery/synthesis.md` §4; pricing options `pricing-options.md` (nothing to price if a kill criterion is met).
 
 ## 7. Each go-to-market criterion: evidence or assumption
@@ -106,4 +114,5 @@ Open state is checked on the board, not here: if a ticket above is closed and it
 - Update sections 7 and 8 when a source changes: a tally, a fake-door result, counsel's answer or a new scorecard reading, each with its date.
 - No name, price, revenue figure or survey answer goes here, only the path under `data/product/` where it lives.
 - A change to the kill criteria is a PRD pull request, never an edit here.
+- The weekly reading's history (`data/product/go_no_go_history.jsonl`) is the dated record of the scorecard; this page keeps only the latest reading (section 8).
 - What each launch phase needs, measures and does to step back is `launch-plan.md`.
