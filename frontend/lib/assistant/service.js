@@ -17,6 +17,7 @@ import { REQUEST_ANSWERED, REQUEST_DRAFT, REQUEST_NONE, checkRequest, emptyCheck
 import { HelpIndex, noAnswer } from "./search";
 import { DRAFT_TEXT, NEEDS_INFO_TEXT } from "@/lib/assistantRequests";
 import { formatAge, formatCoin, formatDateTime, formatPct, formatPrice } from "@/lib/format";
+import { L10_ANALYSIS_GATE_OPEN } from "@/lib/lab";
 import { plainFreeze } from "@/lib/overview";
 import { gexFreshness } from "@/lib/regime";
 import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
@@ -668,6 +669,121 @@ export function perfPassages(bot, perf7, perf30, unit = String(bot ?? "").toUppe
     .map(([range, p]) => perfPassage(bot, range, p, unit));
 }
 
+// The strategy-change lab's comparisons (#742): for a question about a
+// comparison only (asksAboutLab), asked by a manager or an admin (the roles
+// of /api/lab/runs; lib/assistant/server.js labRuns checks it), the latest
+// LAB_RUNS runs of the run list and the latest LAB_REQUESTS requests not run
+// yet, kept LAB_CACHE_MS. Percentages only, as lib/lab.js.
+export const LAB_RUNS = 3;
+export const LAB_REQUESTS = 3;
+export const LAB_CACHE_MS = 10_000;
+
+// A question about a comparison run in the lab: only these pay for the lab passages.
+const LAB_PATTERNS = [
+  /\bcomparisons?\b/i,
+  /\bthe\s+lab\b/i,
+  /\b(proposed|proposal)\b/i,
+  /\b(last|latest|my)\s+(lab\s+)?(runs?|backtests?)\b/i,
+  /\b(apply|confirm)\s+(this|the|that|my)\s+change\b/i,
+  /\bthe\s+change\s+(help|helps|helped|do|does|did|work|works|worked)\b/i,
+];
+
+/** Whether a question asks about a comparison run in the lab (#742). */
+export function asksAboutLab(question) {
+  const q = String(question ?? "");
+  return LAB_PATTERNS.some((re) => re.test(q));
+}
+
+/** A setting's value as the report wrote it. */
+const labValue = (v) => (typeof v === "string" ? v : JSON.stringify(v));
+
+/** One config's headline figures in words, percentages only: the return with its risk beside it. */
+function labFigures(name, f) {
+  if (!f) return `${name}: no figures: this run did not complete.`;
+  const drawdown = fig(f.max_drawdown_pct, (v) => formatPct(Math.abs(v), 1));
+  return (
+    `${name}: return ${signedPct(f.return_pct)}, worst week ${signedPct(f.worst_week_pct)}, ` +
+    `max drawdown ${drawdown}, fees ${fig(f.fees_pct, (v) => formatPct(v, 2))} of the starting equity.`
+  );
+}
+
+/** One source of a run (backtest or replay) as words, or why it has no figures. */
+function labSource(name, s) {
+  if (!s) return `${name}: did not run.`;
+  return `${name}: ${labFigures("current settings", s.base)} ${labFigures("proposed settings", s.proposed)}`;
+}
+
+/** How often the proposal did better per window, or "" without windows. */
+function labWindows(w) {
+  const one = (x, name) => (x && x.run > 0 ? `${x.proposed_wins} of ${x.run} ${name} windows` : "");
+  const parts = [one(w?.backtest, "backtest"), one(w?.replay, "replay")].filter(Boolean);
+  return parts.length ? `The proposed settings did better in ${parts.join(" and ")}.` : "";
+}
+
+/** One run of the list (lib/lab.js runRow) as a citable passage. */
+function labRunPassage(r, newest, analysisOpen) {
+  const changed = (r.changed ?? []).map((d) => `${d.key} from ${labValue(d.base)} to ${labValue(d.proposed)}`);
+  const text = [
+    `Comparison run ${r.id} (finished ${r.time ? `${shortTime(r.time)} UTC` : "time unknown"})${newest ? ", the newest comparison listed" : ""}, ${r.underlying || UNKNOWN}:`,
+    `${r.label}: simulated on past data, not a promise of future results.`,
+    `Settings changed: ${changed.length ? changed.join(", ") : "none listed"}.`,
+    labSource("Backtest on past prices", r.backtest),
+    labSource("Replay of recorded order books", r.replay),
+    `Stress test: ${r.stress_ran ? "ran" : "did not run"}.`,
+    labWindows(r.windows),
+    isNum(r.cliffs) ? `Fragile spots found near the proposed values: ${r.cliffs}.` : "",
+    "The worst week and the max drawdown are the risk beside each return.",
+    analysisOpen ? "A written analysis may exist for this run; the assistant does not quote it." : "The written analysis is not available yet.",
+  ];
+  return { id: `lab:${r.id}/headline`, source: `lab:${r.id}`, title: `lab comparison run ${r.id}`, text: text.filter(Boolean).join(" ") };
+}
+
+const LAB_STATUS = {
+  queued: () => "queued: waiting for the runner",
+  running: () => "running now",
+  failed: (r) => `failed: ${r.reason || "no reason recorded"}`,
+  expired: () => "expired: it did not run within a day of the request",
+  done: () => "done, but its report cannot be read yet",
+};
+
+/** One request not run yet (lib/labrequests.js pendingRequests) as a citable passage: its status and reason, no figure. */
+function labRequestPassage(r, newest) {
+  const settings = (r.settings ?? []).map((s) => `${s.key} to ${labValue(s.value)}`).join(", ");
+  const status = (LAB_STATUS[r.status] ?? (() => `status ${r.status || UNKNOWN}`))(r);
+  const text =
+    `Comparison request ${r.id} (asked ${r.requested_at ? `${shortTime(r.requested_at)} UTC` : "time unknown"})${newest ? ", the newest comparison listed" : ""}, ` +
+    `${r.underlying || UNKNOWN}, settings ${settings || "none listed"}: ${status}. It has no figures.`;
+  return { id: `lab:${r.id}/status`, source: `lab:${r.id}`, title: `lab comparison request ${r.id}`, text };
+}
+
+/**
+ * The lab's latest comparisons as citable passages (#742): one
+ * "lab:<run id>/headline" per run of the list (newest first, at most
+ * LAB_RUNS): what changed and, for the backtest and the replay, the return,
+ * worst week, max drawdown and fees of the current and the proposed
+ * settings, in percentages only, labelled backtested, with the risk beside
+ * the return; and one "lab:<request id>/status" per request not run yet (at
+ * most LAB_REQUESTS): queued, running, failed with its reason or expired. The
+ * newest of all says so. The written analysis is never quoted: while the L10
+ * gate is closed the passage says it is not available yet. Nothing listed →
+ * "lab:none": unknown: no comparison has been run.
+ * runs: /api/lab/runs's rows (lib/lab.js listRuns); requests: its `requests`.
+ */
+export function labPassages({ runs = [], requests = [] } = {}, { analysisOpen = L10_ANALYSIS_GATE_OPEN } = {}) {
+  const rs = (runs ?? []).slice(0, LAB_RUNS);
+  const qs = (requests ?? []).slice(0, LAB_REQUESTS);
+  if (!rs.length && !qs.length) {
+    return [{ id: "lab:none", source: "lab:none", title: "lab comparisons", text: "Comparison runs: unknown: no comparison has been run, so there is no figure to give." }];
+  }
+  const at = (iso) => Date.parse(iso ?? "") || 0;
+  const newestRun = rs.length ? at(rs[0].time) : -1;
+  const newestRequest = qs.length ? at(qs[0].requested_at) : -1;
+  return [
+    ...rs.map((r, i) => labRunPassage(r, i === 0 && newestRun >= newestRequest, analysisOpen)),
+    ...qs.map((r, i) => labRequestPassage(r, i === 0 && newestRequest > newestRun)),
+  ];
+}
+
 /** The passages of both lists, each id once: the first list's copy wins. */
 export function mergePassages(first, second) {
   const ids = new Set(first.map((p) => p.id));
@@ -790,7 +906,10 @@ function applyRequestCheck(entry, verdict, passages) {
  * (#427); perf: the bot's 7- and 30-day performance from perfPassages, sent
  * only when the question asks about results (asksAboutResults, #648); book:
  * the bot's book now from bookPassage, sent only when the question asks why
- * little or nothing is open (asksAboutIdle, #719); reportPassages:
+ * little or nothing is open (asksAboutIdle, #719); lab: the lab's latest
+ * comparisons from labPassages, sent only when the question asks about one
+ * (asksAboutLab, #742) — the caller passes them for a manager or an admin
+ * only (labRuns); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
@@ -809,6 +928,7 @@ export async function answerQuestion({
   live = [],
   perf = [],
   book = [],
+  lab = [],
   reportPassages = async () => [],
   takeRetry = () => true,
   user,
@@ -824,7 +944,9 @@ export async function answerQuestion({
   const results = asksAboutResults(question) ? perf : [];
   // The book now goes only with a question about an idle book or unused margin (#719).
   const present = asksAboutIdle(question) ? book : [];
-  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...results, ...facts];
+  // The lab's comparisons go only with a question about one (#742); the caller gives them to managers only.
+  const comparisons = asksAboutLab(question) ? lab : [];
+  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...results, ...comparisons, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -852,7 +974,7 @@ export async function answerQuestion({
   // best hits go to the model anyway, so an advice or forecast question gets
   // the refusal, not "I don't know"; the guard checks the answer as any other.
   const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
-  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && results.length === 0) {
+  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && results.length === 0 && comparisons.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;

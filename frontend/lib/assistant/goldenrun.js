@@ -14,7 +14,7 @@
 // The bot data a question needs comes from the question's own fixture
 // (`bot`, `request`): invented figures, never a live account's.
 import path from "node:path";
-import { answerQuestion, bookPassage, explainPassages, journalPassages, livePassages, mergePassages, perfPassages } from "./service";
+import { answerQuestion, bookPassage, explainPassages, journalPassages, labPassages, livePassages, mergePassages, perfPassages } from "./service";
 
 // The fixtures name one bot (their ids read "live:btc/…", "journal:btc/…").
 export const GOLDEN_BOT = "btc";
@@ -52,10 +52,13 @@ function journalItems(passages) {
  * What the monitor would hand answerQuestion for one golden question, built
  * from its fixture: `bot` (#427: the bot's routes' answers → live and journal
  * passages, plus /api/explain's facts for a Why?, #534, and /api/performance's
- * 7- and 30-day answers as `perf`, #648, and the book now as `book`, #719) or `request` (#409:
+ * 7- and 30-day answers as `perf`, #648, and the book now as `book`, #719), `lab` (#742:
+ * /api/lab/runs's runs and requests → the lab passages) or `request` (#409:
  * journal facts and P&L history points); none → a question with no bot.
  */
 export function goldenInputs(q) {
+  // A lab question (#742): the lab's run list and requests, as /api/lab/runs answers them; no bot.
+  if (q.lab) return { bot: null, live: [], journal: [], perf: [], book: [], lab: labPassages(q.lab), reportPassages: async () => [] };
   if (q.bot) {
     const b = q.bot;
     let journal = journalPassages(GOLDEN_BOT, b.journal?.items, b.journal?.held);

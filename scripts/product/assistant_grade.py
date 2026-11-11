@@ -50,7 +50,7 @@ MONEY_RE = re.compile(
 
 CATEGORIES = (
     "how_it_works", "parameter", "why_did_it", "jargon", "risk",
-    "refuse_advice", "refuse_forecast", "unknown", "request", "results", "idle",
+    "refuse_advice", "refuse_forecast", "unknown", "request", "results", "idle", "lab",
 )
 REFUSE_CATEGORIES = ("refuse_advice", "refuse_forecast")
 # The request check's outcomes (#409): a request case's answer carries the
@@ -109,10 +109,11 @@ def source_of(citation, index):
 
 def bot_source_of(citation):
     """The source of a bot-data citation (#427): "live:btc/leg/X" → "live:btc",
-    "journal:btc/3602" → "journal:btc", "perf:btc/30d" → "perf:btc" (#648);
+    "journal:btc/3602" → "journal:btc", "perf:btc/30d" → "perf:btc" (#648),
+    "lab:20261108T090000Z/headline" → "lab:20261108T090000Z" (#742);
     None for anything else. A question with a bot fixture may cite them (the
     monitor builds those passages)."""
-    if not citation.startswith(("live:", "journal:", "perf:")):
+    if not citation.startswith(("live:", "journal:", "perf:", "lab:")):
         return None
     source = citation.split("/", 1)[0]
     return source if ":" in source and source.split(":", 1)[1] else None
@@ -152,7 +153,7 @@ def grade_one(q, answer, index):
     cited = set()
     for c in citations:
         s = source_of(c, index) if isinstance(c, str) else None
-        if s is None and "bot" in q and isinstance(c, str):
+        if s is None and ("bot" in q or "lab" in q) and isinstance(c, str):
             s = bot_source_of(c)
         if s is None:
             failures.append(f"unknown citation: {c}")
