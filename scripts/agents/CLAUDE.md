@@ -107,6 +107,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - its Trend section (#707) puts the week beside the 3 before it from the same dumps (`metrics.sh` fetches 4 weeks): an arrow when worse than their mean, a base under 3 "too few to judge", a week with no data "–";
   - its Funnel section follows the issues filed in the week with an `E#` label through to verified fixed: numbers and counts only.
   - its "Flaky repeat offenders (30 days)" section (#747) lists each test file with 2 or more flaky issues (`flaky.repeat_offenders`; the dumps reach 30 days before the week's end), else "none".
+  - agent health (#755, pure `health`/`health_issues`): an agent with 4 runs or more whose failed % or limit % reached 25 % gets one `bug` `[E6] Agent health: <agent> <metric> <week>` in Triage
+    (counts, run ids, the report's link; more than 3 crossings → one combined issue; dedup by title, open or closed); the Runs section names them, else "no agent crossed a threshold".
 - Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;

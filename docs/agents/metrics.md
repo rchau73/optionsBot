@@ -4,7 +4,7 @@ Part of [Agentic development](../../AGENTIC.md).
 The delivery numbers (DORA) are in [dora.md](dora.md).
 
 E6's outcome is "no human toil except approvals", so the loop measures itself (#180).
-On the first tick of each Monday (UTC), [`metrics.sh`](../../scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic.
+On the first tick of each Monday (UTC), [`metrics.sh`](../../scripts/agents/metrics.sh) writes last week's report to `data/agents/metrics/<YYYY-Www>.md` and posts it as a comment on the E6 epic, then files a bug in Triage for an agent that fails or hits its limit too often ("Agent health alert" below).
 It makes no Claude call.
 The numbers come from [`metrics.py`](../../scripts/agents/metrics.py), which is standard library only and tested offline on fixture JSON (`test_metrics.py`).
 Its inputs are the issues and agent PRs updated since three weeks before the week (the Trend section needs them) or 30 days before its end, whichever is earlier (the flaky repeat offenders), the repository's label events, `main`'s git log, the run ledger and the stuck-card log.
@@ -19,8 +19,21 @@ Its inputs are the issues and agent PRs updated since three weeks before the wee
 | Funnel (issues filed in the week) | (#707) The issues created in the week that carry an `E#` label (not the epics themselves), followed as far as the dumps go: how many reached each stage, the median time from filing, and the numbers of those still waiting. See "Reading the Funnel" below. |
 | Flaky repeat offenders (30 days) | (#747) Each test file with 2 or more `Flaky test:` issues, open or closed in the 30 days before the week's end: the file, the count and the issue numbers, most first. A week with none says `none`. The grouping is `flaky.py`'s `repeat_offenders` (see [flaky.md](flaky.md) "Repeat offenders"); only the test file is shown, never a body. |
 | Runs | From the [run ledger](run-ledger.md) (#290), the runs that **started** in the week, per agent: count, each outcome's count, failed % (`failed` + `abandoned`), limit % (`skipped_limit`), median and p90 duration (nearest rank) of the runs that ended, and the runs still open at the week's end (no duration). Only the fixed outcome names are shown, never a detail. A missing or unreadable ledger says "ledger unavailable" and leaves every other section as it is. |
+| Agent health | (#755) Lines under the Runs table: the agents whose failed % or limit % reached 25 % with 4 runs or more (each files a bug in Triage, see "Agent health alert" below), or "no agent crossed a threshold"; and those that reached it on fewer than 4 runs, as "base too small to judge". |
 | Overruled by a person | (#292) **SME findings rejected:** `agent:sme` issues closed in the week as not planned, or closed after a person's comment with no merged agent PR, out of the SME findings closed in the week. **PM decisions reversed:** an `E#`, `P#` or `pm:waiting` label removed in the week with no PM comment and no epic retag (another `E#` added) on that issue within 2 min, out of the week's PM comments. Board moves and Priority changes leave no trace on an issue and are not counted. **Clean reviews overruled:** agent PRs whose last review marker was `verdict=clean` on their final head, then closed unmerged in the week or reverted on `main` in the week (a `Revert …` subject naming the PR or its branch), out of those PRs merged or closed in the week. Each item links to its issue or PR. |
 | Stuck cards | The cards [`stuck.sh`](stuck-cards.md) found in the week, with their longest idle time and reason (#329). |
+
+## Agent health alert
+
+After posting the report, `metrics.sh` files one `bug` issue `[E6] Agent health: <agent> <metric> <week>` in Triage for each agent whose runs started in the week crossed a threshold (`metrics.py health`, pure `health` and `health_issues`, #755).
+The metric is failed % (`failed` + `abandoned`) or limit % (`skipped_limit`), from the same ledger as the Runs table.
+The issue carries the counts, the run ids of the failed or limited runs (never a detail) and the link to the week's comment on the E6 epic (else the report's path).
+
+- **Thresholds** (`HEALTH_PCT` 25, `HEALTH_MIN_RUNS` 4 in `metrics.py`): one run in four failing is no longer noise for a scripted agent; under 4 runs a single bad run already reads 25 %, the same small-base cut as the Trend.
+  Both numbers are assumptions, to adjust from the weeks' figures.
+- **Cap:** more than 3 crossings in a week (`HEALTH_MAX_ISSUES`) go in one combined issue `[E6] Agent health: <n> crossings <week>`, so a bad week cannot flood Triage.
+- **Dedup:** by title against every `Agent health` issue, open or closed; a week with a combined issue files nothing more, so re-running the script for a week files nothing twice.
+- It is a step of the `metrics` run (the ledger line's detail counts the issues filed), not a new agent; a failed listing or create is logged and files nothing.
 
 ## Reading the Trend
 
