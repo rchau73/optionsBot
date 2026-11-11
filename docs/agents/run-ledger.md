@@ -12,7 +12,7 @@ Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-
 - **Helpers** (`lib.sh`): `run_begin <agent> [issue] [pr] [log]`, then `run_end <outcome> [detail]`; a script sets `RUN_PR`/`RUN_COMMIT` when it learns them (the PR it opened, the commit it pushed, reviewed or deployed; otherwise `commit` is the agents' own code).
   Each line is built by `runs.py line` and written with one `printf` under the `agent-runs` mutex, so parallel runs never interleave.
   The ledger never stops an agent: a line it cannot write is logged and skipped.
-- **Agent names** (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`, `security`, `recording`.
+- **Agent names** (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`.
 - **Coverage** (#722, `tests/ledger_coverage_test.go`): every `scripts/agents/*.sh` sources `lib.sh` and calls `run_begin` and `run_end`,
   or is on the test's `ledgerExempt` list with a one-line reason (libraries, the tick, the sweep, the Dev agent's helpers, what a person runs);
   every agent name a script passes to `run_begin` is in `runs.py` `AGENTS`, in the list above and in the Run ledger bullet of `scripts/agents/CLAUDE.md`; an exempt entry must still name a file that writes no run.
@@ -21,7 +21,7 @@ Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-
 - **The sweep** (#291): each tick, before any new run starts, [`sweep_runs.sh`](../../scripts/agents/sweep_runs.sh) runs `runs.py --sweep` under the `agent-runs` mutex.
   An open run whose pid (the one in its `run_id`, `<agent>-<time>-<pid>-<n>`) no longer exists gets an `end` line, outcome `abandoned`, detail `process gone`, built by the same `make_line` as `run_end`.
   A claim holds that same pid, so a dead run's claim is free too, and a live pid is a live run, claimed or not.
-  A live run past its agent's time limit (`TIME_LIMIT_MIN` in `runs.py`: dev 120 min, review 60, sme 60, pm and pm_answer 30, deploy 30, backup 30, flaky 45, usage 20, requests 30, pr_gate 20, metrics 20, evidence 45, requeue 10, stuck 10, security 10, recording 10; tune them from the weekly metrics' p90) is reported **once**:
+  A live run past its agent's time limit (`TIME_LIMIT_MIN` in `runs.py`: dev 120 min, review 60, sme 60, pm and pm_answer 30, deploy 30, backup 30, flaky 45, usage 20, requests 30, pr_gate 20, metrics 20, evidence 45, go_no_go 10, requeue 10, stuck 10, security 10, recording 10; tune them from the weekly metrics' p90) is reported **once**:
   a marker `data/agents/runs/flagged/<run_id>` and a notification naming the agent, the card and the log.
   **Nothing is ever killed.**
   A sweep failure is logged (`data/agents/tick-sweep.log`) and the tick goes on.
@@ -38,6 +38,7 @@ Since #206 every SME, PM, PM-answer, Dev, Reviewer, PR-gate, deploy, flaky-test-
   assistant requests `filed`, `judged`, `none`, `skipped_limit`, `failed`;
   metrics `posted`, `written` (no epic, or the comment failed);
   evidence `posted`, `written`, `failed` (tried twice);
+  go / no-go reading `posted` (issue filed), `written` (no issue due, or it could not be filed), `failed`;
   re-queue `requeued` (one run per card moved back to Ready);
   stuck-card check `checked`;
   security digest `failed`, `notified`;

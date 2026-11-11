@@ -91,7 +91,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
-  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`, `security`, `recording`;
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
     and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
@@ -116,6 +116,11 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `recording_check.sh` (from the tick, first tick of a UTC day, `data/agents/recording/<yesterday>.done`, no Claude) runs `cmd/datacoverage -yesterday -json` for each env that records the market (`BOT_RECORD_MARKET`, stable) × bot;
   - a market recording under `evidence.ReplayFullCoveragePct` (90) of yesterday's hours or with a gap over `LongGapHours` (3) → one notify and one comment on the E2 epic (pure `recording_day.py`, hours and % only); all at the floor → silent;
   - ledger agent `recording`.
+- Weekly go / no-go reading (#738, docs/product/go-no-go.md §6):
+  - `go_no_go.sh` (from the tick, first tick of a Monday UTC after the evidence report, else from Wednesday; `data/agents/go_no_go/<week>.done`, no Claude)
+    runs `scripts/product/go_no_go_week.py`: `go_no_go.py -json` on stable's clone and the newest tally and fake-door files, one line appended to the gitignored `data/product/go_no_go_history.jsonl` (shares and ratios only);
+  - a row changing status, or the overall line becoming `kill criterion met` / `no kill criterion met`, files one `agent:pm` + `agent:needs-human` issue in Triage (old and new reading, source file; recommends nothing beyond PRD §6); ledger agent `go_no_go`;
+  - an issue that cannot be filed (`gh` failed) is notified and kept in `data/agents/go_no_go/<week>/alert` with the week not done, retried each tick without re-reading — the next reading's baseline is the new one, so the change would never alert again.
 - Nightly flaky-test hunt (#248, docs/agents/flaky.md "Nightly flaky-test hunt"):
   - `flaky.sh` (from the tick, first tick of a UTC night from 03:00, `data/agents/flaky/<date>.done`, no Claude)
     runs `go test ./tests/... -race -count=5 -json` and `npm test -- --ci` ×3 on a clean `origin/main` worktree within 30 min (a time-out files nothing)
