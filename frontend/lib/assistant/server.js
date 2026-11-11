@@ -4,11 +4,28 @@
 // swap the model with setAssistantModel.
 import helpIndex from "@/content/help-index.json";
 import { authLog } from "@/lib/auth/log";
+import { roleAtLeast } from "@/lib/auth/roles";
 import { configuredBots } from "@/lib/bots";
+import { compareDir } from "@/lib/compare";
+import { listRuns } from "@/lib/lab";
+import { pendingRequests, queueDir, readRequests } from "@/lib/labrequests";
 import { QuestionLimiter } from "./limit";
 import { anthropicClient } from "./model";
 import { HelpIndex } from "./search";
-import { JOURNAL_CACHE_MS, JOURNAL_DAYS, LIVE_CACHE_MS, PERF_CACHE_MS, bookPassage, explainPassages, journalPassages, livePassages, perfPassages, pnlPassages } from "./service";
+import {
+  JOURNAL_CACHE_MS,
+  JOURNAL_DAYS,
+  LAB_CACHE_MS,
+  LIVE_CACHE_MS,
+  PERF_CACHE_MS,
+  bookPassage,
+  explainPassages,
+  journalPassages,
+  labPassages,
+  livePassages,
+  perfPassages,
+  pnlPassages,
+} from "./service";
 
 const KEY = Symbol.for("optionsbot.monitor.assistant");
 // A week of orders.log is read back by the bot: allow it more than a ring read.
@@ -17,7 +34,7 @@ const JOURNAL_TIMEOUT_MS = 5000;
 const LIVE_TIMEOUT_MS = 3000;
 
 function shared() {
-  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map(), perfs: new Map() };
+  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map(), perfs: new Map(), lab: null };
   return globalThis[KEY];
 }
 
@@ -37,7 +54,7 @@ export function assistantModel() {
   return s.model === undefined ? anthropicClient() : s.model;
 }
 
-/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal, live or performance data. */
+/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal, live, performance or lab data. */
 export function setAssistantModel(model) {
   const s = shared();
   s.model = model;
@@ -45,6 +62,7 @@ export function setAssistantModel(model) {
   s.journals = new Map();
   s.lives = new Map();
   s.perfs = new Map();
+  s.lab = null;
 }
 
 /** GET <bot>/<path> as JSON; throws on a failed read or a non-2xx answer. */
@@ -134,6 +152,35 @@ export async function botPerformance(bot, nowMs = Date.now()) {
     return passages;
   } catch (err) {
     authLog("WARN", "assistant: bot performance unavailable", { component: "assistant", bot, error: err.message });
+    return [];
+  }
+}
+
+/**
+ * The lab's latest comparisons (#742) as passages (labPassages), for a
+ * manager or an admin only — the roles of /api/lab/runs; anyone else gets []
+ * and nothing is read. The run list and the requests not run yet are read
+ * from COMPARE_DIR as /api/lab/runs reads them, kept LAB_CACHE_MS (the same
+ * for every manager); a read that fails → [] with a WARN (not cached).
+ */
+export function labRuns(user, nowMs = Date.now()) {
+  if (!roleAtLeast(user?.role, "manager")) return [];
+  const s = shared();
+  if (s.lab && nowMs - s.lab.at < LAB_CACHE_MS) return s.lab.passages;
+  try {
+    const dir = compareDir();
+    const { runs, skipped } = listRuns(dir);
+    if (skipped.length) authLog("WARN", "assistant: lab runs unreadable", { component: "assistant", ids: skipped });
+    const requests = pendingRequests(
+      readRequests(queueDir(dir)),
+      runs.map((r) => r.id),
+      nowMs,
+    );
+    const passages = labPassages({ runs, requests });
+    s.lab = { at: nowMs, passages };
+    return passages;
+  } catch (err) {
+    authLog("WARN", "assistant: lab runs unavailable", { component: "assistant", error: err.message });
     return [];
   }
 }

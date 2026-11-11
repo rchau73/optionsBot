@@ -200,7 +200,8 @@ func TestAssistantGuard_GoldenSet(t *testing.T) {
 		}
 		// A question about a bot's own data is checked against the passages
 		// the monitor builds from its fixture (assistant-live.test.js, #427).
-		if q.Bot != nil {
+		// A lab case likewise, against its lab fixture's passages (assistant-lab.test.js, #742).
+		if q.Bot != nil || q.Lab != nil {
 			a = valid
 		}
 		if v := guard.Check(a, passages); !v.OK {

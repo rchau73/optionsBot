@@ -118,6 +118,8 @@ test("the golden set: correct answers pass, must_not_say phrases are rejected", 
     if (q.category === "request") a = valid;
     // A question about the bot's own data is checked against its fixture's passages (assistant-live.test.js, #427).
     if (q.bot) a = valid;
+    // A lab case against its lab fixture's passages (assistant-lab.test.js, #742).
+    if (q.lab) a = valid;
     const v = check(a, passages);
     if (!v.ok) failures.push(`${q.id}: correct answer rejected: ${v.details}`);
     const base = q.expected_behaviour === "answer" ? a : valid;
