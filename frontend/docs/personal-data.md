@@ -120,6 +120,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - the trail itself: `audit_exported`;
+- a person's own data: `my_data_exported` (#750: who downloaded their file and the count per section, never the content);
 - the lab: `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
 - analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
@@ -146,6 +147,23 @@ Deleting an account does not edit the logs.
 `MONITOR_API_TOKEN` is a secret of the environment, not a person's data: it is in the `.env` of the host and the scripts that read it, with no name attached.
 It reads the bots' data without a session and never a page, a close or a rebalance.
 
+## What "download my data" holds
+
+Every signed-in person, of any role, can download what this inventory says the monitor keeps about them (#750, the right of access): Account ▾ → **Download my data**, `GET /api/auth/my-data` ([Users and roles](users-and-roles.md)).
+The file is one JSON document, built by `lib/auth/mydata.js` from the person's own rows only:
+- `account`: their `users` row, every column except `password_hash` (`ACCOUNT_COLUMNS`; a test fails on a new column that is in neither list);
+- `consent`: their analytics answer in words (yes, no, not asked);
+- `sessions`: their live sessions as Active sessions shows them, never a token, a hash or an address;
+- `survey_answers`: their `survey_answers` rows with any text they wrote;
+- `analytics_events`: their stored events, as the admin's export finds them (`lib/analytics/userrequest.js`);
+- `audit_lines`: the lines of `audit.jsonl` where they are the `username`, without `ip`, `prev` or `line_hash`, the newest 50,000 at most.
+Lines where the person is only the `target` of an admin's action are left out until counsel answers L14.
+A section that cannot be read is named `unavailable` with its reason, never dropped.
+Once downloaded the file is the person's to keep safe; this inventory's retention and deletion no longer reach it.
+Each download writes one `my_data_exported` line with the person and the count per section, never the content.
+A person may download 3 times an hour; a 4th is refused (429) and writes nothing.
+The admin's CLI export (`events_exported`) and the Audit page's CSV export are unchanged.
+
 ## What "delete my account" removes and keeps
 
 The self-delete (#543) and an admin's deletion run the same steps:
@@ -163,3 +181,4 @@ The self-delete (#543) and an admin's deletion run the same steps:
 5. L16: may survey answers stay linked to an account, and for how long?
 6. L22: the breach duties for the user database and the audit trail, and the minimum security the terms promise.
 7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it. **Fallback in place**: only admins may export, and every export is an audit line.
+8. L14, L16: "Download my data" (#750): the notice wording, and whether audit lines naming the person only as an admin's `target` may be in their file. **Fallback in place**: only the person's own actions.

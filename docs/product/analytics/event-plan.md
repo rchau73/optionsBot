@@ -45,6 +45,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `manual_close_confirmed` | the person confirms the close | `side`, `last_leg` | Q6 |
 | `manual_close_opened` | the manual-close dialog opens for a leg | `side`, `allowed` | Q6 |
 | `manual_close_result` | the close request returns | `side`, `outcome` | Q6, Q7 |
+| `my_data_downloaded` | Account › Download my data returns (#750): the file was saved (`ok`), refused at 3 downloads an hour (`refused`) or failed (`error`); counts only, never the file or its counts | `outcome` | Q3, Q7 |
 | `notification_followed` | the person follows an item of the bell (opens the question, My requests, the public issue, or Why?); its kind only, never its text (#447: the share of Needs you items acted on within 7 days) | `kind` | Q3, Q5 |
 | `notifications_opened` | the bell's list opens: its dropdown, or the `/notifications` page on a phone (#447) | — | Q3 |
 | `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |

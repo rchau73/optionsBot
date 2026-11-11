@@ -1,6 +1,6 @@
 // The signed-in person's session and password (/api/auth/...).
 
-import { apiFetch, getJSON, navigation, sendJSON } from "./http.js";
+import { apiFetch, getJSON, jsonOrNull, navigation, sendJSON } from "./http.js";
 
 /** Ends the session (its refresh token stops working) and goes to the sign-in page. */
 export async function signOut() {
@@ -39,6 +39,17 @@ export async function endSession(id) {
  */
 export async function deleteAccount() {
   return sendJSON("/api/auth/account", "DELETE", {});
+}
+
+/**
+ * The signed-in person's own data as one JSON file (#750) → { blob, filename }.
+ * Throws with the server's reason (e.g. three downloads in the last hour).
+ */
+export async function downloadMyData() {
+  const res = await apiFetch("/api/auth/my-data", { cache: "no-store" });
+  if (!res.ok) throw Object.assign(new Error((await jsonOrNull(res))?.error ?? `${res.status}`), { status: res.status });
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+  return { blob: await res.blob(), filename: name ?? "my-data.json" };
 }
 
 /**
