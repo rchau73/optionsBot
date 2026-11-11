@@ -22,8 +22,9 @@ slug="$(repo_slug)"
 tmp="$AGENT_STATE_DIR/metrics-$$"; mkdir -p "$tmp" "$out_dir"; on_exit_remove "$tmp"
 
 # Everything touched since three weeks before the week began, for the Trend
-# section: an issue or PR with an event in a week was updated in it or later
-# (each carries all its comments and reviews).
+# section, or 30 days before it ended, for the flaky repeat offenders (#747),
+# whichever is earlier: an issue or PR with an event in a week was updated in
+# it or later (each carries all its comments and reviews).
 gh issue list -R "$slug" --state all -L 1000 --search "updated:>=$since" \
   --json number,title,labels,createdAt,closedAt,state,stateReason,comments > "$tmp/issues.json"
 gh pr list -R "$slug" --state all -L 500 --search "updated:>=$since" \
