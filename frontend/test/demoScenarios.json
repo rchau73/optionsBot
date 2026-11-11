@@ -1,0 +1,3182 @@
+{
+  "default": {
+    "/api/positions": {
+      "as_of": "2026-11-10T00:59:28.622853-03:00",
+      "strangles": [
+        {
+          "id": "st-1",
+          "slot": {
+            "dte": 25,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:27.525826-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-5Dec26-110000-C",
+              "instrument": "BTC-5Dec26-110000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 110000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.0036307603908979124,
+              "bid": 0.003521837579170975,
+              "ask": 0.0037396832026248498,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.002510771882730626,
+              "roi_pct": 69.74366340918407,
+              "loss_multiple": -0.6974366340918406,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 9.945081780067426,
+              "greeks": {
+                "delta": -0.038901635601348517,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-5Dec26-90000-P",
+              "instrument": "BTC-5Dec26-90000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 90000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.004138647712086959,
+              "bid": 0.00401448828072435,
+              "ask": 0.004262807143449569,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.002958405686373912,
+              "roi_pct": 70.43823062795029,
+              "loss_multiple": -0.7043823062795029,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 10.044933089035741,
+              "greeks": {
+                "delta": 0.04089866178071483,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-2",
+          "slot": {
+            "dte": 45,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:27.525826-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-25Dec26-114000-C",
+              "instrument": "BTC-25Dec26-114000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 114000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.002252059201284177,
+              "bid": 0.0021844974252456517,
+              "ask": 0.0023196209773227025,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.002924382239614747,
+              "roi_pct": 81.23283998929853,
+              "loss_multiple": -0.8123283998929853,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 13.94308475388806,
+              "greeks": {
+                "delta": -0.1188616950777612,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-25Dec26-87000-P",
+              "instrument": "BTC-25Dec26-87000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 87000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.0029286349035772814,
+              "bid": 0.002840775856469963,
+              "ask": 0.0030164939506846,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.0033214095289268155,
+              "roi_pct": 79.08117926016229,
+              "loss_multiple": -0.7908117926016228,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 13.043435319401217,
+              "greeks": {
+                "delta": 0.10086870638802434,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-3",
+          "slot": {
+            "dte": 60,
+            "delta": 0.18
+          },
+          "opened_at": "2026-11-10T00:59:27.525826-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-9Jan27-116000-C",
+              "instrument": "BTC-9Jan27-116000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 116000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.0017662436415592942,
+              "bid": 0.0017132563323125154,
+              "ask": 0.001819230950806073,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.0030701269075322116,
+              "roi_pct": 85.28130298700589,
+              "loss_multiple": -0.8528130298700588,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 15.942086240798375,
+              "greeks": {
+                "delta": -0.1588417248159675,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-9Jan27-84000-P",
+              "instrument": "BTC-9Jan27-84000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 84000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.16702982809028,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.0020580005486522893,
+              "bid": 0.0019962605321927206,
+              "ask": 0.002119740565111858,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:28.622853-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.003582599835404313,
+              "roi_pct": 85.29999608105507,
+              "loss_multiple": -0.8529999608105507,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 16.041937549766693,
+              "greeks": {
+                "delta": 0.16083875099533387,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5219588404710188
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        }
+      ],
+      "strategy_id": "short-strangle",
+      "underlying": "BTC"
+    },
+    "/api/status": {
+      "account": {
+        "equity": 2.5,
+        "margin_used": 0.42,
+        "as_of": "2026-11-10T00:59:28.626189-03:00"
+      },
+      "as_of": "2026-11-10T00:59:28.626189-03:00",
+      "config": null,
+      "connections": {},
+      "deployment": "",
+      "direction": "sma",
+      "environment": "testnet (demo)",
+      "eval_interval_ms": 0,
+      "event_counts": {},
+      "flip_buffer_pct": 2.7320574370998023,
+      "gex_as_of": null,
+      "gex_bias": "",
+      "greeks": {
+        "net_delta": 0.004199680899301253,
+        "net_gamma": -0.00012,
+        "net_vega": -72,
+        "net_theta": 27
+      },
+      "halted": false,
+      "held_legs": null,
+      "history_since": "2026-05-10T00:59:27.525826-03:00",
+      "key_scope": null,
+      "loop_age_sec": 0,
+      "loop_at": "2026-11-10T00:59:28.626189-03:00",
+      "loop_stale": false,
+      "market": {
+        "as_of": "2026-11-10T00:59:28.626189-03:00",
+        "spot": 100049.95059264445,
+        "dvol": 52.19588404710188,
+        "iv_percentile": 55,
+        "option_iv": 0,
+        "distance_to_strike_pct": 0,
+        "distance_to_strike_sd": 0,
+        "delta": 0,
+        "bid": 0,
+        "ask": 0,
+        "mid": 0,
+        "spread_pct": 0,
+        "intrinsic": 0,
+        "extrinsic": 0,
+        "oi_as_of": "0001-01-01T00:00:00Z",
+        "gex_regime": "POSITIVE/PINNING",
+        "gamma_flip": 96047.95256893868
+      },
+      "median_flip": 0,
+      "open_legs": 6,
+      "open_strangles": 3,
+      "pending": 1,
+      "pnl": [
+        {
+          "slot": null,
+          "realised": 0,
+          "unrealised": 0.018367696080582627,
+          "total": 0.018367696080582627,
+          "open_legs": 6,
+          "closed_legs": 0
+        }
+      ],
+      "risk": {
+        "status": {
+          "limit_im_pct": 35,
+          "max_mm_pct": 35,
+          "reason": "DVOL band ≥30 (IM 35%) (confirmed)",
+          "band": {
+            "min_iv_pct": 30,
+            "max_im_pct": 35
+          },
+          "band_limit_pct": 35,
+          "live_iv_pct": 81,
+          "live_iv_known": true,
+          "regime_used": true,
+          "regime_known": true,
+          "regime_negative": false,
+          "frozen": false,
+          "pending": [
+            {
+              "rule": "dvol_band",
+              "to": "band ≥70 (IM 50%)",
+              "days": 1,
+              "need": 2
+            }
+          ],
+          "can_rebalance": true
+        },
+        "im_pct": 12.273519482877113,
+        "mm_pct": 8.591463638013979,
+        "unit": "USD",
+        "margin_balance": 185313.43725265845,
+        "as_of": "2026-11-10T00:59:28.626189-03:00",
+        "im_over_limit": false,
+        "im_under_use": false,
+        "entries_allowed": false
+      },
+      "sma": {
+        "sma9": 99700,
+        "sma21": 100400,
+        "swing_high": 103000,
+        "swing_high_date": "2026-10-29",
+        "swing_low": 98500,
+        "swing_low_date": "2026-11-02",
+        "price": 100049.95059264445,
+        "trend": "neutral",
+        "reason": "inside the swings, SMAs and price not aligned",
+        "sma9_band_pct": 0,
+        "candles": [
+          {
+            "date": "2026-09-11",
+            "open": 100000,
+            "high": 103382.01754231173,
+            "low": 98800,
+            "close": 102156.14381651356
+          },
+          {
+            "date": "2026-09-12",
+            "open": 102156.14381651356,
+            "high": 104866.92946594425,
+            "low": 100930.27009071539,
+            "close": 103623.44808887772
+          },
+          {
+            "date": "2026-09-13",
+            "open": 103623.44808887772,
+            "high": 105888.5623988044,
+            "low": 102379.96671181118,
+            "close": 104632.96679723755
+          },
+          {
+            "date": "2026-09-14",
+            "open": 104632.96679723755,
+            "high": 105888.5623988044,
+            "low": 102854.22763759317,
+            "close": 104103.469268819
+          },
+          {
+            "date": "2026-09-15",
+            "open": 104103.469268819,
+            "high": 105352.71090004483,
+            "low": 101864.24374141239,
+            "close": 103101.46127673319
+          },
+          {
+            "date": "2026-09-16",
+            "open": 103101.46127673319,
+            "high": 104512.10109250607,
+            "low": 101864.24374141239,
+            "close": 103272.82716650797
+          },
+          {
+            "date": "2026-09-17",
+            "open": 103272.82716650797,
+            "high": 105681.11593327347,
+            "low": 102033.55324050986,
+            "close": 104427.98017121883
+          },
+          {
+            "date": "2026-09-18",
+            "open": 104427.98017121883,
+            "high": 106076.17548280112,
+            "low": 103174.8444091642,
+            "close": 104818.35522015921
+          },
+          {
+            "date": "2026-09-19",
+            "open": 104818.35522015921,
+            "high": 106076.17548280112,
+            "low": 102454.81665556847,
+            "close": 103699.20714126364
+          },
+          {
+            "date": "2026-09-20",
+            "open": 103699.20714126364,
+            "high": 104943.59762695881,
+            "low": 101195.09530668089,
+            "close": 102424.18553307782
+          },
+          {
+            "date": "2026-09-21",
+            "open": 102424.18553307782,
+            "high": 103697.6765280567,
+            "low": 101195.09530668089,
+            "close": 102468.0598103327
+          },
+          {
+            "date": "2026-09-22",
+            "open": 102468.0598103327,
+            "high": 104513.47844886083,
+            "low": 101238.44309260871,
+            "close": 103274.18819057394
+          },
+          {
+            "date": "2026-09-23",
+            "open": 103274.18819057394,
+            "high": 104513.47844886083,
+            "low": 101843.07005018131,
+            "close": 103080.03041516327
+          },
+          {
+            "date": "2026-09-24",
+            "open": 103080.03041516327,
+            "high": 104316.99078014524,
+            "low": 100292.9883026892,
+            "close": 101511.12176385547
+          },
+          {
+            "date": "2026-09-25",
+            "open": 101511.12176385547,
+            "high": 102729.25522502173,
+            "low": 98941.37189376367,
+            "close": 100143.08896129926
+          },
+          {
+            "date": "2026-09-26",
+            "open": 100143.08896129926,
+            "high": 101410.57681612417,
+            "low": 98941.37189376367,
+            "close": 100208.0798578302
+          },
+          {
+            "date": "2026-09-27",
+            "open": 100208.0798578302,
+            "high": 102015.05745787399,
+            "low": 99005.58289953624,
+            "close": 100805.39274493477
+          },
+          {
+            "date": "2026-09-28",
+            "open": 100805.39274493477,
+            "high": 102015.05745787399,
+            "low": 99034.5680946467,
+            "close": 100237.41709984484
+          },
+          {
+            "date": "2026-09-29",
+            "open": 100237.41709984484,
+            "high": 101440.26610504297,
+            "low": 97331.2343558332,
+            "close": 98513.39509699718
+          },
+          {
+            "date": "2026-09-30",
+            "open": 98513.39509699718,
+            "high": 99695.55583816115,
+            "low": 96184.41423338049,
+            "close": 97352.64598520292
+          },
+          {
+            "date": "2026-10-01",
+            "open": 97352.64598520292,
+            "high": 98854.37432244759,
+            "low": 96184.41423338049,
+            "close": 97682.18806565968
+          },
+          {
+            "date": "2026-10-02",
+            "open": 97682.18806565968,
+            "high": 99473.94618428644,
+            "low": 96510.00180887176,
+            "close": 98294.41322557948
+          },
+          {
+            "date": "2026-10-03",
+            "open": 98294.41322557948,
+            "high": 99473.94618428644,
+            "low": 96459.4308894967,
+            "close": 97631.0029245918
+          },
+          {
+            "date": "2026-10-04",
+            "open": 97631.0029245918,
+            "high": 98802.5749596869,
+            "low": 94926.39154977568,
+            "close": 96079.34367386202
+          },
+          {
+            "date": "2026-10-05",
+            "open": 96079.34367386202,
+            "high": 97232.29579794836,
+            "low": 94271.91045407939,
+            "close": 95416.91341506012
+          },
+          {
+            "date": "2026-10-06",
+            "open": 95416.91341506012,
+            "high": 97371.9798948122,
+            "low": 94271.91045407939,
+            "close": 96217.37143756147
+          },
+          {
+            "date": "2026-10-07",
+            "open": 96217.37143756147,
+            "high": 98182.4491899808,
+            "low": 95062.76298031073,
+            "close": 97018.23042488222
+          },
+          {
+            "date": "2026-10-08",
+            "open": 97018.23042488222,
+            "high": 98182.4491899808,
+            "low": 95311.67662803824,
+            "close": 96469.30832797394
+          },
+          {
+            "date": "2026-10-09",
+            "open": 96469.30832797394,
+            "high": 97626.94002790963,
+            "low": 94170.58050902435,
+            "close": 95314.35274192748
+          },
+          {
+            "date": "2026-10-10",
+            "open": 95314.35274192748,
+            "high": 96458.1249748306,
+            "low": 94159.04783537479,
+            "close": 95302.67999531861
+          },
+          {
+            "date": "2026-10-11",
+            "open": 95302.67999531861,
+            "high": 97784.7582169782,
+            "low": 94159.04783537479,
+            "close": 96625.2551551168
+          },
+          {
+            "date": "2026-10-12",
+            "open": 96625.2551551168,
+            "high": 98802.9621585146,
+            "low": 95465.7520932554,
+            "close": 97631.38553212905
+          },
+          {
+            "date": "2026-10-13",
+            "open": 97631.38553212905,
+            "high": 98802.9621585146,
+            "low": 96074.2507982566,
+            "close": 97241.14453264838
+          },
+          {
+            "date": "2026-10-14",
+            "open": 97241.14453264838,
+            "high": 98408.03826704016,
+            "low": 95361.20508085864,
+            "close": 96519.43834095004
+          },
+          {
+            "date": "2026-10-15",
+            "open": 96519.43834095004,
+            "high": 98271.13803111934,
+            "low": 95361.20508085864,
+            "close": 97105.86761968314
+          },
+          {
+            "date": "2026-10-16",
+            "open": 97105.86761968314,
+            "high": 99986.45537603188,
+            "low": 95940.59720824694,
+            "close": 98800.84523323308
+          },
+          {
+            "date": "2026-10-17",
+            "open": 98800.84523323308,
+            "high": 101042.68954311727,
+            "low": 97615.23509043427,
+            "close": 99844.55488450323
+          },
+          {
+            "date": "2026-10-18",
+            "open": 99844.55488450323,
+            "high": 101042.68954311727,
+            "low": 98286.58517442088,
+            "close": 99480.34936682275
+          },
+          {
+            "date": "2026-10-19",
+            "open": 99480.34936682275,
+            "high": 100674.11355922461,
+            "low": 97858.93417461788,
+            "close": 99047.50422532174
+          },
+          {
+            "date": "2026-10-20",
+            "open": 99047.50422532174,
+            "high": 101202.79388543461,
+            "low": 97858.93417461788,
+            "close": 100002.76075635832
+          },
+          {
+            "date": "2026-10-21",
+            "open": 100002.76075635832,
+            "high": 102990.67016343071,
+            "low": 98802.72762728202,
+            "close": 101769.43692038607
+          },
+          {
+            "date": "2026-10-22",
+            "open": 101769.43692038607,
+            "high": 103796.29123487417,
+            "low": 100548.20367734143,
+            "close": 102565.50517280056
+          },
+          {
+            "date": "2026-10-23",
+            "open": 102565.50517280056,
+            "high": 103796.29123487417,
+            "low": 100773.86865209504,
+            "close": 101997.84276527839
+          },
+          {
+            "date": "2026-10-24",
+            "open": 101997.84276527839,
+            "high": 103221.81687846173,
+            "low": 100402.93749069195,
+            "close": 101622.40636709712
+          },
+          {
+            "date": "2026-10-25",
+            "open": 101622.40636709712,
+            "high": 103881.79471643806,
+            "low": 100402.93749069195,
+            "close": 102649.99477908899
+          },
+          {
+            "date": "2026-10-26",
+            "open": 102649.99477908899,
+            "high": 105408.87095371088,
+            "low": 101418.19484173991,
+            "close": 104158.96339299493
+          },
+          {
+            "date": "2026-10-27",
+            "open": 104158.96339299493,
+            "high": 105686.7446837258,
+            "low": 102909.05583227899,
+            "close": 104433.54217759466
+          },
+          {
+            "date": "2026-10-28",
+            "open": 104433.54217759466,
+            "high": 105686.7446837258,
+            "low": 102225.75219282357,
+            "close": 103467.36051905219
+          },
+          {
+            "date": "2026-10-29",
+            "open": 103467.36051905219,
+            "high": 104708.96884528082,
+            "low": 101729.1379954124,
+            "close": 102964.71457025547
+          },
+          {
+            "date": "2026-10-30",
+            "open": 102964.71457025547,
+            "high": 105083.93938120216,
+            "low": 101729.1379954124,
+            "close": 103837.88476403375
+          },
+          {
+            "date": "2026-10-31",
+            "open": 103837.88476403375,
+            "high": 106125.46379598197,
+            "low": 102591.83014686534,
+            "close": 104867.0590869387
+          },
+          {
+            "date": "2026-11-01",
+            "open": 104867.0590869387,
+            "high": 106125.46379598197,
+            "low": 103232.31686247438,
+            "close": 104486.15067052063
+          },
+          {
+            "date": "2026-11-02",
+            "open": 104486.15067052063,
+            "high": 105739.98447856687,
+            "low": 101841.36770560521,
+            "close": 103078.30739433726
+          },
+          {
+            "date": "2026-11-03",
+            "open": 103078.30739433726,
+            "high": 104315.2470830693,
+            "low": 101189.14438905528,
+            "close": 102418.16233710048
+          },
+          {
+            "date": "2026-11-04",
+            "open": 102418.16233710048,
+            "high": 104314.79116372339,
+            "low": 101189.14438905528,
+            "close": 103077.8568811496
+          },
+          {
+            "date": "2026-11-05",
+            "open": 103077.8568811496,
+            "high": 104840.06200501541,
+            "low": 101840.9225985758,
+            "close": 103596.8992144421
+          },
+          {
+            "date": "2026-11-06",
+            "open": 103596.8992144421,
+            "high": 104840.06200501541,
+            "low": 101400.27128243886,
+            "close": 102631.85352473569
+          },
+          {
+            "date": "2026-11-07",
+            "open": 102631.85352473569,
+            "high": 103863.43576703253,
+            "low": 99725.1188543828,
+            "close": 100936.35511577206
+          },
+          {
+            "date": "2026-11-08",
+            "open": 100936.35511577206,
+            "high": 102147.59137716133,
+            "low": 99067.23686325845,
+            "close": 100270.4826551199
+          },
+          {
+            "date": "2026-11-09",
+            "open": 100270.4826551199,
+            "high": 102047.02957676715,
+            "low": 99067.23686325845,
+            "close": 100836.98574779363
+          },
+          {
+            "date": "2026-11-10",
+            "open": 100836.98574779363,
+            "high": 101240.3336907848,
+            "low": 99649.75079027387,
+            "close": 100049.95059264445
+          }
+        ]
+      },
+      "sma_trend": "neutral",
+      "strategy_id": "short-strangle",
+      "trend": "neutral",
+      "underlying": "BTC",
+      "uptime_sec": 1,
+      "utilisation_30d": {
+        "mean_pct": 55.3373651149127,
+        "allowed_share": 0.8925677440884092,
+        "allowed_hours": 642.5002872144445,
+        "measured_hours": 719.8336389252314
+      },
+      "utilisation_7d": {
+        "mean_pct": 55.20461771153529,
+        "allowed_share": 0.9036743462799682,
+        "allowed_hours": 151.6669538811111,
+        "measured_hours": 167.83363886056694
+      },
+      "version": ""
+    },
+    "/api/summary": {
+      "as_of": "2026-11-10T00:59:28.62888-03:00",
+      "strategy_id": "short-strangle",
+      "underlying": "BTC",
+      "environment": "testnet (demo)",
+      "spot": 100049.95059264445,
+      "stop_loss_multiple": 0,
+      "delta_exit_threshold": 0,
+      "repair_cooldown_hours": 0,
+      "holding": {
+        "strangles": 3,
+        "legs": 6,
+        "calls": 3,
+        "puts": 3,
+        "notional_coin": 1.8,
+        "notional_usd": 180089.91106676002,
+        "nearest_expiry": "2026-12-05T05:00:00-03:00",
+        "nearest_dte": 25.16702975833333,
+        "nearest": {
+          "expiry": "2026-12-05T05:00:00-03:00",
+          "put_strike": 90000,
+          "call_strike": 110000
+        },
+        "coin": "BTC"
+      },
+      "income": {
+        "coin": "BTC",
+        "months": [
+          {
+            "month": "2026-06",
+            "realised_coin": 0.024589124461597243,
+            "realised_usd": 2458.912446159725,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.024589124461597243,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2458.9124461597244,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-07",
+            "realised_coin": 0.027200094586305925,
+            "realised_usd": 2720.0094586305922,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.027200094586305925,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2720.0094586305927,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-08",
+            "realised_coin": 0.025414645632187406,
+            "realised_usd": 2541.4645632187403,
+            "closes": 19,
+            "premium_coin": 0,
+            "buyback_coin": -0.025414645632187406,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2541.4645632187403,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-09",
+            "realised_coin": 0.01920138831244289,
+            "realised_usd": 1920.1388312442896,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.01920138831244289,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1920.1388312442891,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-10",
+            "realised_coin": 0.025356577162649552,
+            "realised_usd": 2535.657716264955,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.025356577162649552,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2535.6577162649546,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-11",
+            "realised_coin": 0.007999477426523951,
+            "realised_usd": 799.947742652395,
+            "closes": 6,
+            "premium_coin": 0,
+            "buyback_coin": -0.007999477426523951,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -799.947742652395,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          }
+        ],
+        "this_month": {
+          "month": "2026-11",
+          "realised_coin": 0.007999477426523951,
+          "realised_usd": 799.947742652395,
+          "closes": 6,
+          "premium_coin": 0,
+          "buyback_coin": -0.007999477426523951,
+          "fees_coin": 0,
+          "premium_usd": 0,
+          "buyback_usd": -799.947742652395,
+          "fees_usd": 0,
+          "spot_start": null,
+          "spot_end": null,
+          "spot_days": null,
+          "hold_usd": null
+        },
+        "unrealised_coin": 0.018367696080582627,
+        "unrealised_usd": 1837.687085363001,
+        "basis": "realised: journal closes, net of fees; unrealised: open book at its marks",
+        "summary": null,
+        "start": null
+      },
+      "worst_case": {
+        "model": "model: Black–Scholes on each leg's current IV (DVOL when missing), spot moved ±3 daily σ (σ = DVOL ÷ √365) over one day",
+        "available": true,
+        "sigmas": 3,
+        "dvol": 52.19588404710188,
+        "move_pct": 8.196172311299408,
+        "coin": "BTC",
+        "down": {
+          "spot": 91849.68424470139,
+          "loss_coin": 0.004363863187250421,
+          "loss_usd": 400.8194558360274,
+          "pct_of_equity": 0.17455452749001685
+        },
+        "up": {
+          "spot": 108250.21694058752,
+          "loss_coin": 0.013720597129534273,
+          "loss_usd": 1485.2576158264874,
+          "pct_of_equity": 0.5488238851813709
+        },
+        "scenarios": [
+          {
+            "sigmas": -3,
+            "move_pct": -8.196172311299408,
+            "spot": 91849.68424470139,
+            "result_coin": -0.004363863187250421,
+            "result_usd": -400.8194558360274,
+            "pct_of_equity": -0.17455452749001685
+          },
+          {
+            "sigmas": -2,
+            "move_pct": -5.4641148741996055,
+            "spot": 94583.1063606824,
+            "result_coin": 0.0002111442383369567,
+            "result_usd": 19.97067795206965,
+            "pct_of_equity": 0.008445769533478267
+          },
+          {
+            "sigmas": 0,
+            "move_pct": 0,
+            "spot": 100049.95059264445,
+            "result_coin": 0.0011845202690215966,
+            "result_usd": 118.51119439159665,
+            "pct_of_equity": 0.04738081076086386
+          },
+          {
+            "sigmas": 2,
+            "move_pct": 5.4641148741996055,
+            "spot": 105516.79482460649,
+            "result_coin": -0.006925696543552147,
+            "result_usd": -730.7773012034783,
+            "pct_of_equity": -0.2770278617420859
+          },
+          {
+            "sigmas": 3,
+            "move_pct": 8.196172311299408,
+            "spot": 108250.21694058752,
+            "result_coin": -0.013720597129534273,
+            "result_usd": -1485.2576158264874,
+            "pct_of_equity": -0.5488238851813709
+          }
+        ]
+      },
+      "last_action": {
+        "at": "2026-11-09T08:59:27.525826-03:00",
+        "kind": "close",
+        "instrument": "demo-call",
+        "option_type": "call",
+        "qty": 0.3,
+        "rule": "delta_drift",
+        "reason": "Bought back the call: little premium was left to earn; it is sold again nearer the price (delta drift)",
+        "pnl_coin": 0.0032831728996937175,
+        "pnl_usd": 328.31728996937176,
+        "spot": 100000
+      },
+      "strangle": {
+        "strangle_id": "st-1",
+        "expiry": "2026-12-05T05:00:00-03:00",
+        "spot": 100049.95059264445,
+        "put": {
+          "instrument": "BTC-5Dec26-90000-P",
+          "strike": 90000,
+          "qty": 0.3,
+          "premium_coin": 0.0042,
+          "exit_line": null
+        },
+        "call": {
+          "instrument": "BTC-5Dec26-110000-C",
+          "strike": 110000,
+          "qty": 0.3,
+          "premium_coin": 0.0036,
+          "exit_line": null
+        },
+        "premium_coin": 0.0078,
+        "break_even_low": 87719.29824561405,
+        "break_even_high": 112936.34496919917,
+        "exit_lines": false,
+        "exit_lines_reason": "no delta exit threshold",
+        "exit_lines_model": "model: Black–Scholes delta on the leg's IV (DVOL when missing), today, zero rate"
+      }
+    }
+  },
+  "drawdown": {
+    "/api/positions": {
+      "as_of": "2026-11-10T00:59:31.011895-03:00",
+      "strangles": [
+        {
+          "id": "st-1",
+          "slot": {
+            "dte": 25,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:30.955806-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-5Dec26-110000-C",
+              "instrument": "BTC-5Dec26-110000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 110000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.167002177141203,
+              "qty": 1.5,
+              "entry_price": 0.012,
+              "mark": 0.012,
+              "bid": 0.01164,
+              "ask": 0.012360000000000001,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.018000000000000002,
+              "unrealised_pnl": 1.734723475976807e-18,
+              "roi_pct": 9.637352644315594e-15,
+              "loss_multiple": -9.637352644315594e-17,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 10,
+              "greeks": {
+                "delta": -0.04000000000000001,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-5Dec26-90000-P",
+              "instrument": "BTC-5Dec26-90000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 90000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.167002177141203,
+              "qty": 1.5,
+              "entry_price": 0.014,
+              "mark": 0.0364,
+              "bid": 0.035308,
+              "ask": 0.037492000000000004,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.021,
+              "unrealised_pnl": -0.033600000000000005,
+              "roi_pct": -160,
+              "loss_multiple": 1.6,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 10,
+              "greeks": {
+                "delta": 0.04000000000000001,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-2",
+          "slot": {
+            "dte": 45,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:30.955806-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-25Dec26-114000-C",
+              "instrument": "BTC-25Dec26-114000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 114000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.1670021771412,
+              "qty": 1.5,
+              "entry_price": 0.012,
+              "mark": 0.012,
+              "bid": 0.01164,
+              "ask": 0.012360000000000001,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.018000000000000002,
+              "unrealised_pnl": 1.734723475976807e-18,
+              "roi_pct": 9.637352644315594e-15,
+              "loss_multiple": -9.637352644315594e-17,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 14.000000000000002,
+              "greeks": {
+                "delta": -0.12000000000000002,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-25Dec26-87000-P",
+              "instrument": "BTC-25Dec26-87000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 87000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.1670021771412,
+              "qty": 1.5,
+              "entry_price": 0.014,
+              "mark": 0.014,
+              "bid": 0.01358,
+              "ask": 0.01442,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.021,
+              "unrealised_pnl": 8.673617379884035e-19,
+              "roi_pct": 4.130293990420969e-15,
+              "loss_multiple": -4.130293990420969e-17,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 13,
+              "greeks": {
+                "delta": 0.1,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-3",
+          "slot": {
+            "dte": 60,
+            "delta": 0.18
+          },
+          "opened_at": "2026-11-10T00:59:30.955806-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-9Jan27-116000-C",
+              "instrument": "BTC-9Jan27-116000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 116000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.1670021771412,
+              "qty": 1.5,
+              "entry_price": 0.012,
+              "mark": 0.012,
+              "bid": 0.01164,
+              "ask": 0.012360000000000001,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.018000000000000002,
+              "unrealised_pnl": 1.734723475976807e-18,
+              "roi_pct": 9.637352644315594e-15,
+              "loss_multiple": -9.637352644315594e-17,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 16,
+              "greeks": {
+                "delta": -0.16,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-9Jan27-84000-P",
+              "instrument": "BTC-9Jan27-84000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 84000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.1670021771412,
+              "qty": 1.5,
+              "entry_price": 0.014,
+              "mark": 0.014,
+              "bid": 0.01358,
+              "ask": 0.01442,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:31.011895-03:00",
+              "premium_received": 0.021,
+              "unrealised_pnl": 8.673617379884035e-19,
+              "roi_pct": 4.130293990420969e-15,
+              "loss_multiple": -4.130293990420969e-17,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 16,
+              "greeks": {
+                "delta": 0.16,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.52
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        }
+      ],
+      "strategy_id": "short-strangle",
+      "underlying": "BTC"
+    },
+    "/api/status": {
+      "account": {
+        "equity": 2.5,
+        "margin_used": 0.42,
+        "as_of": "2026-11-10T00:59:31.012259-03:00"
+      },
+      "as_of": "2026-11-10T00:59:31.012259-03:00",
+      "config": null,
+      "connections": {},
+      "deployment": "demo",
+      "direction": "sma",
+      "environment": "testnet (demo)",
+      "eval_interval_ms": 0,
+      "event_counts": {},
+      "flip_buffer_pct": 2.7218043974691115,
+      "gex_as_of": null,
+      "gex_bias": "",
+      "greeks": {
+        "net_delta": 0.030000000000000013,
+        "net_gamma": -0.00012,
+        "net_vega": -72,
+        "net_theta": 27
+      },
+      "halted": false,
+      "held_legs": null,
+      "history_since": "2026-05-10T00:59:30.955806-03:00",
+      "key_scope": null,
+      "loop_age_sec": 0,
+      "loop_at": "2026-11-10T00:59:31.012259-03:00",
+      "loop_stale": false,
+      "market": {
+        "as_of": "2026-11-10T00:59:31.012259-03:00",
+        "spot": 100000,
+        "dvol": 52,
+        "iv_percentile": 55,
+        "option_iv": 0,
+        "distance_to_strike_pct": 0,
+        "distance_to_strike_sd": 0,
+        "delta": 0,
+        "bid": 0,
+        "ask": 0,
+        "mid": 0,
+        "spread_pct": 0,
+        "intrinsic": 0,
+        "extrinsic": 0,
+        "oi_as_of": "0001-01-01T00:00:00Z",
+        "gex_regime": "POSITIVE/PINNING",
+        "gamma_flip": 96000
+      },
+      "median_flip": 0,
+      "open_legs": 6,
+      "open_strangles": 3,
+      "pending": 1,
+      "pnl": [
+        {
+          "slot": null,
+          "realised": 0,
+          "unrealised": -0.033600000000000005,
+          "total": -0.033600000000000005,
+          "open_legs": 6,
+          "closed_legs": 0
+        }
+      ],
+      "risk": {
+        "status": {
+          "limit_im_pct": 35,
+          "max_mm_pct": 35,
+          "reason": "DVOL band ≥30 (IM 35%) (confirmed)",
+          "band": {
+            "min_iv_pct": 30,
+            "max_im_pct": 35
+          },
+          "band_limit_pct": 35,
+          "live_iv_pct": 81,
+          "live_iv_known": true,
+          "regime_used": true,
+          "regime_known": true,
+          "regime_negative": false,
+          "frozen": false,
+          "pending": [
+            {
+              "rule": "dvol_band",
+              "to": "band ≥70 (IM 50%)",
+              "days": 1,
+              "need": 2
+            }
+          ],
+          "can_rebalance": true
+        },
+        "im_pct": 12.34008097165992,
+        "mm_pct": 8.638056680161943,
+        "unit": "USD",
+        "margin_balance": 185250,
+        "as_of": "2026-11-10T00:59:31.012259-03:00",
+        "im_over_limit": false,
+        "im_under_use": false,
+        "entries_allowed": false
+      },
+      "sma": {
+        "sma9": 99700,
+        "sma21": 100400,
+        "swing_high": 103000,
+        "swing_high_date": "2026-10-29",
+        "swing_low": 98500,
+        "swing_low_date": "2026-11-02",
+        "price": 100000,
+        "trend": "neutral",
+        "reason": "inside the swings, SMAs and price not aligned",
+        "sma9_band_pct": 0,
+        "candles": [
+          {
+            "date": "2026-09-11",
+            "open": 100000,
+            "high": 103382.01754231173,
+            "low": 98800,
+            "close": 102156.14381651356
+          },
+          {
+            "date": "2026-09-12",
+            "open": 102156.14381651356,
+            "high": 104866.92946594425,
+            "low": 100930.27009071539,
+            "close": 103623.44808887772
+          },
+          {
+            "date": "2026-09-13",
+            "open": 103623.44808887772,
+            "high": 105888.5623988044,
+            "low": 102379.96671181118,
+            "close": 104632.96679723755
+          },
+          {
+            "date": "2026-09-14",
+            "open": 104632.96679723755,
+            "high": 105888.5623988044,
+            "low": 102854.22763759317,
+            "close": 104103.469268819
+          },
+          {
+            "date": "2026-09-15",
+            "open": 104103.469268819,
+            "high": 105352.71090004483,
+            "low": 101864.24374141239,
+            "close": 103101.46127673319
+          },
+          {
+            "date": "2026-09-16",
+            "open": 103101.46127673319,
+            "high": 104512.10109250607,
+            "low": 101864.24374141239,
+            "close": 103272.82716650797
+          },
+          {
+            "date": "2026-09-17",
+            "open": 103272.82716650797,
+            "high": 105681.11593327347,
+            "low": 102033.55324050986,
+            "close": 104427.98017121883
+          },
+          {
+            "date": "2026-09-18",
+            "open": 104427.98017121883,
+            "high": 106076.17548280112,
+            "low": 103174.8444091642,
+            "close": 104818.35522015921
+          },
+          {
+            "date": "2026-09-19",
+            "open": 104818.35522015921,
+            "high": 106076.17548280112,
+            "low": 102454.81665556847,
+            "close": 103699.20714126364
+          },
+          {
+            "date": "2026-09-20",
+            "open": 103699.20714126364,
+            "high": 104943.59762695881,
+            "low": 101195.09530668089,
+            "close": 102424.18553307782
+          },
+          {
+            "date": "2026-09-21",
+            "open": 102424.18553307782,
+            "high": 103697.6765280567,
+            "low": 101195.09530668089,
+            "close": 102468.0598103327
+          },
+          {
+            "date": "2026-09-22",
+            "open": 102468.0598103327,
+            "high": 104513.47844886083,
+            "low": 101238.44309260871,
+            "close": 103274.18819057394
+          },
+          {
+            "date": "2026-09-23",
+            "open": 103274.18819057394,
+            "high": 104513.47844886083,
+            "low": 101843.07005018131,
+            "close": 103080.03041516327
+          },
+          {
+            "date": "2026-09-24",
+            "open": 103080.03041516327,
+            "high": 104316.99078014524,
+            "low": 100292.9883026892,
+            "close": 101511.12176385547
+          },
+          {
+            "date": "2026-09-25",
+            "open": 101511.12176385547,
+            "high": 102729.25522502173,
+            "low": 98941.37189376367,
+            "close": 100143.08896129926
+          },
+          {
+            "date": "2026-09-26",
+            "open": 100143.08896129926,
+            "high": 101410.57681612417,
+            "low": 98941.37189376367,
+            "close": 100208.0798578302
+          },
+          {
+            "date": "2026-09-27",
+            "open": 100208.0798578302,
+            "high": 102015.05745787399,
+            "low": 99005.58289953624,
+            "close": 100805.39274493477
+          },
+          {
+            "date": "2026-09-28",
+            "open": 100805.39274493477,
+            "high": 102015.05745787399,
+            "low": 99034.5680946467,
+            "close": 100237.41709984484
+          },
+          {
+            "date": "2026-09-29",
+            "open": 100237.41709984484,
+            "high": 101440.26610504297,
+            "low": 97331.2343558332,
+            "close": 98513.39509699718
+          },
+          {
+            "date": "2026-09-30",
+            "open": 98513.39509699718,
+            "high": 99695.55583816115,
+            "low": 96184.41423338049,
+            "close": 97352.64598520292
+          },
+          {
+            "date": "2026-10-01",
+            "open": 97352.64598520292,
+            "high": 98854.37432244759,
+            "low": 96184.41423338049,
+            "close": 97682.18806565968
+          },
+          {
+            "date": "2026-10-02",
+            "open": 97682.18806565968,
+            "high": 99473.94618428644,
+            "low": 96510.00180887176,
+            "close": 98294.41322557948
+          },
+          {
+            "date": "2026-10-03",
+            "open": 98294.41322557948,
+            "high": 99473.94618428644,
+            "low": 96459.4308894967,
+            "close": 97631.0029245918
+          },
+          {
+            "date": "2026-10-04",
+            "open": 97631.0029245918,
+            "high": 98802.5749596869,
+            "low": 94926.39154977568,
+            "close": 96079.34367386202
+          },
+          {
+            "date": "2026-10-05",
+            "open": 96079.34367386202,
+            "high": 97232.29579794836,
+            "low": 94271.91045407939,
+            "close": 95416.91341506012
+          },
+          {
+            "date": "2026-10-06",
+            "open": 95416.91341506012,
+            "high": 97371.9798948122,
+            "low": 94271.91045407939,
+            "close": 96217.37143756147
+          },
+          {
+            "date": "2026-10-07",
+            "open": 96217.37143756147,
+            "high": 98182.4491899808,
+            "low": 95062.76298031073,
+            "close": 97018.23042488222
+          },
+          {
+            "date": "2026-10-08",
+            "open": 97018.23042488222,
+            "high": 98182.4491899808,
+            "low": 95311.67662803824,
+            "close": 96469.30832797394
+          },
+          {
+            "date": "2026-10-09",
+            "open": 96469.30832797394,
+            "high": 97626.94002790963,
+            "low": 94170.58050902435,
+            "close": 95314.35274192748
+          },
+          {
+            "date": "2026-10-10",
+            "open": 95314.35274192748,
+            "high": 96458.1249748306,
+            "low": 94159.04783537479,
+            "close": 95302.67999531861
+          },
+          {
+            "date": "2026-10-11",
+            "open": 95302.67999531861,
+            "high": 97784.7582169782,
+            "low": 94159.04783537479,
+            "close": 96625.2551551168
+          },
+          {
+            "date": "2026-10-12",
+            "open": 96625.2551551168,
+            "high": 98802.9621585146,
+            "low": 95465.7520932554,
+            "close": 97631.38553212905
+          },
+          {
+            "date": "2026-10-13",
+            "open": 97631.38553212905,
+            "high": 98802.9621585146,
+            "low": 96074.2507982566,
+            "close": 97241.14453264838
+          },
+          {
+            "date": "2026-10-14",
+            "open": 97241.14453264838,
+            "high": 98408.03826704016,
+            "low": 95361.20508085864,
+            "close": 96519.43834095004
+          },
+          {
+            "date": "2026-10-15",
+            "open": 96519.43834095004,
+            "high": 98271.13803111934,
+            "low": 95361.20508085864,
+            "close": 97105.86761968314
+          },
+          {
+            "date": "2026-10-16",
+            "open": 97105.86761968314,
+            "high": 99986.45537603188,
+            "low": 95940.59720824694,
+            "close": 98800.84523323308
+          },
+          {
+            "date": "2026-10-17",
+            "open": 98800.84523323308,
+            "high": 101042.68954311727,
+            "low": 97615.23509043427,
+            "close": 99844.55488450323
+          },
+          {
+            "date": "2026-10-18",
+            "open": 99844.55488450323,
+            "high": 101042.68954311727,
+            "low": 98286.58517442088,
+            "close": 99480.34936682275
+          },
+          {
+            "date": "2026-10-19",
+            "open": 99480.34936682275,
+            "high": 100674.11355922461,
+            "low": 97858.93417461788,
+            "close": 99047.50422532174
+          },
+          {
+            "date": "2026-10-20",
+            "open": 99047.50422532174,
+            "high": 101202.79388543461,
+            "low": 97858.93417461788,
+            "close": 100002.76075635832
+          },
+          {
+            "date": "2026-10-21",
+            "open": 100002.76075635832,
+            "high": 102990.67016343071,
+            "low": 98802.72762728202,
+            "close": 101769.43692038607
+          },
+          {
+            "date": "2026-10-22",
+            "open": 101769.43692038607,
+            "high": 103796.29123487417,
+            "low": 100548.20367734143,
+            "close": 102565.50517280056
+          },
+          {
+            "date": "2026-10-23",
+            "open": 102565.50517280056,
+            "high": 103796.29123487417,
+            "low": 100773.86865209504,
+            "close": 101997.84276527839
+          },
+          {
+            "date": "2026-10-24",
+            "open": 101997.84276527839,
+            "high": 103221.81687846173,
+            "low": 100402.93749069195,
+            "close": 101622.40636709712
+          },
+          {
+            "date": "2026-10-25",
+            "open": 101622.40636709712,
+            "high": 103881.79471643806,
+            "low": 100402.93749069195,
+            "close": 102649.99477908899
+          },
+          {
+            "date": "2026-10-26",
+            "open": 102649.99477908899,
+            "high": 105408.87095371088,
+            "low": 101418.19484173991,
+            "close": 104158.96339299493
+          },
+          {
+            "date": "2026-10-27",
+            "open": 104158.96339299493,
+            "high": 105686.7446837258,
+            "low": 102909.05583227899,
+            "close": 104433.54217759466
+          },
+          {
+            "date": "2026-10-28",
+            "open": 104433.54217759466,
+            "high": 105686.7446837258,
+            "low": 102225.75219282357,
+            "close": 103467.36051905219
+          },
+          {
+            "date": "2026-10-29",
+            "open": 103467.36051905219,
+            "high": 104708.96884528082,
+            "low": 101729.1379954124,
+            "close": 102964.71457025547
+          },
+          {
+            "date": "2026-10-30",
+            "open": 102964.71457025547,
+            "high": 105083.93938120216,
+            "low": 101729.1379954124,
+            "close": 103837.88476403375
+          },
+          {
+            "date": "2026-10-31",
+            "open": 103837.88476403375,
+            "high": 106125.46379598197,
+            "low": 102591.83014686534,
+            "close": 104867.0590869387
+          },
+          {
+            "date": "2026-11-01",
+            "open": 104867.0590869387,
+            "high": 106125.46379598197,
+            "low": 103232.31686247438,
+            "close": 104486.15067052063
+          },
+          {
+            "date": "2026-11-02",
+            "open": 104486.15067052063,
+            "high": 105739.98447856687,
+            "low": 101841.36770560521,
+            "close": 103078.30739433726
+          },
+          {
+            "date": "2026-11-03",
+            "open": 103078.30739433726,
+            "high": 104315.2470830693,
+            "low": 101189.14438905528,
+            "close": 102418.16233710048
+          },
+          {
+            "date": "2026-11-04",
+            "open": 102418.16233710048,
+            "high": 104314.79116372339,
+            "low": 101189.14438905528,
+            "close": 103077.8568811496
+          },
+          {
+            "date": "2026-11-05",
+            "open": 103077.8568811496,
+            "high": 104840.06200501541,
+            "low": 101840.9225985758,
+            "close": 103596.8992144421
+          },
+          {
+            "date": "2026-11-06",
+            "open": 103596.8992144421,
+            "high": 104840.06200501541,
+            "low": 101400.27128243886,
+            "close": 102631.85352473569
+          },
+          {
+            "date": "2026-11-07",
+            "open": 102631.85352473569,
+            "high": 103863.43576703253,
+            "low": 99725.1188543828,
+            "close": 100936.35511577206
+          },
+          {
+            "date": "2026-11-08",
+            "open": 100936.35511577206,
+            "high": 102147.59137716133,
+            "low": 99067.23686325845,
+            "close": 100270.4826551199
+          },
+          {
+            "date": "2026-11-09",
+            "open": 100270.4826551199,
+            "high": 102047.02957676715,
+            "low": 99067.23686325845,
+            "close": 100836.98574779363
+          },
+          {
+            "date": "2026-11-10",
+            "open": 100836.98574779363,
+            "high": 101240.3336907848,
+            "low": 99600,
+            "close": 100000
+          }
+        ]
+      },
+      "sma_trend": "neutral",
+      "strategy_id": "short-strangle",
+      "trend": "neutral",
+      "underlying": "BTC",
+      "uptime_sec": 0,
+      "utilisation_30d": {
+        "mean_pct": 54.86451632776079,
+        "allowed_share": 0.8997453135718148,
+        "allowed_hours": 647.666682155,
+        "measured_hours": 719.8333488216666
+      },
+      "utilisation_7d": {
+        "mean_pct": 54.85911313913834,
+        "allowed_share": 0.9036742889220303,
+        "allowed_hours": 151.66668214277777,
+        "measured_hours": 167.83334880944443
+      },
+      "version": "scenario drawdown"
+    },
+    "/api/summary": {
+      "as_of": "2026-11-10T00:59:31.012949-03:00",
+      "strategy_id": "short-strangle",
+      "underlying": "BTC",
+      "environment": "testnet (demo)",
+      "spot": 100000,
+      "stop_loss_multiple": 0,
+      "delta_exit_threshold": 0,
+      "repair_cooldown_hours": 0,
+      "holding": {
+        "strangles": 3,
+        "legs": 6,
+        "calls": 3,
+        "puts": 3,
+        "notional_coin": 9,
+        "notional_usd": 900000,
+        "nearest_expiry": "2026-12-05T05:00:00-03:00",
+        "nearest_dte": 25.16700216494213,
+        "nearest": {
+          "expiry": "2026-12-05T05:00:00-03:00",
+          "put_strike": 90000,
+          "call_strike": 110000
+        },
+        "coin": "BTC"
+      },
+      "income": {
+        "coin": "BTC",
+        "months": [
+          {
+            "month": "2026-06",
+            "realised_coin": 0.015708044107347323,
+            "realised_usd": 1570.8044107347318,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.015708044107347323,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1570.804410734732,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-07",
+            "realised_coin": 0.01665715404029066,
+            "realised_usd": 1665.715404029066,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.01665715404029066,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1665.715404029066,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-08",
+            "realised_coin": 0.023066225183909866,
+            "realised_usd": 2306.6225183909864,
+            "closes": 19,
+            "premium_coin": 0,
+            "buyback_coin": -0.023066225183909866,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2306.6225183909864,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-09",
+            "realised_coin": -0.1480690004097421,
+            "realised_usd": -14806.900040974211,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": 0.1480690004097421,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": 14806.900040974208,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-10",
+            "realised_coin": 0.018852127055043327,
+            "realised_usd": 1885.212705504333,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.018852127055043327,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1885.212705504333,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-11",
+            "realised_coin": -0.004913233172628886,
+            "realised_usd": -491.3233172628886,
+            "closes": 6,
+            "premium_coin": 0,
+            "buyback_coin": 0.004913233172628886,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": 491.3233172628886,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          }
+        ],
+        "this_month": {
+          "month": "2026-11",
+          "realised_coin": -0.004913233172628886,
+          "realised_usd": -491.3233172628886,
+          "closes": 6,
+          "premium_coin": 0,
+          "buyback_coin": 0.004913233172628886,
+          "fees_coin": 0,
+          "premium_usd": 0,
+          "buyback_usd": 491.3233172628886,
+          "fees_usd": 0,
+          "spot_start": null,
+          "spot_end": null,
+          "spot_days": null,
+          "hold_usd": null
+        },
+        "unrealised_coin": -0.033600000000000005,
+        "unrealised_usd": -3360.0000000000005,
+        "basis": "realised: journal closes, net of fees; unrealised: open book at its marks",
+        "summary": null,
+        "start": null
+      },
+      "worst_case": {
+        "model": "model: Black–Scholes on each leg's current IV (DVOL when missing), spot moved ±3 daily σ (σ = DVOL ÷ √365) over one day",
+        "available": true,
+        "sigmas": 3,
+        "dvol": 52,
+        "move_pct": 8.165413192407335,
+        "coin": "BTC",
+        "down": {
+          "spot": 91834.58680759267,
+          "loss_coin": 0.022421459647674207,
+          "loss_usd": 2059.065482367273,
+          "pct_of_equity": 0.8968583859069682
+        },
+        "up": {
+          "spot": 108165.41319240733,
+          "loss_coin": 0.06761622041970496,
+          "loss_usd": 7313.736420206276,
+          "pct_of_equity": 2.704648816788198
+        },
+        "scenarios": [
+          {
+            "sigmas": -3,
+            "move_pct": -8.165413192407335,
+            "spot": 91834.58680759267,
+            "result_coin": -0.022421459647674207,
+            "result_usd": -2059.065482367273,
+            "pct_of_equity": -0.8968583859069682
+          },
+          {
+            "sigmas": -2,
+            "move_pct": -5.443608794938223,
+            "spot": 94556.39120506178,
+            "result_coin": 0.0005677970391501742,
+            "result_usd": 53.68883895895965,
+            "pct_of_equity": 0.022711881566006967
+          },
+          {
+            "sigmas": 0,
+            "move_pct": 0,
+            "spot": 100000,
+            "result_coin": 0.005889202800173711,
+            "result_usd": 588.920280017371,
+            "pct_of_equity": 0.23556811200694844
+          },
+          {
+            "sigmas": 2,
+            "move_pct": 5.443608794938223,
+            "spot": 105443.60879493822,
+            "result_coin": -0.03400764721060514,
+            "result_usd": -3585.88904851132,
+            "pct_of_equity": -1.3603058884242056
+          },
+          {
+            "sigmas": 3,
+            "move_pct": 8.165413192407335,
+            "spot": 108165.41319240733,
+            "result_coin": -0.06761622041970496,
+            "result_usd": -7313.736420206276,
+            "pct_of_equity": -2.704648816788198
+          }
+        ]
+      },
+      "last_action": {
+        "at": "2026-11-09T08:59:30.955806-03:00",
+        "kind": "close",
+        "instrument": "demo-call",
+        "option_type": "call",
+        "qty": 0.3,
+        "rule": "delta_drift",
+        "reason": "Bought back the call: little premium was left to earn; it is sold again nearer the price (delta drift)",
+        "pnl_coin": 0.0004545972650072258,
+        "pnl_usd": 45.45972650072258,
+        "spot": 100000
+      },
+      "strangle": {
+        "strangle_id": "st-1",
+        "expiry": "2026-12-05T05:00:00-03:00",
+        "spot": 100000,
+        "put": {
+          "instrument": "BTC-5Dec26-90000-P",
+          "strike": 90000,
+          "qty": 1.5,
+          "premium_coin": 0.021,
+          "exit_line": null
+        },
+        "call": {
+          "instrument": "BTC-5Dec26-110000-C",
+          "strike": 110000,
+          "qty": 1.5,
+          "premium_coin": 0.018000000000000002,
+          "exit_line": null
+        },
+        "premium_coin": 0.03900000000000001,
+        "break_even_low": 87719.29824561405,
+        "break_even_high": 112936.34496919917,
+        "exit_lines": false,
+        "exit_lines_reason": "no delta exit threshold",
+        "exit_lines_model": "model: Black–Scholes delta on the leg's IV (DVOL when missing), today, zero rate"
+      }
+    }
+  },
+  "mixed": {
+    "/api/positions": {
+      "as_of": "2026-11-10T00:59:30.373093-03:00",
+      "strangles": [
+        {
+          "id": "st-1",
+          "slot": {
+            "dte": 25,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:29.203097-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-5Dec26-110000-C",
+              "instrument": "BTC-5Dec26-110000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 110000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.0035257769550558695,
+              "bid": 0.003420003646404193,
+              "ask": 0.0036315502637075457,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.002542266913483239,
+              "roi_pct": 70.61852537453443,
+              "loss_multiple": -0.7061852537453442,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 10.16404513857648,
+              "greeks": {
+                "delta": -0.0432809027715296,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-5Dec26-90000-P",
+              "instrument": "BTC-5Dec26-90000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 90000,
+              "expiry": "2026-12-05T05:00:00-03:00",
+              "dte": 25.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.004334685824952207,
+              "bid": 0.004204645250203641,
+              "ask": 0.004464726399700773,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.0028995942525143377,
+              "roi_pct": 69.03795839319852,
+              "loss_multiple": -0.6903795839319852,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 9.865781250255608,
+              "greeks": {
+                "delta": 0.03731562500511215,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-2",
+          "slot": {
+            "dte": 45,
+            "delta": 0.16
+          },
+          "opened_at": "2026-11-10T00:59:29.203097-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-25Dec26-114000-C",
+              "instrument": "BTC-25Dec26-114000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 114000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.0021246672554578096,
+              "bid": 0.0020609272377940754,
+              "ask": 0.002188407273121544,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.002962599823362657,
+              "roi_pct": 82.29443953785159,
+              "loss_multiple": -0.8229443953785158,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 14.1700104163429,
+              "greeks": {
+                "delta": -0.12340020832685797,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-25Dec26-87000-P",
+              "instrument": "BTC-25Dec26-87000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 87000,
+              "expiry": "2026-12-25T05:00:00-03:00",
+              "dte": 45.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.00303688437333224,
+              "bid": 0.0029457778421322725,
+              "ask": 0.003127990904532207,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.003288934688000328,
+              "roi_pct": 78.30796876191258,
+              "loss_multiple": -0.7830796876191257,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 12.870255208580419,
+              "greeks": {
+                "delta": 0.09740510417160839,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "st-3",
+          "slot": {
+            "dte": 60,
+            "delta": 0.18
+          },
+          "opened_at": "2026-11-10T00:59:29.203097-03:00",
+          "legs": [
+            {
+              "position_id": "BTC-9Jan27-116000-C",
+              "instrument": "BTC-9Jan27-116000-C",
+              "option_type": "call",
+              "side": "sell",
+              "strike": 116000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.012,
+              "mark": 0.0017434947438443242,
+              "bid": 0.0016911899015289943,
+              "ask": 0.001795799586159654,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0036,
+              "unrealised_pnl": 0.003076951576846703,
+              "roi_pct": 85.47087713463064,
+              "loss_multiple": -0.8547087713463064,
+              "stop_loss_mark": 0.036000000000000004,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 16.172993055226108,
+              "greeks": {
+                "delta": -0.16345986110452213,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            },
+            {
+              "position_id": "BTC-9Jan27-84000-P",
+              "instrument": "BTC-9Jan27-84000-P",
+              "option_type": "put",
+              "side": "sell",
+              "strike": 84000,
+              "expiry": "2027-01-09T05:00:00-03:00",
+              "dte": 60.16700957068287,
+              "qty": 0.3,
+              "entry_price": 0.014,
+              "mark": 0.002064519944441791,
+              "bid": 0.002002584346108537,
+              "ask": 0.002126455542775045,
+              "mark_source": "live",
+              "mark_as_of": "2026-11-10T00:59:30.373093-03:00",
+              "premium_received": 0.0042,
+              "unrealised_pnl": 0.0035806440166674626,
+              "roi_pct": 85.25342896827293,
+              "loss_multiple": -0.8525342896827293,
+              "stop_loss_mark": 0.042,
+              "moneyness": "OTM",
+              "distance_to_strike_pct": 15.874729166905233,
+              "greeks": {
+                "delta": 0.15749458333810465,
+                "gamma": 0.00002,
+                "theta": -15,
+                "vega": 40,
+                "rho": 0,
+                "iv": 0.5230627090650348
+              },
+              "manual_close": {
+                "allowed": false,
+                "reason": "",
+                "rebuilt": false
+              }
+            }
+          ]
+        }
+      ],
+      "strategy_id": "short-strangle",
+      "underlying": "BTC"
+    },
+    "/api/status": {
+      "account": {
+        "equity": 2.5,
+        "margin_used": 0.42,
+        "as_of": "2026-11-10T00:59:30.374746-03:00"
+      },
+      "as_of": "2026-11-10T00:59:30.374746-03:00",
+      "config": null,
+      "connections": {},
+      "deployment": "demo",
+      "direction": "sma",
+      "environment": "testnet (demo)",
+      "eval_interval_ms": 0,
+      "event_counts": {},
+      "flip_buffer_pct": 2.737835349394843,
+      "gex_as_of": null,
+      "gex_bias": "",
+      "greeks": {
+        "net_delta": 0.011377697906425349,
+        "net_gamma": -0.00012,
+        "net_vega": -72,
+        "net_theta": 27
+      },
+      "halted": false,
+      "held_legs": null,
+      "history_since": "2026-05-10T00:59:29.203098-03:00",
+      "key_scope": null,
+      "loop_age_sec": 0,
+      "loop_at": "2026-11-10T00:59:30.374746-03:00",
+      "loop_stale": false,
+      "market": {
+        "as_of": "2026-11-10T00:59:30.374746-03:00",
+        "spot": 99851.09012802668,
+        "dvol": 52.306270906503485,
+        "iv_percentile": 55,
+        "option_iv": 0,
+        "distance_to_strike_pct": 0,
+        "distance_to_strike_sd": 0,
+        "delta": 0,
+        "bid": 0,
+        "ask": 0,
+        "mid": 0,
+        "spread_pct": 0,
+        "intrinsic": 0,
+        "extrinsic": 0,
+        "oi_as_of": "0001-01-01T00:00:00Z",
+        "gex_regime": "POSITIVE/PINNING",
+        "gamma_flip": 95857.04652290561
+      },
+      "median_flip": 0,
+      "open_legs": 6,
+      "open_strangles": 3,
+      "pending": 1,
+      "pnl": [
+        {
+          "slot": null,
+          "realised": 0,
+          "unrealised": 0.01835099127087473,
+          "total": 0.01835099127087473,
+          "open_legs": 6,
+          "closed_legs": 0
+        }
+      ],
+      "risk": {
+        "status": {
+          "limit_im_pct": 35,
+          "max_mm_pct": 35,
+          "reason": "DVOL band ≥30 (IM 35%) (confirmed)",
+          "band": {
+            "min_iv_pct": 30,
+            "max_im_pct": 35
+          },
+          "band_limit_pct": 35,
+          "live_iv_pct": 81,
+          "live_iv_known": true,
+          "regime_used": true,
+          "regime_known": true,
+          "regime_negative": false,
+          "frozen": false,
+          "pending": [
+            {
+              "rule": "dvol_band",
+              "to": "band ≥70 (IM 50%)",
+              "days": 1,
+              "need": 2
+            }
+          ],
+          "can_rebalance": true
+        },
+        "im_pct": 12.538374666289878,
+        "mm_pct": 8.776862266402913,
+        "unit": "USD",
+        "margin_balance": 185060.88446259388,
+        "as_of": "2026-11-10T00:59:30.374746-03:00",
+        "im_over_limit": false,
+        "im_under_use": false,
+        "entries_allowed": false
+      },
+      "sma": {
+        "sma9": 99700,
+        "sma21": 100400,
+        "swing_high": 103000,
+        "swing_high_date": "2026-10-29",
+        "swing_low": 98500,
+        "swing_low_date": "2026-11-02",
+        "price": 99851.09012802668,
+        "trend": "neutral",
+        "reason": "inside the swings, SMAs and price not aligned",
+        "sma9_band_pct": 0,
+        "candles": [
+          {
+            "date": "2026-09-11",
+            "open": 100000,
+            "high": 103382.01754231173,
+            "low": 98800,
+            "close": 102156.14381651356
+          },
+          {
+            "date": "2026-09-12",
+            "open": 102156.14381651356,
+            "high": 104866.92946594425,
+            "low": 100930.27009071539,
+            "close": 103623.44808887772
+          },
+          {
+            "date": "2026-09-13",
+            "open": 103623.44808887772,
+            "high": 105888.5623988044,
+            "low": 102379.96671181118,
+            "close": 104632.96679723755
+          },
+          {
+            "date": "2026-09-14",
+            "open": 104632.96679723755,
+            "high": 105888.5623988044,
+            "low": 102854.22763759317,
+            "close": 104103.469268819
+          },
+          {
+            "date": "2026-09-15",
+            "open": 104103.469268819,
+            "high": 105352.71090004483,
+            "low": 101864.24374141239,
+            "close": 103101.46127673319
+          },
+          {
+            "date": "2026-09-16",
+            "open": 103101.46127673319,
+            "high": 104512.10109250607,
+            "low": 101864.24374141239,
+            "close": 103272.82716650797
+          },
+          {
+            "date": "2026-09-17",
+            "open": 103272.82716650797,
+            "high": 105681.11593327347,
+            "low": 102033.55324050986,
+            "close": 104427.98017121883
+          },
+          {
+            "date": "2026-09-18",
+            "open": 104427.98017121883,
+            "high": 106076.17548280112,
+            "low": 103174.8444091642,
+            "close": 104818.35522015921
+          },
+          {
+            "date": "2026-09-19",
+            "open": 104818.35522015921,
+            "high": 106076.17548280112,
+            "low": 102454.81665556847,
+            "close": 103699.20714126364
+          },
+          {
+            "date": "2026-09-20",
+            "open": 103699.20714126364,
+            "high": 104943.59762695881,
+            "low": 101195.09530668089,
+            "close": 102424.18553307782
+          },
+          {
+            "date": "2026-09-21",
+            "open": 102424.18553307782,
+            "high": 103697.6765280567,
+            "low": 101195.09530668089,
+            "close": 102468.0598103327
+          },
+          {
+            "date": "2026-09-22",
+            "open": 102468.0598103327,
+            "high": 104513.47844886083,
+            "low": 101238.44309260871,
+            "close": 103274.18819057394
+          },
+          {
+            "date": "2026-09-23",
+            "open": 103274.18819057394,
+            "high": 104513.47844886083,
+            "low": 101843.07005018131,
+            "close": 103080.03041516327
+          },
+          {
+            "date": "2026-09-24",
+            "open": 103080.03041516327,
+            "high": 104316.99078014524,
+            "low": 100292.9883026892,
+            "close": 101511.12176385547
+          },
+          {
+            "date": "2026-09-25",
+            "open": 101511.12176385547,
+            "high": 102729.25522502173,
+            "low": 98941.37189376367,
+            "close": 100143.08896129926
+          },
+          {
+            "date": "2026-09-26",
+            "open": 100143.08896129926,
+            "high": 101410.57681612417,
+            "low": 98941.37189376367,
+            "close": 100208.0798578302
+          },
+          {
+            "date": "2026-09-27",
+            "open": 100208.0798578302,
+            "high": 102015.05745787399,
+            "low": 99005.58289953624,
+            "close": 100805.39274493477
+          },
+          {
+            "date": "2026-09-28",
+            "open": 100805.39274493477,
+            "high": 102015.05745787399,
+            "low": 99034.5680946467,
+            "close": 100237.41709984484
+          },
+          {
+            "date": "2026-09-29",
+            "open": 100237.41709984484,
+            "high": 101440.26610504297,
+            "low": 97331.2343558332,
+            "close": 98513.39509699718
+          },
+          {
+            "date": "2026-09-30",
+            "open": 98513.39509699718,
+            "high": 99695.55583816115,
+            "low": 96184.41423338049,
+            "close": 97352.64598520292
+          },
+          {
+            "date": "2026-10-01",
+            "open": 97352.64598520292,
+            "high": 98854.37432244759,
+            "low": 96184.41423338049,
+            "close": 97682.18806565968
+          },
+          {
+            "date": "2026-10-02",
+            "open": 97682.18806565968,
+            "high": 99473.94618428644,
+            "low": 96510.00180887176,
+            "close": 98294.41322557948
+          },
+          {
+            "date": "2026-10-03",
+            "open": 98294.41322557948,
+            "high": 99473.94618428644,
+            "low": 96459.4308894967,
+            "close": 97631.0029245918
+          },
+          {
+            "date": "2026-10-04",
+            "open": 97631.0029245918,
+            "high": 98802.5749596869,
+            "low": 94926.39154977568,
+            "close": 96079.34367386202
+          },
+          {
+            "date": "2026-10-05",
+            "open": 96079.34367386202,
+            "high": 97232.29579794836,
+            "low": 94271.91045407939,
+            "close": 95416.91341506012
+          },
+          {
+            "date": "2026-10-06",
+            "open": 95416.91341506012,
+            "high": 97371.9798948122,
+            "low": 94271.91045407939,
+            "close": 96217.37143756147
+          },
+          {
+            "date": "2026-10-07",
+            "open": 96217.37143756147,
+            "high": 98182.4491899808,
+            "low": 95062.76298031073,
+            "close": 97018.23042488222
+          },
+          {
+            "date": "2026-10-08",
+            "open": 97018.23042488222,
+            "high": 98182.4491899808,
+            "low": 95311.67662803824,
+            "close": 96469.30832797394
+          },
+          {
+            "date": "2026-10-09",
+            "open": 96469.30832797394,
+            "high": 97626.94002790963,
+            "low": 94170.58050902435,
+            "close": 95314.35274192748
+          },
+          {
+            "date": "2026-10-10",
+            "open": 95314.35274192748,
+            "high": 96458.1249748306,
+            "low": 94159.04783537479,
+            "close": 95302.67999531861
+          },
+          {
+            "date": "2026-10-11",
+            "open": 95302.67999531861,
+            "high": 97784.7582169782,
+            "low": 94159.04783537479,
+            "close": 96625.2551551168
+          },
+          {
+            "date": "2026-10-12",
+            "open": 96625.2551551168,
+            "high": 98802.9621585146,
+            "low": 95465.7520932554,
+            "close": 97631.38553212905
+          },
+          {
+            "date": "2026-10-13",
+            "open": 97631.38553212905,
+            "high": 98802.9621585146,
+            "low": 96074.2507982566,
+            "close": 97241.14453264838
+          },
+          {
+            "date": "2026-10-14",
+            "open": 97241.14453264838,
+            "high": 98408.03826704016,
+            "low": 95361.20508085864,
+            "close": 96519.43834095004
+          },
+          {
+            "date": "2026-10-15",
+            "open": 96519.43834095004,
+            "high": 98271.13803111934,
+            "low": 95361.20508085864,
+            "close": 97105.86761968314
+          },
+          {
+            "date": "2026-10-16",
+            "open": 97105.86761968314,
+            "high": 99986.45537603188,
+            "low": 95940.59720824694,
+            "close": 98800.84523323308
+          },
+          {
+            "date": "2026-10-17",
+            "open": 98800.84523323308,
+            "high": 101042.68954311727,
+            "low": 97615.23509043427,
+            "close": 99844.55488450323
+          },
+          {
+            "date": "2026-10-18",
+            "open": 99844.55488450323,
+            "high": 101042.68954311727,
+            "low": 98286.58517442088,
+            "close": 99480.34936682275
+          },
+          {
+            "date": "2026-10-19",
+            "open": 99480.34936682275,
+            "high": 100674.11355922461,
+            "low": 97858.93417461788,
+            "close": 99047.50422532174
+          },
+          {
+            "date": "2026-10-20",
+            "open": 99047.50422532174,
+            "high": 101202.79388543461,
+            "low": 97858.93417461788,
+            "close": 100002.76075635832
+          },
+          {
+            "date": "2026-10-21",
+            "open": 100002.76075635832,
+            "high": 102990.67016343071,
+            "low": 98802.72762728202,
+            "close": 101769.43692038607
+          },
+          {
+            "date": "2026-10-22",
+            "open": 101769.43692038607,
+            "high": 103796.29123487417,
+            "low": 100548.20367734143,
+            "close": 102565.50517280056
+          },
+          {
+            "date": "2026-10-23",
+            "open": 102565.50517280056,
+            "high": 103796.29123487417,
+            "low": 100773.86865209504,
+            "close": 101997.84276527839
+          },
+          {
+            "date": "2026-10-24",
+            "open": 101997.84276527839,
+            "high": 103221.81687846173,
+            "low": 100402.93749069195,
+            "close": 101622.40636709712
+          },
+          {
+            "date": "2026-10-25",
+            "open": 101622.40636709712,
+            "high": 103881.79471643806,
+            "low": 100402.93749069195,
+            "close": 102649.99477908899
+          },
+          {
+            "date": "2026-10-26",
+            "open": 102649.99477908899,
+            "high": 105408.87095371088,
+            "low": 101418.19484173991,
+            "close": 104158.96339299493
+          },
+          {
+            "date": "2026-10-27",
+            "open": 104158.96339299493,
+            "high": 105686.7446837258,
+            "low": 102909.05583227899,
+            "close": 104433.54217759466
+          },
+          {
+            "date": "2026-10-28",
+            "open": 104433.54217759466,
+            "high": 105686.7446837258,
+            "low": 102225.75219282357,
+            "close": 103467.36051905219
+          },
+          {
+            "date": "2026-10-29",
+            "open": 103467.36051905219,
+            "high": 104708.96884528082,
+            "low": 101729.1379954124,
+            "close": 102964.71457025547
+          },
+          {
+            "date": "2026-10-30",
+            "open": 102964.71457025547,
+            "high": 105083.93938120216,
+            "low": 101729.1379954124,
+            "close": 103837.88476403375
+          },
+          {
+            "date": "2026-10-31",
+            "open": 103837.88476403375,
+            "high": 106125.46379598197,
+            "low": 102591.83014686534,
+            "close": 104867.0590869387
+          },
+          {
+            "date": "2026-11-01",
+            "open": 104867.0590869387,
+            "high": 106125.46379598197,
+            "low": 103232.31686247438,
+            "close": 104486.15067052063
+          },
+          {
+            "date": "2026-11-02",
+            "open": 104486.15067052063,
+            "high": 105739.98447856687,
+            "low": 101841.36770560521,
+            "close": 103078.30739433726
+          },
+          {
+            "date": "2026-11-03",
+            "open": 103078.30739433726,
+            "high": 104315.2470830693,
+            "low": 101189.14438905528,
+            "close": 102418.16233710048
+          },
+          {
+            "date": "2026-11-04",
+            "open": 102418.16233710048,
+            "high": 104314.79116372339,
+            "low": 101189.14438905528,
+            "close": 103077.8568811496
+          },
+          {
+            "date": "2026-11-05",
+            "open": 103077.8568811496,
+            "high": 104840.06200501541,
+            "low": 101840.9225985758,
+            "close": 103596.8992144421
+          },
+          {
+            "date": "2026-11-06",
+            "open": 103596.8992144421,
+            "high": 104840.06200501541,
+            "low": 101400.27128243886,
+            "close": 102631.85352473569
+          },
+          {
+            "date": "2026-11-07",
+            "open": 102631.85352473569,
+            "high": 103863.43576703253,
+            "low": 99725.1188543828,
+            "close": 100936.35511577206
+          },
+          {
+            "date": "2026-11-08",
+            "open": 100936.35511577206,
+            "high": 102147.59137716133,
+            "low": 99067.23686325845,
+            "close": 100270.4826551199
+          },
+          {
+            "date": "2026-11-09",
+            "open": 100270.4826551199,
+            "high": 102047.02957676715,
+            "low": 99067.23686325845,
+            "close": 100836.98574779363
+          },
+          {
+            "date": "2026-11-10",
+            "open": 100836.98574779363,
+            "high": 101240.3336907848,
+            "low": 99451.68576751457,
+            "close": 99851.09012802668
+          }
+        ]
+      },
+      "sma_trend": "neutral",
+      "strategy_id": "short-strangle",
+      "trend": "neutral",
+      "underlying": "BTC",
+      "uptime_sec": 1,
+      "utilisation_30d": {
+        "mean_pct": 55.03306360430532,
+        "allowed_share": 0.8941885173795631,
+        "allowed_hours": 643.6669920288541,
+        "measured_hours": 719.8336586955209
+      },
+      "utilisation_7d": {
+        "mean_pct": 55.23365284516535,
+        "allowed_share": 0.8997022798005155,
+        "allowed_hours": 151.00032529672444,
+        "measured_hours": 167.83365863005778
+      },
+      "version": "scenario mixed"
+    },
+    "/api/summary": {
+      "as_of": "2026-11-10T00:59:30.377776-03:00",
+      "strategy_id": "short-strangle",
+      "underlying": "BTC",
+      "environment": "testnet (demo)",
+      "spot": 99851.09012802668,
+      "stop_loss_multiple": 0,
+      "delta_exit_threshold": 0,
+      "repair_cooldown_hours": 0,
+      "holding": {
+        "strangles": 3,
+        "legs": 6,
+        "calls": 3,
+        "puts": 3,
+        "notional_coin": 1.8,
+        "notional_usd": 179731.96223044803,
+        "nearest_expiry": "2026-12-05T05:00:00-03:00",
+        "nearest_dte": 25.16700951648148,
+        "nearest": {
+          "expiry": "2026-12-05T05:00:00-03:00",
+          "put_strike": 90000,
+          "call_strike": 110000
+        },
+        "coin": "BTC"
+      },
+      "income": {
+        "coin": "BTC",
+        "months": [
+          {
+            "month": "2026-06",
+            "realised_coin": 0.019032171640801378,
+            "realised_usd": 1903.2171640801375,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.019032171640801378,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1903.2171640801378,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-07",
+            "realised_coin": 0.018898249864601084,
+            "realised_usd": 1889.824986460108,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.018898249864601084,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1889.8249864601082,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-08",
+            "realised_coin": 0.02195230010970076,
+            "realised_usd": 2195.2300109700764,
+            "closes": 19,
+            "premium_coin": 0,
+            "buyback_coin": -0.02195230010970076,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -2195.230010970076,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-09",
+            "realised_coin": -0.13829626647774987,
+            "realised_usd": -13829.626647774987,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": 0.13829626647774987,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": 13829.626647774985,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-10",
+            "realised_coin": 0.019599799294619594,
+            "realised_usd": 1959.9799294619593,
+            "closes": 18,
+            "premium_coin": 0,
+            "buyback_coin": -0.019599799294619594,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -1959.9799294619595,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          },
+          {
+            "month": "2026-11",
+            "realised_coin": 0.006299720722236382,
+            "realised_usd": 629.9720722236382,
+            "closes": 6,
+            "premium_coin": 0,
+            "buyback_coin": -0.006299720722236382,
+            "fees_coin": 0,
+            "premium_usd": 0,
+            "buyback_usd": -629.9720722236382,
+            "fees_usd": 0,
+            "spot_start": null,
+            "spot_end": null,
+            "spot_days": null,
+            "hold_usd": null
+          }
+        ],
+        "this_month": {
+          "month": "2026-11",
+          "realised_coin": 0.006299720722236382,
+          "realised_usd": 629.9720722236382,
+          "closes": 6,
+          "premium_coin": 0,
+          "buyback_coin": -0.006299720722236382,
+          "fees_coin": 0,
+          "premium_usd": 0,
+          "buyback_usd": -629.9720722236382,
+          "fees_usd": 0,
+          "spot_start": null,
+          "spot_end": null,
+          "spot_days": null,
+          "hold_usd": null
+        },
+        "unrealised_coin": 0.01835099127087473,
+        "unrealised_usd": 1832.3664833267435,
+        "basis": "realised: journal closes, net of fees; unrealised: open book at its marks",
+        "summary": null,
+        "start": null
+      },
+      "worst_case": {
+        "model": "model: Black–Scholes on each leg's current IV (DVOL when missing), spot moved ±3 daily σ (σ = DVOL ÷ √365) over one day",
+        "available": true,
+        "sigmas": 3,
+        "dvol": 52.306270906503485,
+        "move_pct": 8.213506048184529,
+        "coin": "BTC",
+        "down": {
+          "spot": 91649.81480118303,
+          "loss_coin": 0.004936725233970177,
+          "loss_usd": 452.44995341769373,
+          "pct_of_equity": 0.19746900935880707
+        },
+        "up": {
+          "spot": 108052.36545487035,
+          "loss_coin": 0.013299494668217228,
+          "loss_usd": 1437.0418582553077,
+          "pct_of_equity": 0.5319797867286891
+        },
+        "scenarios": [
+          {
+            "sigmas": -3,
+            "move_pct": -8.213506048184529,
+            "spot": 91649.81480118303,
+            "result_coin": -0.004936725233970177,
+            "result_usd": -452.44995341769373,
+            "pct_of_equity": -0.19746900935880707
+          },
+          {
+            "sigmas": -2,
+            "move_pct": -5.475670698789686,
+            "spot": 94383.57324346426,
+            "result_coin": -0.00015130038835448398,
+            "result_usd": -14.280271286020024,
+            "pct_of_equity": -0.006052015534179359
+          },
+          {
+            "sigmas": 0,
+            "move_pct": 0,
+            "spot": 99851.09012802668,
+            "result_coin": 0.0011891408317864912,
+            "result_usd": 118.73700836962955,
+            "pct_of_equity": 0.04756563327145965
+          },
+          {
+            "sigmas": 2,
+            "move_pct": 5.475670698789686,
+            "spot": 105318.60701258913,
+            "result_coin": -0.006626082713055344,
+            "result_usd": -697.8498012891862,
+            "pct_of_equity": -0.26504330852221375
+          },
+          {
+            "sigmas": 3,
+            "move_pct": 8.213506048184529,
+            "spot": 108052.36545487035,
+            "result_coin": -0.013299494668217228,
+            "result_usd": -1437.0418582553077,
+            "pct_of_equity": -0.5319797867286891
+          }
+        ]
+      },
+      "last_action": {
+        "at": "2026-11-09T08:59:29.203098-03:00",
+        "kind": "close",
+        "instrument": "demo-call",
+        "option_type": "call",
+        "qty": 0.3,
+        "rule": "delta_drift",
+        "reason": "Bought back the call: little premium was left to earn; it is sold again nearer the price (delta drift)",
+        "pnl_coin": 0.003179074182191331,
+        "pnl_usd": 317.9074182191331,
+        "spot": 100000
+      },
+      "strangle": {
+        "strangle_id": "st-1",
+        "expiry": "2026-12-05T05:00:00-03:00",
+        "spot": 99851.09012802668,
+        "put": {
+          "instrument": "BTC-5Dec26-90000-P",
+          "strike": 90000,
+          "qty": 0.3,
+          "premium_coin": 0.0042,
+          "exit_line": null
+        },
+        "call": {
+          "instrument": "BTC-5Dec26-110000-C",
+          "strike": 110000,
+          "qty": 0.3,
+          "premium_coin": 0.0036,
+          "exit_line": null
+        },
+        "premium_coin": 0.0078,
+        "break_even_low": 87719.29824561405,
+        "break_even_high": 112936.34496919917,
+        "exit_lines": false,
+        "exit_lines_reason": "no delta exit threshold",
+        "exit_lines_model": "model: Black–Scholes delta on the leg's IV (DVOL when missing), today, zero rate"
+      }
+    }
+  }
+}

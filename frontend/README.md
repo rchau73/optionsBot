@@ -19,7 +19,7 @@ Each area has its own file under `docs/`, so a change to one area does not touch
 - [Analytics](docs/analytics.md): usage events, surveys, retention, and the Analytics page
 - [Assistant](docs/assistant.md): the help assistant, its guard, its panel and its routes
 - [Glossary and help content](docs/glossary-and-help.md): glossary, risk notes, empty states, videos
-- [Testing](docs/testing.md): the viewport check and the accessibility baseline
+- [Testing](docs/testing.md): the viewport check, the accessibility baseline and the four answers on the demo scenarios (`__tests__/scenario-answers.test.jsx`)
 - [Responsive audit](docs/responsive-audit.md): what breaks at phone and tablet widths
 
 ## Run it

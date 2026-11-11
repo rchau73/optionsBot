@@ -1,8 +1,11 @@
 package tests
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"slices"
 	"sort"
@@ -417,5 +420,105 @@ func TestUsabilityKeys_EveryScenarioAndQuestionHasOneKey(t *testing.T) {
 		if _, err := parseUsabilityKeys(bad); err == nil {
 			t.Errorf("no error for %q", bad)
 		}
+	}
+}
+
+// The frontend's scenario fixture (#743): what cmd/monitor-demo serves on
+// /api/positions, /api/status and /api/summary for each scenario, so the
+// Overview's scenario test (frontend/__tests__/scenario-answers.test.jsx)
+// renders the demo's own data. It is checked against the same keys as the
+// demo, so it cannot drift from the round's answers.
+// Rewrite it from the demo: go test ./tests -run TestUsabilityKeys_FrontendScenariosAnswerTheKeys -args -update-scenarios
+// (or UPDATE_GOLDEN=1), then commit it with the key change that needed it.
+const demoScenariosFile = "../frontend/test/demoScenarios.json"
+
+var updateScenarios = flag.Bool("update-scenarios", false, "rewrite frontend/test/demoScenarios.json from cmd/monitor-demo")
+
+var demoScenarioPaths = []string{"/api/positions", "/api/status", "/api/summary"}
+
+// demoScenarios is the fixture: scenario → API path → the demo's answer.
+type demoScenarios map[string]map[string]json.RawMessage
+
+func writeDemoScenarios(t *testing.T) {
+	t.Helper()
+	out := demoScenarios{}
+	for _, scenario := range usabilityScenarios {
+		var args []string
+		if scenario != "default" {
+			args = []string{"-scenario", scenario}
+		}
+		get := demoAPI(t, args...)
+		// Wait for the first marks to move, so the open line is not a bare 0
+		// and the scenario test can tell it apart from the month's result.
+		for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+			var s struct {
+				Income struct {
+					UnrealisedCoin float64 `json:"unrealised_coin"`
+				} `json:"income"`
+			}
+			if get("/api/summary", &s); math.Abs(s.Income.UnrealisedCoin) > 1e-5 {
+				break
+			}
+		}
+		out[scenario] = map[string]json.RawMessage{}
+		for _, path := range demoScenarioPaths {
+			var body json.RawMessage
+			get(path, &body)
+			out[scenario][path] = body
+		}
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(demoScenariosFile, append(b, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Scenario: the frontend fixture is the demo's data (#743).
+func TestUsabilityKeys_FrontendScenariosAnswerTheKeys(t *testing.T) {
+	if *updateScenarios || os.Getenv("UPDATE_GOLDEN") != "" {
+		writeDemoScenarios(t)
+	}
+	doc := readUsabilityKit(t)
+	keys, err := parseUsabilityKeys(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reasons := q4Sentences(t, doc)
+	b, err := os.ReadFile(demoScenariosFile)
+	if err != nil {
+		t.Fatalf("frontend scenario fixture: %v", err)
+	}
+	var fixture demoScenarios
+	if err := json.Unmarshal(b, &fixture); err != nil {
+		t.Fatalf("frontend scenario fixture: %v", err)
+	}
+	for _, scenario := range usabilityScenarios {
+		t.Run(scenario, func(t *testing.T) {
+			served, ok := fixture[scenario]
+			if !ok {
+				t.Fatalf("scenario %s is not in %s", scenario, demoScenariosFile)
+			}
+			get := func(path string, into any) {
+				t.Helper()
+				if err := json.Unmarshal(served[path], into); err != nil {
+					t.Fatalf("scenario %s %s: %v", scenario, path, err)
+				}
+			}
+			var summary struct {
+				AsOf time.Time `json:"as_of"`
+			}
+			get("/api/summary", &summary)
+			facts := fetchDemoFacts(t, get, reasons, summary.AsOf)
+			for _, k := range keys {
+				if k.scenario == scenario {
+					for _, p := range compareUsabilityKey(k, facts) {
+						t.Error(p)
+					}
+				}
+			}
+		})
 	}
 }
