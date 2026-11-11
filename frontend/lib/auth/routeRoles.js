@@ -63,6 +63,7 @@ export const STATE_CHANGING_ROUTES = [
 export const ROLE_GUARDED_READS = [
   { route: "GET /api/admin/audit/export", roles: ADMINS },
   { route: "GET /api/admin/audit/verify", roles: ADMINS },
+  { route: "GET /api/auth/my-data", roles: SIGNED_IN, audit: "my_data_exported" },
   { route: "GET /api/auth/sessions", roles: SIGNED_IN },
   { route: "GET /api/lab/runs", roles: MANAGERS },
   { route: "GET /api/lab/runs/[id]", roles: MANAGERS },

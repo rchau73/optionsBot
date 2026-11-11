@@ -96,6 +96,7 @@ export const EVENTS = {
   manual_close_confirmed: ["side", "last_leg"],
   manual_close_opened: ["side", "allowed"],
   manual_close_result: ["side", "outcome"],
+  my_data_downloaded: ["outcome"],
   notification_followed: ["kind"],
   notifications_opened: [],
   overview_layer_toggle: ["layer"],

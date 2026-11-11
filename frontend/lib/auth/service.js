@@ -3,7 +3,7 @@
 // kept free of Next.js so tests call it directly.
 import crypto from "node:crypto";
 import { guessablePasswordProblem, hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
-import { LOCK_FAILURES, LoginLimiter } from "./limits";
+import { LOCK_FAILURES, LoginLimiter, MY_DATA_DOWNLOADS, MY_DATA_WINDOW_MS, WindowLimiter } from "./limits";
 import { normalizeUsername, ROLES } from "./store";
 import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
 import { authLog } from "./log";
@@ -46,6 +46,8 @@ export class AuthService {
     this.key = key;
     this.now = now;
     this.limiter = limiter;
+    // "Download my data" (#750): per person, in memory.
+    this.myDataLimiter = new WindowLimiter(MY_DATA_DOWNLOADS, MY_DATA_WINDOW_MS);
     this.auditSink = audit;
     this.deleteEvents = deleteEvents;
   }
