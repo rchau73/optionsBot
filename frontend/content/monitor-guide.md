@@ -546,6 +546,22 @@ Active sessions lists every browser where you are signed in to the monitor, what
 
 Learn more: "Sign-in and password" in this guide.
 
+## Download my data
+
+You can download a copy of what the monitor keeps about you, whatever your role, without asking an admin.
+
+**How to download my data**: choose Download my data in the account menu. The window says what the file holds. Choose Download the file and your browser saves one JSON file.
+
+**What the file holds**: your account details, your analytics choice, the browsers where you are signed in, your survey answers with any text you wrote, your usage events and the audit lines of what you did. It holds only your own data. It holds no password, no password hash, no sign-in token and no address. Audit lines where an admin acted on your account are not in it yet.
+
+**When a part is missing**: if the monitor cannot read one part, the file still holds the others and names that part unavailable, with the reason.
+
+**How often**: you can download it 3 times an hour. A 4th try says how many minutes to wait.
+
+**Keeping it safe**: the file is yours. It shows how and when you used the monitor, so keep it somewhere safe. Each download is recorded in the audit trail with how many items each part held, never what they say.
+
+Learn more: "Active sessions" and "Deleting your account" in this guide.
+
 ## Deleting your account
 
 <!-- guide: survey:exit, route:DELETE /api/auth/account -->

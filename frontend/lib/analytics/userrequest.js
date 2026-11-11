@@ -42,8 +42,8 @@ export function parseArgs(argv) {
   return req;
 }
 
-/** A user's survey answers, or [] when the file predates the survey_answers table (#363). */
-function surveyAnswersOf(store, rowId) {
+/** A user's survey answers, or [] when the file predates the survey_answers table (#363); also "Download my data" (#750). */
+export function surveyAnswersOf(store, rowId) {
   if (!store.one("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'survey_answers'")) return [];
   return store.surveyAnswers(rowId);
 }

@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import ActiveSessionsModal from "./ActiveSessions";
 import ChangePasswordModal from "./ChangePassword";
 import DeleteAccountModal from "./DeleteAccount";
+import DownloadMyDataModal from "./DownloadMyData";
 import SignOut from "./SignOut";
 import { useDismiss } from "./useDismiss";
 import { ADMIN_PAGES } from "@/lib/menu";
@@ -16,13 +17,14 @@ const ITEM = "block w-full px-3 py-1.5 text-left hover:bg-line/40 focus-visible:
  * their name ("bob ▾"; "Account ▾" when the name cannot be read): Users,
  * Audit and Analytics (admins only, #306, #308, #445 — links only, the routes
  * enforce the role),
- * change your password, your active sessions (#584), delete your account
+ * change your password, your active sessions (#584), download your data (#750), delete your account
  * (#543), sign out of this browser.
  */
 export default function UserMenu({ role = null, username = null }) {
   const [open, setOpen] = useState(false);
   const [changing, setChanging] = useState(false);
   const [viewingSessions, setViewingSessions] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const ref = useRef(null);
 
@@ -77,6 +79,17 @@ export default function UserMenu({ role = null, username = null }) {
             className={ITEM}
             onClick={() => {
               setOpen(false);
+              setDownloading(true);
+            }}
+          >
+            Download my data
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={ITEM}
+            onClick={() => {
+              setOpen(false);
               setDeleting(true);
             }}
           >
@@ -87,7 +100,8 @@ export default function UserMenu({ role = null, username = null }) {
       ) : null}
       {changing ? <ChangePasswordModal onClose={() => setChanging(false)} /> : null}
       {viewingSessions ? <ActiveSessionsModal onClose={() => setViewingSessions(false)} /> : null}
-      {deleting ? <DeleteAccountModal onClose={() => setDeleting(false)} /> : null}
+      {downloading ? <DownloadMyDataModal onClose={() => setDownloading(false)} /> : null}
+      {deleting ?<DeleteAccountModal onClose={() => setDeleting(false)} /> : null}
     </div>
   );
 }
