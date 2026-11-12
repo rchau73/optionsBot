@@ -1,5 +1,5 @@
 import { configuredBots } from "@/lib/bots";
-import { requireRole } from "@/lib/auth/server";
+import { refuseOtherAccount, requireRole } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,8 @@ export async function POST(request, { params }) {
   const { bot } = await params;
   const target = configuredBots().find((b) => b.name === bot);
   if (!target) return Response.json({ error: "unknown bot" }, { status: 404 });
+  const otherAccount = refuseOtherAccount(auth, user, bot);
+  if (otherAccount) return otherAccount;
 
   const token = process.env.BOT_ADMIN_TOKEN;
   if (!token) return Response.json({ error: "the futures hedge switch is off: BOT_ADMIN_TOKEN is not set on the monitor" }, { status: 503 });

@@ -1,5 +1,5 @@
 import { configuredBots } from "@/lib/bots";
-import { requireRole } from "@/lib/auth/server";
+import { refuseOtherAccount, requireRole } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,7 @@ const TIMEOUT_MS = 125000;
  * browser cannot trigger it, and only by a manager or an admin, re-read from
  * the user database (#171), dry run included. The bot journals the person as
  * "actor"; the monitor audits the request in data/monitor/audit.jsonl.
+ * A manager linked to other accounts than this bot's is refused (403, #760).
  */
 export async function POST(request, { params }) {
   const { auth, user, response } = await requireRole(request, "manager");
@@ -22,6 +23,8 @@ export async function POST(request, { params }) {
   const { bot } = await params;
   const target = configuredBots().find((b) => b.name === bot);
   if (!target) return Response.json({ error: "unknown bot" }, { status: 404 });
+  const otherAccount = refuseOtherAccount(auth, user, bot);
+  if (otherAccount) return otherAccount;
 
   const token = process.env.BOT_ADMIN_TOKEN;
   if (!token) return Response.json({ error: "manual rebalance is off: BOT_ADMIN_TOKEN is not set on the monitor" }, { status: 503 });

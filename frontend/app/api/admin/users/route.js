@@ -1,16 +1,21 @@
 import { adminRequest, serviceAnswer } from "@/lib/auth/admin";
+import { readAccounts } from "@/lib/auth/accountLinks";
 
 export const dynamic = "force-dynamic";
 
 /**
  * GET /api/admin/users → {"users": [{id, username, role, email, created_at,
- * last_sign_in_at}]}, never a hash. Admins only (#306): the person is re-read
+ * last_sign_in_at, accounts}], "accounts": [{account_id, label, environment}]},
+ * never a hash. `accounts` of a user are the account ids they are linked to
+ * (#760); the top-level `accounts` are the registry's, the ones a link may
+ * name ([] without a status file). Admins only (#306): the person is re-read
  * from the database, a manager or a user gets 403.
  */
 export async function GET(request) {
   const { auth, response } = await adminRequest(request);
   if (response) return response;
-  return Response.json({ users: auth.listUsers() }, { headers: { "Cache-Control": "no-store" } });
+  const accounts = readAccounts().map(({ account_id, label, environment }) => ({ account_id, label, environment }));
+  return Response.json({ users: auth.listUsers(), accounts }, { headers: { "Cache-Control": "no-store" } });
 }
 
 /**
