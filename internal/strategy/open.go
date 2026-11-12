@@ -82,9 +82,10 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, s.heldExpiries())
 		switch pick {
 		case marketdata.PickNone:
+			listed := NoExpiryDetail(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE)
 			slog.Info("skip slot: no suitable expiry available",
-				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta)
-			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, "")
+				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "expiries", listed)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, listed)
 			continue
 		case marketdata.PickAllHeld:
 			hi := marketdata.StretchHi(slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.ExpiryStretch)
