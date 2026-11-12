@@ -50,3 +50,16 @@ A failure names the scenario, the layout (desktop or phone) and the question.
 Today's violations are counted per component and rule in `__tests__/a11y-baseline.json`: a new rule or a higher count fails `npm test` naming the component and the rule; a lower count fails asking to lower the baseline.
 `UPDATE_A11Y=1 npm test` rewrites the file from real axe output (never hand-edit it; commit it with the fix).
 A new panel or dialog gets its case in that test.
+
+## Colour contrast, text size and tap targets
+
+**Colour contrast (#763, epic E12).** `__tests__/a11y-tokens.test.js` measures every text-on-background pair the pages use (its `PAIRS`) from the tokens of `app/globals.css` and the Tailwind colours of `test/tailwindPalette.js`, against WCAG AA: 4.5:1 for body text, 3:1 for large text.
+A background with an opacity (`bg-loss/15`) is painted over the panel first, as the browser does.
+Today's failures are pinned in `KNOWN_FINDINGS`: they pass; a new failing pair fails naming it, where it is seen, its ratio and the bar; a pinned pair that now meets AA fails until it is removed.
+A text colour class used in `app/` or `components/` without a pair fails too, so a new colour cannot skip the check.
+The monitor has one theme (dark); a light theme added to the stylesheet fails the test until its tokens and pairs are in it.
+The rules are in `lib/a11y.js` (`contrastRatio`, `meetsAA`, `tapTargetOk`, `MIN_TEXT_PX` 12, `MIN_TAP_PX` 44).
+
+**Small text and tap targets (report-only).** `npm run test:phone` also writes `e2e/a11y-report.json`: for each page at 360 px, the texts under 12 px (`small_text`) and the controls under 44 × 44 px (`small_targets`), one entry per kind with a CSS `selector` of the first element, its size and how many there are.
+`ranked` lists every finding by the number of pages it is on, most first — the order of `docs/product/responsive-a11y-baseline.md`.
+It fails nothing yet: the baseline is accepted first, as with the coverage floor; the fixes come with the E12 UI stories.
