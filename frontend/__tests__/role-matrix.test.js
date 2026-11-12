@@ -195,6 +195,21 @@ const FIXTURES = {
     return { path: "/api/survey/answers", body: { action: "shown" }, actor: who?.user.username };
   },
   "POST /api/survey/nps": async ({ who }) => ({ path: "/api/survey/nps", body: { action: "opt_out" }, actor: who?.user.username }),
+  "PUT /api/admin/users/[id]/accounts": async ({ who }) => {
+    const m = await person("manager");
+    return { path: `/api/admin/users/${m.user.id}/accounts`, params: { id: String(m.user.id) }, body: { accounts: ["acct-a"] }, actor: who?.user.username };
+  },
+};
+
+// The account registry's status file (#655, #760): account A trades BTC, account B ETH.
+const ACCOUNTS_STATUS = {
+  version: 1,
+  checked_at: "2026-11-12T00:00:00Z",
+  accounts: [
+    { account_id: "acct-a", label: "Account A", exchange: "deribit", environment: "testnet", bots: [{ currency: "BTC", config: "config_btc.yaml" }], key_status: "ok" },
+    { account_id: "acct-b", label: "Account B", exchange: "deribit", environment: "testnet", bots: [{ currency: "ETH", config: "config_eth.yaml" }], key_status: "ok" },
+  ],
+  violations: [],
 };
 
 /** A user an admin route acts on; `suffix` follows /api/admin/users/<id>. */
@@ -241,6 +256,8 @@ beforeEach(async () => {
   process.env.ANALYTICS_SALT = SALT;
   process.env.BOT_APIS = "btc=http://bot-btc:8081";
   process.env.BOT_ADMIN_TOKEN = "admin token for tests";
+  process.env.ACCOUNTS_STATUS_PATH = path.join(dir, "accounts_status.json");
+  fs.writeFileSync(process.env.ACCOUNTS_STATUS_PATH, JSON.stringify(ACCOUNTS_STATUS));
   delete process.env.ANTHROPIC_API_KEY;
   resetAuth();
   auth = await getAuth();
@@ -252,7 +269,7 @@ afterEach(() => {
   global.fetch = realFetch;
   resetAuth();
   fs.rmSync(dir, { recursive: true, force: true });
-  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN", "COMPARE_DIR"]) delete process.env[k];
+  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN", "COMPARE_DIR", "ACCOUNTS_STATUS_PATH"]) delete process.env[k];
   if (modelKey !== undefined) process.env.ANTHROPIC_API_KEY = modelKey;
 });
 
@@ -335,6 +352,116 @@ describe("Scenario: an allowed action", () => {
     expect(res.status).toBe(403);
     expect(global.fetch).not.toHaveBeenCalled();
     expect(auditLines().filter((l) => l.action === "manual_close")).toEqual([]);
+  });
+});
+
+describe("Manager–account links (#760)", () => {
+  const BODIES = { close: { position_ids: ["p1"] }, hedge: { enabled: true }, rebalance: { dry_run: true } };
+  beforeEach(() => {
+    process.env.BOT_APIS = "btc=http://bot-btc:8081,eth=http://bot-eth:8082";
+  });
+
+  /** A bot action (close, hedge, rebalance) on `bot` as the caller with these headers. */
+  const botAction = (action, bot, headers) =>
+    send(stateHandlers().get(`POST /api/bots/[bot]/${action}`), "POST", { path: `/api/bots/${bot}/${action}`, params: { bot }, body: BODIES[action] }, headers);
+
+  /** Manager "ana" linked to `accounts` by an admin: { ana, admin }. */
+  async function linkedManager(accounts) {
+    const admin = await person("admin");
+    const ana = await person("manager");
+    expect(auth.setAccountLinks(admin.user, ana.user.id, accounts, ACCOUNTS_STATUS.accounts)).toEqual(expect.objectContaining({ ok: true, accounts }));
+    return { ana, admin };
+  }
+
+  test("Scenario: a linked manager acts on their account", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    const res = await botAction("close", "btc", { cookie: ana.cookie });
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(auditLines().at(-1)).toEqual(expect.objectContaining({ action: "manual_close", username: ana.user.username, bot: "btc" }));
+  });
+
+  test("Scenario: a linked manager is refused on another account", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    for (const action of ["close", "rebalance"]) {
+      const before = auditLines().length;
+      global.fetch.mockClear();
+      const res = await botAction(action, "eth", { cookie: ana.cookie });
+      expect([action, res.status]).toEqual([action, 403]);
+      expect((await res.json()).error).toBe(
+        "you do not manage account Account B (acct-b), which bot eth trades for: ask an admin to link it to you on the Users page",
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(auditLines().slice(before)).toEqual([]);
+    }
+  });
+
+  test("Scenario: a manager with no links keeps today's behaviour", async () => {
+    const bo = await person("manager");
+    for (const bot of ["btc", "eth"]) {
+      const res = await botAction("close", bot, { cookie: bo.cookie });
+      expect([bot, res.status]).toEqual([bot, 200]);
+    }
+    expect(auditLines().filter((l) => l.action === "manual_close").map((l) => l.bot)).toEqual(["btc", "eth"]);
+  });
+
+  test("Scenario: an admin edits links", async () => {
+    const { ana, admin } = await linkedManager(["acct-a"]);
+    expect((await botAction("close", "eth", { cookie: ana.cookie })).status).toBe(403);
+    const handler = stateHandlers().get("PUT /api/admin/users/[id]/accounts");
+    const res = await send(
+      handler,
+      "PUT",
+      { path: `/api/admin/users/${ana.user.id}/accounts`, params: { id: String(ana.user.id) }, body: { accounts: ["acct-a", "acct-b"] } },
+      { cookie: admin.cookie },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accounts: ["acct-a", "acct-b"], added: ["acct-b"], removed: [] });
+    expect(auditLines().at(-1)).toEqual(
+      expect.objectContaining({ action: "account_link_added", username: admin.user.username, role: "admin", target: ana.user.username, account_id: "acct-b" }),
+    );
+    expect((await botAction("close", "eth", { cookie: ana.cookie })).status).toBe(200);
+  });
+
+  test("Scenario: a manager cannot edit links", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    const handler = stateHandlers().get("PUT /api/admin/users/[id]/accounts");
+    for (const role of ["manager", "user"]) {
+      const { headers } = await caller(role);
+      const before = auditLines().length;
+      const res = await send(handler, "PUT", { path: `/api/admin/users/${ana.user.id}/accounts`, params: { id: String(ana.user.id) }, body: { accounts: ["acct-b"] } }, headers);
+      expect([role, res.status]).toEqual([role, 403]);
+      expect(auditLines().slice(before)).toEqual([]);
+    }
+    expect(auth.store.accountLinks(ana.user.id)).toEqual(["acct-a"]);
+  });
+
+  test("Scenario: the role matrix covers the new route — every route that targets a bot checks the link (100 %)", async () => {
+    const botRoutes = STATE_CHANGING_ROUTES.filter((r) => r.route.includes("[bot]"));
+    expect(botRoutes.length).toBeGreaterThan(0);
+    expect(botRoutes.filter((r) => !r.linked).map((r) => r.route)).toEqual([]);
+    const { ana, admin } = await linkedManager(["acct-b"]);
+    for (const entry of botRoutes) {
+      const action = entry.route.split("/").at(-1);
+      global.fetch.mockClear();
+      const asManager = await botAction(action, "btc", { cookie: ana.cookie });
+      expect([entry.route, asManager.status]).toEqual([entry.route, 403]);
+      if (entry.roles.includes("manager")) expect((await asManager.json()).error).toMatch(/do not manage account Account A \(acct-a\)/);
+      expect(global.fetch).not.toHaveBeenCalled();
+      // An admin is never limited by links.
+      const asAdmin = await botAction(action, "btc", { cookie: admin.cookie });
+      expect([entry.route, asAdmin.status]).toEqual([entry.route, 200]);
+    }
+  });
+
+  test("a linked manager is refused when the monitor cannot tell the bot's account (no status file); an unlinked one is not", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    fs.rmSync(process.env.ACCOUNTS_STATUS_PATH);
+    const res = await botAction("close", "btc", { cookie: ana.cookie });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/cannot tell which account bot btc trades for/);
+    const bo = await person("manager");
+    expect((await botAction("close", "btc", { cookie: bo.cookie })).status).toBe(200);
   });
 });
 

@@ -243,6 +243,7 @@ A term or setting leaves this list when a page shows it.
 
 | kind | key | reason |
 | --- | --- | --- |
+| term | account links | Users admin page, not in the menu bar. |
 | term | action funnel | Analytics admin page, not in the menu bar. |
 | term | actions | Users admin page, not in the menu bar. |
 | term | activation | Analytics admin page, not in the menu bar. |

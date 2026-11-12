@@ -9,6 +9,7 @@ import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
 import { authLog } from "./log";
 import { browserName } from "./browser";
 import { roleAtLeast } from "./roles";
+import { accountLinkProblem, checkLinkRequest, linkChanges } from "./accountLinks";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
 export const INVALID_LOGIN = "invalid username or password";
@@ -339,9 +340,14 @@ export class AuthService {
     this.audit("analytics_consent_changed", { username: user.username, consent });
   }
 
-  /** Every user for the Users page: id, username, role, email, created and last sign-in (ISO, null = never); never a hash. */
+  /**
+   * Every user for the Users page: id, username, role, email, created and last
+   * sign-in (ISO, null = never) and the account ids they are linked to (#760,
+   * [] = none); never a hash.
+   */
   listUsers() {
     const iso = (sec) => (sec ? new Date(sec * 1000).toISOString() : null);
+    const links = this.store.allAccountLinks();
     return this.store.listUsers().map((u) => ({
       id: u.id,
       username: u.username,
@@ -349,7 +355,52 @@ export class AuthService {
       email: u.email ?? null,
       created_at: iso(u.created_at),
       last_sign_in_at: iso(u.last_sign_in_at),
+      accounts: links[u.id] ?? [],
     }));
+  }
+
+  /**
+   * An admin sets the accounts a manager may act on (#760): `ids` replaces the
+   * manager's links; each new id must be in the registry (`accounts`, the
+   * status file's). One audit line per account added or removed, naming the
+   * admin, the manager and the account. Links are for managers only: an admin
+   * acts on every account and a user on none.
+   * → { ok: true, accounts, added, removed } | { ok: false, status (400 rule, 404 no user, 409 not a manager), error }
+   */
+  setAccountLinks(by, targetId, ids, accounts) {
+    const target = this.store.userById(targetId);
+    if (!target) return { ok: false, status: 404, error: "no such user" };
+    const current = this.store.accountLinks(target.id);
+    if (target.role !== "manager") {
+      return { ok: false, status: 409, error: `${target.username} is ${target.role === "admin" ? "an admin" : "a user"}: account links are for managers only` };
+    }
+    const checked = checkLinkRequest(ids, { current, accounts });
+    if (!checked.ok) return { ok: false, status: 400, error: checked.error };
+    const { add, remove } = linkChanges(current, checked.ids);
+    if (add.length > 0 || remove.length > 0) this.store.changeAccountLinks(target.id, { add, remove }, by.username, this.now());
+    for (const id of add) {
+      authLog("INFO", "account link added", { by: by.username, username: target.username, account_id: id });
+      this.audit("account_link_added", { username: by.username, role: by.role, target: target.username, account_id: id });
+    }
+    for (const id of remove) {
+      authLog("INFO", "account link removed", { by: by.username, username: target.username, account_id: id });
+      this.audit("account_link_removed", { username: by.username, role: by.role, target: target.username, account_id: id });
+    }
+    return { ok: true, accounts: this.store.accountLinks(target.id), added: add, removed: remove };
+  }
+
+  /**
+   * Why `user` may not act on monitor bot `bot` (#760), in plain words, or
+   * null: the link check behind the role check (lib/auth/accountLinks.js).
+   * `loadAccounts` reads the registry, only for a linked manager. A refusal
+   * is a WARN log line, never an audit line (nothing was done).
+   */
+  accountRefusal(user, bot, loadAccounts) {
+    const links = user.role === "manager" ? this.store.accountLinks(user.id) : [];
+    if (links.length === 0) return null;
+    const problem = accountLinkProblem({ user, links, bot, accounts: loadAccounts() });
+    if (problem) authLog("WARN", "action refused: account", { username: user.username, role: user.role, bot });
+    return problem;
   }
 
   /**

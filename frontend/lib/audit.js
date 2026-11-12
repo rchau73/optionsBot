@@ -18,6 +18,8 @@ export const AUDIT_ACTIONS = [
   "password_reset_by_link",
   "user_deleted",
   "account_deleted",
+  "account_link_added",
+  "account_link_removed",
   "signed_out_everywhere",
   "session_ended",
   "my_data_exported",

@@ -83,6 +83,7 @@ afterEach(() => {
   jest.restoreAllMocks();
   fs.rmSync(root, { recursive: true, force: true });
   delete process.env.COMPARE_DIR;
+  delete process.env.ACCOUNTS_STATUS_PATH;
 });
 
 describe("Scenario: A manager confirms an allowed change", () => {
@@ -217,6 +218,38 @@ describe("Scenario: A user, or a manager of another account, is refused", () => 
     expect((await res.json()).error).toContain("does not match this run, your username and these values");
     expect(records()).toEqual([]);
     expect(changeLines(record)).toEqual([]);
+  });
+
+  /** Manager `name` linked by an admin to `accounts` of the registry (BTC → acct-a, ETH → acct-b, #760). */
+  async function linkedManager(name, accounts) {
+    const registry = [
+      { account_id: "acct-a", label: "Account A", environment: "testnet", bots: [{ currency: "BTC" }] },
+      { account_id: "acct-b", label: "Account B", environment: "testnet", bots: [{ currency: "ETH" }] },
+    ];
+    process.env.ACCOUNTS_STATUS_PATH = path.join(root, "accounts_status.json");
+    fs.writeFileSync(process.env.ACCOUNTS_STATUS_PATH, JSON.stringify({ version: 1, accounts: registry }));
+    const m = await manager(name);
+    const { user: admin, auth } = await signedIn("boss", "admin");
+    expect(auth.setAccountLinks(admin, auth.store.userByName(name).id, accounts, registry)).toMatchObject({ ok: true });
+    return m;
+  }
+
+  test("a manager linked only to another account is refused 403 in plain words; no record, no audit line", async () => {
+    const id = newRun(); // a BTC run: account acct-a
+    const { cookie, record } = await linkedManager("ana", ["acct-b"]);
+    const res = await post(cookie, id, { confirm_token: tokenOf(id, "ana") });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe(
+      "you do not manage account Account A (acct-a), which bot btc trades for: ask an admin to link it to you on the Users page",
+    );
+    expect(records()).toEqual([]);
+    expect(changeLines(record)).toEqual([]);
+  });
+
+  test("a manager linked to the run's account may confirm", async () => {
+    const id = newRun();
+    const { cookie } = await linkedManager("ana", ["acct-a"]);
+    expect((await post(cookie, id, { confirm_token: tokenOf(id, "ana") })).status).toBe(201);
   });
 });
 

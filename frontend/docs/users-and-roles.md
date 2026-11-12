@@ -29,6 +29,10 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: — (403)
   - user: — (403)
+- Link a manager to the accounts they manage (Users page → Edit accounts, `PUT /api/admin/users/<id>/accounts`, #760; below)
+  - admin: ✓
+  - manager: — (403)
+  - user: — (403)
 - See your own sessions and sign out your other browsers (Account ▾ → Active sessions, `/api/auth/sessions`, #584); never another person's
   - admin: ✓
   - manager: ✓
@@ -47,6 +51,20 @@ Who may do what, and the Users page that manages them.
   - user: — (403)
 
 `admin` satisfies `manager` satisfies `user` (`lib/auth/roles.js`).
+
+### Manager–account links (#760)
+
+An admin may link a manager to the exchange accounts they manage (Users page → **Edit accounts**); the link is user → account id, n:n, stored in `auth.db` (`account_links`, [Personal data](personal-data.md)).
+The account ids, labels and each account's bots come from the registry's key-free status file (`ACCOUNTS_STATUS_PATH`, default `data/accounts_status.json`, written by `go run ./cmd/accounts -check -json -out`, #655); no key or secret is read.
+A monitor bot (`btc`) belongs to the one account with a bot of that currency (`botAccount`, `lib/auth/accountLinks.js`).
+- A manager with **no** link acts on every account of this deployment, as before: nothing changes until an admin sets a link.
+- A manager with at least one link: every state-changing route that targets a bot (`linked: true` in `STATE_CHANGING_ROUTES`: close, rebalance, the hedge switch, and the lab apply, whose run names its bot by the underlying, #741) checks the link on the server after the role check (`refuseOtherAccount`, `lib/auth/server.js`).
+  On another account it answers 403 with the account in words ("you do not manage account Account B (acct-b), which bot eth trades for: …"); the bot hears nothing and nothing is audited.
+  When the monitor cannot tell the bot's account (no status file, no account or several accounts with that currency) a linked manager is refused too: the check fails closed.
+- Admins are never limited; users keep read-only access (their role is refused first).
+  Links may be set on managers only (409 otherwise); a manager who becomes admin keeps the rows, which apply again only if they become manager again.
+- **Needs legal review before it is used with an adviser who is not the account owner** (PRD §11): the mechanism ships off (no link), and no link is set for a real adviser until counsel approves.
+The role matrix calls every `[bot]` route as a manager linked to another account and fails on one without `linked: true`.
 
 ### The role matrix (#490)
 
@@ -67,14 +85,15 @@ User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`
 ## Users page (#306)
 
 `/admin/users`, linked as **Account ▾ → Users** for admins only — the link is a convenience, the routes decide: a manager or a user gets 403 from every one of them (`requireRole(admin)`, the person re-read from the database like close and rebalance).
-The page lists every person (username, role, email, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
+The page lists every person (username, role, email, accounts, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
+The **Accounts** column says what each person may act on: "All accounts" (admin), "None: sees only" (user), "All accounts (no links)" or the linked accounts (manager); **Edit accounts** on a manager's row opens a dialog of the registry's accounts with checkboxes, the consequence in words, and **Save accounts** (#760, `AccountLinksDialog.jsx`).
 Your own row cannot be deleted or reset (use **Change password**).
 
 ### Routes
 
 #### `GET /api/admin/users`
 
-**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at}]}` (ISO times, `null` = never); never a hash
+**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); never a hash
 
 **Refusals:** 403 not admin
 
@@ -101,6 +120,13 @@ Your own row cannot be deleted or reset (use **Change password**).
 **Does:** `issueResetLink` → `{"url", "expires_at"}` once (Reset link, above); audited `reset_link_issued`, never with the token
 
 **Refusals:** 404 · 409 yourself
+
+#### `PUT /api/admin/users/<id>/accounts` `{"accounts": [account ids]}` (#760)
+
+**Does:** `setAccountLinks`: the manager's links become this list (`[]` = every account again) → `{"accounts", "added", "removed"}`; one audit line per account, `account_link_added` or `account_link_removed`, with the admin, `target` and `account_id`.
+Admins only, same-origin JSON; in the role matrix
+
+**Refusals:** 400 not a list, a malformed id, over 50, or a new id the registry does not list · 403 not admin · 404 · 409 the person is not a manager
 
 #### `POST /api/admin/users/<id>/signout` `{}`
 
@@ -184,7 +210,7 @@ On success it writes `COMPARE_DIR/applied/<id>.json` once (mode 0600, created ex
 201 with that record, `message` (what was recorded, that the result was backtested, not a forecast, and that nothing was applied to a running bot), `next_step`, `backtested`, `risks` (worst week, drawdown and fees in %, the fragility check, "past data only") and `audit_line`.
 How a recorded change reaches the running bot is not decided yet (a reviewed config PR and a restart, or a later hot-reload): until then the record is the whole effect.
 Manager or admin (`STATE_CHANGING_ROUTES`); one audit line, `parameter_change_recorded`, with the person, the account, the run, each `key` with `old` and `new`, and `token_id`.
-Until E8's tenancy links managers to accounts, a manager may confirm for every account; a token works only for the person it was shown to.
+A manager linked to accounts (#760) is refused 403 on a run whose bot (its underlying: BTC → bot btc) trades for another account, as the bot routes are; a manager without a link may confirm for every account, and a token works only for the person it was shown to.
 
 **Refusals (every one answers `applied: false, recorded: false`, writes no record and no audit line):**
 - 400 no `confirm_token` or malformed JSON.

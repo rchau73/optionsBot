@@ -126,6 +126,7 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `reset_link_issued` (with `expires_at`, #307);
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
+- `account_link_added` and `account_link_removed` (#760), with `target` (the manager) and `account_id`, where `username` and `role` are the admin's;
 - `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
 - `my_data_exported` (a person downloaded their own data, #750), with `counts` per section, never the content;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;

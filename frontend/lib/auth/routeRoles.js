@@ -23,6 +23,9 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  * roles: who may call it (ROLES). audit: the audit.jsonl action an allowed
  * call writes with the person's username, or null with `why` it writes none.
  * bot: the bot API route it forwards to (internal/api/routes_actions.go).
+ * linked: the route targets a bot, so a manager linked to other accounts is
+ * refused (#760, lib/auth/accountLinks.js); every [bot] route must say so,
+ * and the lab apply, whose run names its bot by the underlying.
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
@@ -42,18 +45,19 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/auth/password", roles: SIGNED_IN, audit: "password_changed" },
   { route: "POST /api/auth/refresh", roles: ANYONE, audit: null, why: "renews the caller's own session; changes nothing a person decides" },
   { route: "POST /api/auth/reset", roles: ANYONE, audit: "password_reset_by_link" },
-  { route: "POST /api/bots/[bot]/close", roles: MANAGERS, audit: "manual_close", bot: "POST /api/positions/close" },
-  { route: "POST /api/bots/[bot]/hedge", roles: ADMINS, audit: "futures_hedge_switched", bot: "POST /api/hedge" },
-  { route: "POST /api/bots/[bot]/rebalance", roles: MANAGERS, audit: "manual_rebalance", bot: "POST /api/rebalance" },
+  { route: "POST /api/bots/[bot]/close", roles: MANAGERS, audit: "manual_close", bot: "POST /api/positions/close", linked: true },
+  { route: "POST /api/bots/[bot]/hedge", roles: ADMINS, audit: "futures_hedge_switched", bot: "POST /api/hedge", linked: true },
+  { route: "POST /api/bots/[bot]/rebalance", roles: MANAGERS, audit: "manual_rebalance", bot: "POST /api/rebalance", linked: true },
   { route: "POST /api/consent", roles: SIGNED_IN, audit: "analytics_consent_changed" },
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/lab/requests", roles: MANAGERS, audit: "lab_request" },
-  { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded" },
+  { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded", linked: true },
   { route: "POST /api/lab/validate", roles: MANAGERS, audit: "lab_validate" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },
   { route: "POST /api/survey/answers", roles: SIGNED_IN, audit: "answers_survey_shown" },
   { route: "POST /api/survey/nps", roles: SIGNED_IN, audit: "nps_survey_changed" },
+  { route: "PUT /api/admin/users/[id]/accounts", roles: ADMINS, audit: "account_link_added" },
 ];
 
 /**

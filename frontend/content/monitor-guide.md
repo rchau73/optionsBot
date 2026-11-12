@@ -639,6 +639,7 @@ No screen shows it yet.
 **What happens when I confirm a change from a comparison run?** Managers and admins can confirm a change the preview said may be confirmed, with the preview's confirm token.
 The token works once, only for you, only for that run and those values, and for at most 15 minutes; after that, open the preview again.
 The monitor checks everything again when you confirm: your role, the value's range, whether the run is finished and still current, and whether the setting is a core policy.
+A manager linked to some accounts is refused on a run for a bot of another account.
 A core policy is refused: a new default needs the product owner, not a manager's confirm.
 A confirmed change is recorded, and the audit trail records one line with your username, the account, the run, the old and the new value.
 The answer repeats that the result was backtested, not a forecast, and shows the risks next to it: the worst week, the largest drawdown and the fees in percent, and any fragile spots.
@@ -714,6 +715,16 @@ An admin creates a user (a username of 3 to 64 letters, digits, dots, underscore
 Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
+
+**Accounts a manager manages**: the Accounts column of the Users page says what each person may act on.
+An admin acts on every account, and a user on none.
+A manager with no linked account acts on every account of this environment, as before.
+Edit accounts on a manager's row lists the accounts of the account registry with a box each; tick the ones the manager manages, read what follows, then Save accounts.
+From then on the monitor refuses that manager's close, rebalance or confirm of a lab run on a bot of any other account, and says which account they do not manage; the bot receives nothing.
+Untick every box to give the manager every account again.
+Each account added or removed is recorded in the audit trail with your username, the manager and the account.
+Do not link an adviser who is not the account owner until counsel has approved it.
+<!-- guide: route:PUT /api/admin/users/[id]/accounts -->
 
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.

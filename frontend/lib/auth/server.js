@@ -4,6 +4,7 @@ import path from "node:path";
 import { AuthService } from "./service";
 import { AuthStore } from "./store";
 import { auditPath, fileAudit } from "./audit";
+import { readAccounts } from "./accountLinks";
 import { analyticsSalt, eventsPath } from "../analytics/config.js";
 import { userEventsEraser } from "../analytics/retention.js";
 import { ACCESS_COOKIE, authKey, readCookie, roleRequired, sessionRequired } from "./tokens";
@@ -74,6 +75,17 @@ export async function requireRole(request, need) {
   const r = await auth.actingUser(readCookie(request, ACCESS_COOKIE), need);
   if (r.ok) return { auth, user: r.user, sid: r.sid };
   return { response: r.status === 403 ? roleRequired(need) : sessionRequired() };
+}
+
+/**
+ * For a state-changing route that targets a bot, after requireRole: a 403
+ * response with the reason in plain words when `user` is a manager linked to
+ * other accounts than the bot's (#760), else null. The bot is not called and
+ * nothing is audited on a refusal.
+ */
+export function refuseOtherAccount(auth, user, bot) {
+  const problem = auth.accountRefusal(user, bot, readAccounts);
+  return problem ? Response.json({ error: problem }, { status: 403 }) : null;
 }
 
 /** The signed-in user of a request, or null (state-changing routes check it again behind proxy.js). */

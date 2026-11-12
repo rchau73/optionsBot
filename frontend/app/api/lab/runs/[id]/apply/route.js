@@ -1,4 +1,4 @@
-import { requireRole, sameOrigin } from "@/lib/auth/server";
+import { refuseOtherAccount, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { authKey } from "@/lib/auth/tokens";
 import { compareDir, validId } from "@/lib/compare";
@@ -23,7 +23,8 @@ const MAX_BODY = 1024;
  * (COMPARE_DIR/applied/<id>.json) and one audit line
  * (parameter_change_recorded) and answers 201 `applied: false, recorded: true`:
  * it writes no config, restarts no bot and places no order. Managers and
- * admins, same-origin JSON; a refusal writes no record and no audit line, and
+ * admins, same-origin JSON; a manager linked to other accounts than the run's
+ * bot is refused (#760); a refusal writes no record and no audit line, and
  * an audit line that cannot be written takes the record back (500).
  */
 export async function POST(request, { params }) {
@@ -51,6 +52,9 @@ export async function POST(request, { params }) {
     authLog("ERROR", "lab run unreadable", { component: "lab", username: user.username, id });
     return Response.json({ error: "the run cannot be read: see the monitor's logs" }, { status: 500 });
   }
+  // The run's account is its underlying's bot ("BTC" → bot btc): a manager linked to other accounts is refused (#760).
+  const otherAccount = refuseOtherAccount(auth, user, String(r.run.report?.underlying ?? "").toLowerCase());
+  if (otherAccount) return otherAccount;
 
   const now = Date.now();
   const records = recordsDir(dir);
