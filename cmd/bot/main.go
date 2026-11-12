@@ -23,7 +23,6 @@ import (
 	"optionsbot/internal/hedge"
 	"optionsbot/internal/history"
 	"optionsbot/internal/logger"
-	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
 	"optionsbot/internal/shadow"
@@ -175,12 +174,13 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		}
 	}()
 
-	md := marketdata.New(cfg, gw, deribit.NewChainSource(gw))
+	// Deribit as the strategy's exchange (#761): the trading connection, its
+	// order executor and the market-data manager in one adapter.
+	ex := deribit.NewAdapter(cfg, gw)
+	md := ex.Manager
 	if err := md.Start(ctx); err != nil {
 		return fmt.Errorf("marketdata start: %w", err)
 	}
-
-	exec := orders.NewExecutor(gw)
 
 	// Replay the journal before appending to it: realised P&L, closes, event
 	// counts, the activity feed and the trade history continue across restarts.
@@ -263,8 +263,8 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	}
 
 	strat := strategy.New(cfg, strategy.Deps{
-		Market:   md,
-		Exchange: exec,
+		Market:   ex,
+		Exchange: ex,
 		State:    orders.NewStateManager(),
 		Journal:  orderLog,
 		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
@@ -275,7 +275,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		// The SMA trend next to the GEX bias, for comparing the two.
 		Directions: directions,
 		// The futures hedge experiment (#657): off unless switched on from the monitor.
-		Futures:       exec,
+		Futures:       ex,
 		HedgeModePath: hedgeModePath,
 		ShadowLegs:    shadowLegs,
 	})

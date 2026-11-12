@@ -10,7 +10,10 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `BookReader.BookSummary` is the one book-summary fetch, for `gex.Manager` and `recorder.USDCBooks`;
   - `ChainSource` (`chain.go`, #710) is the option chain, the DVOL history and the three channel names, for `marketdata.Manager`: it implements `marketdata.ChainSource`, so it imports `marketdata`, never the reverse;
   - `AccountSource` (`account.go`, #746) is the monitor's account view (all-currency summaries, the per-currency fallback, every position of a currency), for `account.Poller`: it implements `account.Source`, so it imports `account`, never the reverse;
-  - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`.
+  - `Adapter` (`adapter.go`, #761) embeds the trading `Gateway`, `orders.Executor` and `marketdata.Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`); `cmd/bot` passes it as the strategy's `Exchange`, `Market` and `Futures`.
+    It has no method of its own and no name shared by two parts (`tests/exchange_adapter_test.go`), so the requests stay the parts' own;
+  - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`, and the `*Adapter` check sits in `internal/exchange/deribit.go`.
+  `tests/exchange_adapter_test.go` pins the gateway's importers under `internal/` (`gatewayImporters`, with reasons, may only shrink) and keeps `internal/strategy` free of the gateway, the adapter, the transport and `orders.Executor`.
   The strategy depends on it (#182):
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
   `marketdata` (`Streamer` only) and `internal/exchange/deribit` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
