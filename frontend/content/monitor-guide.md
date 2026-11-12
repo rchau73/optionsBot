@@ -633,8 +633,21 @@ If the setting is a core policy, the preview says a product owner must approve i
 If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
 In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
 The audit trail records one line with your username, the account, the run and both values.
-The preview changes nothing: no config file or bot setting is touched, and confirming a change is not built yet.
+The preview changes nothing: no config file or bot setting is touched.
 No screen shows it yet.
+
+**What happens when I confirm a change from a comparison run?** Managers and admins can confirm a change the preview said may be confirmed, with the preview's confirm token.
+The token works once, only for you, only for that run and those values, and for at most 15 minutes; after that, open the preview again.
+The monitor checks everything again when you confirm: your role, the value's range, whether the run is finished and still current, and whether the setting is a core policy.
+A manager linked to some accounts is refused on a run for a bot of another account.
+A core policy is refused: a new default needs the product owner, not a manager's confirm.
+A confirmed change is recorded, and the audit trail records one line with your username, the account, the run, the old and the new value.
+The answer repeats that the result was backtested, not a forecast, and shows the risks next to it: the worst week, the largest drawdown and the fees in percent, and any fragile spots.
+Confirming records the change only: nothing is applied to a running bot, no config file is written and no order is placed.
+How a recorded change will reach the bot is not decided yet.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/runs/[id]/apply -->
 
 **Can the assistant tell me what a comparison run showed?** Managers and admins can ask it, for example "what did my last comparison show?".
 It answers from the lab's latest runs: the return, the worst week, the drawdown and the fees of the current and the proposed settings, in percentages only, labelled backtested, with the worst week and the drawdown beside each return, and it names the run it read.
@@ -707,7 +720,7 @@ There is always at least one admin, and you cannot delete yourself.
 An admin acts on every account, and a user on none.
 A manager with no linked account acts on every account of this environment, as before.
 Edit accounts on a manager's row lists the accounts of the account registry with a box each; tick the ones the manager manages, read what follows, then Save accounts.
-From then on the monitor refuses that manager's close or rebalance on a bot of any other account, and says which account they do not manage; the bot receives nothing.
+From then on the monitor refuses that manager's close, rebalance or confirm of a lab run on a bot of any other account, and says which account they do not manage; the bot receives nothing.
 Untick every box to give the manager every account again.
 Each account added or removed is recorded in the audit trail with your username, the manager and the account.
 Do not link an adviser who is not the account owner until counsel has approved it.

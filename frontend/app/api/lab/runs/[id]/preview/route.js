@@ -30,9 +30,10 @@ export async function GET(request, { params }) {
     authLog("ERROR", "lab run unreadable", { component: "lab", username: user.username, id });
     return Response.json({ error: "the run cannot be read: see the monitor's logs" }, { status: 500 });
   }
-  const preview = buildPreview(r.run, user.username, Date.now());
+  const now = Date.now();
+  const preview = buildPreview(r.run, user.username, now);
   if (!preview) return Response.json({ error: "this run changed no setting: there is nothing to confirm" }, { status: 409, headers: NO_STORE });
-  if (preview.confirmable) preview.confirm_token = confirmToken(preview, authKey());
+  if (preview.confirmable) preview.confirm_token = confirmToken(preview, authKey(), now);
   authLog("INFO", "lab apply previewed", {
     component: "lab",
     username: user.username,

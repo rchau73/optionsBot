@@ -28,6 +28,7 @@ export const AUDIT_ACTIONS = [
   "futures_hedge_switched",
   "audit_exported",
   "parameter_change_previewed",
+  "parameter_change_recorded",
   "events_pruned",
   "events_prune_failed",
   "events_deleted",

@@ -24,7 +24,8 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  * call writes with the person's username, or null with `why` it writes none.
  * bot: the bot API route it forwards to (internal/api/routes_actions.go).
  * linked: the route targets a bot, so a manager linked to other accounts is
- * refused (#760, lib/auth/accountLinks.js); every [bot] route must say so.
+ * refused (#760, lib/auth/accountLinks.js); every [bot] route must say so,
+ * and the lab apply, whose run names its bot by the underlying.
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
@@ -50,6 +51,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/consent", roles: SIGNED_IN, audit: "analytics_consent_changed" },
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/lab/requests", roles: MANAGERS, audit: "lab_request" },
+  { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded", linked: true },
   { route: "POST /api/lab/validate", roles: MANAGERS, audit: "lab_validate" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },

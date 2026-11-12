@@ -250,12 +250,13 @@ describe("Scenario: audit", () => {
 describe("the confirm token", () => {
   const KEY = "k".repeat(32);
 
-  test("depends on the secret, the person and each value", () => {
+  test("depends on the secret, the person, each value and the time window", () => {
     const p = previewOf({});
-    const token = confirmToken(p, KEY);
-    expect(confirmToken(p, KEY)).toBe(token);
-    expect(confirmToken(p, "j".repeat(32))).not.toBe(token);
-    expect(confirmToken({ ...p, person: "other" }, KEY)).not.toBe(token);
-    expect(confirmToken(previewOf({ diffs: [diff(FILLS, "0.001", "0.003")] }), KEY)).not.toBe(token);
+    const token = confirmToken(p, KEY, RUN_MS);
+    expect(confirmToken(p, KEY, RUN_MS)).toBe(token);
+    expect(confirmToken(p, "j".repeat(32), RUN_MS)).not.toBe(token);
+    expect(confirmToken({ ...p, person: "other" }, KEY, RUN_MS)).not.toBe(token);
+    expect(confirmToken(previewOf({ diffs: [diff(FILLS, "0.001", "0.003")] }), KEY, RUN_MS)).not.toBe(token);
+    expect(confirmToken(p, KEY, RUN_MS + 5 * 60 * 1000)).not.toBe(token);
   });
 });
