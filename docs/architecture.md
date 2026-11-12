@@ -264,8 +264,10 @@ Since #182 the strategy depends on the boundary itself: `internal/strategy/deps.
 `marketdata` and `internal/exchange/deribit` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; `exchange.Transport` is built from them) — a subpackage because `marketdata` cannot import `internal/exchange`, which names `marketdata.Instrument`.
 `marketdata.Manager` reads the chain and the DVOL history and names its channels through `deribit.ChainSource` (#710), behind an interface declared in `marketdata`.
 `account.Poller` (the monitor's account view) reads the summaries and positions through `deribit.AccountSource` (#746), behind `account.Source`.
+`deribit.Adapter` (#761, `internal/exchange/deribit/adapter.go`) composes the trading `Gateway`, the `orders.Executor` and the `marketdata.Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`); `cmd/bot` builds it once and passes it as the strategy's `Exchange`, `Market` and `Futures`.
+It adds no method of its own (`tests/exchange_adapter_test.go`), so every request, its order, priority and rate-limit pool are the composed type's.
+Open interest is not part of it: `gex.Manager` reads mainnet, on testnet over a second, public-only connection.
 A second exchange is an adapter that satisfies these interfaces and converts to the bot's own types (`orders.Order`, `orders.AccountSummary`, `marketdata.Instrument`, …).
-Moving the Deribit code behind an adapter is a later step.
 
 What the strategy asks of an exchange, and the Deribit call behind each:
 

@@ -199,8 +199,8 @@ type Capabilities struct {
 	MainnetOpenInterest bool // real open interest on the same venue
 }
 
-// Exchange is one adapter. NEW: no type satisfies it yet (Deribit's would
-// compose Executor, Manager, Gateway, BookReader, and add Name and Capabilities).
+// Exchange is one adapter. In the code since #761 without Name, Capabilities
+// and BookSummary: exchange.Exchange, satisfied by deribit.Adapter.
 type Exchange interface {
 	Name() string
 	Capabilities() Capabilities
@@ -254,7 +254,11 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
 5. **Account view** (done, #746): `private/get_account_summaries`, `private/get_account_summary` and `private/get_positions` of `account.Poller` moved into `deribit.AccountSource` (`internal/exchange/deribit/account.go`), which the poller consumes through its own `account.Source` interface.
    Same requests, same gateway, same low-priority lane, and `/api/account` byte for byte the same (monitor only, no trading effect).
    `orders.Executor`'s own `get_positions` and `get_account_summary` (reconcile, the margin policy) stay where they are.
-6. **`internal/exchange/deribit`**: an `Adapter` type that composes today's `Gateway`, `Executor` and `Manager` and satisfies `Exchange`; `main` builds `strategy.Deps` from it. No call changes; the coupling test's allowed packages move to `exchange/deribit` as each step lands.
+6. **Adapter** (done, #761): `deribit.Adapter` (`internal/exchange/deribit/adapter.go`) embeds today's `Gateway`, `Executor` and `Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`; compile-time check in `internal/exchange/deribit.go`); `main` builds `strategy.Deps`' `Exchange`, `Market` and `Futures` from it.
+   No call changes: it has no method of its own, and the same scripted cycle sends the same requests through it as through the executor (`tests/exchange_adapter_test.go`).
+   `Name`, `Capabilities` and `BookSummary` of §3's `Exchange` stay out: `internal/exchange/deribit` cannot import `internal/exchange` (it imports `gex`, which imports the adapter's package), and the book summary GEX reads comes from mainnet, not the trading connection.
+   The gateway's importers under `internal/` are pinned with their reasons (`gatewayImporters`, may only shrink); `internal/strategy` imports neither the gateway, the adapter nor the transport and never names `orders.Executor`.
+   It still imports `internal/orders` for the bot's own data types (`Order`, `Fill`, `StateManager`, the journal); moving the executor's calls into `exchange/deribit` is a later step.
 7. **Instrument fields instead of name parsing in the strategy**: `orphans.go`, `pending.go`, `shed.go`, `stopped.go` read `Instrument.Expiry/Strike/OptionType` (from the chain or the journal) instead of `ParseOptionName`; research tools keep the parser for recorded Deribit files. Restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
 8. **Name-free strategy literals**: `suggestedHedgeInst` (`<COIN>-PERPETUAL`) and the daily-close instrument come from the adapter.
 
