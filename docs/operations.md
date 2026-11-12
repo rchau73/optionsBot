@@ -239,6 +239,12 @@ About 0.5 MB a day per coin.
 Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 A block reaches the file whole or not at all (#661); an older file with a damaged block fails `gzip -t`, but `cmd/stress -replay`, `cmd/compare` and the coverage reports read its complete blocks, warn `recorded day damaged` with the day, `last_good` and `resumes`, and show the missing hours as a gap.
 
+**Daily recording check** (#716).
+The morning after, the agents' `recording_check.sh` checks yesterday's (UTC) books and minute GEX of every bot of the recording environment: `go run ./cmd/datacoverage -dir data/btc -yesterday` prints each dataset's covered hours of 24, its share and its longest gap (`-json` for the script).
+Under 90 % (`ReplayFullCoveragePct`, the weekly report's floor for a `full` replay) or with a gap over 3 h, it notifies once and comments on the E2 epic with the bot, dataset, day, share and gap — hours and percentages only; a complete day is silent.
+A dataset folder without yesterday's file counts as 0 %; a damaged stretch is a gap, not an error.
+Fix the recorder (logs above) the same day, so the week's replay stays `full` ([docs/agents/evidence.md](agents/evidence.md#daily-recording-check)).
+
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot.
 It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it.
 The log lines carry `dir`.

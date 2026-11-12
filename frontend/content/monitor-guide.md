@@ -80,6 +80,7 @@ On your first visit there is no card, only a line saying what it will show next 
 **When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
 
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
+In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.
 
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
@@ -544,6 +545,22 @@ Active sessions lists every browser where you are signed in to the monitor, what
 **Signing out this browser**: use Sign out in the account menu. Active sessions does not sign out the browser you are using.
 
 Learn more: "Sign-in and password" in this guide.
+
+## Download my data
+
+You can download a copy of what the monitor keeps about you, whatever your role, without asking an admin.
+
+**How to download my data**: choose Download my data in the account menu. The window says what the file holds. Choose Download the file and your browser saves one JSON file.
+
+**What the file holds**: your account details, your analytics choice, the browsers where you are signed in, your survey answers with any text you wrote, your usage events and the audit lines of what you did. It holds only your own data. It holds no password, no password hash, no sign-in token and no address. Audit lines where an admin acted on your account are not in it yet.
+
+**When a part is missing**: if the monitor cannot read one part, the file still holds the others and names that part unavailable, with the reason.
+
+**How often**: you can download it 3 times an hour. A 4th try says how many minutes to wait.
+
+**Keeping it safe**: the file is yours. It shows how and when you used the monitor, so keep it somewhere safe. Each download is recorded in the audit trail with how many items each part held, never what they say.
+
+Learn more: "Active sessions" and "Deleting your account" in this guide.
 
 ## Deleting your account
 

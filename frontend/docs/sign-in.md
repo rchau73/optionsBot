@@ -109,6 +109,7 @@ One JSON line for each of these, with username and IP:
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
 - another session signed out by its owner: `session ended` (with `event: session_ended` and `target_session`, #584);
+- a person's own data downloaded: `my data exported` with the counts per section (#750);
 - a refused action.
 
 Never a password, hash, token or `AUTH_SECRET`
@@ -126,6 +127,7 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
 - `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
+- `my_data_exported` (a person downloaded their own data, #750), with `counts` per section, never the content;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);

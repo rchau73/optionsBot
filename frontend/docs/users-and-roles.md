@@ -33,6 +33,10 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: ✓
+- Download your own data as one file (Account ▾ → Download my data, `/api/auth/my-data`, #750); never another person's
+  - admin: ✓
+  - manager: ✓
+  - user: ✓
 - Read the audit trail, check its hash chain and export it as CSV (Audit page, `/api/admin/audit`, `/api/admin/audit/verify`, #619, `/api/admin/audit/export`, #702)
   - admin: ✓
   - manager: — (403)
@@ -50,7 +54,7 @@ Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_C
 `__tests__/role-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the read-only `MONITOR_API_TOKEN` and with an expired session.
 A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
 A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
-Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
+Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/my-data` (#750), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
 Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing).
 **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401).
 So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later.
@@ -117,6 +121,14 @@ Any role; the session is re-read like a state-changing route (`requireRole`), an
 Any role; in the role matrix (`STATE_CHANGING_ROUTES`)
 
 **Refusals:** 404 someone else's or an unknown id (nothing changes) · 409 the session in use ("use Sign out")
+
+#### `GET /api/auth/my-data` (#750)
+
+**Does:** one JSON file (`Content-Disposition: attachment`) of the signed-in person's own data (`lib/auth/mydata.js`): account without the password hash, consent, live sessions, survey answers, analytics events and the audit lines where they are the `username`; a section that cannot be read says `unavailable` with its reason.
+Audited `my_data_exported` with the counts per section, never the content.
+Any role; the session is re-read like a state-changing route (`requireRole`), and the role matrix calls it as every caller (`ROLE_GUARDED_READS`)
+
+**Refusals:** 401 no session, an ended one or the service token (nothing written) · 429 a 4th download within the hour, with the wait in words (nothing written)
 
 #### `GET /api/compare` (#302)
 

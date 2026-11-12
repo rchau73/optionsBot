@@ -226,4 +226,5 @@ Managers and admins, same-origin JSON `{"key", "value", "underlying"?}` (BTC by 
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
 - `GET /api/auth/sessions` and `DELETE /api/auth/sessions/<id>` (#584) are the monitor's own, never forwarded to a bot: a person's sessions and signing out the other ones ([Sign-in](sign-in.md#active-sessions), [Users and roles](users-and-roles.md)).
+- `GET /api/auth/my-data` (#750) is the monitor's own, never forwarded to a bot: the signed-in person's own data as one JSON file ([Sign-in](sign-in.md#download-my-data), [Users and roles](users-and-roles.md)).
 - `GET /api/admin/audit/export?user=&action=&from=&to=` (#702) is the monitor's own too, never forwarded to a bot: an admin downloads the filtered audit trail as CSV, at most 50,000 lines, and the export writes an `audit_exported` line ([Audit](audit.md#routes)).
