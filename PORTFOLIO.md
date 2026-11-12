@@ -17,7 +17,7 @@ It shows two things at once: production-grade backend engineering against a real
 | Time frame | June – October 2026, alone, alongside a full-time job |
 | Code | ~75,000 lines of Go, ~38,000 lines of Next.js/React, 160 test files, 87 % coverage |
 | Delivery | 718 commits, 302 merged pull requests, 255 issues on a Kanban board |
-| AI agents | 167 of the 302 merged PRs were implemented by the Dev agent; 158 PR reviews by the Reviewer agent, 19 of them blocking |
+| AI agents | 167 of the 302 merged PRs were implemented by the Dev agent; 150 PR reviews by the Reviewer agent (15–31 October), 12 of them blocking |
 | Releases | two environments (mvp on every merge, stable on versioned releases after a 3-day soak), v0.3.2 today |
 | Delivery metrics (week 2026-W44) | 87 mvp deploys, merge → live 4 min (median), change failure rate 1 % (1 of 88) |
 
