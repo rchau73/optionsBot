@@ -8,7 +8,7 @@ import { render } from "@testing-library/react";
 import Panel from "@/components/Panel";
 import PendingOrders from "@/components/PendingOrders";
 import { measureDialog, measurePage } from "@/e2e/measure";
-import { baselineNotes, baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
+import { A11Y_WIDTH, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
 import { menuItems } from "@/lib/menu";
 import { bot } from "@/test/fixtures";
 
@@ -263,6 +263,46 @@ describe("Scenario: a new overflow not in the baseline fails naming page, viewpo
     expect(normaliseLabel("  Show 50\n more ")).toBe("Show # more");
     expect(normaliseLabel("IM 12.4 % at 10:42")).toBe("IM # % at #");
     expect(normaliseLabel("x".repeat(60))).toHaveLength(40);
+  });
+});
+
+describe("Scenario: the phone report lists small text and small tap targets", () => {
+  test("at 360 px each page's text under 12 px and controls under 44 × 44 px are listed, with a selector", () => {
+    // jsdom's own sheet gives headings an em size; a browser reports px.
+    render(
+      <>
+        <style>{"* { font-size: 16px; }"}</style>
+        <MonitorLike />
+        <p style={{ fontSize: "10px" }}>as of 10:42</p>
+        <p style={{ fontSize: "12px" }}>exactly the bar</p>
+      </>,
+    );
+    fakeLayout();
+    const found = a11yOfPage(measurePage());
+    expect(found.small_text).toEqual([{ key: 'Page › p "as of #"', selector: "div > p:nth-of-type(1)", font_px: 10, count: 1 }]);
+    // Every button is 50 × 20 in the fake layout: under 44 px tall.
+    expect(found.small_targets.map((t) => t.key)).toEqual(['Header › button "Account ▾"']);
+    expect(found.small_targets[0]).toMatchObject({ selector: "div > header > button", width: 50, height: 20, count: 1 });
+  });
+
+  test("the report states the bar and ranks findings by the number of pages they are on", () => {
+    const menu = { key: 'Header › button "Menu"', selector: "header > button", width: 30, height: 30, count: 1 };
+    const tiny = { key: 'Income › span "as of #"', selector: "span", font_px: 10, count: 2 };
+    const pages = { income: { small_text: [tiny], small_targets: [menu] }, overview: { small_text: [], small_targets: [menu] } };
+    const report = a11yReport(pages, "2026-11-12T00:00:00Z");
+    expect(report).toMatchObject({ viewport_px: 360, bar: { min_text_px: 12, min_tap_px: 44 }, report_only: true, pages });
+    expect(report.ranked).toEqual([
+      { kind: "small_target", key: 'Header › button "Menu"', pages: ["income", "overview"], page_count: 2 },
+      { kind: "small_text", key: 'Income › span "as of #"', pages: ["income"], page_count: 1 },
+    ]);
+  });
+
+  test("the spec writes e2e/a11y-report.json at 360 px and fails nothing on it", () => {
+    const spec = read("e2e/phone.spec.js");
+    expect(spec).toMatch(/A11Y_REPORT = path\.join\(FRONTEND, "e2e", "a11y-report\.json"\)/);
+    expect(spec).toMatch(/if \(vp\.name === A11Y_WIDTH\) a11yPages\[target\.name\] = a11yOfPage\(raw\)/);
+    expect(spec).not.toMatch(/expect\([^)]*a11y/i);
+    expect(A11Y_WIDTH).toBe("360");
   });
 });
 

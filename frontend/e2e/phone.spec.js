@@ -2,17 +2,20 @@
 // menu (lib/menu.js) and the assistant panel opened on demo data at 360, 768
 // and 1280 px, and the overview's dialogs at 360 × 640 / 640 × 360, writes
 // docs/responsive-measured.json and screenshots under test-results/phone/
-// (both git-ignored), and fails only when something is worse than
+// (both git-ignored) and, report-only, e2e/a11y-report.json (small text and
+// tap targets at 360 px, #763), and fails only when something is worse than
 // e2e/phone-baseline.json, naming page, viewport and element.
 // UPDATE_PHONE_BASELINE=1 (re)records the baseline.
 import fs from "node:fs";
 import path from "node:path";
 import { demoLoaded, expect, test } from "./fixtures.js";
 import { measureDialog, measurePage } from "./measure.js";
-import { DIALOG_VIEWPORTS, WIDTHS, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
+import { A11Y_WIDTH, DIALOG_VIEWPORTS, WIDTHS, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
 
 const FRONTEND = process.env.PHONE_FRONTEND_DIR;
 const REPORT = path.join(FRONTEND, "docs", "responsive-measured.json");
+// Small text and small tap targets per page at 360 px (#763): report-only, fails nothing.
+const A11Y_REPORT = path.join(FRONTEND, "e2e", "a11y-report.json");
 const BASELINE = path.join(FRONTEND, "e2e", "phone-baseline.json");
 const SHOTS = path.join(FRONTEND, "test-results", "phone");
 
@@ -90,6 +93,7 @@ test("every menu page and the assistant: measured on demo data, no worse than th
   await demoLoaded(page);
 
   const report = { generated_at: new Date().toISOString(), source: "cmd/monitor-demo (BTC, ETH), simulated data", pages: {}, dialogs: {} };
+  const a11yPages = {};
   for (const target of viewportPages()) {
     await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
     await openPage(page, target);
@@ -97,7 +101,9 @@ test("every menu page and the assistant: measured on demo data, no worse than th
     for (const vp of WIDTHS) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.waitForTimeout(800);
-      report.pages[target.name].widths[vp.name] = summariseWidth(vp, await page.evaluate(measurePage));
+      const raw = await page.evaluate(measurePage);
+      report.pages[target.name].widths[vp.name] = summariseWidth(vp, raw);
+      if (vp.name === A11Y_WIDTH) a11yPages[target.name] = a11yOfPage(raw);
       await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
     }
   }
@@ -120,6 +126,7 @@ test("every menu page and the assistant: measured on demo data, no worse than th
   }
 
   fs.writeFileSync(REPORT, `${JSON.stringify(report, null, 2)}\n`);
+  fs.writeFileSync(A11Y_REPORT, `${JSON.stringify(a11yReport(a11yPages, report.generated_at), null, 2)}\n`);
 
   // Every overflow is explained: the report names what causes it.
   for (const [pageName, p] of Object.entries(report.pages)) {
