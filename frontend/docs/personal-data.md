@@ -100,6 +100,19 @@ State of the notification bell, per person.
 | `notification_settings.kind` | Which kind of item | removed with the person |
 | `notification_settings.enabled` | On or off | removed with the person |
 
+## `account_links`
+
+Which exchange accounts a manager may act on (#760): an admin sets them on the Users page; a manager with no row acts on every account of this deployment.
+The account ids are the registry's opaque ids (`data/accounts_status.json`, #655): no key, money, position or name of an account holder.
+Not in "Download my data" yet; an admin sees them on the Users page.
+
+| Column | Purpose | Retention |
+| --- | --- | --- |
+| `user_id` | Which manager the link limits | removed when an admin removes the link, and with the person |
+| `account_id` | The account the manager may act on | same |
+| `created_by` | Username of the admin who added the link | same; the audit line `account_link_added` also names the admin |
+| `created_at` | When the link was added | same |
+
 ## `audit.jsonl`
 
 `data/monitor/audit.jsonl` beside the database: one JSON line per action with the time, the action, the username and role of the actor and fields of the action; append-only, owner-only, hash-chained (`prev`, `line_hash`, hashes of lines only).
@@ -118,6 +131,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
+- manager–account links (#760): `account_link_added`, `account_link_removed` (the admin, the manager as `target` and the `account_id`);
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - the trail itself: `audit_exported`;
 - a person's own data: `my_data_exported` (#750: who downloaded their file and the count per section, never the content);
@@ -167,7 +181,7 @@ The admin's CLI export (`events_exported`) and the Audit page's CSV export are u
 ## What "delete my account" removes and keeps
 
 The self-delete (#543) and an admin's deletion run the same steps:
-- removed: the `users` row with its consent, every session, reset links, notification state (`notification_reads`, `notification_settings`), the person's analytics events and their `survey_answers`;
+- removed: the `users` row with its consent, every session, reset links, account links, notification state (`notification_reads`, `notification_settings`), the person's analytics events and their `survey_answers`;
 - an event or survey step that fails is reported (`events_error`, `survey_answers_error`); orphan survey answers are removed at the next start;
 - kept: the audit lines that name the person (as `username` or as `target`, including `account_deleted`) and the log lines, because the trail is the evidence of who did what — **proposal**, see the questions;
 - not touched: exchange accounts and funds, which are not the monitor's.
@@ -182,3 +196,4 @@ The self-delete (#543) and an admin's deletion run the same steps:
 6. L22: the breach duties for the user database and the audit trail, and the minimum security the terms promise.
 7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it. **Fallback in place**: only admins may export, and every export is an audit line.
 8. L14, L16: "Download my data" (#750): the notice wording, and whether audit lines naming the person only as an admin's `target` may be in their file. **Fallback in place**: only the person's own actions.
+9. PRD §11: manager–account links (#760) let a manager act only on the accounts linked to them; may a manager who is not the account owner (an adviser) be linked, and must their links be in their "Download my data"? **Fallback in place**: no link is set for an adviser until counsel answers.

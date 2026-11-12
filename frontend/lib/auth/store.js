@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS notification_settings (
   enabled INTEGER NOT NULL,
   PRIMARY KEY (user_id, kind)
 );
+-- Manager–account links (#760): which exchange accounts (ids of the registry,
+-- data/accounts_status.json) a manager may act on. No row for a manager =
+-- every account of this deployment. created_by is the admin's username,
+-- created_at in Unix seconds.
+CREATE TABLE IF NOT EXISTS account_links (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  account_id TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, account_id)
+);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -394,8 +405,33 @@ export class AuthStore {
     this.write("INSERT OR REPLACE INTO notification_settings (user_id, kind, enabled) VALUES (?, ?, ?)", [userId, kind, enabled ? 1 : 0]);
   }
 
-  /** Deletes a user, every session of theirs, their reset links and their notification state. */
+  /** The account ids a user is linked to (#760), sorted; [] = no link. */
+  accountLinks(userId) {
+    return this.all("SELECT account_id FROM account_links WHERE user_id = ? ORDER BY account_id", [userId]).map((r) => r.account_id);
+  }
+
+  /** Every user's links for the Users page: user id → sorted account ids (users without a link are absent). */
+  allAccountLinks() {
+    const out = {};
+    for (const r of this.all("SELECT user_id, account_id FROM account_links ORDER BY user_id, account_id")) {
+      (out[r.user_id] ??= []).push(r.account_id);
+    }
+    return out;
+  }
+
+  /** Replaces a user's links with `add` added and `remove` removed, in one save. */
+  changeAccountLinks(userId, { add = [], remove = [] }, createdBy, nowMs = Date.now()) {
+    const t = Math.floor(nowMs / 1000);
+    for (const id of remove) this.db.run("DELETE FROM account_links WHERE user_id = ? AND account_id = ?", [userId, id]);
+    for (const id of add) {
+      this.db.run("INSERT OR IGNORE INTO account_links (user_id, account_id, created_by, created_at) VALUES (?, ?, ?, ?)", [userId, id, createdBy, t]);
+    }
+    this.save();
+  }
+
+  /** Deletes a user, every session of theirs, their reset links, their account links and their notification state. */
   deleteUser(id) {
+    this.db.run("DELETE FROM account_links WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM refresh_tokens WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM reset_tokens WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM notification_reads WHERE user_id = ?", [id]);

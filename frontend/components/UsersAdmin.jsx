@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AccountLinksDialog from "./AccountLinksDialog";
 import AddUserForm from "./AddUserForm";
 import Badge from "./Badge";
 import Panel from "./Panel";
@@ -8,7 +9,7 @@ import ResetLinkDialog from "./ResetLinkDialog";
 import UserActionDialog from "./UserActionDialog";
 import { fetchUsers } from "@/lib/api/users";
 import { formatDateTime } from "@/lib/format";
-import { ROLES } from "@/lib/users";
+import { accountsSummary, ROLES } from "@/lib/users";
 
 const BUTTON =
   "rounded border border-line px-2 py-0.5 text-xs hover:bg-line/40 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
@@ -17,23 +18,26 @@ const BUTTON =
  * The Users page (#306, admins only — the /api/admin/users routes enforce it):
  * every person with role, email, created and last sign-in; add a person;
  * change a role, reset a password, make a reset link (#307), sign out
- * everywhere and delete, each after a confirmation. `me` is the signed-in
- * admin's username.
+ * everywhere and delete, each after a confirmation; the accounts a manager
+ * may act on (#760). `me` is the signed-in admin's username.
  */
 export default function UsersAdmin({ me }) {
   const [users, setUsers] = useState(null);
+  const [accounts, setAccounts] = useState([]); // the registry's, for the account links
   const [error, setError] = useState(null);
   const [reload, setReload] = useState(0);
   const [roles, setRoles] = useState({}); // user id → role picked in its row, not yet sent
   const [pending, setPending] = useState(null); // { action, user, role } awaiting confirmation
   const [notice, setNotice] = useState(null); // { tone, text } of the last action
   const [linkFor, setLinkFor] = useState(null); // the user a reset link is being made for
+  const [accountsFor, setAccountsFor] = useState(null); // the manager whose account links are being edited
 
   useEffect(() => {
     const ctrl = new AbortController();
     fetchUsers(ctrl.signal).then(
       (list) => {
-        setUsers(list);
+        setUsers(list.users);
+        setAccounts(list.accounts);
         setError(null);
       },
       (err) => {
@@ -46,6 +50,7 @@ export default function UsersAdmin({ me }) {
   const done = (result) => {
     setPending(null);
     setLinkFor(null);
+    setAccountsFor(null);
     setRoles({});
     setNotice(result);
     setReload((n) => n + 1);
@@ -78,6 +83,7 @@ export default function UsersAdmin({ me }) {
                   <th className="px-2 py-1">Username</th>
                   <th className="px-2 py-1">Role</th>
                   <th className="px-2 py-1">Email</th>
+                  <th className="px-2 py-1">Accounts</th>
                   <th className="px-2 py-1">Created</th>
                   <th className="px-2 py-1">Last sign-in</th>
                   <th className="px-2 py-1">Actions</th>
@@ -114,6 +120,16 @@ export default function UsersAdmin({ me }) {
                         </div>
                       </td>
                       <td className="px-2 py-1 text-muted">{u.email ?? "—"}</td>
+                      <td className="px-2 py-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={(u.accounts ?? []).length ? "" : "text-muted"}>{accountsSummary(u, accounts)}</span>
+                          {u.role === "manager" ? (
+                            <button type="button" className={BUTTON} aria-label={`Edit accounts of ${u.username}`} onClick={() => setAccountsFor(u)}>
+                              Edit accounts
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-2 py-1 tabular-nums text-muted">{formatDateTime(u.created_at)}</td>
                       <td className="px-2 py-1 tabular-nums text-muted">{u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "never"}</td>
                       <td className="px-2 py-1">
@@ -160,6 +176,7 @@ export default function UsersAdmin({ me }) {
       </Panel>
 
       {pending ? <UserActionDialog {...pending} me={me} onDone={done} onCancel={() => setPending(null)} /> : null}
+      {accountsFor ? <AccountLinksDialog user={accountsFor} accounts={accounts} onDone={done} onCancel={() => setAccountsFor(null)} /> : null}
       {linkFor ? <ResetLinkDialog user={linkFor} me={me} onDone={done} onCancel={() => setLinkFor(null)} /> : null}
     </div>
   );

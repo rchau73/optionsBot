@@ -703,6 +703,16 @@ Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
 
+**Accounts a manager manages**: the Accounts column of the Users page says what each person may act on.
+An admin acts on every account, and a user on none.
+A manager with no linked account acts on every account of this environment, as before.
+Edit accounts on a manager's row lists the accounts of the account registry with a box each; tick the ones the manager manages, read what follows, then Save accounts.
+From then on the monitor refuses that manager's close or rebalance on a bot of any other account, and says which account they do not manage; the bot receives nothing.
+Untick every box to give the manager every account again.
+Each account added or removed is recorded in the audit trail with your username, the manager and the account.
+Do not link an adviser who is not the account owner until counsel has approved it.
+<!-- guide: route:PUT /api/admin/users/[id]/accounts -->
+
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.
 <!-- guide: page:/admin/audit -->

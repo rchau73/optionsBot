@@ -205,6 +205,7 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 - **Key security:** trade-only API keys, no withdrawal rights, encrypted at rest, revocable by the user; passwords hashed; roles enforced on the server (E7, E8).
 - **Scope risk:** thirteen epics are more than a team runs at once. Ranks and the roadmap set the order: Now epics first, Later epics only once their prerequisites (E2 evidence, E7 accounts) exist.
 - **Open questions:** both answered on #185 (2026-10-20). (1) a manager's parameter change applies to one account at a time, an account they manage; an "apply to all my accounts" shortcut may come later. (2) Managers are on the customer's side, the subscriber or a customer's adviser, linked n:n to accounts; admins are our staff. **Needs legal review:** an adviser who is not the account owner changing a strategy for that owner (legal brief, advice and mandate questions), and E8's tenancy (accounts, links of managers to accounts) before E9's UI lets an adviser act.
+- **Manager–account links exist (#760), the legal question stays open:** an admin may link a manager to the accounts they manage on the Users page, and the monitor then refuses that manager's close or rebalance on any other account. It ships off (a manager without a link keeps every account) and no link is set for an adviser who is not the account owner until counsel answers the question above (`frontend/docs/users-and-roles.md`).
 
 ## 12. Decision log
 
