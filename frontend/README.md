@@ -133,6 +133,8 @@ npm run test:phone                # viewport check (#309, #425): every menu page
   - Contents: tests and shared fixtures
 - `e2e/`
   - Contents: the viewport check (Playwright, `npm run test:phone`): config, sign-in fixture, the pages from the menu, in-page measuring, baseline comparison
+  - `a11y-report.json` (#763, report-only): per page at 360 px, `small_text` (under 12 px) and `small_targets` (under 44 × 44 px), each with a `selector`, its size and `count`; `ranked` puts the findings on the most pages first.
+    Read it from the top of `ranked`; the ranked list and each fix's owner are in `docs/product/responsive-a11y-baseline.md` (details: [`docs/testing.md`](docs/testing.md) "Colour contrast, text size and tap targets").
 
 Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/globals.css` (`profit`, `loss`, `call`, `put`, `live`, `testnet`…) · Recharts · clsx.
 

@@ -5,9 +5,9 @@
 
 /**
  * The page as it is now: horizontal overflow and what causes it, every
- * visible interactive control's box, the elements whose only explanation is
- * a `title`, and the header's height. Labels are raw: e2e/phone.js
- * normalises them.
+ * visible interactive control's box, every visible text's font size (#763),
+ * the elements whose only explanation is a `title`, and the header's height.
+ * Labels are raw: e2e/phone.js normalises them.
  */
 export function measurePage() {
   const root = document.documentElement;
@@ -70,11 +70,31 @@ export function measurePage() {
     }
     return el.getAttribute("aria-label") || text(el.querySelector("h2")) || text(el) || el.getAttribute("title") || tag;
   };
+  // A short CSS path to an element (#763): up to four steps, stopping at an id.
+  const selectorOf = (el) => {
+    const steps = [];
+    for (let e = el; e && e !== document.body && steps.length < 4; e = e.parentElement) {
+      const tag = e.tagName.toLowerCase();
+      if (e.id) {
+        steps.unshift(`${tag}#${e.id}`);
+        break;
+      }
+      const same = e.parentElement ? [...e.parentElement.children].filter((c) => c.tagName === e.tagName) : [];
+      steps.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(e) + 1})` : tag);
+    }
+    return steps.join(" > ");
+  };
   const controls = [...document.querySelectorAll(CONTROLS)].filter(visible).map((el) => {
     const r = el.getBoundingClientRect();
     const role = el.getAttribute("role");
-    return { panel: panelOf(el), kind: role ? `${el.tagName.toLowerCase()}[${role}]` : el.tagName.toLowerCase(), label: labelOf(el), width: r.width, height: r.height };
+    return { panel: panelOf(el), kind: role ? `${el.tagName.toLowerCase()}[${role}]` : el.tagName.toLowerCase(), label: labelOf(el), width: r.width, height: r.height, selector: selectorOf(el) };
   });
+
+  // Text and its size (#763): every visible element holding text of its own.
+  const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+  const texts = [...document.querySelectorAll("body *")]
+    .filter((el) => ownText(el) && visible(el))
+    .map((el) => ({ panel: panelOf(el), tag: el.tagName.toLowerCase(), text: text(el), fontPx: parseFloat(getComputedStyle(el).fontSize) || 0, selector: selectorOf(el) }));
 
   // A title whose words are not on screen and not otherwise described: hover-only.
   const titleOnly = [...document.querySelectorAll("[title]")]
@@ -85,6 +105,7 @@ export function measurePage() {
   return {
     overflow: { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, causes },
     controls,
+    texts,
     titleOnly,
     headerHeight: header ? header.getBoundingClientRect().height : 0,
   };
