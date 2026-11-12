@@ -3,7 +3,8 @@
 // production build of the monitor wired to them only, signs in with a
 // throwaway admin on an in-memory user database, and measures every menu page
 // and the assistant at 360, 768 and 1280 px (e2e/phone.spec.js, #425). Chromium only; not part of
-// `npm test` (Jest) nor of CI — it needs `npx playwright install chromium` once.
+// `npm test` (Jest) — it needs `npx playwright install chromium` once. CI runs it as its own
+// job, "Phone viewport check", on pull requests that touch the monitor (#739).
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

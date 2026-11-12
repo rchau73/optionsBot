@@ -109,7 +109,8 @@ else
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           { "context": "Lint, test & coverage" },
-          { "context": "Frontend lint, test & build" } ] } }
+          { "context": "Frontend lint, test & build" },
+          { "context": "Phone viewport check" } ] } }
   ]
 }
 JSON

@@ -8,7 +8,7 @@ import { render } from "@testing-library/react";
 import Panel from "@/components/Panel";
 import PendingOrders from "@/components/PendingOrders";
 import { measureDialog, measurePage } from "@/e2e/measure";
-import { baselineNotes, baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
+import { baselineNotes, baselineOf, baselineSlack, compareToBaseline, normaliseLabel, recordRefusal, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
 import { menuItems } from "@/lib/menu";
 import { bot } from "@/test/fixtures";
 
@@ -263,6 +263,58 @@ describe("Scenario: a new overflow not in the baseline fails naming page, viewpo
     expect(normaliseLabel("  Show 50\n more ")).toBe("Show # more");
     expect(normaliseLabel("IM 12.4 % at 10:42")).toBe("IM # % at #");
     expect(normaliseLabel("x".repeat(60))).toHaveLength(40);
+  });
+});
+
+describe("Scenario: a pull request adds a page overflow (CI, #739)", () => {
+  test("a 540 px table without a scroll box on Income fails, the message naming income 360 px and the new cause", () => {
+    const baseline = baselineOf(report());
+    const now = report();
+    now.pages.income.widths[360] = width({ causes: [{ panel: "Income", element: "table", width_px: 540 }] });
+    const problems = compareToBaseline(baseline, now);
+    expect(problems).toContain("income 360 px: page overflow now caused by Income › table (540 px wide)");
+  });
+});
+
+describe("Scenario: today's known problems stay green (CI, #739)", () => {
+  const baseline = baselineOf(report());
+
+  test("the baseline's entries pass and nothing is reported to tighten", () => {
+    expect(compareToBaseline(baseline, report())).toEqual([]);
+    expect(baselineSlack(baseline, report())).toEqual([]);
+  });
+
+  test("better than the baseline passes, and the output says the baseline can be tightened", () => {
+    const now = report(CLEAN);
+    now.pages.overview.widths[768].controls.under_24_kinds = [];
+    delete now.pages.income;
+    expect(compareToBaseline(baseline, now)).toEqual([]);
+    const slack = baselineSlack(baseline, now);
+    expect(slack).toContain("overview 360 px: page overflow caused by Working orders (placed, not filled yet) › table gone: the baseline can be tightened");
+    expect(slack).toContain('overview 768 px: control under 24 px Activity › button[tab] "All" gone: the baseline can be tightened');
+    expect(slack).toContain("income: in the baseline but no longer measured: the baseline can be tightened");
+    expect(slack).toHaveLength(5); // overview: 3 overflows + 1 control; income once
+  });
+});
+
+describe("Scenario: the baseline is never rewritten by CI (#739)", () => {
+  test("in CI, a missing baseline or UPDATE_PHONE_BASELINE=1 is refused, naming why", () => {
+    expect(recordRefusal({ CI: "true" }, false)).toMatch(/^e2e\/phone-baseline\.json is missing in CI: the baseline is recorded only locally/);
+    expect(recordRefusal({ CI: "true", UPDATE_PHONE_BASELINE: "1" }, true)).toMatch(/^UPDATE_PHONE_BASELINE=1 is set in CI/);
+  });
+
+  test("CI comparing, and any local run, may go on", () => {
+    expect(recordRefusal({ CI: "true" }, true)).toBe("");
+    expect(recordRefusal({ CI: "true", UPDATE_PHONE_BASELINE: "" }, true)).toBe("");
+    expect(recordRefusal({ UPDATE_PHONE_BASELINE: "1" }, true)).toBe("");
+    expect(recordRefusal({}, false)).toBe("");
+  });
+
+  test("the spec asks recordRefusal before it writes the baseline", () => {
+    const spec = read("e2e/phone.spec.js");
+    expect(spec.indexOf("recordRefusal(process.env")).toBeGreaterThan(-1);
+    expect(spec.indexOf("recordRefusal(process.env")).toBeLessThan(spec.indexOf("fs.writeFileSync(BASELINE"));
+    expect(spec).toMatch(/baselineSlack\(baseline, report\)/);
   });
 });
 

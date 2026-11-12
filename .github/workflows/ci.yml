@@ -16,7 +16,8 @@ jobs:
   # suites picks them by what each one builds or reads — a doc runs a suite
   # only when one of its tests opens it (test_checkfail.py keeps that list
   # honest), any .md runs the doc-wide line checks (a CLAUDE.md only those), Docker only on code, the
-  # vulnerability scan only on go.mod/go.sum/package-lock.json. A push to
+  # vulnerability scan only on go.mod/go.sum/package-lock.json, the phone
+  # check only on the monitor and the demo it measures. A push to
   # main, the nightly run and a manual run always run everything.
   changes:
     name: Changes
@@ -29,6 +30,7 @@ jobs:
       scripts: ${{ steps.diff.outputs.scripts }}
       docker: ${{ steps.diff.outputs.docker }}
       vuln: ${{ steps.diff.outputs.vuln }}
+      phone: ${{ steps.diff.outputs.phone }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -45,7 +47,7 @@ jobs:
             cat files.txt
             python3 scripts/agents/checkfail.py suites files.txt | tee -a "$GITHUB_OUTPUT"
           else
-            for s in go go_lint frontend docs scripts docker vuln; do echo "$s=true"; done | tee -a "$GITHUB_OUTPUT"
+            for s in go go_lint frontend docs scripts docker vuln phone; do echo "$s=true"; done | tee -a "$GITHUB_OUTPUT"
           fi
 
   go-lint:
@@ -210,6 +212,49 @@ jobs:
       - run: npm run lint
       - run: npm test -- --ci
       - run: npm run build
+
+  # The phone viewport check (#309, #739): every menu page and the assistant at
+  # 360, 768 and 1280 px on cmd/monitor-demo's data, compared with
+  # e2e/phone-baseline.json. Its failure names page, viewport and element. CI
+  # never records the baseline (recordRefusal in e2e/phone.js; the last step
+  # checks the file is unchanged): that stays a local, reviewed step.
+  phone:
+    name: Phone viewport check
+    needs: changes
+    if: needs.changes.outputs.phone == 'true' # skipped counts as passed for the required check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6 # the two demo bots: go run ./cmd/monitor-demo
+        with:
+          go-version: "1.27.3"
+          cache: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: npm run test:phone
+        env:
+          UPDATE_PHONE_BASELINE: "" # never recorded in CI
+        run: npm run test:phone
+      - name: The baseline is unchanged
+        if: always()
+        run: git diff --exit-code -- e2e/phone-baseline.json
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: phone-check
+          path: |
+            frontend/test-results/phone/
+            frontend/docs/responsive-measured.json
+          if-no-files-found: ignore
 
   secrets:
     name: Secret scan
