@@ -119,6 +119,26 @@ type Transport interface {
 	ConnStats() gateway.ConnStats
 }
 
+// Connection is an exchange connection's lifecycle as its owner (cmd/bot)
+// sees it.
+type Connection interface {
+	Connect(ctx context.Context) error
+	Close() error
+	// Fatal reports that the connection gave up reconnecting.
+	Fatal() <-chan error
+	ConnStats() gateway.ConnStats
+}
+
+// Exchange is one exchange adapter (#761): its connection, the account it
+// trades and the market it reads. main builds strategy.Deps' Exchange and
+// Market from it. Open interest (OpenInterest) is not part of it: it comes
+// from the real market, on testnet over another connection.
+type Exchange interface {
+	Connection
+	Trading
+	MarketData
+}
+
 // OptionNameParser reads an exchange's option instrument name.
 type OptionNameParser func(name string) (underlying string, expiry time.Time, strike float64, optType string, err error)
 
