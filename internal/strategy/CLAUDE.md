@@ -20,6 +20,7 @@ Read both before changing a rule.
   - The other direction (`underuse.go`, pure `IMUnderUseNext`/`UnderUseCause`, #369):
     entries allowed and IM under 60 % of the limit for `IMUnderUseWindowMinutes` (360, fixed; a reading gap > `history.MaxSampleGap` restarts the window, margin unknown pauses it, entries not allowed ends it)
     journals one `im_under_use` risk line + WARN (IM, limit, `utilisation_pct`, `minutes`, `cause` — the vacant slot's last `Skip*` reason or `orders.Idle*`, the vocabulary `cmd/idlemargin` shares),
+    again when the cause changes mid-episode (`UnderUseCauseChanged`, #768: ETH's alert said `all_full` for days after a roll left its 30-DTE slot on `no_expiry`; a `no_expiry` cause and skip list the window and listed expiries, `NoExpiryDetail`),
     `risk.im_under_use(_since)` in `/api/status`, `im_under_use_cleared` + WARN at ≥ 60 % or when entries stop being allowed; alert only, in memory.
   - The drift band on downsizes (`limits.go`, pure `DownsizeDue`, #555, the issue's option A): `limitChanged` is set by a confirmed limit change and cleared once its pass is `Done`;
     until then the pass cuts to the exact limit, any other pass (a top-up's retry, startup, the Rebalance button, its dry run) only above limit + `rebalance_startup_band_pct`.
