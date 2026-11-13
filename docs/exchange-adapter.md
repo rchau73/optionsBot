@@ -66,7 +66,7 @@ Each row is marked: **adapter** (moves into the adapter), **stays** (exchange-ne
 
 | Assumption | Where it lives | Behind a `deps.go` interface today? | Mark |
 |---|---|---|---|
-| Instrument naming `BTC-4OCT26-60000-P` (one-digit days for dailies) | `marketdata.ParseOptionName`, called by gex, recorder, replay, evidence, idlemargin, deployeffect and strategy (`orphans.go`, `pending.go`, `shed.go`, `stopped.go`) | no — a free function | **adapter**: the adapter fills `Instrument{Strike, Expiry, OptionType}`; the strategy's four callers read the instrument instead (step 7). Research tools keep the parser for recorded Deribit files |
+| Instrument naming `BTC-4OCT26-60000-P` (one-digit days for dailies) | `marketdata.ParseOptionName`, called by gex, recorder, replay, evidence, idlemargin and deployeffect; the strategy's five callers (`orphans.go`, `pending.go`, `shed.go`, `stopped.go`, `futureshedge.go`) left it at step 7 | yes since step 7 (`OptionChain.InstrumentFromName`) | **adapter** (done, step 7): `marketdata.InstrumentFromName` fills `Instrument{Underlying, Expiry, Strike, OptionType}` from a name the chain does not hold, and the strategy reads it through its `MarketData`. Research tools keep the parser for recorded Deribit files |
 | Coin-margined (inverse) premiums: prices, fees and P&L in coin, USD = coin × spot | `orders` (journal, `ClosedNetPnL`), `strategy` (sizing, `pnl.go`), `perf`, `evidence`, `api` | no — a unit everywhere | **settle later**: a linear (USDC) exchange changes what "premium" and "% of equity" mean; the recorder already records Deribit's USDC book to study it |
 | The margin simulator `private/simulate_portfolio` (portfolio margin, `add_positions`) | `orders.Executor`, used by `strategy/limits.go` sizing and `CapLots` | yes (`AccountReader.SimulatePortfolio/SimulateAlone`) | **adapter** + capability `MarginSimulator`; an exchange without it needs a local margin model (**settle later**) |
 | Account figures (`initial_margin`, `maintenance_margin`, `margin_balance`, cross collateral totals) | `orders.AccountSummary`, `MarginUsage`, `risk` | yes (`GetAccountSummary`) | **adapter** maps to `AccountSummary`; the margin policy reads the result (**stays**) |
@@ -129,6 +129,10 @@ type OptionChain interface {
 	UnderlyingPrice() float64
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
+	// InstrumentFromName: expiry, strike and type of a name the chain does
+	// not hold (a journal record, an expired leg) — the adapter reads its own
+	// names, the strategy never parses them (step 7).
+	InstrumentFromName(name string) (marketdata.Instrument, error)
 	Track(ctx context.Context, instruments []string) error
 }
 
@@ -259,7 +263,10 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
    `Name`, `Capabilities` and `BookSummary` of §3's `Exchange` stay out: `internal/exchange/deribit` cannot import `internal/exchange` (it imports `gex`, which imports the adapter's package), and the book summary GEX reads comes from mainnet, not the trading connection.
    The gateway's importers under `internal/` are pinned with their reasons (`gatewayImporters`, may only shrink); `internal/strategy` imports neither the gateway, the adapter nor the transport and never names `orders.Executor`.
    It still imports `internal/orders` for the bot's own data types (`Order`, `Fill`, `StateManager`, the journal); moving the executor's calls into `exchange/deribit` is a later step.
-7. **Instrument fields instead of name parsing in the strategy**: `orphans.go`, `pending.go`, `shed.go`, `stopped.go` read `Instrument.Expiry/Strike/OptionType` (from the chain or the journal) instead of `ParseOptionName`; research tools keep the parser for recorded Deribit files. Restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
+7. **Instrument fields instead of name parsing in the strategy** (done, #773): `orphans.go`, `pending.go`, `shed.go`, `stopped.go` and `futureshedge.go` read `Instrument.Expiry/Strike/OptionType` from the chain or, for a name the chain does not hold (the journal keeps only names; an expired leg), from `MarketData.InstrumentFromName` — `marketdata.Manager`'s, the one helper over `ParseOptionName`.
+   `StopsFromTrades` and `ShedsFromTrades` take it as a parameter (`strategy.InstrumentNames`).
+   Same fields as before, so no request and no decision changes; restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
+   `TestExchangeCoupling_StrategyCodeDoesNotParseNames` fails on a `marketdata.ParseOptionName` (or `InstrumentFromName`) call under `internal/strategy`; research tools keep the parser for recorded Deribit files.
 8. **Name-free strategy literals**: `suggestedHedgeInst` (`<COIN>-PERPETUAL`) and the daily-close instrument come from the adapter.
 
 After step 8 the coupling test can require that every `"public/"`/`"private/"` literal lives in `gateway` or `exchange/deribit` only. A second exchange is then an adapter plus the person's decisions in §5.

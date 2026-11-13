@@ -16,6 +16,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `tests/exchange_adapter_test.go` pins the gateway's importers under `internal/` (`gatewayImporters`, with reasons, may only shrink) and keeps `internal/strategy` free of the gateway, the adapter, the transport and `orders.Executor`.
   The strategy depends on it (#182):
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
+  - It never parses an instrument name (#773, migration step 7): it reads `Instrument{Expiry, Strike, OptionType}` from the chain, or from `OptionChain.InstrumentFromName` for a name the chain does not hold (journal records, expired legs);
+    `marketdata.InstrumentFromName` is the one helper over `ParseOptionName` (`TestExchangeCoupling_StrategyCodeDoesNotParseNames`).
   `marketdata` (`Streamer` only) and `internal/exchange/deribit` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
   Method → Deribit call map and what is Deribit-specific: `docs/architecture.md` §15.
   The full inventory, the proposed adapter interface and its migration steps: `docs/exchange-adapter.md` (#325)

@@ -80,6 +80,10 @@ type OptionChain interface {
 	UnderlyingPrice() float64
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
+	// InstrumentFromName fills an instrument's expiry, strike and option
+	// type from its name, for a name the chain does not hold (a journal
+	// record, an expired leg): the strategy never parses names (#773).
+	InstrumentFromName(name string) (marketdata.Instrument, error)
 	// Track subscribes to the tickers of instruments that have none yet.
 	Track(ctx context.Context, instruments []string) error
 }

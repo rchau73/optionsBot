@@ -322,6 +322,60 @@ func TestExchangeCoupling_StrategyHasNoDeribitLiteral(t *testing.T) {
 	}
 }
 
+// strategyNameParsers are the Deribit name parsers strategy code may not call
+// (#773): it reads Instrument{Expiry, Strike, OptionType} from the chain or
+// MarketData.InstrumentFromName.
+var strategyNameParsers = []string{"marketdata.ParseOptionName", "marketdata.InstrumentFromName"}
+
+// nameParserCalls returns "file:line: name" for every use of a banned
+// selector in the .go files under root.
+func nameParserCalls(t *testing.T, root string, banned []string) []string {
+	t.Helper()
+	var found []string
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && slices.Contains(banned, exprName(sel)) {
+				found = append(found, fmt.Sprintf("%s: %s", fset.Position(sel.Pos()), exprName(sel)))
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan %s: %v", root, err)
+	}
+	return found
+}
+
+// Scenario (#773): strategy code does not parse names — no file under
+// internal/strategy calls marketdata.ParseOptionName (nor the helper that
+// wraps it; the strategy reaches that through its MarketData).
+func TestExchangeCoupling_StrategyCodeDoesNotParseNames(t *testing.T) {
+	for _, call := range nameParserCalls(t, "../internal/strategy", strategyNameParsers) {
+		t.Errorf("%s in internal/strategy — read the instrument's fields (MarketData.GetInstrument or InstrumentFromName)", call)
+	}
+}
+
+// The check finds a call it should: a planted parser call fails it.
+func TestExchangeCoupling_NameParserCallIsFound(t *testing.T) {
+	root := t.TempDir()
+	src := "package strategy\n\nimport \"optionsbot/internal/marketdata\"\n\nvar _, _, _, _, _ = marketdata.ParseOptionName(\"BTC-27NOV26-90000-C\")\n"
+	if err := os.WriteFile(filepath.Join(root, "x.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := nameParserCalls(t, root, strategyNameParsers); len(got) != 1 || !strings.Contains(got[0], "x.go:5") {
+		t.Errorf("planted call: got %v, want one at x.go:5", got)
+	}
+}
+
 // Comments are not calls: a method named only in a comment is not coupling.
 func TestExchangeCoupling_CommentsDoNotCount(t *testing.T) {
 	root := t.TempDir()
