@@ -6,6 +6,7 @@ import (
 	"optionsbot/internal/exchange"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/history"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/shadow"
 )
@@ -23,6 +24,11 @@ type Exchange = exchange.Trading
 // MarketData provides the latest option chain snapshot, index price and
 // volatility index.
 type MarketData = exchange.MarketData
+
+// InstrumentNames fills an instrument's expiry, strike and option type from
+// its name — MarketData.InstrumentFromName, the exchange's reading of its own
+// names. The strategy never parses a name itself (#773).
+type InstrumentNames func(name string) (marketdata.Instrument, error)
 
 // TradeJournal records every order event, with its market snapshot, and the
 // periodic P&L to the audit log (orders.log).

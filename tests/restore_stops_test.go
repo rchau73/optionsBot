@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -27,7 +28,7 @@ func TestStopsFromTrades(t *testing.T) {
 		{Kind: "close", Reason: orders.TriggerRebalanceLegs, Instrument: "BTC-25DEC26-121000-C", At: at(5)}, // partial trim: kept
 		{Kind: "close", Reason: orders.TriggerManualClose, Instrument: "not-an-option", At: at(6)},
 	}
-	got := strategy.StopsFromTrades(trades)
+	got := strategy.StopsFromTrades(trades, marketdata.InstrumentFromName)
 	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 	want := map[strategy.StopSide]time.Time{
 		{Expiry: day(2026, 10, 30), OptionType: "put"}:  at(0),

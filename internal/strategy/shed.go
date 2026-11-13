@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -151,15 +150,16 @@ var shedReasons = closeReasons(orders.TriggerGammaClose)
 // ShedsFromTrades returns, for each expiry side, its last GEX shed when the
 // side's latest close was that shed and no repair re-sold the side since —
 // as the in-memory anchor would hold it. Any other later close (a stop, a
-// roll) replaces it; partial trims do not. trades are oldest first.
-func ShedsFromTrades(trades []orders.Trade) map[StopSide]JournalShed {
+// roll) replaces it; partial trims do not. trades are oldest first; names
+// fills each one's expiry and type, as in StopsFromTrades.
+func ShedsFromTrades(trades []orders.Trade, names InstrumentNames) map[StopSide]JournalShed {
 	out := make(map[StopSide]JournalShed)
 	for _, t := range trades {
-		_, expiry, _, typ, err := marketdata.ParseOptionName(t.Instrument)
+		inst, err := names(t.Instrument)
 		if err != nil {
 			continue
 		}
-		side := StopSide{expiryDay(expiry), typ}
+		side := StopSide{expiryDay(inst.Expiry), inst.OptionType}
 		switch {
 		case t.Kind == "close" && shedReasons[t.Reason]:
 			out[side] = JournalShed{At: t.At, Flip: t.GammaFlip, BufferPct: t.FlipBufferPct, DVOL: t.DVOL}

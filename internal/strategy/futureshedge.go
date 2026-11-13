@@ -579,9 +579,9 @@ func (s *Strategy) followCounterfactuals(now time.Time) {
 			c.LastPrice, c.LastAt = inst.Mid, now
 			s.fh.dirty = true
 		}
-		_, expiry, _, _, err := marketdata.ParseOptionName(c.Instrument)
+		named, err := s.md.InstrumentFromName(c.Instrument)
 		switch {
-		case err == nil && (now.After(expiry) || marketdata.DaysToExpiry(expiry, now) <= s.cfg.RolloutDTE):
+		case err == nil && (now.After(named.Expiry) || marketdata.DaysToExpiry(named.Expiry, now) <= s.cfg.RolloutDTE):
 			c.Done = true // the roll (or expiry) would have closed it either way
 		case c.Mode == hedge.CounterHedged && !held[c.Instrument]:
 			c.Done = true // the kept leg was closed by another rule
