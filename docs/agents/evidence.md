@@ -39,6 +39,24 @@ A failed step (stress inputs, a report, a scorecard) is listed in the comment an
 Logs of each step: `data/agents/evidence/<week>/`.
 Tests: `test_evidence.py` (the comment, and `evidence.sh` end to end on throwaway clones with stub `go`/`gh`/`curl`).
 
+## Sample size
+
+Every figure of the evidence pack, and the weekly report's headline figures (its "Sample size" table, `samples` in the JSON), carry how much data stands behind them (#772, `internal/evidence/sample.go`).
+A `Sample` is the days of data, the whole weeks and, where the figure depends on them, the events: leg closes by a stop-loss, a delta exit or a GEX shed, or for the hedge trial its hedge orders (real and paper) and shed legs.
+A figure is **thin** below any floor and then reads "too few to conclude (N days)" beside its number, which stays visible.
+
+The floors are **assumptions**, chosen from rules already in the repo while the history is a few weeks long, to be revisited after 8 more weeks of history (from 2026-11-13, so in 2027-W02):
+
+| Floor | Value | Why |
+|---|---|---|
+| `SampleMinWeeks` | 12 weeks | PRD §6's kill test reads 12 weekly reports (`ScoreboardWeeks`): under them, the go/no-go itself says "not enough weeks" |
+| `SampleMinDays` | 84 days | the same 12 weeks in days, for figures over a span of history |
+| `SampleMinEvents` | 10 events | a short strangle's result is made by its few bad days; under ten stops, delta exits and sheds nothing says how the next ones go |
+
+Holding the coin and the scoreboard's ratios depend on days or weeks only; the net return, drawdown, worst 7 days, excess over holding and the replay-vs-live gap also on the tail events; the hedge trial on its days and orders.
+One week's report is always thin: a week is one sample, not a result.
+`tests/evidence_sample_test.go` fails on a pack figure with a number and no sample, and on a weekly headline figure missing from the table, naming it.
+
 ## Daily recording check
 
 A short recorded day is told the next morning, not in the weekly report (#716).

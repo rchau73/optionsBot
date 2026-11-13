@@ -52,6 +52,7 @@ type WeekRow struct {
 	GapPct      *float64 `json:"gap_pct"`       // of equity
 	UtilPct     *float64 `json:"utilisation_pct"`
 	StopShare   *float64 `json:"stop_share_pct"` // % of the week's buy-back cost from stop-losses (Attribution)
+	TailEvents  int      `json:"tail_events"`    // the week's leg closes by a stop-loss, a delta exit or a shed (#772: a Sample's events)
 	MissingDays []string `json:"missing_days"`   // UTC days of the week with no P&L history point
 	NotMeasured []string `json:"not_measured,omitempty"`
 }
@@ -66,6 +67,7 @@ type Counts struct {
 	LongestLosing int      `json:"longest_losing_streak"` // consecutive lost weeks; a week not reported ends a streak
 	WorstWeek     string   `json:"worst_week,omitempty"`  // the reported week with the lowest net
 	WorstWeekPct  *float64 `json:"worst_week_pct"`        // its net % (nil = equity unknown)
+	TailEvents    int      `json:"tail_events"`           // Σ the reported weeks' TailEvents
 }
 
 // TrackRecord is the whole life of one bot's P&L history.
@@ -218,6 +220,7 @@ func rowFor(monday time.Time, reports map[string]Report) WeekRow {
 		return row
 	}
 	row.Reported = true
+	row.TailEvents = tailEvents(r.Live.ByReason)
 	s := r.Live.Perf
 	row.EquityKnown = s.EquityKnown
 	if s.Points > 0 {
@@ -279,6 +282,7 @@ func countWeeks(rows []WeekRow, byCoin bool) Counts {
 			continue
 		}
 		c.Reported++
+		c.TailEvents += r.TailEvents
 		if r.ExcessPP != nil {
 			c.HoldKnown++
 			if *r.ExcessPP > 0 {

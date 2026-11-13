@@ -39,6 +39,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	missing("minute GEX records", r.Missing.GEXDays)
 	p("\n")
 	writeCoverage(p, r.Coverage) // the hours behind those days (#362)
+	writeSamples(p, r.Samples)   // and how much data stands behind each headline figure (#772)
 
 	l := r.Live
 	p("## Live\n\nSource: %s; %s.\n\n", l.Source, l.PerfSource)
