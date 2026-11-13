@@ -31,5 +31,7 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
     (each start a startup pass with the ±1.5 pp band), and with `-journal` the bot's downsizes are listed beside the replay's per day and side.
   - Starting balance (#638): `-equity`, else with `-journal` the bot's own margin balance at `-from` (its `risk_limit` lines and `data/pnl_history.jsonl`, `-pnlhistory`), else `account.json` (today's);
     none → an error, never a 1-coin default (it priced ETH's ~489 ETH book on 1 ETH).
+  - `-deltaexits 0.25,0.30,0.35,off` (study, #769, `replay/deltaexit.go`; `all` = those four): one replay per `delta_exit_threshold`, `off` = the 2× stop alone, one table:
+    net, return on margin (net ÷ avg IM), worst week, delta exits and stops with their P&L as % of premium, MM cuts, re-entries (repairs of a stopped or exited leg) (`docs/studies/delta-exit.md`).
   - `-rebalances prorata,cheapest,winners` (study, #638): which strangle a downsize cuts — downsize P&L, IM freed, cost per pp, IM and slot balance after the cut, top-ups (`docs/studies/downsize-cut.md`).
   Not modelled there: leg balancing, churn breaker, journal-restored holds; margin is the replay's scan, not Deribit's simulator.

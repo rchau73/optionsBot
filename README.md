@@ -304,6 +304,7 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 `-trace` prints every action.
 `-rebalance prorata` (#638; default `off`) adds the bot's rebalance: downsizes on a confirmed limit change and on retries of a short top-up, top-ups below the slot targets; `-limits journal` takes the IM limit, freeze and restarts from the journal's `risk_limit` lines instead of rebuilding them.
 `-rebalances prorata,cheapest,winners` compares which strangle a downsize cuts (`docs/studies/downsize-cut.md`).
+`-deltaexits 0.25,0.30,0.35,off` (or `all`) compares delta-exit thresholds with the 2× stop alone (`docs/studies/delta-exit.md`, #769).
 Output: one line per day (spot, DVOL, live/confirmed regime, direction, limit, IM %, equity, day P&L, fees, trades, sheds, repairs, actions), a summary (net, realised, fees, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, unfilled orders, worst drawdown, IM max/avg) and a tab-separated `REPLAY` line for scripts.
 
 **GEX at the bot's pace** (#122).
