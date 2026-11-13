@@ -54,3 +54,7 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - every `PackFigure` carries its source (clone-relative), window and caveat, and every section the replay-vs-live label; risks are rows of the same table, and nothing in a table is bold;
   - live when the clone, the track record or the report says so (`packAccount`) → no coin row, and the caveat says live: the ticket's "testnet" would be false there;
   - `evidence.sh` runs `-track-record -trend -pack` after each weekly report.
+- Sample size (`sample.go`, #772): every `PackFigure` with a number carries a `Sample` (days, whole weeks, events where the figure depends on them), and the weekly report's headline figures are `Report.Samples` (its "Sample size" table);
+  - `Thin` under `SampleMinDays` (84), `SampleMinWeeks` (12, = `ScoreboardWeeks`) or `SampleMinEvents` (10) → "too few to conclude (N days)" beside the number, which stays;
+  - events = `TailReasons` closes (stop-loss, delta exit, shed; `WeekRow.TailEvents`, summed in `Counts.TailEvents`), the hedge trial's real and paper trades and shed legs;
+  - the floors are assumptions to revisit in 2027-W02 (`docs/agents/evidence.md` "Sample size"); a new pack figure gets its sample from its `packRows`, a new weekly headline figure needs its row in `buildSamples`.

@@ -501,6 +501,8 @@ No figure is recomputed, and a source that is missing, or an older report withou
 - **Order:** the headline (the weeks it covers, net return in coin and %, holding the coin over the same window, the worst 7 days and worst ISO week, max drawdown), the twelve-week scoreboard, replay vs live, the weeks missing, the hedge trial.
 - **Every figure** sits next to its source file, its window and "testnet, past result, not a forecast"; a live account's says "live account, past result, not a forecast", since its figures are not testnet.
   Every section also shows the replay-vs-live label: `comparable`, `partial`, `not comparable` or `not reported`.
+- **Sample** (#772): every figure with a number also shows the days, whole weeks and, where it depends on them, the stops, delta exits and sheds (the hedge trial: hedge orders and shed legs) behind it.
+  Under 84 days, 12 weeks or 10 such events it reads "too few to conclude (N days)" beside the number, which stays; the weekly report's "Sample size" table does the same for its headline figures (floors and why: [`docs/agents/evidence.md`](docs/agents/evidence.md#sample-size)).
 - **Risks** are rows of the same table as the figures, and nothing in a table is bold, so a loss reads exactly like a gain: its minus sign and unit, same size and weight.
 - **Live accounts** show percentages, ratios and counts only, when the clone's `.env`, the track record or the weekly report says `live`.
 - Paths are relative to the clone and the output is deterministic: the same files give the same JSON.
