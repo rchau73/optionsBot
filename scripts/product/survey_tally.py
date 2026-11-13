@@ -11,6 +11,8 @@ prints the numbers synthesis.md needs:
     fake-door outcomes Joined / Declined / Undecided (survey.md §5)
     delegation share = Q6 "yes, and still do" + "yes, and took it back",
         next to the PRD §6 kill threshold (< 30 %), with n and a small-sample note
+    quota progress = each screener.md §5 quota as have / need and status, the qualified count
+        by channel, and whether the kill criterion can be read yet (#774)
 
     python3 scripts/product/survey_tally.py data/product/interviews/export.csv
     python3 scripts/product/survey_tally.py data/product/interviews/export.csv -map data/product/interviews/map.json
@@ -20,7 +22,10 @@ Standard library only. Answers are private: the free-text items (Q4, F2), the
 F1 e-mail and any answer that matches no option are never printed — only how
 many there were. -out refuses any path outside data/product/interviews/.
 
-CSV columns: ID, S1–S8, Q1–Q8, N1, F1, F2 and F1_email (the e-mail left at F1).
+CSV columns: ID, S1–S8, Q1–Q8, N1, F1, F2 and F1_email (the e-mail left at F1), plus two
+optional ones for the quota progress: CHANNEL (the label of the link the person came by,
+e.g. community, referral, waiting-list) and COMMUNITY (yes / no: from a crypto-option or
+trading community). Without them those rows say "not measurable: no column".
 A multi-choice answer (S4, Q8) lists its options separated by ";". Answers match
 the option wording of the survey, ignoring case, quotes, dashes and spacing; a
 longer answer that starts with an option counts as it ("yes, add me (leave an
@@ -70,10 +75,22 @@ OPTIONS = {
 MULTI = {"S4", "Q8"}
 CHOICE_QUESTIONS = ["Q1", "Q2", "Q3", "Q5", "Q6", "Q7", "Q8"]
 FREE_TEXT = ["Q4", "F2"]
-ITEMS = ["ID"] + [f"S{i}" for i in range(1, 9)] + [f"Q{i}" for i in range(1, 9)] + ["N1", "F1", "F2", "F1_email"]
+ITEMS = ["ID"] + [f"S{i}" for i in range(1, 9)] + [f"Q{i}" for i in range(1, 9)] + \
+    ["N1", "F1", "F2", "F1_email", "CHANNEL", "COMMUNITY"]
 DELEGATED = ("yes, and still do", "yes, and took it back")
 OUTCOMES = ("Joined", "Declined", "Undecided")
 UNRECOGNISED = "(unrecognised)"
+
+# screener.md §5 quotas
+QUOTA_TOTAL = 15         # qualified responses in total (about)
+QUOTA_HOLDERS = 10       # cycle holders (the kill criterion needs at least this many)
+QUOTA_TRADER_CAP = 5     # active option traders beyond this are reported, not counted
+QUOTA_SUB = 3            # each sub-quota among cycle holders
+EARN_OPTIONS = ('exchange "earn" / savings', "dual investment", "covered calls or other options sold by hand")
+NO_CHANNEL = "(no channel)"
+OTHER_CHANNEL = "(other)"
+NOT_MEASURABLE = "not measurable: no column"
+CHANNEL_LABEL = re.compile(r"[a-z0-9][a-z0-9 _-]{0,29}")  # a link label; anything else is not echoed
 
 
 class TallyError(ValueError):
@@ -166,8 +183,7 @@ def segment_of(row):
         return SCREENED_OUT
     if one["S5"] in ("monthly", "weekly or more"):
         return ACTIVE_TRADER
-    earns = any(o in s4 for o in ('exchange "earn" / savings', "dual investment",
-                                  "covered calls or other options sold by hand"))
+    earns = any(o in s4 for o in EARN_OPTIONS)
     if (one["S2"] in ("before 2018", "2018-2021")
             and one["S3"] in ("kept them", "bought more")
             and one["S5"] in ("never", "a few times")
@@ -227,6 +243,74 @@ def delegation_of(rows):
     }
 
 
+def quota_rows(rows, seg):
+    """screener.md §5: every quota as have / need / status. Active option traders are a cap."""
+    holders = [r for r, s in zip(rows, seg) if s == CYCLE_HOLDER]
+    traders = sum(1 for s in seg if s == ACTIVE_TRADER)
+
+    def s4_of(r):
+        return answers_of("S4", r.get("S4", ""))
+
+    def wants_income(r):
+        s4 = s4_of(r)
+        return (bool(s4) and all(o in ("none", "staking") for o in s4)
+                and answers_of("S6", r.get("S6", ""))[:1] in (["yes, and tried something"], ["yes, only looked"]))
+
+    def minimum(name, have, need):
+        return {"quota": name, "have": have, "need": need, "kind": "at least",
+                "status": "met" if have >= need else "open"}
+
+    counted = len(holders) + min(traders, QUOTA_TRADER_CAP)
+    out = [
+        minimum("Qualified in total (about)", counted, QUOTA_TOTAL),
+        minimum("Cycle holders", len(holders), QUOTA_HOLDERS),
+        {"quota": "Active option traders (counted / cap)", "have": traders, "need": QUOTA_TRADER_CAP,
+         "kind": "at most", "counted": min(traders, QUOTA_TRADER_CAP),
+         "status": "over cap" if traders > QUOTA_TRADER_CAP else "met"},
+        minimum("Cycle holders who used earn, dual investment or covered calls (S4)",
+                sum(1 for r in holders if any(o in s4_of(r) for o in EARN_OPTIONS)), QUOTA_SUB),
+        minimum("Cycle holders who want income but never tried (S4 none or staking only, S6 yes)",
+                sum(1 for r in holders if wants_income(r)), QUOTA_SUB),
+    ]
+    name = "Cycle holders not from a crypto-option or trading community"
+    if any("COMMUNITY" in r for r in rows):
+        outside = sum(1 for r in holders if (yes_no(r.get("COMMUNITY", ""))) == "no")
+        out.append(minimum(name, outside, QUOTA_SUB))
+    else:
+        out.append({"quota": name, "have": None, "need": QUOTA_SUB, "kind": "at least",
+                    "status": NOT_MEASURABLE})
+    return out
+
+
+def yes_no(raw):
+    n = norm(raw)
+    return n if n in ("yes", "no") else None
+
+
+def channel_split(qualified):
+    """Qualified responses by the CHANNEL column: label → count and share. None without the column."""
+    if not any("CHANNEL" in r for r in qualified):
+        return None
+    labels = []
+    for r in qualified:
+        raw = norm(r.get("CHANNEL", ""))
+        labels.append(NO_CHANNEL if not raw else raw if CHANNEL_LABEL.fullmatch(raw) else OTHER_CHANNEL)
+    return {label: {"count": labels.count(label), "share_pct": pct(labels.count(label), len(labels))}
+            for label in sorted(set(labels))}
+
+
+def quota_progress(rows, seg, qualified):
+    holders = sum(1 for s in seg if s == CYCLE_HOLDER)
+    missing = max(0, QUOTA_HOLDERS - holders)
+    return {
+        "quotas": quota_rows(rows, seg),
+        "channels": channel_split(qualified),
+        "small_sample": len(qualified) < SMALL_SAMPLE,
+        "cycle_holders_missing": missing,
+        "kill_criterion_readable": missing == 0,
+    }
+
+
 def tally(rows):
     seg = [segment_of(r) for r in rows]
     ids = [r.get("ID", "") for r in rows]
@@ -261,6 +345,7 @@ def tally(rows):
         "fake_door": {"qualified": outcomes(qualified), CYCLE_HOLDER: outcomes(holders),
                       ACTIVE_TRADER: outcomes(traders)},
         "delegation": {"qualified": delegation_of(qualified), CYCLE_HOLDER: delegation_of(holders)},
+        "quota_progress": quota_progress(rows, seg, qualified),
         "free_text_answers": {item: sum(1 for r in qualified if r.get(item, "").strip()) for item in FREE_TEXT},
     }
 
@@ -275,6 +360,33 @@ def _delegation_line(label, d):
     verdict = "below" if d["below_threshold"] else ("–" if d["share_pct"] is None else "at or above")
     return (f"| {label} | {d['delegated']} | {d['n']} | {_p(d['share_pct'])} | "
             f"< {d['threshold_pct']} % | {verdict} |")
+
+
+def render_quota_progress(q):
+    out = ["## Quota progress (screener.md §5)", "", "| Quota | Have | Need | Status |", "|---|---|---|---|"]
+    for r in q["quotas"]:
+        if r["have"] is None:
+            have, need = "–", f"≥ {r['need']}"
+        elif r["kind"] == "at most":
+            have, need = f"{r['have']} (counted {r['counted']})", f"≤ {r['need']}"
+        else:
+            have, need = str(r["have"]), f"≥ {r['need']}"
+        out.append(f"| {r['quota']} | {have} | {need} | {r['status']} |")
+    out += ["", "Active option traders over the cap are reported but not counted in the total.", ""]
+    out += ["### Qualified by channel", ""]
+    if q["channels"] is None:
+        out.append(f"Channels: {NOT_MEASURABLE} (CHANNEL).")
+    else:
+        out += ["| Channel | Qualified | Share |", "|---|---|---|"]
+        out += [f"| {c} | {v['count']} | {_p(v['share_pct'])} |" for c, v in q["channels"].items()]
+        if q["small_sample"]:
+            out += ["", f"Small sample: fewer than {SMALL_SAMPLE} qualified — read the counts, not the shares."]
+    out.append("")
+    m = q["cycle_holders_missing"]
+    out.append("Cycle-holder quota met: the kill criterion can be read." if not m else
+               f"{m} more cycle holder{'s' if m != 1 else ''} needed.")
+    out.append("")
+    return out
 
 
 def render_markdown(t):
@@ -320,6 +432,8 @@ def render_markdown(t):
         if d["unanswered"]:
             out.append(f"{group}: {d['unanswered']} left Q6 blank (not counted in n).")
     out.append("")
+
+    out += render_quota_progress(t["quota_progress"])
 
     out += ["## Free text (never printed here)", ""]
     out += [f"- {item}: {c} answers" for item, c in t["free_text_answers"].items()]
