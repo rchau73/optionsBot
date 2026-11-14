@@ -23,7 +23,10 @@ func (s *Server) summary(w http.ResponseWriter, _ *http.Request) {
 	if ts, ok := s.events.(TradeSource); ok {
 		trades = ts.Trades(0, 0)
 	}
-	writeJSON(w, BuildHedgedSummary(s.strategy.View(), trades, s.futuresHedge(), time.Now()))
+	v := s.strategy.View()
+	sum := BuildHedgedSummary(v, trades, s.futuresHedge(), time.Now())
+	sum.Idle = IdleOf(v, s.events.Recent(0, 0))
+	writeJSON(w, sum)
 }
 
 // futuresHedge is the journal's hedge fills and the perpetual open now; empty
