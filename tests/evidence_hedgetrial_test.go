@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +137,10 @@ func TestEvidenceHedgeTrial_NoLedger(t *testing.T) {
 		}
 		md := trialSection(t, r)
 		wantIn(t, md, "The trial has not started", "No figure")
-		wantNotIn(t, md, "| Figure", "Advantage", "mode now")
+		wantNotIn(t, md, "| Figure", "Advantage", "mode now", "Verdict")
+		if h.Verdict != nil {
+			t.Errorf("%s: verdict %+v", name, h.Verdict)
+		}
 	}
 }
 
@@ -159,8 +163,12 @@ func TestEvidenceHedgeTrial_FewerThan7Days(t *testing.T) {
 			t.Errorf("%.2f days: %+v", c.days, h)
 		}
 		md := trialSection(t, r)
-		wantIn(t, md, "**not enough days**", "No verdict", " day(s) still missing", "mode now: **hedge**")
+		wantIn(t, md, "**not enough days**", " day(s) still missing", "mode now: **hedge**",
+			fmt.Sprintf("**Verdict (docs/hedge-trial.md): needs more days**: %d day(s) missing of the 7", c.missing))
 		wantNotIn(t, md, "| Figure", "Advantage", "BTC")
+		if v := h.Verdict; v == nil || v.Outcome != evidence.HedgeVerdictMoreDays {
+			t.Errorf("%.2f days: verdict %+v", c.days, v)
+		}
 	}
 }
 
@@ -268,5 +276,135 @@ func TestEvidenceHedgeTrial_BotPaths(t *testing.T) {
 	p := evidence.BotPaths("/env", "/env", "btc")
 	if want := filepath.Join("/env", "data", "btc", "data", "hedge_mode.json"); p.HedgeMode != want {
 		t.Errorf("%s, want %s", p.HedgeMode, want)
+	}
+}
+
+// The verdict (#780): docs/hedge-trial.md's rule over the section's figures.
+// trialLedger's advantage is about +0.081 BTC at scale 1 (fees 0.0011, worst
+// day −0.02), −0.081 at scale 10, about 0 at 5.5, and at 3 the worst day
+// (−0.06) costs more than half the advantage (+0.045).
+func verdictReport(scale, days float64, ev *evidence.HedgeEvents) evidence.Report {
+	now := trialStart.Add(time.Duration(days * 24 * float64(time.Hour)))
+	return evidence.Build(evidence.Inputs{Env: "mvp", Bot: "btc", Account: "testnet", Window: evWeek, Points: trialPoints(),
+		Hedge: evidence.HedgeInputs{Path: "m.json", State: trialState(trialLedger(scale), true), Now: now, Events: ev}})
+}
+
+func TestEvidenceHedgeTrial_Verdict(t *testing.T) {
+	t.Parallel()
+	clean := &evidence.HedgeEvents{}
+	for _, c := range []struct {
+		name    string
+		scale   float64
+		days    float64
+		events  *evidence.HedgeEvents
+		outcome string
+		why     string
+		cites   string // a figure the line must cite
+	}{
+		{"clear advantage, enough days", 1, 90, clean, evidence.HedgeVerdictPropose, "beat the shed net of fees", "0 hedge_unavailable, 0 hedge_rate_limited, 90 days"},
+		{"clear advantage, fewer days than a proposal needs", 1, 10, clean, evidence.HedgeVerdictKeep, "10 of the 84 days", "advantage +0.08"},
+		{"clear advantage, events not read", 1, 90, nil, evidence.HedgeVerdictKeep, "were not read", "hedge events not read"},
+		{"clear advantage, the cap held a hedge", 1, 90, &evidence.HedgeEvents{RateLimited: 2}, evidence.HedgeVerdictKeep, "2 hedge(s) waited for the 12 orders/h cap", "2 hedge_rate_limited"},
+		{"clear disadvantage", 10, 10, clean, evidence.HedgeVerdictStop, "worse than the shed by more than its fees", "advantage -0.08"},
+		{"often unavailable", 1, 10, &evidence.HedgeEvents{Unavailable: 11}, evidence.HedgeVerdictStop, "unavailable more than 1 time(s) a day", "11 hedge_unavailable"},
+		{"mixed: worst day past the guard", 3, 90, clean, evidence.HedgeVerdictKeep, "mixed", "worst day -0.0600 BTC"},
+		{"no difference: within the fees", 5.5, 90, clean, evidence.HedgeVerdictKeep, "within the fees", "fees 0.0011 BTC"},
+	} {
+		r := verdictReport(c.scale, c.days, c.events)
+		v := r.Hedge.Verdict
+		if v == nil || v.Outcome != c.outcome || !strings.Contains(v.Why, c.why) || v.Rule != evidence.HedgeTrialRule {
+			t.Errorf("%s: verdict %+v, want %q (%q)", c.name, v, c.outcome, c.why)
+			continue
+		}
+		md := trialSection(t, r)
+		wantIn(t, md, "**Verdict (docs/hedge-trial.md): "+c.outcome+"**: ", "Figures used: ", c.cites, "A verdict changes no hedge mode, setting or config")
+		if n := strings.Count(md, "**Verdict"); n != 1 {
+			t.Errorf("%s: %d verdict lines", c.name, n)
+		}
+	}
+}
+
+func TestEvidenceHedgeTrial_VerdictNoneOnLiveOrWithoutSpot(t *testing.T) {
+	t.Parallel()
+	live := trialReport(trialState(trialLedger(1), true), 10, "live")
+	if live.Hedge.Verdict != nil {
+		t.Errorf("live: %+v", live.Hedge.Verdict)
+	}
+	wantIn(t, trialSection(t, live), "No verdict: a live account")
+	in := evidence.HedgeInputs{Path: "m.json", State: trialState(trialLedger(1), true), Now: trialStart.AddDate(0, 0, 10)}
+	if h := evidence.BuildHedgeTrial(in, nil, "testnet"); h.Verdict != nil {
+		t.Errorf("no spot: %+v", h.Verdict)
+	}
+}
+
+func TestEvidenceHedgeTrial_EventRows(t *testing.T) {
+	t.Parallel()
+	md := trialSection(t, verdictReport(1, 10, &evidence.HedgeEvents{Unavailable: 3, RateLimited: 1}))
+	wantIn(t, md, "| Real hedge orders an hour, mean (cap 12) | 0.00 | 10 |", "(hedge_rate_limited) | 1 | 10 |", "(hedge_unavailable) | 3 | 10 |")
+	md = trialSection(t, verdictReport(1, 10, nil))
+	wantIn(t, md, "| not read: the journal was not read | 10 |")
+}
+
+func TestEvidenceHedgeTrial_ReadHedgeEvents(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "orders.log")
+	line := func(at time.Time, event, change string) string {
+		return fmt.Sprintf(`{"timestamp":%q,"event":%q,"change":%q}`, at.Format(time.RFC3339), event, change)
+	}
+	lines := []string{
+		line(trialStart.Add(-time.Hour), "hedge", "hedge_unavailable"), // before the ledger: not counted
+		line(trialStart, "hedge", "hedge_unavailable"),
+		line(trialStart.Add(time.Hour), "hedge", "hedge_rate_limited"),
+		line(trialStart.Add(2*time.Hour), "hedge", "hedge_rate_limited"),
+		line(trialStart.Add(3*time.Hour), "hedge", "hedge_fill"),
+		line(trialStart.Add(4*time.Hour), "skipped", "hedge_unavailable"), // not a hedge line
+		"not json",
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ev, err := evidence.ReadHedgeEvents(path, trialStart)
+	if err != nil || ev.Unavailable != 1 || ev.RateLimited != 2 {
+		t.Errorf("events %+v, err %v", ev, err)
+	}
+	if _, err := evidence.ReadHedgeEvents(filepath.Join(t.TempDir(), "absent.log"), trialStart); err == nil {
+		t.Error("an absent journal gave no error")
+	}
+}
+
+// Given any verdict, no hedge setting, mode file or config is changed.
+func TestEvidenceHedgeTrial_VerdictChangesNothing(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	mode := filepath.Join(dir, "hedge_mode.json")
+	for _, scale := range []float64{1, 3, 10} {
+		if err := hedge.SaveMode(mode, trialState(trialLedger(scale), false)); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := evidence.LoadHedge(mode, trialStart.AddDate(0, 0, 90))
+		in.Events = &evidence.HedgeEvents{}
+		r := evidence.Build(evidence.Inputs{Env: "mvp", Bot: "btc", Account: "testnet", Window: evWeek, Points: trialPoints(), Hedge: in})
+		if r.Hedge.Verdict == nil {
+			t.Fatalf("scale %v: no verdict", scale)
+		}
+		_ = covMarkdown(t, r)
+		after, err := os.ReadFile(mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(before) {
+			t.Errorf("scale %v (%s): the mode file changed", scale, r.Hedge.Verdict.Outcome)
+		}
+		if st, _ := hedge.LoadMode(mode); st.Enabled {
+			t.Errorf("scale %v: the verdict switched the hedge on", scale)
+		}
+		entries, _ := os.ReadDir(dir)
+		if len(entries) != 1 {
+			t.Errorf("scale %v: files written next to the mode file: %v", scale, entries)
+		}
 	}
 }
