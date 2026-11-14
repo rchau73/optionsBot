@@ -454,6 +454,7 @@ Sections, each naming its source:
   A journal or history that cannot be read makes the part say `not measured` and why; without `deploys.tsv` the startups come from the journal alone (commits unnamed, a restart into a flat book not counted), which the section says.
 - **Futures hedge trial** (#678, `hedgetrial.go`) — the hedge experiment against the GEX shed, from the benchmark's ledger in `data/hedge_mode.json` through `hedge.Summary`: mode now, advantage in coin (positive: the hedge did better), hedge P&L net of fees, real and paper trades, fees, the worst day of shed decisions and the counterfactual legs still open, each with the days measured.
   Testnet and shadow-based, cumulative since the ledger began, not a result.
+  It ends with one verdict line from the rule in `docs/hedge-trial.md` (#780): `needs more days`, `keep running`, `stop` or `propose as a core-policy change`, citing the figures it used; the verdict changes no setting.
   A bot never switched on says the trial has not started; under 7 days it says `not enough days` with the days missing and shows no figure; a live account shows days and counts only.
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account.
