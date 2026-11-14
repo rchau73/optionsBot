@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Badge from "./Badge";
 import BandChart from "./BandChart";
 import FirstDayPanel from "./FirstDayPanel";
+import IdleNote from "./IdleNote";
 import InfoTip from "./InfoTip";
 import LastTrade from "./LastTrade";
 import MarginBar from "./MarginBar";
@@ -18,7 +19,8 @@ import { marginLines } from "@/lib/tiles";
 // trend chips, GEX age · DVOL, the margin bar), the price chart with the
 // sold-strike corridor on the left (about 60 %) and one row-button per
 // strangle on the right; stacked on a phone, chart first; under them the last
-// trade with its one-click Why? (#489). A stale bot is
+// trade with its one-click Why? (#489); under the rows, why the bot is not
+// trading when it holds nothing or may not open anything new (#781). A stale bot is
 // dimmed with its age; a bot that is down says so.
 
 export const NOTHING_HELD = "Nothing held: the bot opens a strangle when a slot is vacant and margin allows";
@@ -88,6 +90,7 @@ function StrangleList({ bot, coin, onOpen }) {
           ))}
         </ul>
       )}
+      <IdleNote bot={bot} />
     </section>
   );
 }

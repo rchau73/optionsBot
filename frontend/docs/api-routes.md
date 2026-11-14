@@ -71,6 +71,10 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
     - `detail` is the rule's numbers.
     - For a close, `pnl_coin` and `pnl_usd`.
     - `spot` (#320) is the coin's index price at the action, in USD; it is omitted when the journal has none.
+  - `idle` (#781, `internal/api/idle.go`, pure `IdleOf`) is null while the bot holds a strangle (or works an entry) with entries allowed, else why it is not trading.
+    - `reason` is the journal's latest skip word (`strategy.Skip*`) or freeze (`risk_frozen`) after its latest open or close, `halted` after the kill switch, or empty when no line says why.
+    - While entries are blocked only a reason that blocks every entry counts (`risk_frozen`, `gex_wait`, `stop_deferred`, `margin_limit`, `margin_unknown`); a freeze with no such line takes the view's freeze reason as `detail`, `seq` 0.
+    - `blocked` (entries not allowed), `held`, `seq` and `at` of the journal line (0/null without one), `plain` its sentence, `detail` its numbers; no amount and no secret.
 - `GET /api/performance?range=7d|30d|all` (#232; default `30d`, any other range → 400; in the proxy allow-list, readable by any signed-in role and the read-only service token; not shown on screen yet) is `internal/perf`'s summary of the bot's P&L history (`data/pnl_history.jsonl`, every recorded point, never a Deribit call).
   `all` starts at the first recorded point.
   Coin amounts are in the bot's underlying:

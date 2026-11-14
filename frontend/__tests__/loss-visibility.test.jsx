@@ -131,6 +131,19 @@ describe("Scenario: nothing held", () => {
     expect(screen.getByRole("region", { name: "Making or losing" })).toHaveTextContent("Open nownothing open");
     expect(screen.getByRole("region", { name: "Worst case right now" })).toHaveTextContent("Nothing held: a bad day costs nothing.");
   });
+
+  // #781: a pause reads as plainly as what is held: not folded away, no
+  // smaller than the holdings sentence it stands in for, named in words.
+  test("a frozen bot's reason is shown in the open, as large as the holdings line", () => {
+    const bot = botFor("none");
+    const idle = { reason: "risk_frozen", blocked: true, held: false, seq: 3, at: "2026-10-28T09:00:00Z", plain: "No new strangle.", detail: "regime NEGATIVE (1/2 closes)" };
+    const { container } = render(<PhoneOverview bots={[{ ...bot, summary: { ...bot.summary, idle } }]} selected="btc" />);
+    const card = screen.getByRole("region", { name: "What it holds" });
+    const sentence = within(card).getByText(/^Not opening new positions\. New risk is paused/);
+    shownResult("Phone overview", container, sentence.textContent);
+    const held = within(card).getByText(/^Nothing open right now/);
+    expect(sizeAndWeight(sentence).filter((c) => c.startsWith("text-"))).toEqual(sizeAndWeight(held).filter((c) => c.startsWith("text-")));
+  });
 });
 
 describe("Scenario: a redesign hides a loss", () => {
