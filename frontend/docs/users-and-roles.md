@@ -69,6 +69,18 @@ Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_C
 A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
 A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
 Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/my-data` (#750), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
+
+### The read matrix (#782)
+
+Every route file under `app/api` that exports `GET` is one line of `READ_ROUTES` in `lib/auth/routeRoles.js`: the roles that may read it, `token` when the read-only `MONITOR_API_TOKEN` may read it too, and a one-line reason.
+`ROLE_GUARDED_READS` is a part of it, called as every caller by the role matrix as before.
+`__tests__/read-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the service token and with an expired session.
+The roles the table lists get 200; a signed-in person of another role gets 403, the others 401, with a body of `error` only, no audit line and no call to a bot.
+A `GET` route file the table does not list fails the test by name: a new read route needs its line first.
+Admins only: `GET /api/admin/analytics`, `/api/admin/analytics/delivery`, `/api/admin/audit`, `/api/admin/audit/export`, `/api/admin/audit/verify` and `/api/admin/users`.
+Managers and admins: `GET /api/compare`, `/api/compare/<id>`, `/api/lab/runs`, `/api/lab/runs/<id>` and `/api/lab/runs/<id>/preview`.
+The service token reads only `GET /api/bots`, `/api/bots/<bot>/<endpoint>` and `/api/bots/<bot>/hedge` (`serviceTokenOk` in `proxy.js`); every other read is any signed-in role.
+Nothing is audited for a refused read, as for a refused write.
 Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing).
 **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401).
 So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later.

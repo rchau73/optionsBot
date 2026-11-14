@@ -13,6 +13,7 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
   It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
 - The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`).
   Bot URLs are configured with `BOT_APIS` and never reach the browser.
+- Who may read each monitor `GET` route is one table, `READ_ROUTES` in `lib/auth/routeRoles.js` (#782; `frontend/docs/users-and-roles.md` "The read matrix"); a new `GET` route needs its line, or `__tests__/read-matrix.test.js` fails naming it.
 - Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
 - Every item of `/api/events` and `/api/trades` carries `plain` (#201): one sentence in everyday words — what happened, why, what follows — from the bot's catalogue (`internal/api/explain.go`; the same words as `last_action.reason`).
   A journal value the catalogue does not know yet gets a generic sentence beginning "The bot recorded a step that has no plain-words explanation yet".

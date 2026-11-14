@@ -16,6 +16,8 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
 - **Manager–account links** (#760, epic E7): `lib/auth/accountLinks.js` (the registry's status file, the bot → account rule and the refusal in words), `account_links` in `auth.db`, `components/AccountLinksDialog.jsx` on the Users page;
   a new route that targets a bot calls `refuseOtherAccount` after its role check and is `linked: true` in `STATE_CHANGING_ROUTES`, or the role matrix fails (`frontend/docs/users-and-roles.md`).
 
+- **The read matrix** (#782): a new `GET` route under `app/api` needs its row in `READ_ROUTES` (`lib/auth/routeRoles.js`: roles, `token`, why), or `__tests__/read-matrix.test.js` fails naming it.
+
 - **The team's cards in the Ask panel** (#446, #498): `NpsCard.jsx` and `AnswersCard.jsx`, one at a time (NPS first, never both in one tab);
   their due rules share `surveyNotEligibleReason` (`lib/analytics/nps.js`) and are decided on the server from the user's row, so a new card reuses it rather than a second copy.
 
