@@ -110,7 +110,8 @@ type Report struct {
 	RVL       ReplayVsLive   `json:"replay_vs_live"`
 	Score     Scoreboard     `json:"scoreboard"`
 	Hedge     HedgeTrial     `json:"hedge_trial"`
-	Equity    float64        `json:"equity"` // coin, at the start (0 = unknown)
+	Samples   []FigureSample `json:"samples"` // the headline figures' sample sizes (#772)
+	Equity    float64        `json:"equity"`  // coin, at the start (0 = unknown)
 	EquitySrc string         `json:"equity_source"`
 }
 
@@ -261,6 +262,7 @@ func Build(in Inputs) Report {
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
 	r.RVL = buildReplayVsLive(in, r, days)
 	r.Hedge = BuildHedgeTrial(in.Hedge, in.Points, in.Account)
+	r.Samples = buildSamples(r, in.Account)
 	return r
 }
 
