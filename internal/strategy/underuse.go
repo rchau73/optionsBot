@@ -30,6 +30,7 @@ type UnderUse struct {
 	RunStart time.Time // first reading of the run (zero: no run)
 	Last     time.Time // the run's last reading
 	Since    time.Time // the episode is open since the run began (zero: none)
+	Cause    string    // the cause last journaled for the open episode (#768)
 }
 
 // Open reports whether an episode is open.
@@ -58,7 +59,7 @@ const (
 // Pure.
 func IMUnderUseNext(prev UnderUse, now time.Time, imPct, limitPct float64, marginKnown, entriesAllowed bool, window time.Duration) (UnderUse, UnderUseStep) {
 	if !marginKnown || limitPct <= 0 {
-		return UnderUse{Since: prev.Since}, UnderUseNone
+		return UnderUse{Since: prev.Since, Cause: prev.Cause}, UnderUseNone
 	}
 	if imPct/limitPct*100 >= UnderUseTargetPct || !entriesAllowed {
 		if prev.Open() {
@@ -114,16 +115,36 @@ func UnderUseCause(slots []UnderUseSlot, rebalanceWaiting bool) string {
 	return orders.IdleAllFull
 }
 
+// UnderUseCauseChanged reports whether an open episode, still under the
+// target this reading (its run going on), now has another cause than the one
+// journaled: the episode is journaled again with the new cause (#768: ETH's
+// episode opened as all_full, then the 30-DTE slot was rolled out and waited
+// with no_expiry for days while the alert still said all_full). Pure.
+func UnderUseCauseChanged(u UnderUse, cause string) bool {
+	return u.Open() && !u.RunStart.IsZero() && cause != u.Cause
+}
+
 // underUseCause reads the cause from the loop's own state: occupied slots,
-// each slot's last skip and liquidity cap, and the rebalance retry.
-func (s *Strategy) underUseCause(now time.Time) string {
+// each slot's last skip and liquidity cap, and the rebalance retry. When the
+// cause is a vacant slot waiting with no_expiry, listed is that slot's
+// window and the expiries the exchange lists (NoExpiryDetail), else "".
+func (s *Strategy) underUseCause(now time.Time) (cause, listed string) {
 	occupied := s.occupiedSlots()
 	var slots []UnderUseSlot
 	for _, sl := range s.cfg.Slots() {
 		k := makeSlotKey(sl.TargetDTE, sl.EntryDelta)
 		slots = append(slots, UnderUseSlot{Vacant: !occupied[k], LastSkip: s.lastSkip[k], Capped: s.liqCapped[k]})
 	}
-	return UnderUseCause(slots, now.Before(s.rebalanceRetryAt))
+	cause = UnderUseCause(slots, now.Before(s.rebalanceRetryAt))
+	if cause != SkipNoExpiry {
+		return cause, ""
+	}
+	for i, sl := range s.cfg.Slots() {
+		if slots[i].Vacant && slots[i].LastSkip == SkipNoExpiry {
+			return cause, NoExpiryDetail(s.md.AllInstruments(), now, sl.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE)
+		}
+	}
+	return cause, ""
 }
 
 // entriesBlockedWhy names what blocks entries this cycle (marginState.entriesAllowed's checks).
@@ -154,17 +175,7 @@ func (s *Strategy) noteIMUnderUse(m marginState, now time.Time) {
 	s.underUse = next
 	switch step {
 	case UnderUseOpened:
-		cause := s.underUseCause(now)
-		util := im / limit * 100
-		minutes := now.Sub(next.Since).Minutes()
-		detail := fmt.Sprintf("IM %.1f%% of limit %.0f%% = %.0f%% used, under the %.0f%% target for %.0f min with entries allowed · cause: %s · no order sent",
-			im, limit, util, UnderUseTargetPct, minutes, cause)
-		slog.Warn("approved margin unused with entries allowed",
-			"im_pct", fmt.Sprintf("%.2f", im), "limit_im_pct", limit, "utilisation_pct", fmt.Sprintf("%.1f", util),
-			"minutes", fmt.Sprintf("%.0f", minutes), "cause", cause, "since", next.Since)
-		rec := s.riskRecord(orders.RiskIMUnderUse, detail, m.status, m.usage, "")
-		rec.UtilisationPct, rec.Minutes, rec.Cause = util, minutes, cause
-		s.journal.LogRisk(rec)
+		s.journalIMUnderUse(m, now, "")
 	case UnderUseCleared:
 		why := fmt.Sprintf("IM %.1f%% of limit %.0f%% is at or over the %.0f%% target", im, limit, UnderUseTargetPct)
 		if !m.entriesAllowed(s.stopsDeferred) && im/limit*100 < UnderUseTargetPct {
@@ -174,9 +185,44 @@ func (s *Strategy) noteIMUnderUse(m marginState, now time.Time) {
 		slog.Warn("approved margin unused: episode ended", "reason", why, "since", prev.Since)
 		s.logRisk(orders.RiskIMUnderUseDone, detail, m.status, m.usage, "")
 	default:
+		if next.Open() && !next.RunStart.IsZero() {
+			if cause, _ := s.underUseCause(now); UnderUseCauseChanged(next, cause) {
+				s.journalIMUnderUse(m, now, next.Cause)
+			}
+		}
 		return
 	}
 	s.pub.mu.Lock()
 	s.pub.risk.setIMUnderUse(s.underUse.Since)
 	s.pub.mu.Unlock()
+}
+
+// journalIMUnderUse journals the open episode with its current cause (and,
+// for no_expiry, the expiries the exchange lists) and keeps that cause in
+// the episode. was is the cause it replaces ("" when the episode opens).
+func (s *Strategy) journalIMUnderUse(m marginState, now time.Time, was string) {
+	im, limit := m.usage.IMPct(), m.status.LimitIMPct
+	cause, listed := s.underUseCause(now)
+	s.underUse.Cause = cause
+	util := im / limit * 100
+	minutes := now.Sub(s.underUse.Since).Minutes()
+	causeText := cause
+	if was != "" {
+		causeText = was + " → " + cause
+	}
+	if listed != "" {
+		causeText += " (" + listed + ")"
+	}
+	detail := fmt.Sprintf("IM %.1f%% of limit %.0f%% = %.0f%% used, under the %.0f%% target for %.0f min with entries allowed · cause: %s · no order sent",
+		im, limit, util, UnderUseTargetPct, minutes, causeText)
+	msg := "approved margin unused with entries allowed"
+	if was != "" {
+		msg = "approved margin unused: cause changed"
+	}
+	slog.Warn(msg,
+		"im_pct", fmt.Sprintf("%.2f", im), "limit_im_pct", limit, "utilisation_pct", fmt.Sprintf("%.1f", util),
+		"minutes", fmt.Sprintf("%.0f", minutes), "cause", cause, "was", was, "expiries", listed, "since", s.underUse.Since)
+	rec := s.riskRecord(orders.RiskIMUnderUse, detail, m.status, m.usage, "")
+	rec.UtilisationPct, rec.Minutes, rec.Cause = util, minutes, cause
+	s.journal.LogRisk(rec)
 }
