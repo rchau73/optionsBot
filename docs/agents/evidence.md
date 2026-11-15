@@ -34,6 +34,10 @@ each kind once ever (deduplicated by its title's start against every issue, open
 A ticket only asks: a change of `gex_direction` is a person's config PR.
 The kill rule's live drawdown is not in the scorecard; the ticket points to the weekly reports.
 
+**Futures-hedge trial** (#780, [`docs/hedge-trial.md`](../hedge-trial.md)): each weekly report's hedge section ends with one verdict line — `needs more days` (with the days missing), `keep running`, `stop` or `propose as a core-policy change` — and the figures it used (advantage, fees, worst day, `hedge_unavailable` and `hedge_rate_limited` lines of the journal since the ledger began, days).
+None when the trial has not started, without a spot, or on a live account.
+The verdict only proposes: it changes no hedge mode, setting or config, and the E2 comment does not carry it yet.
+
 A failed step (stress inputs, a report, a scorecard) is listed in the comment and the rest goes on.
 `data/agents/evidence/<week>.done` marks the week done once the comment is posted; a week whose comment could not be posted is tried once more on a later tick and then marked done whatever happened.
 Logs of each step: `data/agents/evidence/<week>/`.
