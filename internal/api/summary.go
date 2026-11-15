@@ -48,6 +48,9 @@ type Summary struct {
 	// Strangle is the nearest two-legged strangle explained (#322); null when
 	// none is held.
 	Strangle *HowItWorks `json:"strangle"`
+	// Idle is why the bot is not trading (#781, idle.go): null while it
+	// holds a strangle with entries allowed.
+	Idle *Idle `json:"idle"`
 }
 
 // HoldingSummary is what the bot holds now.

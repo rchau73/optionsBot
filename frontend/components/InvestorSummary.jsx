@@ -4,6 +4,7 @@ import { formatCoin, formatDate, formatDateTime, formatNumber, formatPct, format
 import { isFirstDay } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, toneOf, worstCaseRows } from "@/lib/summary";
 import FirstDayPanel from "./FirstDayPanel";
+import IdleNote from "./IdleNote";
 
 // The investor view (#246): per bot, the four answers of /api/summary — what it
 // holds, income per month, the worst case now in money, the last action in
@@ -42,7 +43,7 @@ export function BotSummary({ bot }) {
         <p className="px-4 py-3 text-base text-muted">Loading the summary…</p>
       ) : (
         <div className="grid gap-4 p-4 md:grid-cols-2">
-          <Holding holding={s.holding} bot={bot.name} />
+          <Holding holding={s.holding} bot={bot.name} idle={<IdleNote bot={bot} />} />
           <Income income={s.income} bot={bot.name} />
           <WorstCase wc={s.worst_case} bot={bot.name} />
           <LastAction action={s.last_action} coin={s.underlying} />
@@ -67,7 +68,7 @@ export function Signed({ children, value }) {
   return <span className={clsx("font-semibold tabular-nums", tone === "profit" && "text-profit", tone === "loss" && "text-loss")}>{children}</span>;
 }
 
-function Holding({ holding: h, bot }) {
+function Holding({ holding: h, bot, idle }) {
   const howLink = (
     <Link
       href={`/how-it-works?bot=${encodeURIComponent(bot)}`}
@@ -80,6 +81,7 @@ function Holding({ holding: h, bot }) {
     return (
       <Answer question="What it holds">
         <p className="text-base">Nothing open right now. New strangles appear here once the bot sells them.</p>
+        {idle}
         {howLink}
       </Answer>
     );
@@ -94,6 +96,7 @@ function Holding({ holding: h, bot }) {
         Nearest expiry {formatDate(h.nearest_expiry)}
         {isNumber(h.nearest_dte) ? ` (in ${formatNumber(h.nearest_dte, 1)} days)` : ""}
       </p>
+      {idle}
       {howLink}
     </Answer>
   );

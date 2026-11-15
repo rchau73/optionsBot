@@ -172,6 +172,51 @@ describe("Scenario: no open positions or stale data", () => {
   });
 });
 
+// #781: why the bot is not trading, under the positions answer.
+const FREEZE_IDLE = { reason: "risk_frozen", blocked: true, held: false, seq: 41, at: "2026-11-14T09:00:00Z", plain: "No new strangle: new risk is paused.", detail: "regime NEGATIVE (1/2 closes)" };
+const WAIT_IDLE = { reason: "gex_wait", blocked: false, held: false, seq: 42, at: "2026-11-14T09:05:00Z", plain: "No new risk yet.", detail: "no GEX snapshot yet" };
+const idleFixture = (idle) => {
+  const bot = FIXTURES.none();
+  return { ...bot, summary: { ...bot.summary, idle } };
+};
+
+describe("Scenario: nothing held — why the bot is not trading", () => {
+  test("idle frozen: one sentence says new risk is paused and why, with a Why? to the journal line", () => {
+    const page = renderOverview(idleFixture(FREEZE_IDLE));
+    const strangles = within(page).getByRole("region", { name: "BTC · strangles" });
+    const note = within(strangles).getByRole("region", { name: "Why it is not trading" });
+    expect(note).toHaveTextContent("Not opening new positions. New risk is paused");
+    expect(note).toHaveTextContent("You need to do nothing.");
+    expect(note).not.toHaveTextContent(/will resume|soon/i);
+    expect(within(note).getByText(/^Not opening new positions/)).toHaveClass("text-base", "font-semibold", "text-warn");
+    const why = within(note).getByRole("button", { name: "Why?" });
+    expect(within(note).queryByTestId("idle-why")).toBeNull();
+    fireEvent.click(why);
+    expect(why).toHaveAttribute("aria-expanded", "true");
+    const line = within(note).getByTestId("idle-why");
+    expect(line).toHaveTextContent(FREEZE_IDLE.plain);
+    expect(line).toHaveTextContent(FREEZE_IDLE.detail);
+    expect(within(note).getByRole("link", { name: "All actions, explained →" })).toHaveAttribute("href", "/activity?bot=btc");
+  });
+
+  test("idle waiting: the sentence says what the bot waits for, not a pause", () => {
+    const note = within(renderOverview(idleFixture(WAIT_IDLE))).getByRole("region", { name: "Why it is not trading" });
+    expect(note).toHaveTextContent("Waiting. The bot waits for fresh data on how market makers are positioned.");
+    expect(within(note).getByText(/^Waiting\./)).not.toHaveClass("text-warn");
+  });
+
+  test("a reason with no sentence: the bot is waiting, details in Activity", () => {
+    const note = within(renderOverview(idleFixture({ reason: "", blocked: false, seq: 0 }))).getByRole("region", { name: "Why it is not trading" });
+    expect(note).toHaveTextContent("The bot is waiting. Details in Activity.");
+    expect(within(note).queryByRole("button", { name: "Why?" })).toBeNull();
+  });
+
+  test("open strangles and entries allowed: no idle explanation", () => {
+    const page = renderOverview(FIXTURES.profit());
+    expect(within(page).queryByRole("region", { name: "Why it is not trading" })).toBeNull();
+  });
+});
+
 describe("Since you last looked (#618) stays under the four answers", () => {
   test("the card comes after the tiles, the strangle rows and the last trade, so it never pushes them below the first screen", () => {
     window.localStorage.setItem("monitor.lastVisit.btc", JSON.stringify({ at: new Date(Date.now() - 20 * 3_600_000).toISOString(), worst: null, warnings: [] }));
