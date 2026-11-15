@@ -21,12 +21,16 @@ func WritePackMarkdown(w io.Writer, pk Pack) error {
 	p("\n\n")
 	for _, s := range pk.Sections {
 		p("## %s\n\n%s · replay vs live: %s\n\n", s.Title, s.Caveat, s.ReplayVsLive)
-		p("| Figure | Value | Source | Window | Caveat |\n|---|---|---|---|---|\n")
+		p("| Figure | Value | Sample | Source | Window | Caveat |\n|---|---|---|---|---|---|\n")
 		for _, f := range s.Figures {
-			p("| %s | %s | %s | %s | %s |\n", packCell(f.Name), packCell(f.Display), packCell(f.Source), packCell(f.Window), packCell(f.Caveat))
+			sample := ""
+			if f.Sample != nil {
+				sample = f.Sample.Text()
+			}
+			p("| %s | %s | %s | %s | %s | %s |\n", packCell(f.Name), packCell(f.Display), sample, packCell(f.Source), packCell(f.Window), packCell(f.Caveat))
 		}
 		for _, risk := range s.Risks {
-			p("| %s | %s | | | %s |\n", PackRiskName, packCell(risk), packCell(s.Caveat))
+			p("| %s | %s | | | | %s |\n", PackRiskName, packCell(risk), packCell(s.Caveat))
 		}
 		p("\n")
 	}

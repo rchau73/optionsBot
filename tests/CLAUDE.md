@@ -28,6 +28,7 @@ Notable files:
   a new column or audit action needs its row in the same PR.
 - `evidence_hedgetrial_test.go` (#678): the weekly report's futures hedge trial — one test per ticket scenario, the 7-day boundary and the live account's counts-only section.
 - `evidence_pack_test.go` (#700): the evidence pack equals its source files; a loss's headline matches a gain's with the numbers masked; a live account has no amount; no output holds a promised return.
+- `evidence_sample_test.go` (#772): every pack figure with a number and every weekly headline figure carries its sample; a thin one reads "too few to conclude" with its days, its number still shown; the floors at their boundary.
 - `pipe_guard_test.go` (#683): no workflow step, script or git hook pipes a failing command into a filter (`tee`, `head`, `grep`, …) without `pipefail`, unless its left side only prints or `# pipe-ok: <why>` explains it.
 - `ledger_coverage_test.go` (#722): every `scripts/agents/*.sh` opens and ends a run (`run_begin`/`run_end`) or is on `ledgerExempt` with a reason; every agent name is in `runs.py`, `docs/agents/run-ledger.md` and `scripts/agents/CLAUDE.md`.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
