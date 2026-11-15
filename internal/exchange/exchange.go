@@ -97,6 +97,8 @@ type VolIndex interface {
 	IVPercentile() float64
 	// DVOLDaily returns recent daily closes and today, with percentiles.
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	// TakeDVOLRejections drains the readings the sanity gate kept out (#796).
+	TakeDVOLRejections() []marketdata.DVOLRejection
 }
 
 // MarketData is everything the strategy reads from the market.

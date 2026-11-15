@@ -216,6 +216,10 @@ var riskWords = map[string]func(l journalLine) string{
 	orders.RiskIMUnderUseDone: func(journalLine) string {
 		return "The unused-margin alert ends: margin in use is back at 60 % of its limit or more, or new trades are no longer allowed."
 	},
+	orders.RiskDVOLRejected: func(journalLine) string {
+		return "A volatility index (DVOL) reading was ignored: it disagreed with the option prices, or jumped while the price stayed flat. " +
+			"The last good reading stays in use for the margin band and the GEX buffer."
+	},
 }
 
 // causeWords puts the im_under_use cause in everyday words (orders.Idle*;

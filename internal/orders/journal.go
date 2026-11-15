@@ -101,6 +101,7 @@ const (
 	RiskIMOverLimitDone = "im_over_limit_cleared" // IM back at or under the limit: the episode ends
 	RiskIMUnderUse      = "im_under_use"          // entries allowed, IM under 60 % of the limit for the window: alert only, no order (#369)
 	RiskIMUnderUseDone  = "im_under_use_cleared"  // IM back at or over 60 % of the limit, or entries no longer allowed: the episode ends
+	RiskDVOLRejected    = "dvol_rejected"         // a DVOL reading failed the sanity gate: the last good value stays in use (#796)
 )
 
 // Causes of unused approved margin: the one vocabulary cmd/idlemargin
