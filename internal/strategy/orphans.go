@@ -284,15 +284,12 @@ func (s *Strategy) attachToStrangle(p *orders.Position) *orders.SlotRef {
 
 // positionFromRaw builds a book position from a private/get_positions row.
 func (s *Strategy) positionFromRaw(rp orders.RawPosition, now time.Time) (*orders.Position, error) {
-	var strike float64
-	var expiry time.Time
-	var optType, underlying string
-	if inst, ok := s.md.GetInstrument(rp.InstrumentName); ok {
-		strike, expiry, optType, underlying = inst.Strike, inst.Expiry, inst.OptionType, inst.Underlying
+	var inst marketdata.Instrument
+	if live, ok := s.md.GetInstrument(rp.InstrumentName); ok {
+		inst = *live
 	} else {
 		var err error
-		underlying, expiry, strike, optType, err = marketdata.ParseOptionName(rp.InstrumentName)
-		if err != nil {
+		if inst, err = s.md.InstrumentFromName(rp.InstrumentName); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", rp.InstrumentName, err)
 		}
 	}
@@ -300,10 +297,10 @@ func (s *Strategy) positionFromRaw(rp orders.RawPosition, now time.Time) (*order
 	return &orders.Position{
 		ID:              s.state.NextID("pos"),
 		Instrument:      rp.InstrumentName,
-		Underlying:      underlying,
-		Strike:          strike,
-		Expiry:          expiry,
-		OptionType:      optType,
+		Underlying:      inst.Underlying,
+		Strike:          inst.Strike,
+		Expiry:          inst.Expiry,
+		OptionType:      inst.OptionType,
 		Side:            rp.Direction,
 		Qty:             qty,
 		EntryPrice:      rp.AveragePrice,

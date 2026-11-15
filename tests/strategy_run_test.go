@@ -492,6 +492,11 @@ func (m *fakeMarket) GetInstrument(name string) (*marketdata.Instrument, bool) {
 	return &cp, true
 }
 
+// InstrumentFromName reads names as the real market data does (Deribit's).
+func (m *fakeMarket) InstrumentFromName(name string) (marketdata.Instrument, error) {
+	return marketdata.InstrumentFromName(name)
+}
+
 func (m *fakeMarket) AllInstruments() []*marketdata.Instrument {
 	m.mu.Lock()
 	defer m.mu.Unlock()
