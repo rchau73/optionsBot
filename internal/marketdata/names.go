@@ -39,3 +39,22 @@ func ParseOptionName(name string) (underlying string, expiry time.Time, strike f
 	}
 	return underlying, expiry, strike, optType, nil
 }
+
+// InstrumentFromName is an instrument's fixed fields — underlying, expiry,
+// strike, option type — read from its Deribit name, for a name the chain does
+// not hold (a journal record, an expired leg). Quotes and greeks stay zero.
+// The strategy reaches it only through Manager.InstrumentFromName (#773), so
+// it never parses a name itself.
+func InstrumentFromName(name string) (Instrument, error) {
+	underlying, expiry, strike, optType, err := ParseOptionName(name)
+	if err != nil {
+		return Instrument{}, err
+	}
+	return Instrument{Name: name, Underlying: underlying, Expiry: expiry, Strike: strike, OptionType: optType}, nil
+}
+
+// InstrumentFromName is the package's InstrumentFromName as part of the
+// manager's option chain (exchange.OptionChain).
+func (m *Manager) InstrumentFromName(name string) (Instrument, error) {
+	return InstrumentFromName(name)
+}
