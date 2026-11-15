@@ -60,6 +60,8 @@ A click opens its payoff chart.
 **The last trade** sits under each band: when it happened and what the bot sold or bought back.
 One click on *Why?* opens the reason the bot recorded in its journal when it traded.
 For a buy-back it also shows that trade's past result, net of fees, in coin and USD.
+With the futures hedge experiment on, the last trade can be a hedge trade when it is newer than the last option trade: it says the bot bought or sold so many USD of the perpetual, and why.
+A hedge close also shows its result net of fees, a loss with its minus sign.
 A past result is no promise of future results.
 *All actions, explained* opens the Activity page.
 

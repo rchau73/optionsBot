@@ -48,7 +48,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `worst_case` (a labelled model: Black–Scholes on each leg's IV, a one-day ±3 daily σ move from DVOL, loss in coin, USD and % of equity;
     `scenarios` −3, −2, 0, +2, +3 σ with signed results for the monitor's worst-case page, #318;
     with a perpetual open every figure adds its inverse P&L from the average price, `hedge` keeps the options alone, #665, `hedgeincome.go`, `BuildHedgedSummary`)
-  - and `last_action` (latest open/close in plain words, `PlainReason`);
+  - and `last_action` (latest open/close in plain words, `PlainReason`;
+    #794: the futures hedge's newest fill or close when newer, `kind: "hedge"` with `side`, `size_usd` and `ExplainHedge`'s sentence — `LastActionWithHedge` in `BuildHedgedSummary`, from the `PerpFills` it already reads);
   - `idle` (#781, `idle.go`, pure `IdleOf(view, recent events)`): why a bot that holds nothing or may not open anything is not trading — the latest skip or freeze line after the latest trade, null otherwise;
   - plus `strangle` for the How it works page (#322, `howitworks.go`, pure `HowItWorksOf`:
     the nearest two-legged strangle's strikes, premiums, coin-settled break-evens and each leg's exit line —

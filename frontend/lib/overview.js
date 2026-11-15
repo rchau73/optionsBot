@@ -1,4 +1,5 @@
 import { formatNumber, isNumber } from "./format";
+import { hedgeActionWhat, isHedgeAction } from "./hedgeWords";
 import { loopStalled } from "./monitor";
 import { localParts } from "./time";
 // Pure helpers for the phone overview (#320) and the first-day panel (#321).
@@ -261,10 +262,11 @@ export function lastTradeLine(bot) {
   if (!s) return { unknown: bot?.summaryError || bot?.error || "not loaded yet" };
   const a = s.last_action;
   if (!a) return { none: true };
-  const close = a.kind === "close";
+  const hedge = isHedgeAction(a);
+  const close = a.kind === "close" || hedge; // a hedge fill has no result, a hedge close has one
   return {
     when: a.at,
-    what: `${close ? "bought back" : "sold"} ${isNumber(a.qty) ? formatNumber(a.qty, 2) : "?"} × ${a.instrument || "a leg"}`,
+    what: hedge ? hedgeActionWhat(a) : `${close ? "bought back" : "sold"} ${isNumber(a.qty) ? formatNumber(a.qty, 2) : "?"} × ${a.instrument || "a leg"}`,
     reason: a.reason || a.rule || "no reason recorded",
     detail: a.detail || null,
     pnlCoin: close && isNumber(a.pnl_coin) ? a.pnl_coin : null,

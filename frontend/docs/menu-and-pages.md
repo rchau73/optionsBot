@@ -327,6 +327,7 @@ There are four stacked cards:
   It uses the worse of the two 3σ days.
   It reads "Unknown: <reason>" when not computed, and links to the worst-case page.
 - **Last action · HH:MM** shows the plain-words sentence, the coin's move since (from `last_action.spot`) and a close's result in coin.
+  A hedge trade (#794, `kind: "hedge"`) adds "sold/bought <USD> of the perpetual" and, for a hedge close, its result.
   "All actions, explained" opens the Activity page, `/activity?bot=<name>`, #385.
 Footer: "From the bot's journal, after fees.
 Worst case is an estimate.
