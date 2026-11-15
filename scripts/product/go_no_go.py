@@ -74,6 +74,9 @@ def survey_row(path):
     note = f"n = {d.get('n', 0)}"
     if d.get("small_sample"):
         note += " (small sample)"
+    missing = (data.get("quota_progress") or {}).get("cycle_holders_missing")
+    if missing:
+        note += f"; {missing} more cycle holders needed"
     status = FAILS if share < SURVEY_KILL_PCT else MEETS
     return row(name, fmt_pct(share), threshold, status, path, file_date(path), note)
 
