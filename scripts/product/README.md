@@ -1,6 +1,7 @@
 # Product scripts
 
-Tools for the product work of epic E5 (`docs/product/PRD.md` §6). Standard library only; no Go code, nothing that trades.
+Tools for the product work of epic E5 (`docs/product/PRD.md` §6).
+Standard library only; no Go code, nothing that trades.
 
 ## Survey tally (`survey_tally.py`, #247)
 
@@ -19,9 +20,18 @@ python3 scripts/product/survey_tally.py data/product/interviews/export.csv
 python3 scripts/product/survey_tally.py data/product/interviews/export.csv -json -out data/product/interviews/tally.json
 ```
 
-**Input:** one row per anonymous ID; columns `ID`, `S1`–`S8`, `Q1`–`Q8`, `N1`, `F1`, `F2`, `F1_email`. A multi-choice cell (S4, Q8) separates options with `;`. Answers match the docs' option wording ignoring case, quotes, dashes and spacing (an answer that starts with an option counts as it). If the form tool names its columns differently, `-map map.json` gives `{"export column": "item ID"}`, e.g. `{"Respondent": "ID", "Do you hold BTC or ETH today?": "S1"}`.
+**Input:** one row per anonymous ID; columns `ID`, `S1`–`S8`, `Q1`–`Q8`, `N1`, `F1`, `F2`, `F1_email`.
+A multi-choice cell (S4, Q8) separates options with `;`.
+Answers match the docs' option wording ignoring case, quotes, dashes and spacing (an answer that starts with an option counts as it).
+If the form tool names its columns differently, `-map map.json` gives `{"export column": "item ID"}`, e.g. `{"Respondent": "ID", "Do you hold BTC or ETH today?": "S1"}`.
 
-**Private data stays private.** Free text (Q4, F2), the F1 e-mail and answers that match no option are never printed — only how many there were. `-out` refuses any path outside `data/product/interviews/` (gitignored). The tests build a synthetic CSV inside the test; no real answer is in the repository.
+**Quota progress (#774).** A section (and `quota_progress` in `-json`) shows each `screener.md` §5 quota as have / need / status (`open`, `met`, `over cap`; option traders beyond 5 are reported, not counted in the total), the qualified count and share by channel (small-sample note under 15), and a closing line: `cycle-holder quota met: the kill criterion can be read` or `N more cycle holders needed`.
+Two optional columns feed it: `CHANNEL` (the link label, e.g. `community`, `referral`; anything that is not a short label shows as `(other)`) and `COMMUNITY` (`yes`/`no`: from a crypto-option or trading community); without `COMMUNITY` that row reads `not measurable: no column`.
+`go_no_go.py` adds "N more cycle holders needed" to the survey row's note.
+
+**Private data stays private.** Free text (Q4, F2), the F1 e-mail and answers that match no option are never printed — only how many there were.
+`-out` refuses any path outside `data/product/interviews/` (gitignored).
+The tests build a synthetic CSV inside the test; no real answer is in the repository.
 
 ## Comprehension scorer (`comprehension_score.py`, #718)
 
@@ -31,11 +41,14 @@ Scores an E11 comprehension round (`docs/product/education/comprehension-test.md
 python3 scripts/product/comprehension_score.py docs/product/education/comprehension-example.csv --out-dir data/product/comprehension/example
 ```
 
-Participant codes only (`P01`…); a column other than `participant`, `key`, `answer`, `seconds`, `round` is refused by name. Results go to the gitignored `data/product/comprehension/<round>/`. Tests: `test_comprehension_score.py`.
+Participant codes only (`P01`…); a column other than `participant`, `key`, `answer`, `seconds`, `round` is refused by name.
+Results go to the gitignored `data/product/comprehension/<round>/`.
+Tests: `test_comprehension_score.py`.
 
 ## Competitor map (`competitors.py`, #304)
 
-Checks the private competitor entries — one YAML per competitor in the gitignored `data/product/competitors/` — and prints the positioning gaps. Method, categories and fields: `docs/product/competitors/README.md`.
+Checks the private competitor entries — one YAML per competitor in the gitignored `data/product/competitors/` — and prints the positioning gaps.
+Method, categories and fields: `docs/product/competitors/README.md`.
 
 ```bash
 python3 scripts/product/competitors.py                     # check data/product/competitors/*.yaml
@@ -43,9 +56,11 @@ python3 scripts/product/competitors.py scripts/product/example_competitor.yaml -
 python3 scripts/product/competitors.py --summary           # per category, safe to paste into PRD §4
 ```
 
-- **Refused (exit 1):** a fact without `source_url` or `seen_on`, a date that is not `YYYY-MM-DD` or is after today, an unknown or missing field, a category outside PRD §4's five, a yes/partly/no field with another value. Each error names the file and the field; nothing is summarised.
+- **Refused (exit 1):** a fact without `source_url` or `seen_on`, a date that is not `YYYY-MM-DD` or is after today, an unknown or missing field, a category outside PRD §4's five, a yes/partly/no field with another value.
+  Each error names the file and the field; nothing is summarised.
 - **Stale (warning, exit 0):** a fact seen more than 90 days before today (`--today` sets it; default today UTC), listed as `STALE: <file>: <field>: …`.
-- **`--summary`:** per category, the number of competitors, how many show the risk beside the yield, and each PRD §5 claim as open or contested, plus the stale-fact count. Counts only — no name, price, URL or path.
+- **`--summary`:** per category, the number of competitors, how many show the risk beside the yield, and each PRD §5 claim as open or contested, plus the stale-fact count.
+  Counts only — no name, price, URL or path.
 
 `example_competitor.yaml` is fictional and lives here, outside `data/`, for the tests.
 
@@ -62,7 +77,9 @@ Turns a pricing scenario — tiers, prices, expected mix, churn, CAC, cost to se
 | LTV:CAC, CAC payback | LTV ÷ CAC; CAC ÷ contribution margin (months) |
 | MRR after N months | cohort × mix × ARPA × (1 − churn)^N |
 
-Blended ARPA, margins and LTV are the mix-weighted values (the mix is normalised); blended LTV:CAC and payback come from those. CAC is one number or channels weighted by `share_pct`; a tier may set its own. The pessimistic row multiplies churn by `churn_factor` (default 1.5) and conversion by `conversion_factor` (default 0.7, so CAC ÷ 0.7).
+Blended ARPA, margins and LTV are the mix-weighted values (the mix is normalised); blended LTV:CAC and payback come from those.
+CAC is one number or channels weighted by `share_pct`; a tier may set its own.
+The pessimistic row multiplies churn by `churn_factor` (default 1.5) and conversion by `conversion_factor` (default 0.7, so CAC ÷ 0.7).
 
 **Flags:** payback > 12 months, LTV:CAC < 3, negative contribution margin (CAC never paid back), gross margin under `gross_margin_target_pct`.
 
@@ -72,15 +89,19 @@ python3 scripts/product/unit_economics.py data/product/pricing/v1.yaml -format j
 python3 -m unittest discover -s scripts/product -p 'test_*.py'
 ```
 
-**Input:** `.json`, or a small YAML subset (nested mappings, `key: value`, `#` comments; tiers and channels are mappings by name, no lists). Every key is listed in `example_scenario.yaml`; an unknown key is refused.
+**Input:** `.json`, or a small YAML subset (nested mappings, `key: value`, `#` comments; tiers and channels are mappings by name, no lists).
+Every key is listed in `example_scenario.yaml`; an unknown key is refused.
 
-**Private data stays private.** `example_scenario.yaml` holds fake round numbers marked `# placeholder, not a price`. Real assumptions and results go in the gitignored `data/product/`; `-out` refuses any path outside it.
+**Private data stays private.** `example_scenario.yaml` holds fake round numbers marked `# placeholder, not a price`.
+Real assumptions and results go in the gitignored `data/product/`; `-out` refuses any path outside it.
 
-**A subscription, not a share of profits** (PRD §6): performance or return inputs (`performance…`, `profit…`, `return…`, `yield…`, `pnl…`) are refused. A tier priced as a percentage of capital (`capital_fee_pct_per_year` with `avg_capital`) is computed but printed with the warning **needs legal review** — it can read as a management fee.
+**A subscription, not a share of profits** (PRD §6): performance or return inputs (`performance…`, `profit…`, `return…`, `yield…`, `pnl…`) are refused.
+A tier priced as a percentage of capital (`capital_fee_pct_per_year` with `avg_capital`) is computed but printed with the warning **needs legal review** — it can read as a management fee.
 
 ## Fake-door result (`fakedoor.py`, #303)
 
-Turns a run of the landing-page fake door (`docs/product/experiments/fake-door-landing.md`) into its §10 result, applying the §6 decision rule as written. The thresholds are constants copied from the brief (400 visits, 4 weeks, Success ≥ 10 % with lower bound ≥ 6 % and cycle holders ≥ half, Kill < 3 % with upper bound < 6 %, survey 30 %); `test_fakedoor.py` pins them — moving one is a new brief, not a code change.
+Turns a run of the landing-page fake door (`docs/product/experiments/fake-door-landing.md`) into its §10 result, applying the §6 decision rule as written.
+The thresholds are constants copied from the brief (400 visits, 4 weeks, Success ≥ 10 % with lower bound ≥ 6 % and cycle holders ≥ half, Kill < 3 % with upper bound < 6 %, survey 30 %); `test_fakedoor.py` pins them — moving one is a new brief, not a code change.
 
 ```bash
 python3 scripts/product/fakedoor.py data/product/fakedoor/run1
@@ -94,13 +115,15 @@ python3 scripts/product/fakedoor.py data/product/fakedoor/run1 --survey-share 0.
 | `signups.csv` | `submitted_at`, `confirmed` (yes/no), `channel`, `country`, `first_bought` (a year, `before 2022` or `2022 or later`), `kept_most` (yes/no), `first_wanted`, `fair_pay` — one row per submission; blank segment/choice answers are "not answered" |
 | `visits.csv` | `date` (YYYY-MM-DD), `channel`, `visits` |
 
-Only these columns are read; any other — an `email` column — is ignored and never written. An unknown value in a yes/no or year column is refused with its line number.
+Only these columns are read; any other — an `email` column — is ignored and never written.
+An unknown value in a yes/no or year column is refused with its line number.
 
 **Output:** `result.md` and `result.json` beside the input — US sign-ups that got through first (a guardrail line telling the product owner to stop the run), then visits, confirmed sign-ups, the rate with its Wilson 95 % interval, per-channel rates with intervals, the cycle-holder share (confirmed sign-ups that bought before 2022 and kept most ÷ confirmed sign-ups that answered both), the secondary shares, the confirmation rate (confirmed ÷ submitted) and the outcome: **Not enough traffic** (< 400 visits, whatever the rate) · **Success** · **Kill** (with `--survey-share`: whether PRD §6's kill criterion is met) · **Iterate** (everything between, or a Success rate with cycle holders under half or none answering).
 
 ## Assistant answer grader (`assistant_grade.py`, #313)
 
-Grades a JSONL file of help-assistant answers — `{"id", "text", "citations"}` per line, from any source; no model is called — against the golden question set `docs/product/assistant/golden.jsonl` and the help index `frontend/content/help-index.json` (epic E10). Rules: `docs/product/assistant/contract.md`; the set's fields: `docs/product/assistant/README.md`.
+Grades a JSONL file of help-assistant answers — `{"id", "text", "citations"}` per line, from any source; no model is called — against the golden question set `docs/product/assistant/golden.jsonl` and the help index `frontend/content/help-index.json` (epic E10).
+Rules: `docs/product/assistant/contract.md`; the set's fields: `docs/product/assistant/README.md`.
 
 ```bash
 python3 scripts/product/assistant_grade.py answers.jsonl          # passed / total per category, then each failure
@@ -129,7 +152,8 @@ python3 scripts/product/assistant_golden.py comment data/monitor/assistant_revie
 - No `ANTHROPIC_API_KEY` → one message, exit 2, nothing written.
 - Cost: about one model call per question (≈ 115 a run), at most four for one question.
 
-Details: `docs/product/assistant/README.md` "Live golden-set run". Tests: `test_assistant_golden.py`, `frontend/__tests__/assistant-golden-run.test.js`.
+Details: `docs/product/assistant/README.md` "Live golden-set run".
+Tests: `test_assistant_golden.py`, `frontend/__tests__/assistant-golden-run.test.js`.
 
 ## Go / no-go scorecard (`go_no_go.py`, #305)
 
@@ -147,7 +171,10 @@ python3 scripts/product/go_no_go.py
 python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stable --bot btc -json
 ```
 
-Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date. A missing input stays `missing`. **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's. Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
+Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date.
+A missing input stays `missing`.
+**Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's.
+Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
 
 ### Weekly reading (`go_no_go_week.py`, #738)
 
@@ -168,8 +195,12 @@ python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
 python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md
 ```
 
-- **In:** section 8's table, copied to `data/usability/e3/<round>/results.md` (private, gitignored); the round's name is the folder's. Errors are written `Q2 sign, Q3 unit`.
-- **Out:** pass/fail, the failing questions and the errors by type per question, a sign error in a loss scenario first. It is printed and written to `summary.md` beside the table, with section 8's synthesis skeleton; an existing `summary.md` stays unless `--force`.
+- **In:** section 8's table, copied to `data/usability/e3/<round>/results.md` (private, gitignored); the round's name is the folder's.
+  Errors are written `Q2 sign, Q3 unit`.
+- **Out:** pass/fail, the failing questions and the errors by type per question, a sign error in a loss scenario first.
+  It is printed and written to `summary.md` beside the table, with section 8's synthesis skeleton; an existing `summary.md` stays unless `--force`.
 - **Two rounds:** also the change in passes and in each error type, in `comparison.md` beside the later round.
-- **Participant codes only:** every cell must be a value the template allows and every other line a line of the template, so a name, an e-mail or a phone number stops the run. It prints the line number, never the content, and writes nothing.
-- **Exit:** 0 when scored (a failed round too), 2 when refused or unreadable. Tests: `test_score_usability.py`.
+- **Participant codes only:** every cell must be a value the template allows and every other line a line of the template, so a name, an e-mail or a phone number stops the run.
+  It prints the line number, never the content, and writes nothing.
+- **Exit:** 0 when scored (a failed round too), 2 when refused or unreadable.
+  Tests: `test_score_usability.py`.
