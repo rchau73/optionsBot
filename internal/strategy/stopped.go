@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"time"
 
-	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
 )
@@ -113,15 +112,17 @@ var partialReasons = closeReasons(orders.TriggerRebalanceLegs, orders.TriggerReb
 // stop-class close (stop-loss, delta exit, manual close, MM cut) and no
 // repair re-sold that side afterwards. Any other later close (a roll, a GEX
 // shed) replaces it. trades are oldest first, as the journal replay gives
-// them; names that do not parse are ignored.
-func StopsFromTrades(trades []orders.Trade) map[StopSide]time.Time {
+// them; names that do not parse are ignored. The journal holds only the
+// name, so names fills the expiry and type (the market data's
+// InstrumentFromName).
+func StopsFromTrades(trades []orders.Trade, names InstrumentNames) map[StopSide]time.Time {
 	out := make(map[StopSide]time.Time)
 	for _, t := range trades {
-		_, expiry, _, typ, err := marketdata.ParseOptionName(t.Instrument)
+		inst, err := names(t.Instrument)
 		if err != nil {
 			continue
 		}
-		side := StopSide{expiryDay(expiry), typ}
+		side := StopSide{expiryDay(inst.Expiry), inst.OptionType}
 		switch {
 		case t.Kind == "close" && stopReasons[t.Reason]:
 			out[side] = t.At
@@ -139,8 +140,8 @@ func StopsFromTrades(trades []orders.Trade) map[StopSide]time.Time {
 // gives each strangle the slot that opened it (OpenSlotsFromTrades). Call
 // before Run.
 func (s *Strategy) RestoreStops(trades []orders.Trade) {
-	s.journalStops = StopsFromTrades(trades)
-	s.journalSheds = ShedsFromTrades(trades)
+	s.journalStops = StopsFromTrades(trades, s.md.InstrumentFromName)
+	s.journalSheds = ShedsFromTrades(trades, s.md.InstrumentFromName)
 	s.journalSlots = OpenSlotsFromTrades(trades)
 }
 

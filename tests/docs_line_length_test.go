@@ -62,7 +62,7 @@ var docLongLineExceptions = map[string]struct {
 	"docs/direction-trial.md":                                      {4, reasonNotReflowed},
 	"docs/account-isolation.md":                                    {1, reasonNotReflowed},
 	"docs/exchange-adapter.md":                                     {3, reasonNotReflowed},
-	"scripts/product/README.md":                                    {4, reasonNotReflowed},
+	"scripts/product/README.md":                                    {2, reasonNotReflowed},
 }
 
 var (

@@ -1,8 +1,7 @@
 // The lab's apply preview (#682, epic E9): what a manager's confirm would
-// change for a finished run, and why it may not be confirmable. The apply
-// itself is not built (it waits for a person's decision, E8's tenancy and the
-// legal answer on advisers, docs/product/lab/README.md): nothing here writes
-// a config or a bot setting, and nothing accepts the confirm token yet.
+// change for a finished run, and why it may not be confirmable. The confirm
+// (lib/labapply.js, #741) only records the change: nothing here or there
+// writes a config or a bot setting.
 // Every doubt fails closed: a value that cannot be read gives no token.
 import crypto from "node:crypto";
 import labSettings from "@/content/lab-settings.json";
@@ -127,14 +126,39 @@ export function buildPreview(run, person, now) {
   return { ...preview, audit_line: auditText(preview) };
 }
 
-/**
- * The confirm token: an HMAC of exactly what was shown to this person, under
- * the monitor's secret, so only this server can issue one. The future apply
- * recomputes it from the same run and values; it is no sign-in token, and
- * nothing accepts it yet.
- */
-export function confirmToken(preview, key) {
+/** A confirm token is accepted for at most this long after the preview that issued it (and at least 10 minutes). */
+export const CONFIRM_TOKEN_MINUTES = 15;
+const TOKEN_WINDOW_MS = 5 * 60 * 1000;
+const TOKEN_WINDOWS = CONFIRM_TOKEN_MINUTES / 5;
+
+function tokenFor(preview, windowIndex, key) {
   const { run_id: runId, person, account, changes } = preview;
   const shown = { runId, person, account, changes: changes.map((c) => [c.key, c.current, c.proposed]) };
-  return crypto.createHmac("sha256", key).update(`lab-apply-preview\n${JSON.stringify(shown)}`).digest("hex");
+  return crypto.createHmac("sha256", key).update(`lab-apply-preview\n${windowIndex}\n${JSON.stringify(shown)}`).digest("hex");
+}
+
+/**
+ * The confirm token: an HMAC of exactly what was shown to this person and of
+ * the 5-minute window of `now` (ms), under the monitor's secret, so only this
+ * server can issue one and it expires. The apply (lib/labapply.js) recomputes
+ * it from the same run and values; it is no sign-in token.
+ */
+export function confirmToken(preview, key, now) {
+  return tokenFor(preview, Math.floor(now / TOKEN_WINDOW_MS), key);
+}
+
+/**
+ * True when `token` is the confirm token of `preview` issued in the 5-minute
+ * window of `now` or one of the two before it: at most CONFIRM_TOKEN_MINUTES
+ * old. Compared in constant time.
+ */
+export function confirmTokenMatches(token, preview, key, now) {
+  if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) return false;
+  const given = Buffer.from(token, "hex");
+  const window = Math.floor(now / TOKEN_WINDOW_MS);
+  let match = false;
+  for (let i = 0; i < TOKEN_WINDOWS; i++) {
+    if (crypto.timingSafeEqual(given, Buffer.from(tokenFor(preview, window - i, key), "hex"))) match = true;
+  }
+  return match;
 }

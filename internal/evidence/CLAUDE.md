@@ -40,7 +40,9 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - cumulative since the ledger began, as read, not over the week; marked at the P&L history's last spot (`spotAt`), funding left out as the ledger's testnet pricing does;
     - never switched on (`ModeState.Since` zero, even with a paper ledger) → `not started`; under `HedgeTrialMinDays` (7) → `not enough days`, the days missing, no figure; no spot → no figure;
     - `worst_day` = the UTC day of shed decisions with the lowest Σ `Counterfactual.Value`: the ledger keeps no daily series;
-    - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one.
+    - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one;
+    - the verdict (`hedgeverdict.go`, #780, `HedgeTrial.Verdict`): pure `hedgeVerdict` applies `docs/hedge-trial.md` to the section's figures plus the journal's `hedge_unavailable`/`hedge_rate_limited` lines since the ledger began (`ReadHedgeEvents`, read by `Load`);
+      under 7 days `needs more days` with the days missing, none when not started, not read, without a spot or live; a proposal needs `HedgeProposeMinDays` (= `SampleMinDays`); it changes nothing.
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,
