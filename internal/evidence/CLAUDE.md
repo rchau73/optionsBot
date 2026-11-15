@@ -43,6 +43,10 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one;
     - the verdict (`hedgeverdict.go`, #780, `HedgeTrial.Verdict`): pure `hedgeVerdict` applies `docs/hedge-trial.md` to the section's figures plus the journal's `hedge_unavailable`/`hedge_rate_limited` lines since the ledger began (`ReadHedgeEvents`, read by `Load`);
       under 7 days `needs more days` with the days missing, none when not started, not read, without a spot or live; a proposal needs `HedgeProposeMinDays` (= `SampleMinDays`); it changes nothing.
+  - the direction trial's verdict (`directionverdict.go`, #788, `DirectionReport.Verdict`): pure `BuildDirectionVerdict` applies `docs/direction-trial.md` to the weekly scorecards from 2026-W43
+    (`WithDirectionVerdict` reads the earlier weeks' JSON, `ReadDirectionWeeks`; `cmd/evidence -compare-direction` sets it);
+    - a week missing over 2 book days is excluded, one without both replays counts toward neither d nor noise; kill rule first (3 counted weeks in a row under −noise), then the span of 6, sma better (d, then the tail guard alone), no difference (|d| ≤ noise), bias better;
+    - the span check flags a sign of bias − sma changing on half the steps or more; the live-drawdown half of the kill rule is not in the scorecard (`NotChecked`); `evidence_week.py` posts `verdict.line`, never recomputing it.
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,

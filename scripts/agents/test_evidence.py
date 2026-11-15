@@ -257,6 +257,17 @@ class DirectionTrial(unittest.TestCase):
         self.assertNotIn("BTC |", text.split("**Direction trial**")[1])  # no amount column
         self.assertNotIn("🚩", text)
 
+    def test_the_scorecards_verdict_line_reaches_the_comment(self):
+        # #788: the line is the scorecard's own verdict, computed by cmd/evidence.
+        line = "needs more weeks — 5 week(s) missing of the 6 the trial needs (1 counted): no figure is a conclusion yet"
+        c = scorecard()
+        c["verdict"] = {"status": "needs more weeks", "line": line}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        self.assertIn(f"- **Verdict** (docs/direction-trial.md): {line}", self.comment("2026-W43"))
+        self.card("2026-W44")  # written before #788: no verdict field
+        self.assertIn("- **Verdict** (docs/direction-trial.md): not in the scorecard (built before #788", self.comment("2026-W44"))
+        self.assertIn("- **Verdict** (docs/direction-trial.md): no scorecard for the week", self.comment("2026-W45"))
+
     def test_no_scorecard_is_said_and_before_the_trial_no_block(self):
         self.assertIn("No scorecard for 2026-W43 (see the failed steps).", self.comment("2026-W43"))
         self.assertNotIn("Direction trial", self.comment("2026-W42"))
