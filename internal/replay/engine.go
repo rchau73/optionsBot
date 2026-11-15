@@ -131,13 +131,18 @@ type Result struct {
 	TopUpLots          float64    // lots sold by the complements
 	DownsizeLog        []Downsize // every leg cut, for the journal comparison
 	// The shed study (#637, shed.go).
-	ShedBreaks    int     // negative breaks: decisions where a shed starts after one without
-	ShedPnL       float64 // realised on the GEX shed buy-backs, net of fees
-	HedgePnL      float64 // the perp hedge: its price moves, less fees and funding
-	HedgeTrades   int     // perp orders (opens, re-hedges, unwinds)
-	MaxMMPct      float64 // MM as % of the margin balance, highest over the decisions
-	AvgIM         float64 // IM in the coin, averaged over the decisions
-	MaxGapLossPct float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
+	ShedBreaks  int     // negative breaks: decisions where a shed starts after one without
+	ShedPnL     float64 // realised on the GEX shed buy-backs, net of fees
+	HedgePnL    float64 // the perp hedge: its price moves, less fees and funding
+	HedgeTrades int     // perp orders (opens, re-hedges, unwinds)
+	// The delta-exit study (#769, deltaexit.go): what each exit realised
+	// against the premium it had received, and the closed legs sold again.
+	DeltaExitPnL, DeltaExitPremium float64 // realised net of fees; premium received by the legs closed
+	StopPnL, StopPremium           float64
+	ReEntries                      int     // repairs of a leg a stop, delta exit or MM cut closed
+	MaxMMPct                       float64 // MM as % of the margin balance, highest over the decisions
+	AvgIM                          float64 // IM in the coin, averaged over the decisions
+	MaxGapLossPct                  float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
 	// The full-strangle study (#677, fullstrangle.go).
 	MissingLegHours    float64 // one-legged strangles × hours they were so, every rule set
 	PerpTradedUSD      float64 // the perpetual's turnover, USD
@@ -558,14 +563,20 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 					continue
 				}
 				delete(e.deferSince, p.ID)
+				premium, realised := p.PremiumReceived, e.res.Realised
 				if e.buyBack(at, s, p, p.Qty, quotes, "STOP") {
 					e.stopped[key(s, p.OptionType)] = at
 					e.res.Stops++
+					e.res.StopPremium += premium
+					e.res.StopPnL += e.res.Realised - realised
 				}
 			case strategy.ActionDeltaExit:
+				premium, realised := p.PremiumReceived, e.res.Realised
 				if e.buyBack(at, s, p, p.Qty, quotes, "DELTA EXIT") {
 					e.stopped[key(s, p.OptionType)] = at
 					e.res.DeltaExits++
+					e.res.DeltaExitPremium += premium
+					e.res.DeltaExitPnL += e.res.Realised - realised
 				}
 			case strategy.ActionRollNextMonth:
 				for _, l := range s.legs() {
@@ -668,6 +679,9 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			continue
 		}
 		e.sell(at, s, q, present.Qty, f.Price, "repair")
+		if _, ok := e.stopped[k]; ok {
+			e.res.ReEntries++
+		}
 		delete(e.anchors, k)
 		delete(e.stopped, k)
 		e.res.Repairs++

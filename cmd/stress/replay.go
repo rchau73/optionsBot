@@ -64,7 +64,7 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
 	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "shed": true, "sheds": true, "costs": true, "perpfunding": true,
-	"fullstrangle": true, "rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
+	"fullstrangle": true, "deltaexits": true, "rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -90,6 +90,7 @@ type replayOpts struct {
 	shed                                              string // what a GEX shed does in one replay (#637): today (the bot) | none | partial:K | delta:D | hedge
 	sheds, costs                                      string // the shed study's variants ("all" = the issue's) and cost multiples; "" = one replay
 	fullStrangle                                      string // the full-strangle study's rule sets (e.g. "today,hedged", #677); "" = one replay
+	deltaExits                                        string // the delta-exit study's thresholds (e.g. "0.25,0.30,0.35,off", #769); "" = one replay
 	rebalance                                         string // the rebalance model's downsize rule (#638): off | prorata (the bot) | cheapest | winners
 	rebalances                                        string // the downsize study's rules (e.g. "prorata,cheapest,winners"); "" = one replay
 	limits                                            string // the IM limit, freeze and restarts: replay (rebuilt) | journal (the bot's risk_limit lines)
@@ -220,13 +221,13 @@ func runReplay(o replayOpts) error {
 		changed = append(changed, "-shed="+set.Shed.String())
 	}
 	studies := 0
-	for _, s := range []string{o.liqCaps, o.regimeHolds, o.sheds, o.rebalances, o.fullStrangle} {
+	for _, s := range []string{o.liqCaps, o.regimeHolds, o.sheds, o.rebalances, o.fullStrangle, o.deltaExits} {
 		if s != "" {
 			studies++
 		}
 	}
 	if studies > 1 {
-		return fmt.Errorf("-liqcaps, -regimeholds, -sheds, -rebalances and -fullstrangle are five studies: run one at a time")
+		return fmt.Errorf("-liqcaps, -regimeholds, -sheds, -rebalances, -fullstrangle and -deltaexits are six studies: run one at a time")
 	}
 	if o.trace {
 		set.Trace = func(at time.Time, line string) { fmt.Printf("%s  %s\n", at.UTC().Format("Jan 02 15:04"), line) }
@@ -245,6 +246,9 @@ func runReplay(o replayOpts) error {
 	}
 	if o.sheds != "" {
 		return runShedStudy(snaps, set, o, changed)
+	}
+	if o.deltaExits != "" {
+		return runDeltaExitStudy(snaps, set, o, changed)
 	}
 	res, err := replay.Run(snaps, set)
 	if err != nil {
@@ -494,6 +498,30 @@ func runShedStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, 
 	fmt.Printf(". Entries and repairs skip the shed side under every variant; stops, delta exits and the MM cut run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid by the hedge, re-hedged outside ±%.2f Δ per option; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
 		replay.PerpFeeRate*100, set.PerpFundingPct, replay.HedgeBand, (1-replay.GapMove)*100, replay.GapIVMultiple)
 	fmt.Print(replay.ShedStudyMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
+	return nil
+}
+
+// runDeltaExitStudy is -deltaexits (#769): one replay per delta-exit
+// threshold on the same books and settings, printed as one table.
+func runDeltaExitStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, changed []string) error {
+	if _, ok := o.set["breach"]; ok {
+		return fmt.Errorf("-deltaexits varies the delta exit itself: drop -breach")
+	}
+	thresholds, err := replay.ParseDeltaExits(o.deltaExits)
+	if err != nil {
+		return err
+	}
+	rows, err := replay.DeltaExitStudy(snaps, set, thresholds)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Delta-exit study (#769), %s, direction %s, start %s", set.Cfg.Underlying, set.Cfg.GEXDirection, o.start)
+	if len(changed) > 0 {
+		fmt.Printf(", %s", strings.Join(changed, " "))
+	}
+	fmt.Printf(". 0.30 = the bot; off = the %g× stop alone. Re-entries = repairs of a leg a stop, delta exit or MM cut closed (after repair_cooldown_hours %d). Return on margin = net ÷ the average IM.\n\n",
+		set.Cfg.StopLossMultiplier, set.Cfg.RepairCooldownHours)
+	fmt.Print(replay.DeltaExitMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To)))
 	return nil
 }
 

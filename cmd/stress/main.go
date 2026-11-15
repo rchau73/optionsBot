@@ -676,6 +676,7 @@ func main() {
 	replayShed := flag.String("shed", "today", "STUDY, with -replay (#637): what a GEX shed does — today (the bot: buy the whole side back) | none | partial:K (cut to the slot target × K) | delta:D (only legs with |Δ| ≥ D) | hedge (keep the legs, short/long the perpetual for the side's delta)")
 	replaySheds := flag.String("sheds", "", "STUDY, with -replay: replay once per shed variant in this list (all = today,none,partial:0.5,partial:0,delta:0.20,delta:0.25,hedge, #637) at each -costs multiple and print one table — net (coin, USD), named windows, worst day/week, max MM, −20 % gap loss, stops, MM cuts, verdict")
 	replayFullStrangle := flag.String("fullstrangle", "", "STUDY, with -replay: replay once per rule set in this list (today,hedged; hedged:H = a stopped leg waits H hours, #677) at each -costs multiple and print one table — net (coin, USD), legs missing, perpetual traded and fees, named windows, worst day/week, max MM, −20 % gap loss, stops, MM cuts, verdict")
+	replayDeltaExits := flag.String("deltaexits", "", "STUDY, with -replay: replay once per delta_exit_threshold in this list (e.g. 0.25,0.30,0.35,off; all = those four, #769; off = the 2× stop alone) and print one table — net, return on margin, worst week, delta exits and stops with their P&L as % of premium, MM cuts, re-entries; the bot's threshold stays 0.30")
 	replayCosts := flag.String("costs", "1,2", "with -sheds or -fullstrangle: cost multiples — every spread widened around its mid and every fee multiplied (1 = as recorded)")
 	replayPerpFunding := flag.Float64("perpfunding", 10, "with -shed hedge or -fullstrangle: yearly funding the perp hedge pays, % of its notional (MODEL: funding is not recorded)")
 	flag.Parse()
@@ -694,7 +695,7 @@ func main() {
 			journal: *replayJournal, start: *replayStart, inputs: *dir, gexDir: *replayGEX, equity: *replayEquity,
 			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, liqCaps: *replayLiqCaps,
 			regimeHold: *replayRegimeHold, regimeHolds: *replayRegimeHolds, shed: *replayShed, sheds: *replaySheds,
-			fullStrangle: *replayFullStrangle, costs: *replayCosts, perpFundingPct: *replayPerpFunding,
+			fullStrangle: *replayFullStrangle, deltaExits: *replayDeltaExits, costs: *replayCosts, perpFundingPct: *replayPerpFunding,
 			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, pnlHistory: *replayPnLHistory, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)
