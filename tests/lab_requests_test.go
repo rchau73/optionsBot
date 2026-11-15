@@ -88,7 +88,7 @@ func TestLabRunner_FinishesRequest(t *testing.T) {
 		seen, during = args, labRequest(t, o, labReqID).Status
 		return done(ctx, args)
 	}
-	sum, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, run)
+	sum, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, run, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestLabRunner_FailedRunSaysSo(t *testing.T) {
 		}
 		return done(ctx, args)
 	}
-	sum, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, run)
+	sum, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, run, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestLabRunner_FailedRunSaysSo(t *testing.T) {
 	if _, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, func(context.Context, []string) (string, error) {
 		t.Error("cmd/compare must not run without a config")
 		return "", nil
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r := labRequest(t, o, labReqID); r.Status != compare.StatusFailed || r.Reason != "no config for SOL (config_sol.yaml)" {
@@ -173,7 +173,7 @@ func TestLabRunner_Limits(t *testing.T) {
 	sum, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, func(context.Context, []string) (string, error) {
 		t.Error("nothing is queued to run")
 		return "", nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,14 +198,14 @@ func TestLabRunner_Limits(t *testing.T) {
 		t.Fatal(err)
 	}
 	busy := func() time.Time { return time.Now() }
-	if _, err := compare.RunLabQueue(context.Background(), o, busy, fakeCompare(t, o, "20261105T010000Z")); !errors.Is(err, compare.ErrRunnerBusy) {
+	if _, err := compare.RunLabQueue(context.Background(), o, busy, fakeCompare(t, o, "20261105T010000Z"), nil); !errors.Is(err, compare.ErrRunnerBusy) {
 		t.Fatalf("held lock: err %v", err)
 	}
 	if r := labRequest(t, o, labReqID); r.Status != compare.StatusQueued {
 		t.Errorf("a busy runner takes nothing: %+v", r)
 	}
 	later := func() time.Time { return time.Now().Add(compare.RequestMaxAge + time.Hour) }
-	if _, err := compare.RunLabQueue(context.Background(), o, later, fakeCompare(t, o, "20261105T010000Z")); err != nil {
+	if _, err := compare.RunLabQueue(context.Background(), o, later, fakeCompare(t, o, "20261105T010000Z"), nil); err != nil {
 		t.Fatalf("stale lock: %v", err)
 	}
 
