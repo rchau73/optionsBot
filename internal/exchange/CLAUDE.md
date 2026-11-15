@@ -18,6 +18,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
   - It never parses an instrument name (#773, migration step 7): it reads `Instrument{Expiry, Strike, OptionType}` from the chain, or from `OptionChain.InstrumentFromName` for a name the chain does not hold (journal records, expired legs);
     `marketdata.InstrumentFromName` is the one helper over `ParseOptionName` (`TestExchangeCoupling_StrategyCodeDoesNotParseNames`).
+  - It never builds an exchange instrument name (#786, step 8): the perpetual of the daily closes, the hedge report and the futures hedge is `Trading.PerpetualName(currency)`
+    (`InstrumentNamer`, Deribit's `orders.Executor`: `<COIN>-PERPETUAL`, no request; `TestExchangeCoupling_StrategyNamesNoExchangeInstrument`).
   `marketdata` (`Streamer` only) and `internal/exchange/deribit` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
   Method → Deribit call map and what is Deribit-specific: `docs/architecture.md` §15.
   The full inventory, the proposed adapter interface and its migration steps: `docs/exchange-adapter.md` (#325)
