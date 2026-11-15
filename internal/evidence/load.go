@@ -85,6 +85,13 @@ func Load(env, bot string, p Paths, w Window, equity float64, notes io.Writer) I
 	in.Hedge = LoadHedge(p.HedgeMode, time.Now().UTC())
 	if in.Hedge.Err != "" {
 		note("hedge mode file not read: %s", in.Hedge.Err)
+	} else if since := in.Hedge.State.Ledger.Since; !since.IsZero() {
+		if ev, err := ReadHedgeEvents(p.Journal, since); err != nil {
+			note("hedge events not read: %v", err)
+			in.Hedge.EventsErr = err.Error()
+		} else {
+			in.Hedge.Events = &ev
+		}
 	}
 	return in
 }
