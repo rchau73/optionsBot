@@ -20,6 +20,9 @@ Free text (Q4, F2) and the F1 e-mails are never printed, only how many answered.
 Its "Quota progress" section shows each `screener.md` §5 quota as have / need (open, met, over cap), the qualified count by channel and, last, whether the cycle-holder quota is met so the §4 verdict can be read (`CHANNEL` and `COMMUNITY` are optional columns: without them the row says "not measurable: no column").
 Use its figures in §3 and §4.
 
+Interviews have their own sheet: code each one as `interview-guide.md` "Coding sheet" says, run `python3 scripts/product/interview_tally.py` and paste its pain, delegation, willingness-to-pay and testnet-trial tables into §2–§4 beside the survey's, with anonymous codes only (`I01`, `I02`…).
+The scorecard (`go-no-go.md`) shows the interview delegation share as an informational line; it never decides.
+
 ## 1. Per-response line
 
 The export has one row per response.
