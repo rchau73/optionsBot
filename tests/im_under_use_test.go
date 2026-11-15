@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"optionsbot/internal/api"
 	"optionsbot/internal/config"
 	"optionsbot/internal/idlemargin"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -242,6 +244,102 @@ func TestIMUnderUse_RunJournalsOnceShowsAndClears(t *testing.T) {
 	}
 	if n := len(f.journal.riskChanges(orders.RiskRebalance)); n != 0 {
 		t.Errorf("no rebalance from the alert, got %d", n)
+	}
+}
+
+// #768: a no_expiry skip names the slot's window and every listed expiry.
+func TestNoExpiryDetail_ListsTheExchangesExpiries(t *testing.T) {
+	now := time.Date(2026, 11, 12, 11, 0, 0, 0, time.UTC)
+	at := func(d int) *marketdata.Instrument {
+		return &marketdata.Instrument{Expiry: time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC).AddDate(0, 0, d)}
+	}
+	// Two instruments on 25DEC count once; listed in date order.
+	got := strategy.NoExpiryDetail([]*marketdata.Instrument{at(43), at(15), at(43), at(1)}, now, 25, 10, 15)
+	want := "window 16–35 DTE; the exchange lists 2026-11-13 (0 DTE), 2026-11-27 (14 DTE), 2026-12-25 (42 DTE)"
+	if got != want {
+		t.Errorf("detail\n got %q\nwant %q", got, want)
+	}
+	if got := strategy.NoExpiryDetail(nil, now, 25, 10, 15); got != "window 16–35 DTE; the exchange lists no expiry" {
+		t.Errorf("empty chain: %q", got)
+	}
+}
+
+func TestUnderUseCauseChanged(t *testing.T) {
+	open := strategy.UnderUse{RunStart: t0UnderUse, Last: t0UnderUse, Since: t0UnderUse, Cause: orders.IdleAllFull}
+	cases := []struct {
+		name  string
+		u     strategy.UnderUse
+		cause string
+		want  bool
+	}{
+		{"open, new cause", open, strategy.SkipNoExpiry, true},
+		{"open, same cause", open, orders.IdleAllFull, false},
+		{"no episode", strategy.UnderUse{RunStart: t0UnderUse, Last: t0UnderUse}, strategy.SkipNoExpiry, false},
+		{"paused (margin unknown)", strategy.UnderUse{Since: t0UnderUse, Cause: orders.IdleAllFull}, strategy.SkipNoExpiry, false},
+	}
+	for _, c := range cases {
+		if got := strategy.UnderUseCauseChanged(c.u, c.cause); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	// Margin unknown keeps the journaled cause with the episode.
+	paused, _ := strategy.IMUnderUseNext(open, t0UnderUse.Add(time.Minute), 0, 0, false, false, 6*time.Hour)
+	if paused.Cause != orders.IdleAllFull || !paused.Open() {
+		t.Errorf("a pause keeps the episode and its cause, got %+v", paused)
+	}
+}
+
+// Scenario: the cause is recorded (#768). A 25-DTE slot next to the
+// fixture's 45-DTE strangle has no listed expiry in its window: it waits
+// with no_expiry naming the listed expiries, and the alert's cause is
+// no_expiry with the same list. When an expiry is listed and the slot
+// enters, the episode is journaled again with its new cause.
+func TestIMUnderUse_CauseIsRecordedForANoExpirySlot(t *testing.T) {
+	f := newStrategyFixture(t)
+	f.cfg.DTEDeltaMatrix = []config.DTEDeltaEntry{{DTE: 45, Deltas: []float64{0.16}}, {DTE: 25, Deltas: []float64{0.16}}}
+	f.cfg.RebalanceStartupBandPct = config.FixedRebalanceStartupBandPct
+	f.cfg.IMUnderUseWindowMinutes = 0.3 / 60 // 300 ms
+	f.withOpenStrangle(0.5, 0.02)
+	f.exch.setMargin(1.9, 0.5)
+	f.startRun()
+	eventually(t, 2*time.Second, "slot 25 waits with no_expiry", func() bool { return f.skips(strategy.SkipNoExpiry) == 1 })
+	listed := fmt.Sprintf("%s (%d DTE)", f.expiry.Format("2006-01-02"), marketdata.DaysToExpiry(f.expiry, time.Now()))
+	for _, e := range f.journal.events(orders.EventSkipped) {
+		if strings.HasPrefix(e.reason, strategy.SkipNoExpiry) && !strings.Contains(e.reason, "window 20–35 DTE; the exchange lists "+listed) {
+			t.Errorf("no_expiry skip should list the window and the expiries, got %q", e.reason)
+		}
+	}
+
+	f.exch.setMarginBalance(1.9 / 0.06) // IM 6 % = 30 % of the 20 % limit
+	eventually(t, 3*time.Second, "im_under_use journaled",
+		func() bool { return len(f.journal.riskChanges(orders.RiskIMUnderUse)) == 1 })
+	r := f.journal.riskChanges(orders.RiskIMUnderUse)[0]
+	if r.Cause != strategy.SkipNoExpiry {
+		t.Errorf("cause %q, want no_expiry", r.Cause)
+	}
+	if !strings.Contains(r.Detail, "cause: no_expiry (window 20–35 DTE; the exchange lists "+listed+")") {
+		t.Errorf("alert detail should list the expiries: %q", r.Detail)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := len(f.journal.riskChanges(orders.RiskIMUnderUse)); n != 1 {
+		t.Fatalf("an unchanged cause is journaled once, got %d", n)
+	}
+
+	// An expiry in the window is listed: the slot enters and the cause moves on.
+	exp := time.Now().UTC().AddDate(0, 0, 25).Truncate(24 * time.Hour).Add(8 * time.Hour)
+	label := strings.ToUpper(exp.Format("2Jan06"))
+	f.market.mu.Lock()
+	f.market.instruments[fmt.Sprintf(testCall, label)] = fixtureInstrument(fmt.Sprintf(testCall, label), "call", exp, 110000, 0.16)
+	f.market.instruments[fmt.Sprintf(testPut, label)] = fixtureInstrument(fmt.Sprintf(testPut, label), "put", exp, 90000, -0.16)
+	f.market.mu.Unlock()
+	eventually(t, 3*time.Second, "cause change journaled",
+		func() bool { return len(f.journal.riskChanges(orders.RiskIMUnderUse)) == 2 })
+	r2 := f.journal.riskChanges(orders.RiskIMUnderUse)[1]
+	if r2.Cause == strategy.SkipNoExpiry || !strings.Contains(r2.Detail, "cause: no_expiry → "+r2.Cause) {
+		t.Errorf("second line cause %q detail %q, want the change from no_expiry", r2.Cause, r2.Detail)
+	}
+	if n := len(f.journal.riskChanges(orders.RiskIMUnderUseDone)); n != 0 {
+		t.Errorf("a cause change is no clear, got %d", n)
 	}
 }
 
