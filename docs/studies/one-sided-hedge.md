@@ -8,7 +8,7 @@ Which change to the hedge would have kept the bear book's result?
 **Reading: hedging a one-sided book threw away its edge.**
 On both coins and both windows, the hedge standing down on a one-sided book (`onesided`) or hedging only the delta that opposes the trend (`trend`) nets more than today's hedge (`bot`).
 Trading the hedge after repairs and entries (`+after`) changes little at the replay's hourly pace.
-Both windows are falling markets: a rally, where a calls-only book is the one at risk, is not in the recordings yet.
+Both recorded windows fall; three synthetic rallies (below) show `onesided` ahead of `bot` in each, at the cost of a worse first day in a squeeze, and `trend` ahead only in a slow grind.
 
 ## Live (mvp, 2026-11-05 → 2026-11-16)
 
@@ -61,8 +61,25 @@ ETH's long window is dominated by one replay stop on 11-03 08:06: a 2900 call bo
 
 ## Caveats
 
-- Both windows fall (ETH −27 %, BTC −21 % from 10-10); the case the hedge is for on a calls-only book, a rally, is not tested.
+- Both recorded windows fall (ETH −27 %, BTC −21 % from 10-10); rallies are only synthetic (below).
 - The replay sells about four times the live book's lots (~500 against ~100 ETH lots), so its hedge losses are larger than live; the signs agree.
 - `trend`'s lead over `onesided` in the live window comes from the hours on 11-05 when the replay held puts too (its start repaired them at once), a long book delta it hedged into the fall.
 - The verdict column of the tables reads "max MM above today's": the modes without a perpetual run 1–2 pp more maintenance margin than `bot`, as the bot with the hedge off does, far under `max_mm_pct`.
 - `+after` is measured hourly; live, the roll round trips cost about the spread and fees (ETH: three pairs of ~35,000 USD, ~0.07 ETH), and under `onesided` a calls-only book has no hedge to round-trip.
+
+## Rallies (synthetic, #813)
+
+The recordings hold no rally, the risk of a calls-only book, so `tests/hedgemode_rally_test.go` replays three on synthetic books (`go test ./tests -run TestReplayHedgeModeRallies -v`):
+a calls-only BTC book (1 BTC balance) in a bear trend after a 40-day fall, negative regime, from 100,000:
+
+| Path | off | bot | onesided | trend | Worst day: bot / onesided / trend |
+|---|---|---|---|---|---|
+| grind: +1 %/day, 17 days (+18 %) | +1.22 % | +1.92 % | +2.64 % | **+3.60 %** | −0.01 / −0.35 / −0.35 % |
+| squeeze: +15 % in 48 h, then flat | +1.33 % | +1.57 % | **+2.20 %** | +0.84 % | −0.41 / −1.14 / −1.02 % |
+| reversal: +15 % in 48 h, back in 48 h | +0.05 % | +0.73 % | **+1.07 %** | +0.28 % | −0.41 / −1.14 / −1.02 % |
+
+- **The book does not stay calls-only into a rally.** The trend leaves bear after about +1.5 %, the regime side then lets puts be sold: the first put is sold 5 hours into the squeeze, a day into the grind.
+  From there both `onesided` and `trend` hedge the two-sided book; they differ from `bot` in the first hours and, for `trend`, in leaving a bull-leaning book unhedged once the trend is bull.
+- `onesided` nets more than `bot` in all three, but its worst day in a squeeze is about 0.7 pp worse: the calls are unhedged until the first put.
+- `trend` wins the slow grind and loses the fast ones (below `bot` in the squeeze and the reversal): in a bull trend it keeps the long delta the new puts add, which the stall or the reversal then costs.
+- MODEL: one flat 50 % IV (a real squeeze lifts call IV, which makes the unhedged hours cost more), the regime and flip held fixed, hourly decisions.
