@@ -33,7 +33,8 @@ The direction trial (docs/direction-trial.md, #324, #440): cmd/evidence
 holds percentages, counts and hours only. The comment's "Direction trial"
 block and the decision tickets are built from those files with the brief's
 rules (minimum span, noise, kill rule, review date); a ticket only asks a
-person to decide — no agent changes gex_direction.
+person to decide — no agent changes gex_direction. The verdict line is the
+scorecard's own `verdict.line` (#788, computed by cmd/evidence), not redone here.
 
 Standard library only: launchd runs it with the system python3.
 """
@@ -264,6 +265,7 @@ TRIAL_MAX_MISSING_BOOK_DAYS = 2
 TRIAL_STREAK = 3
 TRIAL_REVIEW_DATE = dt.date(2026, 12, 7)
 TRIAL_SOURCES = ("bias", "sma")
+TRIAL_RULE = "docs/direction-trial.md"
 TICKET_PREFIX = "[E2] Direction trial: "
 TICKET_KINDS = {  # kind → the title's start; one ticket of each kind, ever
     "first-shed": TICKET_PREFIX + "first GEX shed",
@@ -368,6 +370,16 @@ def week_list(weeks):
     return ", ".join(e["week"] for e in weeks) or "none"
 
 
+def verdict_line(card):
+    """The scorecard's computed verdict in one line (#788)."""
+    line = ((card or {}).get("verdict") or {}).get("line")
+    if line:
+        return line
+    if card is None:
+        return "no scorecard for the week"
+    return "not in the scorecard (built before #788: rerun -compare-direction)"
+
+
 def direction_block(stable_root, week):
     """The comment's "Direction trial" block: percentages and counts only
     (the scorecard holds nothing else). [] before the trial."""
@@ -400,6 +412,7 @@ def direction_block(stable_root, week):
     streak = f"{s['streak']} of {TRIAL_STREAK}" if s["noise"] is not None else "not measured (no live − replay gap yet)"
     out.append(f"- Early-stop streak (bias's replay net under sma's by more than the noise): {streak}"
                + (" — **early stop: decision ticket filed**" if s["early_stop"] else ""))
+    out.append(f"- **Verdict** ({TRIAL_RULE}): {verdict_line(card)}")
     out.append("- First GEX shed: " + (s["first_shed"] or "none yet (the review waits for one)"))
     out.append("- Review: " + (f"**due** — {s['review_reason']}" if s["review_reason"] else f"{TRIAL_REVIEW_DATE}"))
     out.append("- The kill rule's live drawdown (stable over 2× mvp) is not in the scorecard: read the weekly reports above.")
@@ -444,7 +457,8 @@ def trial_tickets(week, stable_root, issues):
         body = [why, "", f"- Weeks counted toward {TRIAL_WEEKS}: {len(s['counted'])} ({week_list(s['counted'])})",
                 f"- d = bias − sma, replay net, mean of the counted weeks: {pp(s['mean_d'])}",
                 f"- noise = mean |live − replay|: {pp(s['noise'])}",
-                f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}", "", *trial_table(s), "",
+                f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}",
+                f"- Computed verdict ({TRIAL_RULE}): {verdict_line(s['weeks'][-1]['card'])}", "", *trial_table(s), "",
                 "Decide by the outcomes in `docs/direction-trial.md` (no difference / bias better / sma better; "
                 "the live drawdown kill rule is in the weekly evidence reports): keep `bias` on stable, move it to "
                 "`sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges — no agent "
