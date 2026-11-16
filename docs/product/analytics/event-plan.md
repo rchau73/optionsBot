@@ -55,6 +55,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `rebalance_confirmed` | the person confirms the real rebalance | `outcome` | Q6, Q7 |
 | `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
 | `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
+| `security_summary_seen` | the Active sessions dialog shows the person's sign-in summary (#803): the wrong passwords typed for their username since the previous sign-in as a bucket, never the count above 1, a name or the times; no property on a first sign-in (no count is shown) | `failed_since` | Q3, Q7 |
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
 | `signed_out` | sign-out, or the session expired and the page went to `/login` | `reason` | Q2, Q7 |
 | `survey_answered` | the person sends a survey: NPS with at least a score, the four-answers card or the exit reason; free text never travels here | `survey_id`, `score`, `reason_code`, `came_for`, `hardest_to_find` | Q4, Q8 |
@@ -93,6 +94,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
 | `entry_screen` | enum | `monitor`, `login` |
+| `failed_since` | enum | `0`, `1`, `2_4`, `5_plus` (wrong passwords since the previous sign-in, as a bucket, #803) |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `helped` | bool | `true`, `false` |
