@@ -5,3 +5,5 @@
 29f9cc4480b78cc4ea1a2a1f8835787707fdcbc4:frontend/__tests__/password-rule.test.js:generic-api-key:166
 # #717: made-up token and password in a Go test of what the digest must never leak, replaced by low-entropy values in the next commit.
 130f7d7c60142fe84da435a2a7b20b5d9c4d43bd:tests/security_digest_test.go:generic-api-key:331
+# #806: a made-up confirm-token id in the lab applied-record fixture, replaced by a low-entropy value in the next commit.
+1cc67f55a78d8b8d14423cee72fa70fff84981a8:tests/testdata/lab_applied_record.json:generic-api-key:18
