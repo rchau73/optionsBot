@@ -1,0 +1,23 @@
+{
+  "run_id": "20261104T230000Z",
+  "recorded_at": "2026-11-05T09:12:00.000Z",
+  "person": "maria",
+  "role": "manager",
+  "account": {
+    "underlying": "BTC",
+    "config": "config_btc.yaml"
+  },
+  "changes": [
+    {
+      "key": "backtest.slippage_pct",
+      "title": "Backtest market slippage",
+      "old": 0.001,
+      "new": "0.002"
+    }
+  ],
+  "token_id": "0123456789abcdef",
+  "label": "backtested, not a forecast",
+  "applied": false,
+  "recorded": true,
+  "line": "parameter change recorded: maria, account BTC (config_btc.yaml), run 20261104T230000Z, backtest.slippage_pct 0.001 → 0.002, token 0123456789abcdef; nothing applied to a running bot"
+}
