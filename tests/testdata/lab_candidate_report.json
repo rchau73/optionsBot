@@ -1,0 +1,21 @@
+{
+  "disclaimer": "Backtested/replayed, not a promise",
+  "underlying": "BTC",
+  "base": "config_btc.yaml",
+  "proposed": "config_btc.yaml with backtest.slippage_pct=0.002",
+  "diffs": [{"key": "backtest.slippage_pct", "base": "0.001", "proposed": "0.002"}],
+  "backtest": {
+    "ran": true,
+    "equity_usd": 100000,
+    "base": {"net_usd": 1200, "return_pct": 1.2, "fees_usd": 300, "worst_week_pct": -0.8, "max_drawdown_pct": 1.1},
+    "proposed": {"net_usd": 1100, "return_pct": 1.1, "fees_usd": 250, "worst_week_pct": -0.9, "max_drawdown_pct": 1.3}
+  },
+  "replay": {
+    "ran": true,
+    "equity": 2,
+    "base": {"net": 0.01, "return_pct": 0.5, "fees": 0.004, "worst_week_pct": -0.4, "max_drawdown": 0.02},
+    "proposed": {"net": 0.009, "return_pct": 0.45, "fees": 0.005, "worst_week_pct": -0.5, "max_drawdown": 0.03}
+  },
+  "stress": {"ran": false, "note": "no captured book"},
+  "neighbours": {"key": "backtest.slippage_pct", "cliffs": []}
+}
