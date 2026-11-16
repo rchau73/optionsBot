@@ -21,8 +21,8 @@ import (
 //   - reversal: +15 % in 48 hours, back to 100,000 in the next 48, then flat.
 // The history before is a 40-day fall of 0.6 % a day. MODEL: one flat 50 % IV, the regime and flip held as recorded. `go test
 // ./tests -run TestReplayHedgeModeRallies -v` prints each table and when
-// each mode first traded the perpetual and first sold a put (the trend's flip
-// to bull, as the regime side then sells puts).
+// each mode first traded the perpetual and first sold a put (the trend
+// leaving bear, after about +1.5 %: the regime side then sells puts).
 
 const rallyStart = 72 // hour trading starts (10-10 00:00)
 
