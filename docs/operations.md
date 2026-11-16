@@ -52,6 +52,11 @@ Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `ma
 Two environments on one account would cancel each other's orders and manage each other's positions.
 `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 The account check covers every folder of `~/dev/go/optionsBot-env` with a `.env`, not only stable and mvp (#538, `env_accounts_distinct`), and names both folders.
+When a clone holds an account registry (`data/accounts.json`, `internal/accounts`), the check also reads it through `go run ./cmd/accounts -check -json` (#800, `env_registry_check`, `scripts/env_registry.py`; read-only):
+- each bot is matched to its account by currency and config file name (BTC: `BOT_CONFIG_BTC` of `deploy.env`, else `config_btc.yaml`; ETH: `config_eth.yaml`);
+- it refuses a registry that breaks a rule, an account whose key is not `ok` (missing, revoked, may move funds, unknown scope), a bot listed under two accounts, and two folders whose registries map a bot to the same account id (naming both folders);
+- a bot not in the registry is noted on stderr, and refused only when the registry lists its currency under another account;
+- the refusal names the account id and the state, never a key id, client id or scope string; without a registry file nothing changes.
 Each bot also checks its own API key at startup: a key that can move funds (withdraw or transfer) logs an ERROR, shows `key_scope.can_move_funds: true` in `/api/status` and is journaled as `key_scope`, but the bot still starts — replace it with a trade-only key (`account:read trade:read_write`).
 
 ```bash

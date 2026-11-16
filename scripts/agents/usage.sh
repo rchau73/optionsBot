@@ -18,8 +18,9 @@
 # and skipped; when no environment has events in the week nothing is posted
 # and no marker is written, so a later tick retries (at most hourly). A week whose comment
 # could not be posted is tried once more and then marked done:
-# data/agents/usage/<week>.done. Reads the monitors' event files only: no bot
-# state, no order. No Claude call.
+# data/agents/usage/<week>.done. Reads the monitors' event files and, for the
+# north star (#801), the days of each bot's data/regime_history.jsonl: no other
+# bot state, no order. No Claude call.
 # First it runs assistant_review.sh, the assistant's weekly quality review
 # (#438: its own marker, ledger agent assistant_review, the E10 epic), then
 # assistant_golden.sh, the live golden-set run (#536: its own marker, ledger
@@ -63,7 +64,7 @@ for env in $ENV_NAMES; do
   if [[ ! -s "$events" ]]; then
     log "usage: $env: $([[ -e "$events" ]] && echo "events file empty" || echo "no events file") ($events), skipped"; continue
   fi
-  if ! go run ./cmd/usage -events "$events" -week "$week" -out "$root/data/monitor/reports" -alert > "$dir/$env.log" 2>&1; then
+  if ! go run ./cmd/usage -events "$events" -env "$env" -week "$week" -out "$root/data/monitor/reports" -alert > "$dir/$env.log" 2>&1; then
     log "usage: $env: cmd/usage failed (log $dir/$env.log), skipped"; continue
   fi
   { grep '^DROPS ' "$dir/$env.log" || true; } | tail -1 | sed 's/^DROPS //' > "$dir/$env.drops.json"
