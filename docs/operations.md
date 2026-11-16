@@ -322,6 +322,19 @@ grep '"event":"config_loaded"' orders.log | jq -c 'select(.unchanged != true) | 
 grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
 ```
 
+### Lab candidates
+
+A change a manager confirms in the strategy-change lab is only recorded (`data/compare/applied/<run id>.json`, #741); `cmd/labapply` (#806) turns the record into a checked candidate and applies nothing.
+
+```bash
+go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # → data/compare/candidates/<id>/: candidate.json (ready | refused, reasons), diff.md, config.candidate.yaml when ready
+```
+
+A person takes a `ready` candidate into a deploy: they read `diff.md` (the values, the run's backtested numbers and risks), copy the changed line into the shipped config named there in a pull request, and the usual review and merge deploy it (both BTC configs change together, `TestConfig_MVPBTCDiffersOnlyInDirection`).
+There is no automatic path from a candidate to a running bot.
+A core-policy setting is refused (`needs_product_owner`) unless the record carries `product_owner_approval`, the reference of the product owner's approval that a person adds.
+`refused` lists the reasons in plain words (a fixed key, a value out of range, the shipped setting changed since the run, no report); fix the cause and run it again: a second run on an unchanged record rewrites nothing.
+
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
 The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`).
