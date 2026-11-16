@@ -4,9 +4,10 @@ Part of [Agentic development](../../AGENTIC.md).
 
 Engagement is measured by itself too (#340, #341, #252, epic E13).
 On the first tick of each Monday (UTC), [`usage.sh`](../../scripts/agents/usage.sh) runs the [usage report](../../README.md#usage-report) for the last complete ISO week in every environment whose clone has a non-empty `data/monitor/events.jsonl`.
-It makes no Claude call, never reads bot state and places no order.
+It makes no Claude call, reads of the bots only the days in their `data/regime_history.jsonl` (the north star's running days, #801) and places no order.
 
-1. `go run ./cmd/usage -events <clone>/data/monitor/events.jsonl -week <week> -out <clone>/data/monitor/reports -alert` (from the agents' clone, so stable needs no newer code) writes `<week>.md` and `.json` in the clone and prints the engagement-drop check on its `DROPS` line.
+1. `go run ./cmd/usage -events <clone>/data/monitor/events.jsonl -env <env> -week <week> -out <clone>/data/monitor/reports -alert` (from the agents' clone, so stable needs no newer code) writes `<week>.md` and `.json` in the clone and prints the engagement-drop check on its `DROPS` line.
+   The report's **North star** section (PRD §7) counts that environment as a monthly active account when one of its bots ran on a day of the 30 and someone started a session in them, else under "visits without a running strategy" or "running without visits"; under 10 people `too few to judge`, no share; counts only. No drop rule and no comment line read it yet.
 2. When a key number fell, one `bug` issue `[E13] Engagement drop: <metrics> <week>` goes to **Triage**: every falling metric of every environment, counts and percentages only.
    Nothing is filed when an open issue, or one closed in the last 14 days, has an `[E13] Engagement drop:` title ending with that week.
 3. [`usage_week.py`](../../scripts/agents/usage_week.py) builds one comment, posted on the E13 epic: per environment, active users, the change against the week before, week-1 retention of the latest cohort, the curve of the latest cohort with 4 ended weeks, first answers found, activated in the first day, help used and help answers, the drops and the weeks with no events.

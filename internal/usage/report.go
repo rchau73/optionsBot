@@ -45,6 +45,11 @@ type Report struct {
 	Trust        *Trust        `json:"trust,omitempty"`         // Q7
 	Survey       *Survey       `json:"survey,omitempty"`        // Q8; absent when the window has no survey event
 
+	// NorthStar is PRD §7's monthly active accounts with a strategy running
+	// (Q1, #801), built from the events and the bots' running days even in a
+	// week without events; absent when no running source was given.
+	NorthStar *NorthStar `json:"north_star,omitempty"`
+
 	// Drops is the week's engagement-drop check against the weeks before it
 	// (Drops, #341), written with the report so the monitor's Analytics page
 	// (#445), the E13 post and the drop issue read the same result.

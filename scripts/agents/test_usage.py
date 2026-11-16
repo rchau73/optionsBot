@@ -427,6 +427,7 @@ class UsageScript(unittest.TestCase):
         self.assertIn(f"-week {self.week}", go[0])
         self.assertIn("-alert", go[0])
         self.assertIn("-events " + self.t("envs", "mvp", "data", "monitor", "events.jsonl"), go[0])
+        self.assertIn("-env mvp", go[0])  # the north star's running days are that clone's (#801)
         self.assertTrue(os.path.exists(self.t("envs", "mvp", "data", "monitor", "reports", self.week + ".md")))
         comments = self.files("comment-")
         self.assertEqual(len(comments), 1)
