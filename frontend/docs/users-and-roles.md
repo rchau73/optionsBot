@@ -37,6 +37,10 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: ✓
+- See your own previous sign-in and the wrong passwords typed for your username since (Account ▾ → Active sessions, `GET /api/auth/security-summary`, #803); never another person's
+  - admin: ✓
+  - manager: ✓
+  - user: ✓
 - Download your own data as one file (Account ▾ → Download my data, `/api/auth/my-data`, #750); never another person's
   - admin: ✓
   - manager: ✓
@@ -72,7 +76,7 @@ Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_C
 `__tests__/role-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the read-only `MONITOR_API_TOKEN` and with an expired session.
 A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
 A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
-Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/my-data` (#750), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
+Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/my-data` (#750), `GET /api/auth/security-summary` (#803), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
 
 ### The read matrix (#782)
 
@@ -150,6 +154,14 @@ Admins only, same-origin JSON; in the role matrix
 
 **Does:** `{"sessions": [{id, browser, created_at, last_used_at, current}]}`: the signed-in person's own live sessions, last used first, `current: true` on the one asking (`AuthService.listSessions`); never a token, hash or address.
 Any role; the session is re-read like a state-changing route (`requireRole`), and the role matrix calls it as every caller (`ROLE_GUARDED_READS`)
+
+**Refusals:** 401 no session, an ended one or the service token
+
+#### `GET /api/auth/security-summary` (#803)
+
+**Does:** `{"previous_sign_in", "first_sign_in", "failed_since", "notice_id", "locked_until"?}`: the signed-in person's previous sign-in (ISO, `null` = none recorded) and the wrong passwords typed for their username since (`AuthService.signInSummary`, [Sign-in](sign-in.md#sign-in-summary)); `locked_until` only while the username is locked.
+Their own row only: never an IP, a browser, a token or another person's data.
+Any role; read-only and self-only, the session re-read like a state-changing route (`requireRole`), in the read matrix (`READ_ROUTES`) and called as every caller (`ROLE_GUARDED_READS`)
 
 **Refusals:** 401 no session, an ended one or the service token
 

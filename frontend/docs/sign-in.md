@@ -69,6 +69,24 @@ The session in use is refused with 409 (use **Sign out**); someone else's or an 
 Audited as `session_ended` (`username`, `role`, `target_session`: the first 8 characters of the public id); logged `session ended`.
 No analytics event is sent.
 
+### Sign-in summary
+
+The Active sessions dialog opens with the person's previous sign-in and the wrong passwords typed for their username since (#803), so a stranger's attempt is noticed by the owner and not only by the admin's [security digest](#security-digest).
+The line reads "Last sign-in: <date and time>. <N> wrong-password attempts since.", then "Not you? Change your password and sign out the other browsers." and a **Change your password** button that opens that dialog.
+A first sign-in reads "This is your first sign-in." with no count; a sign-in before #803 shipped reads "Your sign-in before this one was not recorded.".
+While the username is locked the dialog also says until when.
+`GET /api/auth/security-summary` (any role, a live session re-read like `GET /api/auth/sessions`) answers `{previous_sign_in, first_sign_in, failed_since, notice_id, locked_until?}` from the person's own `users` row and the lock ([API routes](api-routes.md)); never an IP, a browser, a token or another person's data.
+The count is not derivable from what existed: `login_failures` loses its rows after 15 minutes, at a lock and at a sign-in, and the audit trail is a file the monitor does not read per request.
+So `users` has three columns: `failed_sign_ins` (wrong passwords at the sign-in form for an existing username since the last sign-in), `failed_sign_ins_before` (those between the previous sign-in and the last one) and `previous_sign_in_at`.
+A successful sign-in moves `last_sign_in_at` to `previous_sign_in_at` and `failed_sign_ins` to `failed_sign_ins_before`, and sets `failed_sign_ins` to 0: the count starts again from 0.
+`failed_since` = both counters, so an attempt while the person is signed in shows at once.
+Not counted: an unknown username (no row), an attempt refused while the username is locked (its password is never checked) and a wrong current password in Change password (the person is signed in).
+The counter is written without its own save, in the same file write as the lockout's failure record, so a known username costs no extra write and still looks the same as an unknown one; the 401 text, the lockout thresholds and the audit lines are unchanged.
+When `failed_since` > 0 (not on a first sign-in) the bell lists one Needs you item, kind `security` (the bell, [Menu and pages](menu-and-pages.md)), with the id `notice_id` (`security:<last sign-in>:<count>`): opening Active sessions marks it read, and a new attempt brings a new one.
+The bell's badge drops at its next refresh (at most a minute).
+The count is never logged: the existing `sign-in failed` line keeps its fields.
+Analytics: `security_summary_seen` with `failed_since` as a bucket (`0`, `1`, `2_4`, `5_plus`; none on a first sign-in), for consenting people only ([event plan](../../docs/product/analytics/event-plan.md)).
+
 ### Reset link
 
 For a person who forgot their password, no e-mail is needed (#307).

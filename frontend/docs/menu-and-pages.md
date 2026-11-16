@@ -36,7 +36,9 @@ Nothing is stored but the person's read marks and settings (`auth.db` `notificat
 
 **Needs you** is counted on the bell's badge:
 - *a short question from the team is waiting* (#446's due rule on the user's row and the losing-week rule, as the Ask button);
-- *your request needs more* (a `needs_info` status of the private queue, `requests_status.jsonl`).
+- *your request needs more* (a `needs_info` status of the private queue, `requests_status.jsonl`);
+- *wrong-password attempts on your account* (kind `security`, #803: wrong passwords typed for the person's username since their previous sign-in, from `users`; read when Active sessions is opened, [Sign-in](sign-in.md#sign-in-summary)).
+  It has no button: the text points to Active sessions in the account menu.
 
 **Updates** are listed, never counted:
 - The page's bot's journal events from `/api/events`: a close by stop-loss, delta exit or the kill switch, a working sell cancelled by `risk_frozen`, and `im_over_limit`.

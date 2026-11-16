@@ -10,6 +10,7 @@ import { authLog } from "./log";
 import { browserName } from "./browser";
 import { roleAtLeast } from "./roles";
 import { accountLinkProblem, checkLinkRequest, linkChanges } from "./accountLinks";
+import { noticeId } from "../signInSummary";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
 export const INVALID_LOGIN = "invalid username or password";
@@ -89,6 +90,8 @@ export class AuthService {
 
     const ok = user ? await verifyPassword(password, this.store.passwordHash(user.id)) : await verifyDummy(password);
     if (!ok) {
+      // The owner sees the count after their next sign-in (#803); saved by recordFailure's write below.
+      if (user) this.store.countFailedSignIn(user.id);
       const nowLocked = this.limiter.recordFailure(name, this.now());
       const reason = user ? "password" : "unknown_user";
       authLog("WARN", "sign-in failed", { username: name, ip, reason, locked: nowLocked });
@@ -204,6 +207,29 @@ export class AuthService {
       last_used_at: new Date(s.lastUsedSec * 1000).toISOString(),
       current: s.tokenHash === sid,
     }));
+  }
+
+  /**
+   * The person's own sign-in summary (#803): { previous_sign_in (ISO, null =
+   * none recorded), first_sign_in, failed_since (wrong passwords typed at
+   * sign-in for their username since the previous sign-in), notice_id (the
+   * bell's Needs you item, null when there is nothing to tell), locked_until
+   * (ISO, only while the username is locked) }. Their own row only: no IP,
+   * browser, token or anyone else's data.
+   */
+  signInSummary(user) {
+    const s = this.store.signInState(user.id);
+    if (!s) return null;
+    const first = s.signIns <= 1;
+    const summary = {
+      previous_sign_in: s.previousSignInSec ? new Date(s.previousSignInSec * 1000).toISOString() : null,
+      first_sign_in: first,
+      failed_since: s.failedSince,
+      notice_id: noticeId(s.lastSignInSec, s.failedSince, first),
+    };
+    const locked = this.limiter.lockedUntil(user.username, this.now());
+    if (locked > 0) summary.locked_until = new Date(locked).toISOString();
+    return summary;
   }
 
   /**
