@@ -17,6 +17,7 @@ It makes no Claude call and places no order.
 3. [`evidence_week.py`](../../scripts/agents/evidence_week.py) builds one comment from the `.json` reports, posted on the E2 epic: a row per env × bot with net P&L (% of equity), the account reconciliation's gap (#566: the margin balance's change minus the booked P&L, % of the starting balance only, `⚠` over the 1 % tolerance, or why not known), excess return vs holding the coin, worst 7 days, replay gap, the worst stress shock,
    E1 reliability (#361: mean IM ÷ limit against the 60 % target and whether it was met, the largest cause of idle slot time, startups and how many were restart-made — with their lots on testnet only — or `not measured` and why)
    and the missing days with the market books' share of the week's hours (`(replay partial)` under 90 %, #362),
+   then one **gap split** line per env × bot (#802, see "Gap split" below),
    then one line per env × bot × dataset with a **recorder gap** over 3 h
    (the dataset, how many such gaps, the longest with its start — times and hours only, so for live accounts too;
    `evidence_week.py gaps` prints the same lines and `evidence.sh` sends the first as a notify, so the recorder can be fixed before the next week),
@@ -63,6 +64,17 @@ The floors are **assumptions**, chosen from rules already in the repo while the 
 Holding the coin and the scoreboard's ratios depend on days or weeks only; the net return, drawdown, worst 7 days, excess over holding and the replay-vs-live gap also on the tail events; the hedge trial on its days and orders.
 One week's report is always thin: a week is one sample, not a result.
 `tests/evidence_sample_test.go` fails on a pack figure with a number and no sample, and on a weekly headline figure missing from the table, naming it.
+
+## Gap split
+
+Each weekly report cuts the Gap section's replay − live into its causes (#802, `internal/evidence/gapsplit.go`, `gap_split` in the JSON, [README](../../README.md#evidence-report)): fill price, fees, trades one side made, marks and unexplained.
+Each part is in coin, pp of the starting equity and % of the gap, with the legs behind it as its `Sample` (events named `legs`).
+The comment's line per env × bot gives each part's pp and share of the gap (a live account: the share only), whether the gap is explained, the one-sided legs counted and `partial` when the books are.
+
+**The bar (an assumption a person confirms):** a week's gap is **explained** when its unexplained line is within `GapExplainedPct` (20 %) of the gap.
+The metric to follow is the share of weekly reports that meet it.
+A one-sided leg is a leg one side filled and the other did not within `FillMatchWindow` (1 h, one recorded-book interval); a wider window would match more legs and move their difference from "trades one side made" to "fill price".
+A journal close without its fill price, the perpetual hedge's P&L and an expiry the two sides book differently land in the unexplained line, never in a named part.
 
 ## Daily recording check
 

@@ -387,7 +387,32 @@ func packReplayVsLive(in PackInputs, amounts bool, caveat string) packRows {
 	if s.GapPct != nil {
 		r.value("Gap, % of the live result", *s.GapPct, packPct)
 	}
+	packGapSplit(&r, rep.Split, amounts, unit)
 	return r
+}
+
+// packGapSplit adds the gap's causes (#802), each with its legs as its
+// sample: a share of the gap always, coin and pp of equity on testnet only.
+// A report written before the split has none.
+func packGapSplit(r *packRows, s GapSplit, amounts bool, unit string) {
+	if !s.Known {
+		return
+	}
+	for _, pt := range s.Parts {
+		sample := pt.Sample
+		row := func(name string, v float64, unit string) {
+			r.add(PackFigure{Name: name, Value: ptr(v), Unit: unit, Display: packDisplay(v, unit), Sample: &sample})
+		}
+		if amounts && pt.Coin != nil {
+			row("Gap split, "+pt.Part+", in coin", *pt.Coin, unit)
+			row("Gap split, "+pt.Part+", of the starting equity", pt.EquityPP, packPP)
+		}
+		if pt.GapPct != nil {
+			row("Gap split, "+pt.Part+", % of the gap", *pt.GapPct, packPct)
+		} else {
+			r.add(PackFigure{Name: "Gap split, " + pt.Part + ", % of the gap", Display: "the gap is 0", Sample: &sample})
+		}
+	}
 }
 
 // packUnmodelled is the replay section's risk: what the replay leaves out.

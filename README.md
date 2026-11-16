@@ -433,6 +433,15 @@ Sections, each naming its source:
   Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`.
   Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
 - **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
+- **Gap split** (#802, `gap_split` in the JSON) — that gap cut into its causes, each in coin, in pp of the starting equity and in % of the gap, with the legs behind it as its sample, from the journal's fills and the replay's own (`replay.Result.Fills`, no second replay):
+  - fill price: legs both sides filled (same instrument and kind within 1 h), the replay's price against live's;
+  - fees: live's close fees − the replay's;
+  - trades one side made: valued to the window's last recorded mid, each listed with the journal's reason or the replay's rule;
+  - marks: each side's open book at the window's ends, its own marks against the recorded mids;
+  - **unexplained**: the gap minus the four, always shown.
+  With a journal whose closes carry their fill prices the parts add to the gap; a gap counts as explained when the unexplained line is within 20 % of it (a proposed bar, `GapExplainedPct`).
+  The exchange's marks (the P&L history's unrealised) against the recorded mids stand on a line outside the sum.
+  Labelled partial like the Gap; no figures when the replay did not run; a live account shows percentages only, and the pack and the E2 comment the share of the gap only.
 - **Replay vs live** (#488) — the Replay and Gap figures side by side, both net of fees: the result in coin, in USD (at the replay's last recorded spot) and in % of the starting equity, the fees, the trades (filled legs, opens and closes) and the worst day (live: each day marked from the book nearest its start to the one nearest its end); then the gap in coin and as a % of the live result.
   The week is **not comparable** — its missing market hours and gaps listed, no gap computed — when the books cover under 90 % of its hours, have a gap over 3 h, the coverage was not measured or the replay did not run.
   Likely causes are listed only when the journal shows them: entries frozen (slot-hours), rebalance orders sent by a startup in its first 30 min, closes a person asked for from the monitor; never guessed.
@@ -638,6 +647,7 @@ Nothing is applied: a change still takes effect only after a manager confirms it
 **Proposed values instead of a file** (#641): `-set key=value` (repeatable, e.g. `-set gamma_flip_buffer_sd=1.2 -set gex_direction=sma`) makes the proposed config `-proposed`, or without it `-base`, with only those values, on a temporary copy removed after the run; `[]` in a key sets every element of the list.
 The report's `proposed` names it "config_btc.yaml with gamma_flip_buffer_sd=1.2".
 The lab's runner (`scripts/lab_runner.sh`, `cmd/labrun`) uses it for the run requests managers queue in the monitor (`docs/product/lab/README.md`).
+A change a manager then confirms is only recorded; `cmd/labapply` (#806) re-checks the record and writes a candidate config with its diff for a person's pull request (`docs/operations.md` "Lab candidates"), applying nothing.
 
 ## AI analysis of a comparison
 
