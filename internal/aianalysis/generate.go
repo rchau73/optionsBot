@@ -242,6 +242,40 @@ func Run(ctx context.Context, o Options) (md, js string, vs []Violation, err err
 	return md, js, nil, nil
 }
 
+// ErrNoLabKey is the lab runner's reason when it has no ANTHROPIC_API_KEY.
+var ErrNoLabKey = errors.New("ANTHROPIC_API_KEY is not set on the runner; nothing was sent")
+
+// LabAnalyzer is the lab runner's analysis step (#792): Run on a done run's
+// report — one model call, the same checks, the same files as cmd/analyze.
+// m nil (no key) sends nothing and returns ErrNoLabKey. A rejected answer's
+// error names its first violations.
+func LabAnalyzer(m AnalysisModel, modelName string, now func() time.Time) compare.AnalyzeFunc {
+	return func(ctx context.Context, reportPath string) error {
+		if m == nil {
+			return ErrNoLabKey
+		}
+		_, _, vs, err := Run(ctx, Options{ReportPath: reportPath, Model: m, ModelName: modelName, Now: now()})
+		if errors.Is(err, ErrRejected) {
+			return fmt.Errorf("the answer failed the checks (%s)", violationsLine(vs))
+		}
+		return err
+	}
+}
+
+// violationsLine is up to three violations on one line, and how many more.
+func violationsLine(vs []Violation) string {
+	const shown = 3
+	var parts []string
+	for i, v := range vs {
+		if i == shown {
+			parts = append(parts, fmt.Sprintf("and %d more", len(vs)-shown))
+			break
+		}
+		parts = append(parts, v.String())
+	}
+	return strings.Join(parts, "; ")
+}
+
 // Markdown is analysis.md: the checked text, the Disclaimer first, then a
 // footer saying where it came from (not part of the checked text).
 func Markdown(a Analysis) string {

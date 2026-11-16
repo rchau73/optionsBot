@@ -639,7 +639,7 @@ The lab's runner (`scripts/lab_runner.sh`, `cmd/labrun`) uses it for the run req
 ## AI analysis of a comparison
 
 `cmd/analyze` (#426, epic E9) turns one comparison's `report.json` into a plain-words analysis and writes `analysis.md` and `analysis.json` beside it.
-Offline only: no monitor page or route serves it (that waits for legal question L10 and E9's UI prototype), and the AI never changes a setting.
+No monitor page or route serves it (that waits for legal question L10 and E9's UI prototype), and the AI never changes a setting.
 
 ```bash
 go run ./cmd/analyze -report data/compare/20261028T120000Z/report.json            # one Messages API call (ANTHROPIC_API_KEY)
@@ -651,6 +651,9 @@ The settings the stress does not model (`stress.not_modelled`) are always named 
 `analysis.md` starts with the comparison's `Disclaimer`, then the label.
 An answer that fails is **not written**: the command prints each violation and exits 1.
 Without `ANTHROPIC_API_KEY` in the environment of whoever runs it (and without `-fake`) it stops with that message before sending anything.
+The lab's runner (`scripts/lab_runner.sh`, #792) runs the same step after each comparison it finishes: one call per done run, none for a failed or expired request.
+It is best effort: without `ANTHROPIC_API_KEY` on the runner (nothing is sent), on a model error or an answer that fails the checks, the run stays done, nothing is written and the request file gets one `note` ("analysis not written: <reason>"), logged with the request and run ids.
+The monitor still withholds every analysis (`L10_ANALYSIS_GATE_OPEN` in `frontend/lib/lab.js` is false until counsel answers legal question L10).
 A saved example: `docs/product/lab/example-analysis.md`.
 
 ## Testing and CI
