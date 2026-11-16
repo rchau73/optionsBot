@@ -15,9 +15,9 @@
       "new": "0.002"
     }
   ],
-  "token_id": "0123456789abcdef",
+  "token_id": "aaaaaaaaaaaaaaaa",
   "label": "backtested, not a forecast",
   "applied": false,
   "recorded": true,
-  "line": "parameter change recorded: maria, account BTC (config_btc.yaml), run 20261104T230000Z, backtest.slippage_pct 0.001 → 0.002, token 0123456789abcdef; nothing applied to a running bot"
+  "line": "parameter change recorded: maria, account BTC (config_btc.yaml), run 20261104T230000Z, backtest.slippage_pct 0.001 → 0.002, token aaaaaaaaaaaaaaaa; nothing applied to a running bot"
 }
