@@ -33,6 +33,10 @@ func Markdown(w io.Writer, r Report) error {
 		b.WriteString("\n")
 	}
 
+	if ns := r.NorthStar; ns != nil {
+		northStarMarkdown(&b, ns, src)
+	}
+
 	if r.EventsInWeek == 0 {
 		b.WriteString("## No events\n\n" + r.NoEvents + "\n\nNothing below is filled in.\n")
 		_, err := io.WriteString(w, b.String())
@@ -249,6 +253,34 @@ func activationMarkdown(b *strings.Builder, a *Activation) {
 	if len(empty) > 0 {
 		fmt.Fprintf(b, "Weeks with no events, left out (not zero): %s\n\n", strings.Join(empty, ", "))
 	}
+}
+
+// northStarMarkdown is PRD §7's north star (#801): counts and a share only.
+func northStarMarkdown(b *strings.Builder, ns *NorthStar, src string) {
+	fmt.Fprintf(b, "## North star: monthly active accounts with a strategy running (Q1)\n\n%s\n\n", src)
+	files := "none found"
+	if len(ns.Files) > 0 {
+		files = "`" + strings.Join(ns.Files, "`, `") + "`"
+	}
+	fmt.Fprintf(b, "Window: the %d days from %s to %s UTC (end excluded). Running: %s; files read: %s.\n\n",
+		MonthDays, ns.From.Format(time.DateOnly), ns.To.Format(time.DateOnly), ns.Running, files)
+	share := fmtPct(ns.ActiveSharePct)
+	if ns.Note != "" {
+		share = fmt.Sprintf("— (%s: %d people with a visit, under %d)", ns.Note, ns.People, NorthStarMinPeople)
+	}
+	b.WriteString("| Monthly active accounts | Visits without a running strategy | Running without visits | Environments | People with a visit | Share active |\n")
+	b.WriteString("|---:|---:|---:|---:|---:|---|\n")
+	fmt.Fprintf(b, "| %d | %d | %d | %d | %d | %s |\n\n", ns.Active, ns.VisitsNotRunning, ns.RunningNoVisits, ns.Environments, ns.People, share)
+	list := func(v []string) string {
+		if len(v) == 0 {
+			return "none"
+		}
+		return strings.Join(v, ", ")
+	}
+	fmt.Fprintf(b, "Active: %s · visits without a running strategy: %s · running without visits: %s\n\n",
+		list(ns.ActiveEnvs), list(ns.VisitsNotRunningEnvs), list(ns.RunningNoVisitsEnvs))
+	b.WriteString("An environment (one Deribit account) is active when it has at least one strategy-running day and at least one `session_started` in the window. " +
+		"Share = active ÷ environments with a visit or a running day.\n\n")
 }
 
 // surveyMarkdown is the survey tally (#342): coded answers only.

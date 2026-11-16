@@ -514,16 +514,19 @@ No figure is recomputed, and a source that is missing, or an older report withou
 ## Usage report
 
 `cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q8 ask for.
-It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+It reads that file and, for the north star, the days in each bot's `data/regime_history.jsonl`, and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
 
 ```bash
 go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
-go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl   # no week: the last complete one
+go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl -env stable   # no week: the last complete one
 ```
 
 Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Monday 00:00 UTC to the next Monday, as `cmd/evidence`).
 Sections, each naming the source file and the span of its accepted events:
 
+- **North star** (Q1, PRD §7, #801; JSON `north_star`, `internal/usage/northstar.go`) — the monthly active accounts with a strategy running: environments (one Deribit account each) with at least one strategy-running day and at least one `session_started` in the 30 days ending with the week.
+  A strategy-running day is a UTC day with a line in a bot's `data/regime_history.jsonl` (the bot writes one when a day starts; seeded lines are left out; only the day is read, and the file holds no amount), from the clone two levels above `-events` (`-bots` changes it; `-env` names its environment, else the one the visits name).
+  It counts the active accounts, those with visits but no running strategy and those running without visits; under 10 people with a visit `too few to judge` and no share. Shown even in a week without events; no drop rule reads it.
 - **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
 - **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 12 before it, and how many had any event in each later week (+1 … +12, #607; a week not yet ended is `—`, never 0; columns stop at the last week any cohort has ended, a week with no first session is listed under the table).
   Each cohort has a **curve** status (`usage.Flattening`, `internal/usage/flatten.go`): `flattening` when it has at least 10 users and each of its last 3 ended weeks is within 5 points of the week before, `falling` when one of them fell by more, `rising` when none fell by more but one rose by more, `too few to judge` under 10 users or 4 ended weeks.
