@@ -52,6 +52,6 @@ Whoever does not qualify sees a thank-you and stops; their screener answers are 
 | Within cycle holders: want income but never tried (S4 = none or staking only, S6 = yes) | ≥ 3 |
 | Within cycle holders: not from a crypto-option or trading community | ≥ 3 (avoid hearing only the most technical voices) |
 
-Keep the form open until the cycle-holder quotas are full; active option traders beyond 5 are reported but not counted. Share a separate link per channel (community, referral, waiting list), so the synthesis can tell a channel's bias apart from a real pattern.
+Keep the form open until the cycle-holder quotas are full; active option traders beyond 5 are reported but not counted. Share a separate link per channel (the codes and the invitation texts are in `outreach.md`), so the synthesis can tell a channel's bias apart from a real pattern.
 
 `python3 scripts/product/survey_tally.py <export>.csv` shows every quota above as have / need and the split by channel ("Quota progress"), so you know when to close the form.

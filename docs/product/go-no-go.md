@@ -107,7 +107,7 @@ The overall line of the scorecard stays `incomplete` until every row has an inpu
 
 | What | Who | Ticket | Unblocks |
 |---|---|---|---|
-| Send the survey to cycle holders and export the answers into `data/product/interviews/` | Product owner | #178 | Kill criterion 1, buyer, pain, willingness to pay |
+| Send the survey to cycle holders (invitation texts and channel codes: `discovery/outreach.md`, after counsel approves them) and export the answers into `data/product/interviews/` | Product owner | #178 | Kill criterion 1, buyer, pain, willingness to pay |
 | Choose the waiting-list tool, approve the page and publish it after counsel's review | Product owner | #234 | Demand signal, price test of software |
 | Get counsel's written answers to L1–L6 and L9 first, then the rest of L1–L24 | Product owner with counsel | #179 | Legal gate, fake door, any offer to third parties |
 | Do the competitor research and save it in `data/product/competitors/` | Product owner | #304 | PRD §4 and positioning |
