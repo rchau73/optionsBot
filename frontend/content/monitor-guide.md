@@ -60,6 +60,8 @@ A click opens its payoff chart.
 **The last trade** sits under each band: when it happened and what the bot sold or bought back.
 One click on *Why?* opens the reason the bot recorded in its journal when it traded.
 For a buy-back it also shows that trade's past result, net of fees, in coin and USD.
+With the futures hedge experiment on, the last trade can be a hedge trade when it is newer than the last option trade: it says the bot bought or sold so many USD of the perpetual, and why.
+A hedge close also shows its result net of fees, a loss with its minus sign.
 A past result is no promise of future results.
 *All actions, explained* opens the Activity page.
 
@@ -78,6 +80,14 @@ On your first visit there is no card, only a line saying what it will show next 
 *Hide until my next visit* hides it until then.
 
 **When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
+
+**Why the bot is not trading** shows under the strangles (on a phone, in the *What it holds* card) when the bot holds nothing or is not opening new positions.
+One sentence, from the bot's latest decision in its journal, says what it is waiting for, such as a free expiry date or fresh market-maker data.
+"Not opening new positions" in amber means new risk is paused, for example while a change in volatility waits to be confirmed; "Waiting" means the bot looks again each cycle.
+It also says whether you must do anything: usually nothing; after the kill switch a person must restart the bot.
+*Why?* opens the journal line itself, its numbers and when it was recorded; *All actions, explained* opens the Activity page.
+When no journal line says why, it reads "The bot is waiting. Details in Activity."
+It says what holds the bot back now, not when trading starts again.
 
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
 In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.

@@ -188,6 +188,8 @@ The *Last action* block shows a plain sentence, a time, "sold" or "bought back",
 | Partial | says what but not why, or why but not what |
 | Fail | describes a different event (an order sent, a skipped entry, a trend change in the Activity feed), the wrong side (sold vs bought back), or cannot say |
 
+On a bot with the futures hedge experiment on (not the demo, which runs no hedge), Q4 may show a hedge sentence instead (#794): "sold" or "bought" so many USD of the perpetual, and why ("Traded the perpetual future to bring the book's direction (delta) back near zero…"). Score it the same way: what it did (sold or bought the perpetual) and why. The keys below do not change.
+
 ```key
 scenario: default
 question: Q4

@@ -71,6 +71,11 @@ type PerpFill struct {
 	FeeCoin     float64   `json:"fee_coin"`
 	FundingCoin float64   `json:"funding_coin"` // the running reading, HedgeRecord.FundingCoin
 	Spot        float64   `json:"spot"`
+	// Change, Instrument and RealisedCoin are the line's own, for the
+	// summary's last action (#794): RealisedCoin is a close's P&L net of the fee.
+	Change       string  `json:"change"` // HedgeFill | HedgeClosed
+	Instrument   string  `json:"instrument,omitempty"`
+	RealisedCoin float64 `json:"realised_coin,omitempty"`
 }
 
 // perpFillOf is r as a fill; ok is false for a line that moved nothing (a
@@ -80,7 +85,8 @@ func perpFillOf(r HedgeRecord) (PerpFill, bool) {
 		return PerpFill{}, false
 	}
 	return PerpFill{At: r.Timestamp, Side: r.Side, FilledUSD: r.FilledUSD, Price: r.Price,
-		FeeCoin: r.FeeCoin, FundingCoin: r.FundingCoin, Spot: r.Market.Spot}, true
+		FeeCoin: r.FeeCoin, FundingCoin: r.FundingCoin, Spot: r.Market.Spot,
+		Change: r.Change, Instrument: r.Instrument, RealisedCoin: r.RealisedCoin}, true
 }
 
 func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
