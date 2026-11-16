@@ -33,6 +33,26 @@ Two optional columns feed it: `CHANNEL` (the link label, e.g. `community`, `refe
 `-out` refuses any path outside `data/product/interviews/` (gitignored).
 The tests build a synthetic CSV inside the test; no real answer is in the repository.
 
+## Interview tally (`interview_tally.py`, #787)
+
+Counts the coded interview sheet `data/product/interviews/interviews.csv` (gitignored; the "Coding sheet" of `docs/product/discovery/interview-guide.md` defines its columns and closed codes):
+
+| Figure | Rule |
+|---|---|
+| Qualified | rows with `qualified` = yes, against the ~15 target; under 15 the output says so and still prints the figures |
+| Delegation share | `yes still do` + `yes took it back` ÷ qualified rows that answered, with n |
+| Pain codes | count and share of the qualified interviews per code, counted only when `pain_happened` is yes |
+| Willingness to pay, testnet trial | share of each bucket / answer among the qualified that answered |
+
+```bash
+python3 scripts/product/interview_tally.py                                   # the default sheet
+python3 scripts/product/interview_tally.py data/product/interviews/interviews.csv -json
+```
+
+It exits 2, naming the row and the column and never the cell, on an unknown code, a missing or extra column, a duplicate participant, or a cell that looks like an e-mail address or an amount.
+`go_no_go.py` shows the delegation share as an informational line (`--interviews`); missing file → `missing`.
+Standard library only; `test_interview_tally.py` uses a fictional fixture.
+
 ## Comprehension scorer (`comprehension_score.py`, #718)
 
 Scores an E11 comprehension round (`docs/product/education/comprehension-test.md`, section 6a): pass or fail per tip against `PASS_BAR_PCT` (80 %, an assumption), `not enough people` under 5, the change since the previous round and the tips to rewrite with their video id.
@@ -172,6 +192,7 @@ python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stab
 ```
 
 Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date.
+An informational line below the rows shows the interviews' delegation share beside the survey's (`--interviews`, default `data/product/interviews/interviews.csv`); it is never in the overall line.
 A missing input stays `missing`.
 **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's.
 Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
