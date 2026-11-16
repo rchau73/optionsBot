@@ -367,12 +367,18 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 	case orders.EventKeyScope:
 		return explainKeyScope(l), ""
 	case orders.EventHedge:
-		if s, ok := hedgeWords[l.Change]; ok {
-			return s, ""
-		}
-		return generic("change=" + l.Change)
+		return ExplainHedge(l.Change)
 	}
 	return generic("event=" + e.Event)
+}
+
+// ExplainHedge says what a futures hedge line (its orders.Hedge* change)
+// means: ExplainEvent's sentence, also the summary's last action (#794).
+func ExplainHedge(change string) (plain, unknown string) {
+	if s, ok := hedgeWords[change]; ok {
+		return s, ""
+	}
+	return generic("change=" + change)
 }
 
 // ExplainTrade says why a trade (an open or a close of the journal) happened.

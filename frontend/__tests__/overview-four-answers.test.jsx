@@ -3,6 +3,7 @@ import Monitor from "@/components/Monitor";
 import { useMonitor } from "@/hooks/useMonitor";
 import { lastTradeLine } from "@/lib/overview";
 import { openLines, usdFooter, worstLines } from "@/lib/tiles";
+import { HEDGE_FILL, hedgeCloseFor } from "@/test/resultFixtures";
 
 // #489: the four answers of the first five minutes (epic E3), pinned on the
 // desktop Overview: what the bot holds (one row per strangle, in plain words),
@@ -238,6 +239,11 @@ describe("the helpers behind the four answers", () => {
     expect(lastTradeLine({ summary: { last_action: null } })).toEqual({ none: true });
     expect(lastTradeLine({ summary: { last_action: { ...OPEN, reason: "" } } })).toMatchObject({ what: "sold 1.00 × BTC-27NOV26-85000-P", reason: "entry", pnlCoin: null });
     expect(lastTradeLine({ summary: { last_action: CLOSE } })).toMatchObject({ reason: CLOSE.reason, detail: CLOSE.detail, pnlCoin: -0.0012, pnlUSD: -115 });
+  });
+
+  test("lastTradeLine: a hedge trade reads as the perpetual, never N × option (#794)", () => {
+    expect(lastTradeLine({ summary: { last_action: HEDGE_FILL } })).toMatchObject({ what: "sold 300 USD of the perpetual (BTC-PERPETUAL)", reason: HEDGE_FILL.reason, pnlCoin: null, pnlUSD: null });
+    expect(lastTradeLine({ summary: { last_action: hedgeCloseFor("loss") } })).toMatchObject({ what: "bought 300 USD of the perpetual (BTC-PERPETUAL)", pnlCoin: -0.00004, pnlUSD: -4 });
   });
 
   test("open and worst-case lines say nothing open for a flat bot; the footer too, unless another bot holds something", () => {

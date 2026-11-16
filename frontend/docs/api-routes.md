@@ -64,13 +64,17 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
     `exit_line` is the coin's price at which the leg's Black–Scholes |Δ| reaches `delta_exit_threshold`.
     The model uses the leg's IV (DVOL when missing), a zero rate and today.
     It is a model; the bot's delta exit reads Deribit's live delta.
-  - `last_action` is null before the first trade, else the journal's latest open or close.
-    - `at`, `kind` (open | close), `instrument`, `option_type` and `qty`.
+  - `last_action` is null before the first trade, else the journal's latest open or close (or hedge trade, below).
+    - `at`, `kind` (open | close | hedge), `instrument`, `option_type` and `qty`.
     - `rule` is the journal's reason, e.g. `stop_loss`.
     - `reason` is the rule in plain words, e.g. "Bought back the put: it lost twice its premium (stop-loss)".
     - `detail` is the rule's numbers.
     - For a close, `pnl_coin` and `pnl_usd`.
     - `spot` (#320) is the coin's index price at the action, in USD; it is omitted when the journal has none.
+    - `kind: "hedge"` (#794) when the futures hedge's newest `hedge_fill` or `hedge_closed` is newer than the last open or close (a tie keeps the option trade).
+      Then `rule` is the change, `reason` its `ExplainHedge` sentence, `instrument` the perpetual, `side` buy | sell and `size_usd` the USD filled; `qty` is 0 and `option_type` empty.
+      A `hedge_closed` carries `pnl_coin` (the journal's realised, net of the fee) and `pnl_usd` (at its price).
+      `side` and `size_usd` are absent otherwise; `lib/hedgeWords.js` `hedgeActionWhat` words it ("sold 300 USD of the perpetual").
   - `idle` (#781, `internal/api/idle.go`, pure `IdleOf`) is null while the bot holds a strangle (or works an entry) with entries allowed, else why it is not trading.
     - `reason` is the journal's latest skip word (`strategy.Skip*`) or freeze (`risk_frozen`) after its latest open or close, `halted` after the kill switch, or empty when no line says why.
     - While entries are blocked only a reason that blocks every entry counts (`risk_frozen`, `gex_wait`, `stop_deferred`, `margin_limit`, `margin_unknown`); a freeze with no such line takes the view's freeze reason as `detail`, `seq` 0.

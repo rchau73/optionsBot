@@ -11,6 +11,7 @@ import { Signed } from "./InvestorSummary";
 import MonthBars from "./MonthBars";
 import RegimeChart from "./RegimeChart";
 import { formatCoin, formatDate, formatUSD, isNumber } from "@/lib/format";
+import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
 import { clockHM, coinOf, isFirstDay, monthSoFar, moveSince, rangeBar, stateWords, warningChips, worstCaseLine } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 
@@ -278,9 +279,10 @@ function LastActionCard({ summary: s, bot }) {
       {a ? (
         <>
           <p className="text-base font-semibold">{a.reason || a.rule}</p>
+          {isHedgeAction(a) ? <p className="text-base tabular-nums">{hedgeActionWhat(a)}</p> : null}
           <p className="text-base tabular-nums">
             {move == null ? `${coin} move since: unknown` : `${coin} ${formatSignedPct(move).replace("%", " %")} since`}
-            {a.kind === "close" && isNumber(a.pnl_coin) ? (
+            {(a.kind === "close" || isHedgeAction(a)) && isNumber(a.pnl_coin) ? (
               <>
                 {" · result "}
                 <Signed value={a.pnl_coin}>{formatCoin(a.pnl_coin, coin)}</Signed>
