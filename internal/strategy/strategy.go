@@ -502,8 +502,10 @@ func (s *Strategy) marketContext() orders.MarketContext {
 	}
 }
 
+// suggestedHedgeInst is the underlying's perpetual future, named by the
+// exchange (#786): the hedge report, the futures hedge and the daily closes.
 func (s *Strategy) suggestedHedgeInst() string {
-	return s.cfg.Underlying + "-PERPETUAL"
+	return s.exch.PerpetualName(s.cfg.Underlying)
 }
 
 // loadGammaPriceHistory seeds the gamma monitor with recent daily closes so

@@ -433,6 +433,12 @@ type chartData struct {
 	Close  []float64 `json:"close"`
 }
 
+// PerpetualName is Deribit's name of a currency's perpetual future, e.g.
+// "BTC-PERPETUAL" (exchange.InstrumentNamer, #786). It sends nothing.
+func (e *Executor) PerpetualName(currency string) string {
+	return currency + "-PERPETUAL"
+}
+
 // GetDailyCloses fetches daily closing prices for the given instrument going back
 // the requested number of days. Uses Deribit's TradingView chart data endpoint.
 func (e *Executor) GetDailyCloses(ctx context.Context, instrument string, days int) ([]DailyClose, error) {
