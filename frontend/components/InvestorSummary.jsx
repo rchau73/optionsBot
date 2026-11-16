@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { formatCoin, formatDate, formatDateTime, formatNumber, formatPct, formatUSD, isNumber } from "@/lib/format";
+import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
 import { isFirstDay } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, toneOf, worstCaseRows } from "@/lib/summary";
 import FirstDayPanel from "./FirstDayPanel";
@@ -208,13 +209,15 @@ function LastAction({ action, coin }) {
       </Answer>
     );
   }
+  const hedge = isHedgeAction(action);
   return (
     <Answer question="Last action">
       <p className="text-base font-semibold">{action.reason || action.rule}</p>
       <p className="text-base tabular-nums">
-        {formatDateTime(action.at)} · {action.kind === "close" ? "bought back" : "sold"} {formatNumber(action.qty, 2)} × {action.instrument}
+        {formatDateTime(action.at)} ·{" "}
+        {hedge ? hedgeActionWhat(action) : `${action.kind === "close" ? "bought back" : "sold"} ${formatNumber(action.qty, 2)} × ${action.instrument}`}
       </p>
-      {action.kind === "close" && (isNumber(action.pnl_coin) || isNumber(action.pnl_usd)) ? (
+      {(action.kind === "close" || hedge) && (isNumber(action.pnl_coin) || isNumber(action.pnl_usd)) ? (
         <p className="text-base">
           Result of that trade (net of fees): <Signed value={action.pnl_coin}>{formatCoin(action.pnl_coin, coin)}</Signed> ·{" "}
           <Signed value={action.pnl_usd}>{formatSignedUSD(action.pnl_usd)}</Signed>

@@ -36,6 +36,44 @@ const LAST_CLOSE = {
   pnl_usd: -115,
 };
 
+// The futures hedge's last trades (#794), newer than LAST_CLOSE: a fill (no
+// result) and a close with ±0.00004 BTC (±$4) net of its fee. The reasons are
+// the bot's ExplainHedge sentences.
+export const HEDGE_FILL = {
+  at: "2026-10-28T14:40:00Z",
+  kind: "hedge",
+  instrument: "BTC-PERPETUAL",
+  qty: 0,
+  rule: "hedge_fill",
+  reason:
+    "Traded the perpetual future to bring the book's direction (delta) back near zero: the futures hedge experiment keeps the options and offsets their direction instead of buying a side back.",
+  side: "sell",
+  size_usd: 300,
+  spot: 95800,
+};
+
+/** The hedge's close as the last action, a gain or a loss. */
+export function hedgeCloseFor(kind) {
+  return {
+    at: "2026-10-28T14:50:00Z",
+    kind: "hedge",
+    instrument: "BTC-PERPETUAL",
+    qty: 0,
+    rule: "hedge_closed",
+    reason: "Closed the perpetual future hedge at market: the experiment was switched off, or the kill switch closed what the bot held.",
+    side: "buy",
+    size_usd: 300,
+    pnl_coin: sign(kind) * 0.00004,
+    pnl_usd: sign(kind) * 4,
+    spot: 95800,
+  };
+}
+
+/** bot with its summary's last action replaced (a hedge trade). */
+export function withLastAction(bot, action) {
+  return { ...bot, summary: { ...bot.summary, last_action: action } };
+}
+
 // Five one-day moves: the calm day earns, the big days cost.
 const SCENARIOS = [
   { sigmas: -3, move_pct: -7.9, spot: 88324, result_coin: -0.05, result_usd: -4935, pct_of_equity: -4.2 },

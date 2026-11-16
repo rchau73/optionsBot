@@ -1,12 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import DetailsPage from "@/components/DetailsPage";
 import { IncomeView } from "@/components/IncomePage";
+import InvestorSummary from "@/components/InvestorSummary";
 import PhoneOverview from "@/components/PhoneOverview";
 import { PositionsScreen } from "@/components/PositionsPage";
 import { WorstCaseScreen } from "@/components/WorstCaseView";
 import { useMonitor } from "@/hooks/useMonitor";
 import { shownResult, sizeAndWeight } from "@/test/lossVisibility";
-import { botFor, incomeFor, payoffFor, summaryFor, tradesFor } from "@/test/resultFixtures";
+import { botFor, hedgeCloseFor, incomeFor, payoffFor, summaryFor, tradesFor, withLastAction } from "@/test/resultFixtures";
 
 // #582 (epic E3): losses as visible as gains on every page that shows a
 // result, beyond the Overview (overview-four-answers.test.jsx, #489). On the
@@ -105,6 +106,28 @@ describe("Scenario: a losing month on each page", () => {
     render(<WorstCaseScreen bot="btc" names={["btc"]} summary={summaryFor("loss")} />);
     const fall = screen.getByText("−0.05000 BTC · −$4,935").parentElement;
     expect(within(fall).getByLabelText("loss")).toHaveTextContent("▼ loss");
+  });
+});
+
+// #794: the futures hedge's close as the last action, desktop and phone.
+describe("Scenario: a hedge close with a loss", () => {
+  const LAYOUTS = {
+    "Overview (desktop)": (bot) => render(<InvestorSummary bots={[bot]} />).container,
+    "Phone overview": (bot) => render(<PhoneOverview bots={[bot]} selected="btc" />).container,
+  };
+  test.each(Object.keys(LAYOUTS))("%s: the result shows its minus sign and unit, as large and as bold as a gain", (page) => {
+    const styles = {};
+    for (const kind of ["profit", "loss"]) {
+      const container = LAYOUTS[page](withLastAction(botFor("profit"), hedgeCloseFor(kind)));
+      const want = `${kind === "loss" ? "−" : "+"}0.00004 BTC`;
+      const card = page === "Phone overview" ? screen.getByRole("region", { name: /^Last action/ }) : container;
+      const el = within(card).getByText(exact(want));
+      shownResult(page, container, want);
+      expect(el.textContent).toMatch(/BTC/);
+      styles[kind] = sizeAndWeight(el);
+      document.body.innerHTML = "";
+    }
+    expect([page, styles.loss]).toEqual([page, styles.profit]);
   });
 });
 

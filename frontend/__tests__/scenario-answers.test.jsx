@@ -1,7 +1,10 @@
 import { render, within } from "@testing-library/react";
 import InvestorSummary from "@/components/InvestorSummary";
 import PhoneOverview from "@/components/PhoneOverview";
-import { formatCoin, formatDate, formatNumber, formatUSD } from "@/lib/format";
+import { formatCoin, formatDate, formatDateTime, formatNumber, formatUSD } from "@/lib/format";
+import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
+import { clockHM } from "@/lib/overview";
+import { HEDGE_FILL, withLastAction } from "@/test/resultFixtures";
 import { formatSignedUSD, monthLabel } from "@/lib/summary";
 import DEMO from "@/test/demoScenarios.json";
 import { assertNotFolded, sizeAndWeight } from "@/test/lossVisibility";
@@ -123,7 +126,7 @@ const CHECKS = {
       const el = block(c, "desktop", 4);
       const a = s.last_action;
       includes(el, a.reason, "the reason of the last action");
-      includes(el, `${a.kind === "close" ? "bought back" : "sold"} ${formatNumber(a.qty, 2)} × ${a.instrument}`, "what the last action did");
+      includes(el, isHedgeAction(a) ? hedgeActionWhat(a) : `${a.kind === "close" ? "bought back" : "sold"} ${formatNumber(a.qty, 2)} × ${a.instrument}`, "what the last action did");
     },
   },
   phone: {
@@ -157,6 +160,7 @@ const CHECKS = {
     4: (c, s) => {
       const el = block(c, "phone", 4);
       includes(el, s.last_action.reason, "the reason of the last action");
+      if (isHedgeAction(s.last_action)) includes(el, hedgeActionWhat(s.last_action), "what the hedge trade did");
     },
   },
 };
@@ -327,6 +331,23 @@ const idleBot = (idle) => {
   const bot = botOf("baseline");
   return { ...bot, summary: { ...bot.summary, holding: { ...bot.summary.holding, strangles: 0, legs: 0, calls: 0, puts: 0, nearest: null }, idle } };
 };
+
+// #794: on a bot with the futures hedge on, Q4 may be a hedge trade. The demo
+// runs no hedge, so its fixture gets the hedge's newest fill.
+describe("Scenario: the hedge traded after the last option trade", () => {
+  test.each(Object.keys(LAYOUTS))("%s: Last action shows the hedge trade's time, side, size and reason, not the older option trade", (layout) => {
+    const baseline = botOf("baseline");
+    const bot = withLastAction(baseline, HEDGE_FILL);
+    const c = LAYOUTS[layout](bot);
+    CHECKS[layout][4](c, bot.summary);
+    const el = block(c, layout, 4);
+    includes(el, "sold 300 USD of the perpetual (BTC-PERPETUAL)", "the hedge's side and size");
+    includes(layout === "desktop" ? el : document.body, layout === "desktop" ? formatDateTime(HEDGE_FILL.at) : `Last action · ${clockHM(HEDGE_FILL.at)}`, "the hedge trade's time");
+    expect(text(el)).not.toContain(baseline.summary.last_action.reason);
+    expect(text(el)).not.toMatch(/ × /); // never "N × option"
+    expect(text(el)).not.toMatch(/result/i); // a fill has no result
+  });
+});
 
 describe("Scenario: nothing held — the first screen says why the bot is not trading", () => {
   test.each(Object.keys(LAYOUTS).flatMap((layout) => Object.keys(IDLE).map((kind) => [layout, kind])))("%s · idle %s", (layout, kind) => {
