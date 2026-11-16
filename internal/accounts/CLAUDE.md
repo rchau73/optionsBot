@@ -15,5 +15,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     `AddKey`/`RotateKey`/`RevokeKey` take a `KeyStore` (the real store, or a test's failing one); new key ids are `<account>-key-<n>`.
     Rotate = seal the new key, move `key_id`, revoke the old; a failure at any step leaves the account on its old key (the new one revoked again).
     Each change is one owner-only line of `data/accounts_audit.jsonl` (time, OS user, account id, action), opened before anything changes; a refusal is not audited.
-  - Not wired: nothing in `cmd/bot`, `scripts/env_lib.sh` or the deploy tooling uses it yet (the isolation unit and the deploy tooling are the product owner's call).
+  - Wired to `env_check` only (#800, `scripts/env_lib.sh` `env_registry_check` → `scripts/env_registry.py`, tests in `scripts/agents/test_env_lib.py`):
+    a clone with `data/accounts.json` is refused by `envctl up`, `deploy.sh` and `promote.sh` on a rule break, a bot's account key not `ok`, or an account another environment folder maps a bot to.
+    Bots are matched by currency and config file name (`docs/operations.md` "Environments"); `cmd/bot` and the gateway do not read the registry.
   Tests: `tests/accounts_test.go`, `tests/accounts_keys_test.go`, `tests/accounts_json_test.go`.
