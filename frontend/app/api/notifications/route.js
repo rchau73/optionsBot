@@ -21,7 +21,7 @@ const botOf = (request) => botParam(new URL(request.url).searchParams.get("bot")
 export async function GET(request) {
   const { auth, user, response } = await requireRole(request, "user");
   if (response) return response;
-  const view = await notificationsView({ store: auth.store, user, bot: botOf(request), nowMs: Date.now() });
+  const view = await notificationsView({ store: auth.store, auth, user, bot: botOf(request), nowMs: Date.now() });
   return Response.json(view, { headers: NO_STORE });
 }
 
@@ -70,11 +70,11 @@ export async function POST(request) {
   const bot = botOf(request);
   if (body.action === "read") auth.store.markNotificationsRead(user.id, body.ids, RETENTION_DAYS, nowMs);
   if (body.action === "read_all") {
-    const { items } = await collectItems({ store: auth.store, user, bot, nowMs });
+    const { items } = await collectItems({ store: auth.store, auth, user, bot, nowMs });
     auth.store.markNotificationsRead(user.id, items.map((i) => i.id), RETENTION_DAYS, nowMs);
   }
   if (body.action === "setting") auth.store.setNotificationSetting(user.id, body.kind, body.enabled);
   // Kinds and counts only: never an item's text.
   authLog("INFO", "notifications state", { component: "notifications", username: user.username, action: body.action, kind: body.kind ?? null });
-  return Response.json(await notificationsView({ store: auth.store, user, bot, nowMs }), { headers: NO_STORE });
+  return Response.json(await notificationsView({ store: auth.store, auth, user, bot, nowMs }), { headers: NO_STORE });
 }

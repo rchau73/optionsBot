@@ -80,6 +80,7 @@ export const READ_ROUTES = [
   { route: "GET /api/assistant", roles: SIGNED_IN, why: "the Ask panel's state for the person asking" },
   { route: "GET /api/assistant/requests", roles: SIGNED_IN, why: "the person's own requests, never anyone else's" },
   { route: "GET /api/auth/my-data", roles: SIGNED_IN, audit: "my_data_exported", why: "the person's own data (#750)" },
+  { route: "GET /api/auth/security-summary", roles: SIGNED_IN, why: "the person's own previous sign-in and wrong-password count (#803)" },
   { route: "GET /api/auth/sessions", roles: SIGNED_IN, why: "the person's own sessions (#584)" },
   { route: "GET /api/bots", roles: SIGNED_IN, token: true, why: "the bots' names and the poll interval; the deploy health check reads it" },
   { route: "GET /api/bots/[bot]/[...path]", roles: SIGNED_IN, token: true, why: "the bot data every page shows (allow-listed endpoints); the health check and the agents read it" },
@@ -101,7 +102,7 @@ export const READ_ROUTES = [
  * Read-only routes that only some roles (or only a live session, #584) may call (#539): the role matrix test
  * calls each as every caller too, and checks the route file exports GET only. Rows of READ_ROUTES.
  */
-const GUARDED = ["GET /api/admin/audit/export", "GET /api/admin/audit/verify", "GET /api/auth/my-data", "GET /api/auth/sessions", "GET /api/lab/runs", "GET /api/lab/runs/[id]", "GET /api/lab/runs/[id]/preview"];
+const GUARDED = ["GET /api/admin/audit/export", "GET /api/admin/audit/verify", "GET /api/auth/my-data", "GET /api/auth/security-summary", "GET /api/auth/sessions", "GET /api/lab/runs", "GET /api/lab/runs/[id]", "GET /api/lab/runs/[id]/preview"];
 export const ROLE_GUARDED_READS = READ_ROUTES.filter((r) => GUARDED.includes(r.route));
 
 /** The table's route for an app/api route file and method: "app/api/consent/route.js", "POST" → "POST /api/consent". */

@@ -99,7 +99,15 @@ export default function UserMenu({ role = null, username = null }) {
         </div>
       ) : null}
       {changing ? <ChangePasswordModal onClose={() => setChanging(false)} /> : null}
-      {viewingSessions ? <ActiveSessionsModal onClose={() => setViewingSessions(false)} /> : null}
+      {viewingSessions ? (
+        <ActiveSessionsModal
+          onClose={() => setViewingSessions(false)}
+          onChangePassword={() => {
+            setViewingSessions(false);
+            setChanging(true);
+          }}
+        />
+      ) : null}
       {downloading ? <DownloadMyDataModal onClose={() => setDownloading(false)} /> : null}
       {deleting ?<DeleteAccountModal onClose={() => setDeleting(false)} /> : null}
     </div>

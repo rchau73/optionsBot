@@ -153,6 +153,12 @@ export class AuthStore {
       ["nps_opted_out", "INTEGER NOT NULL DEFAULT 0"],
       // The four answers card (#498, surveys.md §2): the day it was last shown (Unix seconds, NULL = never).
       ["answers_last_shown_at", "INTEGER"],
+      // Sign-in awareness (#803): the sign-in before the last one (Unix
+      // seconds, NULL = none recorded), the wrong passwords typed for this
+      // username since the last sign-in, and those typed between the two.
+      ["previous_sign_in_at", "INTEGER"],
+      ["failed_sign_ins", "INTEGER NOT NULL DEFAULT 0"],
+      ["failed_sign_ins_before", "INTEGER NOT NULL DEFAULT 0"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
     const sessionCols = this.all("PRAGMA table_info(refresh_tokens)").map((c) => c.name);
@@ -250,9 +256,43 @@ export class AuthStore {
     return this.all("SELECT id, username, role, email, created_at, last_sign_in_at FROM users ORDER BY id");
   }
 
-  /** Records a successful sign-in (its time, and one more in the count). */
+  /**
+   * Records a successful sign-in (its time, and one more in the count). The
+   * last sign-in becomes the previous one and the wrong passwords counted
+   * since then move to failed_sign_ins_before, so the count starts again
+   * from 0 (#803).
+   */
   recordSignIn(id, nowMs = Date.now()) {
-    this.write("UPDATE users SET last_sign_in_at = ?, sign_in_count = sign_in_count + 1 WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+    this.write(
+      `UPDATE users SET previous_sign_in_at = last_sign_in_at, failed_sign_ins_before = failed_sign_ins, failed_sign_ins = 0,
+        last_sign_in_at = ?, sign_in_count = sign_in_count + 1 WHERE id = ?`,
+      [Math.floor(nowMs / 1000), id],
+    );
+  }
+
+  /**
+   * Counts one wrong password typed at sign-in for an existing user (#803).
+   * Not saved here: the lockout's failure record that follows saves the file,
+   * so a known username costs no extra write an unknown one does not.
+   */
+  countFailedSignIn(id) {
+    this.db.run("UPDATE users SET failed_sign_ins = failed_sign_ins + 1 WHERE id = ?", [id]);
+  }
+
+  /**
+   * What the sign-in summary reads (#803): { lastSignInSec, previousSignInSec
+   * (null = none recorded), signIns, failedSince (wrong passwords since the
+   * previous sign-in) }, or null for an unknown user.
+   */
+  signInState(id) {
+    const r = this.one("SELECT last_sign_in_at, previous_sign_in_at, sign_in_count, failed_sign_ins, failed_sign_ins_before FROM users WHERE id = ?", [id]);
+    if (!r) return null;
+    return {
+      lastSignInSec: r.last_sign_in_at ?? null,
+      previousSignInSec: r.previous_sign_in_at ?? null,
+      signIns: r.sign_in_count,
+      failedSince: r.failed_sign_ins + r.failed_sign_ins_before,
+    };
   }
 
   /**
