@@ -444,7 +444,7 @@ func (e *engine) topUps(at time.Time, snap recorder.Snapshot, dec strategy.Gamma
 		c := &strangle{id: e.nextID, slot: s.slot}
 		for _, q := range []recorder.Quote{cq, pq} {
 			if f := SellFill(e.widen(q), e.cfg.EntryPriceFloor); f.OK {
-				e.sellInto(at, c, q, addQty, f.Price)
+				e.sellInto(at, c, q, addQty, f.Price, "top-up")
 			} else {
 				e.res.Unfilled++
 			}

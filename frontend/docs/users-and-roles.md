@@ -233,6 +233,7 @@ It then re-checks everything the preview checks: the role (re-read from the data
 On success it writes `COMPARE_DIR/applied/<id>.json` once (mode 0600, created exclusively, so a second confirm, or two at once, records one) with `run_id`, `recorded_at`, `person`, `role`, `account`, `changes` (`key`, `title`, `old`, `new`), `token_id` (the first 16 hex of the token's SHA-256, never the token), `applied: false` and `recorded: true`.
 201 with that record, `message` (what was recorded, that the result was backtested, not a forecast, and that nothing was applied to a running bot), `next_step`, `backtested`, `risks` (worst week, drawdown and fees in %, the fragility check, "past data only") and `audit_line`.
 How a recorded change reaches the running bot is not decided yet (a reviewed config PR and a restart, or a later hot-reload): until then the record is the whole effect.
+On the bot side `cmd/labapply` (#806) re-checks the record and writes a candidate config and its diff under `COMPARE_DIR/candidates/<id>/` for a person's pull request (`docs/operations.md` "Lab candidates"); it applies nothing.
 Manager or admin (`STATE_CHANGING_ROUTES`); one audit line, `parameter_change_recorded`, with the person, the account, the run, each `key` with `old` and `new`, and `token_id`.
 A manager linked to accounts (#760) is refused 403 on a run whose bot (its underlying: BTC → bot btc) trades for another account, as the bot routes are; a manager without a link may confirm for every account, and a token works only for the person it was shown to.
 

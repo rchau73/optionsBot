@@ -93,6 +93,44 @@ class ReconCell(unittest.TestCase):
         self.assertEqual(evidence_week.recon_cell(report()), "— (not measured)")
 
 
+def gap_split(**over):
+    """A report's gap_split section (#802), testnet amounts."""
+    def part(name, coin, pp, share, legs):
+        return {"part": name, "coin": coin, "equity_pp": pp, "gap_pct": share, "legs": legs}
+    s = {"label": "gap split", "known": True, "explained": True, "explained_bar_pct": 20,
+         "parts": [part("fill price", 0.001, 0.05, 50.0, 4), part("fees", -0.0002, -0.01, -10.0, 9),
+                   part("trades one side made", 0.0008, 0.04, 40.0, 2), part("marks", 0.0003, 0.015, 15.0, 6),
+                   part("unexplained", 0.0001, 0.005, 5.0, 9)],
+         "one_sided": [{"side": "live", "reason": "repair"}, {"side": "replay", "reason": "entry"}]}
+    s.update(over)
+    return s
+
+
+class GapSplitLine(unittest.TestCase):
+    """One line per env × bot for the gap split (#802): no amount ever."""
+
+    def test_testnet_line_has_pp_share_legs_and_the_bar(self):
+        line = evidence_week.split_line(report(gap_split=gap_split()), live=False)
+        self.assertEqual(line, "fill price +0.05 pp, +50.0 % of the gap (4 legs) · fees -0.01 pp, -10.0 % of the gap (9 legs)"
+                               " · trades one side made +0.04 pp, +40.0 % of the gap (2 legs) · marks +0.01 pp, +15.0 % of the gap (6 legs)"
+                               " · unexplained +0.01 pp, +5.0 % of the gap (9 legs) · explained within 20 % · 2 one-sided legs")
+        self.assertNotIn("0.001", line)
+
+    def test_live_line_is_the_share_of_the_gap_only(self):
+        line = evidence_week.split_line(report(gap_split=gap_split(explained=False, partial="partial: 80 %")), live=True)
+        self.assertIn("fill price +50.0 % of the gap (4 legs)", line)
+        self.assertNotIn("pp", line)
+        self.assertIn("⚠ not explained (unexplained over 20 % of the gap)", line)
+        self.assertTrue(line.endswith("· partial"))
+
+    def test_no_replay_and_older_reports_say_why(self):
+        r = report(gap_split={"known": False, "note": "the replay did not run: no recorded book"})
+        self.assertEqual(evidence_week.split_line(r, False), "— (the replay did not run: no recorded book)")
+        self.assertEqual(evidence_week.split_line(report(), False), "— (report without the gap split)")
+        r = report(gap_split=gap_split(parts=[{"part": "fees", "equity_pp": 0, "gap_pct": None, "legs": 0}]))
+        self.assertIn("fees the gap is 0 (0 legs)", evidence_week.split_line(r, True))
+
+
 class Comment(unittest.TestCase):
     def setUp(self):
         self.envs = tempfile.mkdtemp()
@@ -132,9 +170,14 @@ class Comment(unittest.TestCase):
         self.assertIn("`stable/data/evidence/2026-W43/btc.md`", row)
         self.assertIn("+0.0123 ETH", self.row(text, "mvp", "eth"))
         self.assertEqual(sum(l.startswith("| stable") or l.startswith("| mvp") for l in text.splitlines()), 4)
+        # One gap split line per env × bot (#802).
+        self.assertIn("**Gap split**", text)
+        self.assertEqual(sum(l.startswith(f"- **{env} {bot}**: ") for l in text.splitlines()
+                             for env in ("stable", "mvp") for bot in ("btc", "eth")), 4)
+        self.assertIn("- **stable btc**: — (report without the gap split)", text)
 
     def test_live_env_shows_no_coin_or_usd_amount(self):
-        self.put("stable", "btc", report(), "DERIBIT_CLIENT_ID=x\nDERIBIT_ENV='live'\n")
+        self.put("stable", "btc", report(gap_split=gap_split()), "DERIBIT_CLIENT_ID=x\nDERIBIT_ENV='live'\n")
         self.put("mvp", "btc", report())
         write(self.fail_tsv, "stable\tbtc\tstress inputs\tspot 108123.5 USD\n")
         text = self.build()
@@ -149,6 +192,9 @@ class Comment(unittest.TestCase):
         self.assertNotIn("USD", text)
         self.assertNotIn("108123", text)                       # failure details hidden for a live env
         self.assertIn("- stable btc: stress inputs", text)
+        split = next(l for l in text.splitlines() if l.startswith("- **stable (live) btc**: "))
+        self.assertIn("fill price +50.0 % of the gap", split)
+        self.assertNotIn(" pp", split)
         self.assertIn("+0.0123 BTC", self.row(text, "mvp", "btc"))  # the testnet env keeps its amounts
 
     def test_unknown_sections_say_why(self):
