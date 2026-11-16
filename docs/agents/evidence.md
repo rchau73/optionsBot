@@ -33,6 +33,9 @@ each kind once ever (deduplicated by its title's start against every issue, open
 `… early stop in <week>, decide bias vs sma` (bias's replay net under sma's by more than the noise for 3 counted weeks in a row) and `… review due in <week>, decide bias vs sma` (6 counted weeks, or the report made on or after 2026-12-07).
 A ticket only asks: a change of `gex_direction` is a person's config PR.
 The kill rule's live drawdown is not in the scorecard; the ticket points to the weekly reports.
+The scorecard's `## Verdict` block (#788, `verdict` in its JSON) applies the brief's rule to every trial week up to its own: `needs more weeks` (with the weeks missing), `no difference`, `bias better`, `sma better` or `kill rule hit` (the weeks named).
+It lists d, the noise, the tail, every week and why it counted or not, and the thresholds named as assumptions; "span too short: extend by 4 weeks" when the sign of bias − sma flips with no trend.
+The comment's block and each decision ticket carry its one line (`verdict.line`), never recomputed; a scorecard written before #788 says so.
 
 **Futures-hedge trial** (#780, [`docs/hedge-trial.md`](../hedge-trial.md)): each weekly report's hedge section ends with one verdict line — `needs more days` (with the days missing), `keep running`, `stop` or `propose as a core-policy change` — and the figures it used (advantage, fees, worst day, `hedge_unavailable` and `hedge_rate_limited` lines of the journal since the ledger began, days).
 None when the trial has not started, without a spot, or on a live account.

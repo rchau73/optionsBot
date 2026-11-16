@@ -81,6 +81,9 @@ type DirectionReport struct {
 	Replay  []DirectionReplay `json:"replay"`
 	Missing DirectionMissing  `json:"missing"`
 	Units   string            `json:"units"`
+	// Verdict is the brief's rule over every trial week through this one
+	// (#788); nil outside the trial or before it is set (WithDirectionVerdict).
+	Verdict *DirectionVerdict `json:"verdict,omitempty"`
 }
 
 // DirectionMissing are the UTC days of the week without recorded books or
