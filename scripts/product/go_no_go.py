@@ -12,8 +12,12 @@ Rows, thresholds and windows: docs/product/go-no-go.md.
     python3 scripts/product/go_no_go.py --tally data/product/interviews/tally.json \\
         --fakedoor data/product/fakedoor/run1/result.json --evidence-root ~/dev/go/optionsBot-env/stable --bot btc
     python3 scripts/product/go_no_go.py -json
+
+Beside the rows, one informational line shows the interviews' delegation share (interview_tally.py, #787);
+it never enters the overall line.
 """
 import argparse
+import csv
 import glob
 import json
 import math
@@ -22,7 +26,11 @@ import re
 import sys
 from datetime import datetime, timezone
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import interview_tally  # noqa: E402
+
+REPO = os.path.dirname(os.path.dirname(HERE))
 
 # PRD §6 kill criteria, quoted (changing them is a PRD pull request, not a code change).
 SURVEY_KILL_PCT = 30.0      # < 30 % of interviewed cycle holders would let software trade their account
@@ -30,7 +38,7 @@ E2_MIN_WEEKS = 12           # go-no-go.md §3: weekly reports needed before the 
 NO_SPREAD = 1e-9            # a standard deviation at or under this has no ratio (internal/evidence noSpread)
 LEGAL_GATE = ("L1", "L2", "L3", "L4", "L5", "L6", "L9")
 
-MEETS, FAILS, MISSING = "meets", "fails", "missing"
+MEETS, FAILS, MISSING, INFO = "meets", "fails", "missing", "info"
 WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
 
 
@@ -176,12 +184,34 @@ def legal_row(path):
     return row(name, value, threshold, MEETS if not pending else MISSING, path, file_date(path), note)
 
 
+def interview_row(path, survey):
+    """Informational: the interviews' delegation share beside the survey's. It never enters the overall line
+    (PRD §6 reads the survey and E2), and a missing or refused file is `missing`, not a failure (#787)."""
+    name, threshold = "Interviews: delegation share (informational)", "none; the PRD §6 kill rule reads row 1"
+    if not path or not os.path.isfile(path):
+        return row(name, "—", threshold, MISSING, path or "—", "—", "no interview sheet")
+    try:
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            t = interview_tally.tally(interview_tally.read_rows(f))
+    except (interview_tally.TallyError, OSError, csv.Error) as e:
+        return row(name, "—", threshold, MISSING, path, file_date(path), f"refused: {e}")
+    d = t["delegation"]
+    if d["share_pct"] is None:
+        return row(name, "—", threshold, MISSING, path, file_date(path), "no qualified interview coded a delegation answer")
+    note = f"{t['qualified']} of ~{t['target']} qualified interviews"
+    if d["small_sample"]:
+        note += " (small sample)"
+    if survey["value"] != "—":
+        note += f"; survey {survey['value']}"
+    return row(name, f"{fmt_pct(d['share_pct'])} (n = {d['n']})", threshold, INFO, path, file_date(path), note)
+
+
 # --- the scorecard ------------------------------------------------------------
 
 def overall(rows):
     """PRD §6's kill rule, nothing more: either kill input failing → kill criterion met;
     else any missing input → incomplete; else every input is in and the decision is the owner's."""
-    survey, _, e2, _ = rows
+    survey, _, e2, _ = rows  # the four decision inputs; the interview line is not among them
     killed = [r for r in (survey, e2) if r["status"] == FAILS]
     if killed:
         return ("kill criterion met", "PRD §6: " + "; ".join(f"{r['input']} {r['value']} ({r['source']})"
@@ -192,20 +222,26 @@ def overall(rows):
     return "no kill criterion met", "every input is in; the go / no-go decision is the product owner's"
 
 
-def build(tally, fakedoor, evidence_root, bot, legal):
+def build(tally, fakedoor, evidence_root, bot, legal, interviews=None):
     rows = [survey_row(tally), fakedoor_row(fakedoor), e2_row(evidence_root, bot), legal_row(legal)]
     verdict, why = overall(rows)
-    return {"rows": rows, "overall": verdict, "overall_reason": why,
+    return {"rows": rows, "informational": [interview_row(interviews, rows[0])],
+            "overall": verdict, "overall_reason": why,
             "thresholds": {"survey_kill_pct": SURVEY_KILL_PCT, "e2_min_weeks": E2_MIN_WEEKS,
                            "legal_gate": list(LEGAL_GATE)}}
 
 
-def render(card):
-    out = ["# Go / no-go scorecard (E5)", "",
-           "| Input | Value | Threshold | Status | Source | Date | Note |", "|---|---|---|---|---|---|---|"]
-    for r in card["rows"]:
+def render_rows(rows):
+    out = ["| Input | Value | Threshold | Status | Source | Date | Note |", "|---|---|---|---|---|---|---|"]
+    for r in rows:
         out.append(f"| {r['input']} | {r['value']} | {r['threshold']} | {r['status']} | `{r['source']}` "
                    f"| {r['date']} | {r['note']} |")
+    return out
+
+
+def render(card):
+    out = ["# Go / no-go scorecard (E5)", ""] + render_rows(card["rows"])
+    out += ["", "Informational (never decides):", ""] + render_rows(card["informational"])
     out += ["", f"**Overall: {card['overall']}** — {card['overall_reason']}", ""]
     return "\n".join(out)
 
@@ -221,6 +257,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tally", default=os.path.join(private, "interviews", "tally.json"),
                     help="survey_tally.py -json output")
+    ap.add_argument("--interviews", default=os.path.join(private, "interviews", "interviews.csv"),
+                    help="the coded interview sheet read by interview_tally.py")
     ap.add_argument("--fakedoor", default=None, help="fakedoor.py result.json (default: the newest run's)")
     ap.add_argument("--evidence-root", default=REPO, help="an environment clone holding data/evidence/")
     ap.add_argument("--bot", default="btc")
@@ -228,7 +266,7 @@ def main(argv=None):
     ap.add_argument("-json", action="store_true", help="print JSON instead of markdown")
     args = ap.parse_args(argv)
     fakedoor = args.fakedoor if args.fakedoor is not None else latest_fakedoor(private)
-    card = build(args.tally, fakedoor, args.evidence_root, args.bot, args.legal)
+    card = build(args.tally, fakedoor, args.evidence_root, args.bot, args.legal, args.interviews)
     print(json.dumps(card, indent=2, ensure_ascii=False) if args.json else render(card))
     return 0
 
