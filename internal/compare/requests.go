@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,7 +23,10 @@ import (
 // runs cmd/compare with -set for each proposed value and -neighbours for the
 // changed number, then writes the status back: running, then done (with the
 // report's id) or failed (with a short reason). A request still queued a day
-// after it was made is expired. Nothing here writes a config or applies a
+// after it was made is expired. After a run is done the runner asks for its
+// AI analysis (#792, an injected AnalyzeFunc: cmd/analyze's code), best
+// effort: a missing key, a model error or a failed check leaves the run done,
+// with one line in its Note. Nothing here writes a config or applies a
 // setting: the proposed config is cmd/compare's temporary copy.
 
 // Request statuses.
@@ -67,6 +71,7 @@ type LabRequest struct {
 	UpdatedAt   time.Time    `json:"updated_at"`
 	RunID       string       `json:"run_id,omitempty"` // the report folder under data/compare, once done
 	Reason      string       `json:"reason,omitempty"` // why it failed or expired
+	Note        string       `json:"note,omitempty"`   // a done run's status note: why its analysis was not written
 }
 
 // LabSetting is one proposed value of a request.
@@ -90,6 +95,13 @@ type LabRunOptions struct {
 // CompareFunc runs cmd/compare with args and returns its standard output;
 // an error carries a short reason.
 type CompareFunc func(ctx context.Context, args []string) (string, error)
+
+// AnalyzeFunc writes the AI analysis beside a done run's report.json
+// (analysis.md|json); an error is the plain-words reason none was written.
+type AnalyzeFunc func(ctx context.Context, reportPath string) error
+
+// AnalysisNotWritten heads a done run's Note when its analysis failed.
+const AnalysisNotWritten = "analysis not written: "
 
 // LabRunSummary counts what one runner pass did.
 type LabRunSummary struct {
@@ -244,8 +256,9 @@ func ShortReason(err error) string {
 // another runner holds it), marks a request a stopped runner left running as
 // failed, expires the requests that waited too long, then runs the queued
 // ones oldest first, one at a time, until none is left. A failed run is
-// marked failed and the queue moves on.
-func RunLabQueue(ctx context.Context, o LabRunOptions, now func() time.Time, run CompareFunc) (LabRunSummary, error) {
+// marked failed and the queue moves on. A done run gets one analyze call
+// (nil = none); its failure only writes the run's Note.
+func RunLabQueue(ctx context.Context, o LabRunOptions, now func() time.Time, run CompareFunc, analyze AnalyzeFunc) (LabRunSummary, error) {
 	var sum LabRunSummary
 	unlock, err := lockQueue(o.QueueDir, now())
 	if err != nil {
@@ -302,6 +315,19 @@ func RunLabQueue(ctx context.Context, o LabRunOptions, now func() time.Time, run
 		if err := finish(o.QueueDir, next, now(), StatusDone, id, ""); err != nil {
 			return sum, err
 		}
+		if analyze == nil {
+			continue
+		}
+		log := slog.With("component", "lab", "request_id", next.ID, "run_id", id)
+		if err := analyze(ctx, filepath.Join(o.OutDir, id, "report.json")); err != nil {
+			log.Warn("lab analysis not written", "reason", err)
+			next.Note = AnalysisNotWritten + ShortReason(err)
+			if err := SaveLabRequest(o.QueueDir, *next); err != nil {
+				return sum, err
+			}
+			continue
+		}
+		log.Info("lab analysis written")
 	}
 }
 
