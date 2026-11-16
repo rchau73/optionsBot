@@ -5,8 +5,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
 ```bash
 go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -to 2026-10-18 -replay data/btc/data/market -stress data/stress/btc   # two configs side by side → data/compare/<time>/report.md|json: key-by-key diff, backtest, replay, stress; `-windows week|day` adds backtest and replay per window and how often the proposal wins (#301); `-neighbours <key>` re-runs the proposed value ±10/20 % and flags cliffs (#495) (README "Settings comparison")
 go run ./cmd/compare -base config_btc.yaml -set gamma_flip_buffer_sd=1.2 -from … -to …   # -set key=value (repeatable, #641): the proposed config = -proposed (or -base) with these values, a temporary copy; "[]" in a key = every element
-bash scripts/lab_runner.sh     # the lab's runner (#641, cmd/labrun): the monitor's queued run requests (data/compare/requests/) one at a time through cmd/compare -set … -neighbours → done with run_id | failed with a reason | expired after a day
-go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of a comparison (#426): one model call (ANTHROPIC_API_KEY; -fake <answer.md> sends nothing), checked by aianalysis.Check (#257) → analysis.md|json beside the report, Disclaimer first; a failing answer writes nothing and exits 1; offline, no monitor route (README "AI analysis of a comparison")
+bash scripts/lab_runner.sh     # the lab's runner (#641, cmd/labrun): the monitor's queued run requests (data/compare/requests/) one at a time through cmd/compare -set … -neighbours → done with run_id | failed with a reason | expired after a day; a done run then gets its AI analysis (#792, below), best effort
+go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of a comparison (#426): one model call (ANTHROPIC_API_KEY; -fake <answer.md> sends nothing), checked by aianalysis.Check (#257) → analysis.md|json beside the report, Disclaimer first; a failing answer writes nothing and exits 1; no monitor route (README "AI analysis of a comparison")
 ```
 
 - **`internal/compare`** + `cmd/compare` — two configs through the same backtest, replay (each from a flat book) and `cmd/stress` standard shocks (`evidence.RunStress` once per config), side by side (#186):
@@ -22,5 +22,7 @@ go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of 
   - `RunNeighbours` loads each value through `config.Load` on a temporary copy of the proposed file (a `Validate` refusal is a skipped row), runs backtest and replay only, into `Report.Neighbours`; the analysis's grounding check reads its numbers like any other.
   The lab's run requests (`requests.go`, #641): `POST /api/lab/requests` (`frontend/lib/labrequests.js`) writes `data/compare/requests/<id>.json` (the shape of `tests/testdata/lab_request.json`, read by both test suites);
   - `RunLabQueue` (lock folder `.runner.lock`, taken over after `RequestMaxAge`) marks orphaned `running` as failed and day-old `queued` as expired, then runs each queued request through `CompareArgs` and an injected `CompareFunc` (cmd/labrun: `go run ./cmd/compare`);
+  - after a done run, one call to an injected `AnalyzeFunc` (#792; cmd/labrun: `aianalysis.LabAnalyzer`, the same `aianalysis.Run` as cmd/analyze) writes `analysis.md|json` beside the report;
+    no key, a model error or a failed check leaves the run done with `note: "analysis not written: <reason>"` (not served by the monitor), failed, expired and orphaned requests get no call;
   - `set.go`'s `WriteWith` builds `-set`'s temporary proposed file (also `RunNeighbours`' copies); nothing here writes a shipped config.
   Never name a Go file `*_windows.go`/`*_windows_test.go`: Go builds it on Windows only.

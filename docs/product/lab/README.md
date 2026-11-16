@@ -21,7 +21,8 @@ A manager's parameter change is studied offline before anyone decides on it:
    The status goes `running`, then `done` with the report's id (`run_id`) or `failed` with a short reason, and the queue moves on; a request still queued a day after it was made is `expired`, one a stopped runner left `running` is `failed`.
    Each person may have 3 requests waiting or running.
    `GET /api/lab/runs` lists the requests without a report yet under `requests`, with their status; a done run is a row of `runs` as before.
-   `cmd/analyze` still runs by hand on the report, and its analysis stays withheld behind `L10_ANALYSIS_GATE_OPEN`.
+   After a run is done the runner writes its AI analysis beside the report (#792, `cmd/analyze`'s code, one call per run, `ANTHROPIC_API_KEY` from the runner's environment); without the key, on a model error or a failed check the run stays done and its file gets a `note` ("analysis not written: <reason>").
+   The analysis stays withheld behind `L10_ANALYSIS_GATE_OPEN`, and `GET /api/lab/runs` does not return the note.
    Run the runner from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`), by hand or from cron.
    Metrics from the queue files alone (ids and times, no values): the share of requests that end `done`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per week.
 

@@ -21,6 +21,12 @@ They are quoted, not set, here: changing them is a PRD pull request.
 | 3 | **E2:** does the engine beat holding the coin, risk-adjusted | `cmd/evidence` weekly reports → `<clone>/data/evidence/<ISO week>/<bot>.json`, `hold.return_usd_pct` and `hold.hold_return_usd_pct` (weeks where both are known); worst `live.perf.MaxDrawdownPct` shown beside | §3 | fails when the engine's ratio is not above hold's (**PRD §6 kill**); missing under the window (`not enough weeks`) or with no spread |
 | 4 | **Legal gate:** L1–L6 and L9 | `docs/legal/preliminary-answers.md`: a question's line carries `**Counsel (date):**` once counsel answers | every one answered by counsel | meets when all seven are answered (read the answers: the script cannot judge them); missing while any is preliminary. Never fails on its own |
 
+An **informational line** follows the table and never decides:
+
+| – | **Interviews:** delegation share among qualified interviews (#787) | `interview_tally.py` (reads `data/product/interviews/interviews.csv`, `--interviews`) | none; the kill rule reads row 1 | `info` with the share, its n and the survey's share beside it; `missing` with no file, a refused sheet or no delegation answer |
+
+It sits outside `rows` in `-json` (`informational`), so the overall line (section 4) and the weekly reading never move with it.
+
 Every row prints its value, threshold, status, source file and date (the file's date; for E2 the latest week).
 A missing input is `missing`, never assumed.
 
@@ -80,7 +86,7 @@ The file `data/product/` does not exist in a fresh checkout, so "no data" below 
 |---|---|---|---|
 | **Buyer:** the cycle holder (PRD §3) | Evidence for the choice, **assumption** for the size | The product owner confirmed the persona (`decisions/2026-10-18-primary-persona.md`, 2026-10-18). Screener `discovery/screener.md` defines who qualifies (#178) | How many cycle holders there are is an assumption. Verify: send the survey (`discovery/survey.md`) and read the screener's qualified count in the tally (`survey_tally.py`, #247) |
 | **Pain:** opaque yield, no control of risk, too complex by hand (PRD §3) | **Assumption** | Written from the product owner's own experience and the persona table (PRD v0.2, 2026-10-18) | Verify: the survey's Q4 and F2 answers, coded in `discovery/synthesis.md` §2 (a pain counts when it happened to the respondent). No answers yet |
-| **Delegation:** would let software trade their account | **No data** | Survey and tally tool ready (#178, #247); the scorecard row 1 reads the result | Verify: a tally with at least 15 qualified cycle holders. Below 15 the share is noted, not trusted |
+| **Delegation:** would let software trade their account | **No data** | Survey and tally tool ready (#178, #247); the scorecard row 1 reads the result. Interviews: coding sheet in `discovery/interview-guide.md` and `interview_tally.py` (#787), shown as the informational line | Verify: a tally with at least 15 qualified cycle holders. Below 15 the share is noted, not trusted |
 | **Willingness to pay** | **Assumption** | Options and trade-offs only: `pricing-proposal.md` (#762, the decision page) and `pricing-options.md` (#236, prepared before any data); unit-economics tool `unit_economics.py` (#235) | No customer answer yet. Verify: the survey's price questions and the fake door (below). The decision is the product owner's, after counsel answers L8 |
 | **Demand signal:** a waiting list | **No data** | Experiment brief `experiments/fake-door-landing.md` (#234) and copy draft `landing-copy-draft.md`; result reader `fakedoor.py` (#303) | The page is not online. Verify: publish it after counsel clears L5, L7, L9 and L13, then read the result. Scorecard row 2 |
 | **Competitors and positioning gaps** (PRD §4) | **No data** | The method and checker exist (`competitors/README.md`, #304) | The research goes in `data/product/competitors/` and has not been done. Verify: one entry per competitor with its source and date; `competitors.py --summary` feeds PRD §4 |
