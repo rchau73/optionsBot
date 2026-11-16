@@ -48,6 +48,9 @@ type Summary struct {
 	// Strangle is the nearest two-legged strangle explained (#322); null when
 	// none is held.
 	Strangle *HowItWorks `json:"strangle"`
+	// Idle is why the bot is not trading (#781, idle.go): null while it
+	// holds a strangle with entries allowed.
+	Idle *Idle `json:"idle"`
 }
 
 // HoldingSummary is what the bot holds now.
@@ -181,10 +184,11 @@ type MoveShock struct {
 	PctOfEquity *float64 `json:"pct_of_equity"` // null without the equity
 }
 
-// LastAction is the latest open or close in the journal, in plain words.
+// LastAction is the latest open or close in the journal, in plain words, or
+// the futures hedge's latest trade when it is newer (#794, kind "hedge").
 type LastAction struct {
 	At         time.Time `json:"at"`
-	Kind       string    `json:"kind"` // open | close
+	Kind       string    `json:"kind"` // open | close | hedge
 	Instrument string    `json:"instrument"`
 	OptionType string    `json:"option_type"`
 	Qty        float64   `json:"qty"`
@@ -196,6 +200,11 @@ type LastAction struct {
 	// Spot is the coin's index price at the action (USD), for "the coin's
 	// move since" on the phone overview (#320); omitted when not journaled.
 	Spot *float64 `json:"spot,omitempty"`
+	// A hedge trade only (absent otherwise): buy | sell and the USD filled of
+	// the perpetual; Rule is the line's change (hedge_fill | hedge_closed),
+	// and PnL is set for a hedge_closed, net of its fee.
+	Side    string  `json:"side,omitempty"`
+	SizeUSD float64 `json:"size_usd,omitempty"`
 }
 
 // BuildSummary is the pure core of /api/summary.
