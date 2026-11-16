@@ -9,7 +9,10 @@
 # Each request goes running, then done (with the report's id, listed by
 # GET /api/lab/runs) or failed (with a short reason); a request queued over a
 # day ago is expired. A second runner started meanwhile takes nothing and exits
-# 0. It writes no config and applies no setting: the proposed values live in
+# 0. A done run also gets its AI analysis (#792, analysis.md|json beside the
+# report) when ANTHROPIC_API_KEY is in this environment; without it, or when
+# the answer fails the checks, the run stays done with a note (withheld from
+# the monitor until legal question L10). It writes no config and applies no setting: the proposed values live in
 # cmd/compare's temporary copy. Run it from the environment the monitor reads
 # (its data/compare is the monitor's COMPARE_DIR), by hand or from cron.
 set -euo pipefail
