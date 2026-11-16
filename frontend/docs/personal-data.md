@@ -31,6 +31,9 @@ Retention of the row: until the person (or an admin) deletes the account; **prop
 | `nps_last_shown_at` | Spacing of the monthly survey card | with the row |
 | `nps_opted_out` | The person's "don't ask me again" | with the row |
 | `answers_last_shown_at` | Spacing of the four-answers card | with the row |
+| `previous_sign_in_at` | The sign-in before the last one, shown to the person in Active sessions (#803) | with the row; overwritten at each sign-in |
+| `failed_sign_ins` | How many wrong passwords were typed for this username since the last sign-in; a count, never the time, IP or password; shown to the person only | with the row; set to 0 at each sign-in |
+| `failed_sign_ins_before` | The same count for the time between the previous sign-in and the last one | with the row; overwritten at each sign-in |
 
 ## `refresh_tokens`
 

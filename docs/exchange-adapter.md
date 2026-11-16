@@ -85,7 +85,7 @@ Each row is marked: **adapter** (moves into the adapter), **stays** (exchange-ne
 | Order types `limit`, `market`, IOC/GTC `time_in_force` | `orders.Order`, executor params | yes (`Submit`) | **adapter** maps them; the rules that choose them **stay** |
 | Unknown outcome = no RPC error (`orders.MaybePlaced` reads `gateway.RPCError`, `ErrCircuitOpen`) | `orders/executor.go` | the function, no | **adapter** must keep the same meaning (placed / not placed / maybe) |
 | GEX from **mainnet** open interest (testnet OI is test accounts') | `cmd/bot/main.go` `marketGW`, `gex.Manager` | yes (`GEXSource`, `OISource`) | **stays**: GEX keeps reading Deribit mainnet whatever the trading exchange; the liquidity cap's OI → **settle later** (it must be the trading venue's) |
-| Perpetual `<COIN>-PERPETUAL` for daily closes and the hedge suggestion | `strategy.suggestedHedgeInst` | no — a literal format | **adapter** (`Candles` takes the coin, the adapter names its instrument) |
+| Perpetual `<COIN>-PERPETUAL` for daily closes, the hedge suggestion and the futures hedge | `orders.Executor.PerpetualName` (`strategy.suggestedHedgeInst` asks it) | yes since step 8 (`Trading.PerpetualName`) | **adapter** (done, step 8): the adapter names its perpetual for a currency; the strategy holds no `-PERPETUAL` literal |
 | Endpoints `wss://www.deribit.com`, `wss://test.deribit.com`, `DERIBIT_ENV` | `config.go`, `.env` | n/a | **adapter** (per-exchange `.env` keys, testnet default kept) |
 
 ## 3. Proposed interface
@@ -150,6 +150,12 @@ type Candles interface {
 	GetDailyCloses(ctx context.Context, instrument string, days int) ([]orders.DailyClose, error)
 }
 
+// InstrumentNamer: the exchange's names of the instruments the strategy uses
+// besides the option chain — the perpetual (daily closes, hedge, step 8).
+type InstrumentNamer interface {
+	PerpetualName(currency string) string
+}
+
 // BookSummary: open interest and marks of every option of a currency.
 // Today deribit.BookReader (step 3), used by gex.Manager and recorder.USDCBooks.
 type BookSummary interface {
@@ -212,6 +218,7 @@ type Exchange interface {
 	Connection
 	MarketData
 	Candles
+	InstrumentNamer
 	BookSummary
 	Orders
 	PositionsAndMargin
@@ -226,6 +233,7 @@ var (
 	_ PositionsAndMargin = (*orders.Executor)(nil)
 	_ MarginSimulator    = (*orders.Executor)(nil)
 	_ Candles            = (*orders.Executor)(nil)
+	_ InstrumentNamer    = (*orders.Executor)(nil)
 	_ BookSummary        = (*deribit.BookReader)(nil)
 
 	// Same fields, same order, same types as the code's Capabilities.
@@ -237,6 +245,7 @@ var (
 		PositionsAndMargin
 		MarginSimulator
 		Candles
+		InstrumentNamer
 	})(nil)
 	_ strategy.MarketData = MarketData(nil)
 )
@@ -268,7 +277,10 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
    `StopsFromTrades` and `ShedsFromTrades` take it as a parameter (`strategy.InstrumentNames`).
    Same fields as before, so no request and no decision changes; restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
    `TestExchangeCoupling_StrategyCodeDoesNotParseNames` fails on a `marketdata.ParseOptionName` (or `InstrumentFromName`) call under `internal/strategy`; research tools keep the parser for recorded Deribit files.
-8. **Name-free strategy literals**: `suggestedHedgeInst` (`<COIN>-PERPETUAL`) and the daily-close instrument come from the adapter.
+8. **Name-free strategy literals** (done, #786): `suggestedHedgeInst` — the hedge report's suggestion, the futures hedge's `perpName` and the instrument of the daily-close seed (`GetDailyCloses`) — asks `Trading.PerpetualName(currency)`.
+   `orders.Executor` implements it (`<COIN>-PERPETUAL`, no request), so `deribit.Adapter` promotes it and still has no method of its own.
+   Same names as before, so the same requests reach Deribit in the same order (`TestExchangeAdapter_DailyClosesAskForThePerpetual`, restart invariance, the futures hedge tests).
+   `TestExchangeCoupling_StrategyNamesNoExchangeInstrument` fails on a `"-PERPETUAL"` string literal under `internal/strategy`.
 
 After step 8 the coupling test can require that every `"public/"`/`"private/"` literal lives in `gateway` or `exchange/deribit` only. A second exchange is then an adapter plus the person's decisions in §5.
 

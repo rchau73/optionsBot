@@ -67,12 +67,22 @@ type PortfolioSimulator interface {
 	SimulateAlone(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
 }
 
+// InstrumentNamer names the exchange instruments the strategy uses besides
+// the option chain, so the strategy never builds an exchange's name (#786).
+type InstrumentNamer interface {
+	// PerpetualName is the currency's perpetual future: the hedge report's
+	// suggestion, the futures hedge and the daily closes the trend is seeded
+	// with (Deribit: "<COIN>-PERPETUAL").
+	PerpetualName(currency string) string
+}
+
 // Trading is everything the strategy asks of an exchange account.
 type Trading interface {
 	OrderPlacer
 	OrderTracker
 	AccountReader
 	PortfolioSimulator
+	InstrumentNamer
 }
 
 // OptionChain is the live option chain and the underlying's index price.

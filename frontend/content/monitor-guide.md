@@ -554,6 +554,15 @@ Active sessions lists every browser where you are signed in to the monitor, what
 
 **How to see where I am signed in**: choose Active sessions in the account menu. Each row shows the browser, when it signed in and when it was last used. The browser you are using is marked This browser. No address is kept or shown.
 
+**When did I last sign in, and did someone try my password?** The first line of Active sessions shows your previous sign-in and how many wrong passwords were typed for your username since.
+For example "Last sign-in:" with its date and time, then "3 wrong-password attempts since."
+On your first sign-in it reads "This is your first sign-in." and shows no count.
+The count starts again from 0 each time you sign in.
+If your username is locked after too many wrong passwords, it says until when.
+
+**Not you?** If that sign-in or those attempts were not you, choose Change your password in the same window, then sign out the browsers you don't recognise.
+Only you see this line; it never shows an address.
+
 **How to sign out another device**: choose Sign out on its row. From that moment the browser can no longer change anything, and it goes to the sign-in page within 15 minutes, when its sign-in renews and fails. Until then it can still read pages.
 
 **Signing out this browser**: use Sign out in the account menu. Active sessions does not sign out the browser you are using.
@@ -794,8 +803,9 @@ Learn more: "Roles" and "Analytics and your consent" in this guide.
 The **bell** in the menu bar, before your name, lists what happened to your book and your requests, and what waits for you.
 On a phone it opens the Notifications page.
 
-**Needs you** (counted on the bell): a short question from the team is waiting, or a request you sent needs more from you.
+**Needs you** (counted on the bell): a short question from the team is waiting, a request you sent needs more from you, or wrong passwords were typed for your username since your previous sign-in.
 Their buttons open the question or My requests in the assistant.
+The wrong-password item stays until you open Active sessions in the account menu, where you see when you last signed in.
 
 **Updates** (listed, never counted): what the bot did to your book on the page's bot (a stop-loss, a delta exit, the kill switch, a sell cancelled because new risk is frozen, initial margin over the limit), each with the journal's plain sentence and *Why?*; the status of your requests (accepted as a public issue, declined with its reason, shipped); and one What's new note per release.
 Fills and skips are never notifications.

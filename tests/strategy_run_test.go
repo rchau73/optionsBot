@@ -50,7 +50,11 @@ type fakeExchange struct {
 	simCalls        []map[string]float64
 	nextID          int
 	dailyCloses     []orders.DailyClose
+	dailyClosesFor  []string // the instrument of each GetDailyCloses call
 	amended         []string
+	// perpSuffix, when set, replaces Deribit's "-PERPETUAL" in PerpetualName,
+	// so a test can tell the exchange's name from one the strategy built.
+	perpSuffix string
 
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
@@ -376,9 +380,17 @@ func (f *fakeExchange) setMargin(im, mm float64) {
 	f.summary.InitialMargin, f.summary.MaintenanceMargin = im, mm
 }
 
-func (f *fakeExchange) GetDailyCloses(context.Context, string, int) ([]orders.DailyClose, error) {
+func (f *fakeExchange) PerpetualName(currency string) string {
+	if f.perpSuffix != "" {
+		return currency + f.perpSuffix
+	}
+	return currency + "-PERPETUAL"
+}
+
+func (f *fakeExchange) GetDailyCloses(_ context.Context, instrument string, _ int) ([]orders.DailyClose, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.dailyClosesFor = append(f.dailyClosesFor, instrument)
 	if f.dailyCloses == nil {
 		return nil, errors.New("no history in tests")
 	}
@@ -686,6 +698,7 @@ type strategyFixture struct {
 	futures strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
 	hedgeAt string                     // optional: its mode file
 	shadow  *shadow.Book               // optional: the shadow legs record (#676)
+	hedge   strategy.HedgeReporter     // optional: nopHedge{} when nil
 	// hedgeRecheck, when set, shortens a halted hedge's re-check.
 	hedgeRecheck time.Duration
 	journal      *recordingJournal
@@ -750,9 +763,13 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		if f.logger != nil {
 			journal = f.logger
 		}
+		var hedgeReport strategy.HedgeReporter = nopHedge{}
+		if f.hedge != nil {
+			hedgeReport = f.hedge
+		}
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
+			Journal: journal, Hedge: hedgeReport, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
 			Futures: f.futures, HedgeModePath: f.hedgeAt, HedgeRecheck: f.hedgeRecheck, ShadowLegs: f.shadow,
 		})
 		if f.beforeRun != nil {

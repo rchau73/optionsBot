@@ -23,6 +23,7 @@ var (
 	_ OrderTracker       = (*orders.Executor)(nil)
 	_ AccountReader      = (*orders.Executor)(nil)
 	_ PortfolioSimulator = (*orders.Executor)(nil)
+	_ InstrumentNamer    = (*orders.Executor)(nil)
 	_ Trading            = (*orders.Executor)(nil)
 
 	_ OptionChain = (*marketdata.Manager)(nil)

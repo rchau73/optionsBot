@@ -13,6 +13,7 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
   It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
 - The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`).
   Bot URLs are configured with `BOT_APIS` and never reach the browser.
+- Who may read each monitor `GET` route is one table, `READ_ROUTES` in `lib/auth/routeRoles.js` (#782; `frontend/docs/users-and-roles.md` "The read matrix"); a new `GET` route needs its line, or `__tests__/read-matrix.test.js` fails naming it.
 - Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
 - Every item of `/api/events` and `/api/trades` carries `plain` (#201): one sentence in everyday words — what happened, why, what follows — from the bot's catalogue (`internal/api/explain.go`; the same words as `last_action.reason`).
   A journal value the catalogue does not know yet gets a generic sentence beginning "The bot recorded a step that has no plain-words explanation yet".
@@ -234,5 +235,6 @@ Managers and admins, same-origin JSON `{"key", "value", "underlying"?}` (BTC by 
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
 - `GET /api/auth/sessions` and `DELETE /api/auth/sessions/<id>` (#584) are the monitor's own, never forwarded to a bot: a person's sessions and signing out the other ones ([Sign-in](sign-in.md#active-sessions), [Users and roles](users-and-roles.md)).
+- `GET /api/auth/security-summary` (#803) is the monitor's own, never forwarded to a bot: the signed-in person's previous sign-in and the wrong passwords typed for their username since ([Sign-in](sign-in.md#sign-in-summary), [Users and roles](users-and-roles.md)).
 - `GET /api/auth/my-data` (#750) is the monitor's own, never forwarded to a bot: the signed-in person's own data as one JSON file ([Sign-in](sign-in.md#download-my-data), [Users and roles](users-and-roles.md)).
 - `GET /api/admin/audit/export?user=&action=&from=&to=` (#702) is the monitor's own too, never forwarded to a bot: an admin downloads the filtered audit trail as CSV, at most 50,000 lines, and the export writes an `audit_exported` line ([Audit](audit.md#routes)).
