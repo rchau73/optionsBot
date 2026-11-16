@@ -53,6 +53,9 @@ type Settings struct {
 	// each makes the next rebalance a startup pass (rebalance.go).
 	Limits   []LimitAt
 	Restarts []time.Time
+	// Hedge is the one-sided hedge study's variant (hedgemode.go, #812): the
+	// zero value runs no study hedge.
+	Hedge HedgeMode
 	// Shed is what a GEX shed does (shed.go, #637): the zero value is the
 	// bot's (buy the whole side back).
 	Shed ShedVariant
@@ -443,7 +446,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	} else if e.set.Rebalance != "" {
 		e.rebalance(at, snap, dec, st, quotes, spot, gexErr == nil, stopsDeferred)
 	}
-	e.holdBookDelta(at, u.MarginBalance, spot)
+	if !e.set.Hedge.After {
+		e.holdBookDelta(at, u.MarginBalance, spot)
+	}
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.
 	entriesAllowed := !mmBreach && !stopsDeferred && gexErr == nil && !st.Frozen
@@ -452,6 +457,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 		if entriesAllowed {
 			e.entries(at, snap, dec, st, quotes, spot)
 		}
+	}
+	if e.set.Hedge.After {
+		e.holdBookDelta(at, e.usage(spot).MarginBalance, spot)
 	}
 
 	e.noteMissingLegs(at)
@@ -833,6 +841,14 @@ func (e *engine) size(sides []entrySide, spot float64, st risk.Status, vacant, n
 	}
 	book := e.marginLegs()
 	perLot := scanPortfolioIM(append(book, extra(1)...), e.hedge.usd, spot) - u.IM
+	if e.set.Hedge.on() {
+		// The study (#812) prices a lot without the perpetual: next to the
+		// hedge a short leg lowers the scenario IM, perLot ≤ 0 sizes one lot,
+		// and the modes would compare book sizes, not the hedge (the bot kept
+		// selling 28–126 ETH lots with the hedge on). The post-trade check
+		// below still counts the perpetual.
+		perLot = scanPortfolioIM(append(book, extra(1)...), 0, spot) - scanPortfolioIM(book, 0, spot)
+	}
 	lots := strategy.EntryLots(share, perLot)
 	normal := strategy.TargetLots(slotShare, scanIM(extra(1), spot))
 	lots, _ = strategy.CapLots(lots, normal, e.cfg.MaxLegSizeMultiple)
