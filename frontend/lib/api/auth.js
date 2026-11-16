@@ -25,6 +25,14 @@ export async function listSessions(signal) {
 }
 
 /**
+ * The signed-in person's sign-in summary (#803):
+ * { previous_sign_in, first_sign_in, failed_since, notice_id, locked_until? }.
+ */
+export async function securitySummary(signal) {
+  return getJSON("/api/auth/security-summary", signal);
+}
+
+/**
  * Ends one of the person's other sessions (#584); its next refresh fails.
  * Throws with the server's reason (e.g. the session in use).
  */

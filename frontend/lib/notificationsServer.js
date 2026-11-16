@@ -1,7 +1,7 @@
 // Server-side only: the notification bell's list for one signed-in person
 // and the page's bot (#447). Reads what already exists — the NPS due rule on
 // the user's row (#446), the person's requests and their review status
-// (#409), the bot's recent journal events (/api/events, with their plain
+// (#409), the sign-in summary (#803), the bot's recent journal events (/api/events, with their plain
 // sentence) and the release notes — and the person's read marks and
 // settings in auth.db. Stores no item: the list is rebuilt on every read.
 import { authDbPath } from "@/lib/auth/server";
@@ -11,6 +11,7 @@ import { myRequests, readLines, requestsPath, statusPath } from "@/lib/assistant
 import { configuredBots } from "@/lib/bots";
 import { botEventItem, buildNotifications, releaseItem, requestItem, settingsOf, surveyItem } from "@/lib/notifications";
 import { readReleaseNotes } from "@/lib/releases";
+import { securityItem } from "@/lib/signInSummary";
 
 const TIMEOUT_MS = 2000;
 /** The bot keeps its last 500 journal events in memory (orders.RecentEvents); all are read. */
@@ -50,10 +51,14 @@ async function botItems(botName, getJson) {
 /**
  * Every item of the person's list before their read marks and settings
  * apply → { items, errors }. bot: the page's bot (null: no bot updates).
+ * auth: the AuthService, for the sign-in summary's item (null: none).
  */
-export async function collectItems({ store, user, bot = null, nowMs, getJson = botJson }) {
+export async function collectItems({ store, auth = null, user, bot = null, nowMs, getJson = botJson }) {
   const errors = {};
   const items = [];
+
+  // Wrong passwords since the previous sign-in (#803): one item until Active sessions is opened.
+  if (auth) items.push(securityItem(auth.signInSummary(user), nowMs));
 
   const state = store.npsState(user.id);
   if (await surveyDue(state, nowMs, getJson)) items.push(surveyItem(state.lastShownSec, nowMs));
@@ -73,8 +78,8 @@ export async function collectItems({ store, user, bot = null, nowMs, getJson = b
  * The person's view: { items, needs_you, settings, errors } — read marks and
  * settings from auth.db, so every device of theirs shows the same.
  */
-export async function notificationsView({ store, user, bot = null, nowMs, getJson = botJson }) {
-  const { items, errors } = await collectItems({ store, user, bot, nowMs, getJson });
+export async function notificationsView({ store, auth = null, user, bot = null, nowMs, getJson = botJson }) {
+  const { items, errors } = await collectItems({ store, auth, user, bot, nowMs, getJson });
   const stored = store.notificationSettings(user.id);
   const view = buildNotifications(items, { readIds: store.notificationReads(user.id), settings: stored }, nowMs);
   return { ...view, settings: settingsOf(stored), errors };
