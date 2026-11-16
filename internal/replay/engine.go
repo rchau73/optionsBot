@@ -153,6 +153,27 @@ type Result struct {
 	MaxDrawdown        float64
 	MaxIMPct, AvgIMPct float64
 	Days               []Day
+	// The option legs it filled and its book at both ends, for the evidence
+	// report's split of the gap to live (#802).
+	Fills              []LegFill
+	StartBook, EndBook []BookLeg
+}
+
+// LegFill is one option leg the replay filled: a sale (open) or a buy-back
+// or an expiry (close). The perpetual's orders are not in it.
+type LegFill struct {
+	At         time.Time
+	Instrument string
+	Kind       string  // open | close
+	Qty, Price float64 // price per option, coin
+	Fee        float64
+	Why        string // the rule: entry, repair, top-up, STOP, DELTA EXIT, GEX shed, expired, …
+}
+
+// BookLeg is one short leg of the replay's book and the mid it was valued at.
+type BookLeg struct {
+	Instrument string
+	Qty, Mid   float64
 }
 
 type strangle struct {
@@ -289,6 +310,11 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	}
 	for _, s := range e.book {
 		e.res.OpenAtEnd += len(s.legs())
+		for _, p := range s.legs() {
+			if p.Qty > 1e-9 {
+				e.res.EndBook = append(e.res.EndBook, BookLeg{Instrument: p.Instrument, Qty: p.Qty, Mid: p.CurrentMid})
+			}
+		}
 	}
 	return e.res, nil
 }
@@ -338,6 +364,7 @@ func (e *engine) openBook(snap recorder.Snapshot) {
 		}
 		st.set(typ, p)
 		e.cash += p.CurrentMid * p.Qty
+		e.res.StartBook = append(e.res.StartBook, BookLeg{Instrument: l.Instrument, Qty: l.Qty, Mid: p.CurrentMid})
 	}
 }
 
@@ -770,7 +797,7 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 				e.res.Unfilled++
 				continue
 			}
-			e.sellInto(at, s, sd.q, float64(lots)*e.lot, sd.fill.Price)
+			e.sellInto(at, s, sd.q, float64(lots)*e.lot, sd.fill.Price, "entry")
 			names = append(names, sd.q.Instrument)
 		}
 		if len(s.legs()) == 0 {
@@ -854,12 +881,13 @@ func (e *engine) usage(spot float64) risk.Usage {
 
 // sell books a repair onto s.
 func (e *engine) sell(at time.Time, s *strangle, q recorder.Quote, qty, price float64, why string) {
-	e.sellInto(at, s, q, qty, price)
+	e.sellInto(at, s, q, qty, price, why)
 	e.act(at, "%s: sell %s ×%.1f at %.4f", why, q.Instrument, qty, price)
 }
 
-func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, price float64) {
+func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, price float64, why string) {
 	fee := e.fee(price, qty)
+	e.res.Fills = append(e.res.Fills, LegFill{At: at, Instrument: q.Instrument, Kind: "open", Qty: qty, Price: price, Fee: fee, Why: why})
 	p := &orders.Position{ID: fmt.Sprintf("%s#%d", q.Instrument, at.Unix()), Instrument: q.Instrument, Strike: q.Strike,
 		Expiry: q.Expiry, OptionType: q.OptionType, Side: orders.DirectionSell, Qty: qty, EntryPrice: price,
 		UnderlyingPrice: q.UnderlyingPrice, EntryTime: at, PremiumReceived: price * qty, Fees: fee,
@@ -895,6 +923,7 @@ func (e *engine) buyBack(at time.Time, s *strangle, p *orders.Position, qty floa
 // leg's share of its opening fees (orders.ClosedNetPnL).
 func (e *engine) close(at time.Time, s *strangle, p *orders.Position, qty, price, fee float64, why string) float64 {
 	qty = math.Min(qty, p.Qty)
+	e.res.Fills = append(e.res.Fills, LegFill{At: at, Instrument: p.Instrument, Kind: "close", Qty: qty, Price: price, Fee: fee, Why: why})
 	share := qty / p.Qty
 	part := &orders.Position{Qty: qty, PremiumReceived: p.PremiumReceived * share, Fees: p.Fees * share}
 	pnl := orders.ClosedNetPnL(part, orders.Fill{FillPrice: price, Qty: qty, Fee: fee})

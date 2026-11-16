@@ -115,6 +115,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		p("- replay %+.4f · **gap %+.4f**\n", g.Replay, g.Gap)
 		p("- not modelled by the replay: %s\n\n", strings.Join(g.Unmodelled, "; "))
 	}
+	writeGapSplit(p, r.Split, u) // and its causes (#802)
 
 	writeReplayVsLive(p, r.RVL, u)
 
