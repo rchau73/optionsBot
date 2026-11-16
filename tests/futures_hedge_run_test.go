@@ -681,3 +681,91 @@ func TestFuturesHedge_UnavailableWithoutFutures(t *testing.T) {
 	}
 	eventually(t, 2*time.Second, "view published", func() bool { return f.strat.HedgeState().Unavailable != "" })
 }
+
+// ── A one-sided book is not hedged (#813) ────────────────────────────────────
+
+// callsOnlyHedgeFixture is newHedgeFixture with the put taken off the
+// exchange (the calls-only book of a confirmed negative regime in a bear
+// trend) and, when perpUSD ≠ 0, a perpetual the hedge bought earlier, in the
+// ledger too. It returns the put's position, to put back.
+func callsOnlyHedgeFixture(t *testing.T, callDelta, putDelta, perpUSD float64) (*strategyFixture, orders.RawPosition) {
+	t.Helper()
+	f, _ := newHedgeFixture(t, callDelta, putDelta, true)
+	put := f.exch.positions[1]
+	f.exch.positions = f.exch.positions[:1]
+	if perpUSD != 0 {
+		f.exch.positions = append(f.exch.positions, orders.RawPosition{InstrumentName: testPerp, Size: perpUSD, Direction: "buy", AveragePrice: 100000, MarkPrice: 100000, Kind: "future"})
+		st := hedge.ModeState{Enabled: true, Since: time.Now(), By: hedge.Actor{User: "tester", Role: "admin"},
+			Ledger: hedge.Ledger{Real: hedge.PerpBook{SizeUSD: perpUSD, AvgPrice: 100000}}}
+		if err := hedge.SaveMode(f.hedgeAt, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return f, put
+}
+
+// Scenario: the hedge stands down on a calls-only book: the perpetual it
+// holds is closed, nothing else is traded, journaled once.
+func TestFuturesHedge_OneSidedBookStandsDown(t *testing.T) {
+	f, _ := callsOnlyHedgeFixture(t, 0.25, -0.10, 15000) // calls' coin delta −0.23, beyond the band
+	f.startRun()
+	eventually(t, 2*time.Second, "perpetual closed", func() bool { return f.exch.perpSize() == 0 })
+	time.Sleep(150 * time.Millisecond) // several cycles
+	perp := f.exch.perpOrders()
+	if len(perp) != 1 || perp[0].Direction != orders.DirectionSell || perp[0].Qty != 15000 || !perp[0].ReduceOnly ||
+		perp[0].OrderType != orders.TypeMarket || perp[0].TriggerReason != orders.TriggerFuturesHedgeClose {
+		t.Fatalf("perpetual orders %+v, want one reduce-only market sell of 15,000 and no hedge", perp)
+	}
+	down := f.journal.hedgeChanges(orders.HedgeStoodDown)
+	if len(down) != 1 || !strings.Contains(down[0].Detail, "calls only") {
+		t.Errorf("hedge_stood_down %+v, want one line naming the calls-only book", down)
+	}
+	if n := len(f.journal.hedgeChanges(orders.HedgeUnavailable)); n != 0 {
+		t.Errorf("%d hedge_unavailable lines: standing down is not a health episode", n)
+	}
+	v := f.strat.HedgeState()
+	if !strings.Contains(v.StoodDown, "calls only") || !v.Enabled {
+		t.Errorf("view: enabled %v, stood_down %q; want the mode on and the reason", v.Enabled, v.StoodDown)
+	}
+}
+
+// Scenario: once the book holds both sides again the hedge holds its delta.
+func TestFuturesHedge_TwoSidedAgainHedges(t *testing.T) {
+	f, put := callsOnlyHedgeFixture(t, 0.25, -0.10, 0)
+	f.startRun()
+	eventually(t, 2*time.Second, "stood down", func() bool { return len(f.journal.hedgeChanges(orders.HedgeStoodDown)) == 1 })
+	time.Sleep(100 * time.Millisecond)
+	if n := len(f.exch.perpOrders()); n != 0 {
+		t.Fatalf("calls only: %d perpetual orders, want none", n)
+	}
+	f.exch.mu.Lock()
+	f.exch.positions = append(f.exch.positions, put)
+	f.exch.mu.Unlock()
+	eventually(t, 3*time.Second, "perpetual bought", func() bool { return len(f.exch.perpOrders()) >= 1 })
+	// The book is short delta: a hedge buy. Its size follows the adopted put's
+	// greeks (the drift-adoption path), so only the side and the rule are pinned.
+	if o := f.exch.perpOrders()[0]; o.Direction != orders.DirectionBuy || o.ReduceOnly || o.TriggerReason != orders.TriggerFuturesHedge {
+		t.Fatalf("hedge order %+v, want a hedge buy", o)
+	}
+	if n := len(f.journal.hedgeChanges(orders.HedgeBack)); n != 1 {
+		t.Errorf("%d hedge_back lines, want one", n)
+	}
+	eventually(t, 2*time.Second, "the view hedging again", func() bool { return f.strat.HedgeState().StoodDown == "" })
+}
+
+func TestOneSidedBook(t *testing.T) {
+	leg := func(typ string) *orders.Position { return &orders.Position{OptionType: typ} }
+	for _, c := range []struct {
+		book []*orders.Position
+		want string
+	}{
+		{nil, ""},
+		{[]*orders.Position{leg("call"), leg("call")}, "calls"},
+		{[]*orders.Position{leg("put")}, "puts"},
+		{[]*orders.Position{leg("call"), leg("put")}, ""},
+	} {
+		if got := strategy.OneSidedBook(c.book); got != c.want {
+			t.Errorf("OneSidedBook(%d legs) = %q, want %q", len(c.book), got, c.want)
+		}
+	}
+}

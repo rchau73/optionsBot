@@ -40,6 +40,7 @@ Amber means the bot is waiting on purpose, not that it is broken.
 **The futures hedge line** appears under the tiles, one per bot, while a hedge is on or a position is left open.
 It shows the perpetual's size and delta and its profit and loss net of fees, and links to Details (pro).
 "Futures hedge paused" is amber and gives the reason; the GEX shed protects the book meanwhile.
+It also pauses while the book holds one side only (calls or puts): the hedge stands down so the book keeps its direction, and comes back once both sides are held.
 With the hedge off and flat, nothing is shown.
 On a phone the line sits under the headline and also gives the net delta.
 
