@@ -174,5 +174,34 @@ func BuildHedgedSummary(v strategy.View, trades []orders.Trade, h FuturesHedge, 
 	sum := BuildSummary(v, trades, now)
 	sum.Income = IncomeWithHedge(sum.Income, h.Flows(v.Market.Spot, now))
 	sum.WorstCase = WorstCaseWithPerp(sum.WorstCase, h.SizeUSD, h.AvgPrice, v.Account.Equity)
+	sum.LastAction = LastActionWithHedge(sum.LastAction, h.Fills)
 	return sum
+}
+
+// LastActionWithHedge is the hedge's newest trade (fills oldest first) when it
+// is newer than last, the option trade; otherwise last unchanged (#794). The
+// option trade wins a tie: it is the one the investor's answers were about.
+func LastActionWithHedge(last *LastAction, fills []orders.PerpFill) *LastAction {
+	if len(fills) == 0 {
+		return last
+	}
+	f := fills[len(fills)-1]
+	if last != nil && !f.At.After(last.At) {
+		return last
+	}
+	plain, _ := ExplainHedge(f.Change)
+	la := &LastAction{At: f.At, Kind: "hedge", Instrument: f.Instrument, Rule: f.Change, Reason: plain,
+		Side: f.Side, SizeUSD: f.FilledUSD}
+	price := f.Price
+	if price <= 0 {
+		price = f.Spot
+	}
+	if f.Change == orders.HedgeClosed {
+		usd := f.RealisedCoin * price
+		la.PnLCoin, la.PnLUSD = ptr(f.RealisedCoin), &usd
+	}
+	if f.Spot > 0 {
+		la.Spot = ptr(f.Spot)
+	}
+	return la
 }
