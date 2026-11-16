@@ -18,17 +18,22 @@ HEADER = ("| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 tim
 ROUND_LINE = "Round: loss round · Date 2026-11-07 · Monitor version 16439ab\n\n"
 
 
-def row(code, q2="success", q4_time="04:10", errors="", scenario="default", passed="", layout="desktop"):
-    return (f"| {code} | {layout} | {scenario} | success | 00:40 | {q2} | 01:20 | success | 02:30 "
-            f"| success | {q4_time} | {errors} | {passed} |")
+HEADER_WORDING = HEADER.replace("| Passed |", "| Passed | Wording when wrong |").replace("|---|\n", "|---|---|\n")
 
 
-def table(*rows, before=""):
-    """Five rows, the given ones first; the rest are clean passes."""
+def row(code, q2="success", q4_time="04:10", errors="", scenario="default", passed="", layout="desktop",
+        q3="success", wording=None):
+    """A table row; wording (even "") adds the free-text column."""
+    return (f"| {code} | {layout} | {scenario} | success | 00:40 | {q2} | 01:20 | {q3} | 02:30 "
+            f"| success | {q4_time} | {errors} | {passed} |" + ("" if wording is None else f" {wording} |"))
+
+
+def table(*rows, before="", wording=False):
+    """Five rows, the given ones first; the rest are clean passes. wording: with the free-text column."""
     rows = list(rows)
     codes = {r.split("|")[1].strip() for r in rows}
-    rows += [row(c) for c in su.CODES if c not in codes]
-    return before + HEADER + "\n".join(rows) + "\n"
+    rows += [row(c, wording="" if wording else None) for c in su.CODES if c not in codes]
+    return before + (HEADER_WORDING if wording else HEADER) + "\n".join(rows) + "\n"
 
 
 def score(text, name="baseline"):
@@ -198,7 +203,9 @@ class TemplateTest(unittest.TestCase):
         self.assertIn(f"before {su.Q4_LIMIT_SEC // 60}:00", self.doc)
 
 
-class CommandTest(unittest.TestCase):
+class CommandCase(unittest.TestCase):
+    """Runs main on tables in a temporary folder."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -220,6 +227,8 @@ class CommandTest(unittest.TestCase):
         with open(os.path.join(os.path.dirname(path), "summary.md"), encoding="utf-8") as f:
             return f.read()
 
+
+class CommandTest(CommandCase):
     def test_summary_beside_the_table_with_the_synthesis_skeleton(self):
         path = self.write("baseline/results.md", table(row("P1", q2="partial")))
         code, out, _ = self.run_main(path)
@@ -282,6 +291,153 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("nothing written", err)
         self.assertFalse(os.path.exists(os.path.join(os.path.dirname(path), "summary.md")))
+
+
+def worst_case_missed_by_three():
+    """3 of 5 missed Q3 (the worst case), one of them on the phone; each says why in the free-text column."""
+    return table(row("P1", q3="fail", wording="Q3: the margin one; Q2: fine", errors="Q3 unit"),
+                 row("P2", q3="partial", wording="it will lose that for sure"),
+                 row("P5", q3="fail", layout="mobile", wording=""), wording=True)
+
+
+class FindingsTest(unittest.TestCase):
+    """--findings (#810): a failed question becomes a findings row and an issue draft."""
+
+    def test_worst_case_missed_by_3_of_5(self):
+        findings = su.question_findings(su.parse_results(worst_case_missed_by_three()))
+        self.assertEqual([f["question"] for f in findings], ["Q3"])
+        f = findings[0]
+        self.assertEqual((f["missed"], f["total"]), (3, 5))
+        self.assertEqual(f["screen"], "Worst case / phone overview")
+        self.assertEqual(f["scenarios"], ["default"])
+        self.assertEqual(f["wording"], ["P1: the margin one", "P2: it will lose that for sure"])
+        text = su.render_findings("baseline", findings)
+        self.assertIn('| Q3 "What is the worst that could happen right now?" | default | 3 of 5 '
+                      '| Worst case / phone overview | P1 fail, P2 partial, P5 fail |', text)
+
+    def test_draft_has_e3_title_gherkin_and_counts_only(self):
+        f = su.question_findings(su.parse_results(worst_case_missed_by_three()))[0]
+        draft = su.render_draft("baseline", f)
+        self.assertTrue(draft.startswith("# [E3] "), draft)
+        self.assertIn("3 of 5", draft.splitlines()[0])
+        self.assertIn("Worst case", draft.splitlines()[0])
+        self.assertIn("```gherkin\nGiven ", draft)
+        self.assertIn("\nWhen ", draft)
+        self.assertIn("\nThen ", draft)
+        self.assertIn("**Depends on:** none.", draft)
+        self.assertIn("partial 1, fail 2", draft)
+        self.assertIn("unit 1", draft)
+        for code in su.CODES:
+            self.assertNotRegex(draft, rf"\b{code}\b")
+        self.assertNotIn("margin one", draft)
+
+    def test_one_miss_is_not_a_finding_and_late_q4_is(self):
+        self.assertEqual(su.question_findings(su.parse_results(table(row("P1", q3="fail")))), [])
+        late = su.question_findings(su.parse_results(table(row("P1", q4_time="05:00"), row("P2", q4_time="05:30"))))
+        self.assertEqual([(f["question"], f["missed"], f["outcomes"]["late"]) for f in late], [("Q4", 2, 2)])
+        self.assertEqual(late[0]["screen"], "Last action")
+
+    def test_every_question_passes(self):
+        self.assertEqual(su.question_findings(su.parse_results(table(row("P1", q3="fail")))), [])
+        self.assertIn("No failures", su.render_findings("baseline", []))
+
+    def test_table_without_the_wording_column_still_scores(self):
+        findings = su.question_findings(su.parse_results(table(row("P1", q2="fail"), row("P2", q2="partial"))))
+        self.assertEqual(findings[0]["wording"], [])
+        self.assertIn("| — |", su.render_findings("r", findings))
+
+    def test_wording_without_a_question_applies_to_every_miss(self):
+        self.assertEqual(su.parse_wording("it is red; Q3: the margin"), {"*": "it is red", "Q3": "the margin"})
+        self.assertEqual(su.parse_wording(""), {})
+
+
+class WordingPrivacyTest(unittest.TestCase):
+    """The free-text column may hold what a participant said, never who they are or an amount."""
+
+    def test_refused_naming_the_column_and_row(self):
+        for name, wording, why in (
+            ("a name", "Maria thought it was the margin", su.IS_NAME),
+            ("a name mid-sentence", "like my friend Joao said", su.IS_NAME),
+            ("an e-mail", "ana.souza@example.com", su.IS_EMAIL),
+            ("a dollar amount", "it lost $1,200", su.IS_AMOUNT),
+            ("a coin amount", "it holds 0.5 btc", su.IS_AMOUNT),
+            ("an amount in reais", "R$ 300 of mine", su.IS_AMOUNT),
+        ):
+            with self.subTest(name):
+                text = table(row("P2", wording=wording), wording=True)
+                self.assertIn((3, f'{why} in column "Wording when wrong", row P2'), refused_lines(text))
+
+    def test_page_words_and_percentages_pass(self):
+        for wording in ("Q3: I thought the Worst case was BTC margin", "Q2: the P&L is 7 % so it gains", ""):
+            with self.subTest(wording):
+                self.assertIsNone(su.free_text_problem(wording))
+                self.assertEqual(len(su.parse_results(table(row("P1", wording=wording), wording=True))), 5)
+
+
+class RunSheetTest(unittest.TestCase):
+    """The round-1 run sheet (#810) quotes the kit's script and needs nothing outside the repository."""
+
+    def setUp(self):
+        with open(su.PROTOCOL, encoding="utf-8") as f:
+            self.kit = f.read()
+        with open(os.path.join(os.path.dirname(su.PROTOCOL), "round-1-run-sheet.md"), encoding="utf-8") as f:
+            self.sheet = f.read()
+
+    def test_script_read_aloud_is_the_kits(self):
+        intro = re.search(r'^> ".*"$', self.kit, re.M).group()
+        self.assertIn(intro, self.sheet)
+        for q, text in su.QUESTION_TEXT.items():
+            self.assertIn(f'| {q} | "{text}" |', self.kit)
+            self.assertIn(f'"{text}"', self.sheet)
+
+    def test_setup_recording_and_results_are_in_the_repository(self):
+        for want in ("scripts/usability_round.sh", "1440 × 900", "390 × 844", "P1 to P5",
+                     "data/usability/e3/baseline/results.md",
+                     "python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md --findings",
+                     "Wording when wrong", "Never ask how much."):
+            with self.subTest(want):
+                self.assertIn(want, self.sheet)
+        for path in re.findall(r"`((?:scripts|docs)/[^`\s]+)`", self.sheet):
+            self.assertTrue(os.path.exists(os.path.join(su.REPO, path)), path)
+        self.assertIn("(round-1-run-sheet.md)", self.kit)
+
+
+class FindingsCommandTest(CommandCase):
+    def test_findings_and_one_draft_written(self):
+        path = self.write("baseline/results.md", worst_case_missed_by_three())
+        code, out, _ = self.run_main(path, "--findings")
+        self.assertEqual(code, 0)
+        folder = os.path.dirname(path)
+        self.assertEqual(sorted(os.listdir(folder)),
+                         ["findings.md", "issue-draft-Q3.md", "results.md", "summary.md"])
+        self.assertIn("| 3 of 5 | Worst case / phone overview |", out)
+        with open(os.path.join(folder, "issue-draft-Q3.md"), encoding="utf-8") as f:
+            self.assertTrue(f.read().startswith("# [E3] "))
+
+    def test_every_question_passes_writes_no_draft(self):
+        path = self.write("baseline/results.md", table(row("P1", q3="fail")))
+        stale = self.write("baseline/issue-draft-Q3.md", "an earlier run's draft")
+        code, out, _ = self.run_main(path, "--findings")
+        self.assertEqual(code, 0)
+        self.assertIn("No failures", out)
+        self.assertFalse(os.path.exists(stale))
+        self.assertEqual(sorted(os.listdir(os.path.dirname(path))), ["findings.md", "results.md", "summary.md"])
+
+    def test_personal_data_in_wording_writes_nothing(self):
+        path = self.write("r/results.md", table(row("P3", q3="fail", wording="Maria Silva at maria@example.com"),
+                                                row("P4", q3="fail", wording="it lost $500"), wording=True))
+        code, out, err = self.run_main(path, "--findings")
+        self.assertEqual(code, 2)
+        self.assertIn('line 3: refused: e-mail address in column "Wording when wrong", row P3', err)
+        self.assertIn('line 4: refused: currency amount in column "Wording when wrong", row P4', err)
+        self.assertNotIn("Maria", out + err)
+        self.assertNotIn("500", out + err)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(path))), ["results.md"])
+
+    def test_without_the_option_nothing_new_is_written(self):
+        path = self.write("r/results.md", worst_case_missed_by_three())
+        self.run_main(path)
+        self.assertEqual(sorted(os.listdir(os.path.dirname(path))), ["results.md", "summary.md"])
 
 
 if __name__ == "__main__":
