@@ -23,6 +23,10 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - not comparable — missing hours listed, no gap — under 90 % market coverage, a market gap over 3 h, coverage not measured or no replay;
     - causes only from the journal (frozen slot-hours, startup rebalance orders, closes with an `Actor`);
     - `Inputs.Account` (`DeribitAccount(root)`, set by `cmd/evidence`) = `live` drops every amount from its Markdown and JSON (% only).
+  - the gap split (`gapsplit.go`, #802, `Report.Split`): pure `buildGapSplit` over the journal's fills and the replay's own (`replay.Result.Fills`, `StartBook`, `EndBook`), no second replay;
+    - fill price (matched within `FillMatchWindow`, 1 h), fees, trades one side made (to the window's last recorded mid, with the journal's reason), marks, unexplained = the gap minus them — all in the Gap's sign, summing to `Gap.Gap`;
+    - a consistent journal leaves 0 unexplained (`tests/evidence_gapsplit_test.go`); explained = within `GapExplainedPct` (20, an assumption) of the gap; the exchange's marks are a line outside the sum;
+    - every part carries a `Sample` of its legs; partial as the Gap; `live` → % only, the pack (`packGapSplit`) and `evidence_week.py` `split_line` → the share of the gap only.
   - the account reconciliation (`reconcile.go`, #566, `Report.Recon`): pure `BuildReconciliation` — the margin balance at the first and last history point in the week carrying one, the journal's closes in between (net of fees; USD balance → each close's `PnLUSD`, else the history's spot);
     - gap = change − booked, in the unit and % of the starting balance, flagged over `ReconcileTolerancePct` (1) with `ReconcileCauses` (pinned by `tests/evidence_reconcile_test.go`);
     - under two balance points → "not enough history", no gap; days without one listed; `live` → % only; `evidence_week.py` `recon_cell` posts the % on E2.
