@@ -29,7 +29,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
     and fails on a route file, or a non-GET route registered here, that the table does not list (`bot` names the route here a monitor route forwards to).
   - Read-only routes that only some roles may see are monitor routes too, listed in `ROLE_GUARDED_READS` of the same file:
     the strategy-change lab's `GET /api/lab/runs` and `GET /api/lab/runs/<id>` (#539, managers and admins) read `data/compare/` in the monitor, not here, and `POST /api/lab/validate` (#586) checks a proposed value there too — the bot has no roles (`frontend/docs/users-and-roles.md`);
-    `GET /api/lab/runs/<id>/preview` (#682) says there what a confirm would change and applies nothing, its audit line written by the monitor.
+    `GET /api/lab/runs/<id>/preview` (#682) says there what a confirm would change and applies nothing, its audit line written by the monitor;
+    `POST /api/lab/runs/<id>/apply` (#741) consumes its token there and only records the change (`data/compare/applied/`): no route here is called and no setting of the bot changes.
   Never add other endpoints that change trading state without auth + confirmation + audit.
   `cmd/monitor-demo` serves it with simulated data.
   `/api/account` serves `internal/account` (cached `private/get_account_summaries` plus `private/get_positions` for each held currency, all kinds
@@ -47,7 +48,9 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `worst_case` (a labelled model: Black–Scholes on each leg's IV, a one-day ±3 daily σ move from DVOL, loss in coin, USD and % of equity;
     `scenarios` −3, −2, 0, +2, +3 σ with signed results for the monitor's worst-case page, #318;
     with a perpetual open every figure adds its inverse P&L from the average price, `hedge` keeps the options alone, #665, `hedgeincome.go`, `BuildHedgedSummary`)
-  - and `last_action` (latest open/close in plain words, `PlainReason`);
+  - and `last_action` (latest open/close in plain words, `PlainReason`;
+    #794: the futures hedge's newest fill or close when newer, `kind: "hedge"` with `side`, `size_usd` and `ExplainHedge`'s sentence — `LastActionWithHedge` in `BuildHedgedSummary`, from the `PerpFills` it already reads);
+  - `idle` (#781, `idle.go`, pure `IdleOf(view, recent events)`): why a bot that holds nothing or may not open anything is not trading — the latest skip or freeze line after the latest trade, null otherwise;
   - plus `strangle` for the How it works page (#322, `howitworks.go`, pure `HowItWorksOf`:
     the nearest two-legged strangle's strikes, premiums, coin-settled break-evens and each leg's exit line —
     the price where its Black–Scholes |Δ| reaches `delta_exit_threshold`, closed form `ExitLinePrice`, a model — null when none is held)

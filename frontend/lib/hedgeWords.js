@@ -121,6 +121,16 @@ export function hedgeFilters(change, filledUSD) {
   return RISK_CHANGES.has(change) ? ["protection"] : [];
 }
 
+/** True for /api/summary's last_action when it is a futures hedge trade (#794). */
+export const isHedgeAction = (a) => a?.kind === "hedge";
+
+/** "sold 300 USD of the perpetual (BTC-PERPETUAL)": a hedge last action's trade, never an option's "N ×". */
+export function hedgeActionWhat(a) {
+  const size = a.size_usd > 0 ? `${USD(a.size_usd)} of ` : "";
+  const name = a.instrument ? ` (${a.instrument})` : "";
+  return `${(DONE[a.side] ?? "Traded").toLowerCase()} ${size}the perpetual${name}`;
+}
+
 /**
  * A close's result net of its fee, in coin; null for any other line or a close
  * that filled nothing. The journal omits an exact 0, so a missing one is a 0.

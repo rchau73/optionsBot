@@ -212,6 +212,71 @@ class RulesTest(unittest.TestCase):
         self.assertIn("duplicate IDs P01", st.render_markdown(t))
 
 
+def quota_rows_of(rows):
+    t = tally_csv(to_csv(rows))
+    return t, {r["quota"].split(" (")[0]: r for r in t["quota_progress"]["quotas"]}
+
+
+class QuotaProgressTest(unittest.TestCase):
+    def holders(self, n, **over):
+        return [row(HOLDER, **over) for _ in range(n)]
+
+    def test_quotas_short(self):
+        rows = self.holders(6) + [row(TRADER), row(TRADER)]
+        t, q = quota_rows_of(rows)
+        h = q["Cycle holders"]
+        self.assertEqual((h["have"], h["need"], h["status"]), (6, 10, "open"))
+        self.assertEqual(t["quota_progress"]["cycle_holders_missing"], 4)
+        self.assertFalse(t["quota_progress"]["kill_criterion_readable"])
+        text = st.render_markdown(t)
+        self.assertIn("4 more cycle holders needed.", text)
+        self.assertIn("| Cycle holders | 6 | ≥ 10 | open |", text)
+
+    def test_option_trader_cap(self):
+        t, q = quota_rows_of(self.holders(3) + [row(TRADER) for _ in range(7)])
+        tr = q["Active option traders"]
+        self.assertEqual((tr["have"], tr["need"], tr["status"], tr["counted"]), (7, 5, "over cap", 5))
+        self.assertEqual(q["Qualified in total"]["have"], 8)  # 3 holders + 5 counted traders
+        self.assertEqual(t["qualified"], 10)                   # the existing figure is unchanged
+        self.assertIn("| 7 (counted 5) | ≤ 5 | over cap |", st.render_markdown(t))
+
+    def test_all_met(self):
+        earn = self.holders(3, S4="dual investment", COMMUNITY="no")
+        income = self.holders(3, S4="staking", S6="yes, only looked", COMMUNITY="no")
+        rest = self.holders(4, S4="lending", S6="yes, and tried something", COMMUNITY="yes")
+        rows = earn + income + rest + [row(TRADER, COMMUNITY="yes")] * 5
+        t, q = quota_rows_of(rows)
+        self.assertEqual({r["status"] for r in q.values()}, {"met"})
+        self.assertTrue(t["quota_progress"]["kill_criterion_readable"])
+        self.assertIn("Cycle-holder quota met: the kill criterion can be read.", st.render_markdown(t))
+
+    def test_missing_community_column_is_not_measurable(self):
+        text = to_csv(self.holders(10), [i for i in st.ITEMS if i != "COMMUNITY"])
+        t = tally_csv(text)
+        last = t["quota_progress"]["quotas"][-1]
+        self.assertEqual(last["status"], st.NOT_MEASURABLE)
+        self.assertIsNone(last["have"])
+        self.assertIn(st.NOT_MEASURABLE, st.render_markdown(t))
+
+    def test_channels_split_with_small_sample_note(self):
+        rows = self.holders(3, CHANNEL="Community") + self.holders(1, CHANNEL="referral") + \
+            self.holders(1) + self.holders(1, CHANNEL="a b c, d@e.com")
+        t, _ = quota_rows_of(rows)
+        ch = t["quota_progress"]["channels"]
+        self.assertEqual({k: v["count"] for k, v in ch.items()},
+                         {"community": 3, "referral": 1, st.NO_CHANNEL: 1, st.OTHER_CHANNEL: 1})
+        self.assertEqual(ch["community"]["share_pct"], 50.0)
+        self.assertIn("Small sample: fewer than 15 qualified", st.render_markdown(t))
+
+    def test_no_private_data_in_outputs(self):
+        rows = self.holders(2, F1="yes, add me", F1_email=SECRET_MAIL, Q4=SECRET_TEXT, F2=SECRET_TEXT,
+                            CHANNEL=SECRET_MAIL, COMMUNITY="no")
+        t, _ = quota_rows_of(rows)
+        for blob in (st.render_markdown(t), json.dumps(t)):
+            self.assertNotIn(SECRET_MAIL, blob)
+            self.assertNotIn(SECRET_TEXT, blob)
+
+
 class InputTest(unittest.TestCase):
     def test_mapping_renames_form_columns(self):
         rows = fifteen_and_five()

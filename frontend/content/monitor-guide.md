@@ -60,6 +60,8 @@ A click opens its payoff chart.
 **The last trade** sits under each band: when it happened and what the bot sold or bought back.
 One click on *Why?* opens the reason the bot recorded in its journal when it traded.
 For a buy-back it also shows that trade's past result, net of fees, in coin and USD.
+With the futures hedge experiment on, the last trade can be a hedge trade when it is newer than the last option trade: it says the bot bought or sold so many USD of the perpetual, and why.
+A hedge close also shows its result net of fees, a loss with its minus sign.
 A past result is no promise of future results.
 *All actions, explained* opens the Activity page.
 
@@ -78,6 +80,14 @@ On your first visit there is no card, only a line saying what it will show next 
 *Hide until my next visit* hides it until then.
 
 **When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
+
+**Why the bot is not trading** shows under the strangles (on a phone, in the *What it holds* card) when the bot holds nothing or is not opening new positions.
+One sentence, from the bot's latest decision in its journal, says what it is waiting for, such as a free expiry date or fresh market-maker data.
+"Not opening new positions" in amber means new risk is paused, for example while a change in volatility waits to be confirmed; "Waiting" means the bot looks again each cycle.
+It also says whether you must do anything: usually nothing; after the kill switch a person must restart the bot.
+*Why?* opens the journal line itself, its numbers and when it was recorded; *All actions, explained* opens the Activity page.
+When no journal line says why, it reads "The bot is waiting. Details in Activity."
+It says what holds the bot back now, not when trading starts again.
 
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
 In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.
@@ -633,8 +643,21 @@ If the setting is a core policy, the preview says a product owner must approve i
 If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
 In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
 The audit trail records one line with your username, the account, the run and both values.
-The preview changes nothing: no config file or bot setting is touched, and confirming a change is not built yet.
+The preview changes nothing: no config file or bot setting is touched.
 No screen shows it yet.
+
+**What happens when I confirm a change from a comparison run?** Managers and admins can confirm a change the preview said may be confirmed, with the preview's confirm token.
+The token works once, only for you, only for that run and those values, and for at most 15 minutes; after that, open the preview again.
+The monitor checks everything again when you confirm: your role, the value's range, whether the run is finished and still current, and whether the setting is a core policy.
+A manager linked to some accounts is refused on a run for a bot of another account.
+A core policy is refused: a new default needs the product owner, not a manager's confirm.
+A confirmed change is recorded, and the audit trail records one line with your username, the account, the run, the old and the new value.
+The answer repeats that the result was backtested, not a forecast, and shows the risks next to it: the worst week, the largest drawdown and the fees in percent, and any fragile spots.
+Confirming records the change only: nothing is applied to a running bot, no config file is written and no order is placed.
+How a recorded change will reach the bot is not decided yet.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/runs/[id]/apply -->
 
 **Can the assistant tell me what a comparison run showed?** Managers and admins can ask it, for example "what did my last comparison show?".
 It answers from the lab's latest runs: the return, the worst week, the drawdown and the fees of the current and the proposed settings, in percentages only, labelled backtested, with the worst week and the drawdown beside each return, and it names the run it read.
@@ -707,7 +730,7 @@ There is always at least one admin, and you cannot delete yourself.
 An admin acts on every account, and a user on none.
 A manager with no linked account acts on every account of this environment, as before.
 Edit accounts on a manager's row lists the accounts of the account registry with a box each; tick the ones the manager manages, read what follows, then Save accounts.
-From then on the monitor refuses that manager's close or rebalance on a bot of any other account, and says which account they do not manage; the bot receives nothing.
+From then on the monitor refuses that manager's close, rebalance or confirm of a lab run on a bot of any other account, and says which account they do not manage; the bot receives nothing.
 Untick every box to give the manager every account again.
 Each account added or removed is recorded in the audit trail with your username, the manager and the account.
 Do not link an adviser who is not the account owner until counsel has approved it.

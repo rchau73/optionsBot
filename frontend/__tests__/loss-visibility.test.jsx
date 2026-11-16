@@ -1,12 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import DetailsPage from "@/components/DetailsPage";
 import { IncomeView } from "@/components/IncomePage";
+import InvestorSummary from "@/components/InvestorSummary";
 import PhoneOverview from "@/components/PhoneOverview";
 import { PositionsScreen } from "@/components/PositionsPage";
 import { WorstCaseScreen } from "@/components/WorstCaseView";
 import { useMonitor } from "@/hooks/useMonitor";
 import { shownResult, sizeAndWeight } from "@/test/lossVisibility";
-import { botFor, incomeFor, payoffFor, summaryFor, tradesFor } from "@/test/resultFixtures";
+import { botFor, hedgeCloseFor, incomeFor, payoffFor, summaryFor, tradesFor, withLastAction } from "@/test/resultFixtures";
 
 // #582 (epic E3): losses as visible as gains on every page that shows a
 // result, beyond the Overview (overview-four-answers.test.jsx, #489). On the
@@ -108,6 +109,28 @@ describe("Scenario: a losing month on each page", () => {
   });
 });
 
+// #794: the futures hedge's close as the last action, desktop and phone.
+describe("Scenario: a hedge close with a loss", () => {
+  const LAYOUTS = {
+    "Overview (desktop)": (bot) => render(<InvestorSummary bots={[bot]} />).container,
+    "Phone overview": (bot) => render(<PhoneOverview bots={[bot]} selected="btc" />).container,
+  };
+  test.each(Object.keys(LAYOUTS))("%s: the result shows its minus sign and unit, as large and as bold as a gain", (page) => {
+    const styles = {};
+    for (const kind of ["profit", "loss"]) {
+      const container = LAYOUTS[page](withLastAction(botFor("profit"), hedgeCloseFor(kind)));
+      const want = `${kind === "loss" ? "−" : "+"}0.00004 BTC`;
+      const card = page === "Phone overview" ? screen.getByRole("region", { name: /^Last action/ }) : container;
+      const el = within(card).getByText(exact(want));
+      shownResult(page, container, want);
+      expect(el.textContent).toMatch(/BTC/);
+      styles[kind] = sizeAndWeight(el);
+      document.body.innerHTML = "";
+    }
+    expect([page, styles.loss]).toEqual([page, styles.profit]);
+  });
+});
+
 // Nothing held: words instead of figures. A real result (a close earlier in
 // the month) may still be shown; a figure that only stands for "nothing" (a
 // 0.00000 BTC or a $0) may not.
@@ -130,6 +153,19 @@ describe("Scenario: nothing held", () => {
     render(<PhoneOverview bots={[botFor("none")]} selected="btc" />);
     expect(screen.getByRole("region", { name: "Making or losing" })).toHaveTextContent("Open nownothing open");
     expect(screen.getByRole("region", { name: "Worst case right now" })).toHaveTextContent("Nothing held: a bad day costs nothing.");
+  });
+
+  // #781: a pause reads as plainly as what is held: not folded away, no
+  // smaller than the holdings sentence it stands in for, named in words.
+  test("a frozen bot's reason is shown in the open, as large as the holdings line", () => {
+    const bot = botFor("none");
+    const idle = { reason: "risk_frozen", blocked: true, held: false, seq: 3, at: "2026-10-28T09:00:00Z", plain: "No new strangle.", detail: "regime NEGATIVE (1/2 closes)" };
+    const { container } = render(<PhoneOverview bots={[{ ...bot, summary: { ...bot.summary, idle } }]} selected="btc" />);
+    const card = screen.getByRole("region", { name: "What it holds" });
+    const sentence = within(card).getByText(/^Not opening new positions\. New risk is paused/);
+    shownResult("Phone overview", container, sentence.textContent);
+    const held = within(card).getByText(/^Nothing open right now/);
+    expect(sizeAndWeight(sentence).filter((c) => c.startsWith("text-"))).toEqual(sizeAndWeight(held).filter((c) => c.startsWith("text-")));
   });
 });
 
