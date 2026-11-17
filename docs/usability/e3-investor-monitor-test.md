@@ -348,6 +348,11 @@ python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
 
 It prints the summary and writes it to `summary.md` beside the table, with the synthesis of section 8 to fill in; a `summary.md` already there stays unless you pass `--force`.
 It refuses a file with anything the template does not allow (an e-mail, a phone number, a name, a code other than P1 to P5): it names the line number, never the content, and writes nothing.
+The last column, *Wording when wrong*, is the only free text: what the participant said when an answer was wrong, in lower case, one part per question (`Q3: the margin one; Q2: it lost`).
+A capitalised word other than "I" and the page's own words, an e-mail, a phone number or an amount in it is refused, naming the column and the row.
+With `--findings` the script also writes `findings.md` (one row per question that fewer than 4 of 5 answered with a success) and one issue draft per such question, `issue-draft-Q<n>.md`, beside the table; it sends nothing to GitHub.
+
+To run the first round step by step, follow the run sheet: [round-1-run-sheet.md](round-1-run-sheet.md).
 
 ## 8. Templates
 
@@ -359,13 +364,13 @@ Copy these into the private notes folder `data/usability/e3/<round>/` (for examp
 
 Round: baseline / prototype / release / loss round · Date (YYYY-MM-DD) · Monitor version (commit)
 
-| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | desktop | | | | | | | | | | | |
-| P2 | desktop | | | | | | | | | | | |
-| P3 | desktop | | | | | | | | | | | |
-| P4 | desktop | | | | | | | | | | | |
-| P5 | mobile | | | | | | | | | | | |
+| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed | Wording when wrong |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | desktop | | | | | | | | | | | | |
+| P2 | desktop | | | | | | | | | | | | |
+| P3 | desktop | | | | | | | | | | | | |
+| P4 | desktop | | | | | | | | | | | | |
+| P5 | mobile | | | | | | | | | | | | |
 
 Participants passed: _ of 5 · Round passed (≥ 4 of 5): yes / no
 
