@@ -10,7 +10,8 @@ Notable files:
 - `marketdata_test.go`, `gex_manager_test.go`, `orderlog_test.go`, `state_test.go`, `config_test.go`, `backtest_*_test.go`.
 - `usability_kit_test.go` (#202, #646): the E3 usability kit runs from the file alone, keeps participant data out of its templates, and its answer keys match `cmd/monitor-demo`
   — the profit key (section 6) against the no-flag demo, the losing-scenario keys (section 6b) against `-scenario mixed` and `-scenario drawdown`, a failure naming the scenario and the fact.
-  The round scorer's own tests, `scripts/product/test_score_usability.py` (#701), read the kit's template, so a changed table fails there.
+  The round scorer's own tests, `scripts/product/test_score_usability.py` (#701), read the kit's template, so a changed table fails there;
+  they also cover `--findings` and the free-text column (#810) and check that `docs/usability/round-1-run-sheet.md` quotes the kit's script word for word.
 - `usability_keys_test.go` (#727): every figure in the kit's fenced `key` blocks equals `cmd/monitor-demo`'s value, per scenario and question; a stale key fails naming both.
   It checks `frontend/test/demoScenarios.json` (#743, the demo's answers per scenario for `scenario-answers.test.jsx`) against the same keys; `-args -update-scenarios` rewrites it from the demo.
   `usability_round_test.go` runs `scripts/usability_round.sh` on a copy of the layout with stub `go`, `npm`, `npx` and `curl`.
