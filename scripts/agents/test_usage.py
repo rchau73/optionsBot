@@ -102,6 +102,29 @@ class Pure(unittest.TestCase):
         self.put("mvp", r, drops())
         self.assertIn("| 2 of 3 (67 %) | — | 7 |", self.comment())
 
+    def test_scenario_retention_by_activation_line(self):
+        """#818: one line per env from the pooled week 4, 'association, not proof' beside it; live: shares only;
+        a group under 10 is too few to judge; no cohort with an ended week 4 is said in words; absent block → no line."""
+        r = report(activation_retention={"pooled": [
+            {"offset": 4, "cohorts": 3, "activated": 14, "activated_back": 9, "activated_pct": 64.28,
+             "not_activated": 22, "not_activated_back": 7, "not_activated_pct": 31.8}]})
+        self.put("mvp", r, drops())
+        self.put("stable", r, drops(), dotenv="DERIBIT_ENV=live\n")
+        text = self.comment()
+        self.assertIn("**Retention by activation**", text)
+        self.assertIn("- mvp: activated come back 64 % in week 4, not activated 32 % (n = 14 / 22) — association, not proof", text)
+        self.assertIn("- stable: activated come back 64 % in week 4, not activated 32 % — association, not proof", text)
+        r["activation_retention"]["pooled"][0].update(not_activated=4, not_activated_note="too few to judge")
+        del r["activation_retention"]["pooled"][0]["not_activated_pct"]
+        self.put("mvp", r, drops())
+        self.assertIn("- mvp: activated come back 64 % in week 4, not activated too few to judge (n = 14 / 4)", self.comment())
+        r["activation_retention"]["pooled"][0] = {"offset": 4, "cohorts": 0, "activated": 0, "not_activated": 0}
+        self.put("mvp", r, drops())
+        self.assertIn("- mvp: no cohort has an ended week 4 yet (association, not proof)", self.comment())
+        self.put("mvp", report(), drops())
+        self.put("stable", report(), drops())
+        self.assertNotIn("Retention by activation", self.comment())
+
     def test_curve_is_the_latest_cohort_with_four_ended_weeks(self):
         """#607: the newest cohort that can be judged by time gives the curve; its status only, from the fixed list."""
         r = report()

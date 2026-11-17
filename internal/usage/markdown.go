@@ -103,6 +103,11 @@ func Markdown(w io.Writer, r Report) error {
 		activationMarkdown(&b, a)
 	}
 
+	if ar := r.ActivationRetention; ar != nil {
+		section("Retention by activation", "Q9")
+		activationRetentionMarkdown(&b, ar)
+	}
+
 	if p := r.Panels; p != nil {
 		section("What is opened", "Q3")
 		countTable(&b, "Panel opened", p.Opens)
@@ -253,6 +258,79 @@ func activationMarkdown(b *strings.Builder, a *Activation) {
 	if len(empty) > 0 {
 		fmt.Fprintf(b, "Weeks with no events, left out (not zero): %s\n\n", strings.Join(empty, ", "))
 	}
+}
+
+// activationRetentionMarkdown is the retention-by-activation table (#818):
+// each cohort's two groups and who of each came back in weeks +1 … +4, then
+// the cohorts pooled. A week not ended reads "not yet", never 0.
+func activationRetentionMarkdown(b *strings.Builder, ar *ActivationRetention) {
+	fmt.Fprintf(b, "New people (first `session_started` in the week) split into activated within %d h (\"Activation in the first day\") and not activated, "+
+		"and how many of each had any event in each later week — **%s**: activation and staying may share a cause.\n\n", ar.WindowHours, ar.Note)
+	b.WriteString("| Cohort | Group | People |")
+	for j := 1; j <= ActivationReturnWeeks; j++ {
+		fmt.Fprintf(b, " +%d |", j)
+	}
+	b.WriteString("\n|---|---|---:|" + strings.Repeat("---:|", ActivationReturnWeeks) + "\n")
+	var empty, nobody []string
+	for _, c := range ar.Weeks {
+		switch {
+		case c.NoEvents:
+			empty = append(empty, c.Week)
+			continue
+		case c.Activated.Users+c.NotActivated.Users == 0:
+			nobody = append(nobody, c.Week)
+			continue
+		}
+		for _, g := range []struct {
+			name string
+			ReturnGroup
+		}{{"activated", c.Activated}, {"not activated", c.NotActivated}} {
+			people := fmt.Sprint(g.Users)
+			if g.Note != "" {
+				people += fmt.Sprintf(" (%s: under %d)", g.Note, ar.MinUsers)
+			}
+			fmt.Fprintf(b, "| %s | %s | %s |", c.Week, g.name, people)
+			for _, r := range g.Returns {
+				b.WriteString(" " + returnCell(r) + " |")
+			}
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\nPooled over the cohorts above whose later week has ended and had events:\n\n")
+	b.WriteString("| Week after | Cohorts | Activated back | Not activated back |\n|---|---:|---|---|\n")
+	side := func(n, of int, v *float64, note string) string {
+		if note != "" {
+			return fmt.Sprintf("%d of %d (%s)", n, of, note)
+		}
+		return fmt.Sprintf("%d of %d (%s)", n, of, fmtPct(v))
+	}
+	for _, p := range ar.Pooled {
+		fmt.Fprintf(b, "| +%d | %d | %s | %s |\n", p.Offset, p.Cohorts,
+			side(p.ActivatedBack, p.Activated, p.ActivatedPct, p.ActivatedNote),
+			side(p.NotActivatedBack, p.NotActivated, p.NotActivatedPct, p.NotActivatedNote))
+	}
+	fmt.Fprintf(b, "\n%s = that week has not ended; no events = no event at all that week (left out, not zero). "+
+		"A group under %d people is %s: counts, no share. No alert is raised on this measure.\n\n", NotYet, ar.MinUsers, TooFew)
+	if len(empty) > 0 {
+		fmt.Fprintf(b, "Weeks with no events, left out (not zero): %s\n\n", strings.Join(empty, ", "))
+	}
+	if len(nobody) > 0 {
+		fmt.Fprintf(b, "Weeks with no new person: %s\n\n", strings.Join(nobody, ", "))
+	}
+}
+
+// returnCell is one later week of a group: "n (share)", "n" without a
+// share, or why there is no count.
+func returnCell(r WeekReturn) string {
+	switch {
+	case r.NotYet:
+		return NotYet
+	case r.NoEvents:
+		return "no events"
+	case r.Pct == nil:
+		return fmt.Sprint(r.Users)
+	}
+	return fmt.Sprintf("%d (%s)", r.Users, fmtPct(r.Pct))
 }
 
 // northStarMarkdown is PRD §7's north star (#801): counts and a share only.
