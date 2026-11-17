@@ -277,6 +277,101 @@ class QuotaProgressTest(unittest.TestCase):
             self.assertNotIn(SECRET_TEXT, blob)
 
 
+def priced(n, **over):
+    """n cycle holders with ordered P1–P4 answers that spread over a range (synthetic amounts)."""
+    rows = []
+    for i in range(n):
+        base = 10 + i  # P1 10.., P2 +10, P3 +25, P4 +45
+        rows.append(row(HOLDER, ID=f"P{i + 1:02d}", Q6="no", P1=str(base), P2=str(base + 10),
+                        P3=str(base + 25), P4=str(base + 45), **over))
+    return rows
+
+
+class PriceRangeTest(unittest.TestCase):
+    def test_valid_answers_give_a_range_in_the_json_file_only(self):
+        # Scenario: 20 qualified cycle holders with ordered answers → tally.json holds the range and rows used.
+        with tempfile.TemporaryDirectory() as d:
+            export = os.path.join(d, "export.csv")
+            with open(export, "w", encoding="utf-8") as f:
+                f.write(to_csv(priced(20)))
+            private = os.path.join(d, "interviews")
+            orig = st.PRIVATE_DIR
+            st.PRIVATE_DIR = private
+            try:
+                code, out, _ = run_main([export, "-json", "-out", os.path.join(private, "tally.json")])
+            finally:
+                st.PRIVATE_DIR = orig
+            self.assertEqual(code, 0)
+            with open(os.path.join(private, "tally.json"), encoding="utf-8") as f:
+                price = json.load(f)["price"]
+            self.assertEqual((price["status"], price["n_used"]), ("range measured", 20))
+            rng = price["range"]
+            self.assertLess(rng["marginal_cheapness"], rng["marginal_expensiveness"])
+            self.assertEqual(set(rng), {"marginal_cheapness", "marginal_expensiveness", "optimal", "indifference"})
+            self.assertEqual(out.strip(), f"wrote {os.path.join(os.path.realpath(private), 'tally.json')}")
+
+    def test_no_amount_on_stdout(self):
+        with tempfile.TemporaryDirectory() as d:
+            export = os.path.join(d, "export.csv")
+            with open(export, "w", encoding="utf-8") as f:
+                f.write(to_csv(priced(20)))
+            for args in ([export], [export, "-json"]):
+                _, out, _ = run_main(args)
+                self.assertNotIn("range", out.replace("Price range", "").replace("no clear range", "")
+                                 .replace("range measured", ""))
+                self.assertNotIn("marginal", out)
+                self.assertNotIn("optimal", out)
+            self.assertEqual(json.loads(run_main([export, "-json"])[1])["price"]["n_used"], 20)
+
+    def test_too_few_rows_write_no_range(self):
+        # Scenario: 9 qualified rows → "too few to conclude" and no range.
+        p = st.tally(priced(9))["price"]
+        self.assertEqual(p["status"], "too few to conclude")
+        self.assertNotIn("range", p)
+        self.assertEqual(st.tally(priced(14))["price"]["status"], "too few to conclude")
+        self.assertEqual(st.tally(priced(15))["price"]["status"], "range measured")
+
+    def test_inconsistent_row_is_counted_and_left_out(self):
+        # Scenario: a row whose "too cheap" is above its "too expensive".
+        rows = priced(15) + [row(HOLDER, ID="P99", P1="90", P2="20", P3="30", P4="40"),
+                             row(HOLDER, ID="P98", P1="10", P2="10", P3="30", P4="40")]  # equal is out of order too
+        p = st.tally(rows)["price"]
+        self.assertEqual((p["n_used"], p["inconsistent"]), (15, 2))
+        self.assertEqual(p["status"], "range measured")
+        short = st.tally(priced(14) + rows[-2:])["price"]
+        self.assertEqual((short["status"], short["n_used"]), ("too few to conclude", 14))
+
+    def test_blank_and_text_answers_are_unanswered_not_inconsistent(self):
+        rows = priced(15) + [row(HOLDER, ID="P97", P1="10", P2="", P3="30", P4="40"),
+                             row(HOLDER, ID="P96", P1="free", P2="2", P3="3", P4="4")]
+        p = st.tally(rows)["price"]
+        self.assertEqual((p["n_used"], p["inconsistent"], p["unanswered"]), (15, 0, 2))
+
+    def test_only_qualified_cycle_holders_count(self):
+        rows = priced(14) + [row(TRADER, ID="T1", P1="10", P2="20", P3="30", P4="40"),
+                             row(SCREENED[0], ID="S1", P1="10", P2="20", P3="30", P4="40")]
+        p = st.tally(rows)["price"]
+        self.assertEqual((p["n_used"], p["status"]), (14, "too few to conclude"))
+
+    def test_range_follows_the_answers(self):
+        # Everyone answers 10 / 20 / 30 / 40: the optimal price sits between 10 and 40, the range inside it.
+        rows = [row(HOLDER, ID=f"P{i:02d}", P1="10", P2="20", P3="30", P4="40") for i in range(20)]
+        rng = st.tally(rows)["price"]["range"]
+        for v in rng.values():
+            self.assertTrue(10 <= v <= 40, rng)
+        self.assertLess(rng["marginal_cheapness"], rng["marginal_expensiveness"])
+
+    def test_amounts_typed_with_symbols_and_separators(self):
+        for raw, want in (("$1,250.50", 1250.5), ("R$ 99,90", 99.9), ("1.500", 1500.0), ("25", 25.0), ("1,500", 1500.0)):
+            self.assertEqual(st.parse_amount(raw), want, raw)
+        for raw in ("", "free", "0", "-5", None):
+            self.assertIsNone(st.parse_amount(raw), raw)
+
+    def test_markdown_shows_status_and_counts_only(self):
+        md = st.render_markdown(st.tally(priced(20)))
+        self.assertIn("| range measured | 20 | 0 | 0 | 15 |", md)
+
+
 class InputTest(unittest.TestCase):
     def test_mapping_renames_form_columns(self):
         rows = fifteen_and_five()

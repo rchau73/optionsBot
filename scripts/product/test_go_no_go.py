@@ -98,6 +98,30 @@ class ScorecardTest(unittest.TestCase):
         self.assertEqual(card["rows"][0]["status"], gng.MISSING)
         self.assertEqual(card["overall"], "incomplete")
 
+    def test_willingness_to_pay_line_reads_the_status_never_the_amounts(self):
+        def line(price):
+            self.fx.write("tally.json", dict(tally(45.0), **({"price": price} if price else {})))
+            return self.fx.card()["informational"][1]
+
+        measured = line({"status": "range measured", "n_used": 20, "min_rows": 15, "inconsistent": 1,
+                         "range": {"marginal_cheapness": 123.45, "marginal_expensiveness": 678.9,
+                                   "optimal": 234.5, "indifference": 345.6}})
+        self.assertEqual(measured["value"], "range measured")
+        text = json.dumps(measured) + gng.render(self.fx.card())
+        for amount in ("123.45", "678.9", "234.5", "345.6"):
+            self.assertNotIn(amount, text)
+        self.assertEqual(line({"status": "too few to conclude", "n_used": 9, "min_rows": 15})["value"], "too few")
+        self.assertEqual(line({"status": "no clear range", "n_used": 20, "min_rows": 15})["value"], "too few")
+        self.assertEqual(line(None)["value"], "no data")
+
+    def test_willingness_to_pay_without_a_tally_is_no_data_and_never_decides(self):
+        # Scenario: a checkout with no tally file → "no data", nothing fails.
+        card = self.fx.card()
+        line = card["informational"][1]
+        self.assertEqual((line["value"], line["status"]), ("no data", gng.MISSING))
+        self.assertEqual(card["overall"], "incomplete")
+        self.assertIn("no data", gng.render(card))
+
     def test_no_cycle_holder_answer_is_missing(self):
         self.fx.write("tally.json", tally(None, n=0))
         self.assertEqual(self.fx.card()["rows"][0]["status"], gng.MISSING)

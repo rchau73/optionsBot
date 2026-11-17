@@ -14,7 +14,8 @@ Rows, thresholds and windows: docs/product/go-no-go.md.
     python3 scripts/product/go_no_go.py -json
 
 Beside the rows, one informational line shows the interviews' delegation share (interview_tally.py, #787);
-it never enters the overall line.
+it never enters the overall line. A second one reads the tally's price result (#817) as `range measured`,
+`too few` or `no data`, never the amounts.
 """
 import argparse
 import csv
@@ -184,6 +185,24 @@ def legal_row(path):
     return row(name, value, threshold, MEETS if not pending else MISSING, path, file_date(path), note)
 
 
+def price_row(path):
+    """Informational: willingness to pay as `range measured` / `too few` / `no data`, read from the tally's
+    price status. The amounts in the tally are never read or shown (#817); it never enters the overall line."""
+    name, threshold = "Willingness to pay (informational)", "none; the range is read in the private tally"
+    data, why = load_json(path)
+    price = data.get("price") if isinstance(data, dict) else None
+    if not isinstance(price, dict) or "status" not in price:
+        return row(name, "no data", threshold, MISSING, path or "—", "—" if data is None else file_date(path),
+                   why or "the tally has no price result")
+    n = price.get("n_used", 0)
+    if price["status"] == "range measured":
+        value, status = "range measured", INFO
+    else:  # "too few to conclude", or valid rows that show no clear range
+        value, status = "too few", MISSING
+    note = f"{n} valid rows of {price.get('min_rows', 15)} needed; {price.get('inconsistent', 0)} inconsistent"
+    return row(name, value, threshold, status, path, file_date(path), note)
+
+
 def interview_row(path, survey):
     """Informational: the interviews' delegation share beside the survey's. It never enters the overall line
     (PRD §6 reads the survey and E2), and a missing or refused file is `missing`, not a failure (#787)."""
@@ -225,7 +244,7 @@ def overall(rows):
 def build(tally, fakedoor, evidence_root, bot, legal, interviews=None):
     rows = [survey_row(tally), fakedoor_row(fakedoor), e2_row(evidence_root, bot), legal_row(legal)]
     verdict, why = overall(rows)
-    return {"rows": rows, "informational": [interview_row(interviews, rows[0])],
+    return {"rows": rows, "informational": [interview_row(interviews, rows[0]), price_row(tally)],
             "overall": verdict, "overall_reason": why,
             "thresholds": {"survey_kill_pct": SURVEY_KILL_PCT, "e2_min_weeks": E2_MIN_WEEKS,
                            "legal_gate": list(LEGAL_GATE)}}

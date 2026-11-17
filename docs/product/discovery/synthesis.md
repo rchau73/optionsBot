@@ -20,6 +20,10 @@ Free text (Q4, F2) and the F1 e-mails are never printed, only how many answered.
 Its "Quota progress" section shows each `screener.md` §5 quota as have / need (open, met, over cap), the qualified count by channel and, last, whether the cycle-holder quota is met so the §4 verdict can be read (`CHANNEL` and `COMMUNITY` are optional columns: without them the row says "not measurable: no column").
 Use its figures in §3 and §4.
 
+Its "Price range" section reads P1–P4 (`survey.md` §3b) for cycle holders only: rows out of order (too cheap < bargain < getting expensive < too expensive) are counted as inconsistent and left out, and under 15 valid rows the result is "too few to conclude".
+The range (marginal cheapness, marginal expensiveness, optimal and indifference price) is written only to the private `tally.json` (`-json -out`); read it there, never paste an amount here, in an issue or in a comment.
+It informs the pricing proposal (`pricing-proposal.md`); it is not a price and not a verdict.
+
 Interviews have their own sheet: code each one as `interview-guide.md` "Coding sheet" says, run `python3 scripts/product/interview_tally.py` and paste its pain, delegation, willingness-to-pay and testnet-trial tables into §2–§4 beside the survey's, with anonymous codes only (`I01`, `I02`…).
 The scorecard (`go-no-go.md`) shows the interview delegation share as an informational line; it never decides.
 

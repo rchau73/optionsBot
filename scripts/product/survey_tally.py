@@ -13,16 +13,20 @@ prints the numbers synthesis.md needs:
         next to the PRD §6 kill threshold (< 30 %), with n and a small-sample note
     quota progress = each screener.md §5 quota as have / need and status, the qualified count
         by channel, and whether the kill criterion can be read yet (#774)
+    price range = Van Westendorp over the cycle holders' P1–P4 (too cheap, a bargain, getting expensive,
+        too expensive; #817): rows out of order are counted `inconsistent` and left out; under 15 valid rows
+        the result is "too few to conclude". The amounts are written only by -json -out (tally.json), never
+        printed: stdout and the markdown carry the status and the counts.
 
     python3 scripts/product/survey_tally.py data/product/interviews/export.csv
     python3 scripts/product/survey_tally.py data/product/interviews/export.csv -map data/product/interviews/map.json
     python3 scripts/product/survey_tally.py data/product/interviews/export.csv -json -out data/product/interviews/tally.json
 
 Standard library only. Answers are private: the free-text items (Q4, F2), the
-F1 e-mail and any answer that matches no option are never printed — only how
+F1 e-mail, the P1–P4 amounts and any answer that matches no option are never printed — only how
 many there were. -out refuses any path outside data/product/interviews/.
 
-CSV columns: ID, S1–S8, Q1–Q8, N1, F1, F2 and F1_email (the e-mail left at F1), plus two
+CSV columns: ID, S1–S8, Q1–Q8, P1–P4 (a monthly price, a number), N1, F1, F2 and F1_email (the e-mail left at F1), plus two
 optional ones for the quota progress: CHANNEL (the label of the link the person came by,
 e.g. community, referral, waiting-list) and COMMUNITY (yes / no: from a crypto-option or
 trading community). Without them those rows say "not measurable: no column".
@@ -42,6 +46,8 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PRIVATE_DIR = os.path.join(REPO, "data", "product", "interviews")
 
+PRICE_MEASURED, PRICE_TOO_FEW, PRICE_NO_RANGE = "range measured", "too few to conclude", "no clear range"
+PRICE_MIN_ROWS = 15      # valid price rows needed before a range is written (same bar as the delegation share)
 KILL_THRESHOLD_PCT = 30  # PRD §6: < 30 % would let software trade their account → no-go
 SMALL_SAMPLE = 15        # screener.md §5: ~15 qualified responses
 NPS_MIN_N = 5            # synthesis.md §3: with fewer, read the scores, not an NPS
@@ -75,8 +81,9 @@ OPTIONS = {
 MULTI = {"S4", "Q8"}
 CHOICE_QUESTIONS = ["Q1", "Q2", "Q3", "Q5", "Q6", "Q7", "Q8"]
 FREE_TEXT = ["Q4", "F2"]
+PRICE_ITEMS = ["P1", "P2", "P3", "P4"]  # too cheap < a bargain < getting expensive < too expensive (survey.md §3)
 ITEMS = ["ID"] + [f"S{i}" for i in range(1, 9)] + [f"Q{i}" for i in range(1, 9)] + \
-    ["N1", "F1", "F2", "F1_email", "CHANNEL", "COMMUNITY"]
+    PRICE_ITEMS + ["N1", "F1", "F2", "F1_email", "CHANNEL", "COMMUNITY"]
 DELEGATED = ("yes, and still do", "yes, and took it back")
 OUTCOMES = ("Joined", "Declined", "Undecided")
 UNRECOGNISED = "(unrecognised)"
@@ -311,6 +318,85 @@ def quota_progress(rows, seg, qualified):
     }
 
 
+def parse_amount(raw):
+    """A price typed in a form ("$1,250.50", "R$ 99,90", "1.500") as a positive number; None when it is not one."""
+    if "-" in (raw or ""):
+        return None
+    s = re.sub(r"[^\d.,]", "", raw or "")
+    if not any(c.isdigit() for c in s):
+        return None
+    if "," in s and "." in s:
+        dec = "," if s.rfind(",") > s.rfind(".") else "."
+        s = s.replace("." if dec == "," else ",", "").replace(dec, ".")
+    elif "," in s or "." in s:
+        sep = "," if "," in s else "."
+        if re.fullmatch(rf"\d{{1,3}}(\{sep}\d{{3}})+", s):  # thousands separators
+            s = s.replace(sep, "")
+        else:
+            s = s.replace(sep, ".")
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def _crossing(grid, rising, falling):
+    """The first price where a curve rising with the price meets one falling, interpolated; None when they never meet."""
+    prev = None
+    for x in grid:
+        d = rising(x) - falling(x)
+        if d == 0:
+            return x
+        if prev is not None and (prev[1] < 0) != (d < 0):
+            x0, d0 = prev
+            return x0 + (x - x0) * (-d0) / (d - d0)
+        prev = (x, d)
+    return None
+
+
+def price_of(holders):
+    """Van Westendorp over the cycle holders' P1–P4. "range" (the amounts) is present only when measured;
+    output_view() drops it from anything printed."""
+    valid, inconsistent, unanswered = [], 0, 0
+    for r in holders:
+        vals = [parse_amount(r.get(i, "")) for i in PRICE_ITEMS]
+        if any(v is None for v in vals):
+            unanswered += 1
+        elif not vals[0] < vals[1] < vals[2] < vals[3]:
+            inconsistent += 1
+        else:
+            valid.append(vals)
+    out = {"n_used": len(valid), "inconsistent": inconsistent, "unanswered": unanswered,
+           "min_rows": PRICE_MIN_ROWS, "status": PRICE_TOO_FEW}
+    if len(valid) < PRICE_MIN_ROWS:
+        return out
+    n = len(valid)
+    grid = sorted({v for vals in valid for v in vals})
+
+    def share(col, ok):
+        return lambda x: sum(1 for vals in valid if ok(vals[col], x)) / n
+
+    too_cheap, cheap = share(0, lambda v, x: v >= x), share(1, lambda v, x: v >= x)
+    expensive, too_expensive = share(2, lambda v, x: v <= x), share(3, lambda v, x: v <= x)
+    pmc = _crossing(grid, lambda x: 1 - cheap(x), too_cheap)          # too cheap meets "not cheap"
+    pme = _crossing(grid, too_expensive, lambda x: 1 - expensive(x))  # too expensive meets "not expensive"
+    opp = _crossing(grid, too_expensive, too_cheap)                   # optimal price
+    idp = _crossing(grid, expensive, cheap)                           # indifference price
+    if None in (pmc, pme, opp, idp) or not pmc < pme:
+        out["status"] = PRICE_NO_RANGE
+        return out
+    out["status"] = PRICE_MEASURED
+    out["range"] = {"marginal_cheapness": round(pmc, 2), "marginal_expensiveness": round(pme, 2),
+                    "optimal": round(opp, 2), "indifference": round(idp, 2)}
+    return out
+
+
+def output_view(t):
+    """The tally as it may be printed: the price result without its amounts."""
+    return {**t, "price": {k: v for k, v in t["price"].items() if k != "range"}}
+
+
 def tally(rows):
     seg = [segment_of(r) for r in rows]
     ids = [r.get("ID", "") for r in rows]
@@ -346,6 +432,7 @@ def tally(rows):
                       ACTIVE_TRADER: outcomes(traders)},
         "delegation": {"qualified": delegation_of(qualified), CYCLE_HOLDER: delegation_of(holders)},
         "quota_progress": quota_progress(rows, seg, qualified),
+        "price": price_of(holders),
         "free_text_answers": {item: sum(1 for r in qualified if r.get(item, "").strip()) for item in FREE_TEXT},
     }
 
@@ -435,15 +522,20 @@ def render_markdown(t):
 
     out += render_quota_progress(t["quota_progress"])
 
+    p = t["price"]
+    out += ["## Price range (P1–P4, cycle holders; the amounts are only in tally.json)", "",
+            "| Result | Rows used | Inconsistent | Unanswered | Needed |", "|---|---|---|---|---|",
+            f"| {p['status']} | {p['n_used']} | {p['inconsistent']} | {p['unanswered']} | {p['min_rows']} |", ""]
+
     out += ["## Free text (never printed here)", ""]
     out += [f"- {item}: {c} answers" for item, c in t["free_text_answers"].items()]
     return "\n".join(out) + "\n"
 
 
-def check_out_path(path, private_dir=PRIVATE_DIR):
+def check_out_path(path, private_dir=None):
     """Returns the absolute path if it lies inside data/product/interviews/, else raises."""
     target = os.path.realpath(os.path.abspath(path))
-    root = os.path.realpath(private_dir)
+    root = os.path.realpath(private_dir or PRIVATE_DIR)
     if os.path.commonpath([target, root]) != root or target == root:
         raise TallyError(f"-out {path}: refused — survey results stay in {root}/ (gitignored)")
     return target
@@ -464,7 +556,12 @@ def main(argv=None):
     except (TallyError, OSError, json.JSONDecodeError, csv.Error) as e:
         print(f"survey_tally: {e}", file=sys.stderr)
         return 2
-    text = json.dumps(t, indent=2, ensure_ascii=False) + "\n" if args.json else render_markdown(t)
+    if out and args.json:  # the one place the price range is written
+        text = json.dumps(t, indent=2, ensure_ascii=False) + "\n"
+    elif args.json:
+        text = json.dumps(output_view(t), indent=2, ensure_ascii=False) + "\n"
+    else:
+        text = render_markdown(t)
     if out:
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "w", encoding="utf-8") as f:

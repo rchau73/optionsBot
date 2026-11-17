@@ -13,6 +13,7 @@ Turns the cycle-holder survey's CSV export (`docs/product/discovery/survey.md`, 
 | Choice questions | count and share of each option of Q1–Q3, Q5–Q8 over the qualified responses that answered it (Q8 several per answer) |
 | NPS | N1 over qualified responses whose Q1 is not "never tried": % 9–10 − % 0–6; under 5 scores it shows the scores |
 | Fake door | F1 → Joined (yes + e-mail), Declined (no), Undecided (not now, or yes with no e-mail) |
+| Price range (#817) | P1–P4 (too cheap, a bargain, getting expensive, too expensive; a monthly number) of the cycle holders: Van Westendorp marginal cheapness / expensiveness, optimal and indifference price; a row not in order P1 < P2 < P3 < P4 is `inconsistent` and left out; under 15 valid rows `too few to conclude`. The amounts are written only by `-json -out` (`tally.json`); stdout and the markdown show the status and counts |
 | Delegation share | Q6 "yes, and still do" + "yes, and took it back" ÷ qualified responses that answered Q6, for all qualified and cycle holders only, next to the PRD §6 kill threshold (< 30 %); n < 15 carries a small-sample note |
 
 ```bash
@@ -193,6 +194,7 @@ python3 scripts/product/go_no_go.py --evidence-root ~/dev/go/optionsBot-env/stab
 
 Each row: value, threshold, status (`meets` / `fails` / `missing`), source file and date.
 An informational line below the rows shows the interviews' delegation share beside the survey's (`--interviews`, default `data/product/interviews/interviews.csv`); it is never in the overall line.
+A second informational line reads the tally's price result as `range measured`, `too few` or `no data` (no tally file), never an amount (#817).
 A missing input stays `missing`.
 **Overall:** `kill criterion met` when the survey or E2 row fails (PRD §6), else `incomplete` while any row is missing, else `no kill criterion met` — the decision is the product owner's.
 Percentages and ratios only: no coin or USD amount is printed, even when the evidence JSON has them.
