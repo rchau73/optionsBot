@@ -36,6 +36,9 @@ export const ACCOUNT_COLUMNS = [
   "nps_last_shown_at",
   "nps_opted_out",
   "answers_last_shown_at",
+  "previous_sign_in_at",
+  "failed_sign_ins",
+  "failed_sign_ins_before",
 ];
 
 /** The users columns never in the file: secrets. */

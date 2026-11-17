@@ -20,12 +20,21 @@ func Run(eventsPath string, from, to time.Time, label, outDir string) (Report, [
 // A missing or empty file is a report that says no events were recorded, not
 // an error. Returns the two paths.
 func RunWith(eventsPath string, from, to time.Time, label, outDir string, rules Rules, flat FlatRules, baseWeeks int) (Report, []string, error) {
+	return RunWithRunning(eventsPath, from, to, label, outDir, rules, flat, baseWeeks, nil)
+}
+
+// RunWithRunning is RunWith plus the north star (#801) over the running days
+// of the environments in running (LoadRunning); nil leaves it out.
+func RunWithRunning(eventsPath string, from, to time.Time, label, outDir string, rules Rules, flat FlatRules, baseWeeks int, running []Running) (Report, []string, error) {
 	lg, err := Load(eventsPath)
 	if err != nil {
 		return Report{}, nil, err
 	}
 	r := BuildLog(lg, from, to)
 	r.Week = label
+	if running != nil {
+		r.NorthStar = BuildNorthStar(lg.Events, running, to)
+	}
 	r.SetCohortRules(flat)
 	a := Drops(r, BuildWeeks(lg.Events, from, baseWeeks), rules)
 	r.Drops = &a

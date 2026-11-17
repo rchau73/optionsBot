@@ -489,6 +489,7 @@ const READ_FIXTURES = {
   "GET /api/admin/audit/export": { path: "/api/admin/audit/export", params: {} },
   "GET /api/admin/audit/verify": { path: "/api/admin/audit/verify", params: {} },
   "GET /api/auth/my-data": { path: "/api/auth/my-data", params: {} },
+  "GET /api/auth/security-summary": { path: "/api/auth/security-summary", params: {} },
   "GET /api/auth/sessions": { path: "/api/auth/sessions", params: {} },
   "GET /api/lab/runs": { path: "/api/lab/runs", params: {} },
   "GET /api/lab/runs/[id]": { path: `/api/lab/runs/${RUN_ID}`, params: { id: RUN_ID } },

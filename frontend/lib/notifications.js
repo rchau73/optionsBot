@@ -26,6 +26,8 @@ export const GROUPS = [
 export const KINDS = {
   survey: { group: "needs_you", label: "A survey is waiting" },
   request_needs_info: { group: "needs_you", label: "Your request needs more" },
+  // Wrong passwords typed for the person's username since their previous sign-in (#803, lib/signInSummary.js).
+  security: { group: "needs_you", label: "Wrong passwords on your account" },
   bot_event: { group: "updates", label: "What the bot did to your book" },
   request_status: { group: "updates", label: "The status of your requests" },
   whats_new: { group: "updates", label: "What's new in a release" },

@@ -87,9 +87,16 @@ env_platform_dirs() {
   return 0
 }
 
+# env_registry_check <env dir> <platform dir>... — the account registry
+# (#800, data/accounts.json in the environment's clone) lets it start: no rule
+# broken, each bot's account key ok, no account shared with another folder.
+# Without a registry file it does nothing. Read-only; scripts/env_registry.py.
+env_registry_check() { python3 "$_env_repo/scripts/env_registry.py" "$@"; }
+
 # env_check <env> — the environment is set up and shares nothing with the
-# other one, nor its Deribit account with any environment of the platform.
-# Prints the reason and fails otherwise.
+# other one, nor its Deribit account with any environment of the platform,
+# and its account registry (when it has one) allows it. Prints the reason and
+# fails otherwise.
 env_check() {
   local name="$1" dir other odir id d
   local dirs=()
@@ -111,6 +118,7 @@ env_check() {
       echo "$name and $other use the same MONITOR_PORT"; return 1
     fi
   done
+  env_registry_check "$dir" "${dirs[@]}" || return 1
 }
 
 # env_version <env> → the release the clone is on (tag, or tag-N-gSHA on main).

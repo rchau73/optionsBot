@@ -10,7 +10,7 @@ Every event answers at least one of these. An event that answers none is not col
 
 | ID | Question | Feeds | Answered in (`cmd/usage`) |
 |---|---|---|---|
-| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
+| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "North star" (#801: environments with a strategy-running day — a non-seeded line in a bot's `data/regime_history.jsonl` — and a `session_started` in the 30 days; visits without a running strategy, running without visits; no new event) and "Active users" (day, week, 30 days; by role and environment) |
 | Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +12 weeks, each cohort's curve `flattening`, `falling`, `rising` or `too few to judge`, #607: PRD §7's "curve flattens by month 3"), "Active users", "Lapsed" (#569: people with a `session_started` in the 4 weeks before and none in the week, by role and weeks away; counts only, from the same consented events, no new event or property), "Activation in the first day" (#620, §8) |
 | Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, page views per screen) |
 | Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`), "Activation in the first day" (#620, §8: time-to-value) |
@@ -55,6 +55,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `rebalance_confirmed` | the person confirms the real rebalance | `outcome` | Q6, Q7 |
 | `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
 | `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
+| `security_summary_seen` | the Active sessions dialog shows the person's sign-in summary (#803): the wrong passwords typed for their username since the previous sign-in as a bucket, never the count above 1, a name or the times; no property on a first sign-in (no count is shown) | `failed_since` | Q3, Q7 |
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
 | `signed_out` | sign-out, or the session expired and the page went to `/login` | `reason` | Q2, Q7 |
 | `survey_answered` | the person sends a survey: NPS with at least a score, the four-answers card or the exit reason; free text never travels here | `survey_id`, `score`, `reason_code`, `came_for`, `hardest_to_find` | Q4, Q8 |
@@ -93,6 +94,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
 | `entry_screen` | enum | `monitor`, `login` |
+| `failed_since` | enum | `0`, `1`, `2_4`, `5_plus` (wrong passwords since the previous sign-in, as a bucket, #803) |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `helped` | bool | `true`, `false` |
