@@ -109,6 +109,7 @@ type Report struct {
 	Coverage  Coverage       `json:"coverage"`
 	RVL       ReplayVsLive   `json:"replay_vs_live"`
 	Split     GapSplit       `json:"gap_split"` // the gap cut into its causes (#802)
+	GapTrend  GapTrend       `json:"gap_trend"` // the gap over the last 12 weekly reports (#820)
 	Score     Scoreboard     `json:"scoreboard"`
 	Hedge     HedgeTrial     `json:"hedge_trial"`
 	Samples   []FigureSample `json:"samples"` // the headline figures' sample sizes (#772)
@@ -267,6 +268,7 @@ func Build(in Inputs) Report {
 	r.ROM = buildROM(in, r.Replay)
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
 	r.RVL = buildReplayVsLive(in, r, days)
+	r.GapTrend = buildGapTrend(in, r)
 	r.Hedge = BuildHedgeTrial(in.Hedge, in.Points, in.Account)
 	r.Samples = buildSamples(r, in.Account)
 	return r

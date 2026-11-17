@@ -39,13 +39,17 @@ go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082  # ETH
 cd frontend && npm install && npm run dev                       # http://localhost:3000
 ```
 
-**Investor-summary scenarios** (#203) for design and user tests — `-scenario good|mixed|drawdown`, served through the real API code, nothing faked in the frontend: `good` steady monthly income (no stop-loss), `mixed` a losing month (every close two months back a stop-loss, negative in coin and USD) among winning ones, `drawdown` the same losing month, a thin current month, a book five times larger so the worst case now dwarfs the month's income, and the nearest put held at 2.6× its entry, within 20 % of its stop mark.
+**Investor-summary scenarios** (#203) for design and user tests — `-scenario good|mixed|drawdown|hedged`, served through the real API code, nothing faked in the frontend: `good` steady monthly income (no stop-loss), `mixed` a losing month (every close two months back a stop-loss, negative in coin and USD) among winning ones, `drawdown` the same losing month, a thin current month, a book five times larger so the worst case now dwarfs the month's income, and the nearest put held at 2.6× its entry, within 20 % of its stop mark.
+`-scenario hedged` (#827) is the default book with the futures hedge on: spot 3 % under where the strangles were sold, and a sold `BTC-PERPETUAL` that evens out the worst case's two moves.
+It trades again (a journaled `hedge_fill`) when they drift more than 10 % apart, so the Last action is sometimes a hedge trade.
+The worst case counts it as a live bot's does (`worst_case.hedge`), and `GET /api/hedge` serves the hedge on, with no switch.
 A scenario reports `deployment: "demo"` and `version: "scenario <name>"` in `/api/status` (the header's badge shows DEMO · scenario <name>) beside the demo's `testnet (demo)` environment, so it is never read as a track record.
 Without `-scenario` the demo is unchanged.
 
 ```bash
 go run ./cmd/monitor-demo -scenario mixed
 go run ./cmd/monitor-demo -scenario drawdown -underlying ETH -addr 127.0.0.1:8082
+go run ./cmd/monitor-demo -scenario hedged
 ```
 
 Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ignored): `AUTH_SECRET=$(openssl rand -base64 48)`, `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD=<12+ characters>`; the user database is then `frontend/data/monitor/auth.db` (git-ignored).

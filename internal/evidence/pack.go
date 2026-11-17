@@ -366,6 +366,7 @@ func packReplayVsLive(in PackInputs, amounts bool, caveat string) packRows {
 	if s.MissingHours != nil {
 		r.value("Market books missing", *s.MissingHours, packHours)
 	}
+	packGapTrend(&r, rep.GapTrend)
 	if !s.Comparable {
 		return r
 	}
@@ -412,6 +413,43 @@ func packGapSplit(r *packRows, s GapSplit, amounts bool, unit string) {
 		} else {
 			r.add(PackFigure{Name: "Gap split, " + pt.Part + ", % of the gap", Display: "the gap is 0", Sample: &sample})
 		}
+	}
+}
+
+// packGapTrend adds the gap over the last 12 weekly reports (#820): the
+// verdict as written and its statistics, pp of equity, shares and counts only
+// (no amount, live or not), each over the trend's weeks with its comparable
+// weeks as the sample. A report written before the trend has none.
+func packGapTrend(r *packRows, t GapTrend) {
+	if t.Label == "" || t.Note != "" {
+		return
+	}
+	window := t.FirstWeek + " → " + t.LastWeek
+	sample := t.Sample
+	add := func(f PackFigure) {
+		f.Window, f.Sample = window, &sample
+		r.add(f)
+	}
+	value := func(name string, v float64, unit string) {
+		add(PackFigure{Name: name, Value: ptr(v), Unit: unit, Display: packDisplay(v, unit)})
+	}
+	s := t.Summary
+	add(PackFigure{Name: "Gap over time, verdict", Display: t.Verdict.Line})
+	add(PackFigure{Name: "Gap over time, comparable weeks", Value: ptr(float64(s.Weeks)), Unit: packCount,
+		Display: fmt.Sprintf("%d of %d weekly reports", s.Weeks, len(t.Weeks))})
+	if s.Weeks == 0 {
+		return
+	}
+	value("Gap over time, median absolute gap, of the starting equity", *s.MedianAbsPP, packPP)
+	worst := PackFigure{Name: "Gap over time, worst absolute gap, of the starting equity", Value: ptr(*s.WorstAbsPP), Unit: packPP,
+		Display: packDisplay(*s.WorstAbsPP, packPP)}
+	worst.Window, worst.Sample = s.WorstWeek, &sample
+	r.add(worst)
+	value("Gap over time, weeks the replay was above live", float64(s.Above), packCount)
+	value("Gap over time, weeks the replay was below live", float64(s.Below), packCount)
+	if s.LargestPct != nil && s.UnexplainedPct != nil {
+		value("Gap over time, largest cause ("+s.LargestCause+"), % of the summed gap", *s.LargestPct, packPct)
+		value("Gap over time, unexplained, % of the summed gap", *s.UnexplainedPct, packPct)
 	}
 }
 

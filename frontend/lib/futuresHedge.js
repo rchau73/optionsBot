@@ -13,7 +13,7 @@ export const PERP_FLAT_USD = 0.5;
 /** "on", "paused", "off_open" (a position left with the mode off), "off"; null without a reading. */
 export function hedgeState(h) {
   if (!h) return null;
-  if (h.enabled) return h.halted ? "paused" : "on";
+  if (h.enabled) return h.halted || h.stood_down ? "paused" : "on";
   return isNumber(h.perp_usd) && Math.abs(h.perp_usd) >= PERP_FLAT_USD ? "off_open" : "off";
 }
 
@@ -35,9 +35,12 @@ export const HEDGE_BADGE = {
 /**
  * What a pause means, with its reason; null with none. Only a halt with a
  * reason gives the shed back: without one (the kill switch) the bot is idle.
+ * A hedge standing down on a one-sided book (#813) says so.
  */
 export function pausedWords(h) {
-  return h.halt_reason ? `${h.halt_reason}. The GEX shed protects the book meanwhile.` : null;
+  if (h.halt_reason) return `${h.halt_reason}. The GEX shed protects the book meanwhile.`;
+  if (h.stood_down) return `Standing down: ${h.stood_down}. The GEX shed protects the book meanwhile.`;
+  return null;
 }
 
 /** The benchmark's pricing flag; a bot without it is priced at the index on testnet. */

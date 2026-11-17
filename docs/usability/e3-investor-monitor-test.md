@@ -14,9 +14,11 @@ The kit is meant to be followed by a moderator who has never seen the bot. It us
 | Prototype | the E3 investor-view prototype (ux-designer skill) | after the prototype is approved, before the UI stories go to Ready |
 | Release | the shipped investor view | after the E3 UI stories are deployed |
 | Loss round | how a loss reads: today's monitor on a losing demo scenario — P1, P3 and P5 on `-scenario mixed`, P2 and P4 on `-scenario drawdown`; each participant sees only one scenario | after the baseline round, with 5 more new participants |
+| Hedge round | how the worst case and the last action read with the futures hedge on: today's monitor on `-scenario hedged` for all five | once the real bots run the hedge, with 5 more new participants |
 
 Use the same screener, script, tasks, answer key and scoring in all three rounds, so the results compare.
-The loss round uses the same screener, script and scoring too; only the demo's flag and the answer key change (section 6b). Use 5 new participants each round (someone who has seen the monitor once is no longer new). If the demo changes between rounds, update the answer key in the same pull request (the test fails until you do).
+The loss round uses the same screener, script and scoring too; only the demo's flag and the answer key change (section 6b).
+So does the hedge round, scored with section 6c. Use 5 new participants each round (someone who has seen the monitor once is no longer new). If the demo changes between rounds, update the answer key in the same pull request (the test fails until you do).
 
 ## 2. Screener: who takes part
 
@@ -36,6 +38,7 @@ You need Go, Node.js 24+ and a terminal, from the repository root.
 ```bash
 scripts/usability_round.sh            # the demo without flags (section 6)
 scripts/usability_round.sh mixed      # or drawdown: a loss round (section 6b)
+scripts/usability_round.sh hedged     # the futures hedge on: a hedge round (section 6c)
 ```
 
 The script builds and starts the demo bot API (simulated BTC strategy, no exchange connection) and the monitor showing only that demo bot, on a fresh, throw-away user database: the monitor creates the first admin only when its user database is empty, so a reused one would reject the new password.
@@ -54,7 +57,11 @@ The demo moves on its own: spot follows a random walk, marks follow spot, and no
 
 The answer key is for the demo **without flags**. To test how losses read, `scripts/usability_round.sh mixed` (a losing month among winning ones) or `scripts/usability_round.sh drawdown` (an open loss near its stop, a worst case large next to the month's income) serve the same API with those figures (#203; `frontend/README.md` "Without a bot (demo data)"); the header then shows DEMO · scenario <name>. The answer key of section 6 does not hold for them: score the loss round with section 6b. In a loss round, type the next participant's scenario in the script's terminal between participants (section 1).
 
-Before a round, the build already guards this first screen: `frontend/__tests__/scenario-answers.test.jsx` (#743) fails, naming the scenario, the layout and the question, when the investor summary or the phone overview no longer answers one of the four questions on the demo data of baseline, mixed or drawdown.
+`scripts/usability_round.sh hedged` serves the same book as the demo without flags with the futures hedge on (#827).
+A perpetual future offsets the book's direction and is traded now and then, so the *Last action* is sometimes a hedge trade, and the worst case counts the perpetual.
+The header shows DEMO · scenario hedged. Score the hedge round with section 6c.
+
+Before a round, the build already guards this first screen: `frontend/__tests__/scenario-answers.test.jsx` (#743) fails, naming the scenario, the layout and the question, when the investor summary or the phone overview no longer answers one of the four questions on the demo data of baseline, mixed, drawdown or hedged.
 
 ## 4. Moderator script
 
@@ -188,7 +195,8 @@ The *Last action* block shows a plain sentence, a time, "sold" or "bought back",
 | Partial | says what but not why, or why but not what |
 | Fail | describes a different event (an order sent, a skipped entry, a trend change in the Activity feed), the wrong side (sold vs bought back), or cannot say |
 
-On a bot with the futures hedge experiment on (not the demo, which runs no hedge), Q4 may show a hedge sentence instead (#794): "sold" or "bought" so many USD of the perpetual, and why ("Traded the perpetual future to bring the book's direction (delta) back near zero…"). Score it the same way: what it did (sold or bought the perpetual) and why. The keys below do not change.
+On a bot with the futures hedge experiment on (the demo without flags runs no hedge; `-scenario hedged` does, section 6c), Q4 may show a hedge sentence instead (#794): "sold" or "bought" so many USD of the perpetual, and why ("Traded the perpetual future to bring the book's direction (delta) back near zero…").
+Score it the same way: what it did (sold or bought the perpetual) and why. The keys below do not change.
 
 ```key
 scenario: default
@@ -329,6 +337,85 @@ last_action_kinds: open | close
 last_action_reason_in_q4_table: true
 ```
 
+## 6c. Answer key: futures hedge
+
+For the hedge round (section 1): `go run ./cmd/monitor-demo -scenario hedged`. The header shows DEMO · scenario hedged.
+The book is the one of section 6, sold when BTC was at 100,000; the demo starts after a 3 % fall, so the book leans to one side and the futures hedge sells a **perpetual future** against it.
+The perpetual is traded again whenever the book's lean grows, and each trade is journaled.
+The scores are those of section 6, with the fixed facts below where they differ. **Read it off the screen** means the same as in section 6.
+
+The notes rules of section 8 hold unchanged: participants are only **P1 to P5** in every note, and nothing is recorded (screen, audio or video) without **legal review of the consent text** first; without it, written notes only.
+
+### Q1 — what does it hold (hedged)
+
+Fixed facts: the same 3 calls and 3 puts as section 6, all sold, each **0.3 BTC**, together **1.80 BTC sold**, at the same strikes and expiries.
+The **perpetual future** (BTC-PERPETUAL) is the hedge: it offsets the options' direction, it is not a fourth strangle and not a holding of coins.
+An answer that counts it as a fourth pair of options, or as BTC the program owns, is scored as in section 6 (the count or what is sold is wrong); one that names the options and leaves the perpetual out is still a **success**.
+
+```key
+scenario: hedged
+question: Q1
+strangles: 3
+open_legs: 6
+calls: 3
+puts: 3
+side: sell
+qty_per_option: 0.3
+notional_coin: 1.8
+strikes: 25=110000/90000 45=114000/87000 60=116000/84000
+perpetual: open
+```
+
+### Q2 — making or losing money (hedged)
+
+Scored as in section 6: six months of closes, each **full past month is positive**; the open line and the current month: **read them off the screen**.
+
+```key
+scenario: hedged
+question: Q2
+months: 6
+result_sign: positive
+losing_months_ago: none
+```
+
+### Q3 — the worst case right now (hedged)
+
+Fixed facts (*Worst case now (one day)*): two lines, "If BTC falls …%" and "If BTC rises …%", each a **loss** (− sign) in BTC, USD and % of equity, for a move of about 7–9 %, and "This is a model, not a quote".
+Both figures **count the perpetual**: each is what the options would lose plus what the perpetual gains or loses on that move.
+So the larger loss is **smaller than the options alone** would lose — the figure the demo without flags shows, as it has no perpetual (the *Worst case* page shows both).
+**Read the amounts off the screen.** Score as in section 6: a worst case given as a gain is **partial**; a figure of the perpetual alone named as the worst case is a **fail** (another number).
+
+```key
+scenario: hedged
+question: Q3
+worst_case_sign: loss
+worst_case_move_pct: 7-9
+worst_case_includes_hedge: true
+worst_case_below_options_only: true
+```
+
+### Q4 — the last thing it did, and why (hedged)
+
+The *Last action* is the newest trade: an option trade of the section 6 table, or a hedge trade, which says it **sold** or **bought** so many USD of the perpetual (BTC-PERPETUAL) and why.
+At the start the hedge trade is the newest; the demo then trades options and the perpetual in turn. **Read the sentence and the time off the screen when the participant answers.**
+
+| Action | Plain sentence on screen |
+|---|---|
+| Sold or bought the perpetual | "Traded the perpetual future to bring the book's direction (delta) back near zero: the futures hedge experiment keeps the options and offsets their direction instead of buying a side back." |
+
+| Score | The answer… |
+|---|---|
+| Success | says **what** it did (sold or bought the perpetual, or the option trade of section 6) **and why**, in their own words matching the sentence shown (e.g. "it sold a future so the price moving does not hurt as much") |
+| Partial | says what but not why, or why but not what; or calls the perpetual trade an option sale |
+| Fail | describes a different event (an order sent, a skipped entry, a trend change in the Activity feed), the wrong side (sold vs bought), or cannot say |
+
+```key
+scenario: hedged
+question: Q4
+last_action_kinds: open | close | hedge
+last_action_reason_in_q4_table: true
+```
+
 ## 7. Scoring and pass mark
 
 Per participant and question: **success / partial / fail**, the time of the final answer (mm:ss from the start), and the errors.
@@ -344,6 +431,7 @@ Copy the table to `data/usability/e3/<round>/results.md` with no other notes in 
 ```bash
 python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
 python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md   # two rounds, side by side
+python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/hedge/results.md  # the hedge round beside the baseline
 ```
 
 It prints the summary and writes it to `summary.md` beside the table, with the synthesis of section 8 to fill in; a `summary.md` already there stays unless you pass `--force`.
@@ -362,9 +450,9 @@ Copy these into the private notes folder `data/usability/e3/<round>/` (for examp
 
 ### Results table
 
-Round: baseline / prototype / release / loss round · Date (YYYY-MM-DD) · Monitor version (commit)
+Round: baseline / prototype / release / loss round / hedge round · Date (YYYY-MM-DD) · Monitor version (commit)
 
-| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed | Wording when wrong |
+| Code | Layout | Scenario (default / mixed / drawdown / hedged) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time | Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed | Wording when wrong |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | P1 | desktop | | | | | | | | | | | | |
 | P2 | desktop | | | | | | | | | | | | |

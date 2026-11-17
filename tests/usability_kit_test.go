@@ -164,13 +164,7 @@ func TestUsabilityKit_Privacy(t *testing.T) {
 // getter.
 func demoAPI(t *testing.T, args ...string) func(path string, into any) {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("builds and runs cmd/monitor-demo")
-	}
-	bin := filepath.Join(t.TempDir(), "monitor-demo")
-	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/monitor-demo").CombinedOutput(); err != nil {
-		t.Fatalf("build monitor-demo: %v\n%s", err, out)
-	}
+	bin := buildDemo(t)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("free port: %v", err)
@@ -215,6 +209,19 @@ func demoAPI(t *testing.T, args ...string) func(path string, into any) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return get
+}
+
+// buildDemo builds cmd/monitor-demo into the test's temporary folder.
+func buildDemo(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("builds and runs cmd/monitor-demo")
+	}
+	bin := filepath.Join(t.TempDir(), "monitor-demo")
+	if out, err := exec.Command("go", "build", "-o", bin, "../cmd/monitor-demo").CombinedOutput(); err != nil {
+		t.Fatalf("build monitor-demo: %v\n%s", err, out)
+	}
+	return bin
 }
 
 // Scenario: the answer key matches the demo — every fixed answer in the key

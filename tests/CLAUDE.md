@@ -13,7 +13,8 @@ Notable files:
   The round scorer's own tests, `scripts/product/test_score_usability.py` (#701), read the kit's template, so a changed table fails there;
   they also cover `--findings` and the free-text column (#810) and check that `docs/usability/round-1-run-sheet.md` quotes the kit's script word for word.
 - `usability_keys_test.go` (#727): every figure in the kit's fenced `key` blocks equals `cmd/monitor-demo`'s value, per scenario and question; a stale key fails naming both.
-  It checks `frontend/test/demoScenarios.json` (#743, the demo's answers per scenario for `scenario-answers.test.jsx`) against the same keys; `-args -update-scenarios` rewrites it from the demo.
+  It checks `frontend/test/demoScenarios.json` (#743, the demo's answers per scenario for `scenario-answers.test.jsx`) against the same keys; `-args -update-scenarios` rewrites it from the demo (`-only-scenarios=hedged` just those, keeping the rest, #827).
+  `monitor_demo_scenarios_test.go` covers `-scenario hedged` (#827): the hedge on at `/api/hedge`, the worst case = the options alone plus the perpetual's share, a hedge trade as the Last action, an unknown scenario refused.
   `usability_round_test.go` runs `scripts/usability_round.sh` on a copy of the layout with stub `go`, `npm`, `npx` and `curl`.
 - `accounts_json_test.go` (#655): `cmd/accounts -check -json`/`-out` — decoded with unknown fields refused, no key material, key id, client id or scope string in it, the status file owner-only and atomic.
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
@@ -29,6 +30,7 @@ Notable files:
   a new column or audit action needs its row in the same PR.
 - `evidence_hedgetrial_test.go` (#678): the weekly report's futures hedge trial — one test per ticket scenario, the 7-day boundary and the live account's counts-only section; the verdict's table of outcomes (#780).
 - `evidence_pack_test.go` (#700): the evidence pack equals its source files; a loss's headline matches a gain's with the numbers masked; a live account has no amount; no output holds a promised return.
+- `evidence_gaptrend_test.go` (#820): the gap over 12 weekly reports — a table of verdicts (stable, drifting by sign and by range, thin, partial / not-comparable / no-gap weeks), the summary's figures, the Markdown, the pack's rows and the live account's percentages only.
 - `evidence_sample_test.go` (#772): every pack figure with a number and every weekly headline figure carries its sample; a thin one reads "too few to conclude" with its days, its number still shown; the floors at their boundary.
 - `pipe_guard_test.go` (#683): no workflow step, script or git hook pipes a failing command into a filter (`tee`, `head`, `grep`, …) without `pipefail`, unless its left side only prints or `# pipe-ok: <why>` explains it.
 - `ledger_coverage_test.go` (#722): every `scripts/agents/*.sh` opens and ends a run (`run_begin`/`run_end`) or is on `ledgerExempt` with a reason; every agent name is in `runs.py`, `docs/agents/run-ledger.md` and `scripts/agents/CLAUDE.md`.
