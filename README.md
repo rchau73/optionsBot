@@ -446,6 +446,11 @@ Sections, each naming its source:
   The week is **not comparable** — its missing market hours and gaps listed, no gap computed — when the books cover under 90 % of its hours, have a gap over 3 h, the coverage was not measured or the replay did not run.
   Likely causes are listed only when the journal shows them: entries frozen (slot-hours), rebalance orders sent by a startup in its first 30 min, closes a person asked for from the monitor; never guessed.
   When the environment's `.env` says `DERIBIT_ENV=live`, the section shows percentages only, in the Markdown and the `.json`.
+- **Replay-vs-live gap over time** (#820, `gaptrend.go`, `gap_trend` in the JSON) — the last 12 weekly reports' gap (this week's included), each read as its report wrote it, with no second replay: per week the gap in coin, in pp of the starting equity and in % of the live result, and its split by cause in % of the gap.
+  A partial or not-comparable week (books under 90 % of the hours, a gap over 3 h) and a week without a gap are listed with their reason and left out of the statistics.
+  The summary gives the median and the worst absolute gap (pp of equity), the range, the weeks the replay was above and below live, the cause that explains most of the summed gap and the share left unexplained.
+  The verdict line is computed once: `stable` when the comparable weeks' gaps keep one sign and range within 1 pp of equity (`GapStableRangePP`, an assumption, docs/agents/evidence.md "Gap over time"), `drifting` otherwise, and "too few to conclude (N weeks)" under 12 comparable weeks.
+  The E2 comment posts that line as written; a live account shows percentages only (no coin, the split's shares only).
 - **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips).
   The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
 - **Return on margin (north star)** (#278, the PRD's engine-phase north star) — net P&L in coin, net of fees, ÷ the mean initial margin used, in %, with its 30-day rate (× 30 ÷ the days the net covers — first line to last, downtime included, like the replay's whole window; not a forecast) and the measured hours.
@@ -506,7 +511,8 @@ The header names the account (`live` when the clone's `.env` says `DERIBIT_ENV=l
 go run ./cmd/evidence -env stable -track-record -trend -pack  # refresh both, then write the pack; -pack alone reads them as they stand
 ```
 
-It writes `data/evidence/pack/<bot>.md|.json` from `data/evidence/track-record/<bot>.json`, `data/evidence/trend/<bot>.json` and the latest weekly report's `scoreboard`, `replay_vs_live` and `hedge_trial`.
+It writes `data/evidence/pack/<bot>.md|.json` from `data/evidence/track-record/<bot>.json`, `data/evidence/trend/<bot>.json` and the latest weekly report's `scoreboard`, `replay_vs_live`, `gap_split`, `gap_trend` and `hedge_trial`.
+The replay-vs-live section carries the gap over time (#820) as "Gap over time" rows: the verdict line as written, the comparable weeks, the median and worst absolute gap (pp of equity), the weeks the replay was above and below live, the largest cause's and the unexplained share of the summed gap, each with its weeks as its sample and no amount.
 No figure is recomputed, and a source that is missing, or an older report without the section, reads "not reported".
 
 - **Order:** the headline (the weeks it covers, net return in coin and %, holding the coin over the same window, the worst 7 days and worst ISO week, max drawdown), the twelve-week scoreboard, replay vs live, the weeks missing, the hedge trial.

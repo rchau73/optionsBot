@@ -147,6 +147,20 @@ def split_line(r, live):
     return line + (" · partial" if s.get("partial") else "")
 
 
+def trend_line(r):
+    """The gap over the last 12 weekly reports (#820): the report's own
+    verdict line, posted as written and never recomputed, and the comparable
+    weeks behind it. pp and counts only, so the same for a live env."""
+    t = r.get("gap_trend")
+    if t is None:
+        return "— (report without the gap trend)"
+    if t.get("note"):
+        return f"— ({t['note']})"
+    line = (t.get("verdict") or {}).get("line") or "— (no verdict in the report)"
+    weeks = (t.get("summary") or {}).get("weeks", 0)
+    return f"{line} · {weeks} comparable of {len(t.get('weeks') or [])} weekly reports"
+
+
 def rom_cell(r):
     """Return on margin (#278), live then replay: a %, shown for any env."""
     rom = r.get("return_on_margin") or {}
@@ -537,7 +551,7 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
            "| env | bot | net P&L | return on margin | equity not explained by the bot | account vs booked P&L | excess vs holding the coin | worst 7 days | replay gap | stress | E1 reliability | missing days | report |",
            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
-    splits = []
+    splits, trends = [], []
     for env in envs:
         root = os.path.join(envs_dir, env)
         live = is_live(root)
@@ -558,9 +572,13 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
                 label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), recon_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
             splits.append(f"- **{label} {bot}**: {split_line(r, live)}")  # bold: not a failed step's "- env bot:"
+            trends.append(f"- **{label} {bot}**: {trend_line(r)}")
     if splits:
         out += ["", "**Gap split** (replay − live by cause, #802: pp of the starting equity and % of the gap; a live env shows the % of the gap only; "
                 "the report's \"Gap split\" lists every one-sided leg):", ""] + splits
+    if trends:
+        out += ["", "**Gap over time** (the last 12 weekly reports, #820: the report's verdict as written — stable, drifting or too few to conclude; "
+                "the report's \"Replay-vs-live gap over time\" lists every week and its split):", ""] + trends
     if "stable" in envs:
         out += direction_block(stable_root, week)
     gaps = notices(week, envs_dir, bots, envs)
