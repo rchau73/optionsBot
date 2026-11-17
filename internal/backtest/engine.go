@@ -43,13 +43,15 @@ type Engine struct {
 	ivAtEntry    []float64
 	ivPctAtEntry []float64
 
-	monthlyOnly bool       // SetMonthlyOnly: trade monthly expiries only
-	occ         *occupancy // days each slot held a live leg (ladder sweep)
+	monthlyOnly bool                    // SetMonthlyOnly: trade monthly expiries only
+	closed      strategy.ClosedExpiries // expiries a close-only exit left, per slot (#753)
+	occ         *occupancy              // days each slot held a live leg (ladder sweep)
 }
 
 func NewEngine(cfg *config.Config, feed *HistoricalFeed, exec *SimExecutor) *Engine {
 	return &Engine{
 		occ:        newOccupancy(cfg.Slots()),
+		closed:     strategy.ClosedExpiries{},
 		cfg:        cfg,
 		feed:       feed,
 		exec:       exec,
@@ -183,6 +185,7 @@ func (e *Engine) processDay(ctx context.Context, date time.Time, ticks []*market
 			e.cfg.ROITakeProfit,
 			e.cfg.StopLossMultiplier,
 			e.cfg.DeltaExitThreshold,
+			e.cfg.CloseOnlyBelowDTE,
 		)
 		if dec.Action == strategy.ActionNone {
 			slog.Debug("position hold", "instrument", pos.Instrument, "action", "none",
@@ -312,8 +315,15 @@ func (e *Engine) handleRollout(ctx context.Context, dec strategy.RolloutDecision
 	// roll gap the ladder sweep measures). Any other exit is repaired like the
 	// live repair — same strangle, same expiry, the slot's delta — while that
 	// expiry is still above rollout_dte. The backtest does not model the live
-	// repair hold after a stop-loss or delta exit; it repairs at once.
-	if dec.Action != strategy.ActionRollNextMonth {
+	// repair hold after a stop-loss or delta exit; it repairs at once. A close
+	// under the close-only floor is not repaired, and its expiry is held for
+	// the slot (#753).
+	if dec.Action == strategy.ActionClose {
+		if st := e.strangleOf(pos.ID); st != nil {
+			e.closed.Hold(st.TargetDTE, st.EntryDelta, pos.Expiry)
+		}
+	}
+	if dec.Action != strategy.ActionRollNextMonth && dec.Action != strategy.ActionClose {
 		if st := e.strangleOf(pos.ID); st != nil && pos.DTEAt(date) > e.cfg.RolloutDTE {
 			instList := make([]*marketdata.Instrument, 0, len(instruments))
 			for _, v := range instruments {
@@ -430,6 +440,8 @@ func (e *Engine) maybeOpenStrangles(ctx context.Context, instruments []*marketda
 				}
 			}
 		}
+		e.closed.Prune(date)
+		held = e.closed.WithHeld(held, instruments, slot.TargetDTE, slot.EntryDelta)
 		expiry, pick := strategy.SelectSlotExpiry(instruments, date, slot.TargetDTE, e.cfg.MaxDTEDeviation, e.cfg.RolloutDTE, e.cfg.ExpiryStretch, held)
 		if pick == marketdata.PickNone || pick == marketdata.PickAllHeld {
 			slog.Debug("skip entry: no suitable expiry",

@@ -3,11 +3,11 @@ flowchart TD
     B -- "yes" --> C["ActionStopLoss<br/>buy MARKET, high priority<br/>partial fill → remainder stays tracked<br/>(book empty: waits, re-checked each cycle, ≤ 5 min)"]
     B -- "no" --> D{"DTE ≤ rollout_dte?"}
     D -- "yes" --> E["ActionRollNextMonth<br/>close leg: IOC limit at ask<br/>both legs closed → slot freed → fresh entry"]
-    D -- "no" --> F{"|delta| < delta_drift_threshold<br/>and DTE ≥ 25?"}
-    F -- "yes" --> G["ActionRollSameLeg (delta drift)<br/>close leg: IOC limit at ask<br/>repair reopens at entry delta, same expiry"]
-    F -- "no" --> H{"ROI ≥ roi_take_profit<br/>and DTE ≥ 25?"}
-    H -- "yes" --> I["ActionRollSameLeg (take profit)<br/>close leg: IOC limit at ask<br/>repair reopens at entry delta, same expiry"]
-    H -- "no" --> J["ActionNone — keep holding"]
+    D -- "no" --> F{"|delta| < delta_drift_threshold<br/>or ROI ≥ roi_take_profit?"}
+    F -- "yes" --> H{"DTE ≥ 25?"}
+    H -- "yes" --> G["ActionRollSameLeg (delta drift / take profit)<br/>close leg: rest at mid, then IOC at ask<br/>repair reopens at entry delta, same expiry"]
+    H -- "no" --> I["ActionClose (close only, #753)<br/>close leg: rest at mid, then IOC at ask<br/>no repair on that expiry; the slot re-enters on another"]
+    F -- "no" --> J["ActionNone — keep holding"]
     style C fill:#ffcdd2,stroke:#c62828,color:#000
     style E fill:#fff9c4,stroke:#f9a825,color:#000
     style G fill:#e8f5e9,stroke:#2e7d32,color:#000
