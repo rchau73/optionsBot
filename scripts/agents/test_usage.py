@@ -350,6 +350,13 @@ if [[ "$*" == *cmd/assistantreview* ]]; then
   else cp "$US_TEST_DIR/ar_summary.json" "$out/$week.summary.json"; fi
   exit 0
 fi
+if [[ "$*" == *cmd/labstats* ]]; then
+  # go run ./cmd/labstats -compare D → the lab usage section on stdout
+  echo "$*" >> "$US_TEST_DIR/lab.log"
+  [[ -f "$US_TEST_DIR/lab_fail" ]] && { echo "labstats: broken" >&2; exit 1; }
+  printf '## Lab usage\\n\\n| Requests | 4 |\\n'
+  exit 0
+fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
 echo "$*" >> "$US_TEST_DIR/go.log"
 while [[ $# -gt 0 ]]; do
@@ -578,6 +585,30 @@ class UsageScript(unittest.TestCase):
         self.assertTrue(md.startswith(f"# usage {self.week}\n"), md)
         self.assertEqual(md.count("## Security"), 1, md)
         self.assertIn("Audit chain intact", md)
+
+    def test_scenario_the_lab_usage_is_the_reports_lab_section(self):
+        """#824: an env with a lab queue gets cmd/labstats' report appended once; one without none."""
+        self.events("mvp")
+        self.events("stable")
+        os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        self.run_script()
+        lab = self.read("lab.log").splitlines()
+        self.assertEqual(lab, ["run ./cmd/labstats -compare " + self.t("envs", "mvp", "data", "compare")], self.output)
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertEqual(md.count("## Lab usage"), 1, md)
+        self.assertIn("| Requests | 4 |", md)
+        self.assertNotIn("## Lab usage", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
+        self.assertTrue(self.done())
+
+    def test_a_failed_lab_report_never_stops_the_usage_report(self):
+        self.events("mvp")
+        os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        write(self.t("lab_fail"), "")
+        self.run_script()
+        self.assertIn("lab usage report failed", self.output)
+        self.assertNotIn("## Lab usage", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
+        self.assertEqual(len(self.files("comment-")), 1)
+        self.assertTrue(self.done())
 
     def test_tick_starts_usage(self):
         with open(os.path.join(SCRIPTS, "agents", "tick.sh")) as f:

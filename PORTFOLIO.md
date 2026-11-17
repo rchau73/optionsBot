@@ -1,7 +1,7 @@
 # optionsBot — a project summary for recruiters
 
 **Roberto Chau** · Senior Software Engineering Manager · AI-driven engineering leadership · São Paulo, Brazil (remote or hybrid)
-LinkedIn: [linkedin.com/in/robertochau](https://www.linkedin.com/in/robertochau)
+LinkedIn: [linkedin.com/in/robertochau](https://www.linkedin.com/in/robertochau) · Site, with short films of the project: [rchau73.github.io](https://rchau73.github.io/)
 
 optionsBot is a personal project I built and run: an automated options-trading system for the Deribit crypto exchange, developed by a team of AI agents that I designed, govern and review.
 It shows two things at once: production-grade backend engineering against a real exchange, and an AI-first software development lifecycle (SDLC) with people in charge of every risky decision.
