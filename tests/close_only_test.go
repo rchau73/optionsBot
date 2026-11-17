@@ -125,7 +125,7 @@ func TestCloseOnlyFromTrades(t *testing.T) {
 			{Kind: "close", Reason: "roi_target", Detail: closeOnly, Instrument: "BTC-6NOV26-86000-C", Slot: slot, At: now}}, false, false},
 	}
 	for _, c := range cases {
-		j := strategy.CloseOnlyFromTrades(c.trades, now)
+		j := strategy.CloseOnlyFromTrades(c.trades, marketdata.InstrumentFromName, now)
 		if j.Sides[nov27] != c.side {
 			t.Errorf("%s: side held = %v, want %v", c.name, j.Sides[nov27], c.side)
 		}

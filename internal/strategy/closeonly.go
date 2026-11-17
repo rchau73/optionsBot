@@ -97,15 +97,17 @@ type JournalCloseOnly struct {
 // CloseOnlyFromTrades rebuilds the close-only records from the journal's
 // trades (oldest first, as the replay gives them): a side whose latest close
 // on an expiry was a close-only exit, with no repair re-sale since, and every
-// slot's close-only expiries not yet past at now.
-func CloseOnlyFromTrades(trades []orders.Trade, now time.Time) JournalCloseOnly {
+// slot's close-only expiries not yet past at now. names fills each trade's
+// expiry and type, as in StopsFromTrades.
+func CloseOnlyFromTrades(trades []orders.Trade, names InstrumentNames, now time.Time) JournalCloseOnly {
 	out := JournalCloseOnly{Sides: map[StopSide]bool{}, Slots: ClosedExpiries{}}
 	for _, t := range trades {
-		_, expiry, _, typ, err := marketdata.ParseOptionName(t.Instrument)
+		inst, err := names(t.Instrument)
 		if err != nil {
 			continue
 		}
-		side := StopSide{expiryDay(expiry), typ}
+		expiry := inst.Expiry
+		side := StopSide{expiryDay(expiry), inst.OptionType}
 		switch {
 		case t.Kind == "close" && IsCloseOnlyDetail(t.Detail):
 			out.Sides[side] = true
