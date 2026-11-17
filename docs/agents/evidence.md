@@ -76,6 +76,22 @@ The metric to follow is the share of weekly reports that meet it.
 A one-sided leg is a leg one side filled and the other did not within `FillMatchWindow` (1 h, one recorded-book interval); a wider window would match more legs and move their difference from "trades one side made" to "fill price".
 A journal close without its fill price, the perpetual hedge's P&L and an expiry the two sides book differently land in the unexplained line, never in a named part.
 
+## Gap over time
+
+Each weekly report follows the replay − live gap over its last 12 weekly reports, this week's included (#820, `internal/evidence/gaptrend.go`, `gap_trend` in the JSON, [README](../../README.md#evidence-report)), so one good week is not read as proof that replay stands in for live.
+It reads each report's `replay_vs_live` and `gap_split` as written and replays nothing; a partial or not-comparable week and a week without a gap are listed with their reason and left out of the statistics.
+The E2 comment posts the report's verdict line as written (`evidence_week.py` `trend_line`), never recomputing it; the pack copies it with the statistics behind it.
+
+| Verdict | When |
+|---|---|
+| too few to conclude (N weeks) | under `SampleMinWeeks` (12) comparable weeks; the figures stay visible |
+| stable | the comparable weeks' gaps keep one sign and range (largest − smallest) within `GapStableRangePP` (1 pp of each week's starting equity) |
+| drifting | otherwise: the sign changed, or the range is over the bar |
+
+**The bar is an assumption** about the size of a typical week's live result: a gap that moves by more than 1 pp of equity from week to week cannot stand in for live.
+Verify it in 2027-W02, with the sample floors: put the range next to the spread of the weekly live results over the same 12 weeks (the trend's net %), and lower or raise the constant in a PR that says why.
+The causes' shares sum each part's pp of equity over the comparable weeks that carry a split, against their summed gap, so a week's share weighs by its size.
+
 ## Daily recording check
 
 A short recorded day is told the next morning, not in the weekly report (#716).

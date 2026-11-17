@@ -118,6 +118,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	writeGapSplit(p, r.Split, u) // and its causes (#802)
 
 	writeReplayVsLive(p, r.RVL, u)
+	writeGapTrend(p, r.GapTrend, u) // the same gap over the last 12 weekly reports (#820)
 
 	st := r.Stress
 	p("## Stress\n\nSource: %s", st.Source)

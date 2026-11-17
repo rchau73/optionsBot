@@ -131,6 +131,47 @@ class GapSplitLine(unittest.TestCase):
         self.assertIn("fees the gap is 0 (0 legs)", evidence_week.split_line(r, True))
 
 
+def gap_trend(line="stable: replay above live on 12 of 12 weeks, below on 0", weeks=12, listed=12, status="stable"):
+    """A report's gap_trend section (#820): the verdict line as cmd/evidence wrote it."""
+    return {"label": "replay-vs-live gap over time", "weeks": [{"week": f"2026-W{32 + i}"} for i in range(listed)],
+            "summary": {"weeks": weeks, "median_abs_pp": 0.4, "replay_above": weeks, "replay_below": 0},
+            "verdict": {"status": status, "line": line}}
+
+
+class GapTrendLine(unittest.TestCase):
+    """Scenario: one source for the verdict — the line is the report's, never recomputed."""
+
+    def test_the_verdict_line_is_posted_as_written(self):
+        # A line the figures beside it would contradict: posted anyway, nothing recomputed.
+        t = gap_trend(line="drifting: written by cmd/evidence", weeks=12, status="stable")
+        line = evidence_week.trend_line(report(gap_trend=t))
+        self.assertEqual(line, "drifting: written by cmd/evidence · 12 comparable of 12 weekly reports")
+
+    def test_too_few_weeks_keeps_the_reports_wording(self):
+        t = gap_trend(line="too few to conclude (3 weeks): 3 comparable of the 12 weeks the verdict needs", weeks=3, listed=4,
+                      status="too few to conclude")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend=t)),
+                         "too few to conclude (3 weeks): 3 comparable of the 12 weeks the verdict needs · 3 comparable of 4 weekly reports")
+
+    def test_older_reports_and_a_note_say_why(self):
+        self.assertEqual(evidence_week.trend_line(report()), "— (report without the gap trend)")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend={"note": "a -from/-to report is not an ISO week"})),
+                         "— (a -from/-to report is not an ISO week)")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend={"weeks": []})), "— (no verdict in the report) · 0 comparable of 0 weekly reports")
+
+    def test_live_env_line_has_no_amount(self):
+        envs = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, envs, True)
+        write(os.path.join(envs, "stable", ".env"), "DERIBIT_ENV=live\n")
+        write(os.path.join(envs, "stable", "data", "evidence", "2026-W43", "btc.json"), json.dumps(report(gap_trend=gap_trend())))
+        fail = os.path.join(envs, "failures.tsv")
+        write(fail, "")
+        text = evidence_week.comment("2026-W43", envs, fail, ["btc"], ("stable",))
+        trend = [l for l in text.splitlines() if l.startswith("- **stable (live) btc**: stable:")]
+        self.assertEqual(len(trend), 1)
+        self.assertNotIn("BTC", trend[0])
+
+
 class Comment(unittest.TestCase):
     def setUp(self):
         self.envs = tempfile.mkdtemp()
@@ -170,11 +211,13 @@ class Comment(unittest.TestCase):
         self.assertIn("`stable/data/evidence/2026-W43/btc.md`", row)
         self.assertIn("+0.0123 ETH", self.row(text, "mvp", "eth"))
         self.assertEqual(sum(l.startswith("| stable") or l.startswith("| mvp") for l in text.splitlines()), 4)
-        # One gap split line per env × bot (#802).
+        # One gap split line (#802) and one gap-over-time line (#820) per env × bot.
         self.assertIn("**Gap split**", text)
+        self.assertIn("**Gap over time**", text)
         self.assertEqual(sum(l.startswith(f"- **{env} {bot}**: ") for l in text.splitlines()
-                             for env in ("stable", "mvp") for bot in ("btc", "eth")), 4)
+                             for env in ("stable", "mvp") for bot in ("btc", "eth")), 8)
         self.assertIn("- **stable btc**: — (report without the gap split)", text)
+        self.assertIn("- **stable btc**: — (report without the gap trend)", text)
 
     def test_live_env_shows_no_coin_or_usd_amount(self):
         self.put("stable", "btc", report(gap_split=gap_split()), "DERIBIT_CLIENT_ID=x\nDERIBIT_ENV='live'\n")
