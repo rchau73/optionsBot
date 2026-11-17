@@ -31,6 +31,8 @@ const (
 	HedgeUnavailable = "hedge_unavailable"  // the hedge is not holding the delta: the GEX shed is back (#664)
 	HedgeResumed     = "hedge_resumed"      // the hedge holds the delta again: the shed keeps its legs (#664)
 	HedgeLeftOpen    = "perp_left_open"     // the kill switch left a perpetual beyond the bot's ledger alone (#667)
+	HedgeStoodDown   = "hedge_stood_down"   // the book holds one side only: the perpetual closed, the GEX shed back (#813)
+	HedgeBack        = "hedge_back"         // the book holds both sides again: the hedge holds its delta (#813)
 )
 
 // HedgeRecord is one futures-hedge decision with the figures behind it.

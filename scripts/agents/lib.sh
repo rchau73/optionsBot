@@ -368,6 +368,21 @@ security_section() {
   { printf '\n'; cat "$2"; } >> "$1"
 }
 
+# lab_section <usage report.md> <COMPARE_DIR> <work file> — appends the lab's
+# usage report (#824, cmd/labstats: counts only, no name or setting value) to
+# the weekly usage report as its "Lab usage" section, once: an env without a
+# lab queue, or a report that already has one, is left as it is. A failed
+# run is logged and never stops the report. Run from the repository.
+lab_section() {
+  [[ -f "$1" && -d "$2/requests" ]] || return 0
+  grep -q '^## Lab usage$' "$1" && return 0
+  if go run ./cmd/labstats -compare "$2" > "$3" 2> "$3.log"; then
+    { printf '\n'; cat "$3"; } >> "$1"
+  else
+    log "lab usage report failed for $2 (log $3.log)"
+  fi
+}
+
 # require_tools <tool>... — fails (and notifies) when a tool is not on PATH, so
 # an agent stops before it takes a card instead of blocking it for a broken
 # environment. Run scripts/agents/install.sh again after installing a tool.

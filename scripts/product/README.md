@@ -221,7 +221,12 @@ python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
 - **Out:** pass/fail, the failing questions and the errors by type per question, a sign error in a loss scenario first.
   It is printed and written to `summary.md` beside the table, with section 8's synthesis skeleton; an existing `summary.md` stays unless `--force`.
 - **Two rounds:** also the change in passes and in each error type, in `comparison.md` beside the later round.
+- **Findings (`--findings`, #810):** also `findings.md` beside the table, one row per question fewer than 4 of 5 answered with a success (question, scenario, how many failed, the screen: Overview, Income, Worst case, Last action, plus the phone overview when a phone participant missed it, and the *Wording when wrong*),
+  and one issue draft per such question, `issue-draft-Q<n>.md` (an `[E3]` title on the first line, the problem, the evidence as counts only, Gherkin acceptance, "Depends on: none").
+  With no failure it says so and writes no draft; a draft of a question that passes now is removed. The script never sends anything to GitHub.
+  Round 1's steps: `docs/usability/round-1-run-sheet.md`.
 - **Participant codes only:** every cell must be a value the template allows and every other line a line of the template, so a name, an e-mail or a phone number stops the run.
   It prints the line number, never the content, and writes nothing.
+  The optional last column, *Wording when wrong*, is free text in lower case (`Q3: the margin one`); an e-mail, a phone number, a currency amount or a capitalised word other than "I" and the page's words in it is refused naming the column and the row.
 - **Exit:** 0 when scored (a failed round too), 2 when refused or unreadable.
   Tests: `test_score_usability.py`.

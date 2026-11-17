@@ -120,6 +120,11 @@ Read both before changing a rule.
     `hedgeKeepsShed` is false while the hedge is halted, its last order was rejected, or `FixedFuturesHedgeUnfilledCycles` (3) cycles in a row had nothing filled (a hedge due, or the perpetual, its contract or its quote unreadable;
     margin unknown or a leg without greeks neither count nor reset), and `handleGammaAction` then sheds as with the mode off: `hedge_unavailable` once per episode, `hedge_resumed` when it ends.
     Such a shed ends the leg's kept counterfactual (`Ledger.EndKept`) and starts a real one.
+  - **A one-sided book is not hedged** (`standDown`, pure `OneSidedBook`; the product owner's option (1) on #813): while every open leg is a call, or every one a put, the hedge stands down —
+    the bot's own perpetual closed at market (reduce-only, `closePerp` with `s.ownPerp`, one attempt a cycle), `hedgeKeepsShed` false so the shed acts as with the mode off, the paper hedge flattened the same way —
+    journaled `hedge_stood_down` once per episode (and per side), `hedge_back` when both types are held again; `stood_down` in `GET /api/hedge`, the monitor's "paused" line.
+    It is not a health episode: `hedge_unavailable` and the trial's stop guard do not count it. A mode switch resets it.
+    Study #812 (`docs/studies/one-sided-hedge.md`): 2026-11-05 → 11-16 the calls-only books' long hedge lost ETH −5.18 against +3.88 closed on the calls; replayed, the rule nets more than today's hedge in both recorded falls and three synthetic rallies.
   - A rejection a retry cannot cure (`orders.LastingRejection`: `locked_by_admin`, not enough funds, forbidden) or a ticker `state` other than open **halts** the hedge (`hedge_halted`, once per reason): no order and no ticker read until `FixedFuturesHedgeRecheckMinutes` (10);
     the re-check reads the ticker and, if due, sends one order. An order the exchange takes, or an open ticker with nothing due, clears the halt.
   - **Pricing** (`hedge.Pricing`, the product owner's decision on #664): on testnet the ledger books fills, closes and drift at the index and leaves funding out (its perpetual trades ~3.5 % away), and the real orders still go out to test the path;
