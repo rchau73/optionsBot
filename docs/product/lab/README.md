@@ -39,6 +39,13 @@ A manager's parameter change is studied offline before anyone decides on it:
    **How a recorded change reaches the running bot is not decided** (a reviewed config PR and a restart, or a later hot-reload story): it needs a person's decision, with E8's tenancy (links of managers to accounts; until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
    Until then the record is the whole effect: no config file is written, no bot restarted, no order placed.
 
+8. `cmd/labstats` (#824) is the lab's usage report, from its own files and read-only.
+   Over the last 28 days (`-days`) it gives the requests made and the share ending `done`, `failed` and `expired`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per ISO week (an 8-character hash, never a name).
+   It also counts the done runs with a recorded change (`applied/`), those refused as a core policy (`candidates/<id>/candidate.json`), and the AI analyses written (an `analysis.json` and no `note`), a count only.
+   A request file that cannot be read is counted as unreadable; no setting value, amount or account appears; Markdown or `-json`.
+   The weekly usage report appends it as its "Lab usage" section (`scripts/agents/usage.sh`, `docs/operations.md` "Lab usage report").
+   Targets, assumptions to confirm after the first four weeks of use: done share ≥ 90 % and median time to a finished run ≤ 30 min (`compare.LabTargetDonePct`, `LabTargetMedianMinutes`; the report says met, not met or too early to judge).
+
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
 - [`example-analysis.md`](example-analysis.md) — a saved `analysis.md` (percentages and counts only), kept passing the checker by `tests/aianalysis_generate_test.go`.

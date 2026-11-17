@@ -8,7 +8,9 @@
 #     → <clone>/data/monitor/reports/<week>.md and .json, and the drop check
 #       (its DROPS line → <state>/<week>/<env>.drops.json), and the week's
 #       security digest appended as its "Security" section when security.sh
-#       has built it (#717; security.sh appends it when it comes later);
+#       has built it (#717; security.sh appends it when it comes later), and
+#       the lab's usage (go run ./cmd/labstats -compare <clone>/data/compare,
+#       #824) as its "Lab usage" section when the clone has a lab queue;
 #   one `bug` issue "[E13] Engagement drop: <metrics> <week>" in Triage when a
 #   key number fell (usage_week.py issue: one per week, deduplicated by title
 #   against open issues and those closed in 14 days);
@@ -76,6 +78,8 @@ for env in $ENV_NAMES; do
   log "usage: $env: $n events in $week, report $root/data/monitor/reports/$week.md"
   # The week's security digest (#717, security.sh) as the report's "Security" section, when it is built.
   security_section "$root/data/monitor/reports/$week.md" "$AGENT_STATE_DIR/security/$week/$env/digest.md"
+  # The lab's usage over 28 days (#824, cmd/labstats) as its "Lab usage" section, when the env has a lab queue.
+  lab_section "$root/data/monitor/reports/$week.md" "$root/data/compare" "$dir/$env.lab.md"
   envs_csv="${envs_csv:+$envs_csv,}$env"
 done
 if [[ -z "$envs_csv" ]]; then
