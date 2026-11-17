@@ -52,6 +52,11 @@ Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `ma
 Two environments on one account would cancel each other's orders and manage each other's positions.
 `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 The account check covers every folder of `~/dev/go/optionsBot-env` with a `.env`, not only stable and mvp (#538, `env_accounts_distinct`), and names both folders.
+When a clone holds an account registry (`data/accounts.json`, `internal/accounts`), the check also reads it through `go run ./cmd/accounts -check -json` (#800, `env_registry_check`, `scripts/env_registry.py`; read-only):
+- each bot is matched to its account by currency and config file name (BTC: `BOT_CONFIG_BTC` of `deploy.env`, else `config_btc.yaml`; ETH: `config_eth.yaml`);
+- it refuses a registry that breaks a rule, an account whose key is not `ok` (missing, revoked, may move funds, unknown scope), a bot listed under two accounts, and two folders whose registries map a bot to the same account id (naming both folders);
+- a bot not in the registry is noted on stderr, and refused only when the registry lists its currency under another account;
+- the refusal names the account id and the state, never a key id, client id or scope string; without a registry file nothing changes.
 Each bot also checks its own API key at startup: a key that can move funds (withdraw or transfer) logs an ERROR, shows `key_scope.can_move_funds: true` in `/api/status` and is journaled as `key_scope`, but the bot still starts — replace it with a trade-only key (`account:read trade:read_write`).
 
 ```bash
@@ -239,6 +244,12 @@ About 0.5 MB a day per coin.
 Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 A block reaches the file whole or not at all (#661); an older file with a damaged block fails `gzip -t`, but `cmd/stress -replay`, `cmd/compare` and the coverage reports read its complete blocks, warn `recorded day damaged` with the day, `last_good` and `resumes`, and show the missing hours as a gap.
 
+**Daily recording check** (#716).
+The morning after, the agents' `recording_check.sh` checks yesterday's (UTC) books and minute GEX of every bot of the recording environment: `go run ./cmd/datacoverage -dir data/btc -yesterday` prints each dataset's covered hours of 24, its share and its longest gap (`-json` for the script).
+Under 90 % (`ReplayFullCoveragePct`, the weekly report's floor for a `full` replay) or with a gap over 3 h, it notifies once and comments on the E2 epic with the bot, dataset, day, share and gap — hours and percentages only; a complete day is silent.
+A dataset folder without yesterday's file counts as 0 %; a damaged stretch is a gap, not an error.
+Fix the recorder (logs above) the same day, so the week's replay stays `full` ([docs/agents/evidence.md](agents/evidence.md#daily-recording-check)).
+
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot.
 It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it.
 The log lines carry `dir`.
@@ -315,6 +326,32 @@ grep '"event":"config_loaded"' orders.log | jq -c 'select(.unchanged != true) | 
 # The settings in force now
 grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
 ```
+
+### Lab candidates
+
+A change a manager confirms in the strategy-change lab is only recorded (`data/compare/applied/<run id>.json`, #741); `cmd/labapply` (#806) turns the record into a checked candidate and applies nothing.
+
+```bash
+go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # → data/compare/candidates/<id>/: candidate.json (ready | refused, reasons), diff.md, config.candidate.yaml when ready
+```
+
+A person takes a `ready` candidate into a deploy: they read `diff.md` (the values, the run's backtested numbers and risks), copy the changed line into the shipped config named there in a pull request, and the usual review and merge deploy it (both BTC configs change together, `TestConfig_MVPBTCDiffersOnlyInDirection`).
+There is no automatic path from a candidate to a running bot.
+A core-policy setting is refused (`needs_product_owner`) unless the record carries `product_owner_approval`, the reference of the product owner's approval that a person adds.
+`refused` lists the reasons in plain words (a fixed key, a value out of range, the shipped setting changed since the run, no report); fix the cause and run it again: a second run on an unchanged record rewrites nothing.
+
+### Lab usage report
+
+`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, the candidates' status and the analyses written), read-only.
+
+```bash
+go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, analyses written
+go run ./cmd/labstats -compare data/compare -days 7 -json
+```
+
+No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
+It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
+A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
 
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
@@ -497,6 +534,8 @@ A real pass is journaled as `risk_limit` `rebalance_manual`.
 
 **Unused approved margin** (#369, the other direction): when entries have been allowed and IM has stayed under 60 % of the limit for 6 h (`IMUnderUseWindowMinutes`, fixed; a gap of more than 15 min between readings restarts the window), the bot journals one `risk_limit` `im_under_use` line and a WARN (`approved margin unused with entries allowed`) with IM, the limit, the share used (`utilisation_pct`), the minutes and the `cause`, and sets `risk.im_under_use` / `risk.im_under_use_since` (when the under-use began) in `/api/status`.
 The cause uses `cmd/idlemargin`'s vocabulary: an empty slot's last skip reason (`no_free_expiry`, `liquidity_cap`, `regime_side`, `repair_held`, …) or `no_skip_logged`; with every slot taken, `rebalance_waiting` (a short top-up waits for its retry), `sized_small_liquidity_cap` or `all_full`.
+When the cause changes during the episode (a slot rolled out and left waiting), another `im_under_use` line and WARN (`approved margin unused: cause changed`) give the new cause, its detail `cause: all_full → no_expiry` (#768).
+A `no_expiry` cause, like the `no_expiry` skip itself, lists the slot's DTE window and every expiry the exchange lists with its DTE (`window 20–35 DTE; the exchange lists 2026-11-27 (14 DTE), …`), so the journal shows whether only monthlies are listed.
 It sends no order and relaxes no rule.
 **What to do:** read the cause; for a slot cause, check that slot's skips in the monitor's events; for `all_full` the slots' normal size is what holds IM low (the Rebalance dry run shows any top-up due); run `go run ./cmd/idlemargin` over the episode for the hours by cause.
 A change of rule to act on it is a separate proposal with a replay or stress comparison.

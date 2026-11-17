@@ -157,9 +157,12 @@ describe("list and create", () => {
   test("GET lists every user with role, email, created and last sign-in — never a hash", async () => {
     const { cookie, auth } = await asAdmin();
     await createBob(cookie, "manager");
-    let users = (await (await list(req("/api/admin/users", { method: "GET", cookie }))).json()).users;
+    const body = await (await list(req("/api/admin/users", { method: "GET", cookie }))).json();
+    let users = body.users;
     const bob = users.find((u) => u.username === "bob");
-    expect(bob).toEqual({ id: bob.id, username: "bob", role: "manager", email: "bob@example.com", created_at: expect.any(String), last_sign_in_at: null });
+    expect(bob).toEqual({ id: bob.id, username: "bob", role: "manager", email: "bob@example.com", created_at: expect.any(String), last_sign_in_at: null, accounts: [] });
+    // #760: the registry's accounts a link may name; none without its status file.
+    expect(body.accounts).toEqual([]);
     expect(Date.parse(bob.created_at)).not.toBeNaN();
     expect(JSON.stringify(users)).not.toMatch(/argon2|password/);
 

@@ -9,9 +9,19 @@ async function adminSend(url, method, body = {}) {
 
 const userUrl = (id, action = "") => `/api/admin/users/${encodeURIComponent(id)}${action}`;
 
-/** Every monitor user (admins only): [{ id, username, role, email, created_at, last_sign_in_at }]. */
+/**
+ * Every monitor user and the registry's accounts (admins only): { users: [{ id,
+ * username, role, email, created_at, last_sign_in_at, accounts }], accounts:
+ * [{ account_id, label, environment }] }.
+ */
 export async function fetchUsers(signal) {
-  return (await getJSON("/api/admin/users", signal)).users;
+  const body = await getJSON("/api/admin/users", signal);
+  return { users: body.users, accounts: body.accounts ?? [] };
+}
+
+/** Sets the accounts a manager may act on (#760; [] = every account) → { accounts, added, removed }. */
+export async function setAccountLinks(id, accounts) {
+  return adminSend(userUrl(id, "/accounts"), "PUT", { accounts });
 }
 
 /** Adds a person ({ username, password, role, email? }) → the new user. */

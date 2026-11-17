@@ -21,11 +21,27 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: — (403)
+- Confirm a lab run's previewed change, which records it and applies nothing (`POST /api/lab/runs/<id>/apply`, #741; a core policy needs the product owner)
+  - admin: ✓
+  - manager: ✓ (every account, until E8's tenancy links managers to accounts)
+  - user: — (403)
 - Create, edit and delete users; reset a password or issue a reset link (Users page, `/api/admin/users`)
   - admin: ✓
   - manager: — (403)
   - user: — (403)
+- Link a manager to the accounts they manage (Users page → Edit accounts, `PUT /api/admin/users/<id>/accounts`, #760; below)
+  - admin: ✓
+  - manager: — (403)
+  - user: — (403)
 - See your own sessions and sign out your other browsers (Account ▾ → Active sessions, `/api/auth/sessions`, #584); never another person's
+  - admin: ✓
+  - manager: ✓
+  - user: ✓
+- See your own previous sign-in and the wrong passwords typed for your username since (Account ▾ → Active sessions, `GET /api/auth/security-summary`, #803); never another person's
+  - admin: ✓
+  - manager: ✓
+  - user: ✓
+- Download your own data as one file (Account ▾ → Download my data, `/api/auth/my-data`, #750); never another person's
   - admin: ✓
   - manager: ✓
   - user: ✓
@@ -40,13 +56,39 @@ Who may do what, and the Users page that manages them.
 
 `admin` satisfies `manager` satisfies `user` (`lib/auth/roles.js`).
 
+### Manager–account links (#760)
+
+An admin may link a manager to the exchange accounts they manage (Users page → **Edit accounts**); the link is user → account id, n:n, stored in `auth.db` (`account_links`, [Personal data](personal-data.md)).
+The account ids, labels and each account's bots come from the registry's key-free status file (`ACCOUNTS_STATUS_PATH`, default `data/accounts_status.json`, written by `go run ./cmd/accounts -check -json -out`, #655); no key or secret is read.
+A monitor bot (`btc`) belongs to the one account with a bot of that currency (`botAccount`, `lib/auth/accountLinks.js`).
+- A manager with **no** link acts on every account of this deployment, as before: nothing changes until an admin sets a link.
+- A manager with at least one link: every state-changing route that targets a bot (`linked: true` in `STATE_CHANGING_ROUTES`: close, rebalance, the hedge switch, and the lab apply, whose run names its bot by the underlying, #741) checks the link on the server after the role check (`refuseOtherAccount`, `lib/auth/server.js`).
+  On another account it answers 403 with the account in words ("you do not manage account Account B (acct-b), which bot eth trades for: …"); the bot hears nothing and nothing is audited.
+  When the monitor cannot tell the bot's account (no status file, no account or several accounts with that currency) a linked manager is refused too: the check fails closed.
+- Admins are never limited; users keep read-only access (their role is refused first).
+  Links may be set on managers only (409 otherwise); a manager who becomes admin keeps the rows, which apply again only if they become manager again.
+- **Needs legal review before it is used with an adviser who is not the account owner** (PRD §11): the mechanism ships off (no link), and no link is set for a real adviser until counsel approves.
+The role matrix calls every `[bot]` route as a manager linked to another account and fails on one without `linked: true`.
+
 ### The role matrix (#490)
 
 Every route that changes state is one line of `lib/auth/routeRoles.js` (`STATE_CHANGING_ROUTES`): the roles that may call it (`anonymous` for sign-in, refresh and the reset link) and the audit action an allowed call writes, or why it writes none.
 `__tests__/role-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the read-only `MONITOR_API_TOKEN` and with an expired session.
 A signed-in person of the wrong role gets 403, the others 401, and nothing is written; an allowed call leaves its audit line with the person's username and the time.
 A route file exporting `POST`, `PUT`, `PATCH` or `DELETE`, or a non-GET route of the bot's API, that the table does not list fails the test by name: a new state-changing route needs its line first.
-Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
+Read-only routes that only some roles may call are in `ROLE_GUARDED_READS` of the same file and called as every caller too: `GET /api/admin/audit/export` (admins only, #702), `GET /api/admin/audit/verify` (admins only, #619), `GET /api/auth/my-data` (#750), `GET /api/auth/security-summary` (#803), `GET /api/auth/sessions`, `GET /api/lab/runs` and `GET /api/lab/runs/<id>`.
+
+### The read matrix (#782)
+
+Every route file under `app/api` that exports `GET` is one line of `READ_ROUTES` in `lib/auth/routeRoles.js`: the roles that may read it, `token` when the read-only `MONITOR_API_TOKEN` may read it too, and a one-line reason.
+`ROLE_GUARDED_READS` is a part of it, called as every caller by the role matrix as before.
+`__tests__/read-matrix.test.js` calls each route through `proxy.js` and its handler as admin, manager, user, with no session, with the service token and with an expired session.
+The roles the table lists get 200; a signed-in person of another role gets 403, the others 401, with a body of `error` only, no audit line and no call to a bot.
+A `GET` route file the table does not list fails the test by name: a new read route needs its line first.
+Admins only: `GET /api/admin/analytics`, `/api/admin/analytics/delivery`, `/api/admin/audit`, `/api/admin/audit/export`, `/api/admin/audit/verify` and `/api/admin/users`.
+Managers and admins: `GET /api/compare`, `/api/compare/<id>`, `/api/lab/runs`, `/api/lab/runs/<id>` and `/api/lab/runs/<id>/preview`.
+The service token reads only `GET /api/bots`, `/api/bots/<bot>/<endpoint>` and `/api/bots/<bot>/hedge` (`serviceTokenOk` in `proxy.js`); every other read is any signed-in role.
+Nothing is audited for a refused read, as for a refused write.
 Checked on the server, in the route handlers — not by hiding buttons (a user still sees them; the route answers 403 `manager role required` and the bot receives nothing).
 **State-changing routes re-read the person from the database** (`requireRole` in `lib/auth/server.js` → `AuthService.actingUser`): the user must still exist, their **current** role must allow the action (else 403), and the access token's session (`sid`, its refresh token's SHA-256) must still be live (else 401).
 So a demoted manager is refused at once, and a deleted user or one signed out everywhere too — not 15 minutes later.
@@ -59,14 +101,15 @@ User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`
 ## Users page (#306)
 
 `/admin/users`, linked as **Account ▾ → Users** for admins only — the link is a convenience, the routes decide: a manager or a user gets 403 from every one of them (`requireRole(admin)`, the person re-read from the database like close and rebalance).
-The page lists every person (username, role, email, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
+The page lists every person (username, role, email, accounts, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
+The **Accounts** column says what each person may act on: "All accounts" (admin), "None: sees only" (user), "All accounts (no links)" or the linked accounts (manager); **Edit accounts** on a manager's row opens a dialog of the registry's accounts with checkboxes, the consequence in words, and **Save accounts** (#760, `AccountLinksDialog.jsx`).
 Your own row cannot be deleted or reset (use **Change password**).
 
 ### Routes
 
 #### `GET /api/admin/users`
 
-**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at}]}` (ISO times, `null` = never); never a hash
+**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); never a hash
 
 **Refusals:** 403 not admin
 
@@ -94,6 +137,13 @@ Your own row cannot be deleted or reset (use **Change password**).
 
 **Refusals:** 404 · 409 yourself
 
+#### `PUT /api/admin/users/<id>/accounts` `{"accounts": [account ids]}` (#760)
+
+**Does:** `setAccountLinks`: the manager's links become this list (`[]` = every account again) → `{"accounts", "added", "removed"}`; one audit line per account, `account_link_added` or `account_link_removed`, with the admin, `target` and `account_id`.
+Admins only, same-origin JSON; in the role matrix
+
+**Refusals:** 400 not a list, a malformed id, over 50, or a new id the registry does not list · 403 not admin · 404 · 409 the person is not a manager
+
 #### `POST /api/admin/users/<id>/signout` `{}`
 
 **Does:** `signOutEverywhere`; audited `signed_out_everywhere`
@@ -107,12 +157,28 @@ Any role; the session is re-read like a state-changing route (`requireRole`), an
 
 **Refusals:** 401 no session, an ended one or the service token
 
+#### `GET /api/auth/security-summary` (#803)
+
+**Does:** `{"previous_sign_in", "first_sign_in", "failed_since", "notice_id", "locked_until"?}`: the signed-in person's previous sign-in (ISO, `null` = none recorded) and the wrong passwords typed for their username since (`AuthService.signInSummary`, [Sign-in](sign-in.md#sign-in-summary)); `locked_until` only while the username is locked.
+Their own row only: never an IP, a browser, a token or another person's data.
+Any role; read-only and self-only, the session re-read like a state-changing route (`requireRole`), in the read matrix (`READ_ROUTES`) and called as every caller (`ROLE_GUARDED_READS`)
+
+**Refusals:** 401 no session, an ended one or the service token
+
 #### `DELETE /api/auth/sessions/<id>` `{}` (#584)
 
 **Does:** `endSession`: deletes one of the person's own other sessions (its next refresh fails); audited `session_ended` with `target_session` (the id's first 8 characters).
 Any role; in the role matrix (`STATE_CHANGING_ROUTES`)
 
 **Refusals:** 404 someone else's or an unknown id (nothing changes) · 409 the session in use ("use Sign out")
+
+#### `GET /api/auth/my-data` (#750)
+
+**Does:** one JSON file (`Content-Disposition: attachment`) of the signed-in person's own data (`lib/auth/mydata.js`): account without the password hash, consent, live sessions, survey answers, analytics events and the audit lines where they are the `username`; a section that cannot be read says `unavailable` with its reason.
+Audited `my_data_exported` with the counts per section, never the content.
+Any role; the session is re-read like a state-changing route (`requireRole`), and the role matrix calls it as every caller (`ROLE_GUARDED_READS`)
+
+**Refusals:** 401 no session, an ended one or the service token (nothing written) · 429 a 4th download within the hour, with the wait in words (nothing written)
 
 #### `GET /api/compare` (#302)
 
@@ -154,10 +220,29 @@ Answer: `run_id`, `time`, `person`, `account` (`underlying`, `config`) and `chan
 It also carries `backtested` (`label` "backtested, not a forecast", `backtest`, `replay`, `stress_ran`, `windows`), `fragility` (`checked`, `key`, `cliffs`, or a `note` when the check was not run) and `analysis`, withheld behind `L10_ANALYSIS_GATE_OPEN` like the run's.
 Last come `needs_product_owner`, `stale`, `confirmable`, `reasons` (plain words, `[]` when confirmable), `confirm_token`, `audit_line` and `applied`.
 `needs_product_owner` is true for a core policy or a key the catalogue refuses; `stale` for a run over 7 days old, a value the run started from that is not the account's, an account's value that cannot be read, or a proposed value now refused.
-Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown, which nothing accepts yet.
+Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown and of the 5-minute window it was issued in, which `POST /api/lab/runs/<id>/apply` accepts for at most 15 minutes.
 Manager or admin (`ROLE_GUARDED_READS`, called as every caller by the role-matrix test); each answered preview writes one audit line, `parameter_change_previewed`, with the person, the account, the run and both values.
 
 **Refusals (no audit line):** 404 an id that is not a folder time, or no run · 409 a run that changed no setting · 500 unreadable or malformed JSON · 401/403 as above
+
+#### `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741)
+
+**Does:** records the change a manager confirms (`lib/labapply.js`); it writes no config, restarts no bot and places no order.
+The server recomputes the preview of the run now, for the person asking, and checks the token against it: the same run, person, account and values, issued at most 15 minutes ago (`CONFIRM_TOKEN_MINUTES`, at least 10), compared in constant time.
+It then re-checks everything the preview checks: the role (re-read from the database), the range and cross rules, the account's value, the run's age and numbers, and the core-policy block.
+On success it writes `COMPARE_DIR/applied/<id>.json` once (mode 0600, created exclusively, so a second confirm, or two at once, records one) with `run_id`, `recorded_at`, `person`, `role`, `account`, `changes` (`key`, `title`, `old`, `new`), `token_id` (the first 16 hex of the token's SHA-256, never the token), `applied: false` and `recorded: true`.
+201 with that record, `message` (what was recorded, that the result was backtested, not a forecast, and that nothing was applied to a running bot), `next_step`, `backtested`, `risks` (worst week, drawdown and fees in %, the fragility check, "past data only") and `audit_line`.
+How a recorded change reaches the running bot is not decided yet (a reviewed config PR and a restart, or a later hot-reload): until then the record is the whole effect.
+On the bot side `cmd/labapply` (#806) re-checks the record and writes a candidate config and its diff under `COMPARE_DIR/candidates/<id>/` for a person's pull request (`docs/operations.md` "Lab candidates"); it applies nothing.
+Manager or admin (`STATE_CHANGING_ROUTES`); one audit line, `parameter_change_recorded`, with the person, the account, the run, each `key` with `old` and `new`, and `token_id`.
+A manager linked to accounts (#760) is refused 403 on a run whose bot (its underlying: BTC → bot btc) trades for another account, as the bot routes are; a manager without a link may confirm for every account, and a token works only for the person it was shown to.
+
+**Refusals (every one answers `applied: false, recorded: false`, writes no record and no audit line):**
+- 400 no `confirm_token` or malformed JSON.
+- 409 a token that does not match (another run, person or value, a changed character) or is older than 15 minutes ("open the preview again").
+- 409 a run already recorded ("a confirm is used once"), a run whose request is not done, a run that changed no setting, or one the preview would not confirm (stale, out of range, no numbers; `reasons`).
+- 409 a core policy: "a new default needs the product owner, not a manager's confirm", with `approver`.
+- 404 an id that is not a folder time, or no run · 403 cross-origin · 413 a body over 1 KB · 415 not JSON · 500 an unreadable report or a record that could not be written · 401/403 as above.
 
 #### `POST /api/lab/requests` `{"settings": [{"key", "value"}], "underlying"?}` (#641)
 

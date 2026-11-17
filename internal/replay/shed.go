@@ -115,7 +115,7 @@ func (e *engine) shed(at time.Time, dec strategy.GammaDecision, st risk.Status, 
 	if dec.Shed == strategy.GammaActionCloseCalls {
 		typ = "call"
 	}
-	if e.set.FullStrangle.Hedged { // as the bot with the hedge on: the perpetual holds the delta
+	if e.set.FullStrangle.Hedged || e.hedgeKeepsShed() { // as the bot with the hedge on: the perpetual holds the delta
 		return
 	}
 	switch e.set.Shed.mode() {

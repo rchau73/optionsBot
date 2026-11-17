@@ -6,6 +6,13 @@
     "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["% of start", "Bot result", "Bot + holding", "Bot result, % of start", "Holding alone, % of start", "Bot + holding, % of start", "Worst week, % of start"]
   },
+  "account links": {
+    "short": "Which accounts a person may act on: an admin every account, a user none, a manager those an admin linked.",
+    "long": "Users page (admins only), the Accounts column. A manager with no linked account acts on every account, as before. Edit accounts lets an admin tick the accounts a manager manages. The monitor then refuses that manager's close or rebalance on any other account, and says which account it is. Each change is in the audit trail.",
+    "risk_income": "A linked manager cannot close a leg or rebalance on an account that is not theirs; nothing else changes.",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
+    "labels": ["Accounts"]
+  },
   "action funnel": {
     "short": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.",
     "long": "Analytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.",

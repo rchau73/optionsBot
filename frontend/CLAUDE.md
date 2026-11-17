@@ -13,6 +13,11 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
 
 - **The password rule beyond length** (#680): `guessablePasswordProblem` (`lib/auth/password.js`) is its one definition, the list is `lib/auth/commonPasswords.js`; a new way to set a password calls it (`frontend/docs/sign-in.md` "Passwords").
 
+- **Manager–account links** (#760, epic E7): `lib/auth/accountLinks.js` (the registry's status file, the bot → account rule and the refusal in words), `account_links` in `auth.db`, `components/AccountLinksDialog.jsx` on the Users page;
+  a new route that targets a bot calls `refuseOtherAccount` after its role check and is `linked: true` in `STATE_CHANGING_ROUTES`, or the role matrix fails (`frontend/docs/users-and-roles.md`).
+
+- **The read matrix** (#782): a new `GET` route under `app/api` needs its row in `READ_ROUTES` (`lib/auth/routeRoles.js`: roles, `token`, why), or `__tests__/read-matrix.test.js` fails naming it.
+
 - **The team's cards in the Ask panel** (#446, #498): `NpsCard.jsx` and `AnswersCard.jsx`, one at a time (NPS first, never both in one tab);
   their due rules share `surveyNotEligibleReason` (`lib/analytics/nps.js`) and are decided on the server from the user's row, so a new card reuses it rather than a second copy.
 
@@ -24,5 +29,12 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   the worst case in money, and the last trade's one-click Why? (`LastTrade`, from `/api/summary`'s `last_action`).
 - **The hedge's lines in plain words** (#679, epic E3): `lib/hedgeWords.js` has one sentence per `orders.Hedge*` change and `shed_hedged`, for the Activity page and "Since you last looked";
   a new hedge change needs its sentence there (`__tests__/hedge-words.test.jsx` reads the Go constants), besides the bot's own in `internal/api/explain.go`.
+  A hedge trade newer than the last option trade is the Last action (#794, `kind: "hedge"`): `hedgeActionWhat` words it on the desktop summary, the phone card and the band's last trade.
 - **Losses as visible as gains** (#582, epic E3): `__tests__/loss-visibility.test.jsx` renders Income, Details (pro), the phone overview, Worst case and Positions on the shared fixtures of `test/resultFixtures.js` (profit, loss, nothing held)
   and fails, naming the page, on a loss without its minus sign and unit, smaller or lighter than the gain, folded away, or a 0 shown for nothing held; a new page that shows a result gets its row in `PAGES`.
+  Its checks live in `test/lossVisibility.js`.
+- **Colour contrast pinned** (#763, epic E12): `__tests__/a11y-tokens.test.js` checks every text-on-background pair in its `PAIRS` against WCAG AA from `app/globals.css` and `test/tailwindPalette.js` (rules in `lib/a11y.js`);
+  a new text colour needs its pair, a new failing pair fails, and a fixed one leaves `KNOWN_FINDINGS`. `npm run test:phone` writes `e2e/a11y-report.json` (small text, small tap targets at 360 px), report-only.
+- **The four answers on the demo scenarios** (#743, epic E3): `__tests__/scenario-answers.test.jsx` renders the investor summary and the phone overview on `test/demoScenarios.json` (the demo's data for baseline, mixed, drawdown, hedged)
+  and fails, naming the scenario, the layout and the question, when the first screen stops answering a question of the usability kit's key (docs/usability/e3-investor-monitor-test.md).
+  On hedged (#827, the kit's section 6c) it also fails when the Last action is not the hedge trade or the worst case shown is not the one with the perpetual.

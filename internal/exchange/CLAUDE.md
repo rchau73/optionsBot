@@ -9,10 +9,18 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `internal/exchange/deribit` holds Deribit's calls as they leave their callers (#687; it grows into the adapter at step 6 of the migration):
   - `BookReader.BookSummary` is the one book-summary fetch, for `gex.Manager` and `recorder.USDCBooks`;
   - `ChainSource` (`chain.go`, #710) is the option chain, the DVOL history and the three channel names, for `marketdata.Manager`: it implements `marketdata.ChainSource`, so it imports `marketdata`, never the reverse;
-  - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`.
+  - `AccountSource` (`account.go`, #746) is the monitor's account view (all-currency summaries, the per-currency fallback, every position of a currency), for `account.Poller`: it implements `account.Source`, so it imports `account`, never the reverse;
+  - `Adapter` (`adapter.go`, #761) embeds the trading `Gateway`, `orders.Executor` and `marketdata.Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`); `cmd/bot` passes it as the strategy's `Exchange`, `Market` and `Futures`.
+    It has no method of its own and no name shared by two parts (`tests/exchange_adapter_test.go`), so the requests stay the parts' own;
+  - it never imports `internal/exchange`, which imports `gex`: so `gex.SummaryRow` is an alias of its `SummaryRow`, and the `*Adapter` check sits in `internal/exchange/deribit.go`.
+  `tests/exchange_adapter_test.go` pins the gateway's importers under `internal/` (`gatewayImporters`, with reasons, may only shrink) and keeps `internal/strategy` free of the gateway, the adapter, the transport and `orders.Executor`.
   The strategy depends on it (#182):
   - `deps.go`'s `Exchange`, `MarketData`, `OISource` are aliases of its `Trading`, `MarketData`, `OpenInterest` (`tests/exchange_test.go` checks `Deps` carries those types), so a method the strategy needs is added there.
-  `marketdata` (`Streamer` only) and `account` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
+  - It never parses an instrument name (#773, migration step 7): it reads `Instrument{Expiry, Strike, OptionType}` from the chain, or from `OptionChain.InstrumentFromName` for a name the chain does not hold (journal records, expired legs);
+    `marketdata.InstrumentFromName` is the one helper over `ParseOptionName` (`TestExchangeCoupling_StrategyCodeDoesNotParseNames`).
+  - It never builds an exchange instrument name (#786, step 8): the perpetual of the daily closes, the hedge report and the futures hedge is `Trading.PerpetualName(currency)`
+    (`InstrumentNamer`, Deribit's `orders.Executor`: `<COIN>-PERPETUAL`, no request; `TestExchangeCoupling_StrategyNamesNoExchangeInstrument`).
+  `marketdata` (`Streamer` only) and `internal/exchange/deribit` read the connection through `internal/exchange/transport` (`Caller`, `Streamer`; a subpackage because `internal/exchange` names `marketdata.Instrument`).
   Method → Deribit call map and what is Deribit-specific: `docs/architecture.md` §15.
   The full inventory, the proposed adapter interface and its migration steps: `docs/exchange-adapter.md` (#325)
   - — `tests/exchange_coupling_test.go` fails when a `"public/…"`/`"private/…"` literal under `internal/` is not in its table (`deribitMethods`, method → allowed packages) and the doc's §1, or appears under `internal/strategy`:

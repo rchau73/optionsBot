@@ -14,14 +14,16 @@ import (
 	"optionsbot/internal/orders"
 )
 
-// scriptedRPC answers by method; a missing method is an error.
+// scriptedRPC answers by method; a missing method is an error. It records
+// every request: its key (method[:currency]) and the full call.
 type scriptedRPC struct {
-	mu      sync.Mutex
-	replies map[string]string
-	calls   []string
+	mu       sync.Mutex
+	replies  map[string]string
+	calls    []string
+	requests []feedCall
 }
 
-func (s *scriptedRPC) Call(_ context.Context, method string, params any, _ int) (gateway.JSONRPCResponse, error) {
+func (s *scriptedRPC) Call(_ context.Context, method string, params any, priority int) (gateway.JSONRPCResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := method
@@ -29,6 +31,7 @@ func (s *scriptedRPC) Call(_ context.Context, method string, params any, _ int) 
 		key = method + ":" + p["currency"].(string)
 	}
 	s.calls = append(s.calls, key)
+	s.requests = append(s.requests, feedCall{method, params, priority})
 	r, ok := s.replies[key]
 	if !ok {
 		return gateway.JSONRPCResponse{}, &gateway.RPCError{Code: 11050, Message: "bad_request"}
@@ -48,7 +51,7 @@ const summariesJSON = `{"summaries":[
 
 func TestAccount_PollsAllCurrenciesInOneCall(t *testing.T) {
 	rpc := &scriptedRPC{replies: map[string]string{"private/get_account_summaries": summariesJSON}}
-	p := account.NewPoller(rpc)
+	p := newAccountPoller(rpc)
 	p.Refresh(context.Background())
 
 	st := p.Status()
@@ -91,7 +94,7 @@ func TestAccount_ListsEveryPosition(t *testing.T) {
 		  {"instrument_name":"BTC-PERPETUAL","kind":"future","direction":"zero","size":0}]`,
 		"private/get_positions:USDC": `[]`,
 	}}
-	p := account.NewPoller(rpc)
+	p := newAccountPoller(rpc)
 	p.Refresh(context.Background())
 	s := p.Status().Snapshot
 	if s.PositionsError != "" || len(s.Positions) != 2 {
@@ -111,7 +114,7 @@ func TestAccount_FallsBackToPerCurrencySummaries(t *testing.T) {
 		"private/get_account_summary:BTC": `{"currency":"BTC","balance":0.5,"equity":0.5,"margin_balance":0.5,"initial_margin":0.1,"maintenance_margin":0.05,"margin_model":"segregated_pm","portfolio_margining_enabled":true}`,
 		"private/get_account_summary:ETH": `{"currency":"ETH","balance":0,"equity":0,"margin_balance":0}`,
 	}}
-	p := account.NewPoller(rpc)
+	p := newAccountPoller(rpc)
 	p.Refresh(context.Background())
 	s := p.Status().Snapshot
 	if s == nil || s.Source != "get_account_summary" || len(s.Assets) != 1 || s.MarginModel != "segregated_pm" || s.Totals != nil {
@@ -131,7 +134,7 @@ func TestAccount_FallsBackToPerCurrencySummaries(t *testing.T) {
 
 func TestAccount_FailureKeepsLastSnapshot(t *testing.T) {
 	rpc := &scriptedRPC{replies: map[string]string{"private/get_account_summaries": summariesJSON}}
-	p := account.NewPoller(rpc)
+	p := newAccountPoller(rpc)
 	p.Refresh(context.Background())
 	first := p.Status().Snapshot
 
@@ -148,7 +151,7 @@ func TestAccount_FailureKeepsLastSnapshot(t *testing.T) {
 
 func TestAccount_StartPollsUntilCancelled(t *testing.T) {
 	rpc := &scriptedRPC{replies: map[string]string{"private/get_account_summaries": summariesJSON}}
-	p := account.NewPoller(rpc)
+	p := newAccountPoller(rpc)
 	ctx, cancel := context.WithCancel(context.Background())
 	p.Start(ctx, 10*time.Millisecond)
 	eventually(t, time.Second, "polled several times", func() bool {

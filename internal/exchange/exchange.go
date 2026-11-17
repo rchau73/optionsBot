@@ -67,12 +67,22 @@ type PortfolioSimulator interface {
 	SimulateAlone(ctx context.Context, currency string, positions map[string]float64) (orders.AccountSummary, error)
 }
 
+// InstrumentNamer names the exchange instruments the strategy uses besides
+// the option chain, so the strategy never builds an exchange's name (#786).
+type InstrumentNamer interface {
+	// PerpetualName is the currency's perpetual future: the hedge report's
+	// suggestion, the futures hedge and the daily closes the trend is seeded
+	// with (Deribit: "<COIN>-PERPETUAL").
+	PerpetualName(currency string) string
+}
+
 // Trading is everything the strategy asks of an exchange account.
 type Trading interface {
 	OrderPlacer
 	OrderTracker
 	AccountReader
 	PortfolioSimulator
+	InstrumentNamer
 }
 
 // OptionChain is the live option chain and the underlying's index price.
@@ -80,6 +90,10 @@ type OptionChain interface {
 	UnderlyingPrice() float64
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
+	// InstrumentFromName fills an instrument's expiry, strike and option
+	// type from its name, for a name the chain does not hold (a journal
+	// record, an expired leg): the strategy never parses names (#773).
+	InstrumentFromName(name string) (marketdata.Instrument, error)
 	// Track subscribes to the tickers of instruments that have none yet.
 	Track(ctx context.Context, instruments []string) error
 }
@@ -117,6 +131,26 @@ type Transport interface {
 	// Fatal reports that the connection gave up reconnecting.
 	Fatal() <-chan error
 	ConnStats() gateway.ConnStats
+}
+
+// Connection is an exchange connection's lifecycle as its owner (cmd/bot)
+// sees it.
+type Connection interface {
+	Connect(ctx context.Context) error
+	Close() error
+	// Fatal reports that the connection gave up reconnecting.
+	Fatal() <-chan error
+	ConnStats() gateway.ConnStats
+}
+
+// Exchange is one exchange adapter (#761): its connection, the account it
+// trades and the market it reads. main builds strategy.Deps' Exchange and
+// Market from it. Open interest (OpenInterest) is not part of it: it comes
+// from the real market, on testnet over another connection.
+type Exchange interface {
+	Connection
+	Trading
+	MarketData
 }
 
 // OptionNameParser reads an exchange's option instrument name.

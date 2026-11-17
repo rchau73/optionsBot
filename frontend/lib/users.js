@@ -21,6 +21,35 @@ export function newUserProblem(form) {
   return passwordFormProblem(form);
 }
 
+/** An account in words, from the registry list: "Main (acct-a)", or its id alone when unknown or unlabelled. */
+export function accountWords(id, accounts = []) {
+  const a = accounts.find((x) => x.account_id === id);
+  return a && a.label && a.label !== id ? `${a.label} (${id})` : id;
+}
+
+/**
+ * The Users page's Accounts cell (#760): which accounts a person may act on.
+ * Admins act on every account, users on none; a manager without a link on
+ * every account of this deployment, a linked one on the listed accounts only.
+ */
+export function accountsSummary(user, accounts = []) {
+  if (user.role === "admin") return "All accounts";
+  if (user.role === "user") return "None: sees only";
+  const links = user.accounts ?? [];
+  if (links.length === 0) return "All accounts (no links)";
+  return links.map((id) => accountWords(id, accounts)).join(", ");
+}
+
+/**
+ * The account-links dialog's consequence for manager `user` when the links
+ * become `picked` (account ids): what they may act on afterwards, in plain words.
+ */
+export function linksConsequence(user, picked, accounts = []) {
+  if (picked.length === 0) return `${user.username} may close legs and rebalance on every account of this deployment, as without links.`;
+  const names = picked.map((id) => accountWords(id, accounts)).join(", ");
+  return `${user.username} may close legs and rebalance only on ${names}; the monitor refuses them on any other account.`;
+}
+
 /**
  * The confirmation of an action on `user` by the admin `me` (a username):
  * { title, body, button } in plain words, saying what follows.

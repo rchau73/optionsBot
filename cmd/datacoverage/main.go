@@ -9,6 +9,12 @@
 //
 //	go run ./cmd/datacoverage -dir data/btc
 //	go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18 -json
+//	go run ./cmd/datacoverage -dir data/btc -yesterday -json
+//
+// -yesterday is the daily recording check (#716, scripts/agents/
+// recording_check.sh): the previous UTC day's covered hours and share per
+// market recording against evidence.ReplayFullCoveragePct, and each gap over
+// evidence.LongGapHours.
 package main
 
 import (
@@ -19,6 +25,7 @@ import (
 	"time"
 
 	"optionsbot/internal/coverage"
+	"optionsbot/internal/evidence"
 )
 
 func main() {
@@ -26,9 +33,16 @@ func main() {
 	fromStr := flag.String("from", "", "window start, YYYY-MM-DD or RFC 3339 (default: the first recorded day)")
 	toStr := flag.String("to", "", "window end: YYYY-MM-DD = that day included, RFC 3339 = excluded (default: the last recorded day, up to the current hour)")
 	asJSON := flag.Bool("json", false, "print JSON instead of text")
+	yesterday := flag.Bool("yesterday", false, "check the previous UTC day's market recordings against the weekly report's floor (#716)")
 	flag.Parse()
 
-	if err := run(*dir, *fromStr, *toStr, *asJSON); err != nil {
+	var err error
+	if *yesterday {
+		err = runYesterday(*dir, *fromStr, *toStr, *asJSON)
+	} else {
+		err = run(*dir, *fromStr, *toStr, *asJSON)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "datacoverage:", err)
 		os.Exit(1)
 	}
@@ -66,6 +80,25 @@ func run(dir, fromStr, toStr string, asJSON bool) error {
 		return enc.Encode(res)
 	}
 	return coverage.Format(os.Stdout, res)
+}
+
+func runYesterday(dir, fromStr, toStr string, asJSON bool) error {
+	if dir == "" {
+		return fmt.Errorf("-dir is required")
+	}
+	if fromStr != "" || toStr != "" {
+		return fmt.Errorf("-yesterday sets its own window: drop -from and -to")
+	}
+	d, err := evidence.CheckYesterday(dir, time.Now())
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(d)
+	}
+	return evidence.FormatDaily(os.Stdout, d)
 }
 
 func parseTime(s string) (t time.Time, dateOnly bool, err error) {

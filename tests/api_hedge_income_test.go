@@ -229,7 +229,7 @@ func TestJournal_PerpFillsReplayAndRestore(t *testing.T) {
 	l.LogHedge(orders.HedgeRecord{Timestamp: at, Change: orders.HedgeFill, Side: "sell", AmountUSD: 100}) // an IOC with no match
 	l.LogHedge(orders.HedgeRecord{Timestamp: at, Change: orders.HedgeRateLimited, AmountUSD: 100, FilledUSD: 100})
 	l.LogHedge(orders.HedgeRecord{Timestamp: at, Change: orders.HedgeClosed, Side: "buy", FilledUSD: 100, Price: 76000})
-	want := orders.PerpFill{At: at, Side: "sell", FilledUSD: 100, Price: 76650, FeeCoin: 0.0001, FundingCoin: -0.0002, Spot: 76600}
+	want := orders.PerpFill{At: at, Side: "sell", FilledUSD: 100, Price: 76650, FeeCoin: 0.0001, FundingCoin: -0.0002, Spot: 76600, Change: orders.HedgeFill}
 	if live := l.PerpFills(); len(live) != 2 || live[0] != want {
 		t.Fatalf("live fills %+v", live)
 	}

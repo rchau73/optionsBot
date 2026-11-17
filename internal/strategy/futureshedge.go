@@ -23,7 +23,12 @@ import (
 //   - every cycle the book's net delta (options + the coin's perpetual) is
 //     traded back to zero with the perpetual once it reaches the band
 //     (hedge.HedgeOrder), at most FixedFuturesHedgeMaxPerHour orders an hour;
-//   - the stop-loss, delta exit, MM cut, DTE roll and take-profit still close legs.
+//   - the stop-loss, delta exit, MM cut, DTE roll and take-profit still close legs;
+//   - while the book holds one option type only (a calls-only book under the
+//     regime side) the hedge stands down: its perpetual is closed and the shed
+//     works as with the mode off, so the book keeps the bet the regime side
+//     made (#813: since 2026-11-05 the long hedge cancelled the calls-only
+//     books' gains through the fall). It hedges again once both types are held.
 // The kill switch closes the bot's own perpetual too, the ledger's size at
 // most (#667). Switching off closes the perpetual at market first
 // (reduce-only); the shed works again from the next cycle. A benchmark
@@ -71,6 +76,7 @@ type futuresHedge struct {
 	recheck         time.Duration // how often a halted hedge looks again
 	unavailNoted    bool          // the current hedge_unavailable episode is journaled
 	awayNoted       bool          // the current hedge_price_away wait is journaled
+	stoodDown       string        // the one side the book holds while the hedge stands down ("" = hedging, #813)
 	dirty           bool
 	savedAt         time.Time
 }
@@ -215,8 +221,67 @@ func (s *Strategy) coinDelta() (float64, bool) {
 	return s.state.TotalCoinDelta(), true
 }
 
+// OneSidedBook is the option type a book holds when it holds one type only
+// ("calls" or "puts"), else "" (both, or nothing). Pure.
+func OneSidedBook(positions []*orders.Position) string {
+	calls, puts := false, false
+	for _, p := range positions {
+		switch p.OptionType {
+		case "call":
+			calls = true
+		case "put":
+			puts = true
+		}
+	}
+	switch {
+	case calls && !puts:
+		return "calls"
+	case puts && !calls:
+		return "puts"
+	}
+	return ""
+}
+
+// standDown closes the bot's perpetual while the book holds one side only
+// (#813), journaled once per episode; a close that fails is tried again next
+// cycle. It reports whether the hedge stands down this cycle.
+func (s *Strategy) standDown(ctx context.Context) bool {
+	side := OneSidedBook(s.state.AllPositions())
+	if side == "" {
+		if s.fh.stoodDown != "" {
+			s.fh.stoodDown = ""
+			s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeBack, OptionsDelta: s.state.TotalCoinDelta(),
+				Detail: "the book holds calls and puts again: the futures hedge holds its delta and the GEX shed keeps its legs"})
+		}
+		return false
+	}
+	why := "the book holds " + side + " only: the futures hedge stands down, so the book keeps its direction and the GEX shed works as with the mode off"
+	if s.fh.stoodDown != side {
+		s.fh.stoodDown = side
+		s.hedgeJournal(orders.HedgeRecord{Change: orders.HedgeStoodDown, OptionsDelta: s.state.TotalCoinDelta(),
+			PerpDelta: hedge.PerpDelta(s.fh.perp.Size, perpMark(s.fh.perp, s.md.UnderlyingPrice())), Detail: why})
+		slog.Info("futures hedge stands down", "book", side)
+	}
+	perp, err := s.readPerp(ctx)
+	if err != nil {
+		slog.Warn("futures hedge: cannot read the perpetual position while standing down — read again next cycle", "err", err)
+		return true
+	}
+	s.adoptPerpDrift(perp, s.md.UnderlyingPrice())
+	if math.Abs(s.ownPerp(perp.Size)) < 0.5 {
+		return true // nothing of the bot's to close
+	}
+	if _, left, err := s.closePerp(ctx, orders.TriggerFuturesHedgeClose, "futures hedge stands down: the book holds "+side+" only", 1, s.ownPerp); err != nil {
+		slog.Warn("futures hedge: the perpetual could not be closed while standing down — tried again next cycle", "left_usd", left, "err", err)
+	}
+	return true
+}
+
 // realHedge trades the perpetual so the book's net delta is back inside the band.
 func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, now time.Time) {
+	if s.standDown(ctx) {
+		return
+	}
 	perp, err := s.readPerp(ctx)
 	if err != nil {
 		slog.Warn("futures hedge: cannot read the perpetual position — no hedge this cycle", "err", err)
@@ -336,7 +401,8 @@ func (s *Strategy) hedgePricing() hedge.Pricing {
 // cycle: the mode is on and the hedge can trade (#664). A hedge that cannot
 // would leave the book with neither.
 func (s *Strategy) hedgeKeepsShed() bool {
-	return s.fh.mode.Enabled && s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles) == ""
+	return s.fh.mode.Enabled && s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles) == "" &&
+		OneSidedBook(s.state.AllPositions()) == "" // a one-sided book is not hedged (#813)
 }
 
 // endKeptLeg ends the benchmark's kept leg the shed now buys back: from here
@@ -475,6 +541,13 @@ func (s *Strategy) paperHedge(ctx context.Context, m marginState, spot float64, 
 		return
 	}
 	v := &s.fh.mode.Ledger.Virtual
+	if OneSidedBook(s.state.AllPositions()) != "" { // as the real hedge: stands down on a one-sided book (#813)
+		if v.SizeUSD != 0 {
+			v.Trade(-v.SizeUSD, spot, config.FixedFuturesHedgeFeeRate)
+			s.fh.dirty = true
+		}
+		return
+	}
 	usd, side := hedge.HedgeOrder(optDelta, hedge.PerpDelta(v.SizeUSD, spot), band, spot, spec.ContractSize)
 	if usd == 0 || hedge.RateLimited(s.fh.paperSent, now, config.FixedFuturesHedgeMaxPerHour) {
 		return
@@ -579,9 +652,9 @@ func (s *Strategy) followCounterfactuals(now time.Time) {
 			c.LastPrice, c.LastAt = inst.Mid, now
 			s.fh.dirty = true
 		}
-		_, expiry, _, _, err := marketdata.ParseOptionName(c.Instrument)
+		named, err := s.md.InstrumentFromName(c.Instrument)
 		switch {
-		case err == nil && (now.After(expiry) || marketdata.DaysToExpiry(expiry, now) <= s.cfg.RolloutDTE):
+		case err == nil && (now.After(named.Expiry) || marketdata.DaysToExpiry(named.Expiry, now) <= s.cfg.RolloutDTE):
 			c.Done = true // the roll (or expiry) would have closed it either way
 		case c.Mode == hedge.CounterHedged && !held[c.Instrument]:
 			c.Done = true // the kept leg was closed by another rule
@@ -815,7 +888,7 @@ func (s *Strategy) switchHedge(ctx context.Context, enable bool, by orders.Actor
 		s.fh.mode = prev // a switch that cannot be kept across a restart is not made
 		return res, fmt.Errorf("cannot save the mode: %w", err)
 	}
-	s.fh.health, s.fh.unavailNoted, s.fh.awayNoted = hedge.Health{}, false, false
+	s.fh.health, s.fh.unavailNoted, s.fh.awayNoted, s.fh.stoodDown = hedge.Health{}, false, false, ""
 	l := &s.fh.mode.Ledger
 	if enable {
 		// The paper hedge was the hedge side while OFF: it ends at today's price.

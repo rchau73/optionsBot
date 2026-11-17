@@ -164,6 +164,96 @@ describe("Users page", () => {
   });
 });
 
+describe("Accounts column and dialog (#760)", () => {
+  const ACCOUNTS = [
+    { account_id: "acct-a", label: "Account A", environment: "testnet" },
+    { account_id: "acct-b", label: "Account B", environment: "testnet" },
+  ];
+  const LINKED = [...USERS, { id: 3, username: "ana", role: "manager", email: null, created_at: "2026-10-21T10:00:00Z", last_sign_in_at: null, accounts: ["acct-a"] }];
+
+  /** fetch: GET of the list answers `users` and `accounts`; any other call answers `answer`. */
+  function mockList({ users = LINKED, accounts = ACCOUNTS, answer = reply(200, {}) } = {}) {
+    global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users, accounts }) : answer));
+  }
+
+  test("each row says which accounts the person may act on; only managers have Edit accounts", async () => {
+    mockList({ users: [...LINKED, { id: 4, username: "uma", role: "user", email: null, created_at: "2026-10-21T10:00:00Z", last_sign_in_at: null, accounts: [] }] });
+    render(<UsersAdmin me="admin" />);
+    expect(await screen.findByTestId("user-ana")).toHaveTextContent("Account A (acct-a)");
+    expect(screen.getByRole("columnheader", { name: "Accounts" })).toBeInTheDocument();
+    expect(screen.getByTestId("user-bob")).toHaveTextContent("All accounts (no links)");
+    expect(screen.getByTestId("user-admin")).toHaveTextContent("All accounts");
+    expect(screen.getByTestId("user-uma")).toHaveTextContent("None: sees only");
+    expect(screen.getByRole("button", { name: "Edit accounts of ana" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit accounts of bob" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit accounts of admin" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit accounts of uma" })).toBeNull();
+  });
+
+  test("the dialog says the consequence, Cancel sends nothing, Save sends the whole list with PUT", async () => {
+    mockList({ answer: reply(200, { accounts: ["acct-a", "acct-b"], added: ["acct-b"], removed: [] }) });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog", { name: "Accounts ana manages" });
+    expect(within(dialog).getByRole("checkbox", { name: /Account A/ })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Save accounts" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Account B/ }));
+    expect(dialog).toHaveTextContent("ana may close legs and rebalance only on Account A (acct-a), Account B (acct-b); the monitor refuses them on any other account.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sent()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /Account B/ }));
+    await clickAndSettle(screen.getByRole("button", { name: "Save accounts" }));
+    expect(screen.getByRole("status")).toHaveTextContent("ana's accounts: added acct-b.");
+    const [[url, init]] = sent();
+    expect(url).toBe("/api/admin/users/3/accounts");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ accounts: ["acct-a", "acct-b"] });
+  });
+
+  test("unticking every account says the manager acts on every account again", async () => {
+    mockList();
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Account A/ }));
+    expect(dialog).toHaveTextContent("ana may close legs and rebalance on every account of this deployment, as without links.");
+  });
+
+  test("the server's refusal is shown in the dialog", async () => {
+    mockList({ answer: reply(400, { error: "account acct-b is not in the account registry" }) });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /Account B/ }));
+    await clickAndSettle(screen.getByRole("button", { name: "Save accounts" }));
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("account acct-b is not in the account registry");
+  });
+
+  test("without a registry the dialog says no account can be linked; a link the registry dropped can still be removed", async () => {
+    mockList({ accounts: [] });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of bob" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("No account registry found, so no account can be linked.");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("no longer in the registry");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /acct-a/ }));
+    expect(within(dialog).getByRole("button", { name: "Save accounts" })).toBeEnabled();
+  });
+
+  test("Escape closes the dialog", async () => {
+    mockList();
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
 describe("header link", () => {
   test("the Account menu shows Users to admins only", () => {
     const { unmount } = render(<UserMenu role="admin" />);

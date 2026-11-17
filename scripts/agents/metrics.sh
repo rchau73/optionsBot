@@ -5,8 +5,11 @@
 #   data/agents/metrics/<YYYY-Www>.md, from GitHub (issues, agent PRs, label
 #   events), main's git log, the run ledger and the stuck-card log
 #   (metrics.py, offline and tested);
-#   the same report as one comment on the E6 epic.
-# No Claude call. Read-only on GitHub except that one comment.
+#   the same report as one comment on the E6 epic;
+#   one `bug` issue "[E6] Agent health: <agent> <metric> <week>" in Triage per
+#   agent whose failed % or limit % crossed the threshold (#755, metrics.py
+#   health: at most 3, else one combined issue; deduplicated by title).
+# No Claude call. Read-only on GitHub except that comment and those issues.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -44,13 +47,40 @@ mv "$tmp/report.md" "$report"
 log "metrics: wrote $report"
 
 epic="$(gh issue list -R "$slug" --label epic --state open -L 200 --json number,title \
-  -q '.[] | select(.title | startswith("Epic E6 ")) | .number' | head -1)"
+  -q '.[] | select(.title | startswith("Epic E6 ")) | .number' | head -1)" || epic=""
+outcome=written detail="report in $report" link=""
 if [[ -z "$epic" ]]; then
-  log "metrics: no open E6 epic, report not posted"; run_end written "report in $report; no E6 epic"; exit 0
-fi
-{ echo "🤖 **Agent metrics** — week $week (\`scripts/agents/metrics.sh\`, #180)"; echo; sed 1d "$report"; } > "$tmp/comment.md"
-if gh issue comment "$epic" -R "$slug" --body-file "$tmp/comment.md" >/dev/null; then
-  log "metrics: posted $week on #$epic"; run_end posted "report in $report; $week on #$epic"
+  log "metrics: no open E6 epic, report not posted"; detail="$detail; no E6 epic"
 else
-  log "metrics: could not comment on #$epic"; run_end written "report in $report; comment not posted"
+  { echo "🤖 **Agent metrics** — week $week (\`scripts/agents/metrics.sh\`, #180)"; echo; sed 1d "$report"; } > "$tmp/comment.md"
+  if link="$(gh issue comment "$epic" -R "$slug" --body-file "$tmp/comment.md")"; then
+    log "metrics: posted $week on #$epic"; outcome=posted detail="$detail; $week on #$epic"
+  else
+    log "metrics: could not comment on #$epic"; detail="$detail; comment not posted"; link=""
+  fi
 fi
+
+# Agent health (#755): one bug in Triage per agent whose failed % or limit % crossed
+# the threshold (metrics.py health: at most 3, else one combined issue), deduplicated
+# by title against every issue already filed, so a re-run for the week files nothing twice.
+filed=0
+if gh issue list -R "$slug" --state all -L 300 --search "\"Agent health\" in:title" \
+  --json number,title > "$tmp/health_issues.json"; then
+  python3 "$METRICS_PY" health "$week" "$tmp/health" --runs "$AGENT_RUNS_FILE" \
+    --issues "$tmp/health_issues.json" --link "$link" > "$tmp/health.log"
+  while IFS= read -r line; do log "metrics: $line"; done < "$tmp/health.log"
+  for title_file in "$tmp"/health/*.title; do
+    [[ -f "$title_file" ]] || continue
+    title="$(cat "$title_file")"
+    if url="$(gh issue create -R "$slug" --label bug --title "$title" --body-file "${title_file%.title}.body")"; then
+      filed=$((filed + 1))
+      add_to_board "$url" "Triage" >/dev/null || log "metrics: $url filed but not put on the board"
+      log "metrics: filed $url"
+    else
+      log "metrics: could not file \"$title\""
+    fi
+  done
+else
+  log "metrics: could not list issues, the agent-health check files nothing"
+fi
+run_end "$outcome" "$detail; $filed agent-health issue(s) filed"

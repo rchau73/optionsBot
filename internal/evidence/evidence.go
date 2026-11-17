@@ -108,9 +108,12 @@ type Report struct {
 	E1        Reliability    `json:"e1_reliability"`
 	Coverage  Coverage       `json:"coverage"`
 	RVL       ReplayVsLive   `json:"replay_vs_live"`
+	Split     GapSplit       `json:"gap_split"` // the gap cut into its causes (#802)
+	GapTrend  GapTrend       `json:"gap_trend"` // the gap over the last 12 weekly reports (#820)
 	Score     Scoreboard     `json:"scoreboard"`
 	Hedge     HedgeTrial     `json:"hedge_trial"`
-	Equity    float64        `json:"equity"` // coin, at the start (0 = unknown)
+	Samples   []FigureSample `json:"samples"` // the headline figures' sample sizes (#772)
+	Equity    float64        `json:"equity"`  // coin, at the start (0 = unknown)
 	EquitySrc string         `json:"equity_source"`
 }
 
@@ -251,16 +254,23 @@ func Build(in Inputs) Report {
 		GEXDays:     missingDays(w, gexTimes(in.GEX)),
 	}
 	r.Coverage = buildCoverage(in.Recorded, w)
+	var res *replay.Result
+	r.Replay, r.Gap, res = buildReplay(in)
 	var days []replay.Day
-	r.Replay, r.Gap, days = buildReplay(in)
+	if res != nil {
+		days = res.Days
+	}
 	if note := r.Coverage.partialNote(); note != "" && r.Replay.Ran {
 		r.Replay.Partial, r.Gap.Partial = note, note
 	}
+	r.Split = buildGapSplit(in, r, res)
 	r.Stress = buildStress(in)
 	r.ROM = buildROM(in, r.Replay)
 	r.E1 = buildReliability(in, r.Util.Stats, r.Missing.HistoryDays)
 	r.RVL = buildReplayVsLive(in, r, days)
+	r.GapTrend = buildGapTrend(in, r)
 	r.Hedge = BuildHedgeTrial(in.Hedge, in.Points, in.Account)
+	r.Samples = buildSamples(r, in.Account)
 	return r
 }
 
@@ -301,8 +311,9 @@ func buildHold(in Inputs, s perf.Summary) Hold {
 		StrategyKnown: s.HoldKnown && s.EquityKnown, ReturnUSDPct: s.ReturnUSDPct, ExcessReturnPct: s.ExcessReturnPct}
 }
 
-// buildReplay also returns the replay's days (the replay vs live section's worst day).
-func buildReplay(in Inputs) (Replay, Gap, []replay.Day) {
+// buildReplay also returns the replay's result (nil when it did not run): its
+// days for the replay vs live section's worst day, its fills for the gap split.
+func buildReplay(in Inputs) (Replay, Gap, *replay.Result) {
 	w := in.Window
 	rp := Replay{Source: in.Market, ConfigPath: in.Config, BooksRead: len(in.Snaps)}
 	gap := Gap{Source: in.Journal + " marked at " + in.Market + " mids", Unmodelled: Unmodelled}
@@ -352,7 +363,7 @@ func buildReplay(in Inputs) (Replay, Gap, []replay.Day) {
 	gap.Live = replay.ActualPnL(in.Trades, window, res.Start, res.End)
 	gap.Replay = res.Net
 	gap.Gap = res.Net - gap.Live.Net
-	return rp, gap, res.Days
+	return rp, gap, &res
 }
 
 // buildROM is the return on margin, live and replayed (#278). The replay's

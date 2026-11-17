@@ -69,6 +69,24 @@ The session in use is refused with 409 (use **Sign out**); someone else's or an 
 Audited as `session_ended` (`username`, `role`, `target_session`: the first 8 characters of the public id); logged `session ended`.
 No analytics event is sent.
 
+### Sign-in summary
+
+The Active sessions dialog opens with the person's previous sign-in and the wrong passwords typed for their username since (#803), so a stranger's attempt is noticed by the owner and not only by the admin's [security digest](#security-digest).
+The line reads "Last sign-in: <date and time>. <N> wrong-password attempts since.", then "Not you? Change your password and sign out the other browsers." and a **Change your password** button that opens that dialog.
+A first sign-in reads "This is your first sign-in." with no count; a sign-in before #803 shipped reads "Your sign-in before this one was not recorded.".
+While the username is locked the dialog also says until when.
+`GET /api/auth/security-summary` (any role, a live session re-read like `GET /api/auth/sessions`) answers `{previous_sign_in, first_sign_in, failed_since, notice_id, locked_until?}` from the person's own `users` row and the lock ([API routes](api-routes.md)); never an IP, a browser, a token or another person's data.
+The count is not derivable from what existed: `login_failures` loses its rows after 15 minutes, at a lock and at a sign-in, and the audit trail is a file the monitor does not read per request.
+So `users` has three columns: `failed_sign_ins` (wrong passwords at the sign-in form for an existing username since the last sign-in), `failed_sign_ins_before` (those between the previous sign-in and the last one) and `previous_sign_in_at`.
+A successful sign-in moves `last_sign_in_at` to `previous_sign_in_at` and `failed_sign_ins` to `failed_sign_ins_before`, and sets `failed_sign_ins` to 0: the count starts again from 0.
+`failed_since` = both counters, so an attempt while the person is signed in shows at once.
+Not counted: an unknown username (no row), an attempt refused while the username is locked (its password is never checked) and a wrong current password in Change password (the person is signed in).
+The counter is written without its own save, in the same file write as the lockout's failure record, so a known username costs no extra write and still looks the same as an unknown one; the 401 text, the lockout thresholds and the audit lines are unchanged.
+When `failed_since` > 0 (not on a first sign-in) the bell lists one Needs you item, kind `security` (the bell, [Menu and pages](menu-and-pages.md)), with the id `notice_id` (`security:<last sign-in>:<count>`): opening Active sessions marks it read, and a new attempt brings a new one.
+The bell's badge drops at its next refresh (at most a minute).
+The count is never logged: the existing `sign-in failed` line keeps its fields.
+Analytics: `security_summary_seen` with `failed_since` as a bucket (`0`, `1`, `2_4`, `5_plus`; none on a first sign-in), for consenting people only ([event plan](../../docs/product/analytics/event-plan.md)).
+
 ### Reset link
 
 For a person who forgot their password, no e-mail is needed (#307).
@@ -109,6 +127,7 @@ One JSON line for each of these, with username and IP:
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
 - another session signed out by its owner: `session ended` (with `event: session_ended` and `target_session`, #584);
+- a person's own data downloaded: `my data exported` with the counts per section (#750);
 - a refused action.
 
 Never a password, hash, token or `AUTH_SECRET`
@@ -125,7 +144,9 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `reset_link_issued` (with `expires_at`, #307);
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
+- `account_link_added` and `account_link_removed` (#760), with `target` (the manager) and `account_id`, where `username` and `role` are the admin's;
 - `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
+- `my_data_exported` (a person downloaded their own data, #750), with `counts` per section, never the content;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);
@@ -136,7 +157,8 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `manual_close` and `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
 - `audit_exported` (an admin downloaded the trail as CSV, #702: `filters`, `lines`, `cut`, `skipped` and `complete`, never an exported line);
 - `futures_hedge_switched` (bot, `enabled` true or false and the bot's status; #657, admins only);
-- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token).
+- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token);
+- `parameter_change_recorded` (#741, a manager confirmed a lab run's change and it was recorded, nothing applied: `run_id`, `underlying`, `config`, `changes` with each `key`, `old` and `new`, `token_id` (a hash prefix, never the token), `applied: false` and `line`).
 Every line ends with two fields of the hash chain (#619, `lib/auth/auditchain.js`): `prev`, the SHA-256 of the previous line's exact bytes (`""` for the first line of the trail), and `line_hash`, the SHA-256 of the line itself up to `,"line_hash"`.
 Both are hashes of audit lines, never of a password or a token; the Audit page leaves them out of the detail column and the export out of the file.
 Never a password, hash or token (nor a reset link).

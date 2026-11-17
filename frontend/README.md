@@ -19,7 +19,7 @@ Each area has its own file under `docs/`, so a change to one area does not touch
 - [Analytics](docs/analytics.md): usage events, surveys, retention, and the Analytics page
 - [Assistant](docs/assistant.md): the help assistant, its guard, its panel and its routes
 - [Glossary and help content](docs/glossary-and-help.md): glossary, risk notes, empty states, videos
-- [Testing](docs/testing.md): the viewport check and the accessibility baseline
+- [Testing](docs/testing.md): the viewport check, the accessibility baseline and the four answers on the demo scenarios (`__tests__/scenario-answers.test.jsx`)
 - [Responsive audit](docs/responsive-audit.md): what breaks at phone and tablet widths
 
 ## Run it
@@ -39,13 +39,17 @@ go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082  # ETH
 cd frontend && npm install && npm run dev                       # http://localhost:3000
 ```
 
-**Investor-summary scenarios** (#203) for design and user tests — `-scenario good|mixed|drawdown`, served through the real API code, nothing faked in the frontend: `good` steady monthly income (no stop-loss), `mixed` a losing month (every close two months back a stop-loss, negative in coin and USD) among winning ones, `drawdown` the same losing month, a thin current month, a book five times larger so the worst case now dwarfs the month's income, and the nearest put held at 2.6× its entry, within 20 % of its stop mark.
+**Investor-summary scenarios** (#203) for design and user tests — `-scenario good|mixed|drawdown|hedged`, served through the real API code, nothing faked in the frontend: `good` steady monthly income (no stop-loss), `mixed` a losing month (every close two months back a stop-loss, negative in coin and USD) among winning ones, `drawdown` the same losing month, a thin current month, a book five times larger so the worst case now dwarfs the month's income, and the nearest put held at 2.6× its entry, within 20 % of its stop mark.
+`-scenario hedged` (#827) is the default book with the futures hedge on: spot 3 % under where the strangles were sold, and a sold `BTC-PERPETUAL` that evens out the worst case's two moves.
+It trades again (a journaled `hedge_fill`) when they drift more than 10 % apart, so the Last action is sometimes a hedge trade.
+The worst case counts it as a live bot's does (`worst_case.hedge`), and `GET /api/hedge` serves the hedge on, with no switch.
 A scenario reports `deployment: "demo"` and `version: "scenario <name>"` in `/api/status` (the header's badge shows DEMO · scenario <name>) beside the demo's `testnet (demo)` environment, so it is never read as a track record.
 Without `-scenario` the demo is unchanged.
 
 ```bash
 go run ./cmd/monitor-demo -scenario mixed
 go run ./cmd/monitor-demo -scenario drawdown -underlying ETH -addr 127.0.0.1:8082
+go run ./cmd/monitor-demo -scenario hedged
 ```
 
 Local runs need the sign-in variables too, e.g. in `frontend/.env.local` (git-ignored): `AUTH_SECRET=$(openssl rand -base64 48)`, `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD=<12+ characters>`; the user database is then `frontend/data/monitor/auth.db` (git-ignored).
@@ -133,6 +137,8 @@ npm run test:phone                # viewport check (#309, #425): every menu page
   - Contents: tests and shared fixtures
 - `e2e/`
   - Contents: the viewport check (Playwright, `npm run test:phone`): config, sign-in fixture, the pages from the menu, in-page measuring, baseline comparison
+  - `a11y-report.json` (#763, report-only): per page at 360 px, `small_text` (under 12 px) and `small_targets` (under 44 × 44 px), each with a `selector`, its size and `count`; `ranked` puts the findings on the most pages first.
+    Read it from the top of `ranked`; the ranked list and each fix's owner are in `docs/product/responsive-a11y-baseline.md` (details: [`docs/testing.md`](docs/testing.md) "Colour contrast, text size and tap targets").
 
 Stack: Next.js (App Router) · Tailwind CSS v4 with design tokens in `app/globals.css` (`profit`, `loss`, `call`, `put`, `live`, `testnet`…) · Recharts · clsx.
 

@@ -91,7 +91,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
-  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`;
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
     and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
@@ -107,12 +107,18 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - its Trend section (#707) puts the week beside the 3 before it from the same dumps (`metrics.sh` fetches 4 weeks): an arrow when worse than their mean, a base under 3 "too few to judge", a week with no data "–";
   - its Funnel section follows the issues filed in the week with an `E#` label through to verified fixed: numbers and counts only.
   - its "Flaky repeat offenders (30 days)" section (#747) lists each test file with 2 or more flaky issues (`flaky.repeat_offenders`; the dumps reach 30 days before the week's end), else "none".
+  - agent health (#755, pure `health`/`health_issues`): an agent with 4 runs or more whose failed % or limit % reached 25 % gets one `bug` `[E6] Agent health: <agent> <metric> <week>` in Triage
+    (counts, run ids, the report's link; more than 3 crossings → one combined issue; dedup by title, open or closed); the Runs section names them, else "no agent crossed a threshold".
 - Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;
   - it also runs the direction trial's scorecard (`cmd/evidence -compare-direction`, #440: last week plus every week since 2026-W43 without one)
     and adds a "Direction trial" block (% and counts: replay net/drawdown/sheds, live sheds, live − replay, the brief's counters), naming the first week with a GEX shed on the comment's first line;
   - `agent:needs-human` decision tickets (first shed, early stop, review due — each kind once ever, by title) go to Triage, never a config change.
+- Daily recording check (#716, docs/agents/evidence.md "Daily recording check"):
+  - `recording_check.sh` (from the tick, first tick of a UTC day, `data/agents/recording/<yesterday>.done`, no Claude) runs `cmd/datacoverage -yesterday -json` for each env that records the market (`BOT_RECORD_MARKET`, stable) × bot;
+  - a market recording under `evidence.ReplayFullCoveragePct` (90) of yesterday's hours or with a gap over `LongGapHours` (3) → one notify and one comment on the E2 epic (pure `recording_day.py`, hours and % only); all at the floor → silent;
+  - ledger agent `recording`.
 - Weekly go / no-go reading (#738, docs/product/go-no-go.md §6):
   - `go_no_go.sh` (from the tick, first tick of a Monday UTC after the evidence report, else from Wednesday; `data/agents/go_no_go/<week>.done`, no Claude)
     runs `scripts/product/go_no_go_week.py`: `go_no_go.py -json` on stable's clone and the newest tally and fake-door files, one line appended to the gitignored `data/product/go_no_go_history.jsonl` (shares and ratios only);
@@ -132,6 +138,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - files one `bug` `[E13] Engagement drop: <metrics> <week>` in Triage when pure `usage.Drops`
     (`internal/usage/drops.go`: active users or help used ≥ 30 % under the 3 weeks' mean, a funnel ≥ 20 points under, a base under 10 = too few to judge, a week without events left out)
     finds one (dedup by week as `flaky.py`),
+  - appends each env's lab usage (`cmd/labstats`, #824, counts only) to its report as "Lab usage" when the clone has `data/compare/requests/` (`lib.sh lab_section`; a failure is logged, never stops the report),
   - and posts `usage_week.py`'s summary on the E13 epic — named figures only, so no user, session or amount field; percentages only for a live env.
   - after the assistant quality review (`assistant_review.sh`, #438) it runs `assistant_golden.sh` (#536): in `ASSISTANT_GOLDEN_ENV` (mvp) when its `.env` has `ANTHROPIC_API_KEY`,
     `scripts/product/assistant_run.sh` asks the real assistant every golden question (a test run: its own log, `test_run`), grades it against `golden_baseline.json`

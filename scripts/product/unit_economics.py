@@ -33,6 +33,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PRIVATE_DIR = os.path.join(REPO, "data", "product")
 
 LEGAL_WARNING = "needs legal review"
+SCENARIOS_FILE = "data/product/pricing/scenarios.md"  # written by --scenario
 PAYBACK_MAX_MONTHS = 12
 LTV_CAC_MIN = 3
 
@@ -363,6 +364,37 @@ def render_text(report):
     return "\n".join(lines) + "\n"
 
 
+def flatten_inputs(mapping, prefix=""):
+    """Every leaf of a scenario as (dotted name, value), in file order."""
+    for key, value in mapping.items():
+        name = f"{prefix}{key}"
+        if isinstance(value, dict):
+            yield from flatten_inputs(value, name + ".")
+        else:
+            yield name, value
+
+
+def render_scenarios(scenario, report):
+    """The decision file (#762): inputs, base case and pessimistic case. Every input is an assumption."""
+    lines = [
+        "# Pricing scenarios (private: data/product/, gitignored)",
+        "",
+        "Every input below is an **assumption**: none is measured. Verify each against the step named in "
+        "`docs/product/pricing-proposal.md` §3 before it informs a price.",
+        "",
+        "## Inputs",
+        "",
+        "| Input | Value | Status |",
+        "|---|---|---|",
+    ]
+    lines.extend(f"| {name} | {value} | assumption |" for name, value in flatten_inputs(scenario))
+    lines += ["", "## Base case and pessimistic case (churn and conversion shifted)", "", "```",
+              render_text(report).rstrip(), "```"]
+    if report["warnings"]:
+        lines += [""] + [f"- WARNING: {w}" for w in report["warnings"]]
+    return "\n".join(lines) + "\n"
+
+
 def check_out_path(path, private_dir=PRIVATE_DIR):
     """Returns the absolute path if it lies inside data/product/, else raises."""
     target = os.path.realpath(os.path.abspath(path))
@@ -377,14 +409,21 @@ def main(argv=None):
     ap.add_argument("scenario", help="scenario file (.yaml or .json)")
     ap.add_argument("-format", choices=("text", "json"), default="text")
     ap.add_argument("-out", help="write the report here; must be inside data/product/")
+    ap.add_argument("--scenario", action="store_true", dest="scenarios",
+                    help=f"write the decision file {SCENARIOS_FILE} (inputs labelled assumption, base and pessimistic case)")
     args = ap.parse_args(argv)
     try:
-        out = check_out_path(args.out) if args.out else None
-        report = analyse(load_scenario(args.scenario))
+        out = check_out_path(args.out, PRIVATE_DIR) if args.out else None
+        scenario = load_scenario(args.scenario)
+        report = analyse(scenario)
     except (ScenarioError, OSError) as e:
         print(f"unit_economics: {e}", file=sys.stderr)
         return 2
-    text = json.dumps(report, indent=2) + "\n" if args.format == "json" else render_text(report)
+    if args.scenarios:  # fixed path, so the file can only land in the gitignored data/product/
+        out = check_out_path(os.path.join(PRIVATE_DIR, "pricing", "scenarios.md"), PRIVATE_DIR)
+        text = render_scenarios(scenario, report)
+    else:
+        text = json.dumps(report, indent=2) + "\n" if args.format == "json" else render_text(report)
     if out:
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "w", encoding="utf-8") as f:

@@ -18,10 +18,20 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - the E1 reliability section (`reliability.go`, #361) adds `history.Utilisation` against the 60 % target, `idlemargin.Attribute`'s idle time by cause and `deployeffect.Analyze`'s startups (journal + `<envs>/history/deploys.tsv`), counts/hours/lots only;
   - the recorded-history coverage section (`coverage.go`, #362) runs `internal/coverage` over the week per dataset (`Inputs.Recorded`, read by `Load`; absent folder → `not recorded`),
     labels the replay and gap `partial` under `ReplayFullCoveragePct` (90) of market hours and lists gaps over `LongGapHours` (3) in `coverage.long_gaps`, which `evidence.sh` posts and notifies;
+    the daily recording check (`daily.go`, #716: pure `BuildDailyRecording`, `CheckYesterday`, `cmd/datacoverage -yesterday`) applies the same two constants to yesterday's market recordings, pinned by `tests/evidence_daily_test.go`;
   - the "replay vs live" section (`replayvslive.go`, #488, `Report.RVL`) puts the Replay and Gap figures side by side (result in coin, USD and % of equity, fees, filled legs, worst day; gap in coin and % of the live result), no second replay;
     - not comparable — missing hours listed, no gap — under 90 % market coverage, a market gap over 3 h, coverage not measured or no replay;
     - causes only from the journal (frozen slot-hours, startup rebalance orders, closes with an `Actor`);
     - `Inputs.Account` (`DeribitAccount(root)`, set by `cmd/evidence`) = `live` drops every amount from its Markdown and JSON (% only).
+  - the gap split (`gapsplit.go`, #802, `Report.Split`): pure `buildGapSplit` over the journal's fills and the replay's own (`replay.Result.Fills`, `StartBook`, `EndBook`), no second replay;
+    - fill price (matched within `FillMatchWindow`, 1 h), fees, trades one side made (to the window's last recorded mid, with the journal's reason), marks, unexplained = the gap minus them — all in the Gap's sign, summing to `Gap.Gap`;
+    - a consistent journal leaves 0 unexplained (`tests/evidence_gapsplit_test.go`); explained = within `GapExplainedPct` (20, an assumption) of the gap; the exchange's marks are a line outside the sum;
+    - every part carries a `Sample` of its legs; partial as the Gap; `live` → % only, the pack (`packGapSplit`) and `evidence_week.py` `split_line` → the share of the gap only.
+  - the gap over time (`gaptrend.go`, #820, `Report.GapTrend`): pure `ScoreGap` over the last `GapTrendWeeks` (12, = `ScoreboardWeeks`) weekly reports up to the report's week (`Inputs.Earlier` + this week's own), each one's `RVL` and `Split` as written, no second replay;
+    - a week is `comparable`, `partial` (`Gap.Partial`), `not comparable` (`RVL.Note`) or `no gap` (the reason; a report before #488 says so) — only comparable weeks count;
+    - summary: median / worst |gap| (pp of equity), range, weeks replay above / below / equal, the largest named cause and `unexplained` as % of the summed gap (parts' pp summed over the weeks with a split);
+    - verdict (`GapVerdict.Line`, computed once): `ThinNote` "(N weeks)" under `SampleMinWeeks` comparable weeks, `stable` when one sign and range ≤ `GapStableRangePP` (1 pp, an assumption, docs/agents/evidence.md "Gap over time"), else `drifting`;
+    - live (the env or any report's `RVL.Account`) → no coin, the split's shares only; the pack's "Gap over time" rows (`packGapTrend`) and `evidence_week.py` `trend_line` post the line, never recomputing it.
   - the account reconciliation (`reconcile.go`, #566, `Report.Recon`): pure `BuildReconciliation` — the margin balance at the first and last history point in the week carrying one, the journal's closes in between (net of fees; USD balance → each close's `PnLUSD`, else the history's spot);
     - gap = change − booked, in the unit and % of the starting balance, flagged over `ReconcileTolerancePct` (1) with `ReconcileCauses` (pinned by `tests/evidence_reconcile_test.go`);
     - under two balance points → "not enough history", no gap; days without one listed; `live` → % only; `evidence_week.py` `recon_cell` posts the % on E2.
@@ -39,7 +49,13 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
     - cumulative since the ledger began, as read, not over the week; marked at the P&L history's last spot (`spotAt`), funding left out as the ledger's testnet pricing does;
     - never switched on (`ModeState.Since` zero, even with a paper ledger) → `not started`; under `HedgeTrialMinDays` (7) → `not enough days`, the days missing, no figure; no spot → no figure;
     - `worst_day` = the UTC day of shed decisions with the lowest Σ `Counterfactual.Value`: the ledger keeps no daily series;
-    - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one.
+    - `live` → days and counts only; the days stand next to every figure, a negative advantage as bold as a positive one;
+    - the verdict (`hedgeverdict.go`, #780, `HedgeTrial.Verdict`): pure `hedgeVerdict` applies `docs/hedge-trial.md` to the section's figures plus the journal's `hedge_unavailable`/`hedge_rate_limited` lines since the ledger began (`ReadHedgeEvents`, read by `Load`);
+      under 7 days `needs more days` with the days missing, none when not started, not read, without a spot or live; a proposal needs `HedgeProposeMinDays` (= `SampleMinDays`); it changes nothing.
+  - the direction trial's verdict (`directionverdict.go`, #788, `DirectionReport.Verdict`): pure `BuildDirectionVerdict` applies `docs/direction-trial.md` to the weekly scorecards from 2026-W43
+    (`WithDirectionVerdict` reads the earlier weeks' JSON, `ReadDirectionWeeks`; `cmd/evidence -compare-direction` sets it);
+    - a week missing over 2 book days is excluded, one without both replays counts toward neither d nor noise; kill rule first (3 counted weeks in a row under −noise), then the span of 6, sma better (d, then the tail guard alone), no difference (|d| ≤ noise), bias better;
+    - the span check flags a sign of bias − sma changing on half the steps or more; the live-drawdown half of the kill rule is not in the scorecard (`NotChecked`); `evidence_week.py` posts `verdict.line`, never recomputing it.
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,
@@ -53,3 +69,7 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
   - every `PackFigure` carries its source (clone-relative), window and caveat, and every section the replay-vs-live label; risks are rows of the same table, and nothing in a table is bold;
   - live when the clone, the track record or the report says so (`packAccount`) → no coin row, and the caveat says live: the ticket's "testnet" would be false there;
   - `evidence.sh` runs `-track-record -trend -pack` after each weekly report.
+- Sample size (`sample.go`, #772): every `PackFigure` with a number carries a `Sample` (days, whole weeks, events where the figure depends on them), and the weekly report's headline figures are `Report.Samples` (its "Sample size" table);
+  - `Thin` under `SampleMinDays` (84), `SampleMinWeeks` (12, = `ScoreboardWeeks`) or `SampleMinEvents` (10) → "too few to conclude (N days)" beside the number, which stays;
+  - events = `TailReasons` closes (stop-loss, delta exit, shed; `WeekRow.TailEvents`, summed in `Counts.TailEvents`), the hedge trial's real and paper trades and shed legs;
+  - the floors are assumptions to revisit in 2027-W02 (`docs/agents/evidence.md` "Sample size"); a new pack figure gets its sample from its `packRows`, a new weekly headline figure needs its row in `buildSamples`.

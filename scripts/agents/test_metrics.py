@@ -608,6 +608,192 @@ class FlakyRepeatOffenders(unittest.TestCase):
         self.assertEqual(got.strip(), "none")
 
 
+def agent_runs(agent, outcomes, day="2026-10-13", prefix=None):
+    """Ledger lines: one ended run of agent per outcome, 10 min each, on day (in 2026-W42 by default)."""
+    lines = []
+    for n, outcome in enumerate(outcomes):
+        rid = f"{prefix or agent}-{n}"
+        lines += [run_line(f"{day}T{n % 24:02d}:00:00Z", agent, rid, "start"),
+                  run_line(f"{day}T{n % 24:02d}:10:00Z", agent, rid, "end", outcome)]
+    return lines
+
+
+def health_of(lines):
+    start, end = metrics.week_bounds("2026-W42")
+    f = os.path.join(tempfile.mkdtemp(), "agent_runs.jsonl")
+    open(f, "w").write("\n".join(lines) + "\n")
+    by, _, _ = metrics.week_runs(start, end, f)
+    return by, f
+
+
+class AgentHealth(unittest.TestCase):
+    """#755: a bug in Triage when an agent's failed % or limit % crosses the threshold."""
+
+    # Scenario: an agent fails too often
+    def test_scenario_an_agent_fails_too_often(self):
+        by, _ = health_of(agent_runs("dev", ["failed", "abandoned", "failed"] + ["pr_opened"] * 5))
+        crossings, too_few = metrics.health(by)
+        self.assertEqual(crossings, [{"agent": "dev", "metric": "failed %", "k": 3, "n": 8,
+                                      "ids": ["dev-0", "dev-2", "dev-1"]}])
+        self.assertEqual(too_few, [])
+        [(title, body)] = metrics.health_issues("2026-W42", crossings, [], "https://github.com/o/r/issues/9#c1")
+        self.assertEqual(title, "[E6] Agent health: dev failed % 2026-W42")
+        self.assertIn("**dev failed % 38 % (3 of 8 runs)**", body)
+        self.assertIn("`dev-0`, `dev-2`, `dev-1`", body)
+        self.assertIn("https://github.com/o/r/issues/9#c1", body)
+        self.assertNotIn("free text", body)  # a run's detail never reaches the issue
+
+    def test_the_thresholds_at_the_boundary(self):
+        cases = [  # (outcomes, crossing metrics)
+            (["failed"] + ["pr_opened"] * 3, ["failed %"]),           # 25 %: crosses
+            (["failed"] + ["pr_opened"] * 4, []),                     # 20 %: does not
+            (["skipped_limit"] + ["pr_opened"] * 3, ["limit %"]),
+            (["blocked"] * 4, []),                                    # blocked is neither
+            (["failed", "skipped_limit", "ok", "ok"], ["failed %", "limit %"]),
+        ]
+        for outcomes, want in cases:
+            by, _ = health_of(agent_runs("review", outcomes))
+            self.assertEqual([c["metric"] for c in metrics.health(by)[0]], want, outcomes)
+
+    # Scenario: too few runs to judge
+    def test_scenario_too_few_runs_to_judge(self):
+        by, ledger = health_of(agent_runs("pm", ["failed", "failed"]))
+        crossings, too_few = metrics.health(by)
+        self.assertEqual(crossings, [])
+        self.assertEqual([(c["agent"], c["n"]) for c in too_few], [("pm", 2)])
+        self.assertEqual(metrics.health_issues("2026-W42", crossings, [], ""), [])
+        out = metrics.report("2026-W42", write_dir(), runs_file=ledger, stuck_file="")
+        self.assertIn("no agent crossed a threshold", out)
+        self.assertIn("- Agent health, base too small to judge (under 4 runs): pm failed % 100 % (2 of 2 runs)", out)
+
+    # Scenario: the same week is run twice
+    def test_scenario_the_same_week_is_run_twice(self):
+        by, _ = health_of(agent_runs("dev", ["failed"] * 4) + agent_runs("pm", ["skipped_limit"] * 4))
+        crossings, _ = metrics.health(by)
+        first = metrics.health_issues("2026-W42", crossings, [], "")
+        self.assertEqual([t for t, _ in first], ["[E6] Agent health: dev failed % 2026-W42",
+                                                 "[E6] Agent health: pm limit % 2026-W42"])
+        again = metrics.health_issues("2026-W42", crossings, [first[0][0], "[E6] Agent health: pm limit % 2026-W41"], "")
+        self.assertEqual([t for t, _ in again], ["[E6] Agent health: pm limit % 2026-W42"])
+        self.assertEqual(metrics.health_issues("2026-W42", crossings, [t for t, _ in first], ""), [])
+
+    # Scenario: a bad week for many agents
+    def test_scenario_a_bad_week_for_many_agents(self):
+        lines = []
+        for agent in ("dev", "pm", "review", "sme", "deploy"):
+            lines += agent_runs(agent, ["failed"] * 4)
+        by, _ = health_of(lines)
+        crossings, _ = metrics.health(by)
+        issues = metrics.health_issues("2026-W42", crossings, [], "")
+        self.assertEqual(len(issues), 1)
+        title, body = issues[0]
+        self.assertEqual(title, "[E6] Agent health: 5 crossings 2026-W42")
+        for agent in ("dev", "pm", "review", "sme", "deploy"):
+            self.assertIn(f"**{agent} failed % 100 % (4 of 4 runs)**", body)
+        self.assertEqual(metrics.health_issues("2026-W42", crossings, [title], ""), [])
+        # three crossings are still filed one by one
+        self.assertEqual(len(metrics.health_issues("2026-W42", crossings[:3], [], "")), 3)
+
+    # Scenario: a healthy week
+    def test_scenario_a_healthy_week(self):
+        by, ledger = health_of(agent_runs("dev", ["pr_opened"] * 6))
+        self.assertEqual(metrics.health(by), ([], []))
+        out = metrics.report("2026-W42", write_dir(), runs_file=ledger, stuck_file="")
+        self.assertIn("- Agent health (failed % or limit % ≥ 25 % of 4 runs or more, an issue in Triage, #755): "
+                      "no agent crossed a threshold", out)
+        self.assertNotIn("base too small", out)
+
+    def test_a_run_id_not_from_lib_sh_is_not_shown(self):
+        by, _ = health_of(agent_runs("dev", ["failed"] * 4, prefix="dev <script>"))
+        self.assertEqual(metrics.health(by)[0][0]["ids"], [])
+
+    def test_cli_writes_the_issue_files(self):
+        _, ledger = health_of(agent_runs("dev", ["failed"] * 4))
+        d = tempfile.mkdtemp()
+        existing = os.path.join(d, "issues.json")
+        json.dump([{"number": 1, "title": "unrelated"}], open(existing, "w"))
+        lines = metrics.health_files("2026-W42", os.path.join(d, "out"), ledger, existing, "")
+        self.assertEqual(lines, ["agent health 2026-W42: 1 crossing(s), 0 on too small a base, 1 issue(s) to file"])
+        self.assertEqual(open(os.path.join(d, "out", "1.title")).read(), "[E6] Agent health: dev failed % 2026-W42\n")
+        self.assertIn("`data/agents/metrics/2026-W42.md`", open(os.path.join(d, "out", "1.body")).read())
+        self.assertIn("ledger unavailable", metrics.health_files("2026-W42", d, os.path.join(d, "none"), existing, "")[0])
+
+
+GH_STUB = """#!/usr/bin/env bash
+echo "$*" >> "$MT_TEST_DIR/gh.log"
+case "$1 $2" in
+  "repo view") echo owner/repo ;;
+  "issue list")
+    if [[ "$*" == *"--label epic"* ]]; then echo 9
+    elif [[ "$*" == *"Agent health"* ]]; then cat "$MT_TEST_DIR/issues.json"; else echo '[]'; fi ;;
+  "pr list") echo '[]' ;;
+  "issue comment") echo "https://github.com/owner/repo/issues/9#issuecomment-1" ;;
+  "issue create")
+    while [[ $# -gt 0 ]]; do [[ "$1" == --title ]] && echo "$2" >> "$MT_TEST_DIR/titles.txt"; shift; done
+    echo "https://github.com/owner/repo/issues/900" ;;
+  "api repos/owner/repo/issues/events") ;;
+  *) exit 1 ;;
+esac
+"""
+GIT_STUB = "#!/usr/bin/env bash\nexit 0\n"
+
+
+class MetricsScript(unittest.TestCase):
+    """#755: metrics.sh files the health issues with a stub gh (no network), deduplicated by title."""
+
+    def setUp(self):
+        import shutil
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        t = lambda *p: os.path.join(self.tmp, *p)  # noqa: E731
+        shutil.copytree(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), t("repo", "scripts"))
+        for name, text in (("gh", GH_STUB), ("git", GIT_STUB)):
+            os.makedirs(t("bin"), exist_ok=True)
+            open(t("bin", name), "w").write(text)
+            os.chmod(t("bin", name), 0o755)
+        os.makedirs(t("envs", "history"))
+        self.env = dict(os.environ, PATH=t("bin") + os.pathsep + os.environ["PATH"], OPTIONSBOT_ENVS=t("envs"),
+                        MT_TEST_DIR=self.tmp, AGENT_NOTIFY="0")
+        for k in ("AGENT_STATE_DIR", "AGENT_RUNS_FILE", "MONITOR_TOKEN", "MVP_MONITOR_TOKEN"):
+            self.env.pop(k, None)
+        self.t = t
+        import datetime as dt
+        self.week = metrics.previous_week(dt.datetime.now(dt.timezone.utc).date())
+        day = f"{metrics.week_bounds(self.week)[0]:%Y-%m-%d}"
+        open(t("envs", "history", "agent_runs.jsonl"), "w").write(
+            "\n".join(agent_runs("dev", ["failed", "abandoned", "failed"] + ["pr_opened"] * 5, day)) + "\n")
+        json.dump([], open(t("issues.json"), "w"))
+
+    def run_script(self):
+        import subprocess
+        p = subprocess.run(["bash", self.t("repo", "scripts", "agents", "metrics.sh")], env=self.env,
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return p.stdout + p.stderr
+
+    def titles(self):
+        try:
+            return open(self.t("titles.txt")).read().splitlines()
+        except FileNotFoundError:
+            return []
+
+    def test_scenario_a_failing_agent_files_one_bug_and_a_rerun_files_nothing(self):
+        out = self.run_script()
+        self.assertEqual(self.titles(), [f"[E6] Agent health: dev failed % {self.week}"], out)
+        self.assertIn("issue create -R owner/repo --label bug", open(self.t("gh.log")).read())
+        report = open(self.t("repo", "data", "agents", "metrics", self.week + ".md")).read()
+        self.assertIn("dev failed % 38 % (3 of 8 runs)", report)
+        ledger = [json.loads(l) for l in open(self.t("envs", "history", "agent_runs.jsonl")) if l.strip()]
+        self.assertEqual((ledger[-1]["agent"], ledger[-1]["outcome"]), ("metrics", "posted"))
+        self.assertIn("1 agent-health issue(s) filed", ledger[-1]["detail"])
+        # the same week again: the report removed by hand, the issue already there
+        os.remove(self.t("repo", "data", "agents", "metrics", self.week + ".md"))
+        json.dump([{"number": 900, "title": self.titles()[0]}], open(self.t("issues.json"), "w"))
+        out = self.run_script()
+        self.assertEqual(len(self.titles()), 1, out)
+        self.assertIn("already filed, nothing new", out)
+
+
 class EmptyWeek(unittest.TestCase):
     def test_no_data_renders_dashes_not_zeros(self):
         d = tempfile.mkdtemp()

@@ -55,5 +55,7 @@ Stop the trial early and file the decision ticket at once if, over any 3 consecu
 ## What happens at the review
 
 1. The scorecard of each week of the span is already there: `scripts/agents/evidence.sh` runs it every Monday for the week before (and back-fills the weeks since 2026-W43), posts its counters on the E2 epic and files the `agent:needs-human` ticket for the first GEX shed, the kill rule and the review (#440, docs/agents/evidence.md "Weekly evidence report"). By hand: `-compare-direction -week`.
-2. Fill the outcome above from the decisive rows, with d, noise and each week listed.
+2. Read the computed verdict: each scorecard's **Verdict** block (`internal/evidence/directionverdict.go`, #788) applies the outcomes, the kill rule and the span check above to every week from 2026-W43 up to its own: status, d, noise, the tail, each week and why it counted or not.
+   The E2 comment and the decision tickets carry its one line. It only proposes: it files nothing and changes no config. The thresholds stay **assumptions**.
+   The live-drawdown half of the kill rule is not in the scorecard: read it in the weekly evidence reports.
 3. File one ticket marked `agent:needs-human` with the outcome and its numbers. The product owner decides whether to keep `bias` on stable, move it to `sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges. It is never made by an agent.

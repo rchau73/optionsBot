@@ -58,6 +58,7 @@ type PackFigure struct {
 	Value   *float64 `json:"value"`
 	Unit    string   `json:"unit,omitempty"`
 	Display string   `json:"display"`
+	Sample  *Sample  `json:"sample,omitempty"` // how much data stands behind it (#772); nil only on a row without a number
 	Source  string   `json:"source"`
 	Window  string   `json:"window"`
 	Caveat  string   `json:"caveat"`
@@ -97,9 +98,11 @@ type PackInputs struct {
 	EnvsDir           string
 }
 
-// packRows collects a section's rows, all with the same source and caveat.
+// packRows collects a section's rows, all with the same source and caveat
+// and, unless a row brings its own, the same sample (nil = none known).
 type packRows struct {
 	source, window, caveat string
+	sample                 *Sample
 	figures                []PackFigure
 }
 
@@ -107,6 +110,9 @@ func (r *packRows) add(f PackFigure) {
 	f.Source, f.Caveat = r.source, r.caveat
 	if f.Window == "" {
 		f.Window = r.window
+	}
+	if f.Sample == nil {
+		f.Sample = r.sample
 	}
 	r.figures = append(r.figures, f)
 }
@@ -238,6 +244,7 @@ func packHeadline(in PackInputs, amounts bool, caveat string) packRows {
 		r.window = packDays(in.Track.From, in.Track.To)
 	}
 	if weeks != nil {
+		r.sample = ptrTo(WeeksSample(c.Reported, nil, ""))
 		r.add(PackFigure{Name: "Weeks covered", Value: ptr(float64(c.Reported)), Unit: packCount,
 			Display: fmt.Sprintf("%d of %d ISO weeks have a report", c.Reported, c.Reported+c.NotReported)})
 		r.value("Weeks with a loss", float64(c.Lost), packCount)
@@ -247,8 +254,12 @@ func packHeadline(in PackInputs, amounts bool, caveat string) packRows {
 		r.text("Weeks covered", NotReported)
 	}
 	if in.Track == nil || !in.Track.Known {
+		r.sample = nil
 		for _, name := range []string{"Net return", "Holding the coin", "Worst 7 days", "Max drawdown"} {
 			r.text(name, NotReported)
+		}
+		if weeks != nil {
+			r.sample = ptrTo(WeeksSample(c.Reported, intPtr(c.TailEvents), TailEventsName))
 		}
 		packWorstISOWeek(&r, c)
 		return r
@@ -256,15 +267,20 @@ func packHeadline(in PackInputs, amounts bool, caveat string) packRows {
 	r.source = in.TrackPath
 	s, unit := in.Track.Perf, strings.ToUpper(in.Bot)
 	known := s.EquityKnown
+	// The results rest on the days of history and the tail events in them;
+	// holding the coin on the days only.
+	r.sample = ptrTo(SpanSample(s.DaysCovered, intPtr(c.TailEvents), TailEventsName))
 	if amounts {
 		r.value("Net return in coin", s.NetPnL, unit)
 	}
 	r.valueOr("Net return, % of the starting equity, in coin", s.ReturnPct, packPct, known)
-	r.valueOr("Holding the coin over the same window, in USD", s.HoldReturnUSDPct, packPct, s.HoldKnown)
+	hold := packRows{source: r.source, window: r.window, caveat: caveat, sample: ptrTo(SpanSample(s.DaysCovered, nil, ""))}
+	hold.valueOr("Holding the coin over the same window, in USD", s.HoldReturnUSDPct, packPct, s.HoldKnown)
+	r.figures = append(r.figures, hold.figures...)
 	r.valueOr("The strategy in USD", s.ReturnUSDPct, packPct, known && s.HoldKnown)
 	r.valueOr("Excess over holding the coin", s.ExcessReturnPct, packPP, known && s.HoldKnown)
 	if s.WorstWeekKnown {
-		worst := packRows{source: r.source, window: packMinutes(s.WorstWeekStart, s.WorstWeekEnd), caveat: caveat}
+		worst := packRows{source: r.source, window: packMinutes(s.WorstWeekStart, s.WorstWeekEnd), caveat: caveat, sample: r.sample}
 		if amounts {
 			worst.value("Worst 7 days in coin", s.WorstWeek, unit)
 		}
@@ -308,6 +324,7 @@ func packScoreboard(in PackInputs, caveat string) packRows {
 	if s.FirstWeek != "" {
 		r.window = s.FirstWeek + " → " + s.LastWeek
 	}
+	r.sample = ptrTo(WeeksSample(s.WeeksCounted, nil, ""))
 	r.text("Status", s.Status)
 	r.add(PackFigure{Name: "Weeks counted", Value: ptr(float64(s.WeeksCounted)), Unit: packCount,
 		Display: fmt.Sprintf("%d of %d", s.WeeksCounted, s.WeeksNeeded)})
@@ -338,6 +355,7 @@ func packReplayVsLive(in PackInputs, amounts bool, caveat string) packRows {
 	}
 	rep, s := in.Latest, in.Latest.RVL
 	r.window = rep.Week
+	r.sample = ptrTo(rvlSample(*rep))
 	r.text("Replay vs live", label)
 	if rep.Replay.Partial != "" {
 		r.text("Why partial", packPlain(in, rep.Replay.Partial))
@@ -348,6 +366,7 @@ func packReplayVsLive(in PackInputs, amounts bool, caveat string) packRows {
 	if s.MissingHours != nil {
 		r.value("Market books missing", *s.MissingHours, packHours)
 	}
+	packGapTrend(&r, rep.GapTrend)
 	if !s.Comparable {
 		return r
 	}
@@ -369,7 +388,69 @@ func packReplayVsLive(in PackInputs, amounts bool, caveat string) packRows {
 	if s.GapPct != nil {
 		r.value("Gap, % of the live result", *s.GapPct, packPct)
 	}
+	packGapSplit(&r, rep.Split, amounts, unit)
 	return r
+}
+
+// packGapSplit adds the gap's causes (#802), each with its legs as its
+// sample: a share of the gap always, coin and pp of equity on testnet only.
+// A report written before the split has none.
+func packGapSplit(r *packRows, s GapSplit, amounts bool, unit string) {
+	if !s.Known {
+		return
+	}
+	for _, pt := range s.Parts {
+		sample := pt.Sample
+		row := func(name string, v float64, unit string) {
+			r.add(PackFigure{Name: name, Value: ptr(v), Unit: unit, Display: packDisplay(v, unit), Sample: &sample})
+		}
+		if amounts && pt.Coin != nil {
+			row("Gap split, "+pt.Part+", in coin", *pt.Coin, unit)
+			row("Gap split, "+pt.Part+", of the starting equity", pt.EquityPP, packPP)
+		}
+		if pt.GapPct != nil {
+			row("Gap split, "+pt.Part+", % of the gap", *pt.GapPct, packPct)
+		} else {
+			r.add(PackFigure{Name: "Gap split, " + pt.Part + ", % of the gap", Display: "the gap is 0", Sample: &sample})
+		}
+	}
+}
+
+// packGapTrend adds the gap over the last 12 weekly reports (#820): the
+// verdict as written and its statistics, pp of equity, shares and counts only
+// (no amount, live or not), each over the trend's weeks with its comparable
+// weeks as the sample. A report written before the trend has none.
+func packGapTrend(r *packRows, t GapTrend) {
+	if t.Label == "" || t.Note != "" {
+		return
+	}
+	window := t.FirstWeek + " → " + t.LastWeek
+	sample := t.Sample
+	add := func(f PackFigure) {
+		f.Window, f.Sample = window, &sample
+		r.add(f)
+	}
+	value := func(name string, v float64, unit string) {
+		add(PackFigure{Name: name, Value: ptr(v), Unit: unit, Display: packDisplay(v, unit)})
+	}
+	s := t.Summary
+	add(PackFigure{Name: "Gap over time, verdict", Display: t.Verdict.Line})
+	add(PackFigure{Name: "Gap over time, comparable weeks", Value: ptr(float64(s.Weeks)), Unit: packCount,
+		Display: fmt.Sprintf("%d of %d weekly reports", s.Weeks, len(t.Weeks))})
+	if s.Weeks == 0 {
+		return
+	}
+	value("Gap over time, median absolute gap, of the starting equity", *s.MedianAbsPP, packPP)
+	worst := PackFigure{Name: "Gap over time, worst absolute gap, of the starting equity", Value: ptr(*s.WorstAbsPP), Unit: packPP,
+		Display: packDisplay(*s.WorstAbsPP, packPP)}
+	worst.Window, worst.Sample = s.WorstWeek, &sample
+	r.add(worst)
+	value("Gap over time, weeks the replay was above live", float64(s.Above), packCount)
+	value("Gap over time, weeks the replay was below live", float64(s.Below), packCount)
+	if s.LargestPct != nil && s.UnexplainedPct != nil {
+		value("Gap over time, largest cause ("+s.LargestCause+"), % of the summed gap", *s.LargestPct, packPct)
+		value("Gap over time, unexplained, % of the summed gap", *s.UnexplainedPct, packPct)
+	}
 }
 
 // packUnmodelled is the replay section's risk: what the replay leaves out.
@@ -412,6 +493,7 @@ func packHedge(in PackInputs, amounts bool, caveat string) packRows {
 	if h.Since != nil && h.ReadAt != nil {
 		r.window = packMinutes(*h.Since, *h.ReadAt)
 	}
+	r.sample = hedgeSample(h)
 	r.text("Status", h.Status)
 	if h.Note != "" {
 		r.text("Why no figure", packPlain(in, h.Note))

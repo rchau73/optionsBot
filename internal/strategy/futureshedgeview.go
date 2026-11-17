@@ -51,7 +51,10 @@ type HedgeView struct {
 	// ShedNow is the side the GEX shed closes this cycle ("puts", "calls" or
 	// ""): with the mode on those legs are kept while the hedge can trade;
 	// switched off, they are bought back on the next cycle.
-	ShedNow   string        `json:"shed_now"`
+	ShedNow string `json:"shed_now"`
+	// StoodDown: why the hedge stands down while the book holds one option
+	// type only (#813); "" while it hedges.
+	StoodDown string        `json:"stood_down,omitempty"`
 	Benchmark hedge.Summary `json:"benchmark"`
 	// Testnet: the hedge is only ever on a test account's prices.
 	Testnet bool `json:"testnet"`
@@ -61,6 +64,14 @@ type HedgeView struct {
 	// BookScenarios: the one-day move table of the Positions page (#666);
 	// empty while a leg has no greeks or there is no spot.
 	BookScenarios []hedge.BookScenario `json:"book_scenarios"`
+}
+
+// standDownWords is the view's reason for a hedge standing down (#813).
+func standDownWords(side string, enabled bool) string {
+	if side == "" || !enabled {
+		return ""
+	}
+	return "the book holds " + side + " only, so the hedge stands down and the book keeps its direction"
 }
 
 func shedSideWord(a GammaAction) string {
@@ -89,6 +100,7 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 		BandCoin: s.fh.band, BandPct: config.FixedFuturesHedgeBandPct,
 		OrdersLastHour: len(pruneHour(append([]time.Time(nil), s.fh.sent...), now)), MaxPerHour: config.FixedFuturesHedgeMaxPerHour,
 		ShedNow:   shedSideWord(s.fh.shedSide),
+		StoodDown: standDownWords(s.fh.stoodDown, s.fh.mode.Enabled),
 		Benchmark: s.hedgePricing().Summarise(s.fh.mode.Ledger, p.RealizedFunding, mark, spot),
 		Halted:    s.fh.health.Halted(), HaltReason: s.fh.health.HaltReason, HaltedAt: s.fh.health.HaltedAt, RecheckAt: s.fh.health.RecheckAt,
 		NotHolding: s.fh.health.NotHolding(config.FixedFuturesHedgeUnfilledCycles),

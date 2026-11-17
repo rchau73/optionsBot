@@ -188,5 +188,51 @@ class OutPathTest(unittest.TestCase):
         self.assertIn("pessimistic", out.getvalue())
 
 
+class ScenarioFileTest(unittest.TestCase):
+    """Scenario: private scenarios stay private (#762)."""
+
+    def run_scenario(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            private = os.path.join(tmp, "data", "product")
+            saved, ue.PRIVATE_DIR = ue.PRIVATE_DIR, private
+            try:
+                with redirect_stdout(out), redirect_stderr(err):
+                    code = ue.main([os.path.join(HERE, "example_scenario.yaml"), "--scenario"])
+            finally:
+                ue.PRIVATE_DIR = saved
+            target = os.path.join(private, "pricing", "scenarios.md")
+            written = None
+            if os.path.exists(target):
+                with open(target, encoding="utf-8") as f:
+                    written = f.read()
+            others = [os.path.join(d, f) for d, _, fs in os.walk(tmp) for f in fs]
+            return code, written, others, target
+
+    def test_scenario_writes_only_the_private_file_with_assumption_labels(self):
+        code, written, others, target = self.run_scenario()
+        self.assertEqual(code, 0)
+        self.assertEqual(others, [target])
+        self.assertIn("pessimistic", written)
+        rows = [l for l in written.splitlines() if l.startswith("| ") and l.endswith("|")][2:]
+        inputs = [l for l in rows if "|" in l and l.rstrip().endswith("| assumption |")]
+        self.assertGreater(len(inputs), 10)
+        self.assertEqual(len(inputs), len(rows))
+
+    def test_scenarios_file_is_under_a_gitignored_path(self):
+        root = os.path.dirname(os.path.dirname(HERE))
+        with open(os.path.join(root, ".gitignore"), encoding="utf-8") as f:
+            self.assertIn("/data/", f.read().split())
+        self.assertTrue(ue.SCENARIOS_FILE.startswith("data/product/"))
+
+    def test_scenario_still_refuses_performance_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "bad.json")
+            with open(bad, "w", encoding="utf-8") as f:
+                json.dump({"cac": 1, "tiers": {"a": {"monthly_price": 1, "monthly_churn_pct": 5, "profit_share": 1}}}, f)
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(ue.main([bad, "--scenario"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,7 +77,10 @@ const WORDS = {
   hedge_mode_changed: modeWords,
   hedge_price_away: (d, coin) => `${orderWords(d)} waits: its price is too far from the index, so the trade would be at a poor price${deltaFacts(d, coin)}.`,
   hedge_rate_limited: (d, coin) => `${orderWords(d)} waits: the hourly limit of hedge orders was reached${deltaFacts(d, coin)}. It is tried again next cycle.`,
+  hedge_back: () => "The book holds calls and puts again, so the futures hedge holds the book's coin delta again: the GEX shed keeps its legs.",
   hedge_resumed: () => "The futures hedge can trade again and holds the book's coin delta: the GEX shed keeps its legs.",
+  hedge_stood_down: () =>
+    "The book holds one side only, so the futures hedge stands down: its perpetual is closed and the book keeps its direction. The GEX shed protects it as with the hedge off, until the book holds both sides again.",
   hedge_unavailable: () => "The futures hedge cannot trade, so the GEX shed is back on: it buys the threatened side back as usual until the hedge can trade again.",
   perp_left_open: (d) =>
     `The kill switch left ${d.amount_usd > 0 ? USD(d.amount_usd) : "part"} of the perpetual open: it was beyond what the bot itself held, such as one held by hand. It stays on the account until a person closes it.`,
@@ -87,7 +90,7 @@ const WORDS = {
 export const HEDGE_CHANGES = Object.keys(WORDS);
 
 // Lines that say the book is protected differently from a moment ago, or that something needs a person.
-const RISK_CHANGES = new Set(["hedge_halted", "hedge_unavailable", "perp_left_open"]);
+const RISK_CHANGES = new Set(["hedge_halted", "hedge_stood_down", "hedge_unavailable", "perp_left_open"]);
 
 /** "1 × BTC-27NOV26-60000-P kept": the skip's instrument, with the size its detail gives. */
 function shedWords(d) {
@@ -119,6 +122,16 @@ export function hedgeFilters(change, filledUSD) {
   if (change === "hedge_closed") return filled ? ["money"] : ["waiting"];
   if (change === "hedge_failed" || change === "hedge_price_away" || change === "hedge_rate_limited") return ["waiting"];
   return RISK_CHANGES.has(change) ? ["protection"] : [];
+}
+
+/** True for /api/summary's last_action when it is a futures hedge trade (#794). */
+export const isHedgeAction = (a) => a?.kind === "hedge";
+
+/** "sold 300 USD of the perpetual (BTC-PERPETUAL)": a hedge last action's trade, never an option's "N ×". */
+export function hedgeActionWhat(a) {
+  const size = a.size_usd > 0 ? `${USD(a.size_usd)} of ` : "";
+  const name = a.instrument ? ` (${a.instrument})` : "";
+  return `${(DONE[a.side] ?? "Traded").toLowerCase()} ${size}the perpetual${name}`;
 }
 
 /**

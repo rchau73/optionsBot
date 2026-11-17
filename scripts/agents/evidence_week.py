@@ -33,7 +33,8 @@ The direction trial (docs/direction-trial.md, #324, #440): cmd/evidence
 holds percentages, counts and hours only. The comment's "Direction trial"
 block and the decision tickets are built from those files with the brief's
 rules (minimum span, noise, kill rule, review date); a ticket only asks a
-person to decide — no agent changes gex_direction.
+person to decide — no agent changes gex_direction. The verdict line is the
+scorecard's own `verdict.line` (#788, computed by cmd/evidence), not redone here.
 
 Standard library only: launchd runs it with the system python3.
 """
@@ -124,6 +125,40 @@ def gap_cell(r, live, cur):
     if live:
         return share or "— (equity unknown)"
     return coin(g["gap"], cur) + (f" ({share})" if share else "")
+
+
+def split_line(r, live):
+    """The gap split (#802) in one line: each part's pp of equity and share of
+    the gap (a live env: the share only), whether the bar is met, the
+    one-sided legs and the partial label. Never an amount."""
+    s = r.get("gap_split")
+    if s is None:
+        return "— (report without the gap split)"
+    if not s.get("known"):
+        return f"— ({s.get('note') or 'no gap'})"
+    parts = []
+    for p in s.get("parts") or []:
+        share = f"{p['gap_pct']:+.1f} % of the gap" if p.get("gap_pct") is not None else "the gap is 0"
+        legs = f"{p.get('legs', 0)} legs"
+        parts.append(f"{p['part']} {share} ({legs})" if live else f"{p['part']} {p['equity_pp']:+.2f} pp, {share} ({legs})")
+    bar = s.get("explained_bar_pct", 20)
+    verdict = f"explained within {bar:g} %" if s.get("explained") else f"⚠ not explained (unexplained over {bar:g} % of the gap)"
+    line = " · ".join(parts + [verdict, f"{len(s.get('one_sided') or [])} one-sided legs"])
+    return line + (" · partial" if s.get("partial") else "")
+
+
+def trend_line(r):
+    """The gap over the last 12 weekly reports (#820): the report's own
+    verdict line, posted as written and never recomputed, and the comparable
+    weeks behind it. pp and counts only, so the same for a live env."""
+    t = r.get("gap_trend")
+    if t is None:
+        return "— (report without the gap trend)"
+    if t.get("note"):
+        return f"— ({t['note']})"
+    line = (t.get("verdict") or {}).get("line") or "— (no verdict in the report)"
+    weeks = (t.get("summary") or {}).get("weeks", 0)
+    return f"{line} · {weeks} comparable of {len(t.get('weeks') or [])} weekly reports"
 
 
 def rom_cell(r):
@@ -264,6 +299,7 @@ TRIAL_MAX_MISSING_BOOK_DAYS = 2
 TRIAL_STREAK = 3
 TRIAL_REVIEW_DATE = dt.date(2026, 12, 7)
 TRIAL_SOURCES = ("bias", "sma")
+TRIAL_RULE = "docs/direction-trial.md"
 TICKET_PREFIX = "[E2] Direction trial: "
 TICKET_KINDS = {  # kind → the title's start; one ticket of each kind, ever
     "first-shed": TICKET_PREFIX + "first GEX shed",
@@ -368,6 +404,16 @@ def week_list(weeks):
     return ", ".join(e["week"] for e in weeks) or "none"
 
 
+def verdict_line(card):
+    """The scorecard's computed verdict in one line (#788)."""
+    line = ((card or {}).get("verdict") or {}).get("line")
+    if line:
+        return line
+    if card is None:
+        return "no scorecard for the week"
+    return "not in the scorecard (built before #788: rerun -compare-direction)"
+
+
 def direction_block(stable_root, week):
     """The comment's "Direction trial" block: percentages and counts only
     (the scorecard holds nothing else). [] before the trial."""
@@ -400,6 +446,7 @@ def direction_block(stable_root, week):
     streak = f"{s['streak']} of {TRIAL_STREAK}" if s["noise"] is not None else "not measured (no live − replay gap yet)"
     out.append(f"- Early-stop streak (bias's replay net under sma's by more than the noise): {streak}"
                + (" — **early stop: decision ticket filed**" if s["early_stop"] else ""))
+    out.append(f"- **Verdict** ({TRIAL_RULE}): {verdict_line(card)}")
     out.append("- First GEX shed: " + (s["first_shed"] or "none yet (the review waits for one)"))
     out.append("- Review: " + (f"**due** — {s['review_reason']}" if s["review_reason"] else f"{TRIAL_REVIEW_DATE}"))
     out.append("- The kill rule's live drawdown (stable over 2× mvp) is not in the scorecard: read the weekly reports above.")
@@ -444,7 +491,8 @@ def trial_tickets(week, stable_root, issues):
         body = [why, "", f"- Weeks counted toward {TRIAL_WEEKS}: {len(s['counted'])} ({week_list(s['counted'])})",
                 f"- d = bias − sma, replay net, mean of the counted weeks: {pp(s['mean_d'])}",
                 f"- noise = mean |live − replay|: {pp(s['noise'])}",
-                f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}", "", *trial_table(s), "",
+                f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}",
+                f"- Computed verdict ({TRIAL_RULE}): {verdict_line(s['weeks'][-1]['card'])}", "", *trial_table(s), "",
                 "Decide by the outcomes in `docs/direction-trial.md` (no difference / bias better / sma better; "
                 "the live drawdown kill rule is in the weekly evidence reports): keep `bias` on stable, move it to "
                 "`sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges — no agent "
@@ -503,6 +551,7 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
            "| env | bot | net P&L | return on margin | equity not explained by the bot | account vs booked P&L | excess vs holding the coin | worst 7 days | replay gap | stress | E1 reliability | missing days | report |",
            "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     live_envs = set()
+    splits, trends = [], []
     for env in envs:
         root = os.path.join(envs_dir, env)
         live = is_live(root)
@@ -522,6 +571,14 @@ def comment(week, envs_dir, failures_path, bots, envs=("stable", "mvp")):
             out.append("| " + " | ".join([
                 label, bot, net_cell(r, live, cur), rom_cell(r), bridge_cell(r), recon_cell(r), excess_cell(r), worst_week_cell(r, live, cur),
                 gap_cell(r, live, cur), stress_cell(r), e1_cell(r, live), missing_cell(r), f"`{env}/{rel[:-5]}.md`"]) + " |")
+            splits.append(f"- **{label} {bot}**: {split_line(r, live)}")  # bold: not a failed step's "- env bot:"
+            trends.append(f"- **{label} {bot}**: {trend_line(r)}")
+    if splits:
+        out += ["", "**Gap split** (replay − live by cause, #802: pp of the starting equity and % of the gap; a live env shows the % of the gap only; "
+                "the report's \"Gap split\" lists every one-sided leg):", ""] + splits
+    if trends:
+        out += ["", "**Gap over time** (the last 12 weekly reports, #820: the report's verdict as written — stable, drifting or too few to conclude; "
+                "the report's \"Replay-vs-live gap over time\" lists every week and its split):", ""] + trends
     if "stable" in envs:
         out += direction_block(stable_root, week)
     gaps = notices(week, envs_dir, bots, envs)

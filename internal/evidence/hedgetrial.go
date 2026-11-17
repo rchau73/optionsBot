@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"optionsbot/internal/config"
 	"optionsbot/internal/hedge"
 	"optionsbot/internal/history"
 )
@@ -45,6 +46,10 @@ type HedgeInputs struct {
 	State hedge.ModeState // its contents; the zero state = no file
 	Err   string          // why the file was not read
 	Now   time.Time       // when it was read: the days are counted up to here
+	// Events are the journal's hedge lines since the ledger began
+	// (ReadHedgeEvents); nil when not read, EventsErr says why.
+	Events    *HedgeEvents
+	EventsErr string
 }
 
 // HedgeWorstDay is the UTC day whose shed decisions are worth least to the hedge.
@@ -69,10 +74,13 @@ type HedgeTrial struct {
 	Days         *int       `json:"days,omitempty"`         // whole days measured
 	DaysMissing  *int       `json:"days_missing,omitempty"` // to HedgeTrialMinDays
 
-	RealTrades  *int `json:"real_trades,omitempty"`
-	PaperTrades *int `json:"paper_trades,omitempty"`
-	Legs        *int `json:"counterfactuals,omitempty"`
-	LegsOpen    *int `json:"counterfactuals_open,omitempty"`
+	RealTrades  *int   `json:"real_trades,omitempty"`
+	Unavailable *int   `json:"hedge_unavailable,omitempty"` // journal episodes; nil when not read
+	RateLimited *int   `json:"hedge_rate_limited,omitempty"`
+	EventsNote  string `json:"events_note,omitempty"` // why the journal's hedge events were not read
+	PaperTrades *int   `json:"paper_trades,omitempty"`
+	Legs        *int   `json:"counterfactuals,omitempty"`
+	LegsOpen    *int   `json:"counterfactuals_open,omitempty"`
 
 	Advantage   *float64       `json:"advantage,omitempty"` // > 0: the hedge did better than the shed
 	HedgePnL    *float64       `json:"hedge_pnl,omitempty"` // real + paper, net of fees
@@ -86,6 +94,10 @@ type HedgeTrial struct {
 	Spot        *float64       `json:"spot_usd,omitempty"` // the price the open parts are marked at
 	Benchmark   string         `json:"benchmark_note,omitempty"`
 	PricingNote string         `json:"pricing_note,omitempty"`
+
+	// Verdict is docs/hedge-trial.md's rule over the figures above (#780):
+	// nil when not started, not read, without a spot or on a live account.
+	Verdict *HedgeVerdict `json:"verdict,omitempty"`
 }
 
 // LoadHedge reads the mode file; no file is the zero state, the trial not started.
@@ -128,6 +140,7 @@ func BuildHedgeTrial(in HedgeInputs, points []history.Point, account string) Hed
 		missing := HedgeTrialMinDays - days
 		t.Status, t.DaysMissing = HedgeTrialTooFew, &missing
 		t.Note = fmt.Sprintf("%d day(s) still missing of the %d this comparison needs", missing, HedgeTrialMinDays)
+		t.Verdict = hedgeTooFewVerdict(missing)
 		return t
 	}
 	t.Status = HedgeTrialMeasured
@@ -139,6 +152,14 @@ func BuildHedgeTrial(in HedgeInputs, points []history.Point, account string) Hed
 	}
 	legs := len(l.Legs)
 	t.RealTrades, t.PaperTrades, t.Legs, t.LegsOpen = &l.Real.Trades, &l.Virtual.Trades, &legs, &open
+	if ev := in.Events; ev != nil {
+		t.Unavailable, t.RateLimited = ptrTo(ev.Unavailable), ptrTo(ev.RateLimited)
+	} else {
+		t.EventsNote = in.EventsErr
+		if t.EventsNote == "" {
+			t.EventsNote = "the journal was not read"
+		}
+	}
 	if !t.AmountsShown {
 		return t
 	}
@@ -155,6 +176,7 @@ func BuildHedgeTrial(in HedgeInputs, points []history.Point, account string) Hed
 	t.Fees, t.RealFees, t.PaperFees = ptr(l.Real.Fees+l.Virtual.Fees), ptr(l.Real.Fees), ptr(l.Virtual.Fees)
 	t.WorstDay = hedgeWorstDay(l.Legs)
 	t.Benchmark, t.PricingNote = s.Note, s.PricingNote
+	t.Verdict = hedgeVerdict(t)
 	return t
 }
 
@@ -200,7 +222,8 @@ func writeHedgeTrial(p func(string, ...any), t HedgeTrial, unit string) {
 	p("- mode now: **%s** · ledger since %s UTC, read %s UTC\n", t.Mode, t.Since.UTC().Format("2006-01-02 15:04"), t.ReadAt.UTC().Format("2006-01-02 15:04"))
 	switch t.Status {
 	case HedgeTrialTooFew:
-		p("- **%s**: %s. No verdict and no figure yet.\n\n", HedgeTrialTooFew, t.Note)
+		p("- **%s**: %s. No figure yet.\n\n", HedgeTrialTooFew, t.Note)
+		writeHedgeVerdict(p, t, unit)
 		return
 	case HedgeTrialNoSpot:
 		p("- **%s**. No figure.\n\n", strings.ToUpper(t.Note[:1])+t.Note[1:])
@@ -224,8 +247,41 @@ func writeHedgeTrial(p func(string, ...any), t HedgeTrial, unit string) {
 	}
 	p("| Real trades | %d | %d |\n", *t.RealTrades, days)
 	p("| Paper trades | %d | %d |\n", *t.PaperTrades, days)
-	p("| Counterfactual legs still open | %d of %d | %d |\n\n", *t.LegsOpen, *t.Legs, days)
+	p("| Counterfactual legs still open | %d of %d | %d |\n", *t.LegsOpen, *t.Legs, days)
+	p("| Real hedge orders an hour, mean (cap %d) | %.2f | %d |\n", config.FixedFuturesHedgeMaxPerHour, float64(*t.RealTrades)/float64(days*24), days)
+	if t.Unavailable != nil {
+		p("| Hedges that waited for the hourly cap (hedge_rate_limited) | %d | %d |\n", *t.RateLimited, days)
+		p("| Episodes with the hedge unavailable, the shed back (hedge_unavailable) | %d | %d |\n\n", *t.Unavailable, days)
+	} else {
+		p("| Hedge events of the journal (hedge_unavailable, hedge_rate_limited) | not read: %s | %d |\n\n", t.EventsNote, days)
+	}
 	if t.AmountsShown {
 		p("%s Open parts marked at the P&L history's last spot, %.0f USD; %s.\n\n", t.Benchmark, *t.Spot, t.PricingNote)
 	}
+	writeHedgeVerdict(p, t, unit)
+}
+
+// writeHedgeVerdict writes the verdict's one line with the figures it used;
+// a live account (no amount to judge) gets none.
+func writeHedgeVerdict(p func(string, ...any), t HedgeTrial, unit string) {
+	v := t.Verdict
+	if v == nil {
+		p("No verdict: a live account shows no amount to judge (%s).\n\n", HedgeTrialRule)
+		return
+	}
+	used := fmt.Sprintf("%d of the %d days needed", *t.Days, HedgeTrialMinDays)
+	if t.Advantage != nil {
+		events := "hedge events not read"
+		if t.Unavailable != nil {
+			events = fmt.Sprintf("%d hedge_unavailable, %d hedge_rate_limited", *t.Unavailable, *t.RateLimited)
+		}
+		worst := "no shed decision"
+		if t.WorstDay != nil {
+			worst = fmt.Sprintf("%+.4f %s", t.WorstDay.Value, unit)
+		}
+		used = fmt.Sprintf("advantage %+.4f %s, fees %.4f %s, worst day %s, %s, %d days",
+			*t.Advantage, unit, *t.Fees, unit, worst, events, *t.Days)
+	}
+	p("**Verdict (%s): %s**: %s. Figures used: %s. A verdict changes no hedge mode, setting or config: a person decides.\n\n",
+		v.Rule, v.Outcome, v.Why, used)
 }

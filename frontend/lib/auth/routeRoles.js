@@ -23,6 +23,9 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  * roles: who may call it (ROLES). audit: the audit.jsonl action an allowed
  * call writes with the person's username, or null with `why` it writes none.
  * bot: the bot API route it forwards to (internal/api/routes_actions.go).
+ * linked: the route targets a bot, so a manager linked to other accounts is
+ * refused (#760, lib/auth/accountLinks.js); every [bot] route must say so,
+ * and the lab apply, whose run names its bot by the underlying.
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
@@ -42,32 +45,65 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/auth/password", roles: SIGNED_IN, audit: "password_changed" },
   { route: "POST /api/auth/refresh", roles: ANYONE, audit: null, why: "renews the caller's own session; changes nothing a person decides" },
   { route: "POST /api/auth/reset", roles: ANYONE, audit: "password_reset_by_link" },
-  { route: "POST /api/bots/[bot]/close", roles: MANAGERS, audit: "manual_close", bot: "POST /api/positions/close" },
-  { route: "POST /api/bots/[bot]/hedge", roles: ADMINS, audit: "futures_hedge_switched", bot: "POST /api/hedge" },
-  { route: "POST /api/bots/[bot]/rebalance", roles: MANAGERS, audit: "manual_rebalance", bot: "POST /api/rebalance" },
+  { route: "POST /api/bots/[bot]/close", roles: MANAGERS, audit: "manual_close", bot: "POST /api/positions/close", linked: true },
+  { route: "POST /api/bots/[bot]/hedge", roles: ADMINS, audit: "futures_hedge_switched", bot: "POST /api/hedge", linked: true },
+  { route: "POST /api/bots/[bot]/rebalance", roles: MANAGERS, audit: "manual_rebalance", bot: "POST /api/rebalance", linked: true },
   { route: "POST /api/consent", roles: SIGNED_IN, audit: "analytics_consent_changed" },
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/lab/requests", roles: MANAGERS, audit: "lab_request" },
+  { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded", linked: true },
   { route: "POST /api/lab/validate", roles: MANAGERS, audit: "lab_validate" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },
   { route: "POST /api/survey/answers", roles: SIGNED_IN, audit: "answers_survey_shown" },
   { route: "POST /api/survey/nps", roles: SIGNED_IN, audit: "nps_survey_changed" },
+  { route: "PUT /api/admin/users/[id]/accounts", roles: ADMINS, audit: "account_link_added" },
 ];
 
 /**
- * Read-only routes that only some roles (or only a live session, #584) may call (#539): the matrix test
- * calls each as every caller too, and checks the route file exports GET only.
- * audit: the audit.jsonl action an allowed read writes (#682), when it writes one.
+ * The read matrix (#782): every app/api route file that exports GET, who may
+ * read it and why. __tests__/read-matrix.test.js calls each as every caller
+ * (CALLERS) and fails on a GET route missing here, so a new read cannot show
+ * admin-only data to a manager or a user by accident.
+ * roles: who may read it (ROLES). token: the read-only MONITOR_API_TOKEN may
+ * read it too (proxy.js serviceTokenOk: /api/bots only). why: one line.
+ * audit: the audit.jsonl action an allowed read writes (#682), when it writes one;
+ * a refused read writes nothing.
  */
-export const ROLE_GUARDED_READS = [
-  { route: "GET /api/admin/audit/export", roles: ADMINS },
-  { route: "GET /api/admin/audit/verify", roles: ADMINS },
-  { route: "GET /api/auth/sessions", roles: SIGNED_IN },
-  { route: "GET /api/lab/runs", roles: MANAGERS },
-  { route: "GET /api/lab/runs/[id]", roles: MANAGERS },
-  { route: "GET /api/lab/runs/[id]/preview", roles: MANAGERS, audit: "parameter_change_previewed" },
+export const READ_ROUTES = [
+  { route: "GET /api/admin/analytics", roles: ADMINS, why: "weekly usage reports and the consent counts of every user" },
+  { route: "GET /api/admin/analytics/delivery", roles: ADMINS, why: "the delivery report of the whole team" },
+  { route: "GET /api/admin/audit", roles: ADMINS, why: "the audit trail names every person and what they did" },
+  { route: "GET /api/admin/audit/export", roles: ADMINS, why: "the whole audit trail as a file (#702)" },
+  { route: "GET /api/admin/audit/verify", roles: ADMINS, why: "the audit trail's hash chain (#619)" },
+  { route: "GET /api/admin/users", roles: ADMINS, why: "every account, its role and email" },
+  { route: "GET /api/assistant", roles: SIGNED_IN, why: "the Ask panel's state for the person asking" },
+  { route: "GET /api/assistant/requests", roles: SIGNED_IN, why: "the person's own requests, never anyone else's" },
+  { route: "GET /api/auth/my-data", roles: SIGNED_IN, audit: "my_data_exported", why: "the person's own data (#750)" },
+  { route: "GET /api/auth/security-summary", roles: SIGNED_IN, why: "the person's own previous sign-in and wrong-password count (#803)" },
+  { route: "GET /api/auth/sessions", roles: SIGNED_IN, why: "the person's own sessions (#584)" },
+  { route: "GET /api/bots", roles: SIGNED_IN, token: true, why: "the bots' names and the poll interval; the deploy health check reads it" },
+  { route: "GET /api/bots/[bot]/[...path]", roles: SIGNED_IN, token: true, why: "the bot data every page shows (allow-listed endpoints); the health check and the agents read it" },
+  { route: "GET /api/bots/[bot]/hedge", roles: SIGNED_IN, token: true, why: "the hedge experiment's state, shown on the How it works page to every role" },
+  { route: "GET /api/compare", roles: MANAGERS, why: "the comparison reports, a manager's research (#302)" },
+  { route: "GET /api/compare/[id]", roles: MANAGERS, why: "one comparison report (#302)" },
+  { route: "GET /api/consent", roles: SIGNED_IN, why: "the person's own analytics consent" },
+  { route: "GET /api/help/tips", roles: SIGNED_IN, why: "the settings' tips, the same for every role (#588)" },
+  { route: "GET /api/help/videos", roles: SIGNED_IN, why: "the how-to videos, the same for every role (#611)" },
+  { route: "GET /api/lab/runs", roles: MANAGERS, why: "the lab's runs, a manager's research" },
+  { route: "GET /api/lab/runs/[id]", roles: MANAGERS, why: "one lab run" },
+  { route: "GET /api/lab/runs/[id]/preview", roles: MANAGERS, audit: "parameter_change_previewed", why: "a parameter change previewed on an account (#682)" },
+  { route: "GET /api/notifications", roles: SIGNED_IN, why: "the person's own notifications and settings" },
+  { route: "GET /api/survey/answers", roles: SIGNED_IN, why: "whether the person's Answers card is due" },
+  { route: "GET /api/survey/nps", roles: SIGNED_IN, why: "whether the person's NPS card is due" },
 ];
+
+/**
+ * Read-only routes that only some roles (or only a live session, #584) may call (#539): the role matrix test
+ * calls each as every caller too, and checks the route file exports GET only. Rows of READ_ROUTES.
+ */
+const GUARDED = ["GET /api/admin/audit/export", "GET /api/admin/audit/verify", "GET /api/auth/my-data", "GET /api/auth/security-summary", "GET /api/auth/sessions", "GET /api/lab/runs", "GET /api/lab/runs/[id]", "GET /api/lab/runs/[id]/preview"];
+export const ROLE_GUARDED_READS = READ_ROUTES.filter((r) => GUARDED.includes(r.route));
 
 /** The table's route for an app/api route file and method: "app/api/consent/route.js", "POST" → "POST /api/consent". */
 export function routeKey(file, method) {
@@ -85,4 +121,10 @@ export function unlistedRoutes(found, table = STATE_CHANGING_ROUTES) {
 export function callerAllowed(entry, caller) {
   if (entry.roles.includes("anonymous")) return true;
   return entry.roles.includes(caller);
+}
+
+/** True when `caller` may read the READ_ROUTES `entry`: callerAllowed, or the service token where the row says `token`. */
+export function readAllowed(entry, caller) {
+  if (caller === "service_token" && entry.token) return true;
+  return callerAllowed(entry, caller);
 }

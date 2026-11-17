@@ -6,8 +6,11 @@
 // whole UTC days — and writes the status back: running, then done with the
 // report's id, or failed with a short reason. A request queued more than a
 // day ago is expired. At most one runner works at a time (a lock folder in
-// the queue). It writes no config and applies no setting; the AI analysis
-// (cmd/analyze) still runs by hand. Run by scripts/lab_runner.sh.
+// the queue). After a done run it writes the AI analysis beside the report
+// (#792, cmd/analyze's code, ANTHROPIC_API_KEY): best effort, one call per
+// run, a failure only noted on the request; the monitor withholds it until
+// legal question L10. It writes no config and applies no setting. Run by
+// scripts/lab_runner.sh.
 //
 //	go run ./cmd/labrun -queue data/compare/requests -out data/compare
 package main
@@ -24,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"optionsbot/internal/aianalysis"
 	"optionsbot/internal/compare"
 )
 
@@ -41,7 +45,13 @@ func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	sum, err := compare.RunLabQueue(context.Background(), o, time.Now, commandRunner(*compareCmd, *timeout, log))
+	slog.SetDefault(log)
+	model, modelName, err := aianalysis.ModelFor("", os.Getenv("ANTHROPIC_API_KEY"))
+	if err != nil {
+		log.Warn("lab runner: no ANTHROPIC_API_KEY, runs get no analysis", "component", "lab")
+	}
+	analyze := aianalysis.LabAnalyzer(model, modelName, time.Now)
+	sum, err := compare.RunLabQueue(context.Background(), o, time.Now, commandRunner(*compareCmd, *timeout, log), analyze)
 	if errors.Is(err, compare.ErrRunnerBusy) {
 		log.Info("lab runner: another run is in progress, nothing taken", "component", "lab")
 		return

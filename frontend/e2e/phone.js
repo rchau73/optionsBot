@@ -2,6 +2,7 @@
 // pages to measure, turn what the browser measured (e2e/measure.js) into the
 // report, and compare a report with the recorded baseline. No browser, no
 // file system: Jest tests them directly.
+import { MIN_TAP_PX, MIN_TEXT_PX, tapTargetOk } from "../lib/a11y.js";
 import { menuItems } from "../lib/menu.js";
 
 /** Every page is measured at these widths (#425): a small phone, a tablet upright, a laptop. */
@@ -228,4 +229,76 @@ export function baselineNotes(baseline) {
     }
   }
   return notes;
+}
+
+// --- The accessibility report (#763): report-only, it fails nothing yet ---
+
+/** The phone width the accessibility report is taken at. */
+export const A11Y_WIDTH = "360";
+
+// Findings of one kind, one entry per key (rows repeat on demo data), each
+// with the first element's selector, its smallest size and how many there are.
+function groupFindings(items, keyOf, sizeOf) {
+  const by = new Map();
+  for (const it of items) {
+    const key = keyOf(it);
+    const prev = by.get(key);
+    if (!prev) by.set(key, { key, selector: it.selector ?? "", ...sizeOf(it), count: 1 });
+    else prev.count += 1;
+  }
+  return [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * One page's raw measurement (measurePage's result) → its accessibility
+ * findings: text under MIN_TEXT_PX and controls under MIN_TAP_PX × MIN_TAP_PX,
+ * each with a selector.
+ */
+export function a11yOfPage(raw) {
+  const smallText = (raw.texts ?? []).filter((t) => t.fontPx > 0 && t.fontPx < MIN_TEXT_PX);
+  const smallTargets = (raw.controls ?? []).filter((c) => !tapTargetOk(c.width, c.height));
+  return {
+    small_text: groupFindings(
+      smallText,
+      (t) => `${normaliseLabel(t.panel) || "Page"} › ${t.tag} "${normaliseLabel(t.text) || "(no text)"}"`,
+      (t) => ({ font_px: t.fontPx }),
+    ),
+    small_targets: groupFindings(smallTargets, controlKey, (c) => ({ width: Math.round(c.width), height: Math.round(c.height) })),
+  };
+}
+
+/**
+ * Every finding of `pages` ({ name: a11yOfPage result }) ranked by the number
+ * of pages it is on, most first, then by kind and key: { kind, key, pages, page_count }.
+ * The order of docs/product/responsive-a11y-baseline.md.
+ */
+export function rankA11y(pages) {
+  const by = new Map();
+  for (const [page, p] of Object.entries(pages)) {
+    for (const [kind, list] of [
+      ["small_text", p.small_text],
+      ["small_target", p.small_targets],
+    ]) {
+      for (const f of list ?? []) {
+        const id = `${kind}|${f.key}`;
+        if (!by.has(id)) by.set(id, { kind, key: f.key, pages: [] });
+        by.get(id).pages.push(page);
+      }
+    }
+  }
+  return [...by.values()]
+    .map((f) => ({ ...f, pages: f.pages.sort(), page_count: f.pages.length }))
+    .sort((a, b) => b.page_count - a.page_count || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key));
+}
+
+/** What e2e/a11y-report.json holds: the bar, each page's findings at 360 px, the ranked list. */
+export function a11yReport(pages, generatedAt) {
+  return {
+    generated_at: generatedAt,
+    viewport_px: Number(A11Y_WIDTH),
+    bar: { min_text_px: MIN_TEXT_PX, min_tap_px: MIN_TAP_PX },
+    report_only: true,
+    pages,
+    ranked: rankA11y(pages),
+  };
 }

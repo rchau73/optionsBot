@@ -30,20 +30,28 @@ type Report struct {
 	EventsInWeek int       `json:"events_in_week"`
 	NoEvents     string    `json:"no_events,omitempty"` // why, when EventsInWeek is 0; every figure below is then absent
 
-	Active       *Active       `json:"active,omitempty"`        // Q1, Q2
-	Cohorts      []Cohort      `json:"cohorts,omitempty"`       // Q2
-	CohortRules  *FlatRules    `json:"cohort_rules,omitempty"`  // Q2: the rules each cohort's status was judged on (#607)
-	Lapsed       *Lapsed       `json:"lapsed,omitempty"`        // Q2: who stopped coming back (#569)
-	Activation   *Activation   `json:"activation,omitempty"`    // Q2, Q4: new people reaching an answer within a day (#620)
-	Panels       *Panels       `json:"panels,omitempty"`        // Q3
-	FirstAnswers *FirstAnswers `json:"first_answers,omitempty"` // Q4
-	Help         *Help         `json:"help,omitempty"`          // Q5
-	Assistant    *Assistant    `json:"assistant,omitempty"`     // Q5
-	Education    *Education    `json:"education,omitempty"`     // Q5: E11's measure (#642)
-	ManualClose  *ManualClose  `json:"manual_close,omitempty"`  // Q6
-	Rebalance    *Rebalance    `json:"rebalance,omitempty"`     // Q6
-	Trust        *Trust        `json:"trust,omitempty"`         // Q7
-	Survey       *Survey       `json:"survey,omitempty"`        // Q8; absent when the window has no survey event
+	Active      *Active     `json:"active,omitempty"`       // Q1, Q2
+	Cohorts     []Cohort    `json:"cohorts,omitempty"`      // Q2
+	CohortRules *FlatRules  `json:"cohort_rules,omitempty"` // Q2: the rules each cohort's status was judged on (#607)
+	Lapsed      *Lapsed     `json:"lapsed,omitempty"`       // Q2: who stopped coming back (#569)
+	Activation  *Activation `json:"activation,omitempty"`   // Q2, Q4: new people reaching an answer within a day (#620)
+	// ActivationRetention is Q9 (#818): weeks +1 … +4 of the activated and
+	// of the not activated, apart. No alert reads it.
+	ActivationRetention *ActivationRetention `json:"activation_retention,omitempty"`
+	Panels              *Panels              `json:"panels,omitempty"`        // Q3
+	FirstAnswers        *FirstAnswers        `json:"first_answers,omitempty"` // Q4
+	Help                *Help                `json:"help,omitempty"`          // Q5
+	Assistant           *Assistant           `json:"assistant,omitempty"`     // Q5
+	Education           *Education           `json:"education,omitempty"`     // Q5: E11's measure (#642)
+	ManualClose         *ManualClose         `json:"manual_close,omitempty"`  // Q6
+	Rebalance           *Rebalance           `json:"rebalance,omitempty"`     // Q6
+	Trust               *Trust               `json:"trust,omitempty"`         // Q7
+	Survey              *Survey              `json:"survey,omitempty"`        // Q8; absent when the window has no survey event
+
+	// NorthStar is PRD §7's monthly active accounts with a strategy running
+	// (Q1, #801), built from the events and the bots' running days even in a
+	// week without events; absent when no running source was given.
+	NorthStar *NorthStar `json:"north_star,omitempty"`
 
 	// Drops is the week's engagement-drop check against the weeks before it
 	// (Drops, #341), written with the report so the monitor's Analytics page
@@ -221,6 +229,7 @@ func Build(events []Event, from, to time.Time) Report {
 	r.SetCohortRules(DefaultFlatRules())
 	r.Lapsed = buildLapsed(past, from, to)
 	r.Activation = buildActivation(past, from)
+	r.ActivationRetention = buildActivationRetention(past, from, to)
 	r.Panels = buildPanels(week)
 	r.FirstAnswers = buildFirstAnswers(past, from)
 	r.Help = buildHelp(week)

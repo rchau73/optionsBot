@@ -3,12 +3,14 @@
 // kept free of Next.js so tests call it directly.
 import crypto from "node:crypto";
 import { guessablePasswordProblem, hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, passwordProblem, verifyDummy, verifyPassword } from "./password";
-import { LOCK_FAILURES, LoginLimiter } from "./limits";
+import { LOCK_FAILURES, LoginLimiter, MY_DATA_DOWNLOADS, MY_DATA_WINDOW_MS, WindowLimiter } from "./limits";
 import { normalizeUsername, ROLES } from "./store";
 import { REFRESH_TTL_SEC, signAccess, verifyAccess } from "./tokens";
 import { authLog } from "./log";
 import { browserName } from "./browser";
 import { roleAtLeast } from "./roles";
+import { accountLinkProblem, checkLinkRequest, linkChanges } from "./accountLinks";
+import { noticeId } from "../signInSummary";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
 export const INVALID_LOGIN = "invalid username or password";
@@ -46,6 +48,8 @@ export class AuthService {
     this.key = key;
     this.now = now;
     this.limiter = limiter;
+    // "Download my data" (#750): per person, in memory.
+    this.myDataLimiter = new WindowLimiter(MY_DATA_DOWNLOADS, MY_DATA_WINDOW_MS);
     this.auditSink = audit;
     this.deleteEvents = deleteEvents;
   }
@@ -86,6 +90,8 @@ export class AuthService {
 
     const ok = user ? await verifyPassword(password, this.store.passwordHash(user.id)) : await verifyDummy(password);
     if (!ok) {
+      // The owner sees the count after their next sign-in (#803); saved by recordFailure's write below.
+      if (user) this.store.countFailedSignIn(user.id);
       const nowLocked = this.limiter.recordFailure(name, this.now());
       const reason = user ? "password" : "unknown_user";
       authLog("WARN", "sign-in failed", { username: name, ip, reason, locked: nowLocked });
@@ -201,6 +207,29 @@ export class AuthService {
       last_used_at: new Date(s.lastUsedSec * 1000).toISOString(),
       current: s.tokenHash === sid,
     }));
+  }
+
+  /**
+   * The person's own sign-in summary (#803): { previous_sign_in (ISO, null =
+   * none recorded), first_sign_in, failed_since (wrong passwords typed at
+   * sign-in for their username since the previous sign-in), notice_id (the
+   * bell's Needs you item, null when there is nothing to tell), locked_until
+   * (ISO, only while the username is locked) }. Their own row only: no IP,
+   * browser, token or anyone else's data.
+   */
+  signInSummary(user) {
+    const s = this.store.signInState(user.id);
+    if (!s) return null;
+    const first = s.signIns <= 1;
+    const summary = {
+      previous_sign_in: s.previousSignInSec ? new Date(s.previousSignInSec * 1000).toISOString() : null,
+      first_sign_in: first,
+      failed_since: s.failedSince,
+      notice_id: noticeId(s.lastSignInSec, s.failedSince, first),
+    };
+    const locked = this.limiter.lockedUntil(user.username, this.now());
+    if (locked > 0) summary.locked_until = new Date(locked).toISOString();
+    return summary;
   }
 
   /**
@@ -337,9 +366,14 @@ export class AuthService {
     this.audit("analytics_consent_changed", { username: user.username, consent });
   }
 
-  /** Every user for the Users page: id, username, role, email, created and last sign-in (ISO, null = never); never a hash. */
+  /**
+   * Every user for the Users page: id, username, role, email, created and last
+   * sign-in (ISO, null = never) and the account ids they are linked to (#760,
+   * [] = none); never a hash.
+   */
   listUsers() {
     const iso = (sec) => (sec ? new Date(sec * 1000).toISOString() : null);
+    const links = this.store.allAccountLinks();
     return this.store.listUsers().map((u) => ({
       id: u.id,
       username: u.username,
@@ -347,7 +381,52 @@ export class AuthService {
       email: u.email ?? null,
       created_at: iso(u.created_at),
       last_sign_in_at: iso(u.last_sign_in_at),
+      accounts: links[u.id] ?? [],
     }));
+  }
+
+  /**
+   * An admin sets the accounts a manager may act on (#760): `ids` replaces the
+   * manager's links; each new id must be in the registry (`accounts`, the
+   * status file's). One audit line per account added or removed, naming the
+   * admin, the manager and the account. Links are for managers only: an admin
+   * acts on every account and a user on none.
+   * → { ok: true, accounts, added, removed } | { ok: false, status (400 rule, 404 no user, 409 not a manager), error }
+   */
+  setAccountLinks(by, targetId, ids, accounts) {
+    const target = this.store.userById(targetId);
+    if (!target) return { ok: false, status: 404, error: "no such user" };
+    const current = this.store.accountLinks(target.id);
+    if (target.role !== "manager") {
+      return { ok: false, status: 409, error: `${target.username} is ${target.role === "admin" ? "an admin" : "a user"}: account links are for managers only` };
+    }
+    const checked = checkLinkRequest(ids, { current, accounts });
+    if (!checked.ok) return { ok: false, status: 400, error: checked.error };
+    const { add, remove } = linkChanges(current, checked.ids);
+    if (add.length > 0 || remove.length > 0) this.store.changeAccountLinks(target.id, { add, remove }, by.username, this.now());
+    for (const id of add) {
+      authLog("INFO", "account link added", { by: by.username, username: target.username, account_id: id });
+      this.audit("account_link_added", { username: by.username, role: by.role, target: target.username, account_id: id });
+    }
+    for (const id of remove) {
+      authLog("INFO", "account link removed", { by: by.username, username: target.username, account_id: id });
+      this.audit("account_link_removed", { username: by.username, role: by.role, target: target.username, account_id: id });
+    }
+    return { ok: true, accounts: this.store.accountLinks(target.id), added: add, removed: remove };
+  }
+
+  /**
+   * Why `user` may not act on monitor bot `bot` (#760), in plain words, or
+   * null: the link check behind the role check (lib/auth/accountLinks.js).
+   * `loadAccounts` reads the registry, only for a linked manager. A refusal
+   * is a WARN log line, never an audit line (nothing was done).
+   */
+  accountRefusal(user, bot, loadAccounts) {
+    const links = user.role === "manager" ? this.store.accountLinks(user.id) : [];
+    if (links.length === 0) return null;
+    const problem = accountLinkProblem({ user, links, bot, accounts: loadAccounts() });
+    if (problem) authLog("WARN", "action refused: account", { username: user.username, role: user.role, bot });
+    return problem;
   }
 
   /**

@@ -79,6 +79,45 @@ func LoadDirection(bot string, envs []DirectionEnvRoot, base, booksRoot string, 
 	return in
 }
 
+// ReadDirectionWeeks reads the scorecards written for the trial weeks before
+// r's week (<root>/data/evidence/direction/<week>.json) and returns them with
+// r last; a week without a readable file has a nil card. Outside the trial
+// (before DirectionTrialStart, or a -from/-to window) it returns nil.
+func ReadDirectionWeeks(root string, r DirectionReport) []DirectionWeekCard {
+	labels := DirectionTrialLabels(r.Week)
+	if len(labels) == 0 {
+		return nil
+	}
+	out := make([]DirectionWeekCard, 0, len(labels))
+	for _, label := range labels[:len(labels)-1] {
+		out = append(out, DirectionWeekCard{Week: label, Card: readDirectionCard(root, label)})
+	}
+	return append(out, DirectionWeekCard{Week: r.Week, Card: &r})
+}
+
+func readDirectionCard(root, label string) *DirectionReport {
+	_, js := DirectionOutPaths(root, label)
+	data, err := os.ReadFile(js)
+	if err != nil {
+		return nil
+	}
+	var c DirectionReport
+	if json.Unmarshal(data, &c) != nil {
+		return nil
+	}
+	return &c
+}
+
+// WithDirectionVerdict sets r's verdict from the trial weeks through r's
+// own, read under root; r is unchanged outside the trial.
+func WithDirectionVerdict(r DirectionReport, root string) DirectionReport {
+	if weeks := ReadDirectionWeeks(root, r); weeks != nil {
+		v := BuildDirectionVerdict(weeks)
+		r.Verdict = &v
+	}
+	return r
+}
+
 // ReadDirectionHistory reads data/direction_history.jsonl (history.
 // DirectionLog), oldest first as written; unreadable lines are counted and
 // skipped.

@@ -36,7 +36,9 @@ Nothing is stored but the person's read marks and settings (`auth.db` `notificat
 
 **Needs you** is counted on the bell's badge:
 - *a short question from the team is waiting* (#446's due rule on the user's row and the losing-week rule, as the Ask button);
-- *your request needs more* (a `needs_info` status of the private queue, `requests_status.jsonl`).
+- *your request needs more* (a `needs_info` status of the private queue, `requests_status.jsonl`);
+- *wrong-password attempts on your account* (kind `security`, #803: wrong passwords typed for the person's username since their previous sign-in, from `users`; read when Active sessions is opened, [Sign-in](sign-in.md#sign-in-summary)).
+  It has no button: the text points to Active sessions in the account menu.
 
 **Updates** are listed, never counted:
 - The page's bot's journal events from `/api/events`: a close by stop-loss, delta exit or the kill switch, a working sell cancelled by `risk_frozen`, and `im_over_limit`.
@@ -222,6 +224,12 @@ On the right is one **strangle row** per strangle (`components/StrangleRow.jsx`,
 - It has an amber note when a leg is held back (`missingLine`).
 - A click opens the payoff modal, and focus returns to the row.
 A stale bot's band is dimmed with its age; a bot that is down says so; no strangles: "Nothing held: the bot opens a strangle when a slot is vacant and margin allows"; a brand-new bot shows its first-day panel in the list's place.
+Under the rows, **why it is not trading** (`components/IdleNote.jsx`, #781), from `/api/summary`'s `idle`, shown only when the bot holds no strangle (and works no entry) or entries are blocked.
+- One sentence per reason from one map, `lib/idleWords.js` (every `strategy.Skip*` reason and `halted`): what the bot waits for and whether a person must act; any other reason reads "The bot is waiting. Details in Activity."
+- Blocked reads "Not opening new positions." in amber, text-base semibold like the holdings line; otherwise "Waiting.".
+- A one-click *Why?* (44 px) opens the journal line's own sentence, its numbers and its time; *All actions, explained →* opens Activity.
+- The phone overview's *What it holds* card and the investor summary show the same note; `__tests__/idle-words.test.jsx` fails on a Go skip reason without a sentence.
+- The header's held-back line (frozen, held legs) is unchanged; this line answers the positions question in place.
 **5. Since you last looked** (`components/SinceLastVisit.jsx`, helpers in `lib/sincevisit.js`, #618), under the four answers (`overview-four-answers.test.jsx` pins the order).
 - The last visit is a time kept only in this browser (`localStorage`, `monitor.lastVisit.<bot>`, with that moment's worst case and header warnings; `hooks/useLastVisit.js`).
   It is written once the page has been open and visible for 10 s, then at most once a minute while it stays visible, so a quick reload keeps the summary.
@@ -321,6 +329,7 @@ There are four stacked cards:
   It uses the worse of the two 3σ days.
   It reads "Unknown: <reason>" when not computed, and links to the worst-case page.
 - **Last action · HH:MM** shows the plain-words sentence, the coin's move since (from `last_action.spot`) and a close's result in coin.
+  A hedge trade (#794, `kind: "hedge"`) adds "sold/bought <USD> of the perpetual" and, for a hedge close, its result.
   "All actions, explained" opens the Activity page, `/activity?bot=<name>`, #385.
 Footer: "From the bot's journal, after fees.
 Worst case is an estimate.
