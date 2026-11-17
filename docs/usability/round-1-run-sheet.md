@@ -32,7 +32,16 @@ scripts/usability_round.sh
 
 Read the text in quotes word for word. Do not add to it.
 
-> "Thank you for helping. We are testing this page, not you: if something is hard to find, that tells us what to fix. There are no wrong answers. This page shows a program that trades automatically with made-up money. I will ask you four questions about it, one at a time. Please think aloud: say what you look at and what you think it means. You can scroll and click anything. I cannot help or answer questions during the tasks — I will answer them at the end. You have 5 minutes for all four questions. Say 'I don't know' whenever you want to move on."
+> "Thank you for helping.
+> We are testing this page, not you: if something is hard to find, that tells us what to fix.
+> There are no wrong answers.
+> This page shows a program that trades automatically with made-up money.
+> I will ask you four questions about it, one at a time.
+> Please think aloud: say what you look at and what you think it means.
+> You can scroll and click anything.
+> I cannot help or answer questions during the tasks — I will answer them at the end.
+> You have 5 minutes for all four questions.
+> Say 'I don't know' whenever you want to move on."
 
 Start the 5-minute timer when the participant first sees the page, then ask, in this order, each as soon as the previous one is answered or given up:
 
