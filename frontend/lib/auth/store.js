@@ -529,6 +529,15 @@ export class AuthStore {
     return row?.user_id ?? null;
   }
 
+  /** A live session for the refresh route (#821): { userId, publicId, lastUsedSec }, or null when unknown or expired. */
+  liveSession(tokenHash, nowMs = Date.now()) {
+    const row = this.one("SELECT user_id, public_id, created_at, last_used_at FROM refresh_tokens WHERE token_hash = ? AND expires_at > ?", [
+      tokenHash,
+      Math.floor(nowMs / 1000),
+    ]);
+    return row ? { userId: row.user_id, publicId: row.public_id, lastUsedSec: row.last_used_at ?? row.created_at } : null;
+  }
+
   /** Ends one session (logout). */
   revokeSession(tokenHash) {
     this.write("DELETE FROM refresh_tokens WHERE token_hash = ?", [tokenHash]);
