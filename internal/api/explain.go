@@ -116,6 +116,9 @@ var hedgeWords = map[string]string{
 	orders.HedgePriceAway:   "A futures hedge trade waits: the perpetual's price is too far from the index, so the trade would be at a poor price.",
 	orders.HedgeUnavailable: "The futures hedge is not holding the book's direction, so the GEX shed buys the threatened side back as usual until the hedge can trade again.",
 	orders.HedgeResumed:     "The futures hedge can trade and holds the book's direction again: the GEX shed keeps its legs.",
+	orders.HedgeStoodDown: "The book holds one side only (calls or puts), so the futures hedge stands down: its perpetual is closed, the book keeps its direction, " +
+		"and the GEX shed protects it as with the hedge off. The hedge holds the delta again once the book holds both sides.",
+	orders.HedgeBack: "The book holds calls and puts again, so the futures hedge holds the book's direction again: the GEX shed keeps its legs.",
 	orders.HedgeLeftOpen: "The kill switch left a perpetual future open: it was beyond what the bot itself held, such as one held by hand. " +
 		"It stays on the account until a person closes it.",
 }

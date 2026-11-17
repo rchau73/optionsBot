@@ -274,3 +274,17 @@ describe("Scenario: the combined payoff includes the hedge", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });
+
+// #813: a hedge standing down on a one-sided book reads as paused, with its reason.
+describe("Scenario: the hedge stands down on a one-sided book", () => {
+  test("paused, with the reason and the shed", () => {
+    const h = { enabled: true, halted: false, stood_down: "the book holds calls only, so the hedge stands down and the book keeps its direction", perp_usd: 0 };
+    expect(hedgeState(h)).toBe("paused");
+    expect(hedgeShown(h)).toBe(true);
+    expect(pausedWords(h)).toBe("Standing down: the book holds calls only, so the hedge stands down and the book keeps its direction. The GEX shed protects the book meanwhile.");
+  });
+
+  test("a halt's reason comes first", () => {
+    expect(pausedWords({ enabled: true, halted: true, halt_reason: "Deribit maintenance", stood_down: "the book holds calls only" })).toBe("Deribit maintenance. The GEX shed protects the book meanwhile.");
+  });
+});

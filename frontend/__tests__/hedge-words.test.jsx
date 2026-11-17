@@ -36,6 +36,7 @@ const goHedgeChanges = () => [...goFile("internal", "orders", "journal.go").matc
 
 // Every change with figures, as the journal gives them.
 const LINE_OF = {
+  hedge_back: { options_delta: 0.02 },
   hedge_closed: { side: "buy", amount_usd: 32310, filled_usd: 32310, price: 76000, options_delta: 0.42, perp_delta: -0.42, realised_coin: -0.0012, detail: "futures hedge switched off by bob" },
   hedge_failed: { side: "sell", amount_usd: 300 },
   hedge_fill: FILL,
@@ -44,6 +45,7 @@ const LINE_OF = {
   hedge_price_away: { side: "sell", amount_usd: 300, price: 78000, options_delta: 0.5, perp_delta: -0.08, band_coin: 0.3 },
   hedge_rate_limited: { side: "buy", amount_usd: 300, options_delta: -0.5, perp_delta: 0.08, band_coin: 0.3 },
   hedge_resumed: { options_delta: 0.4 },
+  hedge_stood_down: { options_delta: -0.4, perp_delta: 0.4, detail: "the book holds calls only: the futures hedge stands down" },
   hedge_unavailable: { options_delta: 0.4, detail: "the last hedge orders found nothing to fill: the GEX shed works as with the mode off until the hedge can trade" },
   perp_left_open: { amount_usd: 500, options_delta: 0, perp_delta: 0.0066 },
 };
@@ -188,6 +190,8 @@ describe("the other lines", () => {
     ["halted", "hedge_halted", undefined, { money: false, protection: true, waiting: false, person: false }],
     ["left open", "perp_left_open", undefined, { money: false, protection: true, waiting: false, person: false }],
     ["resumed", "hedge_resumed", undefined, { money: false, protection: false, waiting: false, person: false }],
+    ["stood down", "hedge_stood_down", undefined, { money: false, protection: true, waiting: false, person: false }],
+    ["back", "hedge_back", undefined, { money: false, protection: false, waiting: false, person: false }],
   ])("filters: %s", (_, change, filledUSD, want) => {
     expect(activityGroups({ event: "hedge", change, filledUSD })).toEqual(want);
   });
