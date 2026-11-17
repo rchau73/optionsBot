@@ -8,6 +8,7 @@
 > How it works and its guardrails: **[AGENTIC.md](AGENTIC.md)**.
 
 > **👋 Recruiters and hiring managers:** a one-page summary of the project, my role and the skills it shows is in **[PORTFOLIO.md](PORTFOLIO.md)**.
+> Short films of it running are on my site: **[rchau73.github.io](https://rchau73.github.io/)**.
 
 A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https://www.deribit.com), manages them through their life (fill tracking, take-profit, rolls, stop-loss, regime-based leg shedding, kill switch) and backtests the same rules on historical data.
 
