@@ -1,7 +1,7 @@
 // Command usage writes the weekly monitor usage and cohort report (#295)
 // from the analytics events the monitor collects (data/monitor/events.jsonl,
 // docs/product/analytics/event-plan.md): active users, cohort retention,
-// activation (#620), panels opened, first answers, help, the manual-close
+// activation (#620), retention by activation (#818), panels opened, first answers, help, the manual-close
 // and rebalance funnels and trust signals — counts and shares only, never a user or session id.
 // The north star (#801, PRD §7) joins those visits with the days each bot ran,
 // from the clone's data/<bot>/data/regime_history.jsonl (its days only, no amount).
@@ -112,6 +112,9 @@ func run(events, week, out string, rules usage.Rules, flat usage.FlatRules, base
 	}
 	if a := r.Activation; a != nil && len(a.Weeks) > 0 {
 		fmt.Println(a.Weeks[len(a.Weeks)-1].Line())
+	}
+	if ar := r.ActivationRetention; ar != nil {
+		fmt.Println(ar.Headline())
 	}
 	for _, p := range paths {
 		fmt.Println("wrote", p)

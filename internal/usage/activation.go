@@ -85,21 +85,19 @@ func firstStarts(past []Event) map[string]time.Time {
 	return first
 }
 
-// buildActivation measures the window's week and the ActivationWeeks-1
-// before it (7-day steps aligned on `from`, as the cohorts) from the events
-// before `to`, which are sorted by time. A person counts as activated when,
-// within ActivationWindow of their first session_started, they viewed the
-// Overview and then did an activating step; time-to-value is the minutes
-// from that start to the step.
-func buildActivation(past []Event, from time.Time) *Activation {
-	const week = 7 * 24 * time.Hour
-	first := firstStarts(past)
-	type progress struct {
-		overview  bool
-		activated bool
-		step      string
-		minutes   float64
-	}
+// progress is how far one new person got within ActivationWindow of their
+// first session_started.
+type progress struct {
+	overview  bool
+	activated bool
+	step      string
+	minutes   float64
+}
+
+// activationProgress applies the activation rule to every person of first:
+// the Overview, then an activating step, both within ActivationWindow of
+// their first start. Events are sorted by time.
+func activationProgress(past []Event, first map[string]time.Time) map[string]*progress {
 	people := map[string]*progress{}
 	for _, e := range past {
 		t0, ok := first[e.UserID]
@@ -119,6 +117,19 @@ func buildActivation(past []Event, from time.Time) *Activation {
 			p.activated, p.step, p.minutes = true, activationStep(e), e.TS.Sub(t0).Minutes()
 		}
 	}
+	return people
+}
+
+// buildActivation measures the window's week and the ActivationWeeks-1
+// before it (7-day steps aligned on `from`, as the cohorts) from the events
+// before `to`, which are sorted by time. A person counts as activated when,
+// within ActivationWindow of their first session_started, they viewed the
+// Overview and then did an activating step; time-to-value is the minutes
+// from that start to the step.
+func buildActivation(past []Event, from time.Time) *Activation {
+	const week = 7 * 24 * time.Hour
+	first := firstStarts(past)
+	people := activationProgress(past, first)
 	a := &Activation{WindowHours: int(ActivationWindow / time.Hour), MinUsers: ActivationMinUsers}
 	for k := -(ActivationWeeks - 1); k <= 0; k++ {
 		start := from.Add(time.Duration(k) * week)
