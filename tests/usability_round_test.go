@@ -183,6 +183,57 @@ func TestUsabilityRound_OneCommandSetsUpARound(t *testing.T) {
 	}
 }
 
+// Scenario: the round script knows the hedged scenario (#827) — it starts the
+// demo with it and prints the scenario, URLs and password like the others.
+func TestUsabilityRound_HedgedScenario(t *testing.T) {
+	f := newRoundFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", filepath.Join(f.root, "scripts/usability_round.sh"), "hedged")
+	cmd.Env = f.env
+	out := filepath.Join(f.root, "out.txt")
+	sink, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sink.Close()
+	cmd.Stdout, cmd.Stderr = sink, sink
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	printed := waitForText(t, out, "Sign in:")
+	waitForText(t, f.log, "demo -addr 127.0.0.1:")
+	waitForText(t, f.log, "-scenario hedged")
+	for _, want := range []string{"Scenario:  hedged", "Demo API:  http://127.0.0.1:", "Monitor:   http://localhost:", "(user moderator, password ", "default, mixed, drawdown or hedged"} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("output does not contain %q:\n%s", want, printed)
+		}
+	}
+	// Between participants: back to the default demo, then hedged again.
+	if _, err := io.WriteString(stdin, "default\nhedged\n"); err != nil {
+		t.Fatal(err)
+	}
+	after := waitForText(t, out, "Scenario:  default")
+	for deadline := time.Now().Add(20 * time.Second); strings.Count(after, "Scenario:  hedged") < 2; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the demo did not restart on hedged:\n%s", after)
+		}
+		b, _ := os.ReadFile(out)
+		after = string(b)
+	}
+	if strings.Contains(after, "unknown scenario") {
+		t.Errorf("a scenario was refused:\n%s", after)
+	}
+	stdin.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("the round did not end cleanly: %v", err)
+	}
+}
+
 func TestUsabilityRound_DefaultScenarioPassesNoFlag(t *testing.T) {
 	f := newRoundFixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

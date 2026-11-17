@@ -2,7 +2,7 @@
 # usability_round.sh — one command for an E3 usability round's setup (#727):
 # docs/usability/e3-investor-monitor-test.md section 3.
 #
-#   scripts/usability_round.sh [default|mixed|drawdown]
+#   scripts/usability_round.sh [default|mixed|drawdown|hedged]
 #
 # Starts the demo bot API and the monitor on a throw-away user database, and
 # prints the URLs, the scenario and the moderator's password. Between
@@ -25,14 +25,14 @@ monitor_url="http://localhost:${monitor_port}"
 
 valid_scenario() {
   case "$1" in
-    default|mixed|drawdown) return 0 ;;
+    default|mixed|drawdown|hedged) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 scenario="${1:-default}"
 if ! valid_scenario "$scenario"; then
-  echo "usability_round: unknown scenario '$scenario': want default, mixed or drawdown" >&2
+  echo "usability_round: unknown scenario '$scenario': want default, mixed, drawdown or hedged" >&2
   exit 2
 fi
 
@@ -101,7 +101,7 @@ Demo API:  $demo_url
 Monitor:   $monitor_url
 Sign in:   $monitor_url/login   (user moderator, password $ADMIN_PASSWORD)
 
-Between participants: Enter restarts the demo on this scenario, or type default, mixed or drawdown.
+Between participants: Enter restarts the demo on this scenario, or type default, mixed, drawdown or hedged.
 Ctrl-C ends the round and deletes its user database.
 EOF
 }
@@ -132,7 +132,7 @@ print_round
 while IFS= read -r next; do
   next="${next:-$scenario}"
   if ! valid_scenario "$next"; then
-    echo "usability_round: unknown scenario '$next': want default, mixed or drawdown" >&2
+    echo "usability_round: unknown scenario '$next': want default, mixed, drawdown or hedged" >&2
     continue
   fi
   scenario="$next"

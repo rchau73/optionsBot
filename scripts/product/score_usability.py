@@ -44,11 +44,11 @@ SUCCESS = "success"
 SCORE_CELL = "(success|partial|fail)?"
 TIME_CELL = r"(\d{1,2}:[0-5]\d|-|—)?"
 ERROR = "q[1-4] (sign|unit|coin|time)"
-COLUMNS = ["code", "layout", "scenario (default / mixed / drawdown)",
+COLUMNS = ["code", "layout", "scenario (default / mixed / drawdown / hedged)",
            "q1", "q1 time", "q2", "q2 time", "q3", "q3 time", "q4", "q4 time",
            "errors (sign / unit / coin / time)", "passed"]
 CELLS = [re.compile(p) for p in (
-    "(desktop|mobile)?", "(default|mixed|drawdown)?",
+    "(desktop|mobile)?", "(default|mixed|drawdown|hedged)?",
     SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL,
     rf"(none|-|—|{ERROR}(\s*[,;]\s*{ERROR})*)?", "(yes|no)?")]
 
@@ -77,7 +77,7 @@ QUESTION_TEXT = {"Q1": "What does the program hold right now?",
 # The only lines allowed outside the table: section 8's, blank or filled in.
 TEMPLATE_LINES = [re.compile(p) for p in (
     r"", r"### Results table",
-    r"Round: (baseline / prototype / release / loss round|baseline|prototype|release|loss round)"
+    r"Round: (baseline / prototype / release / loss round / hedge round|baseline|prototype|release|loss round|hedge round)"
     r" · Date \(?(YYYY-MM-DD|\d{4}-\d{2}-\d{2})\)? · Monitor version \(?(commit|[0-9a-f]{7,40})\)?",
     r"Participants passed: (_|\d) of 5 · Round passed \(≥ 4 of 5\): (yes / no|yes|no)")]
 

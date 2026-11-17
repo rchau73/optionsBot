@@ -69,6 +69,11 @@ type demoFacts struct {
 	worstExceedsMonthlyIncome                bool
 	lastActionKind                           string
 	reasonInQ4Table                          bool
+	// The futures hedge (#827): "open" while the worst case counts a
+	// perpetual, else "none"; whether each move is the options alone plus the
+	// perpetual's share, and the larger loss smaller than the options alone.
+	perpetual                             string
+	worstIncludesHedge, worstBelowOptions bool
 }
 
 // keyFields reads each field a key may quote: a number is compared with the
@@ -93,6 +98,9 @@ var keyFields = map[string]func(demoFacts) any{
 	"worst_case_exceeds_monthly_income": func(f demoFacts) any { return strconv.FormatBool(f.worstExceedsMonthlyIncome) },
 	"last_action_kinds":                 func(f demoFacts) any { return f.lastActionKind },
 	"last_action_reason_in_q4_table":    func(f demoFacts) any { return strconv.FormatBool(f.reasonInQ4Table) },
+	"perpetual":                         func(f demoFacts) any { return f.perpetual },
+	"worst_case_includes_hedge":         func(f demoFacts) any { return strconv.FormatBool(f.worstIncludesHedge) },
+	"worst_case_below_options_only":     func(f demoFacts) any { return strconv.FormatBool(f.worstBelowOptions) },
 }
 
 // requiredKeyFields are the figures every scenario's key must quote per
@@ -104,7 +112,7 @@ var requiredKeyFields = map[string][]string{
 	"Q4": {"last_action_kinds", "last_action_reason_in_q4_table"},
 }
 
-var usabilityScenarios = []string{"default", "mixed", "drawdown"}
+var usabilityScenarios = []string{"default", "mixed", "drawdown", "hedged"}
 
 // keyMatches compares one quoted value with the demo's.
 func keyMatches(want string, got any) bool {
@@ -215,12 +223,14 @@ func fetchDemoFacts(t *testing.T, get func(string, any), q4Reasons []string, now
 		} `json:"income"`
 		WorstCase struct {
 			MovePct float64 `json:"move_pct"`
-			Down    struct {
-				LossCoin float64 `json:"loss_coin"`
-			} `json:"down"`
-			Up struct {
-				LossCoin float64 `json:"loss_coin"`
-			} `json:"up"`
+			Down    keyMove `json:"down"`
+			Up      keyMove `json:"up"`
+			Hedge   *struct {
+				SizeUSD     float64 `json:"size_usd"`
+				AvgPrice    float64 `json:"avg_price"`
+				OptionsDown keyMove `json:"options_down"`
+				OptionsUp   keyMove `json:"options_up"`
+			} `json:"hedge"`
 		} `json:"worst_case"`
 		LastAction *struct {
 			Kind   string `json:"kind"`
@@ -266,6 +276,15 @@ func fetchDemoFacts(t *testing.T, get func(string, any), q4Reasons []string, now
 	if summary.WorstCase.Down.LossCoin > 0 && summary.WorstCase.Up.LossCoin > 0 {
 		f.worstCaseSign = "loss"
 	}
+	f.perpetual = "none"
+	if h := summary.WorstCase.Hedge; h != nil && h.SizeUSD != 0 && h.AvgPrice > 0 {
+		f.perpetual = "open"
+		// Each move: the options alone less the perpetual's gain at the moved price.
+		share := func(spot float64) float64 { return h.SizeUSD * (1/h.AvgPrice - 1/spot) }
+		f.worstIncludesHedge = math.Abs(summary.WorstCase.Down.LossCoin-(h.OptionsDown.LossCoin-share(summary.WorstCase.Down.Spot))) < 1e-9 &&
+			math.Abs(summary.WorstCase.Up.LossCoin-(h.OptionsUp.LossCoin-share(summary.WorstCase.Up.Spot))) < 1e-9
+		f.worstBelowOptions = worst < math.Max(h.OptionsDown.LossCoin, h.OptionsUp.LossCoin)
+	}
 
 	f.worstExceedsMonthlyIncome = true
 	var losing []string
@@ -301,6 +320,12 @@ func fetchDemoFacts(t *testing.T, get func(string, any), q4Reasons []string, now
 	return f
 }
 
+// keyMove is one move of the worst case, as the keys read it.
+type keyMove struct {
+	Spot     float64 `json:"spot"`
+	LossCoin float64 `json:"loss_coin"`
+}
+
 func sortedSet(set map[string]bool) []string {
 	out := make([]string, 0, len(set))
 	for v := range set {
@@ -310,19 +335,31 @@ func sortedSet(set map[string]bool) []string {
 	return out
 }
 
-// q4Sentences are the plain sentences of the section 6 Q4 table.
+// q4Sentences are the plain sentences of the section 6 Q4 table, plus the
+// hedge's of section 6c (#827).
 func q4Sentences(t *testing.T, doc string) []string {
 	t.Helper()
-	q4 := kitSection(t, kitSection(t, doc, "## 6. Answer key"), "### Q4 ")
-	var out []string
-	for _, m := range regexp.MustCompile(`\| "([^"]+)" \|`).FindAllStringSubmatch(q4, -1) {
-		out = append(out, m[1])
+	sentences := func(heading string) []string {
+		var out []string
+		q4 := kitSection(t, kitSection(t, doc, heading), "### Q4 ")
+		for _, m := range regexp.MustCompile(`\| "([^"]+)" \|`).FindAllStringSubmatch(q4, -1) {
+			out = append(out, m[1])
+		}
+		return out
 	}
+	out := sentences("## 6. Answer key")
 	if len(out) < 5 {
 		t.Fatalf("the Q4 key lists %d sentences, want at least 5", len(out))
 	}
-	return out
+	hedged := sentences(hedgedKeySection)
+	if len(hedged) == 0 {
+		t.Fatalf("the hedged Q4 key (%s) lists no hedge sentence", hedgedKeySection)
+	}
+	return append(out, hedged...)
 }
+
+// hedgedKeySection is the kit's answer key for -scenario hedged (#827).
+const hedgedKeySection = "## 6c. Answer key: futures hedge"
 
 // Scenario: Keys match the demo.
 func TestUsabilityKeys_KeysMatchTheDemo(t *testing.T) {
@@ -430,9 +467,13 @@ func TestUsabilityKeys_EveryScenarioAndQuestionHasOneKey(t *testing.T) {
 // demo, so it cannot drift from the round's answers.
 // Rewrite it from the demo: go test ./tests -run TestUsabilityKeys_FrontendScenariosAnswerTheKeys -args -update-scenarios
 // (or UPDATE_GOLDEN=1), then commit it with the key change that needed it.
+// -only-scenarios=hedged,… rewrites those and keeps the others as they are (#827).
 const demoScenariosFile = "../frontend/test/demoScenarios.json"
 
-var updateScenarios = flag.Bool("update-scenarios", false, "rewrite frontend/test/demoScenarios.json from cmd/monitor-demo")
+var (
+	updateScenarios = flag.Bool("update-scenarios", false, "rewrite frontend/test/demoScenarios.json from cmd/monitor-demo")
+	onlyScenarios   = flag.String("only-scenarios", "", "with -update-scenarios: the scenarios to rewrite, comma-separated (default all)")
+)
 
 var demoScenarioPaths = []string{"/api/positions", "/api/status", "/api/summary"}
 
@@ -442,29 +483,52 @@ type demoScenarios map[string]map[string]json.RawMessage
 func writeDemoScenarios(t *testing.T) {
 	t.Helper()
 	out := demoScenarios{}
+	if *onlyScenarios != "" {
+		if b, err := os.ReadFile(demoScenariosFile); err == nil {
+			if err := json.Unmarshal(b, &out); err != nil {
+				t.Fatalf("%s: %v", demoScenariosFile, err)
+			}
+		}
+	}
 	for _, scenario := range usabilityScenarios {
+		if *onlyScenarios != "" && !slices.Contains(strings.Split(*onlyScenarios, ","), scenario) {
+			continue
+		}
 		var args []string
 		if scenario != "default" {
 			args = []string{"-scenario", scenario}
 		}
 		get := demoAPI(t, args...)
 		// Wait for the first marks to move, so the open line is not a bare 0
-		// and the scenario test can tell it apart from the month's result.
-		for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+		// and the scenario test can tell it apart from the month's result;
+		// hedged also waits for a hedge trade as the last action (#827).
+		// The three answers are read together, the summary last, and kept
+		// once that summary passes.
+		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(250 * time.Millisecond) {
+			out[scenario] = map[string]json.RawMessage{}
+			for _, path := range demoScenarioPaths {
+				var body json.RawMessage
+				get(path, &body)
+				out[scenario][path] = body
+			}
 			var s struct {
 				Income struct {
 					UnrealisedCoin float64 `json:"unrealised_coin"`
 				} `json:"income"`
+				LastAction *struct {
+					Kind string `json:"kind"`
+				} `json:"last_action"`
 			}
-			if get("/api/summary", &s); math.Abs(s.Income.UnrealisedCoin) > 1e-5 {
+			if err := json.Unmarshal(out[scenario]["/api/summary"], &s); err != nil {
+				t.Fatal(err)
+			}
+			hedgeShown := scenario != "hedged" || (s.LastAction != nil && s.LastAction.Kind == "hedge")
+			if math.Abs(s.Income.UnrealisedCoin) > 1e-5 && hedgeShown {
 				break
 			}
-		}
-		out[scenario] = map[string]json.RawMessage{}
-		for _, path := range demoScenarioPaths {
-			var body json.RawMessage
-			get(path, &body)
-			out[scenario][path] = body
+			if time.Now().After(deadline) {
+				t.Fatalf("scenario %s: no answer fit for the fixture within 30 s", scenario)
+			}
 		}
 	}
 	b, err := json.MarshalIndent(out, "", "  ")

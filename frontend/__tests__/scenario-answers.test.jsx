@@ -20,7 +20,7 @@ import { assertNotFolded, sizeAndWeight } from "@/test/lossVisibility";
 jest.mock("@/components/RegimeChart", () => () => null);
 
 // The kit's scenario names → the fixture's (the no-flag demo is "default").
-const SCENARIOS = { baseline: "default", mixed: "mixed", drawdown: "drawdown" };
+const SCENARIOS = { baseline: "default", mixed: "mixed", drawdown: "drawdown", hedged: "hedged" };
 
 const botOf = (scenario) => {
   const served = DEMO[SCENARIOS[scenario]];
@@ -165,10 +165,34 @@ const CHECKS = {
   },
 };
 
+/** The worse of two moves of the worst case. */
+const worseOf = (down, up) => (up.loss_coin > down.loss_coin ? up : down);
+
+// The hedged scenario's own checks (#827, section 6c of the kit): the worst
+// case shown is the one with the perpetual, and the Last action is the hedge trade.
+const HEDGED = {
+  3: (c, s, layout) => {
+    const el = block(c, layout, 3);
+    const wc = s.worst_case;
+    need(wc.hedge, "the worst case does not count the perpetual (no worst_case.hedge)");
+    if (layout === "desktop") includes(el, "perpetual", "the worst case labelled as counting the perpetual");
+    const shown = (side) => (layout === "desktop" ? `${formatCoin(-side.loss_coin, wc.coin)} · ` : `would cost about ${formatCoin(side.loss_coin, "BTC").replace(/^[+−]/, "")} (`);
+    const hedged = shown(worseOf(wc.down, wc.up));
+    const alone = shown(worseOf(wc.hedge.options_down, wc.hedge.options_up));
+    need(hedged !== alone, "the demo's hedged worst case equals the options alone");
+    need(!text(el).includes(alone), `the options alone ("${alone}") are shown as the worst case, not the figure with the perpetual`);
+  },
+  4: (c, s, layout) => {
+    need(isHedgeAction(s.last_action), `the last action is not the hedge trade (kind ${s.last_action?.kind})`);
+    includes(block(c, layout, 4), hedgeActionWhat(s.last_action), "what the hedge trade did");
+  },
+};
+
 /** Runs one question's check, naming the scenario, the layout and the question when it fails. */
-function check(scenario, layout, q, container) {
+function check(scenario, layout, q, container, summary = botOf(scenario).summary) {
   try {
-    CHECKS[layout][q](container, botOf(scenario).summary);
+    CHECKS[layout][q](container, summary);
+    if (scenario === "hedged" && HEDGED[q]) HEDGED[q](container, summary, layout);
   } catch (e) {
     throw new Error(`scenario ${scenario} · layout ${layout} · question ${q}: ${e.message}`);
   }
@@ -314,6 +338,30 @@ describe("Scenario: a regression names the question", () => {
     expect(() => check("drawdown", "desktop", 2, c)).toThrow(/^scenario drawdown · layout desktop · question 2: .* is a loss not named in words/);
   });
 
+  test.each(Object.keys(LAYOUTS))("hedged · %s: an option trade as the last action fails naming question 4", (layout) => {
+    const bot = botOf("hedged");
+    const summary = { ...bot.summary, last_action: botOf("mixed").summary.last_action };
+    const c = LAYOUTS[layout]({ ...bot, summary });
+    expect(() => check("hedged", layout, 4, c, summary)).toThrow(new RegExp(`^scenario hedged · layout ${layout} · question 4: the last action is not the hedge trade`));
+  });
+
+  test.each(Object.keys(LAYOUTS))("hedged · %s: a worst case without the perpetual fails naming question 3", (layout) => {
+    const bot = botOf("hedged");
+    const wc = bot.summary.worst_case;
+    // The options alone served as the worst case, as a bot that forgot the perpetual would.
+    const summary = { ...bot.summary, worst_case: { ...wc, model: wc.model.split(";")[0], down: wc.hedge.options_down, up: wc.hedge.options_up, hedge: undefined } };
+    const c = LAYOUTS[layout]({ ...bot, summary });
+    expect(() => check("hedged", layout, 3, c, summary)).toThrow(new RegExp(`^scenario hedged · layout ${layout} · question 3: the worst case does not count the perpetual`));
+  });
+
+  test.each(Object.keys(LAYOUTS))("hedged · %s: the options alone shown as the worst case fails naming question 3", (layout) => {
+    const bot = botOf("hedged");
+    const wc = bot.summary.worst_case;
+    const shown = { ...bot.summary, worst_case: { ...wc, down: wc.hedge.options_down, up: wc.hedge.options_up } };
+    const c = LAYOUTS[layout]({ ...bot, summary: shown });
+    expect(() => check("hedged", layout, 3, c)).toThrow(new RegExp(`^scenario hedged · layout ${layout} · question 3: `));
+  });
+
   test("a last action without its reason fails naming question 4", () => {
     const c = LAYOUTS.desktop(botOf("mixed"));
     within(c).getByText(botOf("mixed").summary.last_action.reason).remove();
@@ -332,8 +380,9 @@ const idleBot = (idle) => {
   return { ...bot, summary: { ...bot.summary, holding: { ...bot.summary.holding, strangles: 0, legs: 0, calls: 0, puts: 0, nearest: null }, idle } };
 };
 
-// #794: on a bot with the futures hedge on, Q4 may be a hedge trade. The demo
-// runs no hedge, so its fixture gets the hedge's newest fill.
+// #794: on a bot with the futures hedge on, Q4 may be a hedge trade. The
+// baseline demo runs no hedge, so its fixture gets the hedge's newest fill
+// (the hedged scenario serves its own, #827).
 describe("Scenario: the hedge traded after the last option trade", () => {
   test.each(Object.keys(LAYOUTS))("%s: Last action shows the hedge trade's time, side, size and reason, not the older option trade", (layout) => {
     const baseline = botOf("baseline");
