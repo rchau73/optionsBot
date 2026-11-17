@@ -384,8 +384,10 @@ class RunSheetTest(unittest.TestCase):
             self.sheet = f.read()
 
     def test_script_read_aloud_is_the_kits(self):
-        intro = re.search(r'^> ".*"$', self.kit, re.M).group()
-        self.assertIn(intro, self.sheet)
+        # The sheet keeps one sentence per line (TestDocs_NoLongProseLine): compare the quote's words.
+        intro = re.search(r'^> (".*")$', self.kit, re.M).group(1)
+        quote = " ".join(re.findall(r"^> (.*)$", self.sheet, re.M))
+        self.assertIn(intro, quote)
         for q, text in su.QUESTION_TEXT.items():
             self.assertIn(f'| {q} | "{text}" |', self.kit)
             self.assertIn(f'"{text}"', self.sheet)
