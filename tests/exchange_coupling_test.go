@@ -17,6 +17,10 @@ import (
 	"testing"
 )
 
+// A second exchange's adapter is held to docs/exchange-adapter.md §6 by the
+// conformance suite (internal/exchange/exchangetest, #819), which
+// tests/exchange_conformance_test.go runs on Deribit's.
+//
 // The Deribit coupling inventory (#253, #325): every "public/…" and
 // "private/…" string literal under internal/ must be listed here with the
 // packages allowed to use it, and in docs/exchange-adapter.md section 1.

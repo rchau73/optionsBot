@@ -32,3 +32,4 @@ Notable files:
 - `pipe_guard_test.go` (#683): no workflow step, script or git hook pipes a failing command into a filter (`tee`, `head`, `grep`, …) without `pipefail`, unless its left side only prints or `# pipe-ok: <why>` explains it.
 - `ledger_coverage_test.go` (#722): every `scripts/agents/*.sh` opens and ends a run (`run_begin`/`run_end`) or is on `ledgerExempt` with a reason; every agent name is in `runs.py`, `docs/agents/run-ledger.md` and `scripts/agents/CLAUDE.md`.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
+- `exchange_conformance_test.go` (#819): `exchangetest.Run` on `deribit.Adapter` over the mock gateway, the scripted cycle's requests unchanged, and a broken adapter caught (a capability claimed but failing, one unclaimed but emulated, a secret in an error).

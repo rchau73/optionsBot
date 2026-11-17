@@ -22,3 +22,5 @@ The verdicts are the template's terms: **feasible**, **feasible with a gap**, **
 | Verdict | the adapter | feasible with a gap | feasible with a gap | feasible with a gap | not now |
 
 Changes an adapter would force in order handling, the unknown-outcome path, the kill switch or reconcile are listed in section 11 of each brief and go to a person.
+
+Once a brief says **feasible**, the steps to build the adapter, and the conformance suite it must pass, are in [../exchange-adapter.md](../exchange-adapter.md) section 6 "Adding an exchange".

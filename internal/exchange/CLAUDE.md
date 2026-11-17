@@ -25,3 +25,5 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   The full inventory, the proposed adapter interface and its migration steps: `docs/exchange-adapter.md` (#325)
   - — `tests/exchange_coupling_test.go` fails when a `"public/…"`/`"private/…"` literal under `internal/` is not in its table (`deribitMethods`, method → allowed packages) and the doc's §1, or appears under `internal/strategy`:
   - a new Deribit call needs a row in both.
+- **`internal/exchange/exchangetest`** (#819) — the conformance suite every adapter must pass: `exchangetest.Run(t, newSubject)` checks submit outcomes (a timeout is maybe placed), capabilities against behaviour, instrument fields, `PerpetualName`, public-only refusal and no secrets in errors or logs, through `exchange.Exchange` only.
+  An adapter's test supplies its scripted fake (`exchangetest.Fake`); Deribit's is in `tests/exchange_conformance_test.go`. Checklist: `docs/exchange-adapter.md` §6.

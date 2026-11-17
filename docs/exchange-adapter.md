@@ -295,3 +295,23 @@ Core policy areas: the study found these; none is planned for the agents. Each n
 - **"Not placed" errors** — `orders.MaybePlaced` treats an RPC error or an open breaker as a definite no; each adapter must map its errors to the same three outcomes (placed, not placed, maybe), or orders can be doubled.
 - **Margin without a simulator** — entry and top-up sizing and the size cap need `simulate_portfolio`; the backtest's `ApproxIMLimitPct` is labelled an approximation and is not good enough for live sizing.
 - **Settlement unit** — every P&L, fee and "% of equity" is in coin; a linear venue changes the units of the journal and the monitor.
+
+## 6. Adding an exchange
+
+The bar for a new adapter is a test, `exchangetest.Run` (`internal/exchange/exchangetest`, #819). Steps, in order:
+
+1. **Feasibility brief** — copy `docs/exchanges/TEMPLATE.md` to `docs/exchanges/<exchange>.md` and fill every figure with a source and a date, or label it `assumption`. Its verdict decides whether to go on.
+2. **Decisions for a person** — the order-handling and reconcile proposals in §5 **need the product owner's approval before any adapter ships**. The suite decides none of them; it only checks that an adapter says honestly what it can do.
+3. **Adapter** — a type in `internal/exchange/<exchange>` that satisfies `exchange.Exchange`, fills `Instrument.Expiry`, `Strike` and `OptionType` itself, and has a `Capabilities` value that says what it really does.
+4. **Fake transport** — a scripted fake of the exchange's wire protocol that implements `exchangetest.Fake` (Deribit's is in `tests/exchange_conformance_test.go`, over `mockDeribit`).
+5. **Conformance suite** — `exchangetest.Run(t, newSubject)` must pass. It checks, through the interface only:
+   - every submit error maps to exactly one of placed, not placed or maybe placed (`orders.MaybePlaced`), and a timeout is maybe placed and is cancelled by label;
+   - the `Capabilities` value equals behaviour: a capability claimed works; one not claimed is refused with an error and sends nothing (never emulated), and the failure names the capability;
+   - `Expiry`, `Strike` and `OptionType` are filled for every chain instrument, and `InstrumentFromName` agrees;
+   - `PerpetualName(currency)` is stable per currency and sends no request;
+   - a public-only connection refuses private calls and sends none;
+   - a failing authentication leaves no key, client ID or raw scope in any error or log line.
+6. **Coupling test** — `tests/exchange_coupling_test.go`: every `"public/…"`/`"private/…"`-style literal of the new exchange has its row, and the strategy still imports no exchange.
+7. **Wiring** — only after the product owner's approval of step 2: `cmd/bot` picks the adapter by the account's exchange key (`internal/accounts`).
+
+The suite runs on Deribit's adapter today and it sends the requests it always sent (`TestExchangeConformance_DeribitRequestsUnchanged`).
