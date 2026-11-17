@@ -26,6 +26,8 @@ When no environment has events in the week nothing is posted and no marker is wr
 `data/agents/usage/<week>.done` marks the week done once the comment is posted; a comment that could not be posted is tried once more and then the week is done whatever happened.
 Logs: `data/agents/usage/<week>/`.
 Run ledger agent `usage`, outcomes `posted`, `skipped` or `failed`.
+**Lab usage** (#824): for each environment whose clone has a lab queue (`data/compare/requests/`), `usage.sh` runs `go run ./cmd/labstats -compare <clone>/data/compare` and appends its Markdown as the "Lab usage" section of that environment's `<week>.md`, once (`lib.sh` `lab_section`; counts, shares and minutes only, a manager as a short hash).
+It is not posted on GitHub; a failed run is logged and the report goes on. What it counts: [docs/product/lab/README.md](../product/lab/README.md), item 8.
 Tests: `test_usage.py` (the comment, the privacy rule, the dedup, and `usage.sh` end to end on throwaway clones with stub `go`/`gh`) and `tests/usage_test.go` (the drop rules on a six-week fixture).
 
 **Security digest and alerts** (#717): [`security.sh`](../../scripts/agents/security.sh), started by the tick on its own, reads each environment's audit trail (the running monitor's volume through `envctl.sh … cp`, only the audit files kept; else the clone's `data/monitor/`) and runs `go run ./cmd/security` (pure rules in `internal/security`; what they count and the alert rules: [frontend/docs/sign-in.md](../../frontend/docs/sign-in.md) "Security digest").

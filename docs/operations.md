@@ -340,6 +340,19 @@ There is no automatic path from a candidate to a running bot.
 A core-policy setting is refused (`needs_product_owner`) unless the record carries `product_owner_approval`, the reference of the product owner's approval that a person adds.
 `refused` lists the reasons in plain words (a fixed key, a value out of range, the shipped setting changed since the run, no report); fix the cause and run it again: a second run on an unchanged record rewrites nothing.
 
+### Lab usage report
+
+`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, the candidates' status and the analyses written), read-only.
+
+```bash
+go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, analyses written
+go run ./cmd/labstats -compare data/compare -days 7 -json
+```
+
+No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
+It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
+A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
+
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
 The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`).

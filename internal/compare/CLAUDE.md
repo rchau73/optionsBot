@@ -7,6 +7,7 @@ go run ./cmd/compare -base config_btc.yaml -proposed my.yaml -from 2026-10-12 -t
 go run ./cmd/compare -base config_btc.yaml -set gamma_flip_buffer_sd=1.2 -from … -to …   # -set key=value (repeatable, #641): the proposed config = -proposed (or -base) with these values, a temporary copy; "[]" in a key = every element
 bash scripts/lab_runner.sh     # the lab's runner (#641, cmd/labrun): the monitor's queued run requests (data/compare/requests/) one at a time through cmd/compare -set … -neighbours → done with run_id | failed with a reason | expired after a day; a done run then gets its AI analysis (#792, below), best effort
 go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # a recorded lab change (#806, COMPARE_DIR/applied/<id>.json) → COMPARE_DIR/candidates/<id>/: config.candidate.yaml (ready only), diff.md, candidate.json (ready | refused, reasons); exit 0 ready, 2 refused, 1 error
+go run ./cmd/labstats -compare data/compare [-days 28] [-json]   # the lab's usage report (#824): requests, done/failed/expired %, median minutes to done, per manager per week (a hash), recorded changes, analyses written — counts only, read-only
 go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of a comparison (#426): one model call (ANTHROPIC_API_KEY; -fake <answer.md> sends nothing), checked by aianalysis.Check (#257) → analysis.md|json beside the report, Disclaimer first; a failing answer writes nothing and exits 1; no monitor route (README "AI analysis of a comparison")
 ```
 
@@ -31,4 +32,7 @@ go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of 
     a core policy only with `product_owner_approval` in the record (a person adds it; else `needs_product_owner`), the run's `report.json` readable, then the whole candidate through `config.Load` and `DiffConfigs` (only the recorded keys differ);
   - `EditConfigText` changes the values in the file's text in place (comments and alignment kept, a missing top-level key appended);
   - writes only `COMPARE_DIR/candidates/<id>/`, each file only when its bytes change (a second run rewrites nothing); a refusal removes an older `config.candidate.yaml`; it never edits the record or a shipped config and calls no bot or exchange (`tests/lab_candidate_test.go` checks the imports).
+  The lab's usage report (`labstats.go`, #824, `cmd/labstats`): `ReadLabUsage` reads the queue, `applied/`, `candidates/<id>/candidate.json` and `<run id>/analysis.json` (an unreadable request file is counted, never skipped);
+  - pure `ComputeLabStats` (`now` passed in) gives counts, shares, the median minutes to done, requests per manager per ISO week under `ManagerHash` (8 hex of SHA-256) and the targets; `LabStatsMarkdown` prints it;
+  - no setting value, name, amount or run id in the output, and it writes nothing (`tests/lab_stats_test.go`); `usage.sh` appends it weekly (`lib.sh lab_section`).
   Never name a Go file `*_windows.go`/`*_windows_test.go`: Go builds it on Windows only.
