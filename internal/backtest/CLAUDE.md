@@ -26,6 +26,9 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
   - `-fullstrangle today,hedged` (study, #677, `replay/fullstrangle.go`): today's rules vs the perpetual holding the book's coin delta (the bot's band and order limit) with the rules that leave a leg missing relaxed; `hedged:H` = a stopped leg waits H hours;
     at each `-costs` multiple, one table: net (coin, USD), legs missing, perpetual traded and fees, the named windows, worst day/week, avg IM, max MM, a −20 % gap, stops, MM cuts, a verdict; `-trace` prints each row's actions (`docs/studies/full-strangle-hedge.md`).
     Run it with `-start journal -limits journal -rebalance prorata`: from an empty book a variant can run a far smaller book, which the verdict refuses to compare.
+  - `-hedgemodes all` (study, #812, `replay/hedgemode.go`): the bot's futures hedge (`bot`) against no hedge (`off`), standing down on a one-sided book (`onesided`) and hedging only the delta opposing the trend (`trend`), each also `+after` (the hedge after repairs and entries);
+    at each `-costs` multiple, one table: net, hedge and options P&L, perpetual orders, traded and fees, worst day/week, avg IM, max MM, a −20 % gap, stops, delta exits, a verdict against `bot` (`docs/studies/one-sided-hedge.md`).
+    A lot is priced without the perpetual in these modes: next to the hedge a short leg's per-lot IM came out ≤ 0 and sized one lot.
   - `-rebalance prorata` (#638, `replay/rebalance.go`; default `off`, so earlier replays are unchanged): the bot's rebalance — a pass on a confirmed limit change (cuts to the exact limit),
     retries of a held or short top-up (cut only above limit + 1.5 pp, `DownsizeDue`), top-ups as `rebalancePositions`; `-limits journal` takes the limit, freeze and starts from the journal's `risk_limit` lines
     (each start a startup pass with the ±1.5 pp band), and with `-journal` the bot's downsizes are listed beside the replay's per day and side.

@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import score_usability as su  # noqa: E402
 
-HEADER = ("| Code | Layout | Scenario (default / mixed / drawdown) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time "
+HEADER = ("| Code | Layout | Scenario (default / mixed / drawdown / hedged) | Q1 | Q1 time | Q2 | Q2 time | Q3 | Q3 time "
           "| Q4 | Q4 time | Errors (sign / unit / coin / time) | Passed |\n"
           "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 ROUND_LINE = "Round: loss round · Date 2026-11-07 · Monitor version 16439ab\n\n"
@@ -129,6 +129,30 @@ class CompareTest(unittest.TestCase):
         self.assertIn("| unit errors | 1 | 0 | -1 |", text)
         self.assertIn("| coin errors | 0 | 0 | +0 |", text)
         self.assertIn("| time errors | 0 | 1 | +1 |", text)
+
+
+class HedgedScenarioTest(unittest.TestCase):
+    """The hedge round (#827): -scenario hedged rows are scored and compared; no other name is."""
+
+    def test_hedged_rows_are_scored(self):
+        rows = [row(c, scenario="hedged") for c in su.CODES[:4]] + [row("P5", scenario="hedged", q4_time="05:10")]
+        s = score(table(*rows, before="Round: hedge round · Date 2026-11-17 · Monitor version 16439ab\n\n"), "hedge")
+        self.assertTrue(s["round_passed"])
+        self.assertEqual(s["passed"], ["P1", "P2", "P3", "P4"])
+        # Not a loss scenario: its sign errors are counted, not as the loss round's finding.
+        self.assertFalse(s["has_loss_scenario"])
+
+    def test_hedge_round_beside_the_baseline(self):
+        baseline = score(table(), "baseline")
+        hedge = score(table(*[row(c, scenario="hedged", q3="partial" if c == "P1" else "success") for c in su.CODES]), "hedge")
+        text = su.render_comparison(baseline, hedge)
+        self.assertIn("| | baseline | hedge | Change |", text)
+        self.assertIn("| Participants passed | 5 | 4 | -1 |", text)
+
+    def test_another_scenario_is_refused(self):
+        for name in ("hedge", "nothing", "hedged-on"):
+            with self.subTest(name):
+                self.assertIn((3, su.NAME_LIKE), refused_lines(table(row("P1", scenario=name))))
 
 
 class PersonalDataTest(unittest.TestCase):
