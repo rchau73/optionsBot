@@ -18,6 +18,7 @@ Every event answers at least one of these. An event that answers none is not col
 | Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
 | Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | "Why they stay or leave" (#342: each survey's shown/answered/dismissed and response rate, NPS bands and the score from 10 answers, coded why, came for / hardest to find, exit reasons with the top 3) |
+| Q9 | Do people activated in their first day come back more often than those who are not (does time-to-value predict that a person stays)? | PRD §7 north star and retention, E3, E11 | "Retention by activation" (#818, §9: each cohort's activated and not activated and their weeks +1 … +4, pooled week 4 in the E13 comment; an association, not proof; no new event) |
 
 **Are users stopping?** The engagement-drop alert (§7) answers it every week from Q1, Q2 (the lapsed share), Q4, Q5 and Q6.
 
@@ -176,3 +177,19 @@ Does a new person reach a useful answer early, and how fast? `cmd/usage` answers
 - **No alert:** §7's drop rules do not read it.
 
 Only people who said yes send events (§5), so a person who did not accept analytics is in no figure; counts and shares only, never a `user_id`.
+
+## 9. Retention by activation (Q9, #818)
+
+Does reaching a useful answer in the first day go with staying? `cmd/usage` answers it in "Retention by activation" (Q9) by joining §8's rule with the cohort table (Q2): no new event or property.
+
+- **Cohorts:** the report's week and the 11 before it (`usage.ActivationWeeks`); a cohort is the new people of the week (first `session_started` ever, as Q2).
+- **Split:** each cohort into *activated* (§8's rule, unchanged: within 24 h, the Overview and then a step) and *not activated* (everyone else of the cohort).
+- **Came back:** a person of a group with any accepted event in week +1, +2, +3 and +4 after the cohort's week (`usage.ActivationReturnWeeks`) — the cohort table's "active"; counts and the share of the group.
+- **Small group:** under 10 people (`usage.ActivationMinUsers`) a group is `too few to judge`: its counts, no share.
+- **Not ended:** a later week that has not ended reads `not yet`, never 0.
+- **Missing weeks:** a cohort week with no event at all is noted and left out; a later week with no event at all reads `no events` — no count, and it is in no base.
+- **Pooled:** per later week, the cohorts whose week has ended and had events, summed per group; the E13 weekly comment carries the week 4 line ("activated come back 62 % in week 4, not activated 31 % (n = 14 / 22)", shares only for a live account).
+- **Association, not proof:** said beside every figure — a person curious enough to activate may also be one who stays.
+- **No alert:** §7's drop rules do not read it.
+
+Only people who said yes send events (§5); counts and shares only, never a `user_id`.

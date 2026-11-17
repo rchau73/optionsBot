@@ -13,6 +13,7 @@ export function hedgeStory(h) {
   if (!h) return null;
   if (h.kill_switch) return "idle";
   const state = hedgeState(h);
+  if (state === "paused" && !h.halted && h.stood_down) return "stood_down";
   return state === "on" && h.not_holding ? "not_holding" : state;
 }
 
@@ -20,6 +21,7 @@ export const STORY_BADGE = {
   on: { tone: "good", text: "ON" },
   paused: { tone: "warn", text: "PAUSED" },
   not_holding: { tone: "warn", text: "NOT HOLDING" },
+  stood_down: { tone: "warn", text: "STANDING DOWN" },
   off_open: { tone: "warn", text: "OFF · position still open" },
   off: { tone: "muted", text: "OFF" },
   idle: { tone: "warn", text: "KILL SWITCH" },
@@ -35,6 +37,8 @@ export function marketTurnsWords(h) {
     case "paused":
     case "not_holding":
       return `The hedge cannot trade right now (${h.halt_reason || h.not_holding}), so the GEX shed protects the book until the hedge can trade: ${SHED}.`;
+    case "stood_down":
+      return `The book holds one side only, so the hedge stands down and the book keeps its direction; the GEX shed protects it: ${SHED}.`;
     case "off":
     case "off_open":
       return `The GEX shed: in a negative regime ${SHED}. ${h.available && h.testnet ? "You can turn the futures hedge on in Account instead." : "The futures hedge is a testnet experiment, so it cannot be turned on for this bot."}`;

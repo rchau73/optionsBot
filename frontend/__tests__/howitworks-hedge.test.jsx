@@ -2,7 +2,7 @@ import { render, renderHook, screen, waitFor, within } from "@testing-library/re
 import HowItWorks from "@/components/HowItWorks";
 import { HowItWorksScreen } from "@/components/HowItWorksView";
 import { useBotHedge } from "@/hooks/useBotHedge";
-import { bandSize, deltaFigures, deltaWords, hedgeStory, marketTurnsWords, orderCapWords } from "@/lib/howitworksHedge";
+import { STORY_BADGE, bandSize, deltaFigures, deltaWords, hedgeStory, marketTurnsWords, orderCapWords } from "@/lib/howitworksHedge";
 
 // "How it works" explains the futures hedge (#696). The shape GET
 // /api/bots/<bot>/hedge serves (internal/strategy/futureshedgeview.go).
@@ -230,5 +230,15 @@ describe("useBotHedge", () => {
     global.fetch = jest.fn();
     renderHook(() => useBotHedge(null));
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// #813: the How it works card says the hedge stands down on a one-sided book.
+describe("Scenario: a one-sided book", () => {
+  test("the story is stood_down and the card says the shed protects it", () => {
+    const h = { enabled: true, halted: false, stood_down: "the book holds calls only", available: true, testnet: true };
+    expect(hedgeStory(h)).toBe("stood_down");
+    expect(STORY_BADGE.stood_down.text).toBe("STANDING DOWN");
+    expect(marketTurnsWords(h)).toMatch(/^The book holds one side only, so the hedge stands down/);
   });
 });

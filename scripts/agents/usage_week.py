@@ -148,6 +148,32 @@ def activation_cell(act, live):
     return f"{n} of {of} ({share_text}" + ("" if med is None else f", median {med:.0f} min") + ")"
 
 
+# internal/usage/activation_retention.go (#818): the week after the cohort's
+# that the line reads, and the note said beside it.
+RETENTION_WEEK = 4
+ASSOCIATION = "association, not proof"
+
+
+def retention_line(env, live, report):
+    """The env's retention-by-activation line (#818) from the pooled week
+    RETENTION_WEEK; live: shares only. None when the report has no such block."""
+    pooled = (report.get("activation_retention") or {}).get("pooled")
+    if not isinstance(pooled, list):
+        return None
+    p = next((p for p in pooled if isinstance(p, dict) and p.get("offset") == RETENTION_WEEK), None)
+    if p is None:
+        return None
+    if not num(p.get("cohorts")):
+        return f"- {env}: no cohort has an ended week {RETENTION_WEEK} yet ({ASSOCIATION})"
+
+    def side(key):
+        return "too few to judge" if p.get(f"{key}_note") else pct(num(p.get(f"{key}_pct")))
+
+    n = "" if live else f" (n = {num(p.get('activated')) or 0} / {num(p.get('not_activated')) or 0})"
+    return (f"- {env}: activated come back {side('activated')} in week {RETENTION_WEEK}, "
+            f"not activated {side('not_activated')}{n} — {ASSOCIATION}")
+
+
 def drop_text(d, live):
     """One drop in words. Live: shares and the change only."""
     name = METRIC_NAMES.get(d.get("metric"), "a metric")
@@ -220,12 +246,15 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
            "Counts and percentages only: no user or session id.", "",
            "| env | active users | vs last week | week-1 retention (latest cohort) | curve (latest cohort with 4 ended weeks) | first answers found | activated in the first day | help used | help answers (helped) | drops | report |",
            "|---|---|---|---|---|---|---|---|---|---|---|"]
-    live_envs, drop_lines, notes, nps = [], [], [], []
+    live_envs, drop_lines, notes, nps, retention = [], [], [], [], []
     for env, live, report, drops in rows:
         f = figures(report, drops)
         line = nps_line(env, live, report)
         if line:
             nps.append(line)
+        line = retention_line(env, live, report)
+        if line:
+            retention.append(line)
         label = env + (" (live)" if live else "")
         if live:
             live_envs.append(env)
@@ -255,6 +284,9 @@ def comment(week, envs_dir, state_dir, envs=("stable", "mvp")):
             if missing:
                 notes.append(f"- {env}: no events in {', '.join(missing)} — left out of the base, never counted as zero")
         out.append("| " + " | ".join([label] + cells + [n_drops, f"`{env}/data/monitor/reports/{week}.md`"]) + " |")
+    if retention:
+        out += ["", f"**Retention by activation** (week {RETENTION_WEEK} after the first, the cohorts of the last 12 weeks pooled; "
+                    "activated = a useful answer within 24 h):", ""] + retention
     if nps:
         out += ["", "**NPS** (each person's latest answer; the two lists counted apart):", ""] + nps
     if drop_lines:
