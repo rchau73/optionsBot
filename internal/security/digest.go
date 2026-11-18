@@ -14,6 +14,7 @@ import (
 var Counted = []struct{ Action, Label string }{
 	{"sign_in_failed", "Failed sign-ins"},
 	{"locked", "Lockouts"},
+	{"login_unlocked", "Lockouts lifted by an admin"},
 	{"password_change_failed", "Failed password changes"},
 	{"password_reset", "Passwords set by an admin"},
 	{"reset_link_issued", "Reset links issued"},

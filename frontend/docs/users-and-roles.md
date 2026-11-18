@@ -96,7 +96,7 @@ Read routes trust the token.
 An access token from before #171 has no `sid`: its first close answers 401, the page refreshes into a new token and retries.
 
 The route sends the person to the bot with the request — `"actor": {"user": "bob", "role": "manager"}` beside `BOT_ADMIN_TOKEN` — and the bot logs and journals it (the close's `actor` and `detail` "manual close from the monitor by bob (manager)", `rebalance_manual`'s `actor`).
-User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`, `deleteUser`, `signOutEverywhere`: never zero admins, never delete yourself, every change ends that user's sessions), behind the Users page below.
+User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`, `deleteUser`, `signOutEverywhere`, `unlockUser` (#846): never zero admins, never delete yourself, every change ends that user's sessions), behind the Users page below.
 
 ## Users page (#306)
 
@@ -104,12 +104,13 @@ User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`
 The page lists every person (username, role, email, accounts, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
 The **Accounts** column says what each person may act on: "All accounts" (admin), "None: sees only" (user), "All accounts (no links)" or the linked accounts (manager); **Edit accounts** on a manager's row opens a dialog of the registry's accounts with checkboxes, the consequence in words, and **Save accounts** (#760, `AccountLinksDialog.jsx`).
 Your own row cannot be deleted or reset (use **Change password**).
+A row whose username is locked after 5 wrong passwords shows a **Locked until HH:MM** badge in words and an **Unlock** button (#846); its confirmation says "They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead." and the row refreshes after it.
 
 ### Routes
 
 #### `GET /api/admin/users`
 
-**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); never a hash
+**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts, locked_until?}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); `locked_until` only while the username is locked after 5 wrong passwords (#846); never a hash
 
 **Refusals:** 403 not admin
 
@@ -149,6 +150,15 @@ Admins only, same-origin JSON; in the role matrix
 **Does:** `signOutEverywhere`; audited `signed_out_everywhere`
 
 **Refusals:** 404
+
+#### `POST /api/admin/users/<id>/unlock` `{}` (#846)
+
+**Does:** `unlockUser` → `{"unlocked": true}`: the username's sign-in lock and recent failures are deleted (`LoginLimiter.unlock`, `AuthStore.clearLoginLock`), so the person can sign in at once and the next 5 wrong passwords lock again; audited `login_unlocked` with `target` and the lifted `locked_until`, never any password data.
+`{"unlocked": false}` when the username was not locked: nothing changes, no audit line.
+No session ends or starts and the password is unchanged.
+Admins only, same-origin JSON; in the role matrix
+
+**Refusals:** 403 not admin · 404
 
 #### `GET /api/auth/sessions` (#584)
 

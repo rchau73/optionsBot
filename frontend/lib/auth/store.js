@@ -616,6 +616,20 @@ export class AuthStore {
     return this.one("SELECT until FROM login_locks WHERE username = ?", [username])?.until ?? 0;
   }
 
+  /**
+   * An admin lifts a username's lock (#846): deletes its lock and its recent
+   * failures, so the next wrong password counts as the first. Returns the
+   * time (ms) the lock would have ended, or 0 when it was not locked at nowMs
+   * (nothing is written then).
+   */
+  clearLoginLock(username, nowMs) {
+    const until = this.loginLockUntil(username);
+    if (until <= nowMs) return 0;
+    this.db.run("DELETE FROM login_failures WHERE username = ?", [username]);
+    this.write("DELETE FROM login_locks WHERE username = ?", [username]);
+    return until;
+  }
+
   /** Forgets the failures of a username; writes the file only when it had some. */
   clearLoginFailures(username) {
     if (!this.one("SELECT 1 AS found FROM login_failures WHERE username = ? LIMIT 1", [username])) return;
