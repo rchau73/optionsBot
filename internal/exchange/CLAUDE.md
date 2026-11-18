@@ -8,6 +8,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - `Capabilities` says what an exchange can do, as data: `DeribitCapabilities` is pinned by `tests/exchange_test.go` and read by nothing yet (#687).
   `internal/exchange/deribit` holds Deribit's calls as they leave their callers (#687; it grows into the adapter at step 6 of the migration):
   - `BookReader.BookSummary` is the one book-summary fetch, for `gex.Manager` and `recorder.USDCBooks`;
+  - a linear coin (SOL, XRP: `marketdata.IsLinear`, #838) is read from `currency=USDC` — chain and book summary — keeping only its `<COIN>_USDC-` names; its index is `<coin>_usdc`, its perpetual `<COIN>_USDC-PERPETUAL`. BTC/ETH requests are unchanged;
   - `ChainSource` (`chain.go`, #710) is the option chain, the DVOL history and the three channel names, for `marketdata.Manager`: it implements `marketdata.ChainSource`, so it imports `marketdata`, never the reverse;
   - `AccountSource` (`account.go`, #746) is the monitor's account view (all-currency summaries, the per-currency fallback, every position of a currency), for `account.Poller`: it implements `account.Source`, so it imports `account`, never the reverse;
   - `Adapter` (`adapter.go`, #761) embeds the trading `Gateway`, `orders.Executor` and `marketdata.Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`); `cmd/bot` passes it as the strategy's `Exchange`, `Market` and `Futures`.

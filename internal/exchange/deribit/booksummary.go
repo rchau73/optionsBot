@@ -11,6 +11,7 @@ import (
 
 	"optionsbot/internal/exchange/transport"
 	"optionsbot/internal/gateway"
+	"optionsbot/internal/marketdata"
 )
 
 // SummaryRow is one instrument of public/get_book_summary_by_currency.
@@ -36,11 +37,13 @@ type BookReader struct {
 // NewBookReader reads through gw.
 func NewBookReader(gw transport.Caller) *BookReader { return &BookReader{gw: gw} }
 
-// BookSummary returns every option of currency (a coin, or "USDC" for the
-// USDC-settled options), on the low-priority lane: the non-matching pool.
+// BookSummary returns every option of currency (a coin, or "USDC" for every
+// USDC-settled option), on the low-priority lane: the non-matching pool. A
+// linear coin (SOL, XRP) is read from the USDC list and keeps only its own
+// "<COIN>_USDC-" rows (#838); BTC, ETH and USDC send the request as before.
 func (r *BookReader) BookSummary(ctx context.Context, currency string) ([]SummaryRow, error) {
 	resp, err := r.gw.Call(ctx, "public/get_book_summary_by_currency", map[string]any{
-		"currency": currency,
+		"currency": marketdata.SettlementCurrency(currency),
 		"kind":     "option",
 	}, gateway.PriorityLow)
 	if err != nil {
@@ -50,5 +53,14 @@ func (r *BookReader) BookSummary(ctx context.Context, currency string) ([]Summar
 	if err := json.Unmarshal(resp.Result, &rows); err != nil {
 		return nil, fmt.Errorf("decode %s book summary: %w", currency, err)
 	}
-	return rows, nil
+	if !marketdata.IsLinear(currency) {
+		return rows, nil
+	}
+	own := make([]SummaryRow, 0, len(rows))
+	for _, row := range rows {
+		if ownOption(currency, row.InstrumentName) {
+			own = append(own, row)
+		}
+	}
+	return own, nil
 }

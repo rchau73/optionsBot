@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"optionsbot/internal/gateway"
+	"optionsbot/internal/marketdata"
 )
 
 // ParsePriceTooLow extracts the exchange minimum price from a Deribit price_too_low
@@ -434,8 +435,12 @@ type chartData struct {
 }
 
 // PerpetualName is Deribit's name of a currency's perpetual future, e.g.
-// "BTC-PERPETUAL" (exchange.InstrumentNamer, #786). It sends nothing.
+// "BTC-PERPETUAL" (exchange.InstrumentNamer, #786); a linear coin's is its
+// USDC perpetual, "SOL_USDC-PERPETUAL" (#838). It sends nothing.
 func (e *Executor) PerpetualName(currency string) string {
+	if marketdata.IsLinear(currency) {
+		return strings.TrimSuffix(marketdata.OptionPrefix(currency), "-") + "-PERPETUAL"
+	}
 	return currency + "-PERPETUAL"
 }
 
