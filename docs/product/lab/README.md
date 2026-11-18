@@ -48,4 +48,5 @@ A manager's parameter change is studied offline before anyone decides on it:
 
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
+- [`lab-screens.md`](lab-screens.md) — the spec of the lab page for the prototype (#841): flow, comparison screen, states, copy, menu, phone, accessibility.
 - [`example-analysis.md`](example-analysis.md) — a saved `analysis.md` (percentages and counts only), kept passing the checker by `tests/aianalysis_generate_test.go`.

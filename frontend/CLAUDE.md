@@ -10,6 +10,7 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   - the test fails on a page that is in neither.
   It also updates the user-facing guide, `frontend/content/monitor-guide.md` (#418): one `##` section named as the menu item; `tests/monitor_guide_test.go` fails on a menu page with no section.
   Then re-run `go test ./tests -run Help -args -update-help` (the guide is an assistant source).
+  - The planned Lab page (E9, not built): its spec, menu change and menu-test expectations are in `docs/product/lab/lab-screens.md` (#841).
 
 - **The password rule beyond length** (#680): `guessablePasswordProblem` (`lib/auth/password.js`) is its one definition, the list is `lib/auth/commonPasswords.js`; a new way to set a password calls it (`frontend/docs/sign-in.md` "Passwords").
 
