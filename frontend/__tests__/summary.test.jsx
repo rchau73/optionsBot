@@ -194,8 +194,12 @@ describe("Scenario: the worst case is shown", () => {
   test("the model label and its assumptions sit next to the number, in the same type size", () => {
     const el = card({ summary: fixture() });
     const label = within(el).getByText(/This is a model, not a quote/).closest("p");
-    expect(label).toHaveTextContent(MODEL);
-    expect(label).toHaveTextContent("DVOL 50.0, 3σ");
+    expect(label).toHaveTextContent("a move of 3 typical daily swings in one day (DVOL 50.0, 3σ).");
+    // The bot's model line, with its formula, is folded under "How it is computed" (#844).
+    const how = within(el).getByText("How it is computed").closest("details");
+    expect(how).not.toHaveAttribute("open");
+    expect(how).toHaveTextContent(MODEL);
+    expect(label.parentElement).toBe(how.parentElement);
     expect(label).toHaveClass("text-base");
     const numbers = within(el).getByText(/If BTC falls/).closest("ul");
     expect(numbers).toHaveClass("text-base");

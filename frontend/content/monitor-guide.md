@@ -93,6 +93,10 @@ It says what holds the bot back now, not when trading starts again.
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
 In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.
 
+**The investor summary's worst case** says in plain words that it is a model, not a quote: a move of 3 typical daily swings in one day, from DVOL.
+With a futures hedge it adds that the figure counts the perpetual as well as the options.
+*How it is computed* opens the bot's own model line, with its formula.
+
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
 - "GEX 40s ago" turns amber after five minutes.

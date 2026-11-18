@@ -38,3 +38,7 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
 - **The four answers on the demo scenarios** (#743, epic E3): `__tests__/scenario-answers.test.jsx` renders the investor summary and the phone overview on `test/demoScenarios.json` (the demo's data for baseline, mixed, drawdown, hedged)
   and fails, naming the scenario, the layout and the question, when the first screen stops answering a question of the usability kit's key (docs/usability/e3-investor-monitor-test.md).
   On hedged (#827, the kit's section 6c) it also fails when the Last action is not the hedge trade or the worst case shown is not the one with the perpetual.
+- **The first screen in plain words** (#844, epic E3): `__tests__/first-screen-words.test.jsx` reads the four sections of the investor summary and the phone overview on every demo scenario with `longSentences` and `undefinedJargon` (`test/plainWords.js`)
+  and fails naming the scenario, the layout, the section and the sentence or term; fix the wording in the component or its word map, or put a term that must stay in its `ALLOW` with a one-line reason.
+  A long sentence the bot writes itself (Go) sits in `KNOWN_LONG` until fixed there; a fixed one must leave it.
+  The desktop worst case shows the model in plain words, the bot's formula under "How it is computed".
