@@ -1,6 +1,6 @@
 # Accessibility baseline of the monitor (E12, #763)
 
-What the monitor misses today on colour contrast, text size and tap targets, ranked by the pages affected, and what each fix needs from the designer.
+What the monitor misses today on colour contrast, text size, tap targets and screen-reader structure, ranked by the pages affected, and what each fix needs from the designer.
 It measures only: no component or colour changes with it.
 The fixes come with the E12 UI stories, once the prototype (#654) is approved.
 
@@ -39,6 +39,26 @@ Contrast ratios are measured by the token test; text sizes and tap targets come 
 
 Ties are ordered by how often a person meets them (the header before a dialog).
 The admin pages (Users, Audit, Analytics) are outside the customer's view and are counted only where noted; their small text (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) is in the report.
+
+## Screen-reader structure
+
+What a screen reader meets on each whole page (#840): landmarks, regions, heading order, the names of buttons, links and fields, table headers and dialog names.
+`frontend/__tests__/a11y-pages.test.jsx` renders the eight menu pages and the phone overview, each under the menu bar as the layout puts it, on the shared fixtures (the demo's default scenario, `frontend/test/demoScenarios.json`, and `frontend/test/resultFixtures.js`).
+It runs axe with only those rules and pins the counts in `frontend/__tests__/a11y-pages-baseline.json` (page → rule → nodes), every page with an entry even when it has none.
+A new rule or a higher count fails naming the page, the rule and the nodes; a lower count asks for `UPDATE_A11Y=1 npm test`, never an edit by hand.
+The panels one by one stay in `a11y.test.jsx` (#310), contrast in the token test above.
+The overview is measured at both widths: the layout the width hides is hidden as the browser would, so the phone overview is what a phone's screen reader reads.
+
+| # | Finding | Rule | Pages affected | Nodes | What the fix needs | Owner |
+|---|---|---|---|---|---|---|
+| 1 | The phone overview has no main landmark: a screen reader cannot jump to the page's content past the menu | `landmark-one-main` | 1: Phone overview | 1 | wrap the phone overview's cards in one `<main>`, as the desktop overview is; no visual change | developer |
+| 2 | Three blocks of the phone overview sit outside any landmark: the "This month" heading, "Since you last looked" and the footer note | `region` | 1: Phone overview | 3 | the same `<main>` as #1 takes in the heading and "Since you last looked"; the footer note goes in a `<footer>` | developer |
+| 3 | The payoff card's Delta box is an `<aside>` inside the main content: a page-level landmark once per strangle | `landmark-complementary-is-top-level` | 1: Positions | 1 | a plain group (`<div role="group" aria-label="Delta">`) in place of the `<aside>`; no visual change | developer |
+| 4 | The Delta box's heading jumps from the page's h1 to an h4 | `heading-order` | 1: Positions | 1 | the designer decides the payoff card's heading levels (the card's own title, then Delta under it); until then an h2 | designer, then developer |
+
+Every other page — Overview (desktop), Details (pro), Income, Worst case, Activity, Account, How it works — has none of these findings on the fixtures, nor has the menu bar above each page.
+Ties are ordered by how often a person meets them (the overview before Positions).
+The assistant panel and the dialogs are measured one by one in `a11y.test.jsx`, not here: they open over a page.
 
 ## What passes
 

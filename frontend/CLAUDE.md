@@ -36,6 +36,7 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   Its checks live in `test/lossVisibility.js`.
 - **Colour contrast pinned** (#763, epic E12): `__tests__/a11y-tokens.test.js` checks every text-on-background pair in its `PAIRS` against WCAG AA from `app/globals.css` and `test/tailwindPalette.js` (rules in `lib/a11y.js`);
   a new text colour needs its pair, a new failing pair fails, and a fixed one leaves `KNOWN_FINDINGS`. `npm run test:phone` writes `e2e/a11y-report.json` (small text, small tap targets at 360 px), report-only.
+  `__tests__/a11y-pages.test.jsx` (#840) pins each menu page's and the phone overview's screen-reader structure (axe, `PAGE_RULES`) in `a11y-pages-baseline.json`, ranked in `docs/product/responsive-a11y-baseline.md`; a new menu page gets its row in `PAGES`.
 - **The four answers on the demo scenarios** (#743, epic E3): `__tests__/scenario-answers.test.jsx` renders the investor summary and the phone overview on `test/demoScenarios.json` (the demo's data for baseline, mixed, drawdown, hedged)
   and fails, naming the scenario, the layout and the question, when the first screen stops answering a question of the usability kit's key (docs/usability/e3-investor-monitor-test.md).
   On hedged (#827, the kit's section 6c) it also fails when the Last action is not the hedge trade or the worst case shown is not the one with the perpetual.
