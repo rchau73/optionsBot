@@ -1,5 +1,7 @@
 // Browser side of the sign-in page (the monitor's other calls go through
 // lib/api/http.js apiFetch, which refreshes the session by itself).
+import { refreshOutcome } from "./api/http";
+import { idleSignOutMessage } from "./auth/idle";
 
 /** Signs in; resolves to { username, role }, throws with the server's message. */
 export async function signIn(username, password) {
@@ -19,13 +21,22 @@ export async function signIn(username, password) {
   return body.user;
 }
 
-/** True when a live refresh cookie gave a new access token (no password needed). */
+/**
+ * → { ok: true } when a live refresh cookie gave a new access token (no password
+ * needed), else { ok: false, idle? } (idle: the limit in hours of a session this
+ * refresh ended for inactivity, #821).
+ */
 export async function tryRefresh() {
   try {
-    return (await fetch("/api/auth/refresh", { method: "POST", cache: "no-store" })).ok;
+    return await refreshOutcome(await fetch("/api/auth/refresh", { method: "POST", cache: "no-store" }));
   } catch {
-    return false;
+    return { ok: false };
   }
+}
+
+/** The login page's inactivity sentence from its query string (`idle`, set by apiFetch), or null. */
+export function signedOutMessage(search) {
+  return idleSignOutMessage(new URLSearchParams(search).get("idle"));
 }
 
 /** The local page to open after signing in, from the login page's ?next= (never another site). */

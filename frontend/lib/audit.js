@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "account_link_removed",
   "signed_out_everywhere",
   "session_ended",
+  "session_expired",
   "my_data_exported",
   "manual_close",
   "manual_rebalance",
