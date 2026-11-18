@@ -11,6 +11,7 @@ import { browserName } from "./browser";
 import { roleAtLeast } from "./roles";
 import { accountLinkProblem, checkLinkRequest, linkChanges } from "./accountLinks";
 import { noticeId } from "../signInSummary";
+import { idleExpiry } from "./idle";
 
 /** The one answer for a wrong user, a wrong password and a locked username. */
 export const INVALID_LOGIN = "invalid username or password";
@@ -157,14 +158,26 @@ export class AuthService {
     return { ok: true, user, access: await signAccess(user, this.key, now, sid), refresh };
   }
 
-  /** A new access token for a live refresh token whose user still exists → { ok, access, user }. */
+  /**
+   * A new access token for a live refresh token whose user still exists → { ok, access, user }.
+   * A session unused for longer than its role's idle limit (lib/auth/idle.js, #821) is deleted
+   * and audited `session_expired` → { ok: false, idleLimitHours }.
+   */
   async refresh(refreshToken) {
     if (!refreshToken) return { ok: false };
     const now = this.now();
     const sid = hashToken(refreshToken);
-    const userId = this.store.sessionUser(sid, now);
-    const user = userId === null ? null : this.store.userById(userId);
+    const session = this.store.liveSession(sid, now);
+    const user = session ? this.store.userById(session.userId) : null;
     if (!user) return { ok: false };
+    const idle = idleExpiry(user.role, session.lastUsedSec, now);
+    if (idle) {
+      this.store.revokeSession(sid);
+      const fields = { username: user.username, role: user.role, target_session: shortSessionId(session.publicId), idle_hours: idle.idleHours };
+      authLog("INFO", "session expired: not used", { event: "session_expired", ...fields, limit_hours: idle.limitHours });
+      this.audit("session_expired", fields);
+      return { ok: false, idleLimitHours: idle.limitHours };
+    }
     this.store.touchSession(sid, now);
     return { ok: true, user, access: await signAccess(user, this.key, now, sid) };
   }
