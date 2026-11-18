@@ -110,7 +110,9 @@ A row whose username is locked after 5 wrong passwords shows a **Locked until HH
 
 #### `GET /api/admin/users`
 
-**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts, locked_until?}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); `locked_until` only while the username is locked after 5 wrong passwords (#846); never a hash
+**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts, locked_until?}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never).
+A user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760).
+`locked_until` is there only while the username is locked after 5 wrong passwords (#846); never a hash.
 
 **Refusals:** 403 not admin
 
