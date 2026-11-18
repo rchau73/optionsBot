@@ -43,6 +43,22 @@ type Point struct {
 	MarginBalance *float64 `json:"margin_balance,omitempty"`
 	Equity        *float64 `json:"equity,omitempty"`
 	Unit          string   `json:"unit,omitempty"`
+	// PnLUnit is "USDC" when the P&L amounts are USDC (a SOL/XRP bot, #832):
+	// the USD fields then equal them and Spot is the coin's, for the hold
+	// benchmark only. Absent when they are the underlying's coin.
+	PnLUnit string `json:"pnl_unit,omitempty"`
+}
+
+// LinearPnLUnit is the P&L unit of a USDC-settled bot.
+const LinearPnLUnit = "USDC"
+
+// USDPerUnit is what one unit of p's P&L is worth in dollars: 1 for USDC,
+// else the coin's spot.
+func (p Point) USDPerUnit() float64 {
+	if p.PnLUnit == LinearPnLUnit {
+		return 1
+	}
+	return p.Spot
 }
 
 // Margin is the margin view recorded with a P&L point. Known is false when
@@ -62,6 +78,15 @@ type Store struct {
 	file   *os.File
 	points []Point // ordered by time
 	maxAge time.Duration
+	unit   string // PnLUnit of every new point; "" = the coin
+}
+
+// SetPnLUnit names the unit of the P&L this store records: LinearPnLUnit for
+// a USDC-settled bot (#832), whose amounts are then not converted at spot.
+func (s *Store) SetPnLUnit(unit string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unit = unit
 }
 
 // Open loads the history at path (creating the file and its directory if
@@ -126,8 +151,10 @@ func (s *Store) RecordPnL(t time.Time, realised, unrealised, spot float64, margi
 	r := realised
 	p := Point{
 		T: t, Realised: r, Unrealised: unrealised, Total: r + unrealised,
-		Spot: spot, RealisedUSD: r * spot, TotalUSD: (r + unrealised) * spot,
+		Spot: spot, PnLUnit: s.unit,
 	}
+	usd := p.USDPerUnit()
+	p.RealisedUSD, p.TotalUSD = r*usd, (r+unrealised)*usd
 	if margin != nil {
 		m := *margin
 		p.IMLimitPct, p.EntriesAllowed = &m.IMLimitPct, &m.EntriesAllowed
