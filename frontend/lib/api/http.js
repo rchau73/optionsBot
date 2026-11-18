@@ -4,24 +4,35 @@
 
 let refreshing = null;
 
-/** One refresh for every caller that got a 401 at the same time → true when the session lives on. */
+/**
+ * One refresh for every caller that got a 401 at the same time → { ok } (true
+ * when the session lives on) and, for a session ended for inactivity (#821),
+ * `idle`: its limit in hours.
+ */
 function refreshSession() {
   refreshing ??= fetch("/api/auth/refresh", { method: "POST", cache: "no-store" })
-    .then((res) => res.ok)
-    .catch(() => false)
+    .then(refreshOutcome)
+    .catch(() => ({ ok: false }))
     .finally(() => {
       refreshing = null;
     });
   return refreshing;
 }
 
+/** A refresh response → { ok, idle? } (idle: the limit in hours of a session ended for inactivity). */
+export async function refreshOutcome(res) {
+  if (res.ok) return { ok: true };
+  const idle = (await jsonOrNull(res))?.idle_limit_hours;
+  return Number.isInteger(idle) ? { ok: false, idle } : { ok: false };
+}
+
 /** Page navigation (replaced in tests: jsdom does not navigate). */
 export const navigation = { assign: (url) => window.location.assign(url) };
 
-/** Sends the browser to the sign-in page, back to this page afterwards. */
-function toLogin() {
+/** Sends the browser to the sign-in page, back to this page afterwards; `idle` tells it why (#821). */
+function toLogin(idle) {
   const here = window.location.pathname + window.location.search;
-  navigation.assign(`/login?next=${encodeURIComponent(here)}`);
+  navigation.assign(`/login?next=${encodeURIComponent(here)}${idle ? `&idle=${idle}` : ""}`);
 }
 
 /**
@@ -32,11 +43,12 @@ function toLogin() {
 export async function apiFetch(url, init = {}) {
   const res = await fetch(url, init);
   if (!sessionExpired(res)) return res;
-  if (await refreshSession()) {
+  const refreshed = await refreshSession();
+  if (refreshed.ok) {
     const retry = await fetch(url, init);
     if (!sessionExpired(retry)) return retry;
   }
-  toLogin();
+  toLogin(refreshed.idle);
   return res;
 }
 

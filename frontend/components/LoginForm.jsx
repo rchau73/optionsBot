@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loginNext, signIn, tryRefresh } from "@/lib/session";
+import { loginNext, signedOutMessage, signIn, tryRefresh } from "@/lib/session";
+import { idleSignOutMessage } from "@/lib/auth/idle";
 
 /** Username + password form. A live refresh cookie (expired access token) skips it. */
 export default function LoginForm() {
@@ -9,11 +10,16 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Why the last session ended, when it was inactivity (#821); nothing for an ordinary expiry or a sign-out.
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    tryRefresh().then((ok) => {
-      if (ok && !cancelled) window.location.assign(loginNext(window.location.search));
+    tryRefresh().then(({ ok, idle }) => {
+      if (cancelled) return;
+      if (ok) window.location.assign(loginNext(window.location.search));
+      // This refresh ended it, or the page was sent here with ?idle= by apiFetch.
+      else setNotice(idle ? idleSignOutMessage(idle) : signedOutMessage(window.location.search));
     });
     return () => {
       cancelled = true;
@@ -37,6 +43,11 @@ export default function LoginForm() {
   return (
     <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-lg border border-line bg-panel p-6" aria-label="Sign in">
       <h1 className="text-lg font-bold">optionsBot · Sign in</h1>
+      {notice ? (
+        <p role="status" className="text-sm text-muted">
+          {notice}
+        </p>
+      ) : null}
       <label className="block text-sm">
         <span className="text-muted">Username</span>
         <input

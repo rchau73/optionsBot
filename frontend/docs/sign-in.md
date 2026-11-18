@@ -32,6 +32,10 @@ JWT HS256 (`jose`), 15 min, cookie `access_token_<env>` (`<env>` = `MONITOR_DEPL
 
 32 random bytes, only its SHA-256 stored, 14 days, cookie `refresh_token_<env>` on path `/api/auth`; reusable until logout (several tabs).
 Each session row (`refresh_tokens`) also keeps a random public id (16 hex characters, the only id a person sees), the browser name read from the User-Agent at sign-in (`lib/auth/browser.js`, e.g. `Chrome on Windows`; the header itself is not stored) and when it was last refreshed (written at most once a minute), #584.
+A session nobody used for its role's idle limit ends by itself (#821; fixed values in `lib/auth/idle.js`, not settings): **12 hours** for an admin, **14 days** for a manager or a user (the lifetime above, which still applies to every role).
+The refresh of such a session deletes its row and answers the monitor's own 401 (`x-monitor-session: required`) with `idle_limit_hours`, so `apiFetch` sends the page to `/login?next=…&idle=<hours>`.
+The login page then says "You were signed out because the session was not used for 12 hours." (the role's limit in words); it says nothing for an ordinary expiry, a sign-out or any other `idle` value.
+Audited as `session_expired` (`username`, `role`, `target_session`: the short id, `idle_hours`: whole hours unused); logged `session expired: not used`.
 A password change, a role change or a deletion ends every session of that user
 
 ### Silent refresh
@@ -127,6 +131,7 @@ One JSON line for each of these, with username and IP:
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
 - another session signed out by its owner: `session ended` (with `event: session_ended` and `target_session`, #584);
+- a session ended for inactivity: `session expired: not used` (with `event: session_expired`, `target_session`, `idle_hours` and `limit_hours`, #821);
 - a person's own data downloaded: `my data exported` with the counts per section (#750);
 - a refused action.
 
@@ -146,6 +151,7 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
 - `account_link_added` and `account_link_removed` (#760), with `target` (the manager) and `account_id`, where `username` and `role` are the admin's;
 - `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
+- `session_expired` (a session unused for its role's idle limit ended at its next refresh, #821), with `target_session` (the short id) and `idle_hours`; never a token, hash or address;
 - `my_data_exported` (a person downloaded their own data, #750), with `counts` per section, never the content;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
