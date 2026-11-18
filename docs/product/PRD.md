@@ -192,7 +192,8 @@ Principles: summary first, detail on demand; every number with unit, sign and ti
 | Epic | Prototype | Status |
 |---|---|---|
 | E3 | — | needed (designer starts now that the persona is confirmed) |
-| E7, E8, E9, E10, E11, E12 | — | needed before their UI stories go to Ready |
+| E7, E8, E10, E11, E12 | — | needed before their UI stories go to Ready |
+| E9 | — (spec: [lab-screens.md](lab/lab-screens.md), #841) | spec ready, prototype needed |
 | E13 | https://claude.ai/artifact/BB9X65gAbafTCJWdgusQdm (admin Analytics, monthly NPS in the assistant, notification bell) | in review (`prototype:review` on the epic) |
 
 ## 11. Risks, compliance and open questions
