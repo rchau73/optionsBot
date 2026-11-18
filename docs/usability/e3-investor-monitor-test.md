@@ -62,6 +62,7 @@ A perpetual future offsets the book's direction and is traded now and then, so t
 The header shows DEMO · scenario hedged. Score the hedge round with section 6c.
 
 Before a round, the build already guards this first screen: `frontend/__tests__/scenario-answers.test.jsx` (#743) fails, naming the scenario, the layout and the question, when the investor summary or the phone overview no longer answers one of the four questions on the demo data of baseline, mixed, drawdown or hedged.
+The first screen's wording is checked before every round too: `frontend/__tests__/first-screen-words.test.jsx` (#844) fails on a sentence over 25 words or a jargon term without its glossary entry in those four sections, on both layouts and every scenario.
 
 ## 4. Moderator script
 

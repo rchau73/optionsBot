@@ -186,11 +186,18 @@ function WorstCase({ wc, bot }) {
       ) : (
         <p className="text-base text-warn">Unknown{wc?.reason ? `: ${wc.reason}` : ""}.</p>
       )}
+      {/* Plain words first (#844); the bot's own model line, with its formula, is one click away. */}
       <p className="text-base">
         <span className="font-semibold">This is a model, not a quote</span>
-        {wc?.model ? ` — ${wc.model}` : ""}
-        {isNumber(wc?.dvol) && wc.dvol > 0 ? ` (DVOL ${formatNumber(wc.dvol, 1)}, ${wc.sigmas ?? 3}σ).` : "."}
+        {isNumber(wc?.dvol) && wc.dvol > 0 ? `: a move of ${wc.sigmas ?? 3} typical daily swings in one day (DVOL ${formatNumber(wc.dvol, 1)}, ${wc.sigmas ?? 3}σ).` : "."}
+        {wc?.hedge ? " It counts the perpetual as well as the options." : ""}
       </p>
+      {wc?.model ? (
+        <details className="text-xs text-muted">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet">How it is computed</summary>
+          <p>{wc.model}</p>
+        </details>
+      ) : null}
       <Link
         href={`/worst-case?bot=${encodeURIComponent(bot)}`}
         className="inline-flex min-h-11 items-center text-base text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-testnet"
