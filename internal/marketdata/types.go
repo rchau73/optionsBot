@@ -22,6 +22,8 @@ type TickSizeStep struct {
 type Instrument struct {
 	Name            string
 	Underlying      string
+	Settlement      string  // currency it settles in: the coin (BTC, ETH: inverse) or USDC (SOL, XRP: linear)
+	ContractSize    float64 // underlying per contract: 1 BTC or ETH, 10 SOL, 1,000 XRP (0 when read from a name)
 	Strike          float64
 	Expiry          time.Time
 	OptionType      string // "call" or "put"

@@ -19,11 +19,11 @@ func TestInstrumentFromName(t *testing.T) {
 		want marketdata.Instrument
 		bad  bool
 	}{
-		"call": {name: "BTC-27NOV26-110000-C", want: marketdata.Instrument{Name: "BTC-27NOV26-110000-C", Underlying: "BTC",
+		"call": {name: "BTC-27NOV26-110000-C", want: marketdata.Instrument{Name: "BTC-27NOV26-110000-C", Underlying: "BTC", Settlement: "BTC",
 			Expiry: time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC), Strike: 110000, OptionType: "call"}},
-		"daily put, one-digit day": {name: "ETH-4OCT26-2500-P", want: marketdata.Instrument{Name: "ETH-4OCT26-2500-P", Underlying: "ETH",
+		"daily put, one-digit day": {name: "ETH-4OCT26-2500-P", want: marketdata.Instrument{Name: "ETH-4OCT26-2500-P", Underlying: "ETH", Settlement: "ETH",
 			Expiry: time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC), Strike: 2500, OptionType: "put"}},
-		"fractional strike": {name: "XRP_USDC-27NOV26-2d5-C", want: marketdata.Instrument{Name: "XRP_USDC-27NOV26-2d5-C", Underlying: "XRP_USDC",
+		"fractional strike": {name: "XRP_USDC-27NOV26-2d5-C", want: marketdata.Instrument{Name: "XRP_USDC-27NOV26-2d5-C", Underlying: "XRP", Settlement: "USDC",
 			Expiry: time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC), Strike: 2.5, OptionType: "call"}},
 		"perpetual":    {name: "BTC-PERPETUAL", bad: true},
 		"unknown type": {name: "BTC-27NOV26-110000-X", bad: true},
@@ -40,13 +40,15 @@ func TestInstrumentFromName(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", label, err)
 		}
-		if got.Name != c.want.Name || got.Underlying != c.want.Underlying || !got.Expiry.Equal(c.want.Expiry) ||
+		if got.Name != c.want.Name || got.Underlying != c.want.Underlying || got.Settlement != c.want.Settlement || !got.Expiry.Equal(c.want.Expiry) ||
 			got.Strike != c.want.Strike || got.OptionType != c.want.OptionType || got.HasQuote() {
 			t.Errorf("%s: got %+v, want %+v", label, got, c.want)
 		}
-		// The same fields as the parser the research tools keep.
+		// The same fields as the parser the research tools keep (which keeps
+		// a linear name's first part whole: "XRP_USDC").
 		und, exp, strike, typ, _ := marketdata.ParseOptionName(c.name)
-		if und != got.Underlying || !exp.Equal(got.Expiry) || strike != got.Strike || typ != got.OptionType {
+		coin, settlement := marketdata.SplitUnderlying(und)
+		if coin != got.Underlying || settlement != got.Settlement || !exp.Equal(got.Expiry) || strike != got.Strike || typ != got.OptionType {
 			t.Errorf("%s: differs from ParseOptionName", label)
 		}
 	}

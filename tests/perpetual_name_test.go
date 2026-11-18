@@ -73,10 +73,12 @@ func TestExchangeCoupling_PerpetualLiteralIsFound(t *testing.T) {
 }
 
 // Scenario (#786): Deribit's perpetual is BTC-PERPETUAL for BTC and
-// ETH-PERPETUAL for ETH, through the executor and the adapter alike.
+// ETH-PERPETUAL for ETH, through the executor and the adapter alike; a linear
+// coin's is its USDC perpetual (#838).
 func TestExchangeAdapter_PerpetualName(t *testing.T) {
 	a := deribit.NewAdapter(testGatewayConfig(), nil)
-	for currency, want := range map[string]string{"BTC": "BTC-PERPETUAL", "ETH": "ETH-PERPETUAL"} {
+	for currency, want := range map[string]string{"BTC": "BTC-PERPETUAL", "ETH": "ETH-PERPETUAL",
+		"SOL": "SOL_USDC-PERPETUAL", "XRP": "XRP_USDC-PERPETUAL"} {
 		if got := a.PerpetualName(currency); got != want {
 			t.Errorf("adapter PerpetualName(%s) = %q, want %q", currency, got, want)
 		}
