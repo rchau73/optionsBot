@@ -43,6 +43,14 @@ describe("Scenario: silent refresh and logout (browser)", () => {
     expect(navigation.assign).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/")}`);
   });
 
+  test("Scenario: an admin's idle session ends — the page goes to /login saying why (#821)", async () => {
+    global.fetch = jest.fn(async (url) =>
+      url === "/api/auth/refresh" ? { ok: false, status: 401, headers: new Headers(), json: async () => ({ error: "x", idle_limit_hours: 12 }) } : expired(),
+    );
+    await apiFetch("/api/bots/btc/status");
+    expect(navigation.assign).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/")}&idle=12`);
+  });
+
   test("a bot's own 401 is an error, not a sign-out", async () => {
     global.fetch = jest.fn(async () => ({ ok: false, status: 401, headers: new Headers(), json: async () => ({ error: "bad token" }) }));
     const res = await apiFetch("/api/bots/btc/close", { method: "POST" });
@@ -73,6 +81,33 @@ describe("sign-in page", () => {
     const [, init] = global.fetch.mock.calls.find(([u]) => u === "/api/auth/login");
     expect(JSON.parse(init.body)).toEqual({ username: "alice", password: "wrong password" });
     await waitFor(() => expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled());
+  });
+
+  describe("the inactivity message (#821)", () => {
+    afterEach(() => window.history.replaceState({}, "", "/"));
+    const plainRefusal = async (url) => (url === "/api/auth/refresh" ? { ok: false, status: 401 } : ok());
+
+    test("says the session was not used for 12 hours when the page was sent with idle=12", async () => {
+      window.history.replaceState({}, "", "/login?next=%2F&idle=12");
+      global.fetch = jest.fn(plainRefusal);
+      render(<LoginForm />);
+      expect(await screen.findByRole("status")).toHaveTextContent("You were signed out because the session was not used for 12 hours.");
+    });
+
+    test("says it when the login page's own refresh ended the session", async () => {
+      window.history.replaceState({}, "", "/login?next=%2F");
+      global.fetch = jest.fn(async () => ({ ok: false, status: 401, json: async () => ({ idle_limit_hours: 12 }) }));
+      render(<LoginForm />);
+      expect(await screen.findByRole("status")).toHaveTextContent("not used for 12 hours");
+    });
+
+    test("Scenario: other expiries are unchanged — no message for an ordinary expiry or a sign-out", async () => {
+      window.history.replaceState({}, "", "/login?next=%2F");
+      global.fetch = jest.fn(plainRefusal);
+      render(<LoginForm />);
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(screen.queryByRole("status")).toBeNull();
+    });
   });
 
   test("goes back only to a page of this monitor", () => {

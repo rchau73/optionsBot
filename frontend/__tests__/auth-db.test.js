@@ -305,7 +305,13 @@ describe("Scenario: silent refresh and logout", () => {
   test("a refresh token expires after 14 days", async () => {
     const { auth, clock } = await setup();
     const { refresh } = await auth.login({ username: "admin", password: ADMIN.ADMIN_PASSWORD });
-    clock.t += 14 * 24 * 3600 * 1000 - 1000;
+    const end = clock.t + 14 * 24 * 3600 * 1000 - 1000;
+    // Used every 10 hours, so the admin's 12-hour idle limit (#821) never applies.
+    while (clock.t + 10 * 3600 * 1000 < end) {
+      clock.t += 10 * 3600 * 1000;
+      expect((await auth.refresh(refresh)).ok).toBe(true);
+    }
+    clock.t = end;
     expect((await auth.refresh(refresh)).ok).toBe(true);
     clock.t += 2000;
     expect((await auth.refresh(refresh)).ok).toBe(false);

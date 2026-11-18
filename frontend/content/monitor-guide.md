@@ -531,6 +531,8 @@ Learn more: "The monthly survey" and "Analytics and your consent" in this guide.
 You sign in at the sign-in page with a username and password.
 Every page and every part of the monitor needs a signed-in session; without one you are sent to the sign-in page.
 A session is kept alive while you use the monitor and ends after 14 days or when you sign out.
+It also ends by itself when nobody uses it for a while: after 12 hours for an admin, after 14 days for a manager or a user.
+Then the sign-in page says so, for example "You were signed out because the session was not used for 12 hours.", so a browser an admin forgot open cannot close positions or change users.
 
 **How to change your password**: choose Change password in the account menu.
 Enter the current password and the new one twice.
