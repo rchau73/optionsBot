@@ -131,7 +131,7 @@ Retention: the file rotates to `audit.<UTC time>.jsonl` at `AUDIT_MAX_BYTES` (de
 **Proposal**: a retention period for archives, decided with counsel (L14).
 
 Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
-- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`;
+- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - manager–account links (#760): `account_link_added`, `account_link_removed` (the admin, the manager as `target` and the `account_id`);
