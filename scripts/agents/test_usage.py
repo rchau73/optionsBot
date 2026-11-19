@@ -357,6 +357,13 @@ if [[ "$*" == *cmd/labstats* ]]; then
   printf '## Lab usage\\n\\n| Requests | 4 |\\n'
   exit 0
 fi
+if [[ "$*" == *cmd/labfollow* ]]; then
+  # go run ./cmd/labfollow -all -compare D -root R → the lab follow-up section on stdout
+  echo "$*" >> "$US_TEST_DIR/labfollow.log"
+  [[ -f "$US_TEST_DIR/labfollow_fail" ]] && { echo "labfollow: broken" >&2; exit 1; }
+  printf '## Lab follow-up\\n\\n### Run 20261104T230000Z\\n'
+  exit 0
+fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
 echo "$*" >> "$US_TEST_DIR/go.log"
 while [[ $# -gt 0 ]]; do
@@ -607,6 +614,33 @@ class UsageScript(unittest.TestCase):
         self.run_script()
         self.assertIn("lab usage report failed", self.output)
         self.assertNotIn("## Lab usage", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
+        self.assertEqual(len(self.files("comment-")), 1)
+        self.assertTrue(self.done())
+
+    def test_the_lab_follow_up_is_the_reports_section_when_a_live_day_is_on_file(self):
+        """#855: an env with an applied/<id>.live gets cmd/labfollow -all appended once; one without none."""
+        self.events("mvp")
+        self.events("stable")
+        compare = self.t("envs", "mvp", "data", "compare")
+        write(os.path.join(compare, "applied", "20261104T230000Z.json"), "{}\n")
+        write(os.path.join(compare, "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("envs", "stable", "data", "compare", "applied", "20261101T000000Z.json"), "{}\n")  # no .live
+        self.run_script()
+        calls = self.read("labfollow.log").splitlines()
+        self.assertEqual(calls, ["run ./cmd/labfollow -all -compare " + compare + " -root " + self.t("envs", "mvp")], self.output)
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertEqual(md.count("## Lab follow-up"), 1, md)
+        self.assertIn("### Run 20261104T230000Z", md)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
+        self.assertTrue(self.done())
+
+    def test_a_failed_lab_follow_up_never_stops_the_usage_report(self):
+        self.events("mvp")
+        write(self.t("envs", "mvp", "data", "compare", "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("labfollow_fail"), "")
+        self.run_script()
+        self.assertIn("lab follow-up failed", self.output)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
         self.assertEqual(len(self.files("comment-")), 1)
         self.assertTrue(self.done())
 

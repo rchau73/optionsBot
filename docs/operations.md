@@ -353,6 +353,16 @@ No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appe
 It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
 A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
 
+`cmd/labfollow` (#855) follows a recorded change after it went live: the run's backtested return, worst week, drawdown and fees beside the realised ones over the days after, and the gap in points (percentages only, read-only).
+
+```bash
+go run ./cmd/labfollow -id 20261104T230000Z -live-from 2026-11-10 -record-live-from -root .   # once a person knows the day the change reached the bot: prints the follow-up, keeps the day in data/compare/applied/<id>.live
+go run ./cmd/labfollow -all -compare data/compare -root .                                     # every record with a .live day
+```
+
+The weekly usage report appends `-all` as the "Lab follow-up" section of each environment's `<week>.md` when one of its records has a `.live` day (`lib.sh lab_follow_section`).
+"Too early to judge" and "no data" are printed in words, never as a zero; a bad id or day exits 1 and writes nothing.
+
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
 The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`).
