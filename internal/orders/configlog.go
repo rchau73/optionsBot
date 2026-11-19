@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"optionsbot/internal/config"
+	"optionsbot/internal/marketdata"
 )
 
 // ConfigRecord is the startup line that dates every change of the bot's
@@ -77,7 +78,7 @@ func (l *Logger) LogStartConfig(last []byte, cfg *config.Config, file, deploymen
 		slog.Warn("journal: last config_loaded line unreadable; settings journaled as a first record", "err", err)
 		prev = nil
 	}
-	r := NextConfigRecord(prev, config.Effective(cfg), now)
+	r := NextConfigRecord(prev, StartSettings(cfg), now)
 	r.StrategyID, r.ConfigFile, r.Deployment, r.Version = cfg.StrategyID, file, deployment, version
 	l.LogConfig(r)
 	keys := make([]string, 0, len(r.Changes))
@@ -87,6 +88,22 @@ func (l *Logger) LogStartConfig(last []byte, cfg *config.Config, file, deploymen
 	slog.Info("settings journaled", "fingerprint", r.Fingerprint, "first", r.First, "unchanged", r.Unchanged,
 		"changed", keys, "since", r.Since, "config_file", file)
 	return r
+}
+
+// IVSourceKey is the settings key naming a coin's volatility reading when it
+// is not DVOL (#834): "chain ATM IV 30d" for SOL and XRP.
+const IVSourceKey = "iv_source"
+
+// StartSettings is what a config_loaded line journals: config.Effective, plus
+// IVSourceKey for a coin without DVOL — the source is chosen by the coin at
+// startup, never set in the YAML. BTC's and ETH's settings (and fingerprints)
+// are config.Effective's alone.
+func StartSettings(cfg *config.Config) map[string]any {
+	s := config.Effective(cfg)
+	if src := marketdata.VolSource(cfg.Underlying); src != marketdata.DVOLSource {
+		s[IVSourceKey] = src
+	}
+	return s
 }
 
 // LogConfig journals a config_loaded line.

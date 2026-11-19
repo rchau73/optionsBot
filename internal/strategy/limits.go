@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
 )
@@ -106,7 +107,7 @@ func (s *Strategy) policyDays(now time.Time, regime string, regimeKnown bool) ([
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date.Before(closes[j].Date) })
 
-	live := risk.Day{Date: today, RegimeKnown: regimeKnown, Negative: isNegativeRegime(regime)}
+	live := risk.Day{Date: today, RegimeKnown: regimeKnown, Negative: isNegativeRegime(regime), IVDays: s.md.IVCloses(now)}
 	if ivToday.Day.Equal(today) {
 		live.IVPct, live.IVKnown = ivToday.Percentile, ivToday.Known
 	}
@@ -114,6 +115,17 @@ func (s *Strategy) policyDays(now time.Time, regime string, regimeKnown bool) ([
 }
 
 func isNegativeRegime(regime string) bool { return strings.HasPrefix(regime, "NEGATIVE") }
+
+// IVPolicy is the margin policy for the market's volatility reading, chosen
+// once at startup: DVOL as ever (p unchanged), or a coin's chain ATM IV
+// (marketdata.ChainIVSource, #834) — named in every reason, and the lowest
+// band until it has minDays daily closes (config.FixedChainIVMinDays). Pure.
+func IVPolicy(p risk.Config, source string, minDays int) risk.Config {
+	if source == marketdata.ChainIVSource {
+		p.IVSource, p.MinIVDays = source, minDays
+	}
+	return p
+}
 
 // noteRiskChange journals a freeze, unfreeze or limit change once, when it happens.
 func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
