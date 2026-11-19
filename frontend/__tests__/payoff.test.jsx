@@ -158,7 +158,7 @@ describe("Scenario: a leg in loss", () => {
 describe("Scenario: delta exposure", () => {
   test("the delta box shows the strangle's net delta in coin and USD per 1 %, each leg's, and the bot's", () => {
     render(<PayoffCard sp={strangle("a", 25)} report={report([])} />);
-    const box = screen.getByRole("complementary", { name: "Delta" });
+    const box = screen.getByRole("group", { name: "Delta" });
     expect(box).toHaveTextContent("Δ −0.10 BTC · −$82 per +1 %");
     expect(box).toHaveTextContent("put Δ +0.10 BTC · +$82 per +1 %");
     expect(box).toHaveTextContent("call Δ −0.20 BTC · −$165 per +1 %");
@@ -366,7 +366,7 @@ describe("Scenario: a strangle chart includes its hedge share", () => {
   test("the delta box: this strangle, its hedge share, net", () => {
     const sp = hedgedStrangle();
     render(<PayoffCard sp={sp} report={report([sp], { hedge: heldPerp() })} />);
-    const rows = within(screen.getByRole("complementary", { name: "Delta" })).getAllByRole("definition").map((d) => d.textContent);
+    const rows = within(screen.getByRole("group", { name: "Delta" })).getAllByRole("definition").map((d) => d.textContent);
     expect(rows).toEqual(["+0.19 BTC", "−0.17 BTC", "+0.01 BTC"]);
   });
 

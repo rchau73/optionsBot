@@ -1,13 +1,9 @@
 {
   "Overview": {},
-  "Phone overview": {
-    "landmark-one-main": 1,
-    "region": 3
-  },
+  "Phone overview": {},
   "Details (pro)": {},
   "Positions": {
-    "heading-order": 1,
-    "landmark-complementary-is-top-level": 1
+    "heading-order": 1
   },
   "Income": {},
   "Worst case": {},
