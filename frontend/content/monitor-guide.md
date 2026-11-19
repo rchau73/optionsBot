@@ -456,6 +456,10 @@ Each person may send 10 requests a day.
 
 **My requests**: the tab in the Ask panel lists the requests you sent, newest first, with their status (In review, Filed, Fixed, Not planned, Not a bug, Duplicate or Needs info) and the team's note.
 You see only your own.
+A request close to an existing ticket or to an earlier request becomes Duplicate, and the note names it.
+One with no journal entry or P&L point cited and fewer than two steps comes back as Needs info, and the note says what is missing.
+One the help already explains becomes Not a bug.
+An accepted one becomes Filed, with a link to its public issue, which carries the request's id and never your name.
 <!-- guide: route:POST /api/assistant/requests -->
 
 **When something looks wrong**: a dimmed Ask button means the assistant is off or not set up; hover for the reason.
