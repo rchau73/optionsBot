@@ -379,6 +379,9 @@ def trial_state(stable_root, week):
             if e["d"] >= -noise:
                 break
             streak += 1
+    # The kill rule's live half (#850) is the scorecard's own verdict, read as written.
+    live_dd = ((((weeks[-1]["card"] if weeks else None) or {}).get("verdict") or {}).get("live_drawdown") or {})
+    live_weeks = (live_dd.get("fired_weeks") or []) if live_dd.get("status") == "fired" else []
     first_shed = next((e["week"] for e in weeks if e["shed"]), None)
     review_reason = None
     if len(counted) >= TRIAL_WEEKS:
@@ -388,7 +391,8 @@ def trial_state(stable_root, week):
     return {
         "week": week, "weeks": weeks, "counted": counted, "noise": noise, "streak": streak,
         "mean_d": sum(e["d"] for e in counted) / len(counted) if counted else None,
-        "first_shed": first_shed, "early_stop": streak >= TRIAL_STREAK, "review_reason": review_reason,
+        "first_shed": first_shed, "live_dd_weeks": live_weeks,
+        "early_stop": streak >= TRIAL_STREAK or bool(live_weeks), "review_reason": review_reason,
     }
 
 
@@ -449,7 +453,9 @@ def direction_block(stable_root, week):
     out.append(f"- **Verdict** ({TRIAL_RULE}): {verdict_line(card)}")
     out.append("- First GEX shed: " + (s["first_shed"] or "none yet (the review waits for one)"))
     out.append("- Review: " + (f"**due** — {s['review_reason']}" if s["review_reason"] else f"{TRIAL_REVIEW_DATE}"))
-    out.append("- The kill rule's live drawdown (stable over 2× mvp) is not in the scorecard: read the weekly reports above.")
+    out.append("- Kill rule's live drawdown (stable over 2× mvp, from the weekly reports): "
+               + (f"**hit** in {', '.join(s['live_dd_weeks'])} — **early stop: decision ticket filed**" if s["live_dd_weeks"]
+                  else "in the verdict line"))
     return out
 
 
@@ -478,9 +484,14 @@ def trial_tickets(week, stable_root, issues):
                     f"The direction trial's first week with a GEX shed is **{s['first_shed']}** (a replay or a live "
                     "row of the scorecard has sheds > 0). The product owner held the bias-vs-sma review until one (#88)."))
     if s["early_stop"]:
+        halves = []
+        if s["streak"] >= TRIAL_STREAK:
+            halves.append(f"bias's replay net was under sma's by more than the noise "
+                          f"({pp(s['noise'])}) for {s['streak']} counted weeks in a row, up to {week}")
+        if s["live_dd_weeks"]:
+            halves.append(f"stable BTC's live max drawdown was over 2× mvp BTC's in {', '.join(s['live_dd_weeks'])}")
         due.append(("early-stop", f"{TICKET_KINDS['early-stop']} in {week}, decide bias vs sma",
-                    f"The brief's kill rule: bias's replay net was under sma's by more than the noise "
-                    f"({pp(s['noise'])}) for {s['streak']} counted weeks in a row, up to {week}."))
+                    "The brief's kill rule: " + "; and ".join(halves) + "."))
     if s["review_reason"]:
         due.append(("review", f"{TICKET_KINDS['review']} in {week}, decide bias vs sma",
                     f"The trial's review is due: {s['review_reason']}."))
@@ -494,7 +505,7 @@ def trial_tickets(week, stable_root, issues):
                 f"- Early-stop streak: {s['streak']} of {TRIAL_STREAK}",
                 f"- Computed verdict ({TRIAL_RULE}): {verdict_line(s['weeks'][-1]['card'])}", "", *trial_table(s), "",
                 "Decide by the outcomes in `docs/direction-trial.md` (no difference / bias better / sma better; "
-                "the live drawdown kill rule is in the weekly evidence reports): keep `bias` on stable, move it to "
+                "both halves of the kill rule are in the computed verdict): keep `bias` on stable, move it to "
                 "`sma`, or extend the trial. A change of `gex_direction` is a config PR a person merges — no agent "
                 "changes it.", "",
                 "Scorecards: `stable/data/evidence/direction/<week>.md|json` (`cmd/evidence -compare-direction`). "

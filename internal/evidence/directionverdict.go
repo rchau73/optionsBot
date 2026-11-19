@@ -9,7 +9,8 @@ import (
 // The direction trial's verdict (#788): the decision rule of
 // docs/direction-trial.md applied to the weekly scorecards' own figures —
 // replay net_pct and max_drawdown_pct, live_minus_replay_pp and the missing
-// book days — never a new calculation. A verdict only proposes: it files
+// book days — and, for the kill rule's live half (#850), each bot's live max
+// drawdown % from its weekly evidence report — never a new calculation. A verdict only proposes: it files
 // nothing and changes no config (a change of gex_direction is a config PR a
 // person merges). Every threshold below is an assumption of the brief.
 
@@ -41,19 +42,60 @@ var DirectionAssumptions = []string{
 	fmt.Sprintf("span: %d counted weeks from %s", DirectionTrialWeeks, DirectionTrialStart),
 	fmt.Sprintf("a week missing more than %d days of recorded books does not count", DirectionTrialMaxMissingDays),
 	"noise = the mean |live − replay| of the two live rows stands for the replay's own error",
-	fmt.Sprintf("kill rule: %d consecutive counted weeks of bias under sma by more than noise, or stable's live max drawdown over 2× mvp's", DirectionKillStreak),
+	fmt.Sprintf("kill rule: %d consecutive counted weeks of bias under sma by more than noise, or stable's live max drawdown over %g× mvp's", DirectionKillStreak, DirectionLiveDDRatio),
 	fmt.Sprintf("span too short: the sign of bias − sma changes on at least half the week-to-week steps (%d weeks or more) → extend by %d weeks", DirectionFlipMinWeeks, DirectionExtendWeeks),
 	"review date 2026-12-07",
 }
 
-// DirectionLiveDrawdownNote says what the verdict cannot check: the
-// scorecard has no live max drawdown.
-const DirectionLiveDrawdownNote = "the kill rule's live half (stable BTC's live max drawdown over 2× mvp BTC's) is not in the scorecard: read it in the weekly evidence reports"
+// DirectionLiveDrawdownNote starts NotChecked when a reviewed week lacks a
+// figure of the kill rule's live half (#850); the weeks and reasons follow.
+const DirectionLiveDrawdownNote = "the kill rule's live half (stable BTC's live max drawdown over 2× mvp BTC's)"
 
-// DirectionWeekCard is one trial week and its scorecard (nil = none written).
+// DirectionLiveDDRatio is the live half's threshold: stable's live max
+// drawdown over this many times mvp's fires it (an assumption of the brief).
+const DirectionLiveDDRatio = 2.0
+
+// The live half's outcomes, overall and per week.
+const (
+	DirectionLiveFired      = "fired"
+	DirectionLiveNotFired   = "not fired"
+	DirectionLiveNotChecked = "not checked"
+)
+
+// The halves of the kill rule, as the line names them.
+const (
+	DirectionHalfReplay = "replay streak"
+	DirectionHalfLive   = "live drawdown"
+)
+
+// DirectionWeekCard is one trial week and its scorecard (nil = none written),
+// with the two bots' live max drawdown copied from their weekly evidence
+// reports (nil = none read).
 type DirectionWeekCard struct {
 	Week string
 	Card *DirectionReport
+	Live *DirectionLiveDD `json:",omitempty"`
+}
+
+// DirectionLiveDD is one week's live max drawdown of stable BTC (bias) and
+// mvp BTC (sma), % of each one's starting equity (≤ 0, as perf writes it),
+// copied from their weekly reports (Live.Perf.MaxDrawdownPct), never
+// recomputed; nil = no figure, the note says why.
+type DirectionLiveDD struct {
+	StablePct  *float64 `json:"stable_pct"`
+	StableNote string   `json:"stable_note,omitempty"`
+	MVPPct     *float64 `json:"mvp_pct"`
+	MVPNote    string   `json:"mvp_note,omitempty"`
+}
+
+// DirectionLiveHalf is the kill rule's live half over the reviewed weeks:
+// fired in Weeks, not fired, or not checked when no week had both figures.
+// Unchecked lists each week that lacked one, with the reason.
+type DirectionLiveHalf struct {
+	Status    string   `json:"status"`
+	Weeks     []string `json:"fired_weeks,omitempty"`
+	Unchecked []string `json:"unchecked_weeks,omitempty"`
+	Sample    Sample   `json:"sample"` // the weeks that had both figures (#772)
 }
 
 // DirectionVerdict is the rule's outcome, the figures it used and every
@@ -75,7 +117,8 @@ type DirectionVerdict struct {
 	SMAWorstWeekPct  *float64               `json:"sma_worst_week_pct"`
 	BiasMaxDDPct     *float64               `json:"bias_max_drawdown_pct"`
 	SMAMaxDDPct      *float64               `json:"sma_max_drawdown_pct"`
-	KillWeeks        []string               `json:"kill_weeks,omitempty"`
+	KillWeeks        []string               `json:"kill_weeks,omitempty"` // the replay streak's weeks
+	LiveDrawdown     DirectionLiveHalf      `json:"live_drawdown"`
 	SpanTooShort     bool                   `json:"span_too_short"`
 	SignChanges      int                    `json:"sign_changes"`
 	SignSteps        int                    `json:"sign_steps"`
@@ -95,19 +138,26 @@ type DirectionVerdictWeek struct {
 	BiasDDPct  *float64  `json:"bias_max_drawdown_pct"`
 	SMADDPct   *float64  `json:"sma_max_drawdown_pct"`
 	GapsPP     []float64 `json:"gaps_pp"` // |live − replay| of the live rows; counted weeks only
+	// The kill rule's live half this week: both bots' live max drawdown (%)
+	// and its outcome, with the reason when not checked.
+	StableLiveDDPct *float64 `json:"stable_live_max_drawdown_pct"`
+	MVPLiveDDPct    *float64 `json:"mvp_live_max_drawdown_pct"`
+	LiveHalf        string   `json:"live_half"`
+	LiveWhy         string   `json:"live_half_why,omitempty"`
 }
 
 // BuildDirectionVerdict applies the brief's rule to the trial weeks, oldest
 // first (a week before DirectionTrialStart is the caller's to leave out).
-// Checks run in the brief's order: the kill rule (any week), the span, then
-// sma better (d, then the tail guard alone), no difference, bias better.
+// Checks run in the brief's order: the kill rule (either half, any week), the
+// span, then sma better (d, then the tail guard alone), no difference, bias
+// better.
 func BuildDirectionVerdict(weeks []DirectionWeekCard) DirectionVerdict {
-	v := DirectionVerdict{Rule: DirectionTrialRule, Needed: DirectionTrialWeeks,
-		NotChecked: DirectionLiveDrawdownNote, Assumptions: DirectionAssumptions}
+	v := DirectionVerdict{Rule: DirectionTrialRule, Needed: DirectionTrialWeeks, Assumptions: DirectionAssumptions}
 	var counted []DirectionVerdictWeek
 	var gaps []float64
 	for _, wc := range weeks {
 		w := readTrialWeek(wc)
+		readLiveHalf(&w, wc.Live)
 		v.Weeks = append(v.Weeks, w)
 		if w.Counted {
 			counted = append(counted, w)
@@ -126,18 +176,30 @@ func BuildDirectionVerdict(weeks []DirectionWeekCard) DirectionVerdict {
 	v.DPP, v.NoisePP = mean(ds), mean(gaps)
 	v.SignChanges, v.SignSteps = signChanges(ds)
 	v.SpanTooShort = v.SignSteps+1 >= DirectionFlipMinWeeks && 2*v.SignChanges >= v.SignSteps
+	v.LiveDrawdown = liveHalf(v.Weeks)
+	if u := v.LiveDrawdown.Unchecked; len(u) > 0 {
+		v.NotChecked = DirectionLiveDrawdownNote + " in " + strings.Join(u, "; ")
+	}
 
 	set := func(status, why string, a ...any) DirectionVerdict {
 		v.Status, v.Why = status, fmt.Sprintf(why, a...)
 		v.Line = v.line()
 		return v
 	}
+	var fired []string
 	if v.NoisePP != nil {
 		if run := killRun(counted, *v.NoisePP); run != nil {
 			v.KillWeeks = run
-			return set(DirectionVerdictKill, "bias's replay net was below sma's by more than the noise (%.2f pp) in %d consecutive counted weeks: %s — it proposes the decision ticket, nothing else",
-				*v.NoisePP, len(run), strings.Join(run, ", "))
+			fired = append(fired, fmt.Sprintf("%s: bias's replay net was below sma's by more than the noise (%.2f pp) in %d consecutive counted weeks: %s",
+				DirectionHalfReplay, *v.NoisePP, len(run), strings.Join(run, ", ")))
 		}
+	}
+	if v.LiveDrawdown.Status == DirectionLiveFired {
+		fired = append(fired, fmt.Sprintf("%s: stable BTC's live max drawdown was over %g× mvp BTC's in %s",
+			DirectionHalfLive, DirectionLiveDDRatio, v.liveFiredText()))
+	}
+	if len(fired) > 0 {
+		return set(DirectionVerdictKill, "%s — it proposes the decision ticket, nothing else", strings.Join(fired, "; "))
 	}
 	if v.Counted < DirectionTrialWeeks {
 		return set(DirectionVerdictMoreWeeks, "%d week(s) missing of the %d the trial needs (%d counted): no figure is a conclusion yet",
@@ -193,6 +255,79 @@ func readTrialWeek(wc DirectionWeekCard) DirectionVerdictWeek {
 		}
 	}
 	return w
+}
+
+// readLiveHalf sets the week's live half from the two bots' figures: not
+// checked without both or with a zero mvp drawdown (never a pass or a fail),
+// fired over DirectionLiveDDRatio × mvp's, else not fired.
+func readLiveHalf(w *DirectionVerdictWeek, dd *DirectionLiveDD) {
+	w.LiveHalf = DirectionLiveNotChecked
+	if dd == nil {
+		w.LiveWhy = "no weekly evidence report read"
+		return
+	}
+	w.StableLiveDDPct, w.MVPLiveDDPct = dd.StablePct, dd.MVPPct
+	var why []string
+	if dd.StablePct == nil {
+		why = append(why, "stable BTC: "+orNote(dd.StableNote))
+	}
+	if dd.MVPPct == nil {
+		why = append(why, "mvp BTC: "+orNote(dd.MVPNote))
+	} else if *dd.MVPPct == 0 {
+		why = append(why, "mvp BTC's live max drawdown is 0 %: no ratio")
+	}
+	if len(why) > 0 {
+		w.LiveWhy = strings.Join(why, "; ")
+		return
+	}
+	w.LiveHalf = DirectionLiveNotFired
+	if math.Abs(*dd.StablePct) > DirectionLiveDDRatio*math.Abs(*dd.MVPPct) { // perf's drawdown is ≤ 0: sizes compared
+		w.LiveHalf = DirectionLiveFired
+	}
+}
+
+func orNote(note string) string {
+	if note == "" {
+		return "no live max drawdown"
+	}
+	return note
+}
+
+// liveHalf is the live half over the weeks: fired in any week, else not
+// fired when at least one week was checked, else not checked.
+func liveHalf(weeks []DirectionVerdictWeek) DirectionLiveHalf {
+	h := DirectionLiveHalf{Status: DirectionLiveNotChecked}
+	checked := 0
+	for _, w := range weeks {
+		switch w.LiveHalf {
+		case DirectionLiveFired:
+			h.Weeks = append(h.Weeks, w.Week)
+			checked++
+		case DirectionLiveNotFired:
+			checked++
+		default:
+			h.Unchecked = append(h.Unchecked, fmt.Sprintf("%s (%s)", w.Week, w.LiveWhy))
+		}
+	}
+	switch {
+	case len(h.Weeks) > 0:
+		h.Status = DirectionLiveFired
+	case checked > 0:
+		h.Status = DirectionLiveNotFired
+	}
+	h.Sample = WeeksSample(checked, nil, "")
+	return h
+}
+
+// liveFiredText lists the weeks the live half fired, each with both figures.
+func (v DirectionVerdict) liveFiredText() string {
+	var out []string
+	for _, w := range v.Weeks {
+		if w.LiveHalf == DirectionLiveFired {
+			out = append(out, fmt.Sprintf("%s (%+.2f %% vs %+.2f %%)", w.Week, *w.StableLiveDDPct, *w.MVPLiveDDPct))
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 // replayRow is the scorecard's replay row of source (Source set, the rest
