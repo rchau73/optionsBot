@@ -242,6 +242,9 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		return fmt.Errorf("pnl history: %w", err)
 	}
 	defer pnlHistory.Close()
+	if config.IsLinear(cfg.Underlying) {
+		pnlHistory.SetPnLUnit(history.LinearPnLUnit) // a USDC bot's P&L is dollars (#832)
+	}
 	regimes, err := history.OpenRegimes(regimeHistoryPath)
 	if err != nil {
 		return fmt.Errorf("regime history: %w", err)

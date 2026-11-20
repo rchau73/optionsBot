@@ -188,7 +188,7 @@ A new leg is at most this many times its slot's normal size (its margin share ÷
 
 ## `min_premium` — Minimum premium
 
-The least premium a leg must bring at the lowest price its order can step down to; a leg under it is not sold, and 0 accepts any. Higher: skips thin strikes, less income when premiums are low.
+The least premium a leg must bring at the lowest price its order can step down to; a leg under it is not sold, and 0 accepts any. It is in the settlement currency: the coin for BTC and ETH, USDC for SOL and XRP. Higher: skips thin strikes, less income when premiums are low.
 
 - **Range:** not checked
 - **Unit:** coin per contract

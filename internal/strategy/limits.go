@@ -333,8 +333,8 @@ func (s *Strategy) reduceForMM(ctx context.Context, m marginState) {
 	for _, pos := range s.state.AllPositions() {
 		inst, ok := s.md.GetInstrument(pos.Instrument)
 		lot := s.cfg.MinTradeAmount
-		if ok && inst.MinTradeAmount > 0 {
-			lot = inst.MinTradeAmount
+		if ok && inst.OrderStep() > 0 {
+			lot = inst.OrderStep()
 		}
 		keep := MMKeepQty(pos.Qty, lot, mmPct, m.status.MaxMMPct)
 		if keep <= qtyEpsilon {

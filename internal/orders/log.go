@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"optionsbot/internal/marketdata"
 )
 
 // Logger writes structured JSON order events to both orders.log and stdout
@@ -230,7 +232,7 @@ func (l *Logger) LogClose(pos *Position, fill Fill, trigger, orderType string, c
 	rec.PremiumReceived = pos.PremiumReceived
 	rec.CloseCost = closeCost
 	rec.PnL = pnl
-	rec.PnLUSD = pnl * spot
+	rec.PnLUSD = pnl * marketdata.USDPerUnit(marketdata.SettlementOf(pos.Instrument), spot)
 	rec.PnLUSDFmt = formatUSD(rec.PnLUSD)
 	rec.ROIPct = roi
 	rec.ROIPctFmt = formatROI(roi)
@@ -297,6 +299,9 @@ func (l *Logger) LogPnL(p PnLRecord) {
 }
 
 func (l *Logger) write(rec OrderLog) {
+	if u := marketdata.SettlementOf(rec.Instrument); u == marketdata.LinearSettlement {
+		rec.Unit = u // a USDC option's amounts are USDC (#832)
+	}
 	// Warn where the spread is actually paid (submit, fill, close); cancels and
 	// skips repeat the same quote and would only add noise.
 	priced := rec.Event == EventSubmitted || rec.Event == EventFilled || rec.Event == EventClosed

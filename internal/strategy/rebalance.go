@@ -109,7 +109,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 			rep.add(st, ActionSkipped, "", 0, 0, "instrument not in market data")
 			continue
 		}
-		lot := math.Max(callInst.MinTradeAmount, putInst.MinTradeAmount)
+		lot := math.Max(callInst.OrderStep(), putInst.OrderStep())
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}
@@ -296,7 +296,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g", addQty, targetQty)
 	if dryRun {
 		// Report the size the liquidity cap would let out (liquidity.go).
-		lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+		lot := math.Max(call.OrderStep(), put.OrderStep())
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}
