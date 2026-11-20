@@ -120,10 +120,17 @@ The server checks it (`checkRequest`, pure).
 Outcomes: `needs_info` (the checklist, no draft), `answered` (the model's answer through the guard, with the checklist; an enhancement may still come with a draft), `draft` (the card, citing its evidence); kind `none` is answered as any other question.
 A report with nothing to check it against gets the checklist without a model call.
 The draft is logged with its answer in `assistant.jsonl` (`request: {checklist, draft}`, every AI output is reviewable) and is **never queued without the person's click**.
-Send appends to `data/monitor/requests.jsonl` (`ASSISTANT_REQUESTS_PATH`; off for an in-memory database): `id`, `ts`, `user`, `role`, `environment` (`MONITOR_DEPLOYMENT`), `kind`, `fields` (as the person edited them), `citations` and `journal_refs` (taken from the logged draft, never from the browser), `answer_id`.
+Send appends to `data/monitor/requests.jsonl` (`ASSISTANT_REQUESTS_PATH`; off for an in-memory database): `id`, `ts`, `user`, `role`, `environment` (`MONITOR_DEPLOYMENT`), `kind`, `fields` (as the person edited them), `citations` and `journal_refs` (taken from the logged draft, never from the browser), `explained_by`, `answer_id`.
+`explained_by` lists the help passages that explained an answered report, taken from the logged answer (#852).
 The review writes `data/monitor/requests_status.jsonl` (`{id, status, note?, issue_url?, ts}`, status `in_review` \| `filed` \| `fixed` \| `not_a_bug` \| `duplicate` \| `needs_info`; the latest line of an id wins; an `issue_url` that is not https is dropped).
 Both files are gitignored, never copied into the repository (it is public) and in the nightly backup (`scripts/agents/backup_data.sh`, `<date>/<env>/monitor/`).
-Filing a public issue is the next story's.
+Nothing goes to GitHub from the monitor: `scripts/agents/requests.sh` reads both files and files public issues (`docs/agents/requests.md`).
+It reads the requests with no status line yet or still `in_review`.
+Its mechanical filter (`scripts/agents/request_filter.py`, #852) comes first: a duplicate of a card or an earlier request, no cited evidence with fewer than two steps (`needs_info`), or an `explained_by` passage (`not_a_bug`), each with a plain-words note.
+The PM agent's review judges the rest.
+An accepted one is filed in Triage with its kind's and its epic's labels, sanitised (`requests.py` `sanitise`: amounts, sizes, account and user names, emails and tokens removed, each journal reference as "journal line from <date>"), with "Sent from the assistant, request <id>".
+Text the sanitiser cannot classify holds the request as `needs_info` for a person.
+Without `--file` the script is a dry run.
 
 **The panel** (#408, the E10 prototype the product owner approved on #161): `components/AssistantProvider.jsx` sits in the root layout for a signed-in person, so the panel stays open across page changes and the conversation lasts for this browser tab only (the review log keeps the rest).
 **Ask** (`components/AskButton.jsx`, #419) is a floating chat button fixed at the bottom-right of every signed-in page (a chat-bubble icon, "Ask" beside it from 640 px; rendered once by the provider, asking about the page's `?bot=`); it is dimmed with the reason as its tooltip while `GET /api/assistant` (or a question) answers 503.
