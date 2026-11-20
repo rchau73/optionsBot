@@ -48,7 +48,17 @@ Changes to a **core trading policy** (margin limits, exits, entry, repair, GEX s
 
 ## 4. Market and competitors
 
-To be built in E5. Categories to map: exchange-native structured yield (dual investment, earn), option vaults (DeFi), copy-trading and signal platforms, automation platforms with API keys, and option analytics tools. Sources, prices and dates go in `data/product/competitors/` (gitignored). This section keeps only the summary and the positioning gaps found.
+**Status (2026-11-20, #861): 0 competitors mapped.** The first pass could not run: the Dev run had no web access, and entries may not be filled from memory (`competitors/README.md`). No positioning gap is claimed yet.
+
+Categories to map, 2 to 4 competitors each: exchange-native structured yield (dual investment, earn), option vaults (DeFi), copy-trading and signal platforms, automation platforms with API keys, and option analytics tools. Sources, prices and dates go in `data/product/competitors/` (gitignored). This section keeps only the `competitors.py --summary` output and the positioning gaps found.
+
+| Category | Competitors mapped | Positioning gaps found | Effect on the §5 statement |
+|---|---|---|---|
+| Exchange-native structured yield | 0 | None yet | Unknown. Verify: entries with `against_positioning` for the four §5 claims |
+| Option vaults (DeFi) | 0 | None yet | Unknown. Same check |
+| Copy-trading and signal platforms | 0 | None yet | Unknown. Same check |
+| Automation platforms with API keys | 0 | None yet | Unknown. Same check |
+| Option analytics tools | 0 | None yet | Unknown. Same check |
 
 ## 5. Value proposition and positioning
 
