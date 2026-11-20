@@ -141,6 +141,7 @@ type VolIndex interface {
 	DVOL() float64
 	IVPercentile() float64
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	TakeDVOLRejections() []marketdata.DVOLRejection // readings the sanity gate kept out (#796)
 }
 
 // Candles: daily closes for the trend. Today on the Executor

@@ -25,6 +25,10 @@ type Manager struct {
 	instruments     map[string]*Instrument
 	underlyingPrice float64
 
+	dvolMu       sync.Mutex // the DVOL gate and its queued rejections
+	dvolGate     DVOLGate
+	dvolRejected []DVOLRejection
+
 	subMu      sync.Mutex      // serialises Track calls
 	subscribed map[string]bool // instruments with a ticker subscription
 }
@@ -226,7 +230,7 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse, now time.Tim
 			Volatility float64 `json:"volatility"`
 		}
 		if err := json.Unmarshal(data, &d); err == nil && d.Volatility > 0 {
-			m.dvol.Record(now, d.Volatility)
+			m.recordDVOL(now, d.Volatility)
 		}
 
 	case ChannelIndex:
@@ -242,6 +246,48 @@ func (m *Manager) handleNotification(notif gateway.JSONRPCResponse, now time.Tim
 	case ChannelTicker:
 		m.handleTicker(ch, data, now)
 	}
+}
+
+// recordDVOL passes a live DVOL reading through the sanity gate (#796) and
+// records it only when accepted; a rejection is logged and queued for the
+// strategy to journal (TakeDVOLRejections).
+func (m *Manager) recordDVOL(now time.Time, value float64) {
+	m.mu.RLock()
+	spot := m.underlyingPrice
+	insts := make([]*Instrument, 0, len(m.instruments))
+	for _, inst := range m.instruments {
+		insts = append(insts, inst)
+	}
+	atm := ATMMarkIV(insts, spot, now) // read under the lock: no copies, once a second
+	m.mu.RUnlock()
+
+	m.dvolMu.Lock()
+	defer m.dvolMu.Unlock()
+	ok, rej := m.dvolGate.CheckDVOL(DVOLReading{At: now, Value: value, Spot: spot, ATMIV: atm}, m.dvol.Current())
+	if ok {
+		m.dvol.Record(now, value)
+		return
+	}
+	if rej != nil {
+		slog.Warn("DVOL reading rejected", "underlying", m.cfg.Underlying, "dvol", rej.Value, "kept", rej.Kept,
+			"spot", rej.Spot, "atm_mark_iv", rej.ATMIV, "reason", rej.Reason)
+		if len(m.dvolRejected) < maxQueuedDVOLRejections {
+			m.dvolRejected = append(m.dvolRejected, *rej)
+		}
+	}
+}
+
+// maxQueuedDVOLRejections bounds the queue when nothing drains it (no strategy).
+const maxQueuedDVOLRejections = 100
+
+// TakeDVOLRejections returns the DVOL rejections since the last call and
+// clears them; the strategy journals each as dvol_rejected.
+func (m *Manager) TakeDVOLRejections() []DVOLRejection {
+	m.dvolMu.Lock()
+	defer m.dvolMu.Unlock()
+	out := m.dvolRejected
+	m.dvolRejected = nil
+	return out
 }
 
 // tickerData is the subset of a ticker push we use.

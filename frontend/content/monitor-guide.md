@@ -287,6 +287,10 @@ Closing the hedge shows its *Result* net of its fee, a loss with its minus sign.
 When the hedge cannot trade, the line says so and that the GEX shed is back on.
 A leg the shed would have bought back and the hedge kept has its own line.
 
+**An ignored volatility reading** has its own line: the bot ignores a DVOL reading that disagrees with the option prices by more than 1.5 times, or that jumps more than 25 % while the price moves less than 1 %.
+The line gives the reading and the value kept, which stays in use for the margin band and the GEX buffer.
+A long episode is written again every 30 minutes; without option prices to compare with, a new level is taken after 30 minutes.
+
 **When something looks wrong**: a long run of Waiting entries means a rule is holding the bot back; the sentence names it.
 "Show earlier days" adds three more days.
 An empty journal says so.
