@@ -64,7 +64,7 @@ func Build(rows []SummaryRow, now time.Time, p Params) (Snapshot, BuildStats, er
 	latestSpot := 0.0 // last row with a price, in API order (nearest_flip)
 	for _, r := range rows {
 		und, exp, strike, typ, err := marketdata.ParseOptionName(r.InstrumentName)
-		if err != nil || !strings.EqualFold(und, p.Underlying) {
+		if err != nil || !ownUnderlying(und, p.Underlying) {
 			st.Unparsed++
 			continue
 		}
@@ -143,6 +143,19 @@ func Build(rows []SummaryRow, now time.Time, p Params) (Snapshot, BuildStats, er
 	snap := BuildSnapshotWith(ConsolidateProfiles(profiles), snapSpot, p.Method)
 	snap.ComputedAt = now
 	return snap, st, nil
+}
+
+// ownUnderlying reports whether an option name's first part (part, as
+// ParseOptionName returns it) is underlying's: "BTC" for BTC, and for a
+// linear coin its USDC options only, "SOL_USDC" for SOL (#835). Open
+// interest is in coin for both kinds, so gamma × OI × spot² is the dollar
+// gamma either way. An underlying given as "SOL_USDC" (the research tools'
+// key) matches its own names as before.
+func ownUnderlying(part, underlying string) bool {
+	if marketdata.IsLinear(underlying) {
+		return strings.EqualFold(part, strings.TrimSuffix(marketdata.OptionPrefix(underlying), "-"))
+	}
+	return strings.EqualFold(part, underlying)
 }
 
 func firstPrice(rs []parsedRow) float64 {
