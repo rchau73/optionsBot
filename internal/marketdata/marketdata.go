@@ -21,6 +21,7 @@ type Manager struct {
 	gw              transport.Streamer
 	chain           ChainSource
 	dvol            *DVOLTracker
+	ivHistory       *IVHistory // a coin without DVOL: its chain IV's daily closes (UseIVHistory)
 	mu              sync.RWMutex
 	instruments     map[string]*Instrument
 	underlyingPrice float64
@@ -50,8 +51,13 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err := m.fetchOptionsChain(ctx); err != nil {
 		return fmt.Errorf("fetch options chain: %w", err)
 	}
-	if err := m.seedDVOLHistory(ctx, time.Now()); err != nil {
-		slog.Warn("DVOL history seed failed; IV percentile starts at 50", "err", err)
+	if HasVolIndex(m.cfg.Underlying) {
+		if err := m.seedDVOLHistory(ctx, time.Now()); err != nil {
+			slog.Warn("DVOL history seed failed; IV percentile starts at 50", "err", err)
+		}
+	} else {
+		m.seedChainIVHistory()
+		go m.sampleChainIV(ctx)
 	}
 
 	channels := m.subscriptionChannels(time.Now())
@@ -111,11 +117,12 @@ func (m *Manager) Track(ctx context.Context, instruments []string) error {
 // instruments) hits testnet subscription limits and starves the expiries
 // the strategy actually needs.
 func (m *Manager) subscriptionChannels(now time.Time) []string {
-	channels := []string{
-		m.chain.VolIndexChannel(m.cfg.Underlying),
-		// The index price is reliable even when options have no quotes (testnet).
-		m.chain.IndexChannel(m.cfg.Underlying),
+	var channels []string
+	if HasVolIndex(m.cfg.Underlying) { // SOL and XRP have no DVOL channel (#834)
+		channels = append(channels, m.chain.VolIndexChannel(m.cfg.Underlying))
 	}
+	// The index price is reliable even when options have no quotes (testnet).
+	channels = append(channels, m.chain.IndexChannel(m.cfg.Underlying))
 	relevant := m.selectRelevantExpiries(now)
 	slog.Info("relevant expiries for subscription", "count", len(relevant), "slots", len(m.cfg.Slots()))
 
@@ -166,6 +173,54 @@ func (m *Manager) seedDVOLHistory(ctx context.Context, now time.Time) error {
 	}
 	slog.Info("DVOL history seeded", "days", len(closes), "iv_percentile", m.dvol.Percentile())
 	return nil
+}
+
+// chainIVEvery is how often a coin without DVOL reads its chain IV.
+const chainIVEvery = time.Minute
+
+// UseIVHistory gives a coin without DVOL (HasVolIndex false) the file its
+// chain IV's daily closes are kept in; call it before Start. Without one
+// they are kept in memory and a restart starts the 90 days again.
+func (m *Manager) UseIVHistory(h *IVHistory) { m.ivHistory = h }
+
+// seedChainIVHistory loads the recorded daily chain-IV closes, as
+// seedDVOLHistory loads Deribit's DVOL history.
+func (m *Manager) seedChainIVHistory() {
+	if m.ivHistory == nil {
+		m.ivHistory, _ = OpenIVHistory("") // in memory; cannot fail
+	}
+	days := m.ivHistory.Daily()
+	for _, d := range days {
+		m.dvol.Record(d.At, d.Close)
+	}
+	slog.Info("chain IV history seeded", "source", ChainIVSource, "days", len(days), "iv_percentile", m.dvol.Percentile())
+}
+
+// sampleChainIV reads the chain's 30-day ATM IV every chainIVEvery into the
+// tracker DVOL would feed, and into the daily history, until ctx ends.
+func (m *Manager) sampleChainIV(ctx context.Context) {
+	t := time.NewTicker(chainIVEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-t.C:
+			m.ReadChainIV(now)
+		}
+	}
+}
+
+// ReadChainIV records the chain IV at now, when the chain gives one
+// (sampleChainIV calls it every chainIVEvery; tests call it directly).
+func (m *Manager) ReadChainIV(now time.Time) {
+	iv, ok := ChainATMIV30(m.AllInstruments(), m.UnderlyingPrice(), now)
+	if !ok {
+		slog.Debug("chain IV: no ATM call and put quoted yet", "underlying", m.cfg.Underlying)
+		return
+	}
+	m.dvol.Record(now, iv)
+	m.ivHistory.Record(now, iv)
 }
 
 // selectRelevantExpiries returns the expiries the strategy may trade: for
@@ -331,6 +386,13 @@ func (m *Manager) IVPercentile() float64 {
 func (m *Manager) DVOLDaily() ([]DayIV, DayIV) {
 	return m.dvol.Daily()
 }
+
+// IVSource names the reading DVOL(), IVPercentile() and DVOLDaily() carry:
+// DVOLSource, or ChainIVSource for a coin without DVOL (#834).
+func (m *Manager) IVSource() string { return VolSource(m.cfg.Underlying) }
+
+// IVCloses counts the completed daily closes of that reading before now.
+func (m *Manager) IVCloses(now time.Time) int { return m.dvol.Closes(now) }
 
 // UnderlyingPrice returns the latest index price, or 0 before the first push.
 func (m *Manager) UnderlyingPrice() float64 {

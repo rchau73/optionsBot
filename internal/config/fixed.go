@@ -62,6 +62,11 @@ const (
 	FixedFuturesHedgeUnfilledCycles = 3  // cycles in a row with a hedge due and no fill: the shed is back (hedge_unavailable)
 	FixedFuturesHedgeRecheckMinutes = 10 // a halted hedge looks again this often (hedge_halted)
 	FixedFuturesHedgeMaxIndexGapPct = 1  // live: no hedge order priced more than this % from the index (hedge_price_away)
+	// A rule constant, never a YAML key (no Config field, so BTC's and ETH's
+	// effective settings are unchanged): a coin without DVOL (SOL, XRP) reads
+	// its chain's 30-day ATM IV, and while that has fewer daily closes than
+	// this the IM limit is the lowest band (#834; cmd/stress -chainivdays).
+	FixedChainIVMinDays = 90
 )
 
 // fixedKeys are the YAML keys of the settings above, with their value as the

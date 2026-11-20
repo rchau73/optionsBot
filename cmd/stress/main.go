@@ -684,6 +684,7 @@ func main() {
 	replayHedgeModes := flag.String("hedgemodes", "", "STUDY, with -replay: replay once per futures-hedge mode in this list (off,bot,onesided,trend, each optionally +after; all = off,bot,onesided,trend and the three +after, #812) at each -costs multiple and print one table — net (coin, USD), hedge and options P&L, perpetual orders, traded and fees, worst day/week, max MM, −20 % gap loss, stops, delta exits, verdict against bot")
 	replayDeltaExits := flag.String("deltaexits", "", "STUDY, with -replay: replay once per delta_exit_threshold in this list (e.g. 0.25,0.30,0.35,off; all = those four, #769; off = the 2× stop alone) and print one table — net, return on margin, worst week, delta exits and stops with their P&L as % of premium, MM cuts, re-entries; the bot's threshold stays 0.30")
 	replayCosts := flag.String("costs", "1,2", "with -sheds, -fullstrangle or -hedgemodes: cost multiples — every spread widened around its mid and every fee multiplied (1 = as recorded)")
+	replayChainIVDays := flag.Int("chainivdays", config.FixedChainIVMinDays, "with -replay on a coin without DVOL (SOL, XRP; its book's chain ATM IV 30d stands in, #834): daily chain-IV closes before the IV-percentile bands apply, the lowest band until then (the bot: 90; 0 = bands from the first percentile)")
 	replayPerpFunding := flag.Float64("perpfunding", 10, "with -shed hedge, -fullstrangle or -hedgemodes: yearly funding the perp hedge pays, % of its notional (MODEL: funding is not recorded)")
 	flag.Parse()
 	if *replayDir != "" {
@@ -702,7 +703,8 @@ func main() {
 			flipWindowMin: *biasFlipWindow, quiet: *quiet, trace: *replayTrace, liqCaps: *replayLiqCaps,
 			regimeHold: *replayRegimeHold, regimeHolds: *replayRegimeHolds, shed: *replayShed, sheds: *replaySheds,
 			fullStrangle: *replayFullStrangle, hedgeModes: *replayHedgeModes, deltaExits: *replayDeltaExits, costs: *replayCosts, perpFundingPct: *replayPerpFunding,
-			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, pnlHistory: *replayPnLHistory, set: set})
+			rebalance: *replayRebalance, rebalances: *replayRebalances, limits: *replayLimits, pnlHistory: *replayPnLHistory,
+			chainIVDays: *replayChainIVDays, set: set})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "replay:", err)
 			os.Exit(1)

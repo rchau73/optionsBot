@@ -8,6 +8,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `marketdata` never imports `internal/exchange` or `internal/exchange/deribit` (`TestExchangeCoupling_MarketDataDoesNotImportTheExchange`); `New` takes the source and `main` builds it.
   Valid ticker intervals are `100ms` and `raw` only.
   `DVOLTracker` keeps one value per UTC day.
+  A coin without DVOL (`HasVolIndex` false: SOL, XRP, #834) subscribes to no DVOL channel and asks no DVOL history: `ReadChainIV` (every minute) feeds the same tracker with `ChainATMIV30` (pure, takes `now`: the ATM call/put mean mark IV, by variance to 30 days, one expiry → its own),
+  and its daily closes persist in `data/chain_iv_history.jsonl` (`IVHistory`, `UseIVHistory` from `main`), so `DVOL()`, `IVPercentile()` and `DVOLDaily()` carry it to every rule; `IVSource()` names it (`ChainIVSource`), `IVCloses` counts its closes.
   Readers get copies.
   `Track(ctx, names)` subscribes to the tickers of held instruments outside those expiries (positions loaded at startup); the strategy calls it every cycle.
   `Instrument.HasQuote()` is false until the first ticker: never use such an instrument's zero prices as a mark.
