@@ -1,0 +1,39 @@
+{
+  "run_id": "20261104T230000Z",
+  "status": "ready",
+  "reasons": [],
+  "needs_product_owner": false,
+  "product_owner_approval": "#900",
+  "underlying": "BTC",
+  "config": "config_btc.yaml",
+  "candidate": "config.candidate.yaml",
+  "person": "maria",
+  "role": "manager",
+  "recorded_at": "2026-11-05T09:12:00.000Z",
+  "changes": [
+    {
+      "key": "backtest.slippage_pct",
+      "title": "Backtest market slippage",
+      "old": "0.001",
+      "new": "0.002",
+      "core_policy": false,
+      "policy": "none"
+    },
+    {
+      "key": "gamma_flip_buffer_sd",
+      "title": "Gamma flip buffer",
+      "old": "1.5",
+      "new": "1.2",
+      "core_policy": true,
+      "policy": "gex"
+    }
+  ],
+  "label": "backtested, not a forecast",
+  "risks": [
+    "backtest: worst week -0.90 %, largest drawdown 1.30 %, fees 0.25 % of the starting equity",
+    "replay of recorded books: worst week -0.50 %, largest drawdown 1.50 %, fees 0.25 % of the starting equity",
+    "past data only: the market can move in ways these days did not show"
+  ],
+  "applied": false,
+  "nothing_applied": "nothing was applied to a running bot: a candidate file only, no shipped config was written and no bot was restarted; a person takes it into a deploy through a pull request"
+}
