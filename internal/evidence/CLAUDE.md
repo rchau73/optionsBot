@@ -54,8 +54,11 @@ go run ./cmd/deployeffect -journal ~/dev/go/optionsBot-env/mvp/data/btc/orders.l
       under 7 days `needs more days` with the days missing, none when not started, not read, without a spot or live; a proposal needs `HedgeProposeMinDays` (= `SampleMinDays`); it changes nothing.
   - the direction trial's verdict (`directionverdict.go`, #788, `DirectionReport.Verdict`): pure `BuildDirectionVerdict` applies `docs/direction-trial.md` to the weekly scorecards from 2026-W43
     (`WithDirectionVerdict` reads the earlier weeks' JSON, `ReadDirectionWeeks`; `cmd/evidence -compare-direction` sets it);
-    - a week missing over 2 book days is excluded, one without both replays counts toward neither d nor noise; kill rule first (3 counted weeks in a row under −noise), then the span of 6, sma better (d, then the tail guard alone), no difference (|d| ≤ noise), bias better;
-    - the span check flags a sign of bias − sma changing on half the steps or more; the live-drawdown half of the kill rule is not in the scorecard (`NotChecked`); `evidence_week.py` posts `verdict.line`, never recomputing it.
+    - a week missing over 2 book days is excluded, one without both replays counts toward neither d nor noise; kill rule first (either half), then the span of 6, sma better (d, then the tail guard alone), no difference (|d| ≤ noise), bias better;
+    - the kill rule's halves: `replay streak` (3 counted weeks in a row under −noise) and `live drawdown` (#850, `DirectionLiveHalf`): stable BTC's live max drawdown over `DirectionLiveDDRatio` (2) × mvp BTC's in any week, compared by size;
+    - the live figures are `Live.Perf.MaxDrawdownPct` of each clone's weekly report (`ReadDirectionWeeks` → `DirectionWeekCard.Live`, `LiveMaxDrawdownPct`), % only, never recomputed;
+    - a week without both, or with mvp's at 0, is `not checked` with its reason; `NotChecked` names those weeks and is empty when every week had both; the half carries a `Sample` (#772);
+    - the span check flags a sign of bias − sma changing on half the steps or more; `evidence_week.py` posts `verdict.line` and files the early-stop ticket from `verdict.live_drawdown`, never recomputing either.
   Reads files only; writes under the clone's `data/evidence/`.
   Pure `BuildTrackRecord` (`track.go`, #279:
   - `perf.Summarize`/`ReturnOnMargin`/`Utilisation` from the history's first to last point, equity = the earliest weekly report carrying one,

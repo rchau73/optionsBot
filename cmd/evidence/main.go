@@ -203,7 +203,7 @@ func runCompare(stableRoot, mvpRoot, bots, week, from, to string) error {
 	envs := []evidence.DirectionEnvRoot{{Env: "stable", Root: stableRoot}, {Env: "mvp", Root: mvpRoot}}
 	in := evidence.LoadDirection(bot, envs, "stable", stableRoot, w, os.Stderr)
 	md, js := evidence.DirectionOutPaths(stableRoot, w.Label)
-	r := evidence.WithDirectionVerdict(evidence.BuildDirection(in), stableRoot)
+	r := evidence.WithDirectionVerdict(evidence.BuildDirection(in), stableRoot, mvpRoot)
 	if err := evidence.WriteDirection(r, md, js); err != nil {
 		return err
 	}
