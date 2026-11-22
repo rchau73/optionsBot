@@ -36,8 +36,9 @@ A manager's parameter change is studied offline before anyone decides on it:
 7. `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741, managers and admins) records the confirmed change, and applies nothing.
    The server recomputes the preview and refuses a token for another run, person or value, one over 15 minutes old (`CONFIRM_TOKEN_MINUTES`), a core policy (it names the product owner as the approver), a stale or out-of-range value, a run whose request is not done and a run already recorded (a token is used once).
    Success writes `data/compare/applied/<id>.json` once and one audit line, `parameter_change_recorded` (the person, the account, the run, old → new, the token's id), and answers `applied: false, recorded: true`, with the numbers labelled "backtested, not a forecast" and the risks beside them.
-   **How a recorded change reaches the running bot is not decided** (a reviewed config PR and a restart, or a later hot-reload story): it needs a person's decision, with E8's tenancy (links of managers to accounts; until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
-   Until then the record is the whole effect: no config file is written, no bot restarted, no order placed.
+   The record itself changes nothing: no config file is written, no bot restarted, no order placed.
+   **A recorded change reaches the running bot through a reviewed config pull request** (decision `../decisions/2026-11-20-lab-change-reaches-bot-by-pr.md`, #862): `cmd/labapply` checks it into a candidate, `cmd/labpr` opens the draft PR (item 10), a person's merge is the approval and the usual deploy restarts the bot; hot-reload stays a later story.
+   It runs on the shipped configs only: per-account changes wait for E8's tenancy (until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
 
 8. `cmd/labstats` (#824) is the lab's usage report, from its own files and read-only.
    Over the last 28 days (`-days`) it gives the requests made and the share ending `done`, `failed` and `expired`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per ISO week (an 8-character hash, never a name).
@@ -47,7 +48,7 @@ A manager's parameter change is studied offline before anyone decides on it:
    Targets, assumptions to confirm after the first four weeks of use: done share ≥ 90 % and median time to a finished run ≤ 30 min (`compare.LabTargetDonePct`, `LabTargetMedianMinutes`; the report says met, not met or too early to judge).
 
 9. `cmd/labfollow` (#855) is the lab follow-up: after a recorded change went live, the run's numbers beside what the bot realised, read-only.
-   A person gives the day the change reached the bot (`-live-from YYYY-MM-DD`), because how a change reaches a bot is still open (item 7); `-record-live-from` keeps it in `applied/<run id>.live`.
+   A person gives the day the change reached the bot (`-live-from YYYY-MM-DD`: the day its pull request deployed, item 7); `-record-live-from` keeps it in `applied/<run id>.live`.
    It shows the settings changed (keys and titles, no value) and, in % of equity, the run's backtested return, worst week, largest drawdown and fees ("backtested, not a forecast"; return and fees scaled from the run's days to the window's).
    Beside them are the realised figures over `[live-from, live-from + days)` (default 7) from `perf.Summarize` on the P&L history and the journal's close fees ("realised, one short window"), and the gap in percentage points.
    The realised figures use the run's replay equity, the same basis as its report.
@@ -56,6 +57,13 @@ A manager's parameter change is studied offline before anyone decides on it:
    A missing record, or a live-from day in the future or before the record, exits 1 and writes nothing.
    The weekly usage report appends `-all` (every record with a `.live` day) as its "Lab follow-up" section (`docs/operations.md` "Lab usage report").
    Target for the gap: set after the first four recorded changes; only an assumption exists today.
+
+10. `cmd/labpr` (#862) opens the draft pull request of a ready candidate, run by hand only (`docs/operations.md` "Lab candidates").
+   Branch `lab/<run id>` from `origin/main` changes only the recorded values, in the shipped config and its twin (`config_btc.yaml` and `config_btc.mvp.yaml` stay different only in `gex_direction`), and the generated files `scripts/regen.sh` rewrites.
+   The PR body carries the run id, the old and new values, the headline numbers in percentages labelled "backtested, not a forecast", the fragility flags, the risks, the requester as the 8-character hash and a line that the merge is the approval; no name, account or amount, and not the AI analysis.
+   A refused or missing candidate exits 2 and opens nothing, `-dry-run` prints the branch, the diff and the body and touches nothing, and a second run reports the PR already open (one per run id).
+   It never merges, pushes to `main`, restarts a bot or sends an order.
+   Metric: the count of lab PRs opened; guardrails: none touches a core policy without the product owner's approval reference, none has an amount or a name in its body.
 
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
