@@ -8,6 +8,7 @@ go run ./cmd/compare -base config_btc.yaml -set gamma_flip_buffer_sd=1.2 -from �
 bash scripts/lab_runner.sh     # the lab's runner (#641, cmd/labrun): the monitor's queued run requests (data/compare/requests/) one at a time through cmd/compare -set … -neighbours → done with run_id | failed with a reason | expired after a day; a done run then gets its AI analysis (#792, below), best effort
 go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # a recorded lab change (#806, COMPARE_DIR/applied/<id>.json) → COMPARE_DIR/candidates/<id>/: config.candidate.yaml (ready only), diff.md, candidate.json (ready | refused, reasons); exit 0 ready, 2 refused, 1 error
 go run ./cmd/labstats -compare data/compare [-days 28] [-json]   # the lab's usage report (#824): requests, done/failed/expired %, median minutes to done, per manager per week (a hash), recorded changes, analyses written — counts only, read-only
+go run ./cmd/labfollow -id 20261104T230000Z -live-from 2026-11-10 [-days 7] [-record-live-from] [-json]   # the lab follow-up (#855): the run's backtested figures beside the realised ones after it went live, the gap in points; -all = every applied/<id>.live; read-only, exit 1 on bad input
 go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of a comparison (#426): one model call (ANTHROPIC_API_KEY; -fake <answer.md> sends nothing), checked by aianalysis.Check (#257) → analysis.md|json beside the report, Disclaimer first; a failing answer writes nothing and exits 1; no monitor route (README "AI analysis of a comparison")
 ```
 
@@ -35,4 +36,8 @@ go run ./cmd/analyze -report data/compare/<time>/report.json   # AI analysis of 
   The lab's usage report (`labstats.go`, #824, `cmd/labstats`): `ReadLabUsage` reads the queue, `applied/`, `candidates/<id>/candidate.json` and `<run id>/analysis.json` (an unreadable request file is counted, never skipped);
   - pure `ComputeLabStats` (`now` passed in) gives counts, shares, the median minutes to done, requests per manager per ISO week under `ManagerHash` (8 hex of SHA-256) and the targets; `LabStatsMarkdown` prints it;
   - no setting value, name, amount or run id in the output, and it writes nothing (`tests/lab_stats_test.go`); `usage.sh` appends it weekly (`lib.sh lab_section`).
+  The lab follow-up (`labfollow.go`, #855, `cmd/labfollow`): `ReadLabFollow` reads the record, the run's `report.json`, the bot's journal and P&L history under `-root` (`evidence.BotPaths`) and the equity (the run's replay equity, else `account.json`);
+  - `CheckLiveFrom` refuses a day in the future or before the record (exit 1, nothing written); pure `BuildLabFollow` (`now` passed in) puts the proposed backtest (return and fees scaled to the window) beside `perf.Summarize` over `[live-from, +days)` and the close fees, the gap in points;
+  - states `too early to judge` / `no data` (no gap), a flag when the realised worst week or drawdown is deeper; `applied/<id>.live` holds the day (`RecordLiveFrom`, `-record-live-from`), `-all` follows them all for `usage.sh` (`lib.sh lab_follow_section`);
+  - percentages and counts only, keys without values, no name; `tests/lab_follow_test.go` checks the imports.
   Never name a Go file `*_windows.go`/`*_windows_test.go`: Go builds it on Windows only.

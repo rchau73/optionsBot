@@ -50,6 +50,7 @@ A failure names the scenario, the layout (desktop or phone) and the question.
 Today's violations are counted per component and rule in `__tests__/a11y-baseline.json`: a new rule or a higher count fails `npm test` naming the component and the rule; a lower count fails asking to lower the baseline.
 `UPDATE_A11Y=1 npm test` rewrites the file from real axe output (never hand-edit it; commit it with the fix).
 A new panel or dialog gets its case in that test.
+Every axe run goes through `axeCounts` or `pageAxeCounts`, which wait for the previous run (`serialAxe`, #865): axe throws "Axe is already running" when a timed-out test left its run going.
 
 ## Colour contrast, text size and tap targets
 
