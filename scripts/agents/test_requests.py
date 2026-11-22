@@ -75,7 +75,46 @@ class Redaction(unittest.TestCase):
         self.assertIn(fence + "untrusted", md)
 
 
+class Sanitiser(unittest.TestCase):
+    """#852: what may reach a public issue (guardrail: private data in a public issue → 0)."""
+
+    def test_private_data_goes_and_the_rest_stays(self):
+        text = ("alice_trader (alice@example.com) on mvp-btc-main lost 0.5 BTC and $1,200 on 3 lots, size: 2; "
+                "token secretsecret; see journal:btc/42 and pnl:btc/2026-10-27T14:00:00Z. "
+                "IM 25.7 % at 14:00 on 2026-10-27, Positions page, bot-btc, BTC-27NOV26-80000-C, #410, R-0001.")
+        out, left = rq.sanitise(text, [("DERIBIT_CLIENT_SECRET", "secretsecret")], ["alice_trader"], ["mvp-btc-main"], "2026-10-27")
+        for gone in ("alice_trader", "alice@example.com", "mvp-btc-main", "0.5 BTC", "$1,200", "3 lots", "size: 2",
+                     "secretsecret", "journal:btc/42", "pnl:"):
+            self.assertNotIn(gone, out)
+        for kept in ("25.7 %", "14:00", "2026-10-27", "Positions page", "bot-btc", "BTC-27NOV26-80000-C", "#410", "R-0001",
+                     "an account", "a size", "journal line from 2026-10-27"):
+            self.assertIn(kept, out)
+        self.assertEqual(left, 0)
+
+    def test_what_it_cannot_classify_is_counted(self):
+        for text in ("order a8f3k29x7q2m", "balance 12345.6", "lost 1,234", "key ab12cd34ef56"):
+            self.assertGreater(rq.sanitise(text, [])[1], 0, text)
+        for text in ("delta 0.30 at 14:00", "in 2026", "issue #1234", "BTC-PERPETUAL"):
+            self.assertEqual(rq.sanitise(text, [])[1], 0, text)
+
+    def test_journal_reference_without_a_date_takes_the_request_day(self):
+        self.assertEqual(rq.sanitise("journal:btc", [], day="2026-10-27")[0], "journal line from 2026-10-27")
+
+    def test_account_names_from_the_registry(self):
+        root = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(root, "data"))
+            with open(os.path.join(root, "data", "accounts.json"), "w") as f:
+                json.dump({"accounts": [{"account_id": "acct-btc-1", "name": "Main BTC", "bots": [{"currency": "BTC"}]}]}, f)
+            self.assertEqual(rq.account_names([("mvp", root), ("none", os.path.join(root, "x"))]), ["acct-btc-1", "Main BTC"])
+        finally:
+            shutil.rmtree(root)
+
+
 class Queue(unittest.TestCase):
+    def test_pending_reads_in_review_again(self):
+        self.assertEqual([r["id"] for r in rq.pending([request("R-1")], [{"id": "R-1", "status": "in_review"}])], ["R-1"])
+
     def test_pending_skips_judged_and_repeated_ids(self):
         reqs = [request("R-0001"), request("R-0002"), request("R-0002"), {"no": "id"}]
         statuses = [{"id": "R-0001", "status": "filed"}]
@@ -257,6 +296,69 @@ class Commands(unittest.TestCase):
             self.assertEqual(self.prepare(), ["1", "0"])
             self.decide([])
         self.assertEqual(self.prepare(), ["0", "0"])
+
+    def test_filter_writes_its_verdicts_before_the_agent(self):
+        """#852: a duplicate card, a vague request and one the help explains get their status; only the rest is judged."""
+        self.write(rq.QUEUE, [request("R-0001", title="Chart of the income page wrong"),
+                              request("R-0002", title="Strikes too close", what="Calls near spot", evidence=[], steps=["Open Positions"]),
+                              dict(request("R-0003", title="Fees missing", what="No fee column"), explained_by=["help:monitor-guide#income"]),
+                              request("R-0004", title="Spread too wide", what="The put's spread is 40 %")])
+        cards = [{"number": 77, "title": "[E3] Chart of the income page is wrong", "state": "CLOSED", "labels": [{"name": "bug"}]}]
+        self.assertEqual(self.prepare(issues=cards), ["1", "0"])
+        st = {s["id"]: s for s in self.statuses()}
+        self.assertEqual((st["R-0001"]["status"], st["R-0001"]["issue"]), ("duplicate", 77))
+        self.assertIn("#77", st["R-0001"]["note"])
+        self.assertTrue(st["R-0001"]["issue_url"].startswith("https://"))
+        self.assertEqual(st["R-0002"]["status"], "needs_info")
+        self.assertIn("1 step", st["R-0002"]["note"])
+        self.assertEqual(st["R-0003"]["status"], "not_a_bug")
+        self.assertNotIn("R-0004", st)
+        with open(os.path.join(self.run_dir, "requests.json")) as f:
+            self.assertEqual([r["id"] for r in json.load(f)], ["R-0004"])
+
+    def test_duplicate_of_an_earlier_request_points_at_its_issue(self):
+        self.write(rq.QUEUE, [request("R-0001"), request("R-0002", title="P&L chart is wrong")])
+        self.write(rq.STATUS, [{"id": "R-0001", "status": "filed", "issue": 40, "ts": "2026-10-27T15:00:00Z"}])
+        self.assertEqual(self.prepare(), ["0", "0"])
+        line = self.statuses()[-1]
+        self.assertEqual((line["id"], line["status"], line["issue"]), ("R-0002", "duplicate", 40))
+        self.assertIn("R-0001", line["note"])
+
+    def test_in_review_is_read_again(self):
+        self.write(rq.QUEUE, [request()])
+        self.write(rq.STATUS, [{"id": "R-0001", "status": "in_review", "ts": "2026-10-27T15:00:00Z"}])
+        self.assertEqual(self.prepare(), ["1", "0"])
+
+    def test_dry_run_writes_no_status_line(self):
+        """#852: without the filing flag nothing is written, only printed."""
+        self.write(rq.QUEUE, [request("R-0001"), request("R-0002", title="Other", what="Something else", evidence=[])])
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            rq.main(["requests.py", "prepare", "--dry-run", self.run_dir, self.dump("marked.json", []),
+                     self.dump("issues.json", []), SLUG, f"mvp={self.clone}"])
+        self.assertEqual(self.statuses(), [])
+        self.assertIn("would write mvp/R-0002 → needs_info", err.getvalue())
+
+    def test_unsanitisable_text_is_held_for_a_person(self):
+        self.write(rq.QUEUE, [request()])
+        self.prepare()
+        self.decide([accept(body="The order id a8f3k29x7q2m failed at 14:00")])
+        self.assertFalse(os.listdir(os.path.join(self.run_dir, "filings")))
+        line = self.statuses()[-1]
+        self.assertEqual((line["status"], line["note"]), ("needs_info", rq.HELD_NOTE))
+
+    def test_filed_writes_one_audit_line_with_the_role_only(self):
+        self.write(rq.QUEUE, [request()])
+        self.prepare()
+        self.decide([accept()])
+        audit = os.path.join(self.root, "audit.jsonl")
+        filing = os.path.join(self.run_dir, "filings", "001.json")
+        with open(filing) as f:
+            self.assertEqual(json.load(f)["labels"], ["bug", "E10"])
+        rq.cmd_filed(filing, "https://github.com/owner/repo/issues/501", NOW, audit)
+        [line] = rq.read_jsonl(audit)
+        self.assertEqual((line["role"], line["request"], line["issue"]), ("user", "mvp/R-0001", 501))
+        self.assertNotIn("alice", json.dumps(line))
 
     def test_closed_issue_sweep(self):
         self.write(rq.QUEUE, [request()])
