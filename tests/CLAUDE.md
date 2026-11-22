@@ -36,4 +36,5 @@ Notable files:
 - `ledger_coverage_test.go` (#722): every `scripts/agents/*.sh` opens and ends a run (`run_begin`/`run_end`) or is on `ledgerExempt` with a reason; every agent name is in `runs.py`, `docs/agents/run-ledger.md` and `scripts/agents/CLAUDE.md`.
 - `lab_follow_test.go` (#855): `cmd/labfollow` — one test per ticket scenario (full window, too early, no data, worse than the backtest, bad input exits 1 writing nothing, read-only with no value, amount or name printed), and the `.live` day with `-all`;
   the weekly report's "Lab follow-up" section is in `scripts/agents/test_usage.py`.
+- `lab_pr_test.go` (#862): `cmd/labpr` — one test per ticket scenario with a fake git/gh runner (no network) on `testdata/lab_pr_candidate.json`, the twins kept in step, nothing private in the body, the exit codes.
 - `claude_docs_test.go` (#460): the root `CLAUDE.md` is under 25 KB and indexes every folder file; no prose line over 300 characters (the split's one-off "nothing lost" check against a frozen copy was retired after it merged).
