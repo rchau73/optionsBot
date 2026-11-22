@@ -51,13 +51,12 @@ The overview is measured at both widths: the layout the width hides is hidden as
 
 | # | Finding | Rule | Pages affected | Nodes | What the fix needs | Owner |
 |---|---|---|---|---|---|---|
-| 1 | The phone overview has no main landmark: a screen reader cannot jump to the page's content past the menu | `landmark-one-main` | 1: Phone overview | 1 | wrap the phone overview's cards in one `<main>`, as the desktop overview is; no visual change | developer |
-| 2 | Three blocks of the phone overview sit outside any landmark: the "This month" heading, "Since you last looked" and the footer note | `region` | 1: Phone overview | 3 | the same `<main>` as #1 takes in the heading and "Since you last looked"; the footer note goes in a `<footer>` | developer |
-| 3 | The payoff card's Delta box is an `<aside>` inside the main content: a page-level landmark once per strangle | `landmark-complementary-is-top-level` | 1: Positions | 1 | a plain group (`<div role="group" aria-label="Delta">`) in place of the `<aside>`; no visual change | developer |
 | 4 | The Delta box's heading jumps from the page's h1 to an h4 | `heading-order` | 1: Positions | 1 | the designer decides the payoff card's heading levels (the card's own title, then Delta under it); until then an h2 | designer, then developer |
 
-Every other page — Overview (desktop), Details (pro), Income, Worst case, Activity, Account, How it works — has none of these findings on the fixtures, nor has the menu bar above each page.
+Every other page — Overview (desktop and phone), Details (pro), Income, Worst case, Activity, Account, How it works — has none of these findings on the fixtures, nor has the menu bar above each page.
 Ties are ordered by how often a person meets them (the overview before Positions).
+Fixed by #851, with no visual change: #1 (the phone overview had no main landmark) and #2 (its "This month" heading, "Since you last looked" and footer note sat outside any landmark) — its cards, "Since you last looked" and the note, now a `<footer>`, are in one `<main>`;
+#3 (the payoff card's Delta box was an `<aside>`, a page-level landmark inside the content) — it is a group named "Delta".
 The assistant panel and the dialogs are measured one by one in `a11y.test.jsx`, not here: they open over a page.
 
 ## What passes

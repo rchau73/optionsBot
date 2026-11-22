@@ -49,10 +49,11 @@ export default function Monitor({ bot = null }) {
   return (
     <div className="min-h-screen">
       <div className="sm:hidden">
-        <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} now={polledAt} />
-        <div className="px-3 pb-3">
-          <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} hedgeEvents={hedgeEvents} visit={visit} now={polledAt} />
-        </div>
+        <PhoneOverview bots={bots} selected={phoneBot} onSelect={selectPhoneBot} now={polledAt}>
+          <div className="px-3">
+            <SinceLastVisit bots={[pickBot(bots, phoneBot)].filter(Boolean)} trades={trades} tradesComplete={tradesComplete} hedgeEvents={hedgeEvents} visit={visit} now={polledAt} />
+          </div>
+        </PhoneOverview>
       </div>
       <div className="hidden sm:block" data-testid="desktop-monitor">
         <Header bots={bots} error={error} />
