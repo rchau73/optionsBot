@@ -882,7 +882,8 @@ function applyRequestCheck(entry, verdict, passages) {
     entry.citations = cites;
     entry.verdict = [...g.details, ...r.details];
     [entry.outcome, entry.answer] = outcomeOf({ text: v.text }, g);
-    if (r.outcome === REQUEST_ANSWERED && entry.outcome === OUTCOME_ANSWERED) entry.request = { checklist: r.checklist, draft: r.draft };
+    // explained_by goes with a sent draft to the queue: the review closes it as not_a_bug (#852).
+    if (r.outcome === REQUEST_ANSWERED && entry.outcome === OUTCOME_ANSWERED) entry.request = { checklist: r.checklist, draft: r.draft, explained_by: r.explained_by };
     return;
   }
   entry.verdict = r.details;
