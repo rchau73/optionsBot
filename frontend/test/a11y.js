@@ -10,6 +10,19 @@ export const UPDATE_COMMAND = "UPDATE_A11Y=1 npm test";
 // it stays with the responsive audit and the browser check.
 const axe = configureAxe({ rules: { "color-contrast": { enabled: false } } });
 
+// axe allows one run at a time per instance and throws "Axe is already
+// running" on a second (#863, #864, #865). Tests in a file are serial, but a
+// test that times out leaves its axe run going while the next test starts;
+// every run here waits for the previous one to finish, pass or fail.
+let previousRun = Promise.resolve();
+
+/** Runs `run` once every earlier axe run of this file has settled. */
+export function serialAxe(run) {
+  const next = previousRun.then(run, run);
+  previousRun = next.catch(() => {});
+  return next;
+}
+
 /** Rule id → number of offending nodes of axe's results. */
 function countViolations(results) {
   const counts = {};
@@ -19,7 +32,7 @@ function countViolations(results) {
 
 /** Rule id → number of offending nodes axe finds in `container`. */
 export async function axeCounts(container) {
-  return countViolations(await axe(container));
+  return countViolations(await serialAxe(() => axe(container)));
 }
 
 /**
@@ -31,7 +44,7 @@ export async function pageAxeCounts(rules) {
   // jsdom has no layout, so no point is over any element: axe's "is a modal
   // open" probe (one main, one h1) otherwise throws and skips the rule.
   document.elementFromPoint ??= () => null;
-  const results = await axeCore.run(document, { runOnly: { type: "rule", values: rules } });
+  const results = await serialAxe(() => axeCore.run(document, { runOnly: { type: "rule", values: rules } }));
   // A rule axe could not run is not a pass: fail rather than pin it as one.
   const errors = results.incomplete.filter((r) => r.nodes.some((n) => [...n.any, ...n.all, ...n.none].some((c) => c.id === "error-occurred")));
   if (errors.length) throw new Error(`axe could not run ${errors.map((r) => r.id).join(", ")} on this page`);
