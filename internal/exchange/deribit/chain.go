@@ -24,6 +24,7 @@ const (
 const (
 	defaultTickSize       = 0.0001
 	defaultMinTradeAmount = 0.1 // Deribit default for BTC/ETH options
+	defaultContractSize   = 1   // one coin: BTC/ETH options
 )
 
 // Compile-time check: this is the manager's source.
@@ -40,23 +41,27 @@ func NewChainSource(gw transport.Caller) *ChainSource { return &ChainSource{gw: 
 
 // instrumentInfo is the subset of public/get_instruments we use.
 type instrumentInfo struct {
-	InstrumentName string  `json:"instrument_name"`
-	Strike         float64 `json:"strike"`
-	ExpirationTS   int64   `json:"expiration_timestamp"`
-	OptionType     string  `json:"option_type"`
-	TickSize       float64 `json:"tick_size"`
-	MinTradeAmount float64 `json:"min_trade_amount"`
-	TickSizeSteps  []struct {
+	InstrumentName     string  `json:"instrument_name"`
+	Strike             float64 `json:"strike"`
+	ExpirationTS       int64   `json:"expiration_timestamp"`
+	OptionType         string  `json:"option_type"`
+	SettlementCurrency string  `json:"settlement_currency"`
+	ContractSize       float64 `json:"contract_size"`
+	TickSize           float64 `json:"tick_size"`
+	MinTradeAmount     float64 `json:"min_trade_amount"`
+	TickSizeSteps      []struct {
 		AbovePrice float64 `json:"above_price"`
 		TickSize   float64 `json:"tick_size"`
 	} `json:"tick_size_steps"`
 }
 
 // Instruments returns the unexpired options of underlying, on the low-priority
-// lane: the non-matching pool.
+// lane: the non-matching pool. A linear coin's options are listed under
+// currency=USDC with every other coin's: only its own "<COIN>_USDC-" names
+// are kept (#838). BTC and ETH send the request they always did.
 func (s *ChainSource) Instruments(ctx context.Context, underlying string) ([]*marketdata.Instrument, error) {
 	resp, err := s.gw.Call(ctx, "public/get_instruments", map[string]any{
-		"currency": underlying,
+		"currency": marketdata.SettlementCurrency(underlying),
 		"kind":     "option",
 		"expired":  false,
 	}, gateway.PriorityLow)
@@ -67,11 +72,20 @@ func (s *ChainSource) Instruments(ctx context.Context, underlying string) ([]*ma
 	if err := json.Unmarshal(resp.Result, &infos); err != nil {
 		return nil, fmt.Errorf("decode instruments: %w", err)
 	}
-	instruments := make([]*marketdata.Instrument, len(infos))
-	for i, info := range infos {
-		instruments[i] = newInstrument(underlying, info)
+	instruments := make([]*marketdata.Instrument, 0, len(infos))
+	for _, info := range infos {
+		if !ownOption(underlying, info.InstrumentName) {
+			continue
+		}
+		instruments = append(instruments, newInstrument(underlying, info))
 	}
 	return instruments, nil
+}
+
+// ownOption reports whether name is one of underlying's options: every name
+// of an inverse coin's list, only the "<COIN>_USDC-" names of the USDC list.
+func ownOption(underlying, name string) bool {
+	return !marketdata.IsLinear(underlying) || strings.HasPrefix(name, marketdata.OptionPrefix(underlying))
 }
 
 func newInstrument(underlying string, info instrumentInfo) *marketdata.Instrument {
@@ -83,6 +97,14 @@ func newInstrument(underlying string, info instrumentInfo) *marketdata.Instrumen
 	if minTA <= 0 {
 		minTA = defaultMinTradeAmount
 	}
+	settlement := info.SettlementCurrency
+	if settlement == "" {
+		settlement = marketdata.SettlementCurrency(underlying)
+	}
+	contractSize := info.ContractSize
+	if contractSize <= 0 {
+		contractSize = defaultContractSize
+	}
 	steps := make([]marketdata.TickSizeStep, len(info.TickSizeSteps))
 	for i, s := range info.TickSizeSteps {
 		steps[i] = marketdata.TickSizeStep{AbovePrice: s.AbovePrice, TickSize: s.TickSize}
@@ -90,6 +112,8 @@ func newInstrument(underlying string, info instrumentInfo) *marketdata.Instrumen
 	return &marketdata.Instrument{
 		Name:           info.InstrumentName,
 		Underlying:     underlying,
+		Settlement:     settlement,
+		ContractSize:   contractSize,
 		Strike:         info.Strike,
 		Expiry:         time.UnixMilli(info.ExpirationTS),
 		OptionType:     info.OptionType,
@@ -132,8 +156,12 @@ func (s *ChainSource) VolIndexChannel(underlying string) string {
 	return volIndexChannelPrefix + strings.ToLower(underlying) + "_usd"
 }
 
-// IndexChannel is the price index's channel, e.g. "deribit_price_index.btc_usd".
+// IndexChannel is the price index's channel, e.g. "deribit_price_index.btc_usd";
+// a linear coin's options settle on its USDC index, "deribit_price_index.sol_usdc".
 func (s *ChainSource) IndexChannel(underlying string) string {
+	if marketdata.IsLinear(underlying) {
+		return indexChannelPrefix + strings.ToLower(underlying+"_"+marketdata.LinearSettlement)
+	}
 	return indexChannelPrefix + strings.ToLower(underlying) + "_usd"
 }
 

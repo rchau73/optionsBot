@@ -46,6 +46,18 @@ A manager's parameter change is studied offline before anyone decides on it:
    The weekly usage report appends it as its "Lab usage" section (`scripts/agents/usage.sh`, `docs/operations.md` "Lab usage report").
    Targets, assumptions to confirm after the first four weeks of use: done share ≥ 90 % and median time to a finished run ≤ 30 min (`compare.LabTargetDonePct`, `LabTargetMedianMinutes`; the report says met, not met or too early to judge).
 
+9. `cmd/labfollow` (#855) is the lab follow-up: after a recorded change went live, the run's numbers beside what the bot realised, read-only.
+   A person gives the day the change reached the bot (`-live-from YYYY-MM-DD`), because how a change reaches a bot is still open (item 7); `-record-live-from` keeps it in `applied/<run id>.live`.
+   It shows the settings changed (keys and titles, no value) and, in % of equity, the run's backtested return, worst week, largest drawdown and fees ("backtested, not a forecast"; return and fees scaled from the run's days to the window's).
+   Beside them are the realised figures over `[live-from, live-from + days)` (default 7) from `perf.Summarize` on the P&L history and the journal's close fees ("realised, one short window"), and the gap in percentage points.
+   The realised figures use the run's replay equity, the same basis as its report.
+   "Too early to judge" while fewer than `-days` whole UTC days have passed, "no data" when the history has no point in the window; neither prints a gap.
+   A realised worst week or drawdown deeper than the backtest's is flagged in words, and every follow-up ends with a line that a single week is not evidence.
+   A missing record, or a live-from day in the future or before the record, exits 1 and writes nothing.
+   The weekly usage report appends `-all` (every record with a `.live` day) as its "Lab follow-up" section (`docs/operations.md` "Lab usage report").
+   Target for the gap: set after the first four recorded changes; only an assumption exists today.
+
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
+- [`lab-screens.md`](lab-screens.md) — the spec of the lab page for the prototype (#841): flow, comparison screen, states, copy, menu, phone, accessibility.
 - [`example-analysis.md`](example-analysis.md) — a saved `analysis.md` (percentages and counts only), kept passing the checker by `tests/aianalysis_generate_test.go`.
