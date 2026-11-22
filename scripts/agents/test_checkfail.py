@@ -220,6 +220,71 @@ class Failures(unittest.TestCase):
         self.assertIn("`TestFreeze`:", checkfail.tails(GO_LOG))
 
 
+def jest_timeout_log(seconds, tests=1, other=""):
+    """A jest log (the shape of #868's) where the file failed by `tests` 20 s timeouts."""
+    fails = "".join(f"""  ● test {i}
+
+    thrown: "Exceeded timeout of 20000 ms for a test.
+    Add a timeout value to this test to increase the timeout.
+
+""" for i in range(tests))
+    return f"""PASS __tests__/my-data-route.test.js ({seconds} s)
+FAIL __tests__/assistant-requests-panel.test.js ({seconds} s)
+  ● Console
+
+    console.error
+      An update inside a test was not wrapped in act(...).
+
+{fails}{other}PASS __tests__/active-sessions.test.jsx ({seconds} s)
+Test Suites: 1 failed, 2 passed, 3 total
+"""
+
+
+class Stalled(unittest.TestCase):
+    """#869: the Mac slept ~14 min mid-run; a 20 s timeout firing then is no flake."""
+    NAME = "__tests__/assistant-requests-panel.test.js"
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp()
+        write(self.repo, f"frontend/{self.NAME}", "test('x', () => {});\n")
+
+    def test_a_timeout_that_fired_minutes_late_is_stalled(self):
+        self.assertTrue(checkfail.stalled(jest_timeout_log("864.607"), self.NAME))
+        self.assertEqual(checkfail.retry_list(self.repo, ["scripts/x.sh"], jest_timeout_log("864.607")),
+                         [("stalled", self.NAME)])
+
+    def test_a_timeout_on_time_is_a_failure_to_judge_as_flaky(self):
+        # 20 s timeout in a 25 s file: the test was slow or hung, the run was not frozen.
+        self.assertFalse(checkfail.stalled(jest_timeout_log("25.1"), self.NAME))
+        self.assertEqual(checkfail.retry_list(self.repo, ["scripts/x.sh"], jest_timeout_log("25.1")),
+                         [("jest", self.NAME)])
+
+    def test_several_timeouts_are_added_up(self):
+        # 4 × 20 s = 80 s: 120 s is within a minute of it, 200 s is not.
+        self.assertFalse(checkfail.stalled(jest_timeout_log("120", tests=4), self.NAME))
+        self.assertTrue(checkfail.stalled(jest_timeout_log("200", tests=4), self.NAME))
+
+    def test_an_assertion_failure_beside_the_timeout_is_not_stalled(self):
+        other = "  ● another test\n\n    expect(received).toBe(expected)\n\n"
+        self.assertFalse(checkfail.stalled(jest_timeout_log("864.607", other=other), self.NAME))
+
+    def test_no_time_or_no_failure_is_not_stalled(self):
+        self.assertFalse(checkfail.stalled(f"FAIL {self.NAME}\n  ● t\n    Exceeded timeout of 20000 ms\n", self.NAME))
+        self.assertFalse(checkfail.stalled(f"FAIL {self.NAME} (900 s)\n  ● Console\n", self.NAME))
+        self.assertFalse(checkfail.stalled(GO_LOG, self.NAME))
+
+    def test_a_touched_stalled_file_is_still_never_retried(self):
+        self.assertIsNone(checkfail.retry_list(self.repo, [f"frontend/{self.NAME}"], jest_timeout_log("864.607")))
+
+    def test_cli_prints_the_stalled_kind(self):
+        files = os.path.join(self.repo, "files.txt")
+        write(self.repo, "files.txt", "scripts/x.sh\n")
+        write(self.repo, "check.log", jest_timeout_log("864.607"))
+        out = subprocess.run([sys.executable, os.path.join(HERE, "checkfail.py"), "retry", self.repo, files,
+                              os.path.join(self.repo, "check.log")], capture_output=True, text=True, check=True)
+        self.assertEqual(out.stdout, f"stalled {self.NAME}\n")
+
+
 class Plans(unittest.TestCase):
     def setUp(self):
         self.repo = tempfile.mkdtemp()
@@ -422,6 +487,15 @@ class DevScript(unittest.TestCase):
         self.assertTrue(related)
         for line in related:
             self.assertIn("--passWithNoTests", line)
+
+    def test_a_stalled_test_is_rerun_not_filed_and_the_mac_kept_awake(self):
+        # #869: a run frozen by sleep filed a flaky issue for a test with no race.
+        with open(os.path.join(HERE, "dev_agent.sh"), encoding="utf-8") as f:
+            src = f.read()
+        retry = src[src.index("retry_untouched() {"):src.index("test_check() {")]
+        self.assertIn('if [[ "$kind" == "stalled" ]]', retry)
+        self.assertLess(retry.index('"stalled" ]]'), retry.index('>> "$run_dir/flaky.txt"'))
+        self.assertIn("caffeinate -is -w $$", src[:src.index("\nverify\n")])
 
 
 if __name__ == "__main__":

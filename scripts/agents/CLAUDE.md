@@ -44,6 +44,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - a check failure (the script's, or CI red on an In review head) → Ready with `needs-fix` and the failing log tails, read first by the next run; the second → Blocked, `agent:needs-human`
       (count: `<!-- dev:check-fail n=… -->` on the issue since the last `<!-- dev:blocked -->`; `lib.sh check_failed`);
     - a failing test the change does not touch is re-run (script: that test ×3; gate: the failed jobs, 3 times a head); a pass makes it flaky (`lib.sh note_flaky`: the PR and its flaky issue);
+      a jest file failed only by timeouts over a minute late is `stalled` (the Mac slept, #869): re-run, logged, never filed; the script runs under `caffeinate -is`;
     - `checkfail.py suites` (CI's path filter and the script's) runs a suite on code it builds or a doc its tests open; any `.md` runs the doc-wide line checks, a CLAUDE.md only those;
     - a user-visible change is done only with its monitor-guide section, a golden question and `go run ./cmd/helpindex`; the Reviewer blocks one without them (#483, both prompts);
     - a PR that merged while it fixed review findings (#478, PR #474): the new commits move to `agent/issue-<n>-r<k>` from main (`rescue_commits.sh`, tested on a throwaway clone in `test_rescue.py`)
