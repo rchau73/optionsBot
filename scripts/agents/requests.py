@@ -6,24 +6,31 @@ and writes the queue's files and decides, with no network.
     requests.py pending <env=clone>...
         prints how many requests wait (no status line yet), and how many filed
         ones are still open in the status files: "<pending> <filed>".
-    requests.py prepare <run dir> <marked.json> <issues.json> <slug> <env=clone>...
+    requests.py prepare [--dry-run] <run dir> <marked.json> <issues.json> <slug> <env=clone>...
         1. a filed request whose issue closed → fixed | not_planned;
         2. a request an issue already carries (its marker: filed, then the
            status write failed) → filed with that issue, never filed twice;
-        3. the rest, at most the day's cap left, redacted → <run dir>/
+        3. the mechanical filter (request_filter.review, #852): a duplicate of
+           a card or an earlier request, no evidence, or explained by the help
+           → its status line;
+        4. the rest, at most the day's cap left, redacted → <run dir>/
            requests.md (each request's text fenced as untrusted data),
            requests.json, issues.json (open issues and those closed in
            DEDUP_DAYS, for the duplicate check). Prints "<to judge> <waiting>".
+        --dry-run writes no status line: it prints each one it would write.
         marked.json: gh issue list --search "assistant-request in:body"
         --json number,state,stateReason,body. issues.json: gh issue list
         --state all --json number,title,state,closedAt,labels,body.
     requests.py decide <run dir> <agent.md> <slug> <env=clone>...
         reads the agent's PM-REQUESTS block; appends the status line of each
         duplicate / not_a_bug / needs_info verdict, writes <run dir>/filings/
-        <n>.title|.body|.json for each accepted one (within the cap). A
-        request with no valid verdict is retried, MAX_ATTEMPTS times at most.
-    requests.py filed <filing.json> <issue url>
-        appends the `filed` status line of a filing once its issue exists.
+        <n>.title|.body|.json for each accepted one (within the cap) whose
+        title and body the sanitiser could clean, else holds it as
+        needs_info for a person. A request with no valid verdict is retried,
+        MAX_ATTEMPTS times at most.
+    requests.py filed <filing.json> <issue url> [<audit.jsonl>]
+        appends the `filed` status line of a filing once its issue exists,
+        and one audit line (role, request key, issue number).
 
 Files per environment: <clone>/data/monitor/requests.jsonl (the monitor's
 queue, #409) and requests_status.jsonl (append-only: {id, status, note, issue,
@@ -34,6 +41,11 @@ Redaction (`redact`): .env secret values (deploy_issue.py's rule), bearer
 tokens, emails, account ids, the requester's username and @mentions, long
 tokens, and amounts in coin or USD ("an amount"; percentages stay). The
 agent sees the redacted text only, and its title and body are redacted again.
+Sanitiser (`sanitise`, #852): that redaction plus the bot-account names of
+the clone's data/accounts.json, position sizes ("a size") and every journal
+or P&L reference ("journal line from <date>"); what is left that it cannot
+classify (a long mixed token, a bare number of four digits or more) holds the
+filing for a person.
 
 Standard library only.
 """
@@ -45,6 +57,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import deploy_issue  # noqa: E402  (secrets, redact, fence)
+import request_filter  # noqa: E402  (the mechanical review, #852)
 
 DAILY_CAP = 10  # issues filed a UTC day, all environments together
 DEDUP_DAYS = 14
@@ -77,6 +90,22 @@ LONG_TOKEN = re.compile(r"\b[A-Za-z0-9_\-]{32,}\b")
 COMMENT = re.compile(r"<!--|-->")
 EPIC = re.compile(r"^E\d{1,2}$")
 TITLE_PREFIX = re.compile(r"^\s*\[E\d{1,2}\]\s*")
+
+# The sanitiser's own rules (#852), after `redact`.
+RECORD_REF = re.compile(r"\b(?:journal|pnl):[\w./:+-]*")
+ISO_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+SIZE = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?\s?(?:lots?|contracts?)\b"
+                  r"|\b(?:size|qty|quantity)\s*(?:of\s*)?[:=]?\s*\d[\d,]*(?:\.\d+)?", re.I)
+# What may stay: dates and times, instrument names, issue and request ids, percentages, years.
+KNOWN = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/(?:issues|pull)/\d+"
+                   r"|\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?Z?)?"
+                   r"|\b[A-Z]{2,5}-(?:\d{1,2}[A-Z]{3}\d{2}(?:-\d+(?:-[CP])?)?|PERPETUAL)\b"
+                   r"|\b\d{1,2}:\d{2}(?::\d{2})?\b|#\d+|\bR-\d+\b|\[E\d{1,2}\]|\d+(?:\.\d+)?\s?%|\b(?:19|20)\d{2}\b")
+# What it cannot classify: a long token mixing letters and digits, a bare number of four digits or more.
+UNCLASSIFIED = re.compile(r"(?=[\w+/=-]*\d)(?=[\w+/=-]*[A-Za-z])(?<![\w+/=-])[\w+/=-]{10,}"
+                          r"|(?<![\w.,])(?:\d{4,}|\d{1,3}(?:,\d{3})+)(?:\.\d+)?(?![\w%])")
+ACCOUNTS_FILE = os.path.join("data", "accounts.json")
+ACCOUNT_KEYS = ("account_id", "name", "label", "display_name")
 
 
 # ── Files ────────────────────────────────────────────────────────────────────
@@ -117,6 +146,21 @@ def parse_envs(args):
     return out
 
 
+def account_names(envs):
+    """The bot-account names and ids of every environment's registry (data/accounts.json), longest first."""
+    names = set()
+    for _, clone in envs:
+        try:
+            with open(os.path.join(clone, ACCOUNTS_FILE), encoding="utf-8") as f:
+                doc = json.load(f)
+        except (OSError, ValueError):
+            continue
+        for a in (doc.get("accounts") if isinstance(doc, dict) else None) or []:
+            if isinstance(a, dict):
+                names.update(v for k in ACCOUNT_KEYS if isinstance(v := a.get(k), str) and len(v) >= 3)
+    return sorted(names, key=len, reverse=True)
+
+
 def env_pairs(envs):
     """The secret (name, value) pairs of every environment's .env and deploy.env, longest first."""
     pairs = [p for _, clone in envs for f in (".env", "deploy.env")
@@ -135,8 +179,9 @@ def latest_status(statuses):
 
 
 def pending(requests, statuses):
-    """Requests with no status line, each id once (the first line of an id wins), queue order."""
-    done, seen, out = set(latest_status(statuses)), set(), []
+    """Requests with no status line or still `in_review`, each id once (the first line of an id wins), queue order."""
+    done = {rid for rid, s in latest_status(statuses).items() if s["status"] != "in_review"}
+    seen, out = set(), []
     for r in requests:
         rid = r.get("id")
         if not isinstance(rid, str) or rid in done or rid in seen:
@@ -170,6 +215,26 @@ def redact(text, pairs, names=()):
     for p in AMOUNT_PATTERNS:
         text = p.sub("an amount", text)
     return COMMENT.sub("", text)
+
+
+def journal_line(ref, day):
+    """A journal or P&L reference as public words: its date, never its text."""
+    m = ISO_DAY.search(ref or "")
+    return f"journal line from {m.group(0) if m else (day or 'an earlier day')}"
+
+
+def sanitise(text, pairs, names=(), accounts=(), day=""):
+    """(clean text, count of what it could not classify) — the one function a
+    public issue's title and body go through (#852). `redact`, then bot-account
+    names → "an account", position sizes → "a size", journal and P&L references
+    → "journal line from <date>" (the reference's date, else `day`). A count
+    above 0 means the text must not be published: a person reads it first."""
+    text = str(text or "")
+    for a in accounts:
+        text = re.sub(r"(?<![\w-])" + re.escape(a) + r"(?![\w-])", "an account", text, flags=re.I)
+    text = RECORD_REF.sub(lambda m: journal_line(m.group(0), day), text)
+    text = redact(SIZE.sub("a size", text), pairs, names)
+    return text, len(UNCLASSIFIED.findall(KNOWN.sub(" ", text)))
 
 
 def key(env, rid):
@@ -262,17 +327,37 @@ def one_line(s, n):
     return re.sub(r"\s+", " ", str(s or "")).strip()[:n]
 
 
-def issue_title(req, verdict, pairs, names=()):
-    epic = verdict.get("epic") if EPIC.match(str(verdict.get("epic") or "")) else DEFAULT_EPIC
+def epic_of(verdict):
+    return verdict.get("epic") if EPIC.match(str(verdict.get("epic") or "")) else DEFAULT_EPIC
+
+
+def issue_title(req, verdict, pairs, names=(), accounts=()):
+    """(title, count it could not classify)."""
     raw = verdict.get("title") or req["fields"].get("title") or req["fields"].get("what", "")
-    title = TITLE_PREFIX.sub("", one_line(redact(raw, pairs, names), MAX_TITLE))
-    return f"[{epic}] {title or 'Request from the in-product assistant'}"
+    text, left = sanitise(raw, pairs, names, accounts, req["ts"][:10])
+    title = TITLE_PREFIX.sub("", one_line(text, MAX_TITLE))
+    return f"[{epic_of(verdict)}] {title or 'Request from the in-product assistant'}", left
 
 
-def issue_body(req, verdict, pairs, names=()):
-    """The public issue: the agent's redacted text, the request id and where it came from."""
-    text = redact(verdict.get("body") or "", pairs, names).strip()[:MAX_BODY] or "(no description)"
-    cites = "\n".join(f"- `{c}`" for c in req["citations"] if re.fullmatch(r"[\w:/.#-]+", c)) or "- (none)"
+def cite_line(ref, day):
+    """A citation of the public issue: a journal or P&L reference as its date, another source as its id."""
+    if RECORD_REF.fullmatch(ref):
+        return f"- {journal_line(ref, day)}"
+    return f"- `{ref}`" if re.fullmatch(r"[\w:/.#-]+", ref) else None
+
+
+def issue_body(req, verdict, pairs, names=(), accounts=()):
+    """(the public issue, count it could not classify): the agent's sanitised
+    text, the request id and where it came from — never the person."""
+    day = req["ts"][:10]
+    text, left = sanitise(verdict.get("body") or "", pairs, names, accounts, day)
+    text = text.strip()[:MAX_BODY] or "(no description)"
+    lines = []
+    for c in req["citations"]:
+        line = cite_line(c, day)
+        if line and line not in lines:
+            lines.append(line)
+    cites = "\n".join(lines) or "- (none)"
     return f"""📨 **From the in-product assistant** — request `{req['key']}` ({req['kind']}), sent from the monitor's assistant and accepted by the PM agent's review.
 
 {text}
@@ -280,17 +365,25 @@ def issue_body(req, verdict, pairs, names=()):
 ### The bot's records it cites
 {cites}
 
-_Amounts, account details and personal data were removed before this issue was filed; the request itself stays in the private queue of the `{req['env']}` environment. Filed by `scripts/agents/requests.sh` (#410)._
+Sent from the assistant, request {req['id']}
+
+_Amounts, account details and personal data were removed before this issue was filed; the request itself stays in the private queue of the `{req['env']}` environment. Filed by `scripts/agents/requests.sh` (#410, #852)._
+<!-- agent:pm -->
 {marker(req['env'], req['id'])}
-"""
+""", left
 
 
-def decide(reqs, verdicts, cand_numbers, filed, now, slug, pairs, users=None):
+HELD_NOTE = "Held for a person: the text holds something the filter cannot safely publish; a person reads it before it is filed."
+
+
+def decide(reqs, verdicts, cand_numbers, filed, now, slug, pairs, users=None, accounts=(), roles=None):
     """(status lines [(env, line)], filings [dict], unjudged keys) for the
     requests the agent judged. users: key → the requester's username, which
-    the agent never saw and the issue never holds. A duplicate must name a
-    candidate issue; an accept beyond the day's cap waits (no line); a missing
-    or invalid verdict leaves the request unjudged."""
+    the agent never saw and the issue never holds; roles: key → their role,
+    for the audit line only. A duplicate must name a candidate issue; an
+    accept beyond the day's cap waits (no line); an accept whose title or
+    body the sanitiser cannot clean is held as needs_info (HELD_NOTE); a
+    missing or invalid verdict leaves the request unjudged."""
     by_key = {v.get("key"): v for v in verdicts if isinstance(v, dict)}
     lines, filings, unjudged = [], [], []
     left = max(0, DAILY_CAP - filed)
@@ -316,11 +409,16 @@ def decide(reqs, verdicts, cand_numbers, filed, now, slug, pairs, users=None):
         else:  # accept
             if left <= 0:
                 continue  # waits for tomorrow's cap
+            title, t_left = issue_title(req, v, pairs, names, accounts)
+            body, b_left = issue_body(req, v, pairs, names, accounts)
+            if t_left or b_left:
+                lines.append((req["env"], status_line(req["id"], "needs_info", HELD_NOTE, None, slug, now)))
+                continue
             left -= 1
             kind = v.get("kind") if v.get("kind") in KINDS else req["kind"]
             filings.append({"env": req["env"], "id": req["id"], "key": req["key"], "kind": kind,
-                            "note": note or "Filed as a public issue", "title": issue_title(req, v, pairs, names),
-                            "body": issue_body(req, v, pairs, names)})
+                            "labels": [kind, epic_of(v)], "role": (roles or {}).get(req["key"]) or "unknown",
+                            "note": note or "Filed as a public issue", "title": title, "body": body})
     return lines, filings, unjudged
 
 
@@ -381,28 +479,59 @@ def cmd_pending(envs):
     return 0
 
 
-def cmd_prepare(run_dir, marked_path, issues_path, slug, envs, now):
+def filter_line(r, verdict, statuses, slug, now):
+    """The status line of request_filter.review's verdict; a duplicate of an
+    earlier request points at that request's issue when it has one."""
+    status, note, num, earlier = verdict
+    if earlier is not None:
+        num = latest_status(statuses).get(earlier, {}).get("issue")
+    return status_line(r["id"], status, note, num if isinstance(num, int) else None, slug, now)
+
+
+def cmd_prepare(run_dir, marked_path, issues_path, slug, envs, now, dry=False):
     marked = _load_json(marked_path, [])
     issues = _load_json(issues_path, [])
+    cards = [i for i in issues if isinstance(i, dict) and isinstance(i.get("number"), int)]
     pairs = env_pairs(envs)
     all_statuses = []
     to_judge = []
     for env, clone in envs:
         reqs, statuses, attempts = _queue(clone)
         status_file = os.path.join(monitor_dir(clone), STATUS)
-        for rid, st, num in sweep(statuses, marked):
-            line = status_line(rid, st, "The issue was closed" + (" as not planned" if st == "not_planned" else " as fixed"), num, slug, now)
-            append_jsonl(status_file, line)
-            statuses.append(line)
-            print(f"requests: {key(env, rid)} → {st} (#{num} closed)", file=sys.stderr)
-        for r in pending(reqs, statuses):
-            num = issue_with_marker(env, r["id"], marked)
-            if num is not None:
-                line = status_line(r["id"], "filed", "Filed as a public issue", num, slug, now)
+
+        def write(line, why):
+            if not dry:
                 append_jsonl(status_file, line)
-                statuses.append(line)
-                print(f"requests: {key(env, r['id'])} already filed as #{num}", file=sys.stderr)
-            elif attempts.get(r["id"], 0) < MAX_ATTEMPTS:
+            statuses.append(line)
+            print(f"requests: {'would write ' if dry else ''}{key(env, line['id'])} → {line['status']}: {why}", file=sys.stderr)
+
+        for rid, st, num in sweep(statuses, marked):
+            write(status_line(rid, st, "The issue was closed" + (" as not planned" if st == "not_planned" else " as fixed"), num, slug, now),
+                  f"#{num} closed")
+        waiting = {r["id"] for r in pending(reqs, statuses)}
+        earlier, seen = [], set()
+        for r in reqs:
+            rid = r.get("id")
+            if not isinstance(rid, str) or rid in seen:
+                continue
+            seen.add(rid)
+            if rid not in waiting:
+                if latest_status(statuses).get(rid, {}).get("status") in request_filter.STANDING:
+                    earlier.append(r)
+                continue
+            num = issue_with_marker(env, rid, marked)
+            if num is not None:
+                write(status_line(rid, "filed", "Filed as a public issue", num, slug, now), f"already filed as #{num}")
+                earlier.append(r)
+                continue
+            verdict = request_filter.review(r, cards, earlier)
+            if verdict is not None:
+                write(filter_line(r, verdict, statuses, slug, now), "the filter")
+                if verdict[0] == "duplicate":
+                    earlier.append(r)
+                continue
+            earlier.append(r)
+            if attempts.get(rid, 0) < MAX_ATTEMPTS:
                 to_judge.append(redacted_request(env, r, pairs))
         all_statuses += statuses
     left = max(0, DAILY_CAP - filed_today(all_statuses, now))
@@ -426,17 +555,21 @@ def cmd_decide(run_dir, agent_path, slug, envs, now):
         verdicts = parse_agent(f.read())
     clones = dict(envs)
     pairs = env_pairs(envs)
-    all_statuses, users = [], {}
+    all_statuses, users, roles = [], {}, {}
     for env, clone in envs:
         queue, statuses, _ = _queue(clone)
         all_statuses += statuses
         for r in queue:
             if isinstance(r.get("id"), str) and isinstance(r.get("user"), str):
                 users.setdefault(key(env, r["id"]), r["user"])
-    lines, filings, unjudged = decide(reqs, verdicts, cand, filed_today(all_statuses, now), now, slug, pairs, users)
+            if isinstance(r.get("id"), str) and isinstance(r.get("role"), str):
+                roles.setdefault(key(env, r["id"]), r["role"])
+    lines, filings, unjudged = decide(reqs, verdicts, cand, filed_today(all_statuses, now), now, slug, pairs, users,
+                                      account_names(envs), roles)
     for env, line in lines:
         append_jsonl(os.path.join(monitor_dir(clones[env]), STATUS), line)
-        print(f"{env}/{line['id']}: {line['status']}" + (f" (#{line['issue']})" if "issue" in line else ""))
+        print(f"{env}/{line['id']}: {line['status']}" + (f" (#{line['issue']})" if "issue" in line else "")
+              + (" HELD for a person: the sanitiser left text it cannot classify" if line["note"] == HELD_NOTE else ""))
     for k in unjudged:
         env, _, rid = k.partition("/")
         path = os.path.join(monitor_dir(clones[env]), ATTEMPTS)
@@ -458,26 +591,38 @@ def cmd_decide(run_dir, agent_path, slug, envs, now):
     return 0
 
 
-def cmd_filed(filing_path, url, now):
+def audit_line(filing, issue, now):
+    """One filing's audit line: who sent it (role only), the request key and the issue number."""
+    return {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "action": "filed", "role": filing.get("role") or "unknown",
+            "request": filing.get("key"), "issue": issue}
+
+
+def cmd_filed(filing_path, url, now, audit_path=None):
     fl = _load_json(filing_path, {})
     m = re.search(r"/issues/(\d+)$", url.strip())
     if not fl or not m:
         print(f"bad filing or url: {filing_path} {url}", file=sys.stderr)
         return 1
-    append_jsonl(fl["status_file"], status_line(fl["id"], "filed", fl["note"], int(m.group(1)), fl["slug"], now))
+    num = int(m.group(1))
+    append_jsonl(fl["status_file"], status_line(fl["id"], "filed", fl["note"], num, fl["slug"], now))
+    if audit_path:
+        append_jsonl(audit_path, audit_line(fl, num, now))
     return 0
 
 
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else ""
+    dry = cmd == "prepare" and len(argv) > 2 and argv[2] == "--dry-run"
+    if dry:
+        argv = argv[:2] + argv[3:]
     if cmd == "pending":
         return cmd_pending(parse_envs(argv[2:]))
     if cmd == "prepare" and len(argv) >= 6:
-        return cmd_prepare(argv[2], argv[3], argv[4], argv[5], parse_envs(argv[6:]), _now())
+        return cmd_prepare(argv[2], argv[3], argv[4], argv[5], parse_envs(argv[6:]), _now(), dry)
     if cmd == "decide" and len(argv) >= 5:
         return cmd_decide(argv[2], argv[3], argv[4], parse_envs(argv[5:]), _now())
-    if cmd == "filed" and len(argv) == 4:
-        return cmd_filed(argv[2], argv[3], _now())
+    if cmd == "filed" and len(argv) in (4, 5):
+        return cmd_filed(argv[2], argv[3], _now(), argv[4] if len(argv) == 5 else None)
     print(__doc__, file=sys.stderr)
     return 2
 
