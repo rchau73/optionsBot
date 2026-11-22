@@ -53,6 +53,8 @@ note_stop() {
 #   DEV_LIGHT_MODEL (sonnet), DEV_LIGHT_EPICS (E5,E11): the Dev model for
 #                              documents/research cards when DEV_MODEL is unset
 #   AUTO_RELEASE=0             no automatic release of stable (release.sh, #471)
+#   REQUESTS_FILE=0            the tick does not run requests.sh (assistant requests, #852)
+#   REQUESTS_FILE_LIVE=1       requests.sh also files a DERIBIT_ENV=live environment's requests
 # A variable already set in the environment wins over the file.
 AGENTS_ENV_FILE="${AGENTS_ENV_FILE:-${ENVS_DIR:-}/agents.env}"
 load_budget() {
@@ -63,7 +65,7 @@ load_budget() {
     [[ "$line" == *=* ]] || continue
     key="${line%%=*}"
     case "$key" in
-      AGENTS_PAUSED|AGENT_HOURS|AGENT_MAX_RUNS_PER_DAY|DEV_PARALLEL|REVIEW_PARALLEL|PM_ANSWER_PARALLEL|DEV_MODEL|DEV_LIGHT_MODEL|DEV_LIGHT_EPICS|REVIEW_MODEL|PM_MODEL|SME_MODEL|AUTO_RELEASE)
+      AGENTS_PAUSED|AGENT_HOURS|AGENT_MAX_RUNS_PER_DAY|DEV_PARALLEL|REVIEW_PARALLEL|PM_ANSWER_PARALLEL|DEV_MODEL|DEV_LIGHT_MODEL|DEV_LIGHT_EPICS|REVIEW_MODEL|PM_MODEL|SME_MODEL|AUTO_RELEASE|REQUESTS_FILE|REQUESTS_FILE_LIVE)
         [[ -n "${!key+x}" ]] || export "$key=${line#*=}" ;;
     esac
   done < "$AGENTS_ENV_FILE"
