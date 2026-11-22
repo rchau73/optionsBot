@@ -383,6 +383,22 @@ lab_section() {
   fi
 }
 
+# lab_follow_section <usage report.md> <COMPARE_DIR> <clone> <work file> —
+# appends the lab follow-up (#855, cmd/labfollow -all: each recorded change's
+# backtested figures beside the realised ones, percentages only) as the
+# report's "Lab follow-up" section, once, when at least one record has a
+# live-from day on file (applied/<id>.live). A failed run is logged and never
+# stops the report. Run from the repository.
+lab_follow_section() {
+  [[ -f "$1" ]] && compgen -G "$2/applied/*.live" > /dev/null || return 0
+  grep -q '^## Lab follow-up$' "$1" && return 0
+  if go run ./cmd/labfollow -all -compare "$2" -root "$3" > "$4" 2> "$4.log"; then
+    { printf '\n'; cat "$4"; } >> "$1"
+  else
+    log "lab follow-up failed for $2 (log $4.log)"
+  fi
+}
+
 # require_tools <tool>... — fails (and notifies) when a tool is not on PATH, so
 # an agent stops before it takes a card instead of blocking it for a broken
 # environment. Run scripts/agents/install.sh again after installing a tool.
