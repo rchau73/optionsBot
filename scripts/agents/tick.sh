@@ -37,6 +37,9 @@
 #     PM agent run and files the accepted ones as redacted issues (#410; its
 #     mechanical filter and sanitiser #852; REQUESTS_FILE=0 in agents.env
 #     turns it off), else exits at once;
+#   - lab.sh, which runs the lab runner (scripts/lab_runner.sh) on the mvp
+#     clone's queued comparison requests and files one Triage bug when the
+#     queue stalls (#876), else exits at once;
 #   - release.sh, only after a healthy deploy step: the weekly release of the
 #     newest mvp build soaked 3 days (first tick of a Monday UTC), or a
 #     `release:hotfix` bug fix live 1 h on mvp (#471; AUTO_RELEASE=0 in
@@ -101,6 +104,7 @@ start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-m
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
 start recording_check.sh 1 # daily: exits at once once yesterday's (UTC) done-marker exists
+start lab.sh 1 # exits at once unless the mvp clone's lab queue has a queued or stalled request (#876)
 # Exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget);
 # REQUESTS_FILE=0 in agents.env stops it (a person runs requests.sh alone for a dry run, #852).
 if [[ "${REQUESTS_FILE:-1}" == 1 ]]; then start requests.sh 1 --file; fi

@@ -91,7 +91,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
-  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`;
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`, `lab`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
     and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
@@ -119,6 +119,12 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `recording_check.sh` (from the tick, first tick of a UTC day, `data/agents/recording/<yesterday>.done`, no Claude) runs `cmd/datacoverage -yesterday -json` for each env that records the market (`BOT_RECORD_MARKET`, stable) × bot;
   - a market recording under `evidence.ReplayFullCoveragePct` (90) of yesterday's hours or with a gap over `LongGapHours` (3) → one notify and one comment on the E2 epic (pure `recording_day.py`, hours and % only); all at the floor → silent;
   - ledger agent `recording`.
+- Lab runner on the tick (#876, docs/operations.md "Lab runner on the tick"):
+  - `lab.sh` (from the tick, in the background; no Claude of its own; rules in pure `lab_queue.py`) works on the mvp clone's lab queue (`LAB_ENV`, `<clone>/data/compare/requests/`); no such folder → exits silently;
+  - a queued request with the runner's lock (`.runner.lock`, under a day old) free → one `scripts/lab_runner.sh` pass from that clone (cmd/labrun's rules unchanged: one at a time, the analysis one call per done run, no key → a note);
+    the lock held → a "skipped" log line; nothing queued → nothing starts; each request it took is a line of `data/agents/lab/started.jsonl`, counted in the usage report's "Lab usage" (`lib.sh lab_section`);
+  - a request queued over 2 h, or `running` with the lock free (the runner died), files one `bug` `E9` `[E9] Lab queue stalled: <id> <status> <age>` in Triage (ids and ages only), none while one is open;
+  - ledger agent `lab`.
 - Weekly go / no-go reading (#738, docs/product/go-no-go.md §6):
   - `go_no_go.sh` (from the tick, first tick of a Monday UTC after the evidence report, else from Wednesday; `data/agents/go_no_go/<week>.done`, no Claude)
     runs `scripts/product/go_no_go_week.py`: `go_no_go.py -json` on stable's clone and the newest tally and fake-door files, one line appended to the gitignored `data/product/go_no_go_history.jsonl` (shares and ratios only);
