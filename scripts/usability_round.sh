@@ -91,6 +91,12 @@ start_demo() {
     echo "usability_round: the demo API did not start" >&2
     exit 1
   fi
+  # Pre-flight (#881): the monitor's investor summary comes from this route.
+  if ! curl -fsS -o /dev/null --max-time 5 "${demo_url}/api/summary" 2>/dev/null; then
+    echo "usability_round: the demo started but /api/summary does not answer, so the page would say \"Summary unavailable\": press Ctrl-C and start again" >&2
+    exit 1
+  fi
+  echo "usability_round: pre-flight ok: scenario $1, /api/summary answers"
 }
 
 print_round() {

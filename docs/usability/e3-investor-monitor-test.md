@@ -442,6 +442,7 @@ A capitalised word other than "I" and the page's own words, an e-mail, a phone n
 With `--findings` the script also writes `findings.md` (one row per question that fewer than 4 of 5 answered with a success) and one issue draft per such question, `issue-draft-Q<n>.md`, beside the table; it sends nothing to GitHub.
 
 To run the first round step by step, follow the run sheet: [round-1-run-sheet.md](round-1-run-sheet.md).
+The loss round has [round-2-loss-run-sheet.md](round-2-loss-run-sheet.md) (who sees which scenario) and the hedge round [round-3-hedge-run-sheet.md](round-3-hedge-run-sheet.md); `tests/usability_run_sheets_test.go` keeps both true to the script and the demo.
 
 ## 8. Templates
 

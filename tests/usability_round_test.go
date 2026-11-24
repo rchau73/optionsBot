@@ -258,6 +258,33 @@ func TestUsabilityRound_DefaultScenarioPassesNoFlag(t *testing.T) {
 	}
 }
 
+// Scenario: the pre-flight check (#881). A demo that answers /api/health but
+// not /api/summary stops the round with one plain sentence and a non-zero exit.
+func TestUsabilityRound_PreflightNeedsTheSummary(t *testing.T) {
+	f := newRoundFixture(t)
+	writeExecutable(t, filepath.Join(f.root, "bin", "curl"), "case \"$*\" in *api/summary*) exit 22 ;; esac\nexit 0\n")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", filepath.Join(f.root, "scripts/usability_round.sh"), "mixed")
+	cmd.Env = f.env
+	out, err := cmd.CombinedOutput()
+	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() == 0 {
+		t.Fatalf("want a non-zero exit, got %v:\n%s", err, out)
+	}
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if strings.Contains(l, "/api/summary") {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "does not answer") {
+		t.Errorf("want one plain sentence naming /api/summary, got %q in:\n%s", lines, out)
+	}
+	if strings.Contains(string(out), "Sign in:") {
+		t.Errorf("the round went on after a failed pre-flight:\n%s", out)
+	}
+}
+
 // Negative: nothing starts on a wrong scenario or on a busy port (a real bot's
 // API on the demo port would be shown to the participant).
 func TestUsabilityRound_RefusesBeforeStartingAnything(t *testing.T) {

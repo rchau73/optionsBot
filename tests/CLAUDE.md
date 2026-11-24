@@ -15,6 +15,7 @@ Notable files:
 - `usability_keys_test.go` (#727): every figure in the kit's fenced `key` blocks equals `cmd/monitor-demo`'s value, per scenario and question; a stale key fails naming both.
   It checks `frontend/test/demoScenarios.json` (#743, the demo's answers per scenario for `scenario-answers.test.jsx`) against the same keys; `-args -update-scenarios` rewrites it from the demo (`-only-scenarios=hedged` just those, keeping the rest, #827).
   `monitor_demo_scenarios_test.go` covers `-scenario hedged` (#827): the hedge on at `/api/hedge`, the worst case = the options alone plus the perpetual's share, a hedge trade as the Last action, an unknown scenario refused.
+  `usability_run_sheets_test.go` (#881): the loss and hedge run sheets name existing scenarios, quote only commands the script has, link the kit section they score with, and hold no name, e-mail or amount.
   `usability_round_test.go` runs `scripts/usability_round.sh` on a copy of the layout with stub `go`, `npm`, `npx` and `curl`.
 - `accounts_json_test.go` (#655): `cmd/accounts -check -json`/`-out` — decoded with unknown fields refused, no key material, key id, client id or scope string in it, the status file owner-only and atomic.
 - `prd_decisions_test.go` (#464): the PRD's decision log is one file per decision in `docs/product/decisions/`; the old rows are all there and each file is complete.
