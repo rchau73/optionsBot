@@ -89,5 +89,6 @@ These describe the product as planned in the PRD; where today's build differs, i
 - A walk-through of the monitor on testnet: the journal, the reasons for each trade, the kill switch.
 - The planned API-key scopes per exchange and how a key is revoked.
 - `docs/product/analytics/event-plan.md` (what analytics may and may not carry).
+- `docs/product/experiments/waiting-list-texts.md` (#882): every text of the fake-door waiting list in English and PT-BR, with a hand-off sheet pointing each text at its questions — L9 (offer or solicitation: T1, T2, C3–C6), L13 and L15 (consent, data requests, leaving: T1–T4, C8), L5 and L17 (the US exclusion: T5, C7), L19 (the risk line in T1).
 
 Answers go back into the PRD by pull request (§11, and the decision log §12); counsel's written opinion stays in `data/product/`.

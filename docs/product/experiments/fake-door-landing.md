@@ -102,6 +102,8 @@ The waiting list collects personal data, so it follows `docs/legal/data-protecti
 6. Who is the named controller and the contact for requests on the page (`data-protection.md` §1 `[FILL]`)?
 7. Does the double-opt-in confirmation e-mail count as marketing, and what must it say?
 
+The texts the list sends or shows beyond the page — the confirmation e-mail (question 7), the "you are on the list" line, the leave-the-list confirmation, the data-request reply and the "not available in your country" line — are drafted in English and PT-BR in `docs/product/experiments/waiting-list-texts.md` (#882), each pointing to the questions above.
+
 **The tool or provider is the product owner's decision**, after counsel answers questions 1–2.
 
 ## 9. Risks and compliance
@@ -110,7 +112,7 @@ The waiting list collects personal data, so it follows `docs/legal/data-protecti
 - **Performance claims** (L7): the page shows no return, yield, APY or performance figure, not even testnet's; it describes mechanics and risks only.
 - **Exclusions** (L5, L17): US persons excluded; the page names Deribit's testnet only as the place of a future trial.
 - **Risk of ruin** (L19): every benefit carries its risk beside it at the same size; "it can lose money, more than the premium received" is on the page.
-- **Before publishing:** counsel's review of `landing-copy-draft.md` and §8, the product owner's approval, and the ux-designer prototype approved by a person.
+- **Before publishing:** counsel's review of `landing-copy-draft.md`, §8 and `waiting-list-texts.md` (one hand-off sheet for all of them), the product owner's approval, and the ux-designer prototype approved by a person.
 
 ## 10. Result (filled after the run)
 
