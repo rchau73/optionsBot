@@ -40,6 +40,19 @@ Contrast ratios are measured by the token test; text sizes and tap targets come 
 Ties are ordered by how often a person meets them (the header before a dialog).
 The admin pages (Users, Audit, Analytics) are outside the customer's view and are counted only where noted; their small text (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) is in the report.
 
+### Admin pages and sign-in (#883)
+
+`npm run test:phone` measures them too since #883: `users`, `audit`, `analytics`, `analytics-delivery` (signed in as the throwaway admin) and `sign-in` (signed out), each in `a11y-report.json` at 360 px.
+They enter `ranked` with the menu pages, so a finding shared with the header is counted on them as well; rows found only on these pages are marked **admin** (or **sign-in**) here.
+From the source until the first run is reviewed:
+
+| Finding | Measured | Pages affected | What the fix needs | Owner |
+|---|---|---|---|---|
+| Row buttons `px-2 py-0.5 text-xs` (22 px) and the role `select` (about 30 px) | source | admin: Users | the touch size of #1 for table actions | designer, then developer |
+| Filter fields and buttons about 30 px, "Older" 30 px | source | admin: Audit | as #1 | designer, then developer |
+| Small text in the tiles, release train and usage cards (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) | source | admin: Analytics, Analytics · Delivery | as #4 | designer |
+| Inputs 34 px, Sign in 38 px; 14 px inputs zoom on iOS | source | sign-in | as #1, and 16 px inputs | designer, then developer |
+
 ## Screen-reader structure
 
 What a screen reader meets on each whole page (#840): landmarks, regions, heading order, the names of buttons, links and fields, table headers and dialog names.

@@ -1,5 +1,6 @@
 // The viewport check (#309, every page since #425): measures every page of the
-// menu (lib/menu.js) and the assistant panel opened on demo data at 360, 768
+// menu (lib/menu.js), the assistant panel opened, the admin pages, Analytics'
+// Delivery topic and, signed out, sign-in (#883) on demo data at 360, 768
 // and 1280 px, and the overview's dialogs at 360 × 640 / 640 × 360, writes
 // docs/responsive-measured.json and screenshots under test-results/phone/
 // (both git-ignored) and, report-only, e2e/a11y-report.json (small text and
@@ -10,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { demoLoaded, expect, test } from "./fixtures.js";
 import { measureDialog, measurePage } from "./measure.js";
-import { A11Y_WIDTH, DIALOG_VIEWPORTS, WIDTHS, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
+import { A11Y_WIDTH, DIALOG_VIEWPORTS, WIDTHS, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, pagePathname, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
 
 const FRONTEND = process.env.PHONE_FRONTEND_DIR;
 const REPORT = path.join(FRONTEND, "docs", "responsive-measured.json");
@@ -74,10 +75,11 @@ const DIALOGS = {
   },
 };
 
-// A page is rendered: the URL stayed on it (not sent to sign-in) and its <main> is shown.
+// A page is rendered: the URL stayed on it (not sent to sign-in, nor an admin
+// page sent away) and its <main> is shown. A query (?topic=delivery) is kept.
 async function openPage(page, target) {
   await page.goto(target.path);
-  await expect(page, `${target.name}: did not stay on ${target.path}`).toHaveURL((url) => url.pathname === target.path);
+  await expect(page, `${target.name}: did not stay on ${target.path}`).toHaveURL((url) => url.pathname === pagePathname(target));
   await expect(page.locator("main").first(), `${target.name}: no <main> rendered`).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(2000); // the first poll of both demo bots arrives
   if (target.assistant) {
@@ -86,7 +88,22 @@ async function openPage(page, target) {
   }
 }
 
-test("every menu page and the assistant: measured on demo data, no worse than the baseline", async ({ page }) => {
+// One page at every width: its part of the report and, at 360 px, its accessibility findings.
+async function measureTarget(page, target, report, a11yPages) {
+  await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
+  await openPage(page, target);
+  report.pages[target.name] = { path: target.path, signed_out: target.signedOut, widths: {} };
+  for (const vp of WIDTHS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(800);
+    const raw = await page.evaluate(measurePage);
+    report.pages[target.name].widths[vp.name] = summariseWidth(vp, raw);
+    if (vp.name === A11Y_WIDTH) a11yPages[target.name] = a11yOfPage(raw);
+    await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
+  }
+}
+
+test("every page a person reaches and the assistant: measured on demo data, no worse than the baseline", async ({ page, browser }) => {
   fs.mkdirSync(SHOTS, { recursive: true });
   await enableOrderDialogs(page);
   await page.reload();
@@ -94,18 +111,19 @@ test("every menu page and the assistant: measured on demo data, no worse than th
 
   const report = { generated_at: new Date().toISOString(), source: "cmd/monitor-demo (BTC, ETH), simulated data", pages: {}, dialogs: {} };
   const a11yPages = {};
-  for (const target of viewportPages()) {
-    await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
-    await openPage(page, target);
-    report.pages[target.name] = { path: target.path, widths: {} };
-    for (const vp of WIDTHS) {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.waitForTimeout(800);
-      const raw = await page.evaluate(measurePage);
-      report.pages[target.name].widths[vp.name] = summariseWidth(vp, raw);
-      if (vp.name === A11Y_WIDTH) a11yPages[target.name] = a11yOfPage(raw);
-      await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
+  for (const target of viewportPages().filter((t) => !t.signedOut)) {
+    await measureTarget(page, target, report, a11yPages);
+  }
+  // Sign-in is what a signed-out person sees (#883): a fresh context, no session cookie.
+  const { baseURL, colorScheme } = test.info().project.use;
+  const signedOut = await browser.newContext({ baseURL, colorScheme });
+  try {
+    const fresh = await signedOut.newPage();
+    for (const target of viewportPages().filter((t) => t.signedOut)) {
+      await measureTarget(fresh, target, report, a11yPages);
     }
+  } finally {
+    await signedOut.close();
   }
 
   // The dialogs are the overview's.
