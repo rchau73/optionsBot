@@ -15,6 +15,8 @@ Rows, thresholds and windows: docs/product/go-no-go.md.
 
 Beside the rows, one informational line shows the interviews' delegation share (interview_tally.py, #787);
 it never enters the overall line.
+
+    python3 scripts/product/go_no_go.py --reading    # sections 7–8 of the page, to stdout only (#886)
 """
 import argparse
 import csv
@@ -246,6 +248,104 @@ def render(card):
     return "\n".join(out)
 
 
+# --- the reading (#886): sections 7 and 8 of docs/product/go-no-go.md, from the same sources ---
+
+EVIDENCE, ASSUMPTION, NO_DATA = "evidence", "assumption", "no data"
+SMALL_SAMPLE = 15  # the survey tally's small-sample line (survey_tally.py)
+
+FIRST_STEP = {
+    "buyer": "Send the survey (discovery/survey.md); run survey_tally.py -json",
+    "pain": "Code the survey's Q4 and F2 answers in discovery/synthesis.md §2",
+    "delegation": "Send the survey; run survey_tally.py -json; rerun the scorecard",
+    "wtp": "Read the survey's price questions and the fake door; decide after counsel answers L8",
+    "demand": "Publish the fake door after counsel clears L5, L7, L9 and L13; run fakedoor.py",
+    "competitors": "Save one entry per competitor in data/product/competitors/; run competitors.py --summary",
+    "legal": "Get counsel's written answers to L1–L6 and L9; record them as in docs/legal/counsel-engagement.md",
+    "e2": "Let the weekly reports reach the 12-week window; read the scorecard's row 3",
+}
+
+
+def competitors_count(directory):
+    """(entries, newest date) of the competitor YAML files; names and contents are never read."""
+    files = sorted(glob.glob(os.path.join(directory, "*.yaml")) + glob.glob(os.path.join(directory, "*.yml")))
+    return len(files), (max(file_date(f) for f in files) if files else "—")
+
+
+def reading_line(criterion, reading, value, status, source, date, step, note=""):
+    """One reading row. The source is a file name only; a first step is given unless the reading is evidence."""
+    shown = "—" if source in (None, "", "—") else os.path.basename(source)
+    return {"criterion": criterion, "reading": reading, "value": value, "status": status,
+            "source": shown, "date": date, "first_step": "" if reading == EVIDENCE else step, "note": note}
+
+
+def build_reading(tally, fakedoor, evidence_root, bot, legal, competitors_dir):
+    """Both tables of the reading, as data. Every private input that is absent reads `no data`."""
+    survey = survey_row(tally)
+    data, _ = load_json(tally)
+    have_tally = data is not None
+    src = tally if have_tally else None
+    d = ((data or {}).get("delegation") or {}).get("cycle holder") or {}
+    n = d.get("n") or 0
+    survey_note = survey["note"].replace("(small sample)", "").strip(" ;")
+    if d.get("share_pct") is not None and n < SMALL_SAMPLE:
+        survey_note = f"sample under {SMALL_SAMPLE}; " + survey_note
+    fd = fakedoor_row(fakedoor)
+    if not fakedoor or not os.path.isfile(fakedoor):
+        fd_reading = NO_DATA
+    else:
+        fd_reading = EVIDENCE if fd["status"] != MISSING else ASSUMPTION
+    e2 = e2_row(evidence_root, bot)
+    lg = legal_row(legal)
+    n_comp, comp_date = competitors_count(competitors_dir)
+    deleg = reading_line("Delegation", NO_DATA if survey["status"] == MISSING else EVIDENCE, survey["value"],
+                         survey["status"], survey["source"], survey["date"], FIRST_STEP["delegation"], survey_note)
+    e2_line = reading_line("E2: engine vs holding the coin", NO_DATA if e2["status"] == MISSING else EVIDENCE,
+                           e2["value"], e2["status"], e2["source"], e2["date"], FIRST_STEP["e2"], e2["note"])
+    criteria = [
+        reading_line("Buyer: the cycle holder", EVIDENCE if n else NO_DATA,
+                     f"{n} cycle holders in the tally" if n else "—", "—", src, survey["date"], FIRST_STEP["buyer"]),
+        reading_line("Pain", ASSUMPTION if have_tally else NO_DATA, "—", "—", src, survey["date"],
+                     FIRST_STEP["pain"], "the tally does not code pain"),
+        deleg,
+        reading_line("Willingness to pay", ASSUMPTION if have_tally else NO_DATA, "—", "—", src,
+                     survey["date"], FIRST_STEP["wtp"], "options only, no customer answer read"),
+        reading_line("Demand signal (fake door)", fd_reading, fd["value"], fd["status"], fakedoor, fd["date"],
+                     FIRST_STEP["demand"], fd["note"]),
+        reading_line("Competitors", EVIDENCE if n_comp else NO_DATA, f"{n_comp} entries" if n_comp else "—", "—",
+                     os.path.join(competitors_dir, "entries") if n_comp else None, comp_date, FIRST_STEP["competitors"]),
+        reading_line("Legal gate (L1–L6, L9)", EVIDENCE if lg["status"] == MEETS else ASSUMPTION, lg["value"],
+                     lg["status"], legal, lg["date"], FIRST_STEP["legal"], lg["note"]),
+        e2_line,
+    ]
+    kill = []
+    for text, line in (("Fewer than 30 % of interviewed cycle holders would let software trade their account", deleg),
+                       ("E2 shows the engine does not beat holding the coin on a risk-adjusted basis", e2_line)):
+        # the first step is for a reading that is not in yet; a kill row with a verdict needs none
+        step = FIRST_STEP["delegation"] if line is deleg else FIRST_STEP["e2"]
+        kill.append({"kill": text, "status": line["status"], "value": line["value"], "source": line["source"],
+                     "date": line["date"], "first_step": step if line["status"] == MISSING else "",
+                     "note": line["note"]})
+    return {"criteria": criteria, "kill": kill}
+
+
+def render_reading(rd):
+    def cell(v):
+        return (str(v).replace("|", "/") or "—") if v != "" else "—"
+    out = ["## Each go-to-market criterion: evidence or assumption", "",
+           "| Criterion | Reading | Value | Scorecard status | Source | Date | First step | Note |",
+           "|---|---|---|---|---|---|---|---|"]
+    for r in rd["criteria"]:
+        out.append("| " + " | ".join(cell(r[k]) for k in (
+            "criterion", "reading", "value", "status", "source", "date", "first_step", "note")) + " |")
+    out += ["", "## Kill criteria and the current reading", "",
+            "| Kill criterion (PRD §6) | Status | Value | Source | Date | First step | Note |",
+            "|---|---|---|---|---|---|---|"]
+    for r in rd["kill"]:
+        out.append("| " + " | ".join(cell(r[k]) for k in (
+            "kill", "status", "value", "source", "date", "first_step", "note")) + " |")
+    return "\n".join(out) + "\n"
+
+
 def latest_fakedoor(private):
     """The newest result.json under data/product/fakedoor/, or None."""
     found = glob.glob(os.path.join(private, "fakedoor", "*", "result.json"))
@@ -263,9 +363,16 @@ def main(argv=None):
     ap.add_argument("--evidence-root", default=REPO, help="an environment clone holding data/evidence/")
     ap.add_argument("--bot", default="btc")
     ap.add_argument("--legal", default=os.path.join(REPO, "docs", "legal", "preliminary-answers.md"))
+    ap.add_argument("--reading", action="store_true",
+                    help="print sections 7–8 of go-no-go.md (criteria; kill criteria) from the sources, to stdout")
     ap.add_argument("-json", action="store_true", help="print JSON instead of markdown")
     args = ap.parse_args(argv)
     fakedoor = args.fakedoor if args.fakedoor is not None else latest_fakedoor(private)
+    if args.reading:
+        rd = build_reading(args.tally, fakedoor, args.evidence_root, args.bot, args.legal,
+                           os.path.join(private, "competitors"))
+        print(json.dumps(rd, indent=2, ensure_ascii=False) if args.json else render_reading(rd), end="")
+        return 0
     card = build(args.tally, fakedoor, args.evidence_root, args.bot, args.legal, args.interviews)
     print(json.dumps(card, indent=2, ensure_ascii=False) if args.json else render(card))
     return 0

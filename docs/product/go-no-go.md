@@ -63,7 +63,13 @@ python3 scripts/product/go_no_go.py
 python3 scripts/product/go_no_go.py --tally data/product/interviews/tally.json \
     --fakedoor data/product/fakedoor/run1/result.json --evidence-root ~/dev/go/optionsBot-env/stable --bot btc
 python3 scripts/product/go_no_go.py -json
+python3 scripts/product/go_no_go.py --reading
 ```
+
+**Reading (#886).**
+`--reading` prints sections 7 and 8 of this page to stdout, from the same files as the rows: per criterion (buyer, pain, delegation, willingness to pay, demand signal, competitors, legal gate, E2) a reading (`evidence`, `assumption` or `no data`), the value, the scorecard status, the source file name and its date, and the first step when it is not evidence; then the two kill criteria.
+Competitors are counted from `data/product/competitors/`, never named; a tally under 15 cycle holders shows its share with "sample under 15".
+It prints shares, ratios and counts only, writes nothing, and a fresh checkout with no `data/product/` reads `no data` for every private criterion and exits 0.
 
 **Weekly reading (#738).**
 `scripts/agents/go_no_go.sh` (the agents' tick, first tick of a Monday UTC after the evidence report, else from Wednesday; ledger agent `go_no_go`) runs `scripts/product/go_no_go_week.py`.
@@ -118,6 +124,7 @@ Open state is checked on the board, not here: if a ticket above is closed and it
 ## 10. Keeping this page true
 
 - Update sections 7 and 8 when a source changes: a tally, a fake-door result, counsel's answer or a new scorecard reading, each with its date.
+  Refresh them from the output of `go_no_go.py --reading` (section 6), not from memory; the output is never committed as a file, so whoever updates the page copies the reading and its dates.
 - No name, price, revenue figure or survey answer goes here, only the path under `data/product/` where it lives.
 - A change to the kill criteria is a PRD pull request, never an edit here.
 - The weekly reading's history (`data/product/go_no_go_history.jsonl`) is the dated record of the scorecard; this page keeps only the latest reading (section 8).

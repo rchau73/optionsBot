@@ -205,6 +205,88 @@ class ScorecardTest(unittest.TestCase):
         self.assertIn(f"{gng.E2_MIN_WEEKS} weekly reports", doc)
 
 
+class ReadingTest(unittest.TestCase):
+    """--reading (#886): sections 7–8 of the page, printed from the sources."""
+
+    def setUp(self):
+        self.fx = Fixture()
+
+    def tearDown(self):
+        self.fx.close()
+
+    def reading(self, legal=LEGAL):
+        return gng.build_reading(self.fx.path("tally.json"), self.fx.path("result.json"), self.fx.root, "btc",
+                                 legal, self.fx.path("competitors"))
+
+    def crit(self, rd, prefix):
+        return next(r for r in rd["criteria"] if r["criterion"].startswith(prefix))
+
+    def test_fresh_checkout(self):
+        # Scenario: no data/product → every private criterion reads "no data" with its first step; exit 0.
+        rd = self.reading()
+        for prefix in ("Buyer", "Pain", "Delegation", "Willingness", "Demand", "Competitors", "E2"):
+            r = self.crit(rd, prefix)
+            self.assertEqual(r["reading"], gng.NO_DATA, prefix)
+            self.assertTrue(r["first_step"], prefix)
+        self.assertEqual(rd["kill"][0]["status"], gng.MISSING)
+        self.assertTrue(rd["kill"][0]["first_step"])
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = gng.main(["--reading", "--tally", self.fx.path("none.json"), "--interviews",
+                             self.fx.path("none.csv"), "--evidence-root", self.fx.root])
+        self.assertEqual(code, 0)
+        self.assertIn("no data", out.getvalue())
+
+    def test_kill_row_fails_with_source_and_date(self):
+        # Scenario: delegation share under 30 % → the kill row fails, naming the file and its date.
+        path = self.fx.write("tally.json", tally(25.0))
+        kill = self.reading()["kill"][0]
+        self.assertEqual(kill["status"], gng.FAILS)
+        self.assertEqual(kill["source"], os.path.basename(path))
+        self.assertEqual(kill["date"], gng.file_date(path))
+        self.assertEqual(kill["first_step"], "")
+
+    def test_small_sample_is_noted(self):
+        # Scenario: fewer than 15 qualified cycle holders → the share with "sample under 15".
+        self.fx.write("tally.json", tally(60.0, n=9))
+        r = self.crit(self.reading(), "Delegation")
+        self.assertEqual(r["value"], "60.0 %")
+        self.assertIn("sample under 15", r["note"])
+        self.fx.write("tally.json", tally(60.0, n=20))
+        self.assertNotIn("sample under", self.crit(self.reading(), "Delegation")["note"])
+
+    def test_percentages_only(self):
+        # Scenario: evidence JSON carrying coin and USD amounts → none of them in the reading.
+        self.fx.weeks(12, lambda i: 1.0 + (i % 3), lambda i: (i % 5) - 2)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            gng.main(["--reading", "--tally", self.fx.path("none.json"), "--evidence-root", self.fx.root])
+        text = out.getvalue()
+        self.assertIn("engine", text)  # the E2 row was read
+        for leaked in ("1.2345", "12.345", "86415", "70000", "71000"):
+            self.assertNotIn(leaked, text)
+
+    def test_counsel_answers(self):
+        # Scenario: counsel lines for L1 and L2 only → "2 of 7 answered by counsel", still missing.
+        lines = [f"| **{q}** | question | **Counsel (2026-11-01):** yes |" if q in ("L1", "L2")
+                 else f"| **{q}** | question | preliminary |" for q in gng.LEGAL_GATE]
+        legal = self.fx.write("legal.md", "\n".join(lines))
+        r = self.crit(self.reading(legal), "Legal")
+        self.assertEqual(r["value"], "2 of 7 answered by counsel")
+        self.assertEqual(r["status"], gng.MISSING)
+        self.assertEqual(r["reading"], gng.ASSUMPTION)
+        self.assertIn("L3", r["note"])
+
+    def test_competitors_counted_never_named(self):
+        self.fx.write("competitors/acme.yaml", "name: Acme Secret Vaults\n")
+        r = self.crit(self.reading(), "Competitors")
+        self.assertEqual((r["reading"], r["value"]), (gng.EVIDENCE, "1 entries"))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            gng.main(["--reading", "--tally", self.fx.path("none.json"), "--evidence-root", self.fx.root])
+        self.assertNotIn("Acme", out.getvalue())
+
+
 def read(path):
     with open(path, encoding="utf-8") as f:
         return f.read()
