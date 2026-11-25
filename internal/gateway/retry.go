@@ -29,6 +29,11 @@ func isRateLimitError(err error) bool {
 	return false
 }
 
+// IsRateLimited reports whether err is Deribit asking us to slow down
+// (10028 too_many_requests, 10040 retry). Callers that retry a method the
+// gateway does not (private/simulate_portfolio, #888) use it.
+func IsRateLimited(err error) bool { return isRateLimitError(err) }
+
 // isExchangeUnhealthy reports whether an RPC error means the exchange itself
 // is struggling, as opposed to rejecting our request on its merits (bad price,
 // not enough funds). Only the former should count towards the circuit breaker.
