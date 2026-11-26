@@ -502,6 +502,10 @@ The assistant works the same whether you answer or not.
 Your score, reasons and comment are not in it.
 Turning the survey off or back on is recorded the same way.
 
+**How long is my survey comment kept?** At most 24 months.
+Once a day the monitor erases every comment older than that; your score and the reasons you picked stay.
+Deleting your account erases the comment at once.
+
 **When it shows**: at most once every 30 days, counted from the day it was shown, answered or not.
 It shows only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times, and not while a bot's last 7 days is a net loss or cannot be read.
 

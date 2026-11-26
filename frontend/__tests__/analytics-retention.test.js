@@ -12,10 +12,13 @@ import {
   exportEventsOf,
   pruneAndAudit,
   pruneEvents,
+  purgeSurveyTextAndAudit,
   startRetentionJob,
   stopRetentionJob,
+  SURVEY_TEXT_RETENTION_DAYS,
   userEventsEraser,
 } from "@/lib/analytics/retention";
+import { AUDIT_ACTIONS } from "@/lib/audit";
 import { pseudonymousId } from "@/lib/analytics/config";
 import { parseArgs, runUserRequest } from "@/lib/analytics/userrequest";
 import { AuthService } from "@/lib/auth/service";
@@ -116,6 +119,94 @@ describe("Scenario: Daily prune", () => {
     expect(pruneAndAudit(file, NOW, (e) => audit.push(e))).toEqual({ ok: false, error: "disk full" });
     expect(audit[0]).toMatchObject({ action: "events_prune_failed", username: "system", error: "disk full" });
     expect(console.error.mock.calls.map((c) => JSON.parse(c[0]))).toContainEqual(expect.objectContaining({ level: "ERROR", msg: "analytics events prune failed" }));
+  });
+});
+
+describe("survey free text kept at most 24 months (#849)", () => {
+  const TEXT = "my private words about the monitor";
+
+  async function storeWith(ages) {
+    const store = await AuthStore.open(":memory:");
+    const alice = store.createUser({ username: "alice", passwordHash: "x", role: "user" });
+    for (const days of ages) {
+      store.addSurveyAnswer(alice.id, { surveyId: "nps", codes: { score: "3", reason_code: "other" }, text: TEXT }, NOW - days * DAY_MS);
+    }
+    return { store, alice };
+  }
+  const rows = (store) => store.all("SELECT survey_id, codes, free_text, created_at FROM survey_answers ORDER BY id");
+
+  test("the period is one named constant: 24 months (surveys.md §6)", () => {
+    expect(SURVEY_TEXT_RETENTION_DAYS).toBe(730);
+    expect(AUDIT_ACTIONS).toEqual(expect.arrayContaining(["survey_text_purged", "survey_text_purge_failed"]));
+  });
+
+  test("Scenario: Old free text is erased — codes and created_at unchanged, audited with the count and retention_days", async () => {
+    jest.useFakeTimers({ now: NOW });
+    try {
+      const { store } = await storeWith([731]);
+      const before = rows(store)[0];
+      const audit = [];
+      startRetentionJob({ file: null, store, audit: (e) => audit.push(e) });
+      expect(rows(store)).toEqual([{ ...before, free_text: null }]);
+      expect(audit).toEqual([
+        { time: new Date(NOW).toISOString(), action: "survey_text_purged", username: "system", retention_days: 730, erased: 1 },
+      ]);
+      // The next daily run finds nothing left to erase.
+      jest.advanceTimersByTime(DAY_MS);
+      expect(audit[1]).toMatchObject({ action: "survey_text_purged", erased: 0 });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("Scenario: Recent free text is kept (729 days, and exactly at the edge)", async () => {
+    const { store } = await storeWith([729, SURVEY_TEXT_RETENTION_DAYS]);
+    const audit = [];
+    expect(purgeSurveyTextAndAudit(store, NOW, (e) => audit.push(e))).toEqual({ ok: true, erased: 0 });
+    expect(rows(store).map((r) => r.free_text)).toEqual([TEXT, TEXT]);
+    expect(audit[0]).toMatchObject({ action: "survey_text_purged", erased: 0 });
+  });
+
+  test("an answer without text is not counted; the row count never changes", async () => {
+    const { store, alice } = await storeWith([800]);
+    store.addSurveyAnswer(alice.id, { surveyId: "answers", codes: { came_for: "holding" } }, NOW - 900 * DAY_MS);
+    expect(purgeSurveyTextAndAudit(store, NOW, () => {})).toEqual({ ok: true, erased: 1 });
+    expect(rows(store)).toHaveLength(2);
+  });
+
+  test("Scenario: A failure never stops the monitor — ERROR log, a failed audit line, and the events prune still runs", async () => {
+    const { store } = await storeWith([731]);
+    jest.spyOn(store, "save").mockImplementation(() => {
+      throw new Error("read-only file system");
+    });
+    write([event(pseudonymousId(SALT, 1), 400)]);
+    const audit = [];
+    expect(() => startRetentionJob({ file, store, audit: (e) => audit.push(e), now: () => NOW })).not.toThrow();
+    expect(audit.map((e) => e.action)).toEqual(["events_pruned", "survey_text_purge_failed"]);
+    expect(audit[1]).toMatchObject({ username: "system", retention_days: 730, error: "read-only file system" });
+    expect(lines()).toEqual([]);
+    expect(console.error.mock.calls.map((c) => JSON.parse(c[0]))).toContainEqual(
+      expect.objectContaining({ level: "ERROR", msg: "survey free text purge failed" }),
+    );
+  });
+
+  test("Scenario: No text in logs — no line holds the text, a user id or a username", async () => {
+    const { store, alice } = await storeWith([731]);
+    const audit = [];
+    purgeSurveyTextAndAudit(store, NOW, (e) => audit.push(e));
+    jest.spyOn(store, "purgeSurveyText").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    purgeSurveyTextAndAudit(store, NOW, (e) => audit.push(e));
+    const out = [...audit.map((e) => JSON.stringify(e)), ...console.log.mock.calls.map((c) => c[0]), ...console.error.mock.calls.map((c) => c[0])];
+    expect(out.length).toBeGreaterThanOrEqual(4);
+    for (const line of out) {
+      expect(line).not.toContain(TEXT);
+      expect(line).not.toContain("alice");
+      expect(line).not.toContain(pseudonymousId(SALT, alice.id));
+      expect(Object.keys(JSON.parse(line))).not.toEqual(expect.arrayContaining(["user_id"]));
+    }
+    for (const e of audit) expect(e.username).toBe("system");
   });
 });
 

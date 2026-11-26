@@ -316,7 +316,9 @@ check() { # name, command...
 }
 # retry_untouched <log> — 0 when every test that failed in <log> is one the
 # change does not touch and passed on one of up to 3 re-runs (#472): each goes
-# to flaky.txt (named on the PR and its flaky issue once the PR exists).
+# to flaky.txt (named on the PR and its flaky issue once the PR exists) — except
+# a stalled jest file (its timeouts fired over a minute late: the Mac slept),
+# only logged (#869: such a run filed a flaky issue for a test with no race).
 retry_untouched() {
   local kind name i passed
   python3 "$CHECKFAIL" retry "$wt" "$run_dir/files.txt" "$1" > "$run_dir/retry.txt" || return 1
@@ -331,7 +333,11 @@ retry_untouched() {
       fi
     done
     [[ $passed -eq 1 ]] || return 1
-    echo "$kind $name" >> "$run_dir/flaky.txt"
+    if [[ "$kind" == "stalled" ]]; then
+      log "dev: $name stalled (timed out over a minute late: the run was frozen), passed on a re-run; not filed as flaky"
+    else
+      echo "$kind $name" >> "$run_dir/flaky.txt"
+    fi
   done < "$run_dir/retry.txt"
 }
 test_check() { # name, command... — check(), with untouched failures re-run
@@ -339,7 +345,7 @@ test_check() { # name, command... — check(), with untouched failures re-run
   if (cd "$wt" && "$@") > "$run_dir/check.log" 2>&1; then echo "- [x] $name" >> "$checks"; return 0; fi
   cp "$run_dir/check.log" "$run_dir/check-failed.log"
   if retry_untouched "$run_dir/check-failed.log"; then
-    echo "- [x] $name — flaky, passed on a re-run: $(cut -d' ' -f2 "$run_dir/retry.txt" | paste -sd, -)" >> "$checks"; return 0
+    echo "- [x] $name — passed on a re-run: $(sed -E 's/^(go|jest) (.*)/\2 (flaky)/; s/^stalled (.*)/\1 (stalled: the run was frozen)/' "$run_dir/retry.txt" | paste -sd, -)" >> "$checks"; return 0
   fi
   echo "- [ ] **$name — FAILED**" >> "$checks"; python3 "$CHECKFAIL" tails "$run_dir/check-failed.log" >> "$checks"; return 1
 }
@@ -410,6 +416,9 @@ verify() { # sets ok
   fi
   echo "- CI runs every suite on the PR (and \`next build\`); the PR gate marks it ready for review when CI is green." >> "$checks"
 }
+# Keep the Mac awake while this script lives, as flaky.sh does (#869: it slept
+# ~14 min mid-jest on 2026-11-21 and a 20 s timeout fired); skipped off macOS.
+if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & fi
 rescue_if_merged || true
 verify
 # The checks take up to an hour: the PR may have merged during them. Then the
