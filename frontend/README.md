@@ -45,6 +45,7 @@ It trades again (a journaled `hedge_fill`) when they drift more than 10 % apart,
 The worst case counts it as a live bot's does (`worst_case.hedge`), and `GET /api/hedge` serves the hedge on, with no switch.
 A scenario reports `deployment: "demo"` and `version: "scenario <name>"` in `/api/status` (the header's badge shows DEMO · scenario <name>) beside the demo's `testnet (demo)` environment, so it is never read as a track record.
 Without `-scenario` the demo is unchanged.
+`-steady` (#896) turns off the demo's random rolls, so the Details trade log keeps its seeded rows for the whole run; the phone check (`npm run test:phone`) starts both demo bots with it, so a baseline recorded on one run holds on the next.
 
 ```bash
 go run ./cmd/monitor-demo -scenario mixed
