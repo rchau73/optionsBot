@@ -105,6 +105,16 @@ export function pairKey(pair) {
   return `text-${pair.text} on bg-${pair.bg}${pair.under ? ` over bg-${pair.under}` : ""}`;
 }
 
+/** One pair's exact contrast ratio (not rounded); the background is painted over `under` (or the panel) when it has an opacity. */
+export function pairRatio(pair, tokens, palette = {}) {
+  const fg = resolveColor(pair.text, tokens, palette);
+  const bg = resolveColor(pair.bg, tokens, palette);
+  // only a tinted background needs the colour under it (a solid one hides it)
+  const background = bg.alpha < 1 ? mix(bg.color, resolveColor(pair.under ?? "panel", tokens, palette).color, bg.alpha) : bg.color;
+  const text = fg.alpha < 1 ? mix(fg.color, background, fg.alpha) : fg.color;
+  return contrastRatio(text, background);
+}
+
 /**
  * Each pair { text, bg, under?, large?, where } measured: the background is
  * painted over `under` (or the panel) when it has an opacity. Returns
@@ -112,15 +122,86 @@ export function pairKey(pair) {
  */
 export function measurePairs(pairs, tokens, palette = {}) {
   return pairs.map((pair) => {
-    const fg = resolveColor(pair.text, tokens, palette);
-    const bg = resolveColor(pair.bg, tokens, palette);
-    const under = resolveColor(pair.under ?? "panel", tokens, palette);
-    const background = bg.alpha < 1 ? mix(bg.color, under.color, bg.alpha) : bg.color;
-    const text = fg.alpha < 1 ? mix(fg.color, background, fg.alpha) : fg.color;
-    const ratio = Math.round(contrastRatio(text, background) * 100) / 100;
+    const ratio = Math.round(pairRatio(pair, tokens, palette) * 100) / 100;
     const needed = pair.large ? AA_LARGE : AA_BODY;
     return { key: pairKey(pair), where: pair.where, ratio, needed, ok: meetsAA(ratio, pair.large) };
   });
+}
+
+/** A colour as #rrggbb (channels rounded), the form a candidate is written in. */
+export function toHex(color) {
+  const { r, g, b } = parseColor(color);
+  return `#${[r, g, b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The straight-line distance of two colours in sRGB (0–441), the sheet's "how far from today". */
+export function colorDistance(a, b) {
+  const x = parseColor(a);
+  const y = parseColor(b);
+  return Math.round(Math.hypot(x.r - y.r, x.g - y.g, x.b - y.b));
+}
+
+/** The hue of a colour in degrees (0–360), for checking that a candidate keeps its colour family. */
+export function hueOf(color) {
+  const { r, g, b } = parseColor(color);
+  const [mx, mn] = [Math.max(r, g, b), Math.min(r, g, b)];
+  if (mx === mn) return 0;
+  const d = mx - mn;
+  const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
+/** The smaller angle between two hues, 0–180. */
+export const hueGap = (a, b) => Math.min(Math.abs(a - b) % 360, 360 - (Math.abs(a - b) % 360));
+
+/**
+ * The closest ways to make `pair` pass, each found by changing ONE thing and
+ * keeping the rest (#878; the designer's decision sheet, nothing here changes a token):
+ *   - "text": the text colour's token, lightened (toward white) or darkened (toward black), 1 % steps;
+ *   - "background": the background colour's token, the same, when the pair has a solid background token;
+ *   - "tint": the opacity of a tinted background (bg-loss/15 → /8), weaker or stronger, 1-point steps.
+ * Each hit is the first step that reaches `margin` extra ratio over the bar (0 = just passes), as
+ * { kind, token, direction, value, ratio, distance, hue } with `value` a #rrggbb (or an opacity in
+ * percent for "tint") and `ratio` the exact ratio of the pair with it. A colour changed here is
+ * the token's colour everywhere, so a token that is both the text and the tint moves both.
+ * `direction`s with no hit (white cannot get lighter) are left out. Pure.
+ */
+export function nearestPassing(pair, tokens, palette = {}, margin = 0) {
+  const need = (pair.large ? AA_LARGE : AA_BODY) + margin;
+  const out = [];
+  const base = (name) => String(name).split("/")[0];
+  const colorOf = (name) => tokens[base(name)] ?? palette[base(name)];
+  const colourSteps = (kind, name) => {
+    const from = parseColor(colorOf(name));
+    for (const [direction, to] of [["lighter", 255], ["darker", 0]]) {
+      for (let pct = 1; pct <= 100; pct++) {
+        const value = toHex({ r: from.r + (to - from.r) * (pct / 100), g: from.g + (to - from.g) * (pct / 100), b: from.b + (to - from.b) * (pct / 100) });
+        const ratio = pairRatio(pair, { ...tokens, [base(name)]: value }, palette);
+        if (ratio >= need) {
+          out.push({ kind, token: base(name), direction, value, ratio, distance: colorDistance(value, toHex(from)), hue: hueOf(value) });
+          break;
+        }
+      }
+    }
+  };
+  colourSteps("text", pair.text);
+  if (base(pair.bg) !== base(pair.text) && colorOf(pair.bg)) colourSteps("background", pair.bg);
+  const [bgName, pctText] = String(pair.bg).split("/");
+  if (pctText !== undefined) {
+    const now = Number(pctText);
+    for (const [direction, sign] of [["weaker", -1], ["stronger", 1]]) {
+      for (let step = 1; step <= 100; step++) {
+        const pct = now + sign * step;
+        if (pct < 0 || pct > 100) break;
+        const ratio = pairRatio({ ...pair, bg: `${bgName}/${pct}` }, tokens, palette);
+        if (ratio >= need) {
+          out.push({ kind: "tint", token: bgName, direction, value: pct, ratio, distance: step, hue: hueOf(colorOf(bgName)) });
+          break;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**
