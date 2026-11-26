@@ -127,6 +127,10 @@ Read both before changing a rule.
     Allowed while frozen (it only reduces delta); never during the kill switch.
     Each fill journals `hedge_fill` with the market snapshot.
     A cycle with the margin unknown (band 0) or a leg without greeks (`UnpricedLegs`: it would count as its mark alone) trades nothing, real or paper.
+  - **A SOL/XRP bot** (#836, `hedge.Perp{Linear: true}`): the perpetual is the linear `<COIN>_USDC-PERPETUAL` (read from `currency=USDC`, its own rows only), its size and orders in the coin, whole contracts of the exchange's contract size;
+    the options count in their Black–Scholes delta (`hedgeOptionsDelta` = `TotalNetDelta`: no mark subtraction, the equity is dollars); the band = 5 % of the USDC balance ÷ spot;
+    the ledger (`PerpBook.Linear`) books P&L and fees in USDC, the benchmark's `unit` is `USDC`, hedge lines carry `amount_unit` (the coin) and `unit: "USDC"`; BTC/ETH lines and orders are unchanged.
+    **On at first start:** no mode file on a testnet USDC bot with a futures connection → switched on, the file written (unwritable → OFF), journaled `hedge_mode_changed` by `first start`/`system` once Run starts; a file a person switched off stays off.
   - An order whose outcome is unknown is cancelled by label and journaled `hedge_failed`; the next cycle reads the position before sending anything.
   - **A hedge that cannot trade gives the shed back** (`hedge.Health`, in memory, #664; 2026-11-05 mvp: testnet maintenance, 12 `locked_by_admin` rejections an hour, the book with neither shed nor hedge):
     `hedgeKeepsShed` is false while the hedge is halted, its last order was rejected, or `FixedFuturesHedgeUnfilledCycles` (3) cycles in a row had nothing filled (a hedge due, or the perpetual, its contract or its quote unreadable;

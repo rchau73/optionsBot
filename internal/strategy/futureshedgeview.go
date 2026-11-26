@@ -89,8 +89,8 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 	spot := s.md.UnderlyingPrice()
 	p := s.fh.perp
 	mark := perpMark(p, spot)
-	optDelta := s.state.TotalCoinDelta()
-	perpDelta := hedge.PerpDelta(p.Size, mark)
+	optDelta := s.hedgeOptionsDelta()
+	perpDelta := s.perpDeltaOf(p.Size, mark)
 	v := HedgeView{
 		Available: s.futures != nil && s.fh.path != "", Enabled: s.fh.mode.Enabled, Since: s.fh.mode.Since,
 		By: s.fh.mode.By.User, Underlying: s.cfg.Underlying, Instrument: s.perpName(), ContractUSD: s.fh.spec.ContractSize,
@@ -107,11 +107,11 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 	}
 	// The real perpetual is only read while the mode is on; what a failed
 	// close left open still counts.
-	if !v.Enabled && math.Abs(p.Size) < 0.5 {
+	if !v.Enabled && math.Abs(p.Size) < s.perpDust() {
 		v.NetDelta = optDelta
 	}
 	if v.UnrealisedCoin == 0 && p.Size != 0 {
-		v.UnrealisedCoin = hedge.PerpPnL(p.Size, p.AveragePrice, mark)
+		v.UnrealisedCoin = s.fh.kind.PnL(p.Size, p.AveragePrice, mark)
 	}
 	v.Testnet = !s.cfg.IsLive()
 	v.RealisedCoin, v.FeesCoin = s.fh.mode.Ledger.Real.Realised, s.fh.mode.Ledger.Real.Fees

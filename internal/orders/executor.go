@@ -388,11 +388,24 @@ func (e *Executor) GetPositions(ctx context.Context, currency string) ([]RawPosi
 // GetFuturePositions returns the currency's open futures positions
 // (perpetual included). Kept apart from GetPositions, which is option-only,
 // so reconcile and the position check never adopt a hedge (#657).
+// A linear coin's (SOL, XRP, #836) are listed under currency=USDC with every
+// other USDC future: only its own "<COIN>_USDC-" rows are kept. BTC/ETH send
+// the request as before.
 func (e *Executor) GetFuturePositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
-		"currency": currency,
+	rows, err := call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
+		"currency": marketdata.SettlementCurrency(currency),
 		"kind":     "future",
 	}, gateway.PriorityLow)
+	if err != nil || !marketdata.IsLinear(currency) {
+		return rows, err
+	}
+	own := rows[:0]
+	for _, r := range rows {
+		if strings.HasPrefix(r.InstrumentName, marketdata.OptionPrefix(currency)) {
+			own = append(own, r)
+		}
+	}
+	return own, nil
 }
 
 // GetInstrumentSpec reads an instrument's contract size, minimum amount and
