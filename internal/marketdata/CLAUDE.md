@@ -8,6 +8,10 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `marketdata` never imports `internal/exchange` or `internal/exchange/deribit` (`TestExchangeCoupling_MarketDataDoesNotImportTheExchange`); `New` takes the source and `main` builds it.
   Valid ticker intervals are `100ms` and `raw` only.
   `DVOLTracker` keeps one value per UTC day.
+  A live DVOL push reaches it only through the sanity gate (`dvolgate.go`, pure `CheckDVOL`/`ATMMarkIV`, #796): more than ×/÷ 1.5 from the fresh ATM mark IV of the expiry nearest 30 DTE, or without marks a jump over 25 % with spot under 1 %, is rejected (≤ 30 min without marks);
+  the first of an episode (and one every 30 min) is queued for `TakeDVOLRejections`, which the strategy journals as `dvol_rejected`.
+  The startup history seed is not gated.
+  The DVOL feed is the trading connection's, so on testnet it is testnet's own index (the 2026-11-14/15 swings).
   Readers get copies.
   `Track(ctx, names)` subscribes to the tickers of held instruments outside those expiries (positions loaded at startup); the strategy calls it every cycle.
   `Instrument.HasQuote()` is false until the first ticker: never use such an instrument's zero prices as a mark.

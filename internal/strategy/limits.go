@@ -68,6 +68,11 @@ func (s *Strategy) riskStatus(now time.Time, gammaDec GammaDecision) risk.Status
 		slog.Warn("regime history seeded from the live regime", "regime", gammaDec.Regime, "days", s.riskCfg.ConfirmDays)
 		s.logRisk(orders.RiskRegimeSeeded, detail, st, risk.Usage{}, gammaDec.Regime)
 	}
+	// DVOL readings the sanity gate kept out since the last cycle (#796):
+	// the status above already uses the value that stayed.
+	for _, r := range s.md.TakeDVOLRejections() {
+		s.logRisk(orders.RiskDVOLRejected, r.Detail, st, risk.Usage{}, gammaDec.Regime)
+	}
 	s.noteRiskChange(st, gammaDec.Regime)
 	return st
 }

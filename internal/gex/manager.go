@@ -66,7 +66,7 @@ func (m *Manager) LatestSummary() ([]SummaryRow, time.Time) {
 // Like Snapshot it is immutable once published.
 type OISnapshot struct {
 	AsOf         time.Time
-	ByInstrument map[string]float64 // instrument name → open interest (contracts)
+	ByInstrument map[string]float64 // instrument name → open interest in the coin (BTC; SOL for SOL_USDC: contracts × 10), the unit orders are sized in
 }
 
 // OpenInterest returns the open interest from the last successful refresh,
@@ -110,10 +110,18 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	if m.params.Method == MethodNearestFlip {
 		snap.Regime, overridden = ApplyRegimeHysteresis(snap.Regime, m.lastRegime, snap.Spot, snap.GammaFlip, m.bandPct)
 	}
+	prevRegime := m.lastRegime
 	m.lastRegime = snap.Regime
 	m.snapshot = &snap
 	m.mu.Unlock()
 
+	// One line per change of the live regime (#835): a thin book (SOL, XRP)
+	// can flip-flop, and this counts how often.
+	if prevRegime != "" && prevRegime != snap.Regime {
+		slog.Info("gex_regime_changed",
+			"underlying", m.params.Underlying, "from", prevRegime, "to", snap.Regime,
+			"regime_score", snap.RegimeScore, "gamma_flip", snap.GammaFlip, "spot", snap.Spot)
+	}
 	if overridden {
 		slog.Info("gex_regime_hysteresis_held",
 			"held_regime", snap.Regime, "raw_regime", rawRegime, "spot", snap.Spot, "flip", snap.GammaFlip,

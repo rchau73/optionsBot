@@ -223,6 +223,10 @@ On Deribit, BTC options are priced in BTC; dollar figures use the BTC price at t
   When DVOL is high (rich premium, fear already priced in) up to 50 % is allowed; in the middle, 35 %; when it is low (cheap premium, often the calm before a big move), 20 %.
   When dealer positioning amplifies moves (negative gamma), 20 % applies whatever DVOL says.
   Every number is Deribit's own margin calculation, including a simulation of each new trade before it is placed.
+- **A bad volatility reading is ignored:** a live DVOL reading more than 1.5× away (above or below) from the at-the-money option marks' implied volatility, or — with no marks to compare — one that jumps more than 25 % while the price moves less than 1 %, is not used.
+  The last good value stays for the margin band, its daily closes and the GEX buffer (`dvol_rejected` in the journal, #796).
+  On 2026-11-14/15 the testnet DVOL swung 40 ↔ 125 within minutes with spot flat and the marks near 40.
+  Without marks, a new level is taken after 30 minutes.
 - **No knee-jerk reactions:** a change of volatility band or gamma regime must hold for two daily closes before the bot resizes anything.
   Until then it simply stops opening new positions; if the change reverts (a one-day spike), it carries on as before.
 - **Distance to liquidation:** if maintenance margin reaches 35 % of the account's margin balance (Deribit liquidates at 100 %), positions are bought back at once, whatever else is going on.
@@ -280,6 +284,7 @@ Every rule that opens, closes or holds a position, by market state.
 | **Rebalance right after a restart** | ⛔ while IM is within ±1.5 pp of the limit (`rebalance_in_band`: a deploy does not trade on market drift); outside it, top-up or downsize as above. A later confirmed limit change is met exactly | ⛔ waits for confirmation | same as Normal | same as Normal | the MM cut acts at once, band or not |
 | **IM over the limit with no limit change** (a transfer out, a price move: IM > limit + 1.5 pp) | 🔔 alert only, no trade: journaled once `im_over_limit` (IM, limit, margin balance now and at the last rebalance) and shown in the monitor beside the Rebalance button until IM is back at or under the limit (`im_over_limit_cleared`). A person decides with the Rebalance dry run; entries and top-ups have no headroom meanwhile | same alert | same alert | same alert | same alert; the MM cut acts at once as always |
 | **Approved margin unused** (entries allowed, IM under 60 % of the limit for 6 h with no data gap over 15 min) | 🔔 alert only, no trade: journaled once `im_under_use` (IM, limit, share of the limit used, minutes and the cause: the empty slot's last skip reason, or a top-up waiting, a slot sized down by the liquidity cap, every slot full) until IM is back at 60 % of the limit or more (`im_under_use_cleared`). The bot does not act on it: no rule is relaxed, nothing is sold | — (entries not allowed: no alert, an open one ends) | same alert | same alert | — |
+| **A DVOL reading the market does not support** (more than 1.5× from the ATM option marks' IV, or without marks a jump over 25 % with spot moving under 1 %) | ⛔ not used: the last good value stays for the IV band, its daily closes and the GEX buffer; journaled once per episode `dvol_rejected` with both values, again every 30 min while it lasts; without marks a new level is taken after 30 min | same | same | same | same |
 | **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |
 | **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Rolls** (take-profit, delta drift, DTE) | ✅ · rest at the mid for 90 s, then the rest at the ask; any urgent exit cancels the resting order first | ✅ | ✅ | ✅ | ✅ |
