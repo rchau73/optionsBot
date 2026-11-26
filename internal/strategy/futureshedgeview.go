@@ -64,6 +64,10 @@ type HedgeView struct {
 	// BookScenarios: the one-day move table of the Positions page (#666);
 	// empty while a leg has no greeks or there is no spot.
 	BookScenarios []hedge.BookScenario `json:"book_scenarios"`
+	// A linear (USDC) perpetual, SOL/XRP (#836): its size in SizeUnit (the
+	// coin); PerpUSD and ContractUSD are then their value at the average price.
+	PerpSize float64 `json:"perp_size,omitempty"`
+	SizeUnit string  `json:"size_unit,omitempty"`
 }
 
 // standDownWords is the view's reason for a hedge standing down (#813).
@@ -115,9 +119,12 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 	}
 	v.Testnet = !s.cfg.IsLive()
 	v.RealisedCoin, v.FeesCoin = s.fh.mode.Ledger.Real.Realised, s.fh.mode.Ledger.Real.Fees
+	if s.fh.kind.Linear {
+		s.linearView(&v, mark)
+	}
 	v.BookScenarios = []hedge.BookScenario{}
 	if len(s.state.UnpricedLegs()) == 0 {
-		v.BookScenarios = hedge.BookScenarios(spot, s.state.TotalNetDelta(), s.state.NetGamma(), p.Size)
+		v.BookScenarios = s.fh.kind.BookScenarios(spot, s.state.TotalNetDelta(), s.state.NetGamma(), p.Size)
 	}
 	switch {
 	case s.futures == nil:
@@ -126,6 +133,32 @@ func (s *Strategy) hedgeView(now time.Time) HedgeView {
 		v.Unavailable = "this bot has no data file to keep the mode in"
 	}
 	return v
+}
+
+// linearView keeps the view's units for a linear (USDC) perpetual (#836): the
+// size in the coin moves to PerpSize, PerpUSD and ContractUSD become their
+// value at the average price (the mark before one exists), so contracts =
+// PerpUSD ÷ ContractUSD still holds and the inverse P&L the summary and the
+// payoff count from the average price is the linear one exactly:
+// size·avg × (1/avg − 1/S) coin = size × (S − avg) USDC at S. The USDC P&L,
+// fees and funding are shown in coin at the mark, as for BTC/ETH.
+func (s *Strategy) linearView(v *HedgeView, mark float64) {
+	at := v.PerpAvg
+	if at <= 0 {
+		at = mark
+	}
+	v.PerpSize, v.SizeUnit = v.PerpUSD, s.cfg.Underlying
+	v.PerpUSD *= at
+	v.ContractUSD = perpStep(s.fh.kind, s.fh.spec) * at
+	coin := func(usdc float64) float64 {
+		if mark <= 0 {
+			return 0
+		}
+		return usdc / mark
+	}
+	v.UnrealisedCoin, v.FundingCoin = coin(v.UnrealisedCoin), coin(v.FundingCoin)
+	v.RealisedCoin, v.FeesCoin = coin(v.RealisedCoin), coin(v.FeesCoin)
+	v.Benchmark = v.Benchmark.InCoin(mark)
 }
 
 // HedgeState is the published hedge view. Safe from any goroutine.
@@ -185,11 +218,14 @@ func (s *Strategy) HedgePreview(ctx context.Context) (HedgePreview, error) {
 	}
 	out := HedgePreview{
 		Preview: hedge.BuildPreview(hedge.PreviewInput{
-			Spot: spot, OptionsDelta: s.state.TotalCoinDelta(), ScenarioDelta: s.state.TotalNetDelta(), OptionsGamma: s.state.NetGamma(),
+			Spot: spot, OptionsDelta: s.hedgeOptionsDelta(), ScenarioDelta: s.state.TotalNetDelta(), OptionsGamma: s.state.NetGamma(),
 			PerpUSD: p.size, PerpAvg: p.avg, PerpMark: p.mark, Unrealised: p.floating, Funding: p.funding,
-			FeeRate: config.FixedFuturesHedgeFeeRate,
+			FeeRate: config.FixedFuturesHedgeFeeRate, Kind: s.fh.kind,
 		}),
 		Underlying: s.cfg.Underlying, Instrument: s.perpName(), Spot: spot, AsOf: time.Now(), Warnings: []string{},
+	}
+	if s.fh.kind.Linear {
+		out.SizeUnit = s.cfg.Underlying
 	}
 	rs := s.riskView().Status
 	out.LimitIMPct, out.MaxMMPct = rs.LimitIMPct, rs.MaxMMPct
@@ -199,7 +235,7 @@ func (s *Strategy) HedgePreview(ctx context.Context) (HedgePreview, error) {
 		u := sum.MarginUsage()
 		out.MarginUnit, out.IMPctNow, out.MMPctNow = u.Unit, u.IMPct(), u.MMPct()
 		out.IMPctAfter, out.MMPctAfter = out.IMPctNow, out.MMPctNow
-		if math.Abs(p.size) >= 0.5 {
+		if math.Abs(p.size) >= s.fh.kind.Dust(0) { // the spec is the loop's: any size open
 			after, err := s.exch.SimulatePortfolio(ctx, s.cfg.Underlying, map[string]float64{s.perpName(): -p.size})
 			if err != nil {
 				out.MarginError = "simulate_portfolio: " + err.Error()

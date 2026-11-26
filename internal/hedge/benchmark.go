@@ -258,6 +258,20 @@ func (l Ledger) Summarise(funding, mark float64) Summary {
 	return s
 }
 
+// InCoin is a USDC summary (Unit "USDC") with its _coin totals in the coin
+// at mark, as the monitor labels them (#836); AdvantageUSD stays. Any other
+// summary, or no mark, is returned as it is.
+func (s Summary) InCoin(mark float64) Summary {
+	if s.Unit != "USDC" || mark <= 0 {
+		return s
+	}
+	for _, f := range []*float64{&s.AdvantageCoin, &s.HedgeCoin, &s.RealCoin, &s.VirtualCoin, &s.LegsCoin} {
+		*f /= mark
+	}
+	s.Unit = ""
+	return s
+}
+
 // ── The mode file ────────────────────────────────────────────────────────────
 
 // Actor is who switched the mode (the monitor's signed-in person).

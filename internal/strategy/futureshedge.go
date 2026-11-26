@@ -165,7 +165,12 @@ func (s *Strategy) hedgeOptionsDelta() float64 {
 func (s *Strategy) perpDeltaOf(size, price float64) float64 { return s.fh.kind.Delta(size, price) }
 
 // perpDust is the size under which the perpetual counts as flat.
-func (s *Strategy) perpDust() float64 { return s.fh.kind.Dust(s.fh.spec.ContractSize) }
+func (s *Strategy) perpDust() float64 { return s.fh.kind.Dust(perpStep(s.fh.kind, s.fh.spec)) }
+
+// perpStep is the perpetual's order grid (hedge.Perp.Step).
+func perpStep(kind hedge.Perp, spec orders.InstrumentSpec) float64 {
+	return kind.Step(spec.ContractSize, spec.MinTradeAmount)
+}
 
 // perpAmount is a perpetual amount in words: "23050 USD" (inverse), "2.8 SOL" (linear).
 func (s *Strategy) perpAmount(x float64) string {
@@ -396,7 +401,7 @@ func (s *Strategy) realHedge(ctx context.Context, m marginState, spot float64, n
 		return
 	}
 	perpDelta := s.perpDeltaOf(perp.Size, perpMark(perp, spot))
-	usd, side := s.fh.kind.Order(optDelta, perpDelta, band, spot, spec.ContractSize)
+	usd, side := s.fh.kind.Order(optDelta, perpDelta, band, spot, perpStep(s.fh.kind, spec))
 	if s.fh.health.Waiting(now) {
 		return // halted: nothing until the re-check
 	}
@@ -639,7 +644,7 @@ func (s *Strategy) paperHedge(ctx context.Context, m marginState, spot float64, 
 		}
 		return
 	}
-	usd, side := s.fh.kind.Order(optDelta, s.perpDeltaOf(v.SizeUSD, spot), band, spot, spec.ContractSize)
+	usd, side := s.fh.kind.Order(optDelta, s.perpDeltaOf(v.SizeUSD, spot), band, spot, perpStep(s.fh.kind, spec))
 	if usd == 0 || hedge.RateLimited(s.fh.paperSent, now, config.FixedFuturesHedgeMaxPerHour) {
 		return
 	}
