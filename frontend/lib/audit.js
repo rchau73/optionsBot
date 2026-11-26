@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS = [
   "audit_exported",
   "parameter_change_previewed",
   "parameter_change_recorded",
+  "parameter_change_dropped",
   "events_pruned",
   "events_prune_failed",
   "events_deleted",

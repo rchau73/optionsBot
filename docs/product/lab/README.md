@@ -33,6 +33,8 @@ A manager's parameter change is studied offline before anyone decides on it:
    "The account's value" is the shipped config in `frontend/content/lab-settings.json` until E8's tenancy gives a real one; mvp's BTC runs `config_btc.mvp.yaml`, which differs only in `gex_direction`, a core policy that never gets a token.
    The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account, both values and the 5-minute window it was issued in, so the confirm can recompute it and see that what is confirmed is what was shown.
    Reading a preview writes one audit line, `parameter_change_previewed`, naming the person, the account, the run and both values; a refused call writes none.
+   `may_confirm` (#890) says whether this person may confirm for this account, with `may_confirm_reason` in plain words when not: a manager linked only to other accounts (#760) gets `may_confirm: false` and no token.
+   It is the apply route's own check (`decisionRefusal`, `frontend/lib/labapply.js`: the role, then the account link), so the field and the apply's refusal cannot disagree; a user is refused by the preview itself, as before.
 
 7. `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741, managers and admins) records the confirmed change, and applies nothing.
    The server recomputes the preview and refuses a token for another run, person or value, one over 15 minutes old (`CONFIRM_TOKEN_MINUTES`), a core policy (it names the product owner as the approver), a stale or out-of-range value, a run whose request is not done and a run already recorded (a token is used once).
@@ -40,10 +42,14 @@ A manager's parameter change is studied offline before anyone decides on it:
    The record itself changes nothing: no config file is written, no bot restarted, no order placed.
    **A recorded change reaches the running bot through a reviewed config pull request** (decision `../decisions/2026-11-20-lab-change-reaches-bot-by-pr.md`, #862): `cmd/labapply` checks it into a candidate, `cmd/labpr` opens the draft PR (item 10), a person's merge is the approval and the usual deploy restarts the bot; hot-reload stays a later story.
    It runs on the shipped configs only: per-account changes wait for E8's tenancy (until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
+   A manager may instead **drop the proposal**: `POST /api/lab/runs/<id>/drop` (#890, managers and admins, the same role and account-link check) records the decision to leave the setting as it is.
+   It writes `data/compare/dropped/<id>.json` once (the person as an 8-character hash, the account, the run and the time; no setting value and no amount) and one audit line, `parameter_change_dropped`, and applies nothing.
+   A second drop answers that it is already recorded, a confirmed run cannot be dropped and a dropped one cannot be confirmed.
+   The admin rule stays as it is: the apply and the drop accept an admin; whether to refuse one on an onboarded account (PRD §3) is open for a person until E8's tenancy defines one.
 
 8. `cmd/labstats` (#824) is the lab's usage report, from its own files and read-only.
    Over the last 28 days (`-days`) it gives the requests made and the share ending `done`, `failed` and `expired`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per ISO week (an 8-character hash, never a name).
-   It also counts the done runs with a recorded change (`applied/`), those refused as a core policy (`candidates/<id>/candidate.json`), and the AI analyses written (an `analysis.json` and no `note`), a count only.
+   It also counts the done runs with a recorded change (`applied/`), those with a dropped proposal (`dropped/`, #890), the share of done runs ending in a decision (recorded or dropped: the lab's metric), those refused as a core policy (`candidates/<id>/candidate.json`), and the AI analyses written (an `analysis.json` and no `note`), a count only.
    A request file that cannot be read is counted as unreadable; no setting value, amount or account appears; Markdown or `-json`.
    The weekly usage report appends it as its "Lab usage" section (`scripts/agents/usage.sh`, `docs/operations.md` "Lab usage report").
    Targets, assumptions to confirm after the first four weeks of use: done share ≥ 90 % and median time to a finished run ≤ 30 min (`compare.LabTargetDonePct`, `LabTargetMedianMinutes`; the report says met, not met or too early to judge).

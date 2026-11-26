@@ -21,9 +21,9 @@ Who may do what, and the Users page that manages them.
   - admin: ✓
   - manager: ✓
   - user: — (403)
-- Confirm a lab run's previewed change, which records it and applies nothing (`POST /api/lab/runs/<id>/apply`, #741; a core policy needs the product owner)
+- Confirm a lab run's previewed change, which records it and applies nothing (`POST /api/lab/runs/<id>/apply`, #741; a core policy needs the product owner), or drop its proposal, which records the decision to leave the setting as it is (`POST /api/lab/runs/<id>/drop`, #890)
   - admin: ✓
-  - manager: ✓ (every account, until E8's tenancy links managers to accounts)
+  - manager: ✓ (every account without a link; a linked manager only the linked accounts, #760; the preview's `may_confirm` says which, #890)
   - user: — (403)
 - Create, edit and delete users; reset a password or issue a reset link (Users page, `/api/admin/users`)
   - admin: ✓
@@ -62,7 +62,8 @@ An admin may link a manager to the exchange accounts they manage (Users page →
 The account ids, labels and each account's bots come from the registry's key-free status file (`ACCOUNTS_STATUS_PATH`, default `data/accounts_status.json`, written by `go run ./cmd/accounts -check -json -out`, #655); no key or secret is read.
 A monitor bot (`btc`) belongs to the one account with a bot of that currency (`botAccount`, `lib/auth/accountLinks.js`).
 - A manager with **no** link acts on every account of this deployment, as before: nothing changes until an admin sets a link.
-- A manager with at least one link: every state-changing route that targets a bot (`linked: true` in `STATE_CHANGING_ROUTES`: close, rebalance, the hedge switch, and the lab apply, whose run names its bot by the underlying, #741) checks the link on the server after the role check (`refuseOtherAccount`, `lib/auth/server.js`).
+- A manager with at least one link: every state-changing route that targets a bot (`linked: true` in `STATE_CHANGING_ROUTES`: close, rebalance, the hedge switch, and the lab apply and drop, whose run names its bot by the underlying, #741, #890) checks the link on the server after the role check (`refuseOtherAccount`, `lib/auth/server.js`).
+  The lab's two use `decisionRefusal` (`lib/labapply.js`), which the preview's `may_confirm` reports too.
   On another account it answers 403 with the account in words ("you do not manage account Account B (acct-b), which bot eth trades for: …"); the bot hears nothing and nothing is audited.
   When the monitor cannot tell the bot's account (no status file, no account or several accounts with that currency) a linked manager is refused too: the check fails closed.
 - Admins are never limited; users keep read-only access (their role is refused first).
@@ -230,9 +231,12 @@ Manager or admin (`ROLE_GUARDED_READS` in `lib/auth/routeRoles.js`, called as ev
 **Does:** says what confirming a finished run would change (`lib/labpreview.js`); it changes no config and applies nothing, and the apply itself is not built.
 Answer: `run_id`, `time`, `person`, `account` (`underlying`, `config`) and `changes`, each with `key`, `title`, `tip`, `current` (the account's value, from `content/lab-settings.json`), `base` (the value the run started from), `proposed`, `core_policy` and `policy_note`.
 It also carries `backtested` (`label` "backtested, not a forecast", `backtest`, `replay`, `stress_ran`, `windows`), `fragility` (`checked`, `key`, `cliffs`, or a `note` when the check was not run) and `analysis`, withheld behind `L10_ANALYSIS_GATE_OPEN` like the run's.
-Last come `needs_product_owner`, `stale`, `confirmable`, `reasons` (plain words, `[]` when confirmable), `confirm_token`, `audit_line` and `applied`.
+Last come `needs_product_owner`, `stale`, `confirmable`, `reasons` (plain words, `[]` when confirmable), `may_confirm`, `may_confirm_reason`, `confirm_token`, `audit_line` and `applied`.
+`may_confirm` (#890) says whether this person may confirm this run for its account: the apply route's own check (`decisionRefusal`, `lib/labapply.js`: the role, then the manager–account link), so the field and the apply's 403 cannot disagree.
+When false, `may_confirm_reason` is the apply's refusal in plain words ("you do not manage account Account A (acct-a), which bot btc trades for: …") and `confirm_token` is null; when true it is null.
+`confirmable` is about the run (stale, core policy, no numbers), `may_confirm` about the person.
 `needs_product_owner` is true for a core policy or a key the catalogue refuses; `stale` for a run over 7 days old, a value the run started from that is not the account's, an account's value that cannot be read, or a proposed value now refused.
-Either, or no numbers for the proposed value, gives `confirm_token: null`; else it is an HMAC of what was shown and of the 5-minute window it was issued in, which `POST /api/lab/runs/<id>/apply` accepts for at most 15 minutes.
+Either, no numbers for the proposed value, or `may_confirm: false`, gives `confirm_token: null`; else it is an HMAC of what was shown and of the 5-minute window it was issued in, which `POST /api/lab/runs/<id>/apply` accepts for at most 15 minutes.
 Manager or admin (`ROLE_GUARDED_READS`, called as every caller by the role-matrix test); each answered preview writes one audit line, `parameter_change_previewed`, with the person, the account, the run and both values.
 
 **Refusals (no audit line):** 404 an id that is not a folder time, or no run · 409 a run that changed no setting · 500 unreadable or malformed JSON · 401/403 as above
@@ -252,9 +256,22 @@ A manager linked to accounts (#760) is refused 403 on a run whose bot (its under
 **Refusals (every one answers `applied: false, recorded: false`, writes no record and no audit line):**
 - 400 no `confirm_token` or malformed JSON.
 - 409 a token that does not match (another run, person or value, a changed character) or is older than 15 minutes ("open the preview again").
-- 409 a run already recorded ("a confirm is used once"), a run whose request is not done, a run that changed no setting, or one the preview would not confirm (stale, out of range, no numbers; `reasons`).
+- 409 a run already recorded ("a confirm is used once"), a run whose proposal was dropped (#890: "a dropped proposal cannot be confirmed"), a run whose request is not done, a run that changed no setting, or one the preview would not confirm (stale, out of range, no numbers; `reasons`).
 - 409 a core policy: "a new default needs the product owner, not a manager's confirm", with `approver`.
 - 404 an id that is not a folder time, or no run · 403 cross-origin · 413 a body over 1 KB · 415 not JSON · 500 an unreadable report or a record that could not be written · 401/403 as above.
+
+#### `POST /api/lab/runs/<id>/drop` `{}` (#890)
+
+**Does:** records a manager's decision to leave the setting as it is (`lib/labapply.js`), so the lab's usage report counts it beside the confirmed changes; it writes no config, restarts no bot and places no order.
+No body is needed (same-origin JSON, at most 1 KB, ignored); the role and the manager–account link are checked as for the apply (`decisionRefusal`), so a linked manager is refused 403 on another account's run with the same words.
+On success it writes `COMPARE_DIR/dropped/<id>.json` once (mode 0600, created exclusively) with `run_id`, `dropped_at`, `person` (the first 8 hex of the username's SHA-256, as `cmd/labstats` hashes a requester), `role`, `account` (`underlying`, `config`), `applied: false` and `dropped: true`: no setting value and no amount.
+201 with `message`, `run_id`, `dropped_at`, `person`, `account` and `audit_line`.
+Manager or admin (`STATE_CHANGING_ROUTES`, `linked: true`); one audit line, `parameter_change_dropped`, with the person's username, the account and the run; an audit line that cannot be written takes the record back (500), so the drop may be retried.
+A dropped run can no longer be confirmed, and a confirmed one cannot be dropped.
+
+**Refusals (every one answers `applied: false, dropped: false`, writes no record and no audit line):**
+- 409 a run already dropped ("a drop is recorded once", naming the hash and the time), a run whose change was recorded ("a confirmed run cannot be dropped"), a run whose request is not done, or a run that changed no setting.
+- 403 a linked manager on another account's run · 404 an id that is not a folder time, or no run · 403 cross-origin · 413 a body over 1 KB · 415 not JSON · 500 an unreadable report or a record that could not be written · 401/403 as above.
 
 #### `POST /api/lab/requests` `{"settings": [{"key", "value"}], "underlying"?}` (#641)
 

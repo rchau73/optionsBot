@@ -356,16 +356,17 @@ go run ./cmd/labpr -id 20261104T230000Z -compare data/compare            # branc
 
 ### Lab usage report
 
-`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, the candidates' status and the analyses written), read-only.
+`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, `dropped/`, the candidates' status and the analyses written), read-only.
 
 ```bash
-go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, analyses written
+go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, dropped proposals, done runs ending in a decision, analyses written
 go run ./cmd/labstats -compare data/compare -days 7 -json
 ```
 
 No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
 It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
 A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
+A deliberate drop (#890, `POST /api/lab/runs/<id>/drop`, `dropped/<id>.json`) counts beside the recorded changes, and "Done runs ending in a decision (recorded or dropped)" is the lab's metric; a run with both files counts once, as recorded.
 The section ends with one more line, the requests the agents' tick started in the last 28 days (below).
 
 ### Lab runner on the tick

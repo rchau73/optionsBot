@@ -31,7 +31,16 @@ export const recordsDir = (compareDir) => path.join(compareDir, "applied");
 /** A short id of a confirm token for the record and the audit line: never the token itself. */
 export const tokenId = (token) => crypto.createHash("sha256").update(token).digest("hex").slice(0, 16);
 
-/** The record of a run already confirmed, or null; a file that cannot be read still counts as recorded. */
+/** The folder of the dropped proposals inside the comparison reports' folder (#890). */
+export const droppedDir = (compareDir) => path.join(compareDir, "dropped");
+
+/** The audit action of a dropped proposal (auth.recordAction, #890). */
+export const DROP_AUDIT_ACTION = "parameter_change_dropped";
+
+/** A person as 8 hex characters of the SHA-256 of their username: the same as cmd/labstats' ManagerHash. */
+export const personHash = (username) => crypto.createHash("sha256").update(String(username)).digest("hex").slice(0, 8);
+
+/** The record of a run already confirmed (or, in `droppedDir`, dropped), or null; a file that cannot be read still counts. */
 export function readRecord(dir, runId) {
   const file = path.join(dir, `${runId}.json`);
   if (!fs.existsSync(file)) return null;
@@ -44,13 +53,35 @@ export function readRecord(dir, runId) {
 
 const refusal = (status, error, extra = {}) => ({ status, body: { error, ...extra, applied: false, recorded: false, nothing_applied: NOT_APPLIED } });
 
+/** The roles that may confirm or drop a lab change (STATE_CHANGING_ROUTES). */
+export const DECIDER_ROLES = ["manager", "admin"];
+
+/** The monitor bot a run's change is for: its underlying, lower case ("BTC" → "btc"). */
+export const runBot = (run) => String(run.report?.underlying ?? "").toLowerCase();
+
+/**
+ * Why `user` may not confirm (or drop) a change of `run`, in plain words, or
+ * null (#890): the role, then the manager–account link (#760). The one check
+ * behind the preview's `may_confirm` and the 403 of the apply and drop routes,
+ * so the field and the refusal cannot disagree. `loadAccounts` reads the
+ * account registry (lib/auth/accountLinks.js readAccounts).
+ */
+export function decisionRefusal(auth, user, run, loadAccounts) {
+  if (!DECIDER_ROLES.includes(user.role)) return `your role (${user.role}) cannot confirm a change: a manager or an admin decides`;
+  return auth.accountRefusal(user, runBot(run), loadAccounts);
+}
+
+/** "by 1a2b3c4d at <time>" of a drop record, or "" when it cannot be read. */
+const droppedBy = (dropped) => (dropped?.person ? ` by ${dropped.person} at ${dropped.dropped_at}` : "");
+
 /**
  * Checks a confirm of `run` (readRun's run) by `person` with `token` at `now`
  * (ms): { preview } when it may be recorded, else { status, body } with the
  * reason in plain words. `requests` are the run requests (to tell a run still
- * running), `recorded` the run's record or null.
+ * running), `recorded` the run's record or null, `dropped` its drop record or
+ * null (#890: a dropped proposal cannot be confirmed).
  */
-export function checkConfirm({ run, person, token, key, now, requests, recorded }) {
+export function checkConfirm({ run, person, token, key, now, requests, recorded, dropped = null }) {
   if (typeof token !== "string" || token === "") {
     return refusal(400, 'send {"confirm_token": "<the token the preview gave you>"}');
   }
@@ -58,6 +89,7 @@ export function checkConfirm({ run, person, token, key, now, requests, recorded 
     const by = recorded.person ? ` by ${recorded.person} at ${recorded.recorded_at}` : "";
     return refusal(409, `this run's change was already recorded${by}: a confirm is used once`);
   }
+  if (dropped) return refusal(409, `this run's proposal was dropped${droppedBy(dropped)}: a dropped proposal cannot be confirmed`);
   const unfinished = requests.find((r) => r.run_id === run.id && r.status !== STATUS.done);
   if (unfinished) return refusal(409, `the run is not finished (its request is ${unfinished.status}): wait until it is done`);
   const preview = buildPreview(run, person, now);
@@ -128,6 +160,59 @@ export function writeRecord(dir, record) {
 /** Removes a run's record: its audit line could not be written, so the confirm did not happen and may be retried. */
 export function removeRecord(dir, runId) {
   fs.rmSync(path.join(dir, `${runId}.json`), { force: true });
+}
+
+const dropRefusal = (status, error) => ({ status, body: { error, applied: false, dropped: false, nothing_applied: NOT_APPLIED } });
+
+/**
+ * Checks a drop of `run` (#890): { preview } when it may be recorded, else
+ * { status, body } with the reason in plain words. Only a done run with a
+ * proposal, never one already recorded (confirmed) or dropped.
+ */
+export function checkDrop({ run, now, requests, recorded, dropped }) {
+  if (dropped) return dropRefusal(409, `this run's proposal was already dropped${droppedBy(dropped)}: a drop is recorded once`);
+  if (recorded) {
+    const by = recorded.person ? ` by ${recorded.person} at ${recorded.recorded_at}` : "";
+    return dropRefusal(409, `this run's change was already recorded${by}: a confirmed run cannot be dropped`);
+  }
+  const unfinished = requests.find((r) => r.run_id === run.id && r.status !== STATUS.done);
+  if (unfinished) return dropRefusal(409, `the run is not finished (its request is ${unfinished.status}): wait until it is done`);
+  const preview = buildPreview(run, "", now);
+  if (!preview) return dropRefusal(409, "this run changed no setting: there is no proposal to drop");
+  return { preview };
+}
+
+/**
+ * The record of a dropped proposal (data/compare/dropped/<run id>.json, #890):
+ * the person as a hash, the account, the run and the time — no setting value
+ * and no amount. `line` is the audit line's text, which names the person.
+ */
+export function buildDropRecord(preview, user, now) {
+  const record = {
+    run_id: preview.run_id,
+    dropped_at: new Date(now).toISOString(),
+    person: personHash(user.username),
+    role: user.role,
+    account: preview.account,
+    applied: false,
+    dropped: true,
+  };
+  const line = `parameter change dropped: ${user.username}, account ${record.account.underlying} (${record.account.config ?? "no config"}), run ${record.run_id}; nothing applied to a running bot`;
+  return { record, line };
+}
+
+/** The answer of a dropped proposal. */
+export function droppedAnswer(record, line) {
+  return {
+    applied: false,
+    dropped: true,
+    message: `Dropped: this run's proposal for ${record.account.underlying} is recorded as a decision to leave the setting as it is; ${NOT_APPLIED}.`,
+    run_id: record.run_id,
+    dropped_at: record.dropped_at,
+    person: record.person,
+    account: record.account,
+    audit_line: line,
+  };
 }
 
 /** The answer of a recorded change: what was recorded, the numbers labelled as backtested and the risks next to them. */
