@@ -88,6 +88,18 @@ type journalFacts struct {
 	journalLine
 	Slot   *orders.SlotRef        `json:"slot"`
 	Market *orders.MarketSnapshot `json:"market"`
+	// A futures hedge line's side and fill (orders.HedgeRecord, #877): its
+	// side is "side", not "direction", and a filled one changed the book.
+	HedgeSide string  `json:"side"`
+	FilledUSD float64 `json:"filled_usd"`
+}
+
+// sideOf is a line's buy | sell: an order's direction, else a hedge line's side.
+func sideOf(l journalFacts) string {
+	if l.Direction != "" {
+		return l.Direction
+	}
+	return l.HedgeSide
 }
 
 // tradeMarket is the market a fill or a close recorded; nil for other events.
@@ -106,7 +118,7 @@ var digits = regexp.MustCompile(`[0-9]+(?:[.,][0-9]+)*`)
 // never collapsed with another.
 func alwaysOwn(event string, l journalFacts) bool {
 	return event == orders.EventFilled || event == orders.EventClosed ||
-		l.Actor != nil || l.Change == orders.RiskRebalanceManual || l.FilledQty > 0
+		l.Actor != nil || l.Change == orders.RiskRebalanceManual || l.FilledQty > 0 || l.FilledUSD > 0
 }
 
 // reasonOf is the rule word of a line: its close reason, skip word, trigger
@@ -176,7 +188,7 @@ func (c *journalCollector) add(e orders.RecentEvent) bool {
 	if !alwaysOwn(e.Event, l) {
 		// The plain sentence without its numbers tells holds of one skip word
 		// apart (repair_held: stopped, GEX shed, regime side, top-up).
-		key = fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", e.Event, reason, l.Instrument, slot, l.OptionType, l.Direction,
+		key = fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", e.Event, reason, l.Instrument, slot, l.OptionType, sideOf(l),
 			digits.ReplaceAllString(plain, "#"))
 		if i, ok := c.byKey[key]; ok {
 			it := &c.items[i]
@@ -196,7 +208,7 @@ func (c *journalCollector) add(e orders.RecentEvent) bool {
 	}
 	c.items = append(c.items, JournalItem{
 		Seq: e.Seq, At: e.At, Event: e.Event, Reason: reason, Instrument: l.Instrument, Slot: l.Slot,
-		OptionType: l.OptionType, Side: l.Direction, Plain: plain,
+		OptionType: l.OptionType, Side: sideOf(l), Plain: plain,
 		Count: 1, FirstSeq: e.Seq, First: e.At, Last: e.At, Market: tradeMarket(e.Event, l),
 	})
 	return true
