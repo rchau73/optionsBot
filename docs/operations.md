@@ -335,10 +335,24 @@ A change a manager confirms in the strategy-change lab is only recorded (`data/c
 go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # → data/compare/candidates/<id>/: candidate.json (ready | refused, reasons), diff.md, config.candidate.yaml when ready
 ```
 
-A person takes a `ready` candidate into a deploy: they read `diff.md` (the values, the run's backtested numbers and risks), copy the changed line into the shipped config named there in a pull request, and the usual review and merge deploy it (both BTC configs change together, `TestConfig_MVPBTCDiffersOnlyInDirection`).
-There is no automatic path from a candidate to a running bot.
 A core-policy setting is refused (`needs_product_owner`) unless the record carries `product_owner_approval`, the reference of the product owner's approval that a person adds.
 `refused` lists the reasons in plain words (a fixed key, a value out of range, the shipped setting changed since the run, no report); fix the cause and run it again: a second run on an unchanged record rewrites nothing.
+
+A `ready` candidate reaches the bot only through a pull request a person merges (decision `docs/product/decisions/2026-11-20-lab-change-reaches-bot-by-pr.md`, #862).
+A person runs `cmd/labpr` by hand, from a clone whose `origin` is GitHub and with `gh` signed in; nothing schedules it.
+
+```bash
+go run ./cmd/labpr -id 20261104T230000Z -compare data/compare -dry-run   # prints the branch, the config diff and the PR body; touches nothing
+go run ./cmd/labpr -id 20261104T230000Z -compare data/compare            # branch lab/<id> from origin/main, one commit, one draft PR; exit 0 opened or already there, 2 refused, 1 error
+```
+
+- It acts only on a `ready` candidate whose `config.candidate.yaml` still matches the shipped config on `origin/main`; anything else exits 2 with the reasons and starts no git command (run `cmd/labapply` again after the shipped config moved).
+- The branch changes only the recorded values, in the config named by the candidate and in its twin (`config_btc.yaml` ↔ `config_btc.mvp.yaml`, except `gex_direction`); the twin must still hold the value the run started from.
+  `scripts/regen.sh` then rewrites the generated files (the effective-config goldens); any other changed file stops it before the commit.
+- The draft PR's body has the run id, each setting with its old and new value, the headline numbers in percentages ("backtested, not a forecast"), the fragility flags, the risks, the requester as the 8-character hash `cmd/labstats` uses and a line that the merge is the approval.
+  It has no name, account or amount (checked: a body naming the person or holding an amount is refused), and the AI analysis stays out while L10 is open.
+- One PR per run id: a second run reports the open (or merged) PR and changes nothing; a PR a person closed unmerged is not reopened.
+- It never merges, never pushes to `main`, restarts no bot and sends no order: after the merge the usual deploy (`deploy.sh` for mvp, `scripts/promote.sh` for stable) restarts the bot on the new config.
 
 ### Lab usage report
 

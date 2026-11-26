@@ -169,10 +169,13 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `requests.sh` (each tick; exits at once unless a request in some env's `data/monitor/requests.jsonl` has no status line, or a filed one is open
     — that sweep at most hourly; rules in pure `requests.py`, files only)
   - marks a filed request `fixed`/`not_planned` when its issue closes, `filed` when an issue already carries its `<!-- assistant-request: <env>/R-NNNN -->` marker (never filed twice),
+  - runs the mechanical filter first (#852, pure `request_filter.py`, no Claude; `in_review` requests are read again): duplicate of a card or an earlier request, no evidence with fewer than two steps → `needs_info`, `explained_by` → `not_a_bug`;
   - redacts the rest (`.env` secrets as `deploy_issue.py`, emails, account ids, the requester's username and @mentions, long tokens, coin/USD amounts → "an amount"; no user, role or answer id)
   - and hands at most the day's cap left (10 issues a UTC day, all envs) to one read-only PM agent run (`docs/product/assistant/request-triage.md`, request text fenced as untrusted data):
     duplicate (an issue open or closed in 14 days, else refused), not_a_bug (reason), needs_info,
-    accept → a `bug`/`enhancement` issue `[E?] …` in Triage, redacted again, with the request id and "From the in-product assistant";
+    accept → a `bug`/`enhancement` + epic-labelled issue `[E?] …` in Triage, through `requests.py` `sanitise` (account names, sizes, journal references as "journal line from <date>"), with "Sent from the assistant, request <id>" and `<!-- agent:pm -->`;
+    text the sanitiser cannot classify holds it as `needs_info` for a person; each filing is one `data/agents/requests/audit.jsonl` line (role, request key, issue);
+  - without `--file` a dry run (writes and files nothing); the tick passes `--file` unless `REQUESTS_FILE=0`; it leaves out a `DERIBIT_ENV=live` env unless `REQUESTS_FILE_LIVE=1` (`agents.env`);
   - every verdict appends `{id, status, note, issue, issue_url, ts}` to that env's `requests_status.jsonl` (My requests; `not_planned` added to `STATUSES`);
   - no valid verdict → retried, 3 runs at most (`requests_attempts.json`); ledger agent `requests`.
 - Token savers (2026-10-27, AGENTIC.md "Parallel runs and limits"):

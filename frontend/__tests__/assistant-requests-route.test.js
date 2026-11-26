@@ -113,6 +113,7 @@ describe("Scenario: Given Send, then one line lands in requests.jsonl and My req
     });
     expect(line.citations).toEqual(expect.arrayContaining(["pnl:btc/2026-10-27T14:00:00Z", "journal:btc"]));
     expect(line.journal_refs).toEqual(line.citations);
+    expect(line.explained_by).toEqual([]);
     expect(lines()).toHaveLength(1);
 
     const mine = await (await listR()).json();
@@ -121,6 +122,15 @@ describe("Scenario: Given Send, then one line lands in requests.jsonl and My req
     // The same draft sent again: refused, still one line.
     expect((await sendR(body(answer.id, requestFields("bug", answer.draft)))).status).toBe(409);
     expect(lines()).toHaveLength(1);
+  });
+
+  test("the help passages that explained it go with the request, from the log (#852)", async () => {
+    appendLine(log, {
+      kind: "answer", id: "a9", ts: new Date().toISOString(), user: "viewer", role: "user", outcome: "answered",
+      request: { checklist: [], draft: DRAFT, explained_by: ["help:monitor-guide#income", 7] },
+    });
+    expect((await sendR(body("a9"))).status).toBe(201);
+    expect(lines()[0].explained_by).toEqual(["help:monitor-guide#income"]);
   });
 
   test("the person's edits are stored; the sources stay the logged ones", async () => {

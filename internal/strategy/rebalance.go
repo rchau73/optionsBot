@@ -117,14 +117,14 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 		// Buying one lot back (positive size) frees this strangle's IM per
 		// lot — measured against the book now, which includes complements
 		// sent earlier in this pass.
-		base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
+		base, err := s.simulate(ctx, map[string]float64{}, m.usage)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
 			rep.add(st, ActionSkipped, "", 0, 0, "margin simulation failed: "+err.Error())
 			continue
 		}
-		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage.Unit)
+		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
@@ -138,7 +138,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 			rep.add(st, ActionSkipped, "", 0, 0, "adds no IM (portfolio netting): size kept")
 			continue
 		}
-		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage.Unit); err != nil {
+		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage); err != nil {
 			slog.Warn("rebalance: standalone simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
 			rep.add(st, ActionSkipped, "", 0, 0, "standalone margin simulation failed: "+err.Error())
