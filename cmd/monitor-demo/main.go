@@ -6,6 +6,7 @@
 //	go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082
 //	go run ./cmd/monitor-demo -scenario mixed     # a losing month among winning ones (#203)
 //	go run ./cmd/monitor-demo -scenario hedged    # the futures hedge on (#827)
+//	go run ./cmd/monitor-demo -steady             # no random rolls: the trade log stays as seeded (#896)
 //
 // -scenario good|mixed|drawdown|hedged shapes the investor summary for design
 // and user tests: steady income, a losing month, an open loss near its stop
@@ -16,6 +17,14 @@
 // counts it as the real API does). Without it the demo is as before. A
 // scenario reports deployment "demo" and version "scenario <name>" in
 // /api/status, so it is never mistaken for a track record.
+//
+// -steady turns off the random rolls (a close and a re-open of a leg, about
+// one tick in 25), so the trade log keeps its seeded rows for the whole run:
+// the phone check (frontend/e2e/playwright.config.mjs, #896) measures the
+// Details trade log 30–60 s in and compares it with a committed baseline,
+// which a roll's wider rows broke. Orders sent and skips still come at
+// random, so the Activity feed moves. -tick sets how often the simulation
+// moves (default 1 s; the tests run it faster).
 package main
 
 import (
@@ -48,9 +57,15 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8081", "listen address")
 	underlying := flag.String("underlying", "BTC", "BTC or ETH")
 	scenario := flag.String("scenario", "", "investor-summary scenario: good | mixed | drawdown | hedged (default: the usual demo)")
+	steady := flag.Bool("steady", false, "no random rolls: the trade log keeps its seeded rows (the phone check, #896)")
+	tick := flag.Duration("tick", time.Second, "how often the simulation moves")
 	flag.Parse()
 	if !validScenario(*scenario) {
 		fmt.Fprintf(os.Stderr, "unknown -scenario %q: want good, mixed, drawdown or hedged\n", *scenario)
+		os.Exit(2)
+	}
+	if *tick <= 0 {
+		fmt.Fprintf(os.Stderr, "-tick %s: want a positive duration\n", *tick)
 		os.Exit(2)
 	}
 
@@ -58,6 +73,7 @@ func main() {
 	defer cancel()
 
 	sim := newSimulation(*underlying, *scenario)
+	sim.steady, sim.tick = *steady, *tick
 	hist, err := demoHistory(*underlying, sim.spot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -67,7 +83,7 @@ func main() {
 	sim.history = hist
 	go sim.run(ctx)
 
-	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr, "scenario", *scenario)
+	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr, "scenario", *scenario, "steady", *steady)
 	opts := []api.Option{api.WithPnLHistory(hist), api.WithAccount(sim)}
 	if *scenario != "" {
 		opts = append(opts, api.WithDeployment("demo", "scenario "+*scenario))
@@ -100,6 +116,8 @@ type simulation struct {
 	trend      string  // last SMA trend, so a change is journaled once
 	scenario   string  // "" | good | mixed | drawdown | hedged
 	steps      int     // ticks so far: the first always journals an order
+	steady     bool    // no random rolls: the trade log stays as seeded (#896)
+	tick       time.Duration
 	// The hedged scenario's perpetual (#827): the book of its fills, when the
 	// hedge was switched on, and when it last traded.
 	perp        hedge.PerpBook
@@ -330,7 +348,11 @@ func roundStrike(k, spot float64) float64 {
 }
 
 func (s *simulation) run(ctx context.Context) {
-	t := time.NewTicker(time.Second)
+	every := s.tick
+	if every <= 0 {
+		every = time.Second
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
@@ -378,7 +400,9 @@ func (s *simulation) step() {
 	}
 	switch r := rand.Float64(); {
 	case r < 0.04:
-		s.rollRandomLeg("rollout_roi")
+		if !s.steady {
+			s.rollRandomLeg("rollout_roi")
+		}
 	case r < 0.06:
 		s.journal.LogSkipped("no_expiry", s.ctx(nil, &orders.SlotRef{DTE: 25, Delta: 0.16}))
 	case r < 0.10:

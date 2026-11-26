@@ -63,10 +63,18 @@ export function measurePage() {
   }
 
   const CONTROLS = "a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [tabindex]:not([tabindex='-1'])";
+  // A <label> wrapping its control holds the control's text too (a select's
+  // options, whose order follows the demo's prices, #896): its own text only.
+  const labelText = (label) => {
+    if (!label) return "";
+    const own = label.cloneNode(true);
+    own.querySelectorAll("select, input, textarea, button").forEach((c) => c.remove());
+    return (own.textContent ?? "").replace(/\s+/g, " ").trim();
+  };
   const labelOf = (el) => {
     const tag = el.tagName.toLowerCase();
     if (tag === "select" || tag === "input" || tag === "textarea") {
-      return el.getAttribute("aria-label") || text(el.labels?.[0]) || el.name || el.type || tag;
+      return el.getAttribute("aria-label") || labelText(el.labels?.[0]) || el.name || el.type || tag;
     }
     return el.getAttribute("aria-label") || text(el.querySelector("h2")) || text(el) || el.getAttribute("title") || tag;
   };

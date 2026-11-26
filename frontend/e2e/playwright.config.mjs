@@ -23,8 +23,10 @@ process.env.PHONE_ADMIN_PASSWORD ??= crypto.randomBytes(18).toString("base64url"
 process.env.PHONE_AUTH_SECRET ??= crypto.randomBytes(48).toString("base64url");
 process.env.PHONE_FRONTEND_DIR ??= frontend;
 
+// -steady: no random rolls, so the Details trade log keeps its seeded rows
+// and a baseline recorded on one run holds on the next (#896).
 const demo = (name) => ({
-  command: `go run ./cmd/monitor-demo -underlying ${name.toUpperCase()} -addr 127.0.0.1:${DEMO_PORTS[name]}`,
+  command: `go run ./cmd/monitor-demo -steady -underlying ${name.toUpperCase()} -addr 127.0.0.1:${DEMO_PORTS[name]}`,
   cwd: repo,
   url: `http://127.0.0.1:${DEMO_PORTS[name]}/api/health`,
   timeout: 180_000,
