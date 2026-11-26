@@ -112,6 +112,8 @@ type VolIndex interface {
 	IVSource() string
 	// IVCloses counts the reading's completed daily closes before now.
 	IVCloses(now time.Time) int
+	// TakeDVOLRejections drains the readings the sanity gate kept out (#796).
+	TakeDVOLRejections() []marketdata.DVOLRejection
 }
 
 // MarketData is everything the strategy reads from the market.

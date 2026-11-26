@@ -163,10 +163,19 @@ describe("Scenario: the baseline doc ranks the findings", () => {
     for (const r of rows) expect([r[1], r.at(-2)]).toEqual([r[1], expect.stringMatching(/designer|developer/)]);
   });
 
-  test("findings are listed by number of pages affected, most first", () => {
-    const counts = rows.map((r) => Number(r[4].match(/^(\d+):/)?.[1]));
-    expect(counts.every(Number.isFinite)).toBe(true);
-    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  // Each table is ranked on its own (contrast and size, screen-reader structure, text resize #887).
+  const tables = doc
+    .split(/\n(?!\|)/)
+    .map((block) => block.split("\n").filter((l) => /^\| \d+ \|/.test(l)).map((l) => l.split("|").map((c) => c.trim())))
+    .filter((t) => t.length > 0);
+
+  test("findings are listed by number of pages affected, most first, in each table", () => {
+    expect(tables.length).toBeGreaterThan(1);
+    for (const t of tables) {
+      const counts = t.map((r) => Number(r[4].match(/^(\d+):/)?.[1]));
+      expect(counts.every(Number.isFinite)).toBe(true);
+      expect(counts).toEqual([...counts].sort((a, b) => b - a));
+    }
   });
 
   test("every pinned contrast finding is in the doc with its measured ratio", () => {

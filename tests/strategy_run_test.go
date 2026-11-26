@@ -462,6 +462,8 @@ type fakeMarket struct {
 	dvolToday   marketdata.DayIV
 	ivSource    string // "" = DVOL
 	ivCloses    int    // 0 = len(dvolCloses)
+	// dvolRejected is what TakeDVOLRejections hands the strategy next.
+	dvolRejected []marketdata.DVOLRejection
 }
 
 func (m *fakeMarket) Track(_ context.Context, names []string) error {
@@ -489,6 +491,21 @@ func (m *fakeMarket) setIVHistory(closes []float64, today float64) {
 		m.dvolCloses = append(m.dvolCloses, marketdata.DayIV{Day: d, Percentile: pct, Known: true})
 	}
 	m.dvolToday = marketdata.DayIV{Day: day, Percentile: today, Known: true}
+}
+
+// TakeDVOLRejections drains the rejections a test queued with rejectDVOL.
+func (m *fakeMarket) TakeDVOLRejections() []marketdata.DVOLRejection {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := m.dvolRejected
+	m.dvolRejected = nil
+	return out
+}
+
+func (m *fakeMarket) rejectDVOL(r marketdata.DVOLRejection) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dvolRejected = append(m.dvolRejected, r)
 }
 
 func (m *fakeMarket) UnderlyingPrice() float64 { m.mu.Lock(); defer m.mu.Unlock(); return m.price }

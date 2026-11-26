@@ -6,7 +6,10 @@
 #      Deribit account and port), its bots run on testnet, and its clone is
 #      on main with no local changes;
 #   2. fast-forwards the mvp clone, rebuilds and restarts its stack (the bots
-#      reconcile with Deribit on every start, so a restart is safe);
+#      reconcile with Deribit on every start, so a restart is safe); the
+#      images are built one service at a time, and a build the Docker VM killed
+#      for memory is built once more before it counts as failed (#892,
+#      deploy_issue.py oom);
 #   3. waits for every bot's decision loop to report again (health check) and
 #      records the deploy in <envs>/history/deploys.tsv — the soak
 #      clock scripts/promote.sh reads;
@@ -177,6 +180,21 @@ docker_housekeeping() {
   log "deploy: filed $url"
 }
 
+# build_images — builds mvp's images one service at a time (#892): compose
+# builds them all at once, and the monitor's `next build` beside the bots' Go
+# builds, on a Docker VM that also runs stable, was killed for memory
+# (2026-11-26, 2eaf8e9). The bots share one image context, so the second is
+# cached. With no service listed, one plain build.
+build_images() {
+  local services svc
+  services="$(env_compose mvp config --services 2>/dev/null)" || services=""
+  [[ -n "$services" ]] || { env_compose mvp build; return; }
+  for svc in $services; do
+    log "deploy: building $svc"
+    env_compose mvp build "$svc" || return
+  done
+}
+
 dir="$(env_dir mvp)"
 faildir="$AGENT_STATE_DIR/deploy/failed"
 if ! why="$(env_check mvp)"; then
@@ -225,9 +243,23 @@ fi
 git -C "$dir" merge -q --ff-only origin/main
 log "deploy: building and restarting mvp ($(env_version mvp))"
 step_log="$faildir/$target.step.log"
-rc=0; env_compose mvp up -d --build > "$step_log" 2>&1 || rc=$?
+: > "$step_log"
+step="docker compose build"
+rc=0; build_images >> "$step_log" 2>&1 || rc=$?
+if [[ $rc -ne 0 ]] && oom="$(python3 "$AGENT_REPO_DIR/scripts/agents/deploy_issue.py" oom < "$step_log")"; then
+  # The Docker VM ran out of memory (#892): the host's state, not the commit's.
+  # Once more, one image at a time, before the rollback.
+  log "deploy: the build was killed for memory ($oom) — building once more, one image at a time"
+  echo "--- killed for memory; building once more, one image at a time (#892) ---" >> "$step_log"
+  rc=0; build_images >> "$step_log" 2>&1 || rc=$?
+  [[ $rc -ne 0 ]] || log "deploy: the second build passed"
+fi
+if [[ $rc -eq 0 ]]; then
+  step="docker compose up --build"
+  env_compose mvp up -d --build >> "$step_log" 2>&1 || rc=$?
+fi
 cat "$step_log"
-[[ $rc -eq 0 ]] || fail "docker compose up --build" "$step_log"
+[[ $rc -eq 0 ]] || fail "$step" "$step_log"
 if ! healthy "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}"; then
   if why="$(outage_reason)"; then
     log "deploy: $why — not the commit; waiting up to ${DEPLOY_OUTAGE_WAIT_SEC:-600} s more"

@@ -415,6 +415,13 @@ The issue is deduplicated by the sha in its title.
 If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
 
+**A build killed for memory is built once more** (#892: on 2026-11-26 the monitor's `next build` ran 770 s and the Docker VM killed it, "cannot allocate memory", while compose built every image at once).
+`deploy.sh` builds mvp's images one service at a time (`docker compose build <service>`), then runs `docker compose up -d --build` on the cached images.
+When a build fails and its log reads as an out-of-memory kill (`cannot allocate memory`, `ResourceExhausted`, `signal SIGKILL`, `exit code: 137`, a Node heap limit; `deploy_issue.py oom`), it builds once more, one image at a time, before the failure counts.
+A second failure, or any other build error, fails the step `docker compose build` and rolls back as above.
+The monitor's image caps Node's heap during the build (`BUILD_HEAP_MB`, 3072 MB, in `frontend/Dockerfile`) and sends no Next.js telemetry.
+If it fails again, give the Docker VM more memory (Docker Desktop → Settings → Resources) or stop what else builds or runs on the host at deploy time.
+
 **An exchange outage is not a failed deploy** (#631: on 2026-11-04 Deribit testnet answered HTTP 502 to every connect, and a good commit was rolled back).
 When the health check fails and every bot exit in the log is a connect Deribit or the network refused (a 5xx handshake, a refused, reset or timed-out dial, an unknown host; `deploy_issue.py outage`), `deploy.sh` waits `DEPLOY_OUTAGE_WAIT_SEC` (600) more.
 If the bots come up, the deploy is healthy as usual.

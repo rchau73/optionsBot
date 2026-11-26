@@ -146,6 +146,7 @@ type VolIndex interface {
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
 	IVSource() string
 	IVCloses(now time.Time) int
+	TakeDVOLRejections() []marketdata.DVOLRejection // readings the sanity gate kept out (#796)
 }
 
 // Candles: daily closes for the trend. Today on the Executor
