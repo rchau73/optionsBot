@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { changeUserRole, deleteUser, resetUserPassword, signOutUser } from "@/lib/api/users";
+import { changeUserRole, deleteUser, resetUserPassword, signOutUser, unlockUser } from "@/lib/api/users";
 import { confirmText, MIN_PASSWORD, passwordFormProblem } from "@/lib/users";
 
 const INPUT =
@@ -20,6 +20,11 @@ async function run(action, user, { role, password }) {
     case "signout":
       await signOutUser(user.id);
       return { tone: "good", text: `${user.username} is signed out everywhere.` };
+    case "unlock": {
+      const r = await unlockUser(user.id);
+      if (!r.unlocked) return { tone: "warn", text: `${user.username} was not locked: nothing to unlock.` };
+      return { tone: "good", text: `${user.username} is unlocked and can sign in again now.` };
+    }
     case "delete": {
       const r = await deleteUser(user.id);
       const errors = [r.events_error, r.survey_answers_error].filter(Boolean);
@@ -33,7 +38,7 @@ async function run(action, user, { role, password }) {
 
 /**
  * The confirmation before a role change, a password reset, a sign-out
- * everywhere or a deletion: says what follows, then sends it. A reset asks
+ * everywhere, an unlock (#846) or a deletion: says what follows, then sends it. A reset asks
  * for the new password (twice) in the same dialog.
  */
 export default function UserActionDialog({ action, user, role = null, me, onDone, onCancel }) {

@@ -377,9 +377,28 @@ lab_section() {
   [[ -f "$1" && -d "$2/requests" ]] || return 0
   grep -q '^## Lab usage$' "$1" && return 0
   if go run ./cmd/labstats -compare "$2" > "$3" 2> "$3.log"; then
+    # The requests the agents' tick started (#876, lab.sh: data/agents/lab/started.jsonl).
+    printf -- '\n- Requests the agents'"'"' tick started (last 28 days): %s\n' \
+      "$(python3 "$AGENT_REPO_DIR/scripts/agents/lab_queue.py" count "$AGENT_STATE_DIR/lab/started.jsonl" "$2/requests" --days 28)" >> "$3"
     { printf '\n'; cat "$3"; } >> "$1"
   else
     log "lab usage report failed for $2 (log $3.log)"
+  fi
+}
+
+# lab_follow_section <usage report.md> <COMPARE_DIR> <clone> <work file> —
+# appends the lab follow-up (#855, cmd/labfollow -all: each recorded change's
+# backtested figures beside the realised ones, percentages only) as the
+# report's "Lab follow-up" section, once, when at least one record has a
+# live-from day on file (applied/<id>.live). A failed run is logged and never
+# stops the report. Run from the repository.
+lab_follow_section() {
+  [[ -f "$1" ]] && compgen -G "$2/applied/*.live" > /dev/null || return 0
+  grep -q '^## Lab follow-up$' "$1" && return 0
+  if go run ./cmd/labfollow -all -compare "$2" -root "$3" > "$4" 2> "$4.log"; then
+    { printf '\n'; cat "$4"; } >> "$1"
+  else
+    log "lab follow-up failed for $2 (log $4.log)"
   fi
 }
 

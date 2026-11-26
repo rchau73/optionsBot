@@ -78,7 +78,10 @@ type goldenBot struct {
 	Explain json.RawMessage `json:"explain,omitempty"`
 	// Perf is /api/performance's answers for range 7d and 30d (#648): the
 	// monitor's __tests__/assistant-perf.test.js builds their perf:<bot>/… passages.
-	Perf   json.RawMessage `json:"perf,omitempty"`
+	Perf json.RawMessage `json:"perf,omitempty"`
+	// Hedge is /api/hedge's answer (#877; null = the route did not answer):
+	// the monitor's __tests__/assistant-hedge.test.js builds live:<bot>/hedge from it.
+	Hedge  json.RawMessage `json:"hedge,omitempty"`
 	Answer struct {
 		Text      string   `json:"text"`
 		Citations []string `json:"citations"`
@@ -110,6 +113,7 @@ var goldenMinimum = map[string]int{
 	"results":         4, // a month, the worst week, against holding, a negative week (#648)
 	"idle":            4, // waiting for GEX, frozen, fully used, status unknown (#719)
 	"lab":             4, // the last run, the analysis withheld, no run, a failed request (#742)
+	"hedge":           4, // on, off, unavailable, the route unknown (#877)
 }
 
 var goldenBehaviour = map[string]string{
@@ -124,6 +128,7 @@ var goldenBehaviour = map[string]string{
 	"results":         "answer",
 	"idle":            "answer",
 	"lab":             "answer",
+	"hedge":           "answer",
 }
 
 // journalEvent names the catalogue event of a journal fixture's kind.
@@ -255,6 +260,13 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		// An idle case (#719) answers from its bot's book now: the monitor builds live:<bot>/book from the fixture.
 		if q.Category == "idle" && (q.Bot == nil || !slices.Contains(q.Bot.Answer.Citations, "live:btc/book")) {
 			t.Errorf("%s: an idle case needs a bot fixture and an answer citing live:btc/book", q.ID)
+		}
+		// A hedge case (#877) answers from its bot's hedge now: the monitor builds live:<bot>/hedge from the fixture's /api/hedge answer.
+		if (q.Category == "hedge") != (q.Bot != nil && len(q.Bot.Hedge) > 0) {
+			t.Errorf("%s: a hedge fixture belongs to hedge cases only, and each has one", q.ID)
+		}
+		if q.Category == "hedge" && (q.Bot == nil || !slices.Contains(q.Bot.Answer.Citations, "live:btc/hedge")) {
+			t.Errorf("%s: a hedge case needs an answer citing live:btc/hedge", q.ID)
 		}
 		// A lab case (#742) answers from the lab's comparisons: the monitor builds lab:<id>/… from the fixture.
 		if (q.Category == "lab") != (q.Lab != nil) {

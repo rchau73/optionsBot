@@ -174,6 +174,8 @@ Nothing leaves the machine: no third-party tracker, SDK or script.
   The monitor prunes older lines when it starts and then every 24 h (`instrumentation-node.js`).
   Each run writes an `events_pruned` audit line with the kept and removed counts; a failure is an ERROR log and an `events_prune_failed` line.
   Every rewrite goes through `events.jsonl.tmp` (0600, fsync) and a rename, so a crash leaves the old file or the new one whole.
+  The same job erases survey free text (`survey_answers.free_text`) older than `SURVEY_TEXT_RETENTION_DAYS` (730, 24 months; needs legal review (C2), change it there only), keeping the row and its codes (#849).
+  Each run writes a `survey_text_purged` audit line with `retention_days` and the `erased` count; a failure is an ERROR log and a `survey_text_purge_failed` line, and the events prune runs regardless.
 - **Deleting a user** deletes their events in the same step: the `user_deleted` audit line (or `account_deleted`, when the person deletes their own account, #543) is followed by `events_deleted` with the count.
   If the events cannot be deleted (e.g. `ANALYTICS_SALT` unset while the file exists), the user is still deleted, the failure is logged at ERROR and audited as `events_delete_failed`, and the answer's `events_error` gives the CLI command to retry with `--row-id`.
   Their survey answers (codes and free text) go in the same step: `survey_answers_deleted` with the count; a failure is an ERROR log, a `survey_answers_delete_failed` line and `survey_answers_error` in the answer, and the monitor deletes the rows left without a user when it next starts.

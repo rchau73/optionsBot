@@ -97,6 +97,8 @@ export async function POST(request) {
     fields,
     citations,
     journal_refs: citations.filter(isRecordRef),
+    // The help passages that explained it (taken from the logged answer, #852): the review closes it as not_a_bug.
+    explained_by: (answer.request.explained_by ?? []).filter((c) => typeof c === "string"),
     answer_id: answerId,
   };
   if (!appendLine(file, entry)) return Response.json({ error: "request not stored: see the monitor's logs" }, { status: 500 });

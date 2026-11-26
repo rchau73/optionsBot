@@ -165,6 +165,9 @@ Each vacant slot gets its **slot share** of the limit (limit × margin balance �
 A single vacant slot therefore never takes all the headroom.
 Finally the size is capped at `max_leg_size_multiple` × the slot's **normal size** — its share divided by the strangle's margin per lot **on its own** (`private/simulate_portfolio` with `add_positions=false`): when the new strangle offsets the book (a short call against short puts after a drop) portfolio margin prices it almost free, but that offset lasts only as long as the rest of the book.
 `private/simulate_portfolio` — Deribit allows one call per second, so the executor spaces them — prices one strangle lot as the difference between two simulations of the same moment (the book now, resting orders included, and the book plus one lot) (legs offsetting), the size is scaled to the share, and a second simulation confirms post-trade IM and MM fit; otherwise the size shrinks or the slot is skipped (`margin_limit`).
+A simulation Deribit refuses as rate limited (10028) is sent again twice, after 2 s then 4 s, still spaced; one refused every time skips the slot as before (#888).
+A result is reused for at most 30 s while the book is unchanged — the same request, the cycle's margin reading, the IM limit and every position's size, no order sent, amended or cancelled since (`strategy/simcache.go`) — so the vacant slots and the strangles of a rebalance pass do not each ask for the same book.
+The executor logs each minute's `simulate_portfolio` and `get_account_summary` calls and the share refused (`exchange calls per minute`).
 Every freeze, unfreeze, limit change, rebalance and MM breach is journaled as a `risk_limit` event.
 
 ## 7. Orders and state
