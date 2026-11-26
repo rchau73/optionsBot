@@ -377,6 +377,9 @@ lab_section() {
   [[ -f "$1" && -d "$2/requests" ]] || return 0
   grep -q '^## Lab usage$' "$1" && return 0
   if go run ./cmd/labstats -compare "$2" > "$3" 2> "$3.log"; then
+    # The requests the agents' tick started (#876, lab.sh: data/agents/lab/started.jsonl).
+    printf -- '\n- Requests the agents'"'"' tick started (last 28 days): %s\n' \
+      "$(python3 "$AGENT_REPO_DIR/scripts/agents/lab_queue.py" count "$AGENT_STATE_DIR/lab/started.jsonl" "$2/requests" --days 28)" >> "$3"
     { printf '\n'; cat "$3"; } >> "$1"
   else
     log "lab usage report failed for $2 (log $3.log)"

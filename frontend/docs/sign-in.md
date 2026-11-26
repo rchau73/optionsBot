@@ -160,6 +160,7 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);
+- `survey_text_purged` and `survey_text_purge_failed` (the daily erasure of survey free text older than 24 months, #849: `retention_days` and the `erased` count, never a text, user id or name);
 - `analytics_consent_changed` (`consent` true or false);
 - `survey_answered` (`survey_id` only, never the codes or text, #490);
 - `nps_survey_changed` (`change`: shown, opt_out or opt_in, #490);

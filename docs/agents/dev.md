@@ -32,6 +32,8 @@ Rules in [`checkfail.py`](../../scripts/agents/checkfail.py), tested in `test_ch
   Touched = the test's file, a path it opens, a package it imports (transitively) or a helper of `tests/` it names changed.
   An untouched failing test is re-run: the script re-runs that test up to 3 times, the gate the failed CI jobs up to 3 times a head.
   Passing makes it **flaky**: named on the PR and on its `[E6] Flaky test: <name>` issue (`lib.sh note_flaky`, filed in Triage or commented), and the PR goes on.
+  A jest file that failed only by timeouts firing over a minute late is **stalled** (`checkfail.py stalled`, as the nightly hunt's #587 rule): the Mac slept, so passing on a re-run is logged and no flaky issue is filed (#869).
+  The script keeps the Mac awake while it runs (`caffeinate -is`), as the hunt does.
   A touched test is never retried.
 - **Go test cache:** `actions/setup-go` already caches the build cache keyed on `go.sum`.
   Test results stay uncached (`-count=1`): many tests run bash, python or `go run`, whose file reads Go's test cache does not see, so a cached pass could hide a broken script.
