@@ -44,6 +44,11 @@ export async function signOutUser(id) {
   await adminSend(userUrl(id, "/signout"), "POST");
 }
 
+/** Lifts the sign-in lock of a user's username (#846) → { unlocked: true | false (it was not locked) }. */
+export async function unlockUser(id) {
+  return adminSend(userUrl(id, "/unlock"), "POST");
+}
+
 /** Deletes a user → { events_removed | events_error, survey_answers_removed | survey_answers_error }. */
 export async function deleteUser(id) {
   return adminSend(userUrl(id), "DELETE");

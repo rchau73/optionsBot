@@ -9,7 +9,7 @@ import ResetLinkDialog from "./ResetLinkDialog";
 import UserActionDialog from "./UserActionDialog";
 import { fetchUsers } from "@/lib/api/users";
 import { formatDateTime } from "@/lib/format";
-import { accountsSummary, ROLES } from "@/lib/users";
+import { accountsSummary, lockedLabel, ROLES } from "@/lib/users";
 
 const BUTTON =
   "rounded border border-line px-2 py-0.5 text-xs hover:bg-line/40 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
@@ -18,8 +18,9 @@ const BUTTON =
  * The Users page (#306, admins only — the /api/admin/users routes enforce it):
  * every person with role, email, created and last sign-in; add a person;
  * change a role, reset a password, make a reset link (#307), sign out
- * everywhere and delete, each after a confirmation; the accounts a manager
- * may act on (#760). `me` is the signed-in admin's username.
+ * everywhere, unlock a username locked by wrong passwords (#846) and delete,
+ * each after a confirmation; the accounts a manager may act on (#760). `me`
+ * is the signed-in admin's username.
  */
 export default function UsersAdmin({ me }) {
   const [users, setUsers] = useState(null);
@@ -93,10 +94,16 @@ export default function UsersAdmin({ me }) {
                 {users.map((u) => {
                   const self = u.username === me;
                   const picked = roles[u.id] ?? u.role;
+                  const locked = lockedLabel(u);
                   return (
                     <tr key={u.id} className="border-t border-line" data-testid={`user-${u.username}`}>
                       <td className="px-2 py-1 font-semibold">
-                        {u.username} {self ? <Badge tone="muted">you</Badge> : null}
+                        {u.username} {self ? <Badge tone="muted">you</Badge> : null}{" "}
+                        {locked ? (
+                          <Badge tone="warn" title="5 wrong passwords: sign-in refused until then, unless an admin unlocks it">
+                            {locked}
+                          </Badge>
+                        ) : null}
                       </td>
                       <td className="px-2 py-1">
                         <div className="flex items-center gap-2">
@@ -134,6 +141,16 @@ export default function UsersAdmin({ me }) {
                       <td className="px-2 py-1 tabular-nums text-muted">{u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "never"}</td>
                       <td className="px-2 py-1">
                         <div className="flex flex-wrap gap-1">
+                          {locked ? (
+                            <button
+                              type="button"
+                              className={`${BUTTON} min-h-11`}
+                              aria-label={`Unlock ${u.username}`}
+                              onClick={() => setPending({ action: "unlock", user: u })}
+                            >
+                              Unlock
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className={BUTTON}

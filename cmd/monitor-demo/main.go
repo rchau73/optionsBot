@@ -99,6 +99,7 @@ type simulation struct {
 	base       float64 // starting spot: the simulated SMAs and swings sit around it
 	trend      string  // last SMA trend, so a change is journaled once
 	scenario   string  // "" | good | mixed | drawdown | hedged
+	steps      int     // ticks so far: the first always journals an order
 	// The hedged scenario's perpetual (#827): the book of its fills, when the
 	// hedge was switched on, and when it last traded.
 	perp        hedge.PerpBook
@@ -367,17 +368,31 @@ func (s *simulation) step() {
 	if s.scenario == scenarioHedged {
 		s.rebalanceHedge(time.Now())
 	}
+	s.steps++
+	if s.steps == 1 {
+		// The first tick always sends an order, so the Activity feed is
+		// never empty for long; afterwards events come at random (a minute
+		// without one failed a loaded test run).
+		s.submitRandomLeg()
+		return
+	}
 	switch r := rand.Float64(); {
 	case r < 0.04:
 		s.rollRandomLeg("rollout_roi")
 	case r < 0.06:
 		s.journal.LogSkipped("no_expiry", s.ctx(nil, &orders.SlotRef{DTE: 25, Delta: 0.16}))
 	case r < 0.10:
-		l := s.legs[rand.Intn(len(s.legs))]
-		s.journal.LogSubmit(orders.PendingOrderRecord{OrderID: fmt.Sprintf("o-%d", rand.Intn(1e6)), Instrument: s.name(l),
-			OptionType: l.typ, Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
-			Qty: l.qty, LimitPrice: l.mark}, s.ctx(l, &l.slot))
+		s.submitRandomLeg()
 	}
+}
+
+// submitRandomLeg journals an entry order sent for a random leg. Call with
+// s.mu held.
+func (s *simulation) submitRandomLeg() {
+	l := s.legs[rand.Intn(len(s.legs))]
+	s.journal.LogSubmit(orders.PendingOrderRecord{OrderID: fmt.Sprintf("o-%d", rand.Intn(1e6)), Instrument: s.name(l),
+		OptionType: l.typ, Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
+		Qty: l.qty, LimitPrice: l.mark}, s.ctx(l, &l.slot))
 }
 
 func (s *simulation) rollRandomLeg(reason string) {
