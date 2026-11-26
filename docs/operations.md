@@ -366,6 +366,16 @@ go run ./cmd/labstats -compare data/compare -days 7 -json
 No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
 It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
 A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
+The section ends with one more line, the requests the agents' tick started in the last 28 days (below).
+
+### Lab runner on the tick
+
+The agents' tick runs the lab runner itself (#876, `scripts/agents/lab.sh`, in the background, so a long comparison never delays the tick), on the mvp clone's queue (`data/compare/requests/`; `LAB_ENV` in the agents' environment names another clone):
+- a queued request and the runner's lock free → one `scripts/lab_runner.sh` pass from that clone: each request goes `running`, then `done` with a run id or `failed`; one run in the ledger (agent `lab`);
+- the lock held (a run in progress) → a "skipped" line in `data/agents/tick-lab.log`, no second run; nothing queued → nothing starts and no model call; a clone without the folder → skipped silently;
+- a request queued over 2 hours, or left `running` with the lock free (the runner died), files one bug `[E9] Lab queue stalled: <id> <status> <age>` in Triage, as the agent-health alert does: ids and ages only, no setting value, account or amount, and none while one is open.
+The runner's rules do not change: one run at a time, a run applies nothing, one model call per done run with the `ANTHROPIC_API_KEY` of the agents' environment (none → `done` with a note, withheld until L10).
+`bash scripts/lab_runner.sh` by hand still works; while a tick's pass runs it takes nothing.
 
 `cmd/labfollow` (#855) follows a recorded change after it went live: the run's backtested return, worst week, drawdown and fees beside the realised ones over the days after, and the gap in points (percentages only, read-only).
 

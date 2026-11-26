@@ -23,7 +23,8 @@ A manager's parameter change is studied offline before anyone decides on it:
    `GET /api/lab/runs` lists the requests without a report yet under `requests`, with their status; a done run is a row of `runs` as before.
    After a run is done the runner writes its AI analysis beside the report (#792, `cmd/analyze`'s code, one call per run, `ANTHROPIC_API_KEY` from the runner's environment); without the key, on a model error or a failed check the run stays done and its file gets a `note` ("analysis not written: <reason>").
    The analysis stays withheld behind `L10_ANALYSIS_GATE_OPEN`, and `GET /api/lab/runs` does not return the note.
-   Run the runner from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`), by hand or from cron.
+   The runner is scheduled (#876): the agents' tick (`scripts/agents/lab.sh`, every 6 minutes, in the background) runs it on the mvp clone's queue when a request is queued and no run holds the lock.
+   It files one Triage bug (`E9`, ids and ages only) for a request queued over 2 hours or left `running` by a runner that died; the runner still runs by hand from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`).
    Metrics from the queue files alone (ids and times, no values): the share of requests that end `done`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per week.
 
 6. `GET /api/lab/runs/<id>/preview` (#682, managers and admins) says what confirming a finished run would change, and applies nothing: each setting with its title and tip, the account's value and the proposed one, the account (one at a time, decision of 2026-10-20), the person, the numbers labelled "backtested, not a forecast", the fragility flags, and the text of the audit line.
