@@ -43,13 +43,17 @@ func (s *Strategy) logStartupState(ctx context.Context) {
 	price := s.md.UnderlyingPrice()
 	u := sum.MarginUsage()
 
-	unit := strings.ToLower(s.cfg.Underlying)
+	// The summary is in the settlement currency: the coin for BTC/ETH, USDC
+	// for a linear coin (#833), whose amounts are already dollars.
+	settlement := s.cfg.PremiumUnit()
+	unit := strings.ToLower(settlement)
+	usd := marketdata.USDPerUnit(settlement, price)
 	slog.Info("account state",
 		"currency", sum.Currency,
 		"equity_"+unit, fmt.Sprintf("%.6f", sum.Equity),
-		"equity_usd", fmt.Sprintf("%.2f", sum.Equity*price),
+		"equity_usd", fmt.Sprintf("%.2f", sum.Equity*usd),
 		"available_funds_"+unit, fmt.Sprintf("%.6f", sum.AvailableFunds),
-		"available_funds_usd", fmt.Sprintf("%.2f", sum.AvailableFunds*price),
+		"available_funds_usd", fmt.Sprintf("%.2f", sum.AvailableFunds*usd),
 		"margin_used_"+unit, fmt.Sprintf("%.6f", sum.InitialMargin),
 		"margin_maintenance_"+unit, fmt.Sprintf("%.6f", sum.MaintenanceMargin),
 		"margin_model", sum.MarginModel,

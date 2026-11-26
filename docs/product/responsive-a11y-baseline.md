@@ -3,6 +3,7 @@
 What the monitor misses today on colour contrast, text size, tap targets and screen-reader structure, ranked by the pages affected, and what each fix needs from the designer.
 It measures only: no component or colour changes with it.
 The fixes come with the E12 UI stories, once the prototype (#654) is approved.
+For each failing contrast pair, the nearest passing colours and what each does to the same token's other pairs are in [`responsive-a11y-contrast-candidates.md`](responsive-a11y-contrast-candidates.md) (#878), the designer's decision sheet.
 
 ## The bar
 
@@ -83,6 +84,6 @@ Body text (`#e2e8f0`), the muted grey and every accent colour (profit, loss, war
 
 ## What changes this list
 
-- A fix lands: remove its line from `KNOWN_FINDINGS` (the test asks for it) and from this table.
+- A fix lands: remove its line from `KNOWN_FINDINGS` (the test asks for it) and from this table, and regenerate the candidates sheet (`UPDATE_CONTRAST_SHEET=1 npm test -- contrast-candidates`).
 - A new failing pair: the token test fails naming it; the designer either fixes it or accepts it here first.
 - A light theme: its tokens and pairs go into the test before it ships.
