@@ -291,9 +291,13 @@ export function rankA11y(pages) {
     .sort((a, b) => b.page_count - a.page_count || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key));
 }
 
-/** What e2e/a11y-report.json holds: the bar, each page's findings at 360 px, the ranked list. */
-export function a11yReport(pages, generatedAt) {
-  return {
+/**
+ * What e2e/a11y-report.json holds: the bar, each page's findings at 360 px, the
+ * ranked list and, when `resize` ({ page: { pass: summariseResize result } })
+ * is given (#887), each page's counts at 200 % text size and at 320 px, ranked.
+ */
+export function a11yReport(pages, generatedAt, resize) {
+  const report = {
     generated_at: generatedAt,
     viewport_px: Number(A11Y_WIDTH),
     bar: { min_text_px: MIN_TEXT_PX, min_tap_px: MIN_TAP_PX },
@@ -301,4 +305,53 @@ export function a11yReport(pages, generatedAt) {
     pages,
     ranked: rankA11y(pages),
   };
+  if (resize) {
+    report.resize = { passes: RESIZE_PASSES.map((p) => ({ name: p.name, font_scale: p.fontScale, width_px: p.width })), pages: resize, ranked: rankResize(resize) };
+  }
+  return report;
+}
+
+// --- Text resize and reflow (#887): 200 % text size and a 320 px screen, report-only ---
+
+/** The two extra passes on every page: the root font size doubled, and a very narrow screen. */
+export const RESIZE_PASSES = [
+  { name: "text_200", fontScale: 2, width: 360, height: 800 },
+  { name: "width_320", fontScale: 1, width: 320, height: 800 },
+];
+
+/** One pass's raw measurement (measureResize's result) → counts and the kinds behind them. */
+export function summariseResize(raw) {
+  const kinds = (items, keyOf) => [...new Set(items.map(keyOf))].sort();
+  const clipped = raw.clipped ?? [];
+  const offscreen = raw.offscreen ?? [];
+  return {
+    overflow_px: Math.max(0, Math.round(raw.overflowPx ?? 0)),
+    clipped_text: clipped.length,
+    offscreen_controls: offscreen.length,
+    clipped_kinds: kinds(clipped, (c) => `${c.tag} "${normaliseLabel(c.text) || "(no text)"}" (${c.selector})`),
+    offscreen_kinds: kinds(offscreen, (c) => `${c.kind} "${normaliseLabel(c.label) || "(no label)"}" (${c.selector})`),
+  };
+}
+
+/**
+ * Pages with a problem in a pass, ranked by pages affected, most first:
+ * { pass, kind: overflow|clipped_text|offscreen_control, pages, page_count }.
+ */
+export function rankResize(pages) {
+  const by = new Map();
+  const add = (pass, kind, page) => {
+    const id = `${pass}|${kind}`;
+    if (!by.has(id)) by.set(id, { pass, kind, pages: [] });
+    by.get(id).pages.push(page);
+  };
+  for (const [page, passes] of Object.entries(pages)) {
+    for (const [pass, m] of Object.entries(passes)) {
+      if (m.overflow_px > 0) add(pass, "overflow", page);
+      if (m.clipped_text > 0) add(pass, "clipped_text", page);
+      if (m.offscreen_controls > 0) add(pass, "offscreen_control", page);
+    }
+  }
+  return [...by.values()]
+    .map((f) => ({ ...f, pages: f.pages.sort(), page_count: f.pages.length }))
+    .sort((a, b) => b.page_count - a.page_count || a.pass.localeCompare(b.pass) || a.kind.localeCompare(b.kind));
 }
