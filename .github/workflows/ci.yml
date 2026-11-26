@@ -222,7 +222,7 @@ jobs:
     name: Phone viewport check
     needs: changes
     if: needs.changes.outputs.phone == 'true' # skipped counts as passed for the required check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.55.0 cannot install Chromium on ubuntu-latest (26.04)
     timeout-minutes: 25
     defaults:
       run:
