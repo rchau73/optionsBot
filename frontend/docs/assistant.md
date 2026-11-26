@@ -70,6 +70,19 @@ It answers from the published help, the bot's live page data and the user's own 
   A status that cannot be read makes it "Book now: unknown: the bot's status route did not answer…", so the answer says why it cannot tell and invents no reason.
   Any other question sends no book passage.
 
+  **Hedge now** (#877, `hedgePassage` in `lib/assistant/hedgeNow.js`, `botHedge` in `lib/assistant/server.js`): with `bot`, a question about the futures hedge (`asksAboutHedge`: "hedge", "hedging", "perp", "perpetual", "futures"…) also gets one passage, `live:<bot>/hedge`.
+  It reads the bot's `GET /api/hedge` once, kept `LIVE_CACHE_MS` (10 s) per bot, and the question's journal passages (the hedge lines carry their `side`, #877).
+  It holds, in this order:
+  - whether the hedge is on, off or unavailable, and why it cannot trade when on (halted with its reason, standing down on a one-sided book, not holding the delta, the kill switch), and that the experiment is testnet only;
+  - the perpetual's side and size as % of the margin balance (|`perp_delta_coin`| ÷ (`band_coin` ÷ `band_pct` %)), or none open;
+  - the book's coin delta as % of the margin balance against its ±`band_pct` % band and the hour's hedge orders against the cap, or "the hedge holds none while it is off";
+  - the newest `hedge_fill` or `hedge_closed` line of the journal read, as "A sale/purchase of the perpetual" and its reason (`hedgeOrderSentence`, `lib/hedgeWords.js`), never its size;
+  - the trial's days since the ledger began, "not started" when it was never switched on and "needs more days" under 7 (`docs/hedge-trial.md`), with its risks.
+  Percentages and counts only: no amount, no account detail (not who switched it), because a bot may run live and the review log is a file.
+  A route that does not answer makes it "Hedge now: unknown: the bot's hedge route did not answer…" (WARN log, not cached), so the answer says it cannot tell.
+  Any other question reads nothing more and sends no hedge passage.
+  The answer guard still refuses advice: "should I turn the hedge on?" gets the refusal, with the trial's days and its risks beside it; the assistant never switches the hedge.
+
   **The lab's comparisons** (#742, `labPassages`, `labRuns` in `lib/assistant/server.js`): a question about a comparison run (`asksAboutLab`: "comparison", "the lab", "proposed", "my last run", "apply this change", "does the change help"…), with or without `bot`, also gets the lab's latest comparisons — for a manager or an admin only, the roles of `/api/lab/runs`.
   For anyone else `labRuns` reads nothing and sends nothing, so no run figure reaches the answer or the review log; the help answers that the lab is for managers.
   The run list and the requests not run yet are read from `COMPARE_DIR` as `/api/lab/runs` reads them (`listRuns`, `pendingRequests`), kept `LAB_CACHE_MS` (10 s); a failed read sends nothing (WARN log, not cached).
