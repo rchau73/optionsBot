@@ -38,6 +38,8 @@ export const AUDIT_ACTIONS = [
   "analytics_consent_changed",
   "survey_answers_deleted",
   "survey_answers_delete_failed",
+  "survey_text_purged",
+  "survey_text_purge_failed",
   "survey_answered",
   "nps_survey_changed",
   "answers_survey_shown",
