@@ -67,7 +67,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - a policy-free one, up to date with main, is merged by the gate itself, one per run (#468, product owner 2026-10-28);
     - `PR_AUTO_MERGE=0` in `agents.env` turns it off;
   - a human merges every policy change (ruleset: PR + green CI); a review that left a changed file unread is `incomplete`, never clean, and counts as no review (#476);
-  - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
+  - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), building its images one service at a time
+    (a build killed for memory is built once more before it fails, `deploy_issue.py oom`, #892), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
     - a failed compose or health check (#204) resets the clone to `mvp.deployed`, rebuilds and re-checks it (a `rollback` line in `deploys.tsv`; unhealthy too → loud notify, no retry),
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)
