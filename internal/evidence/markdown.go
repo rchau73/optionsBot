@@ -39,6 +39,7 @@ func WriteMarkdown(w io.Writer, r Report) error {
 	missing("minute GEX records", r.Missing.GEXDays)
 	p("\n")
 	writeCoverage(p, r.Coverage) // the hours behind those days (#362)
+	writeSamples(p, r.Samples)   // and how much data stands behind each headline figure (#772)
 
 	l := r.Live
 	p("## Live\n\nSource: %s; %s.\n\n", l.Source, l.PerfSource)
@@ -114,8 +115,10 @@ func WriteMarkdown(w io.Writer, r Report) error {
 		p("- replay %+.4f · **gap %+.4f**\n", g.Replay, g.Gap)
 		p("- not modelled by the replay: %s\n\n", strings.Join(g.Unmodelled, "; "))
 	}
+	writeGapSplit(p, r.Split, u) // and its causes (#802)
 
 	writeReplayVsLive(p, r.RVL, u)
+	writeGapTrend(p, r.GapTrend, u) // the same gap over the last 12 weekly reports (#820)
 
 	st := r.Stress
 	p("## Stress\n\nSource: %s", st.Source)

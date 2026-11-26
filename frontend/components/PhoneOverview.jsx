@@ -6,10 +6,12 @@ import { useId, useState } from "react";
 import Badge from "./Badge";
 import FirstDayPanel from "./FirstDayPanel";
 import HedgeLine from "./HedgeLine";
+import IdleNote from "./IdleNote";
 import { Signed } from "./InvestorSummary";
 import MonthBars from "./MonthBars";
 import RegimeChart from "./RegimeChart";
 import { formatCoin, formatDate, formatUSD, isNumber } from "@/lib/format";
+import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
 import { clockHM, coinOf, isFirstDay, monthSoFar, moveSince, rangeBar, stateWords, warningChips, worstCaseLine } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
 
@@ -22,9 +24,11 @@ const LINK = "inline-flex min-h-11 items-center text-base text-testnet underline
 
 /**
  * bots: every bot; selected/onSelect: the bot shown (by name). Its menu opens
- * the other views, Details (pro) included (/details, #405).
+ * the other views, Details (pro) included (/details, #405). children go under
+ * the cards inside the same <main> ("Since you last looked"), so a screen
+ * reader jumps past the menu to all of it (#851).
  */
-export default function PhoneOverview({ bots, selected, onSelect, now }) {
+export default function PhoneOverview({ bots, selected, onSelect, now, children }) {
   const bot = bots.find((b) => b.name === selected) ?? bots[0];
   if (!bot) return null;
   const s = bot.summary;
@@ -32,30 +36,33 @@ export default function PhoneOverview({ bots, selected, onSelect, now }) {
   return (
     <div className="space-y-3 pb-3" data-testid="phone-overview">
       <PhoneHeader bots={bots} bot={bot} onSelect={onSelect} />
-      <div className="space-y-3 px-3">
-        {isFirstDay(bot) ? (
-          <FirstDayPanel bot={bot} headingLevel={1} />
-        ) : failure ? (
-          <p role="alert" className="rounded-lg border border-line bg-panel px-4 py-3 text-base text-warn">
-            Summary unavailable: {failure}. Nothing is shown until the bot answers again.
-          </p>
-        ) : !s ? (
-          <p className="text-base text-muted">Loading the summary…</p>
-        ) : (
-          <>
-            <Headline bot={bot} />
-            <HedgeLine bot={bot} now={now} net />
-            <Card title={`${coinOf(bot)} market regime`}>
-              <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
-            </Card>
-            <HoldsCard summary={s} />
-            <MakingCard summary={s} bot={bot.name} />
-            <WorstCard summary={s} bot={bot.name} />
-            <LastActionCard summary={s} bot={bot.name} />
-          </>
-        )}
-        <p className="text-center text-xs text-muted">From the bot&apos;s journal, after fees. Worst case is an estimate. Not investment advice.</p>
-      </div>
+      <main className="space-y-3">
+        <div className="space-y-3 px-3">
+          {isFirstDay(bot) ? (
+            <FirstDayPanel bot={bot} headingLevel={1} />
+          ) : failure ? (
+            <p role="alert" className="rounded-lg border border-line bg-panel px-4 py-3 text-base text-warn">
+              Summary unavailable: {failure}. Nothing is shown until the bot answers again.
+            </p>
+          ) : !s ? (
+            <p className="text-base text-muted">Loading the summary…</p>
+          ) : (
+            <>
+              <Headline bot={bot} />
+              <HedgeLine bot={bot} now={now} net />
+              <Card title={`${coinOf(bot)} market regime`}>
+                <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
+              </Card>
+              <HoldsCard summary={s} bot={bot} />
+              <MakingCard summary={s} bot={bot.name} />
+              <WorstCard summary={s} bot={bot.name} />
+              <LastActionCard summary={s} bot={bot.name} />
+            </>
+          )}
+          <footer className="text-center text-xs text-muted">From the bot&apos;s journal, after fees. Worst case is an estimate. Not investment advice.</footer>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
@@ -157,13 +164,14 @@ function Card({ title, children, loss = false }) {
   );
 }
 
-function HoldsCard({ summary: s }) {
+function HoldsCard({ summary: s, bot }) {
   const h = s.holding;
   const coin = s.underlying || h?.coin;
   if (!h?.legs) {
     return (
       <Card title="What it holds">
         <p className="text-base">Nothing open right now. New positions appear here once the bot sells them.</p>
+        <IdleNote bot={bot} />
       </Card>
     );
   }
@@ -188,6 +196,7 @@ function HoldsCard({ summary: s }) {
         )}
       </p>
       {bar && !bar.missing ? <RangeBar bar={bar} /> : null}
+      <IdleNote bot={bot} />
     </Card>
   );
 }
@@ -275,9 +284,10 @@ function LastActionCard({ summary: s, bot }) {
       {a ? (
         <>
           <p className="text-base font-semibold">{a.reason || a.rule}</p>
+          {isHedgeAction(a) ? <p className="text-base tabular-nums">{hedgeActionWhat(a)}</p> : null}
           <p className="text-base tabular-nums">
             {move == null ? `${coin} move since: unknown` : `${coin} ${formatSignedPct(move).replace("%", " %")} since`}
-            {a.kind === "close" && isNumber(a.pnl_coin) ? (
+            {(a.kind === "close" || isHedgeAction(a)) && isNumber(a.pnl_coin) ? (
               <>
                 {" · result "}
                 <Signed value={a.pnl_coin}>{formatCoin(a.pnl_coin, coin)}</Signed>

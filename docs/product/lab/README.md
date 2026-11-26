@@ -21,20 +21,58 @@ A manager's parameter change is studied offline before anyone decides on it:
    The status goes `running`, then `done` with the report's id (`run_id`) or `failed` with a short reason, and the queue moves on; a request still queued a day after it was made is `expired`, one a stopped runner left `running` is `failed`.
    Each person may have 3 requests waiting or running.
    `GET /api/lab/runs` lists the requests without a report yet under `requests`, with their status; a done run is a row of `runs` as before.
-   `cmd/analyze` still runs by hand on the report, and its analysis stays withheld behind `L10_ANALYSIS_GATE_OPEN`.
-   Run the runner from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`), by hand or from cron.
+   After a run is done the runner writes its AI analysis beside the report (#792, `cmd/analyze`'s code, one call per run, `ANTHROPIC_API_KEY` from the runner's environment); without the key, on a model error or a failed check the run stays done and its file gets a `note` ("analysis not written: <reason>").
+   The analysis stays withheld behind `L10_ANALYSIS_GATE_OPEN`, and `GET /api/lab/runs` does not return the note.
+   The runner is scheduled (#876): the agents' tick (`scripts/agents/lab.sh`, every 6 minutes, in the background) runs it on the mvp clone's queue when a request is queued and no run holds the lock.
+   It files one Triage bug (`E9`, ids and ages only) for a request queued over 2 hours or left `running` by a runner that died; the runner still runs by hand from the environment the monitor reads (its `data/compare` is the monitor's `COMPARE_DIR`).
    Metrics from the queue files alone (ids and times, no values): the share of requests that end `done`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per week.
 
 6. `GET /api/lab/runs/<id>/preview` (#682, managers and admins) says what confirming a finished run would change, and applies nothing: each setting with its title and tip, the account's value and the proposed one, the account (one at a time, decision of 2026-10-20), the person, the numbers labelled "backtested, not a forecast", the fragility flags, and the text of the audit line.
    `needs_product_owner: true` (a core policy, or a key the catalogue does not know) or `stale: true` (the run is over 7 days old, the value it started from is not the account's, the account's value cannot be read, or the proposed value is now refused) gives `confirm_token: null`, and so does a run with no numbers for the proposal; `reasons` says why in plain words.
    The 7 days are `PREVIEW_MAX_AGE_DAYS` (`frontend/lib/labpreview.js`): the runner compares the last 7 days, so an older run has no day in common with the week after it.
    "The account's value" is the shipped config in `frontend/content/lab-settings.json` until E8's tenancy gives a real one; mvp's BTC runs `config_btc.mvp.yaml`, which differs only in `gex_direction`, a core policy that never gets a token.
-   The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account and both values, so the future apply can recompute it and see that what is confirmed is what was shown; nothing accepts it yet.
+   The token is an HMAC, under `AUTH_SECRET`, of the run, the person, the account, both values and the 5-minute window it was issued in, so the confirm can recompute it and see that what is confirmed is what was shown.
    Reading a preview writes one audit line, `parameter_change_previewed`, naming the person, the account, the run and both values; a refused call writes none.
+   `may_confirm` (#890) says whether this person may confirm for this account, with `may_confirm_reason` in plain words when not: a manager linked only to other accounts (#760) gets `may_confirm: false` and no token.
+   It is the apply route's own check (`decisionRefusal`, `frontend/lib/labapply.js`: the role, then the account link), so the field and the apply's refusal cannot disagree; a user is refused by the preview itself, as before.
 
-   **The apply is not built.** It touches the live configuration, so it waits for a person's decision, E8's tenancy (accounts, links of managers to accounts) and the legal answer on advisers (PRD §11, L10).
-   When it is built, a confirm must re-check the token, the role and the staleness on the server, and it writes its own audit line, `parameter_change_applied`, with the person, the account, the run, both values and the bot's answer.
+7. `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` (#741, managers and admins) records the confirmed change, and applies nothing.
+   The server recomputes the preview and refuses a token for another run, person or value, one over 15 minutes old (`CONFIRM_TOKEN_MINUTES`), a core policy (it names the product owner as the approver), a stale or out-of-range value, a run whose request is not done and a run already recorded (a token is used once).
+   Success writes `data/compare/applied/<id>.json` once and one audit line, `parameter_change_recorded` (the person, the account, the run, old → new, the token's id), and answers `applied: false, recorded: true`, with the numbers labelled "backtested, not a forecast" and the risks beside them.
+   The record itself changes nothing: no config file is written, no bot restarted, no order placed.
+   **A recorded change reaches the running bot through a reviewed config pull request** (decision `../decisions/2026-11-20-lab-change-reaches-bot-by-pr.md`, #862): `cmd/labapply` checks it into a candidate, `cmd/labpr` opens the draft PR (item 10), a person's merge is the approval and the usual deploy restarts the bot; hot-reload stays a later story.
+   It runs on the shipped configs only: per-account changes wait for E8's tenancy (until then a manager confirms for every account) and the legal answer on advisers (PRD §11, L10).
+   A manager may instead **drop the proposal**: `POST /api/lab/runs/<id>/drop` (#890, managers and admins, the same role and account-link check) records the decision to leave the setting as it is.
+   It writes `data/compare/dropped/<id>.json` once (the person as an 8-character hash, the account, the run and the time; no setting value and no amount) and one audit line, `parameter_change_dropped`, and applies nothing.
+   A second drop answers that it is already recorded, a confirmed run cannot be dropped and a dropped one cannot be confirmed.
+   The admin rule stays as it is: the apply and the drop accept an admin; whether to refuse one on an onboarded account (PRD §3) is open for a person until E8's tenancy defines one.
+
+8. `cmd/labstats` (#824) is the lab's usage report, from its own files and read-only.
+   Over the last 28 days (`-days`) it gives the requests made and the share ending `done`, `failed` and `expired`, the median minutes from `requested_at` to the done `updated_at`, and requests per manager per ISO week (an 8-character hash, never a name).
+   It also counts the done runs with a recorded change (`applied/`), those with a dropped proposal (`dropped/`, #890), the share of done runs ending in a decision (recorded or dropped: the lab's metric), those refused as a core policy (`candidates/<id>/candidate.json`), and the AI analyses written (an `analysis.json` and no `note`), a count only.
+   A request file that cannot be read is counted as unreadable; no setting value, amount or account appears; Markdown or `-json`.
+   The weekly usage report appends it as its "Lab usage" section (`scripts/agents/usage.sh`, `docs/operations.md` "Lab usage report").
+   Targets, assumptions to confirm after the first four weeks of use: done share ≥ 90 % and median time to a finished run ≤ 30 min (`compare.LabTargetDonePct`, `LabTargetMedianMinutes`; the report says met, not met or too early to judge).
+
+9. `cmd/labfollow` (#855) is the lab follow-up: after a recorded change went live, the run's numbers beside what the bot realised, read-only.
+   A person gives the day the change reached the bot (`-live-from YYYY-MM-DD`: the day its pull request deployed, item 7); `-record-live-from` keeps it in `applied/<run id>.live`.
+   It shows the settings changed (keys and titles, no value) and, in % of equity, the run's backtested return, worst week, largest drawdown and fees ("backtested, not a forecast"; return and fees scaled from the run's days to the window's).
+   Beside them are the realised figures over `[live-from, live-from + days)` (default 7) from `perf.Summarize` on the P&L history and the journal's close fees ("realised, one short window"), and the gap in percentage points.
+   The realised figures use the run's replay equity, the same basis as its report.
+   "Too early to judge" while fewer than `-days` whole UTC days have passed, "no data" when the history has no point in the window; neither prints a gap.
+   A realised worst week or drawdown deeper than the backtest's is flagged in words, and every follow-up ends with a line that a single week is not evidence.
+   A missing record, or a live-from day in the future or before the record, exits 1 and writes nothing.
+   The weekly usage report appends `-all` (every record with a `.live` day) as its "Lab follow-up" section (`docs/operations.md` "Lab usage report").
+   Target for the gap: set after the first four recorded changes; only an assumption exists today.
+
+10. `cmd/labpr` (#862) opens the draft pull request of a ready candidate, run by hand only (`docs/operations.md` "Lab candidates").
+   Branch `lab/<run id>` from `origin/main` changes only the recorded values, in the shipped config and its twin (`config_btc.yaml` and `config_btc.mvp.yaml` stay different only in `gex_direction`), and the generated files `scripts/regen.sh` rewrites.
+   The PR body carries the run id, the old and new values, the headline numbers in percentages labelled "backtested, not a forecast", the fragility flags, the risks, the requester as the 8-character hash and a line that the merge is the approval; no name, account or amount, and not the AI analysis.
+   A refused or missing candidate exits 2 and opens nothing, `-dry-run` prints the branch, the diff and the body and touches nothing, and a second run reports the PR already open (one per run id).
+   It never merges, pushes to `main`, restarts a bot or sends an order.
+   Metric: the count of lab PRs opened; guardrails: none touches a core policy without the product owner's approval reference, none has an amount or a name in its body.
 
 No page shows them yet: that waits for E9's UI prototype. The AI never changes a setting, and neither tool, route, queue nor runner applies one: a change takes effect only after a manager confirms it.
 
+- [`lab-screens.md`](lab-screens.md) — the spec of the lab page for the prototype (#841): flow, comparison screen, states, copy, menu, phone, accessibility.
 - [`example-analysis.md`](example-analysis.md) — a saved `analysis.md` (percentages and counts only), kept passing the checker by `tests/aianalysis_generate_test.go`.

@@ -18,6 +18,9 @@
 #   - usage.sh, which writes last week's monitor usage report of every env
 #     with analytics events, files one issue on an engagement drop and posts
 #     its summary on the E13 epic (#340), else exits at once;
+#   - security.sh, which checks every env's audit trail for the alert rules at
+#     most every 30 min (a notify per new alert) and builds last week's
+#     security digest once (#717), else exits at once;
 #   - flaky.sh, which repeats the Go and frontend suites on origin/main once a
 #     UTC night and files one bug per new flaky test (#248), else exits at once;
 #   - backup_data.sh, which copies every env × bot's journal and histories to
@@ -26,9 +29,17 @@
 #   - dora.sh, which writes the delivery report (DORA metrics, each PR's time
 #     live on mvp and stable) once a UTC day and posts last week's four
 #     numbers on the E6 epic once (#470), else exits at once;
+#   - recording_check.sh, which checks yesterday's (UTC) market recordings
+#     of every recording env × bot against the weekly report's floor and,
+#     when one is short, notifies once and comments on the E2 epic (#716),
+#     else exits at once;
 #   - requests.sh, which judges the assistant's private request queue with one
-#     PM agent run and files the accepted ones as redacted issues (#410), else
-#     exits at once;
+#     PM agent run and files the accepted ones as redacted issues (#410; its
+#     mechanical filter and sanitiser #852; REQUESTS_FILE=0 in agents.env
+#     turns it off), else exits at once;
+#   - lab.sh, which runs the lab runner (scripts/lab_runner.sh) on the mvp
+#     clone's queued comparison requests and files one Triage bug when the
+#     queue stalls (#876), else exits at once;
 #   - release.sh, only after a healthy deploy step: the weekly release of the
 #     newest mvp build soaked 3 days (first tick of a Monday UTC), or a
 #     `release:hotfix` bug fix live 1 h on mvp (#471; AUTO_RELEASE=0 in
@@ -56,12 +67,12 @@ deploy_ok=1
 "$dir/deploy.sh" || { echo "deploy step failed (exit $?)"; deploy_ok=0; }
 "$dir/pr_gate.sh" || echo "pr gate step failed (exit $?)"
 
-start() { # script, instances
+start() { # script, instances, [its arguments…]
   local i=0
   while [[ $i -lt $2 ]]; do
     # Own session (setsid via python3: macOS has no setsid(1)), so nothing that
     # ends the tick's process group — launchd included — stops a running agent.
-    python3 -c 'import os, sys; os.setsid(); os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$dir/$1" \
+    python3 -c 'import os, sys; os.setsid(); os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$dir/$1" "${@:3}" \
       >> "$logs/tick-${1%.sh}.log" 2>&1 < /dev/null &
     i=$((i + 1))
   done
@@ -86,11 +97,17 @@ fi
 start pm_agent.sh 1 # its board passes need no Claude; triage and planning check the budget
 start metrics.sh 1 # weekly: exits at once unless last week's report is missing
 start evidence.sh 1 # weekly: exits at once once last week's done-marker exists
+start go_no_go.sh 1 # weekly: exits at once once this week's done-marker exists, or before the evidence report is in
 start usage.sh 1 # weekly: exits at once once last week's done-marker exists (or no events file)
+start security.sh 1 # alerts at most every 30 min, the digest weekly: else exits at once
 start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-marker exists
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
-start requests.sh 1 # exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget)
+start recording_check.sh 1 # daily: exits at once once yesterday's (UTC) done-marker exists
+start lab.sh 1 # exits at once unless the mvp clone's lab queue has a queued or stalled request (#876)
+# Exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget);
+# REQUESTS_FILE=0 in agents.env stops it (a person runs requests.sh alone for a dry run, #852).
+if [[ "${REQUESTS_FILE:-1}" == 1 ]]; then start requests.sh 1 --file; fi
 # Only after a healthy deploy step (#471): weekly, or a hotfix live 1 h on mvp.
 if [[ $deploy_ok -eq 1 ]]; then start release.sh 1; else echo "release step skipped: the deploy step failed"; fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

@@ -116,6 +116,9 @@ var hedgeWords = map[string]string{
 	orders.HedgePriceAway:   "A futures hedge trade waits: the perpetual's price is too far from the index, so the trade would be at a poor price.",
 	orders.HedgeUnavailable: "The futures hedge is not holding the book's direction, so the GEX shed buys the threatened side back as usual until the hedge can trade again.",
 	orders.HedgeResumed:     "The futures hedge can trade and holds the book's direction again: the GEX shed keeps its legs.",
+	orders.HedgeStoodDown: "The book holds one side only (calls or puts), so the futures hedge stands down: its perpetual is closed, the book keeps its direction, " +
+		"and the GEX shed protects it as with the hedge off. The hedge holds the delta again once the book holds both sides.",
+	orders.HedgeBack: "The book holds calls and puts again, so the futures hedge holds the book's direction again: the GEX shed keeps its legs.",
 	orders.HedgeLeftOpen: "The kill switch left a perpetual future open: it was beyond what the bot itself held, such as one held by hand. " +
 		"It stays on the account until a person closes it.",
 }
@@ -215,6 +218,10 @@ var riskWords = map[string]func(l journalLine) string{
 	},
 	orders.RiskIMUnderUseDone: func(journalLine) string {
 		return "The unused-margin alert ends: margin in use is back at 60 % of its limit or more, or new trades are no longer allowed."
+	},
+	orders.RiskDVOLRejected: func(journalLine) string {
+		return "A volatility index (DVOL) reading was ignored: it disagreed with the option prices, or jumped while the price stayed flat. " +
+			"The last good reading stays in use for the margin band and the GEX buffer."
 	},
 }
 
@@ -363,12 +370,18 @@ func ExplainEvent(e orders.RecentEvent) (plain, unknown string) {
 	case orders.EventKeyScope:
 		return explainKeyScope(l), ""
 	case orders.EventHedge:
-		if s, ok := hedgeWords[l.Change]; ok {
-			return s, ""
-		}
-		return generic("change=" + l.Change)
+		return ExplainHedge(l.Change)
 	}
 	return generic("event=" + e.Event)
+}
+
+// ExplainHedge says what a futures hedge line (its orders.Hedge* change)
+// means: ExplainEvent's sentence, also the summary's last action (#794).
+func ExplainHedge(change string) (plain, unknown string) {
+	if s, ok := hedgeWords[change]; ok {
+		return s, ""
+	}
+	return generic("change=" + change)
 }
 
 // ExplainTrade says why a trade (an open or a close of the journal) happened.

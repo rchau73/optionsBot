@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"optionsbot/internal/history"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 )
 
@@ -193,6 +194,13 @@ func HistoryMargin(rv RiskView, now time.Time) *history.Margin {
 // logPnL writes one P&L line per slot plus the strategy total to the journal.
 func (s *Strategy) logPnL() {
 	spot := s.md.UnderlyingPrice()
+	// A USDC bot's P&L is already dollars (#832): no conversion, unit named.
+	settlement := s.cfg.PremiumUnit()
+	usd := marketdata.USDPerUnit(settlement, spot)
+	unit := ""
+	if settlement == marketdata.LinearSettlement {
+		unit = settlement
+	}
 	now := time.Now()
 	for _, l := range s.PnLReport() {
 		total := l.Realised + l.Unrealised
@@ -204,10 +212,11 @@ func (s *Strategy) logPnL() {
 			Realised:      l.Realised,
 			Unrealised:    l.Unrealised,
 			Total:         total,
-			RealisedUSD:   l.Realised * spot,
-			UnrealisedUSD: l.Unrealised * spot,
-			TotalUSD:      total * spot,
+			RealisedUSD:   l.Realised * usd,
+			UnrealisedUSD: l.Unrealised * usd,
+			TotalUSD:      total * usd,
 			Spot:          spot,
+			Unit:          unit,
 			OpenLegs:      l.OpenLegs,
 			ClosedLegs:    l.ClosedLegs,
 		})
@@ -216,7 +225,7 @@ func (s *Strategy) logPnL() {
 		}
 		if l.Slot == nil {
 			slog.Info("pnl", "strategy_id", s.strategyID(),
-				"realised", l.Realised, "unrealised", l.Unrealised, "total_usd", total*spot,
+				"realised", l.Realised, "unrealised", l.Unrealised, "total_usd", total*usd,
 				"open_legs", l.OpenLegs, "closed_legs", l.ClosedLegs)
 		}
 	}

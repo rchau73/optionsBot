@@ -43,6 +43,8 @@ export const PROPERTIES = {
   // The assistant panel's opener (#408).
   entry: enumOf("menu", "why"),
   entry_screen: enumOf("monitor", "login"),
+  // Wrong passwords since the previous sign-in, as a bucket (#803), never the count itself.
+  failed_since: enumOf("0", "1", "2_4", "5_plus"),
   filter: enumOf("bot", "strategy", "type", "moneyness", "group_by"),
   hardest_to_find: enumOf(...FOUR_ANSWERS),
   helped: BOOL,
@@ -96,6 +98,7 @@ export const EVENTS = {
   manual_close_confirmed: ["side", "last_leg"],
   manual_close_opened: ["side", "allowed"],
   manual_close_result: ["side", "outcome"],
+  my_data_downloaded: ["outcome"],
   notification_followed: ["kind"],
   notifications_opened: [],
   overview_layer_toggle: ["layer"],
@@ -105,6 +108,7 @@ export const EVENTS = {
   rebalance_confirmed: ["outcome"],
   rebalance_previewed: ["outcome"],
   screen_viewed: ["screen", "topic"],
+  security_summary_seen: ["failed_since"],
   session_started: ["entry_screen", "viewport"],
   signed_out: ["reason"],
   survey_answered: ["survey_id", "score", "reason_code", "came_for", "hardest_to_find"],

@@ -120,10 +120,16 @@ func (e *engine) coinDelta() float64 {
 // orders a rolling hour. MODEL: filled at spot, and the options' delta is the
 // last hourly book's, so what a move inside the hour adds is not seen.
 func (e *engine) holdBookDelta(at time.Time, marginBalance, spot float64) {
-	if !e.set.FullStrangle.Hedged {
+	if !e.set.FullStrangle.Hedged && !e.set.Hedge.on() {
 		return
 	}
 	options := e.coinDelta()
+	if e.set.Hedge.on() { // the one-sided hedge study (#812)
+		var ok bool
+		if options, ok = e.studyHedgeDelta(at, options); !ok {
+			return
+		}
+	}
 	band := hedge.Band(marginBalance, false, spot, config.FixedFuturesHedgeBandPct)
 	usd, side := hedge.HedgeOrder(options, hedge.PerpDelta(e.hedge.usd, spot), band, spot, perpContractUSD(e.cfg.Underlying))
 	if side == "" {

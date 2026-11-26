@@ -11,8 +11,14 @@ and in each error type, and writes comparison.md beside the later round.
 Participant codes only: every cell must be a value the template allows and every line outside the table
 a line of the template, so an e-mail, a phone number or a name stops the run. The refusal names the line
 number, never its content, and nothing is written. Exit 0 when scored (a failed round too), 2 when refused.
+The one free-text column, "Wording when wrong", is checked for an e-mail, a phone number, a currency amount
+and a capitalised word (a name); its refusal also names the column and the row's code (#810).
+
+With --findings (#810) it also writes findings.md, one row per question that fails the pass bar, and one
+issue draft per such question, issue-draft-Q<n>.md, beside the table. The script never sends them anywhere.
 
     python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md
+    python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md --findings
     python3 scripts/product/score_usability.py data/usability/e3/baseline/results.md data/usability/e3/loss/results.md
 """
 import argparse
@@ -38,18 +44,40 @@ SUCCESS = "success"
 SCORE_CELL = "(success|partial|fail)?"
 TIME_CELL = r"(\d{1,2}:[0-5]\d|-|—)?"
 ERROR = "q[1-4] (sign|unit|coin|time)"
-COLUMNS = ["code", "layout", "scenario (default / mixed / drawdown)",
+COLUMNS = ["code", "layout", "scenario (default / mixed / drawdown / hedged)",
            "q1", "q1 time", "q2", "q2 time", "q3", "q3 time", "q4", "q4 time",
            "errors (sign / unit / coin / time)", "passed"]
 CELLS = [re.compile(p) for p in (
-    "(desktop|mobile)?", "(default|mixed|drawdown)?",
+    "(desktop|mobile)?", "(default|mixed|drawdown|hedged)?",
     SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL, SCORE_CELL, TIME_CELL,
     rf"(none|-|—|{ERROR}(\s*[,;]\s*{ERROR})*)?", "(yes|no)?")]
+
+# The optional last column (#810): what participants said when they were wrong, "Q3: the margin one".
+WORDING = "wording when wrong"
+WORDING_PART = re.compile(r"(?i)\bq([1-4])\s*:\s*")
+# Capitals are allowed only for "I" and the page's own words; any other capitalised word may be a name.
+CAPITALISED = re.compile(r"[A-Za-z][A-Za-z0-9'&]*")
+PAGE_WORDS = {"I", "I'm", "I'd", "I've", "BTC", "ETH", "USD", "USDC", "P&L", "DVOL", "OK", "DEMO",
+              "Q1", "Q2", "Q3", "Q4", "P1", "P2", "P3", "P4", "P5",
+              "Overview", "Income", "Worst", "Last", "Open", "Details", "Activity"}
+_UNIT = r"(?:R\$|[$€£]|(?:usdc|usdt|usd|btc|eth|brl|eur|dollars?|reais|euros?|bitcoins?|sats?)\b)"
+_NUMBER = r"\d[\d.,]*"
+CURRENCY = re.compile(rf"(?i){_UNIT}\s*{_NUMBER}|{_NUMBER}\s*(?:k\s*)?{_UNIT}")
+IS_AMOUNT, IS_NAME = "currency amount", "capitalised word (a name?)"
+
+# --findings (#810): the screen each question is read from; a miss on the phone layout adds the phone overview.
+SCREENS = {"Q1": "Overview", "Q2": "Income", "Q3": "Worst case", "Q4": "Last action"}
+PHONE_SCREEN = "phone overview"
+# Section 4's questions, word for word (a test checks them against the kit).
+QUESTION_TEXT = {"Q1": "What does the program hold right now?",
+                 "Q2": "Is it making money or losing money?",
+                 "Q3": "What is the worst that could happen right now?",
+                 "Q4": "What was the last thing it did, and why?"}
 
 # The only lines allowed outside the table: section 8's, blank or filled in.
 TEMPLATE_LINES = [re.compile(p) for p in (
     r"", r"### Results table",
-    r"Round: (baseline / prototype / release / loss round|baseline|prototype|release|loss round)"
+    r"Round: (baseline / prototype / release / loss round / hedge round|baseline|prototype|release|loss round|hedge round)"
     r" · Date \(?(YYYY-MM-DD|\d{4}-\d{2}-\d{2})\)? · Monitor version \(?(commit|[0-9a-f]{7,40})\)?",
     r"Participants passed: (_|\d) of 5 · Round passed \(≥ 4 of 5\): (yes / no|yes|no)")]
 
@@ -85,6 +113,26 @@ def personal_data(line):
     return None
 
 
+def free_text_problem(cell):
+    """What makes a wording cell unsafe to keep, or None: personal data, an amount or a capitalised word."""
+    why = personal_data(cell)
+    if why:
+        return why
+    if CURRENCY.search(cell):
+        return IS_AMOUNT
+    if any(w[0].isupper() and w not in PAGE_WORDS for w in CAPITALISED.findall(cell)):
+        return IS_NAME
+    return None
+
+
+def parse_wording(cell):
+    """The wording per question: {"Q3": "…"}; text before any "Qn:" applies to every missed question ("*")."""
+    parts = [p.strip(" ;,") for p in WORDING_PART.split(cell)]
+    out = {"*": parts[0]} if parts[0] else {}
+    out.update((f"Q{number}", text) for number, text in zip(parts[1::2], parts[2::2]) if text)
+    return out
+
+
 def seconds(cell):
     """A mm:ss cell in seconds, None when empty."""
     if ":" not in cell:
@@ -111,15 +159,25 @@ def parse_row(cells):
     unscored = not layout or not scenario or not all(scores.values())
     if unscored or any(s == SUCCESS and times[q] is None for q, s in scores.items()):
         return None, NOT_SCORED
-    return {"code": cells[0], "scenario": scenario, "scores": scores, "times": times,
+    return {"code": cells[0], "layout": layout, "scenario": scenario, "scores": scores, "times": times,
             "errors": parse_errors(errors), "table_passed": passed}, None
 
 
 def parse_results(text):
     """The five participants, in code order. Raises Refused naming every line that stops the scoring."""
-    problems, found, header_seen = [], {}, False
+    problems, found, header_seen, with_wording = [], {}, False, False
     for no, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip()
+        line, wording = raw.strip(), ""
+        if with_wording and line.startswith("|") and not TABLE_RULE.fullmatch(line):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) == len(COLUMNS) + 1:
+                wording = cells.pop()
+                line = "| " + " | ".join(cells) + " |"
+                why = free_text_problem(wording)
+                if why:
+                    where = cells[0] if cells[0] in CODES else "without a participant code"
+                    problems.append((no, f"{why} in column \"Wording when wrong\", row {where}"))
+                    continue
         why = personal_data(line)
         if why:
             problems.append((no, why))
@@ -129,7 +187,9 @@ def parse_results(text):
         elif not TABLE_RULE.fullmatch(line):
             cells = [c.strip() for c in line.strip("|").split("|")]
             if not header_seen:
-                header_seen = [c.lower() for c in cells] == COLUMNS
+                titles = [c.lower() for c in cells]
+                with_wording = titles == COLUMNS + [WORDING]
+                header_seen = with_wording or titles == COLUMNS
                 if not header_seen:
                     problems.append((no, NAME_LIKE))
                 continue
@@ -137,6 +197,7 @@ def parse_results(text):
             if why or participant["code"] in found:
                 problems.append((no, why or "the same participant code twice"))
             else:
+                participant["wording"] = parse_wording(wording)
                 found[participant["code"]] = participant
     if not problems:
         problems = [(None, f"{code} has no row") for code in CODES if code not in found]
@@ -195,6 +256,28 @@ def score_round(name, participants):
             "median_q4_sec": int(statistics.median(q4_times)) if q4_times else None,
             "table_differs": [p["code"] for p in participants if p["table_passed"]
                               and (p["table_passed"] == "yes") != participant_passes(p)]}
+
+
+def question_findings(participants):
+    """One finding per question that fails the pass bar: fewer than ROUND_PASS_MARK of the participants
+    answered it with a success (a Q4 success at or after 5:00 is a miss, as in question_misses)."""
+    out = []
+    for q in QUESTIONS:
+        missed = [p for p in participants
+                  if p["scores"][q] != SUCCESS or (q == "Q4" and p["times"]["Q4"] >= Q4_LIMIT_SEC)]
+        if len(participants) - len(missed) >= ROUND_PASS_MARK:
+            continue
+        screen = SCREENS[q] + (f" / {PHONE_SCREEN}" if any(p["layout"] == "mobile" for p in missed) else "")
+        wording = [f"{p['code']}: {p['wording'].get(q) or p['wording']['*']}" for p in missed
+                   if p["wording"].get(q) or p["wording"].get("*")]
+        outcomes = {kind: sum(p["scores"][q] == kind for p in missed) for kind in ("partial", "fail")}
+        outcomes["late"] = len(missed) - outcomes["partial"] - outcomes["fail"]
+        out.append({"question": q, "text": QUESTION_TEXT[q], "missed": len(missed), "total": len(participants),
+                    "scenarios": sorted({p["scenario"] for p in missed}), "screen": screen,
+                    "misses": question_misses(missed, q), "wording": wording, "outcomes": outcomes,
+                    "errors": {kind: sum(p["errors"].count((q, kind)) for p in participants) for kind in ERROR_TYPES},
+                    "layouts": {lay: sum(p["layout"] == lay for p in missed) for lay in ("desktop", "mobile")}})
+    return out
 
 
 def compare_rounds(earlier, later):
@@ -263,12 +346,76 @@ def render_comparison(earlier, later):
     return "\n".join(out)
 
 
+def render_findings(name, findings):
+    """The findings table: participant codes and their wording, for the private folder only."""
+    out = [f"# E3 usability round: {name}: findings", ""]
+    if not findings:
+        return "\n".join(out + ["No failures: every question passed the bar "
+                                f"(at least {ROUND_PASS_MARK} successes). No issue draft written.", ""])
+    out += [f"A question fails the bar when fewer than {ROUND_PASS_MARK} participants answered it with a success.", "",
+            "| Question | Scenario | Failed | Screen | Who and how | Wording when wrong |", "|---|---|---|---|---|---|"]
+    for f in findings:
+        out.append(f"| {f['question']} \"{f['text']}\" | {', '.join(f['scenarios'])} | {f['missed']} of {f['total']} "
+                   f"| {f['screen']} | {', '.join(f['misses'])} | {'; '.join(f['wording']) or '—'} |")
+    out += ["", "Issue drafts: " + ", ".join(draft_name(f) for f in findings) + " (not sent anywhere).", ""]
+    return "\n".join(out)
+
+
+def draft_name(finding):
+    return f"issue-draft-{finding['question']}.md"
+
+
+def draft_title(finding):
+    return (f"[E3] Usability: {finding['question']} \"{finding['text']}\" missed by "
+            f"{finding['missed']} of {finding['total']} ({finding['screen']})")
+
+
+def render_draft(name, finding):
+    """One issue draft. Evidence as counts only: no participant code, no wording, no amount."""
+    q, n, total, o = finding["question"], finding["missed"], finding["total"], finding["outcomes"]
+    errors = ", ".join(f"{kind} {count}" for kind, count in finding["errors"].items())
+    layouts = ", ".join(f"{lay} {count}" for lay, count in finding["layouts"].items())
+    scenarios = ", ".join(finding["scenarios"])
+    return "\n".join([
+        f"# {draft_title(finding)}", "",
+        "**Problem:** in usability round " + name + f", {n} of {total} participants new to options did not answer "
+        f"{q} (\"{finding['text']}\") with a success (screen: {finding['screen']}). "
+        f"The bar is at least {ROUND_PASS_MARK} of {total}.", "",
+        "**Evidence (counts only):**",
+        f"- Missed: {n} of {total} (partial {o['partial']}, fail {o['fail']}, success at or after 5:00 {o['late']}).",
+        f"- Scenario: {scenarios}; layout of those who missed: {layouts}.",
+        f"- Errors counted on {q}: {errors}.",
+        "- Source: the round's findings table in the private notes folder (`data/usability/e3/<round>/findings.md`).", "",
+        "**Acceptance criteria:**", "", "```gherkin",
+        f"Given a person new to options on the {finding['screen']} of the {scenarios} demo",
+        f"When the moderator asks \"{finding['text']}\"",
+        "Then the person answers it with a success under the answer key of docs/usability/e3-investor-monitor-test.md",
+        f"And at least {ROUND_PASS_MARK} of {total} participants of the next round answer {q} with a success",
+        "```", "",
+        "**Depends on:** none.", ""])
+
+
+def write_findings(results_path, name, findings):
+    """findings.md and one draft per finding beside the table; a draft of a question that now passes goes."""
+    folder = os.path.dirname(os.path.abspath(results_path))
+    notes = [write_beside(results_path, "findings.md", render_findings(name, findings), True)]
+    for f in findings:
+        notes.append(write_beside(results_path, draft_name(f), render_draft(name, f), True))
+    failing = {f["question"] for f in findings}
+    for q in QUESTIONS:
+        stale = os.path.join(folder, f"issue-draft-{q}.md")
+        if q not in failing and os.path.exists(stale):
+            os.remove(stale)
+            notes.append(f"removed {stale}: {q} passes now")
+    return notes
+
+
 def read_round(path):
-    """The round's score; its name is the folder's (data/usability/e3/<round>/)."""
+    """The round's score and its participants; its name is the folder's (data/usability/e3/<round>/)."""
     # errors="replace": a stray byte is refused as a bad cell, never echoed by a traceback.
     with open(path, encoding="utf-8", errors="replace") as f:
         participants = parse_results(f.read())
-    return score_round(os.path.basename(os.path.dirname(os.path.abspath(path))), participants)
+    return score_round(os.path.basename(os.path.dirname(os.path.abspath(path))), participants), participants
 
 
 def write_beside(results_path, name, text, overwrite):
@@ -287,13 +434,17 @@ def main(argv=None):
     ap.add_argument("later", nargs="?", help="a later round's table, to compare the two")
     ap.add_argument("--protocol", default=PROTOCOL, help="the usability kit, source of the synthesis skeleton")
     ap.add_argument("--force", action="store_true", help="replace an existing summary.md")
+    ap.add_argument("--findings", action="store_true",
+                    help="also write findings.md and an issue draft per failing question beside each table")
     args = ap.parse_args(argv)
 
     paths = [args.results] + ([args.later] if args.later else [])
-    scores, refused = [], False
+    scores, rounds, refused = [], [], False
     for path in paths:
         try:
-            scores.append(read_round(path))
+            score, participants = read_round(path)
+            scores.append(score)
+            rounds.append(participants)
         except Refused as e:
             refused = True
             for line, why in e.problems:
@@ -320,6 +471,11 @@ def main(argv=None):
         comparison = render_comparison(*scores)
         print(comparison)
         notes.append(write_beside(paths[1], "comparison.md", comparison, True))
+    if args.findings:
+        for path, score, participants in zip(paths, scores, rounds):
+            findings = question_findings(participants)
+            print(render_findings(score["round"], findings))
+            notes += write_findings(path, score["round"], findings)
     print("\n".join(notes))
     return 0
 

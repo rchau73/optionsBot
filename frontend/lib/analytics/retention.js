@@ -1,7 +1,9 @@
 // Server-side only: what event plan §5 promises about stored analytics events
 // (#296) — raw events are kept EVENT_RETENTION_DAYS and then pruned daily, a
 // deleted user's events go with them, and an admin can export or delete one
-// person's events on request (scripts/analytics-user.mjs).
+// person's events on request (scripts/analytics-user.mjs). The same daily job
+// erases survey free text older than SURVEY_TEXT_RETENTION_DAYS in auth.db
+// (surveys.md §6, #849), keeping the row and its codes.
 //
 // Every change rewrites events.jsonl whole and atomically: the kept lines go
 // to events.jsonl.tmp (mode 0600, flushed to disk), which is then renamed over
@@ -16,6 +18,9 @@ import { authLog } from "../auth/log.js";
 
 /** How long raw events are kept: 13 months (event plan §5; needs legal review — change it here only). */
 export const EVENT_RETENTION_DAYS = 395;
+
+/** How long survey free text is kept: 24 months (surveys.md §6; needs legal review (C2) — change it here only). */
+export const SURVEY_TEXT_RETENTION_DAYS = 730;
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ID = /^[0-9a-f]{16}$/;
@@ -154,18 +159,52 @@ export function pruneAndAudit(file, nowMs, audit, days = EVENT_RETENTION_DAYS) {
   }
 }
 
+/**
+ * Erases the survey free text older than `days` (#849) with its audit line and
+ * log; never throws. Counts only: never the text, a user id or a name.
+ */
+export function purgeSurveyTextAndAudit(store, nowMs, audit, days = SURVEY_TEXT_RETENTION_DAYS) {
+  const time = new Date(nowMs).toISOString();
+  try {
+    const erased = store.purgeSurveyText(Math.floor((nowMs - days * DAY_MS) / 1000));
+    authLog("INFO", "survey free text purged", { component: "analytics", retention_days: days, erased });
+    audit({ time, action: "survey_text_purged", username: "system", retention_days: days, erased });
+    return { ok: true, erased };
+  } catch (err) {
+    authLog("ERROR", "survey free text purge failed", { component: "analytics", retention_days: days, error: err.message });
+    audit({ time, action: "survey_text_purge_failed", username: "system", retention_days: days, error: err.message });
+    return { ok: false, error: err.message };
+  }
+}
+
+/** One daily run: the events prune (when there is a file), then the survey text purge (when there is a store). */
+function runRetention({ file, store, audit, nowMs, days, surveyTextDays }) {
+  if (file) pruneAndAudit(file, nowMs, audit, days);
+  if (store) purgeSurveyTextAndAudit(store, nowMs, audit, surveyTextDays);
+}
+
 // One job per server process (dev-mode reloads re-run instrumentation).
 const JOB = Symbol.for("optionsbot.monitor.retention");
 
 /**
- * Prunes now and then every intervalMs (a day). Nothing when analytics has no
- * file. The timer does not keep the process alive. → the timer or null.
+ * Runs the retention now and then every intervalMs (a day): the events prune
+ * and the survey text purge. Nothing when there is neither an events file nor
+ * a store. The timer does not keep the process alive. → the timer or null.
  */
-export function startRetentionJob({ file, audit, now = () => Date.now(), intervalMs = DAY_MS, days = EVENT_RETENTION_DAYS }) {
-  if (!file) return null;
+export function startRetentionJob({
+  file,
+  store = null,
+  audit,
+  now = () => Date.now(),
+  intervalMs = DAY_MS,
+  days = EVENT_RETENTION_DAYS,
+  surveyTextDays = SURVEY_TEXT_RETENTION_DAYS,
+}) {
+  if (!file && !store) return null;
   if (globalThis[JOB]) clearInterval(globalThis[JOB]);
-  pruneAndAudit(file, now(), audit, days);
-  const timer = setInterval(() => pruneAndAudit(file, now(), audit, days), intervalMs);
+  const run = () => runRetention({ file, store, audit, nowMs: now(), days, surveyTextDays });
+  run();
+  const timer = setInterval(run, intervalMs);
   timer.unref?.();
   globalThis[JOB] = timer;
   return timer;

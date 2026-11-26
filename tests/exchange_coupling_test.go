@@ -42,12 +42,13 @@ var deribitMethods = map[string][]string{
 	"private/cancel":                      {"gateway", "orders"},
 	"private/cancel_by_label":             {"orders"},
 	"private/cancel_all_by_currency":      {"orders"},
+	"private/cancel_all_by_currency_pair": {"orders"},
 	"private/cancel_all_by_instrument":    {"orders"},
 	"private/get_order_state":             {"orders"},
 	"private/get_user_trades_by_order":    {"orders"},
-	"private/get_positions":               {"orders", "account"},
-	"private/get_account_summary":         {"orders", "account"},
-	"private/get_account_summaries":       {"account"},
+	"private/get_positions":               {"orders", "exchange/deribit"},
+	"private/get_account_summary":         {"orders", "exchange/deribit"},
+	"private/get_account_summaries":       {"exchange/deribit"},
 	"private/simulate_portfolio":          {"orders"},
 	"private/get_margins":                 {"orders"},
 	"public/":                             {"gateway"},
@@ -216,6 +217,32 @@ func TestExchangeCoupling_OneCallSiteForTheMovedReads(t *testing.T) {
 	}
 }
 
+// Scenario (#746): no Deribit method name is left in the account package —
+// its three reads are allowed under exchange/deribit, and account does not
+// import the adapter (the adapter imports account).
+func TestExchangeCoupling_AccountNamesNoDeribitMethod(t *testing.T) {
+	for _, u := range scanRPCLiterals(t, "../internal") {
+		if u.pkg == "account" {
+			t.Errorf("%s: Deribit method %q in the account package", u.file, u.method)
+		}
+	}
+	for _, method := range []string{"private/get_positions", "private/get_account_summary", "private/get_account_summaries"} {
+		if !slices.Contains(deribitMethods[method], "exchange/deribit") || slices.Contains(deribitMethods[method], "account") {
+			t.Errorf("%s: allowed packages %v, want exchange/deribit and not account", method, deribitMethods[method])
+		}
+	}
+	if testing.Short() {
+		return
+	}
+	out, err := exec.Command("go", "list", "-deps", "../internal/account").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	if slices.Contains(strings.Fields(string(out)), "optionsbot/internal/exchange/deribit") {
+		t.Error("internal/account imports internal/exchange/deribit")
+	}
+}
+
 // Scenario (#710): marketdata stays free of the exchange package, directly
 // or through any package it imports. Its transport subpackage is allowed: it
 // imports the gateway's wire types only.
@@ -293,6 +320,60 @@ func TestExchangeCoupling_StrategyHasNoDeribitLiteral(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("a private/ literal under strategy must fail, naming deps.go: %v", problems)
+	}
+}
+
+// strategyNameParsers are the Deribit name parsers strategy code may not call
+// (#773): it reads Instrument{Expiry, Strike, OptionType} from the chain or
+// MarketData.InstrumentFromName.
+var strategyNameParsers = []string{"marketdata.ParseOptionName", "marketdata.InstrumentFromName"}
+
+// nameParserCalls returns "file:line: name" for every use of a banned
+// selector in the .go files under root.
+func nameParserCalls(t *testing.T, root string, banned []string) []string {
+	t.Helper()
+	var found []string
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectorExpr); ok && slices.Contains(banned, exprName(sel)) {
+				found = append(found, fmt.Sprintf("%s: %s", fset.Position(sel.Pos()), exprName(sel)))
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan %s: %v", root, err)
+	}
+	return found
+}
+
+// Scenario (#773): strategy code does not parse names — no file under
+// internal/strategy calls marketdata.ParseOptionName (nor the helper that
+// wraps it; the strategy reaches that through its MarketData).
+func TestExchangeCoupling_StrategyCodeDoesNotParseNames(t *testing.T) {
+	for _, call := range nameParserCalls(t, "../internal/strategy", strategyNameParsers) {
+		t.Errorf("%s in internal/strategy — read the instrument's fields (MarketData.GetInstrument or InstrumentFromName)", call)
+	}
+}
+
+// The check finds a call it should: a planted parser call fails it.
+func TestExchangeCoupling_NameParserCallIsFound(t *testing.T) {
+	root := t.TempDir()
+	src := "package strategy\n\nimport \"optionsbot/internal/marketdata\"\n\nvar _, _, _, _, _ = marketdata.ParseOptionName(\"BTC-27NOV26-90000-C\")\n"
+	if err := os.WriteFile(filepath.Join(root, "x.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := nameParserCalls(t, root, strategyNameParsers); len(got) != 1 || !strings.Contains(got[0], "x.go:5") {
+		t.Errorf("planted call: got %v, want one at x.go:5", got)
 	}
 }
 

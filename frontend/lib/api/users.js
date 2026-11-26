@@ -9,9 +9,19 @@ async function adminSend(url, method, body = {}) {
 
 const userUrl = (id, action = "") => `/api/admin/users/${encodeURIComponent(id)}${action}`;
 
-/** Every monitor user (admins only): [{ id, username, role, email, created_at, last_sign_in_at }]. */
+/**
+ * Every monitor user and the registry's accounts (admins only): { users: [{ id,
+ * username, role, email, created_at, last_sign_in_at, accounts }], accounts:
+ * [{ account_id, label, environment }] }.
+ */
 export async function fetchUsers(signal) {
-  return (await getJSON("/api/admin/users", signal)).users;
+  const body = await getJSON("/api/admin/users", signal);
+  return { users: body.users, accounts: body.accounts ?? [] };
+}
+
+/** Sets the accounts a manager may act on (#760; [] = every account) → { accounts, added, removed }. */
+export async function setAccountLinks(id, accounts) {
+  return adminSend(userUrl(id, "/accounts"), "PUT", { accounts });
 }
 
 /** Adds a person ({ username, password, role, email? }) → the new user. */
@@ -32,6 +42,11 @@ export async function resetUserPassword(id, password) {
 /** Ends every session of a user. */
 export async function signOutUser(id) {
   await adminSend(userUrl(id, "/signout"), "POST");
+}
+
+/** Lifts the sign-in lock of a user's username (#846) → { unlocked: true | false (it was not locked) }. */
+export async function unlockUser(id) {
+  return adminSend(userUrl(id, "/unlock"), "POST");
 }
 
 /** Deletes a user → { events_removed | events_error, survey_answers_removed | survey_answers_error }. */

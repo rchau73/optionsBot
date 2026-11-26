@@ -31,6 +31,9 @@ Retention of the row: until the person (or an admin) deletes the account; **prop
 | `nps_last_shown_at` | Spacing of the monthly survey card | with the row |
 | `nps_opted_out` | The person's "don't ask me again" | with the row |
 | `answers_last_shown_at` | Spacing of the four-answers card | with the row |
+| `previous_sign_in_at` | The sign-in before the last one, shown to the person in Active sessions (#803) | with the row; overwritten at each sign-in |
+| `failed_sign_ins` | How many wrong passwords were typed for this username since the last sign-in; a count, never the time, IP or password; shown to the person only | with the row; set to 0 at each sign-in |
+| `failed_sign_ins_before` | The same count for the time between the previous sign-in and the last one | with the row; overwritten at each sign-in |
 
 ## `refresh_tokens`
 
@@ -68,9 +71,9 @@ The IP is not stored here; the per-IP limit lives in memory and a restart forget
 
 | Column | Purpose | Retention |
 | --- | --- | --- |
-| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, and at a successful sign-in |
+| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, at a successful sign-in, and when an admin unlocks the username (#846) |
 | `login_failures.at` | When each failure happened | same |
-| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure |
+| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure, or when an admin unlocks it (#846) |
 | `login_locks.until` | When the lock ends | same |
 
 ## `survey_answers`
@@ -84,7 +87,7 @@ Never sent in an event or a log line.
 | `user_id` | Whose answer it is (so it can be deleted with the person) | with the row; **proposal**: unlink answers after a period (question L16) |
 | `survey_id` | Which survey | with the row |
 | `codes` | The allow-listed coded answers | with the row |
-| `free_text` | Optional free text, which may hold anything the person types | with the row |
+| `free_text` | Optional free text, which may hold anything the person types | erased after `SURVEY_TEXT_RETENTION_DAYS` (730, 24 months) by the daily retention job (#849; needs legal review, C2), or with the row if sooner |
 | `created_at` | When it was given | with the row |
 
 ## `notification_reads` and `notification_settings`
@@ -99,6 +102,19 @@ State of the notification bell, per person.
 | `notification_settings.user_id` | Whose setting | removed with the person |
 | `notification_settings.kind` | Which kind of item | removed with the person |
 | `notification_settings.enabled` | On or off | removed with the person |
+
+## `account_links`
+
+Which exchange accounts a manager may act on (#760): an admin sets them on the Users page; a manager with no row acts on every account of this deployment.
+The account ids are the registry's opaque ids (`data/accounts_status.json`, #655): no key, money, position or name of an account holder.
+Not in "Download my data" yet; an admin sees them on the Users page.
+
+| Column | Purpose | Retention |
+| --- | --- | --- |
+| `user_id` | Which manager the link limits | removed when an admin removes the link, and with the person |
+| `account_id` | The account the manager may act on | same |
+| `created_by` | Username of the admin who added the link | same; the audit line `account_link_added` also names the admin |
+| `created_at` | When the link was added | same |
 
 ## `audit.jsonl`
 
@@ -115,13 +131,29 @@ Retention: the file rotates to `audit.<UTC time>.jsonl` at `AUDIT_MAX_BYTES` (de
 **Proposal**: a retention period for archives, decided with counsel (L14).
 
 Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
-- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`;
+- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `login_unlocked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
+- manager–account links (#760): `account_link_added`, `account_link_removed` (the admin, the manager as `target` and the `account_id`);
 - trading actions from the monitor: `manual_close`, `manual_rebalance`, `futures_hedge_switched`;
 - the trail itself: `audit_exported`;
-- the lab: `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
-- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
+- a person's own data: `my_data_exported` (#750: who downloaded their file and the count per section, never the content);
+- the lab:
+  - `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
+  - `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
+  - `parameter_change_dropped` (#890: which manager dropped a run's proposal, with the account and the run, no setting value; that run's drop record, `data/compare/dropped/<id>.json`, holds only an 8-character hash of the username and the role, kept with the run);
+- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_text_purged`, `survey_text_purge_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
+
+## The security digest and alerts
+
+The weekly security digest and the same-day alerts (#717, [Sign-in](sign-in.md) "Security digest") are built on the agents' host from a copy of the audit trail, which is removed once read.
+They hold counts only: no username, IP address, password, token or reset link; a locked-out username appears only on the Audit page, for an admin.
+
+| Store | Purpose | Retention |
+| --- | --- | --- |
+| Digest files, `data/agents/security/<week>/<env>/digest.md` and `.json` | The week's counts, the chain check and the date of the last admin-role change; the md is also the usage report's "Security" section | as long as the host keeps the agents' state; nothing deletes them today |
+| Alert IDs raised, `data/agents/security/<env>.alerts` | So one pattern never alerts twice: the rule, the UTC day or time and, for failed sign-ins and a promotion, a 12-character SHA-256 prefix of the username (a pseudonym: whoever holds the user list can match it), never the name | same; grows by one line per alert |
+| Notifications | The digest's one-line headline and each alert's text, shown on the Mac that runs the agents | the Mac's notification centre |
 
 ## The monitor's JSON logs
 
@@ -135,10 +167,27 @@ Deleting an account does not edit the logs.
 `MONITOR_API_TOKEN` is a secret of the environment, not a person's data: it is in the `.env` of the host and the scripts that read it, with no name attached.
 It reads the bots' data without a session and never a page, a close or a rebalance.
 
+## What "download my data" holds
+
+Every signed-in person, of any role, can download what this inventory says the monitor keeps about them (#750, the right of access): Account ▾ → **Download my data**, `GET /api/auth/my-data` ([Users and roles](users-and-roles.md)).
+The file is one JSON document, built by `lib/auth/mydata.js` from the person's own rows only:
+- `account`: their `users` row, every column except `password_hash` (`ACCOUNT_COLUMNS`; a test fails on a new column that is in neither list);
+- `consent`: their analytics answer in words (yes, no, not asked);
+- `sessions`: their live sessions as Active sessions shows them, never a token, a hash or an address;
+- `survey_answers`: their `survey_answers` rows with any text they wrote;
+- `analytics_events`: their stored events, as the admin's export finds them (`lib/analytics/userrequest.js`);
+- `audit_lines`: the lines of `audit.jsonl` where they are the `username`, without `ip`, `prev` or `line_hash`, the newest 50,000 at most.
+Lines where the person is only the `target` of an admin's action are left out until counsel answers L14.
+A section that cannot be read is named `unavailable` with its reason, never dropped.
+Once downloaded the file is the person's to keep safe; this inventory's retention and deletion no longer reach it.
+Each download writes one `my_data_exported` line with the person and the count per section, never the content.
+A person may download 3 times an hour; a 4th is refused (429) and writes nothing.
+The admin's CLI export (`events_exported`) and the Audit page's CSV export are unchanged.
+
 ## What "delete my account" removes and keeps
 
 The self-delete (#543) and an admin's deletion run the same steps:
-- removed: the `users` row with its consent, every session, reset links, notification state (`notification_reads`, `notification_settings`), the person's analytics events and their `survey_answers`;
+- removed: the `users` row with its consent, every session, reset links, account links, notification state (`notification_reads`, `notification_settings`), the person's analytics events and their `survey_answers`;
 - an event or survey step that fails is reported (`events_error`, `survey_answers_error`); orphan survey answers are removed at the next start;
 - kept: the audit lines that name the person (as `username` or as `target`, including `account_deleted`) and the log lines, because the trail is the evidence of who did what — **proposal**, see the questions;
 - not touched: exchange accounts and funds, which are not the monitor's.
@@ -146,9 +195,15 @@ The self-delete (#543) and an admin's deletion run the same steps:
 ## Questions for counsel
 
 1. L13: the lawful basis of each store above (account, sessions, audit, logs), and which need consent.
-2. L14: how long may the audit archives and logs keep lines that name a person who deleted their account? **Proposal**: keep the lines, never the account row; or replace the name by a neutral id at deletion.
+2. L14: how long may the audit archives and logs keep lines that name a person who deleted their account?
+   **Proposal**: keep the lines, never the account row; or replace the name by a neutral id at deletion.
 3. L14: a retention period for audit archives and for the Docker logs (today none for the archives).
 4. L14: the `email` column is optional and unused; keep, or stop collecting it?
 5. L16: may survey answers stay linked to an account, and for how long?
 6. L22: the breach duties for the user database and the audit trail, and the minimum security the terms promise.
-7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it. **Fallback in place**: only admins may export, and every export is an audit line.
+7. L14: exporting audit lines (#702): the lawful basis for handing a copy to a person or an authority, how long an exported file may be kept, and who may receive it.
+   **Fallback in place**: only admins may export, and every export is an audit line.
+8. L14, L16: "Download my data" (#750): the notice wording, and whether audit lines naming the person only as an admin's `target` may be in their file.
+   **Fallback in place**: only the person's own actions.
+9. PRD §11: manager–account links (#760) let a manager act only on the accounts linked to them; may a manager who is not the account owner (an adviser) be linked, and must their links be in their "Download my data"?
+   **Fallback in place**: no link is set for an adviser until counsel answers.

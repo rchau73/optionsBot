@@ -35,14 +35,15 @@ How to read the columns:
 | `private/edit` | orders / `executor.go`; gateway / `ratelimiter.go` (pool) | re-prices a resting entry/repair (`AmendOrder`, step-down) | private | matching | no | low | trading | the step-down (cancel and re-send instead) |
 | `private/cancel` | orders / `executor.go`; gateway / `ratelimiter.go` (pool prefix) | cancels one order by ID (timeouts, freeze, shed, resting closes) | private | matching | no | high | trading | every timeout and freeze |
 | `private/cancel_by_label` | orders / `executor.go` | cancels an order whose submit outcome is unknown (`orders.MaybePlaced`) | private | matching | no | high | trading | the unknown-outcome guard: slot or instrument stays blocked |
-| `private/cancel_all_by_currency` | orders / `executor.go` | startup reconcile and kill switch | private | matching | no | high | trading | a clean start and the kill switch |
+| `private/cancel_all_by_currency` | orders / `executor.go` | startup reconcile and kill switch (BTC, ETH) | private | matching | no | high | trading | a clean start and the kill switch |
+| `private/cancel_all_by_currency_pair` | orders / `executor.go` | startup reconcile and kill switch of a linear coin (SOL, XRP): its own `<coin>_usdc` options, then futures, never another USDC coin's orders (#833) | private | matching | no | high | trading | a clean start and the kill switch |
 | `private/cancel_all_by_instrument` | orders / `executor.go` | `Executor.CancelAll` — **not called** by any package today | private | matching | no | high | trading | nothing |
 | `private/get_order_state` | orders / `executor.go` | fill tracking of resting orders, read-back after cancel | private | non-matching | yes | low | trading | fills of resting orders |
 | `private/get_user_trades_by_order` | orders / `executor.go` | the fees of an order's fills (`OrderFee`), booked into net P&L | private | non-matching | yes | low | trading | net P&L (gross only) |
-| `private/get_positions` | orders / `executor.go`; account / `account.go` | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
-| `private/get_account_summary` | orders / `executor.go`; account / `account.go` | IM, MM, margin balance (`extended`) for the margin policy; per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
-| `private/get_account_summaries` | account / `account.go` | every currency's summary at once for `/api/account` (monitor only) | private | non-matching | yes | low | trading | nothing in trading (monitor only) |
-| `private/simulate_portfolio` | orders / `executor.go` | sizing of entries and top-ups and the size cap (`SimulatePortfolio`, `SimulateAlone`, ≤ 1 call/s spaced in the executor) | private | non-matching | no (not `get_`) | low | trading | every entry and top-up (a failed simulation → no new risk) |
+| `private/get_positions` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); a linear coin reads `currency=USDC` and keeps only its `<COIN>_USDC-` rows (`OwnRows`, #833); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
+| `private/get_account_summary` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | IM, MM, margin balance (`extended`) for the margin policy (a linear coin's from `currency=USDC`, refused in any other currency, #833); per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
+| `private/get_account_summaries` | exchange/deribit / `account.go` (for `account.Poller`) | every currency's summary at once for `/api/account` (monitor only) | private | non-matching | yes | low | trading | nothing in trading (monitor only) |
+| `private/simulate_portfolio` | orders / `executor.go` | sizing of entries and top-ups and the size cap (`SimulatePortfolio`, `SimulateAlone`, ≤ 1 call/s spaced in the executor) | private | non-matching | not by the gateway (not `get_`); the executor retries a 10028 twice, after 2 s then 4 s, spacing kept (#888) | low | trading | every entry and top-up (a failed simulation → no new risk) |
 | `private/close_position` | gateway / `ratelimiter.go` | named only in the matching-pool list (`IsMatchingEngine`) — **not called** by any package today | private | matching | no | — | — | nothing |
 | `private/get_margins` | orders / `executor.go` | margin of one order (`GetMargins`) — in the strategy's `AccountReader` but **not called** today | private | non-matching | yes | low | trading | nothing today |
 
@@ -58,7 +59,7 @@ The gateway also matches on method prefixes, which the test lists as gateway-onl
 
 Heartbeats arrive as `heartbeat` notifications; `test_request` is answered with `public/test` on the socket (above).
 
-**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 4 packages (gateway, exchange/deribit, orders, account). None under `internal/strategy`.
+**Count (the coupling metric):** 23 RPC methods (20 called, 3 named but not called: `private/close_position`, `private/cancel_all_by_instrument`, `private/get_margins`), 3 subscription channels, 4 gateway prefix rules, in 3 packages (gateway, exchange/deribit, orders; `account` left at step 5, #746). None under `internal/strategy`.
 
 ## 2. Deribit-specific assumptions outside the gateway
 
@@ -66,7 +67,7 @@ Each row is marked: **adapter** (moves into the adapter), **stays** (exchange-ne
 
 | Assumption | Where it lives | Behind a `deps.go` interface today? | Mark |
 |---|---|---|---|
-| Instrument naming `BTC-4OCT26-60000-P` (one-digit days for dailies) | `marketdata.ParseOptionName`, called by gex, recorder, replay, evidence, idlemargin, deployeffect and strategy (`orphans.go`, `pending.go`, `shed.go`, `stopped.go`) | no — a free function | **adapter**: the adapter fills `Instrument{Strike, Expiry, OptionType}`; the strategy's four callers read the instrument instead (step 7). Research tools keep the parser for recorded Deribit files |
+| Instrument naming `BTC-4OCT26-60000-P` (one-digit days for dailies) | `marketdata.ParseOptionName`, called by gex, recorder, replay, evidence, idlemargin and deployeffect; the strategy's five callers (`orphans.go`, `pending.go`, `shed.go`, `stopped.go`, `futureshedge.go`) left it at step 7 | yes since step 7 (`OptionChain.InstrumentFromName`) | **adapter** (done, step 7): `marketdata.InstrumentFromName` fills `Instrument{Underlying, Expiry, Strike, OptionType}` from a name the chain does not hold, and the strategy reads it through its `MarketData`. Research tools keep the parser for recorded Deribit files |
 | Coin-margined (inverse) premiums: prices, fees and P&L in coin, USD = coin × spot | `orders` (journal, `ClosedNetPnL`), `strategy` (sizing, `pnl.go`), `perf`, `evidence`, `api` | no — a unit everywhere | **settle later**: a linear (USDC) exchange changes what "premium" and "% of equity" mean; the recorder already records Deribit's USDC book to study it |
 | The margin simulator `private/simulate_portfolio` (portfolio margin, `add_positions`) | `orders.Executor`, used by `strategy/limits.go` sizing and `CapLots` | yes (`AccountReader.SimulatePortfolio/SimulateAlone`) | **adapter** + capability `MarginSimulator`; an exchange without it needs a local margin model (**settle later**) |
 | Account figures (`initial_margin`, `maintenance_margin`, `margin_balance`, cross collateral totals) | `orders.AccountSummary`, `MarginUsage`, `risk` | yes (`GetAccountSummary`) | **adapter** maps to `AccountSummary`; the margin policy reads the result (**stays**) |
@@ -85,7 +86,7 @@ Each row is marked: **adapter** (moves into the adapter), **stays** (exchange-ne
 | Order types `limit`, `market`, IOC/GTC `time_in_force` | `orders.Order`, executor params | yes (`Submit`) | **adapter** maps them; the rules that choose them **stay** |
 | Unknown outcome = no RPC error (`orders.MaybePlaced` reads `gateway.RPCError`, `ErrCircuitOpen`) | `orders/executor.go` | the function, no | **adapter** must keep the same meaning (placed / not placed / maybe) |
 | GEX from **mainnet** open interest (testnet OI is test accounts') | `cmd/bot/main.go` `marketGW`, `gex.Manager` | yes (`GEXSource`, `OISource`) | **stays**: GEX keeps reading Deribit mainnet whatever the trading exchange; the liquidity cap's OI → **settle later** (it must be the trading venue's) |
-| Perpetual `<COIN>-PERPETUAL` for daily closes and the hedge suggestion | `strategy.suggestedHedgeInst` | no — a literal format | **adapter** (`Candles` takes the coin, the adapter names its instrument) |
+| Perpetual `<COIN>-PERPETUAL` for daily closes, the hedge suggestion and the futures hedge | `orders.Executor.PerpetualName` (`strategy.suggestedHedgeInst` asks it) | yes since step 8 (`Trading.PerpetualName`) | **adapter** (done, step 8): the adapter names its perpetual for a currency; the strategy holds no `-PERPETUAL` literal |
 | Endpoints `wss://www.deribit.com`, `wss://test.deribit.com`, `DERIBIT_ENV` | `config.go`, `.env` | n/a | **adapter** (per-exchange `.env` keys, testnet default kept) |
 
 ## 3. Proposed interface
@@ -99,6 +100,7 @@ package adapter
 
 import (
 	"context"
+	"time"
 
 	"optionsbot/internal/exchange"
 	"optionsbot/internal/exchange/deribit"
@@ -129,20 +131,35 @@ type OptionChain interface {
 	UnderlyingPrice() float64
 	GetInstrument(name string) (*marketdata.Instrument, bool)
 	AllInstruments() []*marketdata.Instrument
+	// InstrumentFromName: expiry, strike and type of a name the chain does
+	// not hold (a journal record, an expired leg) — the adapter reads its own
+	// names, the strategy never parses them (step 7).
+	InstrumentFromName(name string) (marketdata.Instrument, error)
 	Track(ctx context.Context, instruments []string) error
 }
 
-// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability.
+// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability:
+// a coin without one (SOL, XRP) reads its chain's 30-day ATM IV through the
+// same methods, named by IVSource, with IVCloses daily closes (#834).
 type VolIndex interface {
 	DVOL() float64
 	IVPercentile() float64
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	IVSource() string
+	IVCloses(now time.Time) int
+	TakeDVOLRejections() []marketdata.DVOLRejection // readings the sanity gate kept out (#796)
 }
 
 // Candles: daily closes for the trend. Today on the Executor
 // (public/get_tradingview_chart_data); proposed home: market data.
 type Candles interface {
 	GetDailyCloses(ctx context.Context, instrument string, days int) ([]orders.DailyClose, error)
+}
+
+// InstrumentNamer: the exchange's names of the instruments the strategy uses
+// besides the option chain — the perpetual (daily closes, hedge, step 8).
+type InstrumentNamer interface {
+	PerpetualName(currency string) string
 }
 
 // BookSummary: open interest and marks of every option of a currency.
@@ -199,14 +216,15 @@ type Capabilities struct {
 	MainnetOpenInterest bool // real open interest on the same venue
 }
 
-// Exchange is one adapter. NEW: no type satisfies it yet (Deribit's would
-// compose Executor, Manager, Gateway, BookReader, and add Name and Capabilities).
+// Exchange is one adapter. In the code since #761 without Name, Capabilities
+// and BookSummary: exchange.Exchange, satisfied by deribit.Adapter.
 type Exchange interface {
 	Name() string
 	Capabilities() Capabilities
 	Connection
 	MarketData
 	Candles
+	InstrumentNamer
 	BookSummary
 	Orders
 	PositionsAndMargin
@@ -221,6 +239,7 @@ var (
 	_ PositionsAndMargin = (*orders.Executor)(nil)
 	_ MarginSimulator    = (*orders.Executor)(nil)
 	_ Candles            = (*orders.Executor)(nil)
+	_ InstrumentNamer    = (*orders.Executor)(nil)
 	_ BookSummary        = (*deribit.BookReader)(nil)
 
 	// Same fields, same order, same types as the code's Capabilities.
@@ -232,6 +251,7 @@ var (
 		PositionsAndMargin
 		MarginSimulator
 		Candles
+		InstrumentNamer
 	})(nil)
 	_ strategy.MarketData = MarketData(nil)
 )
@@ -251,10 +271,22 @@ Each step is one PR that keeps `make check` green and `tests/restart_invariance_
 4. **Chain and channels behind the adapter** (done, #710): `public/get_instruments`, `public/get_volatility_index_data` and the three channel names moved from `marketdata.Manager` into `deribit.ChainSource` (`internal/exchange/deribit/chain.go`), which the manager consumes through its own `marketdata.ChainSource` interface; same requests, same gateway.
    `Manager` keeps its methods (it still satisfies `MarketData`).
    The ticker's payload is still decoded in `marketdata`.
-5. **Account view**: `account.Poller`'s three calls go through the same Deribit package (monitor only, no trading effect).
-6. **`internal/exchange/deribit`**: an `Adapter` type that composes today's `Gateway`, `Executor` and `Manager` and satisfies `Exchange`; `main` builds `strategy.Deps` from it. No call changes; the coupling test's allowed packages move to `exchange/deribit` as each step lands.
-7. **Instrument fields instead of name parsing in the strategy**: `orphans.go`, `pending.go`, `shed.go`, `stopped.go` read `Instrument.Expiry/Strike/OptionType` (from the chain or the journal) instead of `ParseOptionName`; research tools keep the parser for recorded Deribit files. Restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
-8. **Name-free strategy literals**: `suggestedHedgeInst` (`<COIN>-PERPETUAL`) and the daily-close instrument come from the adapter.
+5. **Account view** (done, #746): `private/get_account_summaries`, `private/get_account_summary` and `private/get_positions` of `account.Poller` moved into `deribit.AccountSource` (`internal/exchange/deribit/account.go`), which the poller consumes through its own `account.Source` interface.
+   Same requests, same gateway, same low-priority lane, and `/api/account` byte for byte the same (monitor only, no trading effect).
+   `orders.Executor`'s own `get_positions` and `get_account_summary` (reconcile, the margin policy) stay where they are.
+6. **Adapter** (done, #761): `deribit.Adapter` (`internal/exchange/deribit/adapter.go`) embeds today's `Gateway`, `Executor` and `Manager` and satisfies `exchange.Exchange` (`Connection` + `Trading` + `MarketData`; compile-time check in `internal/exchange/deribit.go`); `main` builds `strategy.Deps`' `Exchange`, `Market` and `Futures` from it.
+   No call changes: it has no method of its own, and the same scripted cycle sends the same requests through it as through the executor (`tests/exchange_adapter_test.go`).
+   `Name`, `Capabilities` and `BookSummary` of §3's `Exchange` stay out: `internal/exchange/deribit` cannot import `internal/exchange` (it imports `gex`, which imports the adapter's package), and the book summary GEX reads comes from mainnet, not the trading connection.
+   The gateway's importers under `internal/` are pinned with their reasons (`gatewayImporters`, may only shrink); `internal/strategy` imports neither the gateway, the adapter nor the transport and never names `orders.Executor`.
+   It still imports `internal/orders` for the bot's own data types (`Order`, `Fill`, `StateManager`, the journal); moving the executor's calls into `exchange/deribit` is a later step.
+7. **Instrument fields instead of name parsing in the strategy** (done, #773): `orphans.go`, `pending.go`, `shed.go`, `stopped.go` and `futureshedge.go` read `Instrument.Expiry/Strike/OptionType` from the chain or, for a name the chain does not hold (the journal keeps only names; an expired leg), from `MarketData.InstrumentFromName` — `marketdata.Manager`'s, the one helper over `ParseOptionName`.
+   `StopsFromTrades` and `ShedsFromTrades` take it as a parameter (`strategy.InstrumentNames`).
+   Same fields as before, so no request and no decision changes; restart invariance covers the journal-restore paths (`stopped.go`, `shed.go`).
+   `TestExchangeCoupling_StrategyCodeDoesNotParseNames` fails on a `marketdata.ParseOptionName` (or `InstrumentFromName`) call under `internal/strategy`; research tools keep the parser for recorded Deribit files.
+8. **Name-free strategy literals** (done, #786): `suggestedHedgeInst` — the hedge report's suggestion, the futures hedge's `perpName` and the instrument of the daily-close seed (`GetDailyCloses`) — asks `Trading.PerpetualName(currency)`.
+   `orders.Executor` implements it (`<COIN>-PERPETUAL`, no request), so `deribit.Adapter` promotes it and still has no method of its own.
+   Same names as before, so the same requests reach Deribit in the same order (`TestExchangeAdapter_DailyClosesAskForThePerpetual`, restart invariance, the futures hedge tests).
+   `TestExchangeCoupling_StrategyNamesNoExchangeInstrument` fails on a `"-PERPETUAL"` string literal under `internal/strategy`.
 
 After step 8 the coupling test can require that every `"public/"`/`"private/"` literal lives in `gateway` or `exchange/deribit` only. A second exchange is then an adapter plus the person's decisions in §5.
 

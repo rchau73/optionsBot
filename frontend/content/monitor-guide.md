@@ -40,6 +40,7 @@ Amber means the bot is waiting on purpose, not that it is broken.
 **The futures hedge line** appears under the tiles, one per bot, while a hedge is on or a position is left open.
 It shows the perpetual's size and delta and its profit and loss net of fees, and links to Details (pro).
 "Futures hedge paused" is amber and gives the reason; the GEX shed protects the book meanwhile.
+It also pauses while the book holds one side only (calls or puts): the hedge stands down so the book keeps its direction, and comes back once both sides are held.
 With the hedge off and flat, nothing is shown.
 On a phone the line sits under the headline and also gives the net delta.
 
@@ -60,6 +61,8 @@ A click opens its payoff chart.
 **The last trade** sits under each band: when it happened and what the bot sold or bought back.
 One click on *Why?* opens the reason the bot recorded in its journal when it traded.
 For a buy-back it also shows that trade's past result, net of fees, in coin and USD.
+With the futures hedge experiment on, the last trade can be a hedge trade when it is newer than the last option trade: it says the bot bought or sold so many USD of the perpetual, and why.
+A hedge close also shows its result net of fees, a loss with its minus sign.
 A past result is no promise of future results.
 *All actions, explained* opens the Activity page.
 
@@ -79,7 +82,20 @@ On your first visit there is no card, only a line saying what it will show next 
 
 **When the bot holds nothing**, the band says "Nothing held" and the *Open now* and *Worst case* tiles say "nothing open" instead of a zero. On a phone, the *Open now* figure of the *Making or losing* card says "nothing open" and the *Worst case right now* card says "Nothing held: a bad day costs nothing."
 
+**Why the bot is not trading** shows under the strangles (on a phone, in the *What it holds* card) when the bot holds nothing or is not opening new positions.
+One sentence, from the bot's latest decision in its journal, says what it is waiting for, such as a free expiry date or fresh market-maker data.
+"Not opening new positions" in amber means new risk is paused, for example while a change in volatility waits to be confirmed; "Waiting" means the bot looks again each cycle.
+It also says whether you must do anything: usually nothing; after the kill switch a person must restart the bot.
+*Why?* opens the journal line itself, its numbers and when it was recorded; *All actions, explained* opens the Activity page.
+When no journal line says why, it reads "The bot is waiting. Details in Activity."
+It says what holds the bot back now, not when trading starts again.
+
 **A loss looks like a gain, with a minus sign**: on every page that shows a result (Overview, Income, Details (pro), Worst case, Positions) a loss has the same size and weight as a gain, a minus sign and its unit, and is never folded away. Red is only a second cue.
+In the investor summary's *Income per month*, a month that lost money says "· loss" after its name, as on the Income page.
+
+**The investor summary's worst case** says in plain words that it is a model, not a quote: a move of 3 typical daily swings in one day, from DVOL.
+With a futures hedge it adds that the figure counts the perpetual as well as the options.
+*How it is computed* opens the bot's own model line, with its formula.
 
 **Colours and marks**:
 - A dimmed band means the bot's data is stale; the age of the last answer is shown.
@@ -202,7 +218,7 @@ With the hedge off and no perpetual, the card is the same as without a hedge.
 
 **When something looks wrong**:
 - A card that says a side is missing ("no call held: repair waiting") has one leg only.
-  The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, or the margin limit.
+  The reason in brackets is the rule that holds the repair: a stop cooldown, a GEX shed, the confirmed regime side, the margin limit, or "close only" — the leg was bought back under 25 days to expiry and is not sold again on that expiry.
 - "Unknown" in the today curve means an implied volatility was missing for a leg.
   The expiry curve is still drawn.
 
@@ -223,6 +239,7 @@ The dashed line is today's price.
 
 **3. How the bot defends the position**: five cards, the first four in the order the rules are applied:
 - *Take profit*: buy back when enough of the premium has been kept.
+  From 25 days to expiry the leg is sold again on the same expiry; under 25 it is only bought back, and once the strangle has no leg left the slot opens a new one on another expiry.
 - *Exit line*: buy back when a leg's delta reaches the delta-exit threshold, because the move looks real.
 - *Stop-loss*: buy back at market when the price of the option reaches the stop multiple.
 - *Wait, then repair*: after a stop, the bot waits the repair cooldown before it sells that side again.
@@ -269,6 +286,10 @@ An order that filled in part or not at all says so.
 Closing the hedge shows its *Result* net of its fee, a loss with its minus sign.
 When the hedge cannot trade, the line says so and that the GEX shed is back on.
 A leg the shed would have bought back and the hedge kept has its own line.
+
+**An ignored volatility reading** has its own line: the bot ignores a DVOL reading that disagrees with the option prices by more than 1.5 times, or that jumps more than 25 % while the price moves less than 1 %.
+The line gives the reading and the value kept, which stays in use for the margin band and the GEX buffer.
+A long episode is written again every 30 minutes; without option prices to compare with, a new level is taken after 30 minutes.
 
 **When something looks wrong**: a long run of Waiting entries means a rule is holding the bot back; the sentence names it.
 "Show earlier days" adds three more days.
@@ -365,7 +386,7 @@ A roll or a repair opens a new leg on another strike, so a leg that showed a lar
 <!-- guide: route:POST /api/bots/[bot]/close -->
 
 **Missing legs**: one row for each one-legged strangle.
-It shows who holds the repair (a stop, a GEX shed, the regime side), the market now and when the hold ends.
+It shows who holds the repair (a stop, a GEX shed, the regime side, or "close only": not sold again on that expiry), the market now and when the hold ends.
 
 **Trades and results**: realised profit and loss per coin, the win rate, average win against average loss, results by exit reason and by slot, and one line per trade.
 A caret opens the rule and its numbers.
@@ -409,6 +430,12 @@ It gives the margin in use against its limit as percentages, how many slots hold
 When every slot is full and the margin is near its limit, it says so; whether to change a limit is your decision, and the assistant does not advise it.
 When the bot does not answer, the reason is called unknown, never guessed.
 
+**What is the futures hedge doing, and why did it trade the perpetual?**: ask, such as "what is the hedge doing?" or "why did it sell the perpetual?", and the answer reads the bot's hedge as it is now.
+It says whether the hedge is on, off or cannot trade, and why: no futures connection, the exchange refusing its orders, a book holding one side only, or the kill switch.
+It gives the perpetual's side and size as a percentage of the margin balance, the book's coin delta against its band, and the newest hedge order with its reason, such as a sale of the perpetual to bring the delta back inside its band.
+It also says how many days the trial has run and whether it needs more days or has not started, with its risks; whether to switch the hedge on is your decision, and the assistant does not advise it or predict its result.
+Percentages only, never an amount; when the bot does not answer, the hedge is called unknown.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
@@ -439,6 +466,10 @@ Each person may send 10 requests a day.
 
 **My requests**: the tab in the Ask panel lists the requests you sent, newest first, with their status (In review, Filed, Fixed, Not planned, Not a bug, Duplicate or Needs info) and the team's note.
 You see only your own.
+A request close to an existing ticket or to an earlier request becomes Duplicate, and the note names it.
+One with no journal entry or P&L point cited and fewer than two steps comes back as Needs info, and the note says what is missing.
+One the help already explains becomes Not a bug.
+An accepted one becomes Filed, with a link to its public issue, which carries the request's id and never your name.
 <!-- guide: route:POST /api/assistant/requests -->
 
 **When something looks wrong**: a dimmed Ask button means the assistant is off or not set up; hover for the reason.
@@ -470,6 +501,10 @@ The assistant works the same whether you answer or not.
 **Is my survey answer in the audit trail?** Only the fact that you answered, and which survey, with your username and the time.
 Your score, reasons and comment are not in it.
 Turning the survey off or back on is recorded the same way.
+
+**How long is my survey comment kept?** At most 24 months.
+Once a day the monitor erases every comment older than that; your score and the reasons you picked stay.
+Deleting your account erases the comment at once.
 
 **When it shows**: at most once every 30 days, counted from the day it was shown, answered or not.
 It shows only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times, and not while a bot's last 7 days is a net loss or cannot be read.
@@ -510,6 +545,8 @@ Learn more: "The monthly survey" and "Analytics and your consent" in this guide.
 You sign in at the sign-in page with a username and password.
 Every page and every part of the monitor needs a signed-in session; without one you are sent to the sign-in page.
 A session is kept alive while you use the monitor and ends after 14 days or when you sign out.
+It also ends by itself when nobody uses it for a while: after 12 hours for an admin, after 14 days for a manager or a user.
+Then the sign-in page says so, for example "You were signed out because the session was not used for 12 hours.", so a browser an admin forgot open cannot close positions or change users.
 
 **How to change your password**: choose Change password in the account menu.
 Enter the current password and the new one twice.
@@ -520,6 +557,9 @@ Your sessions on other devices end when you change it.
 Too common means it is on a list of about 1,000 common passwords, even with capitals, with look-alikes such as p@ssw0rd, or with digits or symbols added before or after.
 The rule applies to a new user, a password change and both kinds of reset.
 A password you already have keeps working, and a refused password on a reset link leaves the link usable.
+
+**Locked after wrong passwords**: 5 wrong passwords in 15 minutes lock your username for 15 minutes.
+Wait, or ask an admin to unlock it on the Users page; then you can sign in at once with your password.
 
 **How to reset a forgotten password**: ask an admin.
 An admin issues a single-use reset link on the Users page.
@@ -539,11 +579,36 @@ Active sessions lists every browser where you are signed in to the monitor, what
 
 **How to see where I am signed in**: choose Active sessions in the account menu. Each row shows the browser, when it signed in and when it was last used. The browser you are using is marked This browser. No address is kept or shown.
 
+**When did I last sign in, and did someone try my password?** The first line of Active sessions shows your previous sign-in and how many wrong passwords were typed for your username since.
+For example "Last sign-in:" with its date and time, then "3 wrong-password attempts since."
+On your first sign-in it reads "This is your first sign-in." and shows no count.
+The count starts again from 0 each time you sign in.
+If your username is locked after too many wrong passwords, it says until when.
+
+**Not you?** If that sign-in or those attempts were not you, choose Change your password in the same window, then sign out the browsers you don't recognise.
+Only you see this line; it never shows an address.
+
 **How to sign out another device**: choose Sign out on its row. From that moment the browser can no longer change anything, and it goes to the sign-in page within 15 minutes, when its sign-in renews and fails. Until then it can still read pages.
 
 **Signing out this browser**: use Sign out in the account menu. Active sessions does not sign out the browser you are using.
 
 Learn more: "Sign-in and password" in this guide.
+
+## Download my data
+
+You can download a copy of what the monitor keeps about you, whatever your role, without asking an admin.
+
+**How to download my data**: choose Download my data in the account menu. The window says what the file holds. Choose Download the file and your browser saves one JSON file.
+
+**What the file holds**: your account details, your analytics choice, the browsers where you are signed in, your survey answers with any text you wrote, your usage events and the audit lines of what you did. It holds only your own data. It holds no password, no password hash, no sign-in token and no address. Audit lines where an admin acted on your account are not in it yet.
+
+**When a part is missing**: if the monitor cannot read one part, the file still holds the others and names that part unavailable, with the reason.
+
+**How often**: you can download it 3 times an hour. A 4th try says how many minutes to wait.
+
+**Keeping it safe**: the file is yours. It shows how and when you used the monitor, so keep it somewhere safe. Each download is recorded in the audit trail with how many items each part held, never what they say.
+
+Learn more: "Active sessions" and "Deleting your account" in this guide.
 
 ## Deleting your account
 
@@ -615,9 +680,40 @@ It shows each setting with its current value and the proposed one, the account, 
 If the setting is a core policy, the preview says a product owner must approve it.
 If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
 In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
+The preview also says whether you may confirm it for this account, before you click: a manager linked only to other accounts sees why not, and gets no confirm token.
 The audit trail records one line with your username, the account, the run and both values.
-The preview changes nothing: no config file or bot setting is touched, and confirming a change is not built yet.
+The preview changes nothing: no config file or bot setting is touched.
 No screen shows it yet.
+
+**What happens when I confirm a change from a comparison run?** Managers and admins can confirm a change the preview said may be confirmed, with the preview's confirm token.
+The token works once, only for you, only for that run and those values, and for at most 15 minutes; after that, open the preview again.
+The monitor checks everything again when you confirm: your role, the value's range, whether the run is finished and still current, and whether the setting is a core policy.
+A manager linked to some accounts is refused on a run for a bot of another account.
+A core policy is refused: a new default needs the product owner, not a manager's confirm.
+A confirmed change is recorded, and the audit trail records one line with your username, the account, the run, the old and the new value.
+The answer repeats that the result was backtested, not a forecast, and shows the risks next to it: the worst week, the largest drawdown and the fees in percent, and any fragile spots.
+Confirming records the change only: nothing is applied to a running bot, no config file is written and no order is placed.
+How a recorded change will reach the bot is not decided yet.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/runs/[id]/apply -->
+
+**Can I decide to leave a setting as it is after a comparison run?** Yes: managers and admins can drop a finished run's proposal instead of confirming it.
+The monitor records that decision once, so the lab counts the runs that end in a decision, not only the confirmed changes.
+The same role and account checks as a confirm apply.
+A dropped proposal can no longer be confirmed, and a confirmed change cannot be dropped.
+The audit trail records one line with your username, the account and the run; the drop itself keeps only a short code for you, never a setting value or an amount.
+Dropping changes nothing: no config file is written, no bot is restarted and no order is placed.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/runs/[id]/drop -->
+
+**Can the assistant tell me what a comparison run showed?** Managers and admins can ask it, for example "what did my last comparison show?".
+It answers from the lab's latest runs: the return, the worst week, the drawdown and the fees of the current and the proposed settings, in percentages only, labelled backtested, with the worst week and the drawdown beside each return, and it names the run it read.
+A request still queued or running, or one that failed or expired, is answered with its status and its reason; with no run at all the answer is that it is unknown.
+The written analysis of a run is not available yet, so the assistant does not quote it.
+It does not advise whether to apply a change.
+A user who asks gets no run figure.
 
 Each environment has its own people and roles.
 
@@ -679,6 +775,24 @@ Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
 
+**Unlock a locked username**: after 5 wrong passwords in 15 minutes a username is locked for 15 minutes.
+The person's row on the Users page then shows "Locked until" and the time, and an Unlock button.
+Unlock asks you to confirm: they can sign in again now, and their failed attempts are forgotten.
+If you think someone else is guessing the password, reset it instead.
+Unlock does not sign the person out or in, and does not change their password.
+Each unlock is recorded in the audit trail with your username and the person's, never any password.
+<!-- guide: route:POST /api/admin/users/[id]/unlock -->
+
+**Accounts a manager manages**: the Accounts column of the Users page says what each person may act on.
+An admin acts on every account, and a user on none.
+A manager with no linked account acts on every account of this environment, as before.
+Edit accounts on a manager's row lists the accounts of the account registry with a box each; tick the ones the manager manages, read what follows, then Save accounts.
+From then on the monitor refuses that manager's close, rebalance or confirm of a lab run on a bot of any other account, and says which account they do not manage; the bot receives nothing.
+Untick every box to give the manager every account again.
+Each account added or removed is recorded in the audit trail with your username, the manager and the account.
+Do not link an adviser who is not the account owner until counsel has approved it.
+<!-- guide: route:PUT /api/admin/users/[id]/accounts -->
+
 **Audit**: the trail of who did what: sign-ins, user changes, role changes, consent changes, closes and rebalances by hand, and survey answers (which survey only, never the answer).
 It is read-only.
 <!-- guide: page:/admin/audit -->
@@ -733,8 +847,9 @@ Learn more: "Roles" and "Analytics and your consent" in this guide.
 The **bell** in the menu bar, before your name, lists what happened to your book and your requests, and what waits for you.
 On a phone it opens the Notifications page.
 
-**Needs you** (counted on the bell): a short question from the team is waiting, or a request you sent needs more from you.
+**Needs you** (counted on the bell): a short question from the team is waiting, a request you sent needs more from you, or wrong passwords were typed for your username since your previous sign-in.
 Their buttons open the question or My requests in the assistant.
+The wrong-password item stays until you open Active sessions in the account menu, where you see when you last signed in.
 
 **Updates** (listed, never counted): what the bot did to your book on the page's bot (a stop-loss, a delta exit, the kill switch, a sell cancelled because new risk is frozen, initial margin over the limit), each with the journal's plain sentence and *Why?*; the status of your requests (accepted as a public issue, declined with its reason, shipped); and one What's new note per release.
 Fills and skips are never notifications.

@@ -31,6 +31,8 @@ const (
 	HedgeUnavailable = "hedge_unavailable"  // the hedge is not holding the delta: the GEX shed is back (#664)
 	HedgeResumed     = "hedge_resumed"      // the hedge holds the delta again: the shed keeps its legs (#664)
 	HedgeLeftOpen    = "perp_left_open"     // the kill switch left a perpetual beyond the bot's ledger alone (#667)
+	HedgeStoodDown   = "hedge_stood_down"   // the book holds one side only: the perpetual closed, the GEX shed back (#813)
+	HedgeBack        = "hedge_back"         // the book holds both sides again: the hedge holds its delta (#813)
 )
 
 // HedgeRecord is one futures-hedge decision with the figures behind it.
@@ -60,9 +62,14 @@ type HedgeRecord struct {
 	RealisedCoin float64 `json:"realised_coin,omitempty"`
 	// FundingCoin is the perpetual's realised funding as Deribit reported it
 	// on the read before this trade (coin, a running figure, not this trade's).
-	FundingCoin float64        `json:"funding_coin,omitempty"`
-	Market      MarketSnapshot `json:"market"`
-	Portfolio   MarketContext  `json:"portfolio"`
+	FundingCoin float64 `json:"funding_coin,omitempty"`
+	// A linear (USDC) perpetual's line (SOL, XRP, #836): AmountUnit is the
+	// coin amount_usd/filled_usd are in ("SOL"), Unit the USDC the _coin
+	// fields are in. Both empty for BTC/ETH, whose lines are unchanged.
+	AmountUnit string         `json:"amount_unit,omitempty"`
+	Unit       string         `json:"unit,omitempty"`
+	Market     MarketSnapshot `json:"market"`
+	Portfolio  MarketContext  `json:"portfolio"`
 }
 
 // TrendRecord is one change of the SMA trend with the levels behind it. It
@@ -101,6 +108,7 @@ const (
 	RiskIMOverLimitDone = "im_over_limit_cleared" // IM back at or under the limit: the episode ends
 	RiskIMUnderUse      = "im_under_use"          // entries allowed, IM under 60 % of the limit for the window: alert only, no order (#369)
 	RiskIMUnderUseDone  = "im_under_use_cleared"  // IM back at or over 60 % of the limit, or entries no longer allowed: the episode ends
+	RiskDVOLRejected    = "dvol_rejected"         // a DVOL reading failed the sanity gate: the last good value stays in use (#796)
 )
 
 // Causes of unused approved margin: the one vocabulary cmd/idlemargin
@@ -301,6 +309,11 @@ type OrderLog struct {
 	Market    MarketSnapshot `json:"market"`
 	Portfolio MarketContext  `json:"portfolio"`
 
+	// Unit is the currency of the line's prices, premium, fees and P&L when
+	// it is not the underlying's coin: "USDC" for a SOL/XRP option, whose
+	// _usd fields equal its amounts (#832). Absent on BTC/ETH lines.
+	Unit string `json:"unit,omitempty"`
+
 	// Closing records only
 	CloseReason     string  `json:"close_reason,omitempty"`
 	PremiumReceived float64 `json:"premium_received,omitempty"` // coin
@@ -331,7 +344,10 @@ type PnLRecord struct {
 	RealisedUSD   float64   `json:"realised_usd"`
 	UnrealisedUSD float64   `json:"unrealised_usd"`
 	TotalUSD      float64   `json:"total_usd"`
-	Spot          float64   `json:"spot"` // conversion price for the USD fields
-	OpenLegs      int       `json:"open_legs"`
-	ClosedLegs    int       `json:"closed_legs"`
+	Spot          float64   `json:"spot"` // conversion price for the USD fields (not used when Unit is USDC)
+	// Unit is "USDC" for a USDC-settled bot (#832): the coin fields are USDC
+	// and equal the USD ones. Absent for BTC/ETH.
+	Unit       string `json:"unit,omitempty"`
+	OpenLegs   int    `json:"open_legs"`
+	ClosedLegs int    `json:"closed_legs"`
 }

@@ -1,12 +1,14 @@
 // Command usage writes the weekly monitor usage and cohort report (#295)
 // from the analytics events the monitor collects (data/monitor/events.jsonl,
 // docs/product/analytics/event-plan.md): active users, cohort retention,
-// activation (#620), panels opened, first answers, help, the manual-close
+// activation (#620), retention by activation (#818), panels opened, first answers, help, the manual-close
 // and rebalance funnels and trust signals — counts and shares only, never a user or session id.
-// It reads that file only and writes data/monitor/reports/<week>.md|json.
+// The north star (#801, PRD §7) joins those visits with the days each bot ran,
+// from the clone's data/<bot>/data/regime_history.jsonl (its days only, no amount).
+// It reads those files only and writes data/monitor/reports/<week>.md|json.
 //
 //	go run ./cmd/usage -week 2026-W43
-//	go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl
+//	go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl -env stable
 //	go run ./cmd/usage -week 2026-W43 -alert   # + the engagement-drop check (#341): DROPS {json}
 //	go run ./cmd/usage -week 2026-W43 -flat-step-pts 3   # study the cohort flattening check (#607)
 package main
@@ -16,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"optionsbot/internal/evidence"
@@ -36,9 +39,20 @@ func main() {
 	flag.IntVar(&flat.Weeks, "flat-weeks", flat.Weeks, "study: how many of a cohort's last ended weeks are compared with the week before")
 	flag.Float64Var(&flat.StepPts, "flat-step-pts", flat.StepPts, "study: a week within this many points of the one before is flat; a bigger fall is falling")
 	baseWeeks := flag.Int("alert-base-weeks", usage.DropBaseWeeks, "study: how many weeks before the report's are its base")
+	bots := flag.String("bots", "", "the clone's data folder holding each bot's data/"+usage.RunningFile+" for the north star (#801; default: two levels above -events)")
+	env := flag.String("env", "", "the environment the -bots folder belongs to (stable|mvp; default: the one the window's visits name)")
 	flag.Parse()
 
-	r, err := run(*events, *week, *out, rules, flat, *baseWeeks)
+	dataDir := *bots
+	if dataDir == "" {
+		dataDir = filepath.Dir(filepath.Dir(*events))
+	}
+	running, err := usage.LoadRunning(*env, dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "usage:", err)
+		os.Exit(1)
+	}
+	r, err := run(*events, *week, *out, rules, flat, *baseWeeks, []usage.Running{running})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "usage:", err)
 		os.Exit(1)
@@ -79,21 +93,28 @@ func window(week string) (evidence.Window, error) {
 	return evidence.ParseWeek(week)
 }
 
-func run(events, week, out string, rules usage.Rules, flat usage.FlatRules, baseWeeks int) (usage.Report, error) {
+func run(events, week, out string, rules usage.Rules, flat usage.FlatRules, baseWeeks int, running []usage.Running) (usage.Report, error) {
 	w, err := window(week)
 	if err != nil {
 		return usage.Report{}, err
 	}
-	r, paths, err := usage.RunWith(events, w.From, w.To, w.Label, out, rules, flat, baseWeeks)
+	r, paths, err := usage.RunWithRunning(events, w.From, w.To, w.Label, out, rules, flat, baseWeeks, running)
 	if err != nil {
 		return usage.Report{}, err
 	}
 	fmt.Printf("%s: %d events in the week, %d lines rejected\n", w.Label, r.EventsInWeek, r.Source.RejectedTotal)
+	if ns := r.NorthStar; ns != nil {
+		fmt.Printf("north star: %d monthly active account(s), %d with visits and no running strategy, %d running without visits (%d days to %s)\n",
+			ns.Active, ns.VisitsNotRunning, ns.RunningNoVisits, usage.MonthDays, ns.To.Format(time.DateOnly))
+	}
 	if r.EventsInWeek == 0 {
 		fmt.Println(r.NoEvents)
 	}
 	if a := r.Activation; a != nil && len(a.Weeks) > 0 {
 		fmt.Println(a.Weeks[len(a.Weeks)-1].Line())
+	}
+	if ar := r.ActivationRetention; ar != nil {
+		fmt.Println(ar.Headline())
 	}
 	for _, p := range paths {
 		fmt.Println("wrote", p)

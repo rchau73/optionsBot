@@ -2,6 +2,8 @@
 
 **Status:** options for the product owner to decide (#236, epic E5). Prepared **before** the interviews (#178) and the fake door (`experiments/fake-door-landing.md`) report, so their questions are specific. **The decision is the product owner's**, after those results and counsel's answer to L8.
 
+**The one-page summary for the decision is `pricing-proposal.md` (#762).**
+
 **No figures here.** This repository is public: no price, revenue, CAC, churn rate, competitor price or survey answer is written in this file. Prices, research and the unit-economics scenarios go in the gitignored `data/product/pricing/` (run them with `scripts/product/unit_economics.py`, #235). This file names the choices, their trade-offs, their legal flags and the data each one still needs.
 
 **Principles** (PRD §6, quoted): fair to the customer, rewards staying (annual plans, loyalty), low churn; **no share of profits** (regulatory and incentive risk). Any fee that scales with capital is flagged **needs legal review** — it can read as a management fee (`legal-brief.md` L8; `docs/legal/preliminary-answers.md` L8: a fee as a share of capital or of profits reinforces the portfolio-management reading and does not fit a pure software licence; a flat subscription per account is the cleanest).

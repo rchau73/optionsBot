@@ -177,7 +177,7 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 			"loss_pct", fmt.Sprintf("%.2f", pos.LossPct()),
 		)
 
-	case ActionRollNextMonth, ActionRollSameLeg, ActionDeltaExit:
+	case ActionRollNextMonth, ActionRollSameLeg, ActionClose, ActionDeltaExit:
 		// Pay at most the current ask: a marketable limit that fills like a
 		// market order in a normal book but cannot sweep a thin one.
 		inst, ok := s.md.GetInstrument(pos.Instrument)
@@ -187,6 +187,11 @@ func (s *Strategy) handleRollout(ctx context.Context, d RolloutDecision) {
 			return
 		}
 		note := closeNote{detail: d.Detail}
+		if d.Action == ActionClose {
+			// Under the close-only floor: no repair on this expiry, and the
+			// slot re-enters on another (closeonly.go, #753).
+			s.noteCloseOnly(pos)
+		}
 		if d.Action == ActionDeltaExit {
 			// Held like a stop-loss: repair re-sells it only once calm.
 			s.noteStopped(pos, time.Now())

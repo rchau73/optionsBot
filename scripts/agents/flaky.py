@@ -25,6 +25,11 @@ test when its title ends with "Flaky test: <name>"; an open one, or one closed
 in the last DEDUP_DAYS days, is a duplicate (as deploy_issue.py, nothing is
 filed twice).
 
+Repeat offenders (#747): repeat_offenders groups the flaky-test issues (open,
+or closed in REPEAT_DAYS days) by test file (file_key); metrics.py lists each
+file with 2 or more, and a new issue of a file with REPEAT_HINT_MIN or more
+(itself included) carries a "fix the shared cause" line in its body.
+
 Standard library only.
 """
 import datetime as dt
@@ -46,6 +51,11 @@ JEST_SUITE = "frontend: `npm test -- --ci`, 3 runs"
 # (sleep, SIGSTOP); CPU load delays it by seconds, not a minute.
 STALL_LATE_MS = 60_000
 JEST_TIMEOUT = re.compile(r"Exceeded timeout of (\d+) ms")
+JEST_SEP = " › "  # a jest test's name: <file> › <full name>
+GO_TEST = re.compile(r"^Test\w*(/|$)")  # a Go test's name: TestX or TestX/subtest
+FLAKY_TITLE = "Flaky test: "
+REPEAT_DAYS = 30  # the window of the repeat-offender count (#747)
+REPEAT_HINT_MIN = 3  # a file with this many flaky issues gets the shared-cause hint
 
 
 class Result:
@@ -120,7 +130,7 @@ def parse_jest(report, results):
             status = a.get("status")
             if status not in ("passed", "failed"):
                 continue
-            name = f"{where} › {a.get('fullName') or a.get('title', '')}"
+            name = f"{where}{JEST_SEP}{a.get('fullName') or a.get('title', '')}"
             r = results.setdefault(name, Result(name, JEST_SUITE, where))
             if status == "passed":
                 r.passes += 1
@@ -168,7 +178,7 @@ def _parse_time(s):
 def find(name, issues, now):
     """Number of an issue that already names this test: open, or closed in
     the last DEDUP_DAYS days; None otherwise."""
-    want = f"Flaky test: {name}"
+    want = f"{FLAKY_TITLE}{name}"
     since = now - dt.timedelta(days=DEDUP_DAYS)
     for i in issues:
         if not i.get("title", "").rstrip().endswith(want):
@@ -181,10 +191,59 @@ def find(name, issues, now):
     return None
 
 
-def body(r, commit, pairs):
+def file_key(name):
+    """The test file a flaky test belongs to (#747): for jest the part before
+    " › " (a suite that did not load is named by its file alone), for Go the
+    top-level Test name (no subtest). A Go name never contains " › " and a jest
+    path never starts with a bare Test name, so the two never share a key."""
+    if JEST_SEP in name:
+        return name.split(JEST_SEP, 1)[0]
+    if GO_TEST.match(name):
+        return name.split("/", 1)[0]
+    return name
+
+
+def flaky_name(issue_title):
+    """The test an issue's title names ("…Flaky test: <name>"), else None."""
+    _, sep, name = (issue_title or "").partition(FLAKY_TITLE)
+    return name.strip() if sep and name.strip() else None
+
+
+def repeat_offenders(issues, now, days=REPEAT_DAYS):
+    """{file: sorted issue numbers} of the flaky-test issues that count at
+    `now` (#747): open, or closed in the last `days` days; an issue created
+    after `now` (when createdAt is known) does not count yet. Every file is
+    returned, also one with a single issue: the callers pick their minimum."""
+    since = now - dt.timedelta(days=days)
+    by_file = {}
+    for i in issues:
+        name = flaky_name(i.get("title", ""))
+        if name is None:
+            continue
+        created = _parse_time(i.get("createdAt"))
+        if created is not None and created > now:
+            continue
+        if i.get("state", "OPEN").upper() != "OPEN":
+            closed = _parse_time(i.get("closedAt"))
+            if closed is None or closed < since:
+                continue
+        by_file.setdefault(file_key(name), set()).add(i["number"])
+    return {f: sorted(ns) for f, ns in by_file.items()}
+
+
+def repeat_hint(n):
+    """The body line of a flaky issue whose file has REPEAT_HINT_MIN or more."""
+    return (f"⚠️ This file has {n} flaky issues in {REPEAT_DAYS} days: fix the shared cause in the file "
+            "(timers, shared state, ordering), not only this test.")
+
+
+def body(r, commit, pairs, file_count=0):
+    """The issue body; file_count = this test's file's flaky issues in
+    REPEAT_DAYS days, this one included (the hint from REPEAT_HINT_MIN)."""
     out = deploy_issue.redact(deploy_issue.tail(r.output or ""), pairs) or "(no output)"
     f = deploy_issue.fence(out)
     runs = r.passes + r.fails
+    hint = f"\n{repeat_hint(file_count)}\n" if file_count >= REPEAT_HINT_MIN else ""
     return f"""🧪 **Flaky test** — `{r.name}` passed {r.passes} and failed {r.fails} of {runs} runs tonight on `origin/main` at `{commit[:7]}`.
 
 - **Suite:** {r.suite}
@@ -193,7 +252,7 @@ def body(r, commit, pairs):
 - **Passed:** {r.passes} · **Failed:** {r.fails}
 
 A flaky test turns a pull request's CI red by chance. Make it pass every run (or fix the race it found); never retry it in CI.
-
+{hint}
 ### First failure's output (last {deploy_issue.TAIL_LINES} lines, secrets redacted)
 {f}text
 {out}
@@ -208,6 +267,7 @@ def plan(results, issues, commit, pairs, now):
     """(log lines, [(title, body)] to file)."""
     flaky, broken = classify(results)
     lines, filings = [], []
+    per_file = {f: len(ns) for f, ns in repeat_offenders(issues, now).items()}
     for r in sorted((r for r in results.values() if r.stalls), key=lambda r: r.name):
         lines.append(f"stalled: {r.name} ({r.stalls} run(s) timed out over {STALL_LATE_MS // 1000} s late: "
                      "the process was frozen, e.g. the machine slept) — not counted")
@@ -218,8 +278,10 @@ def plan(results, issues, commit, pairs, now):
         if n is not None:
             lines.append(f"flaky: {r.name} (passed {r.passes}, failed {r.fails}) — #{n} already names it, nothing filed")
             continue
+        key = file_key(r.name)
+        per_file[key] = per_file.get(key, 0) + 1  # tonight's earlier filings for the file count too
         lines.append(f"flaky: {r.name} (passed {r.passes}, failed {r.fails}) — filing")
-        filings.append((title(r.name), body(r, commit, pairs)))
+        filings.append((title(r.name), body(r, commit, pairs, per_file[key])))
     if not lines:
         lines.append("no test failed")
     return lines, filings

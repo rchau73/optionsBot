@@ -34,7 +34,7 @@ func TestEvaluateLeg_DetailNamesTheRuleAndNumbers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := strategy.EvaluateLeg(tc.pos, now, 15, 0.10, 0.50, 2.0, 0.30)
+			d := strategy.EvaluateLeg(tc.pos, now, 15, 0.10, 0.50, 2.0, 0.30, 0)
 			for _, w := range tc.want {
 				if !strings.Contains(d.Detail, w) {
 					t.Errorf("detail %q lacks %q", d.Detail, w)

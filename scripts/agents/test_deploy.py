@@ -19,6 +19,18 @@ DOCKER = """#!/usr/bin/env bash
 state="$DEPLOY_TEST_DIR"; ver="$(cat app.txt 2>/dev/null)"
 echo "$* @ $ver" >> "$state/docker.log"
 case " $* " in
+  *" config --services "*) printf 'bot-btc\\nmonitor\\n'; exit 0 ;;
+  *" build "*)
+    # build_oom: how many builds of the monitor the VM kills for memory.
+    n="$(cat "$state/build_oom" 2>/dev/null || echo 0)"
+    if [[ " $* " == *" monitor "* && "$n" -gt 0 ]]; then
+      echo $((n - 1)) > "$state/build_oom"
+      echo "npm error signal SIGKILL"
+      echo "failed to solve: ResourceExhausted: process \\"/bin/sh -c npm run build\\" did not complete successfully: cannot allocate memory"
+      exit 1
+    fi
+    grep -qx "$ver" "$state/build_fails" 2>/dev/null && { echo "src/app.go:1: syntax error in $ver"; exit 1; }
+    exit 0 ;;
   *" up "*) grep -qx "$ver" "$state/compose_fails" 2>/dev/null && { echo "build error in $ver"; exit 1; }; exit 0 ;;
   *" exec "*) cat "$state/df" 2>/dev/null; exit 0 ;;
   *" system df"*) echo "Images 3 1 9GB 6GB (66%)"; exit 0 ;;
@@ -170,6 +182,56 @@ class Deploy(unittest.TestCase):
         self.assertEqual(self.mvp_head(), self.a)
         self.assertIn("docker compose up --build", self.read("body.md"))
         self.assertIn("build error in B", self.read("body.md"))
+        self.assertEqual(len(self.creates()), 1)
+
+    # #892: the images are built one at a time, then started.
+    def builds(self):
+        return [l.split(" @ ")[0].split(" build", 1)[1].strip() + " @ " + l.split(" @ ")[1]
+                for l in self.read("docker.log").splitlines() if " build " in f" {l} " and " up " not in f" {l} "]
+
+    # Scenario: Given a main commit that changes only backend code, When deploy.sh
+    # builds mvp, Then the monitor build finishes within the host's memory and the deploy succeeds.
+    def test_images_are_built_one_service_at_a_time_then_started(self):
+        Monitor.healthy = {"A", "B"}
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.builds(), ["bot-btc @ B", "monitor @ B"])
+        self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["B"])
+        self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
+
+    def test_a_build_killed_for_memory_is_built_once_more_and_deploys(self):
+        Monitor.healthy = {"A", "B"}
+        self._write(self.t("build_oom"), "1")
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertIn("killed for memory (npm error signal SIGKILL) — building once more, one image at a time", self.output)
+        self.assertIn("the second build passed", self.output)
+        self.assertEqual(self.builds(), ["bot-btc @ B", "monitor @ B", "bot-btc @ B", "monitor @ B"])
+        self.assertEqual(self.mvp_head(), self.b)
+        self.assertEqual(self.read("envs", "history", "mvp.deployed").strip(), self.b)
+        self.assertEqual(self.read("envs", "history", "mvp.failed"), "")
+        self.assertEqual(self.creates(), [])
+
+    def test_killed_for_memory_twice_rolls_back_as_today(self):
+        Monitor.healthy = {"A", "B"}
+        self._write(self.t("build_oom"), "2")
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertEqual(len(self.builds()), 4)  # one retry, never a loop
+        self.assertEqual(self.mvp_head(), self.a)
+        self.assertEqual(self.read("envs", "history", "mvp.failed").strip(), self.b)
+        self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["A"])  # only the rollback
+        body = self.read("body.md")
+        self.assertIn("**Failed step:** docker compose build", body)
+        self.assertIn("cannot allocate memory", body)
+        self.assertEqual(len(self.creates()), 1)
+        self.assertEqual(self.ledger_ends(), [("rolled_back", self.b[:7])])
+
+    def test_a_build_error_is_not_retried(self):
+        Monitor.healthy = {"A", "B"}
+        self._write(self.t("build_fails"), "B\n")
+        self.assertEqual(self.run_deploy(), 1, self.output)
+        self.assertNotIn("building once more", self.output)
+        self.assertEqual(self.builds(), ["bot-btc @ B"])  # stopped at the first failing image
+        self.assertEqual(self.mvp_head(), self.a)
+        self.assertIn("syntax error in B", self.read("body.md"))
         self.assertEqual(len(self.creates()), 1)
 
     def test_rollback_unhealthy_too_stops_loudly(self):

@@ -41,6 +41,9 @@ type Trade struct {
 	Vega    float64 `json:"vega"`
 	Premium float64 `json:"premium"`
 	OpenFee float64 `json:"open_fee,omitempty"` // opens only, coin: what the fill was charged
+	// Unit is "USDC" when Premium, fees and P&L are USDC (a SOL/XRP option,
+	// #832); absent when they are the underlying's coin.
+	Unit string `json:"unit,omitempty"`
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
 	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
@@ -71,6 +74,11 @@ type PerpFill struct {
 	FeeCoin     float64   `json:"fee_coin"`
 	FundingCoin float64   `json:"funding_coin"` // the running reading, HedgeRecord.FundingCoin
 	Spot        float64   `json:"spot"`
+	// Change, Instrument and RealisedCoin are the line's own, for the
+	// summary's last action (#794): RealisedCoin is a close's P&L net of the fee.
+	Change       string  `json:"change"` // HedgeFill | HedgeClosed
+	Instrument   string  `json:"instrument,omitempty"`
+	RealisedCoin float64 `json:"realised_coin,omitempty"`
 }
 
 // perpFillOf is r as a fill; ok is false for a line that moved nothing (a
@@ -80,7 +88,8 @@ func perpFillOf(r HedgeRecord) (PerpFill, bool) {
 		return PerpFill{}, false
 	}
 	return PerpFill{At: r.Timestamp, Side: r.Side, FilledUSD: r.FilledUSD, Price: r.Price,
-		FeeCoin: r.FeeCoin, FundingCoin: r.FundingCoin, Spot: r.Market.Spot}, true
+		FeeCoin: r.FeeCoin, FundingCoin: r.FundingCoin, Spot: r.Market.Spot,
+		Change: r.Change, Instrument: r.Instrument, RealisedCoin: r.RealisedCoin}, true
 }
 
 func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
@@ -90,7 +99,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
 		GammaFlip: rec.Market.GammaFlip, FlipBufferPct: rec.Market.FlipBufferPct,
-		Detail: rec.Detail, Actor: rec.Actor, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
+		Detail: rec.Detail, Actor: rec.Actor, Unit: rec.Unit, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
 	case EventFilled:

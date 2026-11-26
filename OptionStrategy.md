@@ -107,6 +107,7 @@ There is no cap.*
 8. **Reports, and hedges only in an experiment.** If the book's overall directional exposure (net delta) grows large, it writes a hedge suggestion file.
    A human decides whether to act on it.
    The one exception is the futures hedge experiment, off by default and on test money only: while an admin has it on, the bot trades the coin's perpetual future to hold the delta near zero (section 9).
+   A SOL or XRP bot starts with it on: it holds its delta with the coin's USDC perpetual, in the coin.
 
 ## 4. How a trade can end
 
@@ -117,10 +118,15 @@ The first one that applies wins.
 |---|---|---|---|
 | 1 | **Stop-loss** | the leg's loss reaches **2× the premium** received for it | buys it back **at market**, immediately, ahead of all other traffic; if the book is empty (ask more than 20 % above mid) it waits up to 5 minutes for the spread, re-checking each cycle |
 | 2 | **Time roll** | **15 days** or fewer left | buys the leg back; once both legs are gone the slot reopens further out |
-| 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; repair re-sells a fresh leg at the target delta, same expiry |
-| 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; repair re-sells a fresh leg |
+| 3 | **Delta drift** | the leg's delta falls below **0.10** (far from the price, little premium left) | buys it back; from 25 days to expiry repair re-sells a fresh leg at the target delta, same expiry; under 25 days *close only* (below) |
+| 4 | **Take-profit** | **50 %** of the leg's premium is captured | buys it back; from 25 days to expiry repair re-sells a fresh leg; under 25 days *close only* (below) |
 | — | **Regime shed** | negative dealer gamma + confirmed trend, with spot more than about one and a half normal days' move (1.5σ) below the gamma flip, on two snapshots in a row | closes the threatened side at market; it is sold again only once the price is back above the flip it was shed at (plus 1.5σ), or dealer gamma has been non-negative for a day |
 | — | **Kill switch** | operator signal | cancels everything, buys back everything at market, then stops trading |
+
+**Close only under 25 days** (#753): between 25 days and the time roll, a leg that meets the drift or take-profit threshold is bought back the same way, journaled "close only: < 25 DTE", and not sold again on that expiry — a fresh leg there would be time-rolled within days, paying the spread twice.
+The other leg of the strangle stays under its own rules.
+Once the strangle has no leg left, the slot is empty and opens a new strangle through the normal entry rules, but never on the expiry it just closed: that expiry counts as taken for the slot until it expires, so the slot uses the next free expiry or waits (`no_free_expiry`).
+The 25 is fixed in code; `cmd/stress -closeonly` varies it (0 = the rule before: nothing under 25 days).
 
 How each exit buys back (#239):
 
@@ -218,6 +224,10 @@ On Deribit, BTC options are priced in BTC; dollar figures use the BTC price at t
   When DVOL is high (rich premium, fear already priced in) up to 50 % is allowed; in the middle, 35 %; when it is low (cheap premium, often the calm before a big move), 20 %.
   When dealer positioning amplifies moves (negative gamma), 20 % applies whatever DVOL says.
   Every number is Deribit's own margin calculation, including a simulation of each new trade before it is placed.
+- **A bad volatility reading is ignored:** a live DVOL reading more than 1.5× away (above or below) from the at-the-money option marks' implied volatility, or — with no marks to compare — one that jumps more than 25 % while the price moves less than 1 %, is not used.
+  The last good value stays for the margin band, its daily closes and the GEX buffer (`dvol_rejected` in the journal, #796).
+  On 2026-11-14/15 the testnet DVOL swung 40 ↔ 125 within minutes with spot flat and the marks near 40.
+  Without marks, a new level is taken after 30 minutes.
 - **No knee-jerk reactions:** a change of volatility band or gamma regime must hold for two daily closes before the bot resizes anything.
   Until then it simply stops opening new positions; if the change reverts (a one-day spike), it carries on as before.
 - **Distance to liquidation:** if maintenance margin reaches 35 % of the account's margin balance (Deribit liquidates at 100 %), positions are bought back at once, whatever else is going on.
@@ -262,6 +272,11 @@ Every rule that opens, closes or holds a position, by market state.
   Stress-tested on 2026-10-12 the bias shed 3–5× as often and returned 16–139 % less than the trend; BTC trades on it as a live trial since 2026-10-12, ETH stays on the trend as the control.
 - **No fresh GEX data:** the first minute after a start (before the first GEX snapshot), or the last snapshot is more than 5 minutes old.
   The regime and trend are unknown, so the bot cannot tell which side is safe to sell.
+- **A coin without DVOL (SOL, XRP):** Deribit publishes no volatility index for them, so wherever this document says DVOL these bots read the coin's own **30-day at-the-money implied volatility** ("chain ATM IV 30d", #834).
+  It is the mean mark IV of the call and put at the strike nearest the price, taken on the two expiries either side of 30 days and blended to 30 days by variance (one expiry only: its own).
+  The bot records one value a day; until **90 daily closes** exist it cannot rank today's value, so the margin limit stays at the lowest band (20 %) and every margin line says how far the history is ("chain ATM IV 30d: 10 of 90 days of history: lowest band").
+  From the 90th day the bands apply exactly as for BTC and ETH.
+  BTC and ETH keep DVOL.
 
 | What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
 |---|---|---|---|---|---|
@@ -275,12 +290,14 @@ Every rule that opens, closes or holds a position, by market state.
 | **Rebalance right after a restart** | ⛔ while IM is within ±1.5 pp of the limit (`rebalance_in_band`: a deploy does not trade on market drift); outside it, top-up or downsize as above. A later confirmed limit change is met exactly | ⛔ waits for confirmation | same as Normal | same as Normal | the MM cut acts at once, band or not |
 | **IM over the limit with no limit change** (a transfer out, a price move: IM > limit + 1.5 pp) | 🔔 alert only, no trade: journaled once `im_over_limit` (IM, limit, margin balance now and at the last rebalance) and shown in the monitor beside the Rebalance button until IM is back at or under the limit (`im_over_limit_cleared`). A person decides with the Rebalance dry run; entries and top-ups have no headroom meanwhile | same alert | same alert | same alert | same alert; the MM cut acts at once as always |
 | **Approved margin unused** (entries allowed, IM under 60 % of the limit for 6 h with no data gap over 15 min) | 🔔 alert only, no trade: journaled once `im_under_use` (IM, limit, share of the limit used, minutes and the cause: the empty slot's last skip reason, or a top-up waiting, a slot sized down by the liquidity cap, every slot full) until IM is back at 60 % of the limit or more (`im_under_use_cleared`). The bot does not act on it: no rule is relaxed, nothing is sold | — (entries not allowed: no alert, an open one ends) | same alert | same alert | — |
+| **A DVOL reading the market does not support** (more than 1.5× from the ATM option marks' IV, or without marks a jump over 25 % with spot moving under 1 %) | ⛔ not used: the last good value stays for the IV band, its daily closes and the GEX buffer; journaled once per episode `dvol_rejected` with both values, again every 30 min while it lasts; without marks a new level is taken after 30 min | same | same | same | same |
 | **Stop-loss** (loss ≥ 2× premium, at market) | ✅ · waits while the book is empty (see below) | same | same | same | same |
 | **Delta exit** (\|Δ\| ≥ 0.30) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Rolls** (take-profit, delta drift, DTE) | ✅ · rest at the mid for 90 s, then the rest at the ask; any urgent exit cancels the resting order first | ✅ | ✅ | ✅ | ✅ |
-| **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots; with the futures hedge experiment on, ⛔ the legs are kept (`shed_hedged`) and the perpetual holds the delta instead, unless the hedge cannot trade (halted, last order rejected, or 3 cycles due without a fill): then ✅ as usual (`hedge_unavailable`) | ✅ |
-| **Futures hedge experiment** (off by default; testnet; switched by an admin from the monitor, #657) | while on: the coin's perpetual is traded so the book's delta stays within 5 % of the margin balance (IOC at the best price, at most 12 orders an hour); a rejection a retry cannot cure (maintenance lock, instrument not open, not enough funds) halts its orders, re-checked every 10 minutes (`hedge_halted`); live only, no order more than 1 % from the index (`hedge_price_away`); on testnet the benchmark is priced at the index, without funding; stops, delta exits, rolls and the MM cut still close legs; the kill switch closes only the perpetual size the bot's ledger holds and journals the rest (`perp_left_open`) | ✅ runs (it only reduces direction) | ✅ | ✅ instead of the shed's close | ✅ |
-| **Repair after a take-profit or drift roll** | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`; a working repair of that side is cancelled when the trend turns) | ⛔ for the shed side | ⛔ |
+| **GEX shed** (close the threatened side at market) | — | — | — | ✅ after 2 snapshots; with the futures hedge experiment on, ⛔ the legs are kept (`shed_hedged`) and the perpetual holds the delta instead, unless the hedge cannot trade (halted, last order rejected, or 3 cycles due without a fill): then ✅ as usual (`hedge_unavailable`), and ✅ as usual while the book holds one side only (`hedge_stood_down`) | ✅ |
+| **Futures hedge experiment** (off by default, but on at a SOL or XRP bot's first start, #836; testnet; switched by an admin from the monitor, #657) | while on: the coin's perpetual is traded so the book's delta stays within 5 % of the margin balance (a SOL or XRP bot: its USDC perpetual, sized in the coin, the band 5 % of the USDC balance ÷ spot; IOC at the best price, at most 12 orders an hour); a rejection a retry cannot cure (maintenance lock, instrument not open, not enough funds) halts its orders, re-checked every 10 minutes (`hedge_halted`); live only, no order more than 1 % from the index (`hedge_price_away`); on testnet the benchmark is priced at the index, without funding; stops, delta exits, rolls and the MM cut still close legs; the kill switch closes only the perpetual size the bot's ledger holds and journals the rest (`perp_left_open`); while the book holds calls only or puts only the hedge stands down — its perpetual closed, the book keeps the direction the regime side chose — and hedges again once both sides are held (`hedge_stood_down`, `hedge_back`, #813: on 2026-11-05 → 11-16 the long hedge cost the calls-only books more than the calls earned) | ✅ runs (it only reduces direction) | ✅ | ✅ instead of the shed's close | ✅ |
+| **Repair after a take-profit or drift close under 25 days to expiry** (#753) | ⛔ not on that expiry (`repair_held`: close only); the slot re-enters on another expiry once its strangle has no leg | same | same | same | same |
+| **Repair after a take-profit or drift roll** (25 days or more to expiry) | ✅ at once | ✅ at once | ✅ at once, except the threatened side in a trend (`repair_held`; a working repair of that side is cancelled when the trend turns) | ⛔ for the shed side | ⛔ |
 | **Repair after a stop-loss or delta exit** | ✅ after 72 h (`repair_cooldown_hours`) | ⛔ held (`repair_held`) | ⛔ held | ⛔ for the shed side | ⛔ |
 | **Top-up while a slot's leg is held after a stop-loss or manual close** | ⛔ that slot's top-up waits until the repair may run (`repair_held`: top-up held); a strangle missing a leg is never topped up, repair completes it | same | same | same | same |
 | **Repair after a GEX shed** | ⛔ held until spot is back above the flip *at the shed* + 1.5σ on 2 snapshots, or the live regime has been non-negative for 24 h | same | same | ⛔ | ⛔ |

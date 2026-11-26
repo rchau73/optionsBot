@@ -5,16 +5,31 @@
 //	go run ./cmd/monitor-demo                     # BTC on :8081
 //	go run ./cmd/monitor-demo -underlying ETH -addr 127.0.0.1:8082
 //	go run ./cmd/monitor-demo -scenario mixed     # a losing month among winning ones (#203)
+//	go run ./cmd/monitor-demo -scenario hedged    # the futures hedge on (#827)
+//	go run ./cmd/monitor-demo -steady             # no random rolls: the trade log stays as seeded (#896)
 //
-// -scenario good|mixed|drawdown shapes the investor summary for design and
-// user tests: steady income, a losing month, or an open loss near its stop
-// with a worst case large next to the month's income. Without it the demo is
-// as before. A scenario reports deployment "demo" and version "scenario
-// <name>" in /api/status, so it is never mistaken for a track record.
+// -scenario good|mixed|drawdown|hedged shapes the investor summary for design
+// and user tests: steady income, a losing month, an open loss near its stop
+// with a worst case large next to the month's income, or the same book as the
+// default demo with the futures hedge on — a perpetual that offsets the
+// book's lean, traded now and then (journaled hedge_fill lines, so the Last
+// action can be a hedge trade, and served on /api/hedge; the worst case
+// counts it as the real API does). Without it the demo is as before. A
+// scenario reports deployment "demo" and version "scenario <name>" in
+// /api/status, so it is never mistaken for a track record.
+//
+// -steady turns off the random rolls (a close and a re-open of a leg, about
+// one tick in 25), so the trade log keeps its seeded rows for the whole run:
+// the phone check (frontend/e2e/playwright.config.mjs, #896) measures the
+// Details trade log 30–60 s in and compares it with a committed baseline,
+// which a roll's wider rows broke. Orders sent and skips still come at
+// random, so the Activity feed moves. -tick sets how often the simulation
+// moves (default 1 s; the tests run it faster).
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,6 +46,7 @@ import (
 	"optionsbot/internal/account"
 	"optionsbot/internal/api"
 	"optionsbot/internal/config"
+	"optionsbot/internal/hedge"
 	"optionsbot/internal/history"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
@@ -40,10 +56,16 @@ import (
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8081", "listen address")
 	underlying := flag.String("underlying", "BTC", "BTC or ETH")
-	scenario := flag.String("scenario", "", "investor-summary scenario: good | mixed | drawdown (default: the usual demo)")
+	scenario := flag.String("scenario", "", "investor-summary scenario: good | mixed | drawdown | hedged (default: the usual demo)")
+	steady := flag.Bool("steady", false, "no random rolls: the trade log keeps its seeded rows (the phone check, #896)")
+	tick := flag.Duration("tick", time.Second, "how often the simulation moves")
 	flag.Parse()
 	if !validScenario(*scenario) {
-		fmt.Fprintf(os.Stderr, "unknown -scenario %q: want good, mixed or drawdown\n", *scenario)
+		fmt.Fprintf(os.Stderr, "unknown -scenario %q: want good, mixed, drawdown or hedged\n", *scenario)
+		os.Exit(2)
+	}
+	if *tick <= 0 {
+		fmt.Fprintf(os.Stderr, "-tick %s: want a positive duration\n", *tick)
 		os.Exit(2)
 	}
 
@@ -51,6 +73,7 @@ func main() {
 	defer cancel()
 
 	sim := newSimulation(*underlying, *scenario)
+	sim.steady, sim.tick = *steady, *tick
 	hist, err := demoHistory(*underlying, sim.spot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -60,10 +83,14 @@ func main() {
 	sim.history = hist
 	go sim.run(ctx)
 
-	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr, "scenario", *scenario)
+	slog.Info("monitor demo: simulated data, no exchange connection", "underlying", *underlying, "addr", *addr, "scenario", *scenario, "steady", *steady)
 	opts := []api.Option{api.WithPnLHistory(hist), api.WithAccount(sim)}
 	if *scenario != "" {
 		opts = append(opts, api.WithDeployment("demo", "scenario "+*scenario))
+	}
+	if *scenario == scenarioHedged {
+		// No token: GET /api/hedge only, the switch is not served.
+		opts = append(opts, api.WithFuturesHedge(sim, "", false))
 	}
 	if err := api.New(sim, sim.journal, opts...).ListenAndServe(ctx, *addr); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -87,23 +114,55 @@ type simulation struct {
 	started    time.Time
 	base       float64 // starting spot: the simulated SMAs and swings sit around it
 	trend      string  // last SMA trend, so a change is journaled once
-	scenario   string  // "" | good | mixed | drawdown
+	scenario   string  // "" | good | mixed | drawdown | hedged
+	steps      int     // ticks so far: the first always journals an order
+	steady     bool    // no random rolls: the trade log stays as seeded (#896)
+	tick       time.Duration
+	// The hedged scenario's perpetual (#827): the book of its fills, when the
+	// hedge was switched on, and when it last traded.
+	perp        hedge.PerpBook
+	hedgeSince  time.Time
+	hedgeTrades []time.Time
 }
 
-// The investor-summary scenarios (#203).
+// The investor-summary scenarios (#203, #827).
 const (
 	scenarioGood     = "good"     // steady monthly income
 	scenarioMixed    = "mixed"    // a losing month among winning ones
 	scenarioDrawdown = "drawdown" // an open loss near its stop, a large worst case
+	scenarioHedged   = "hedged"   // the default book with the futures hedge on
 )
 
 func validScenario(s string) bool {
 	switch s {
-	case "", scenarioGood, scenarioMixed, scenarioDrawdown:
+	case "", scenarioGood, scenarioMixed, scenarioDrawdown, scenarioHedged:
 		return true
 	}
 	return false
 }
+
+// The hedged scenario's numbers (#827).
+const (
+	// hedgedSpotMove is where spot starts against the price the strangles
+	// were sold at: a 3 % fall, so the book leans to the puts (it gains as
+	// the coin rises) and the perpetual is sold against it.
+	hedgedSpotMove = 0.97
+	// hedgeLeanPct: the perpetual trades when the worst case's two moves
+	// differ by more than this % of the larger one, and the trade makes them
+	// equal at the model's prices.
+	hedgeLeanPct = 10
+	// perpContractUSD is the perpetual's contract size (Deribit BTC: 10 USD).
+	perpContractUSD = 10
+	// perpTakerFee is Deribit's perpetual taker fee rate.
+	perpTakerFee = 0.0005
+	// demoEquity is the equity the view reports (coin), for % of equity.
+	demoEquity = 2.5
+	// hedgeBandPct and hedgeMaxPerHour are the real hedge's band and order
+	// limit, shown on /api/hedge (the demo's book is small for its 2.5 coin,
+	// so it trades on the lean of the worst case instead).
+	hedgeBandPct    = 5
+	hedgeMaxPerHour = 12
+)
 
 // drawdownMarkMultiple pins the drawdown scenario's stressed put at this
 // multiple of its entry price: 2.6 of the 3× stop mark (premium + 2×
@@ -232,6 +291,14 @@ func newSimulation(underlying, scenario string) *simulation {
 		put := s.legs[1] // the 25-day put
 		put.pinned, put.mark = true, put.entry*drawdownMarkMultiple
 	}
+	if scenario == scenarioHedged {
+		// The same strikes, sold before a 3 % fall; the hedge was switched on
+		// an hour ago and sells the perpetual against the lean now, after the
+		// last option trade (demoTrades ends an hour back).
+		s.spot = spot * hedgedSpotMove
+		s.hedgeSince = time.Now().Add(-time.Hour)
+		s.rebalanceHedge(time.Now())
+	}
 	return s
 }
 
@@ -281,7 +348,11 @@ func roundStrike(k, spot float64) float64 {
 }
 
 func (s *simulation) run(ctx context.Context) {
-	t := time.NewTicker(time.Second)
+	every := s.tick
+	if every <= 0 {
+		every = time.Second
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
@@ -316,17 +387,36 @@ func (s *simulation) step() {
 		}
 		s.history.RecordPnL(time.Now(), s.realised, unrealised, s.spot, demoMargin(s.underlying))
 	}
+	if s.scenario == scenarioHedged {
+		s.rebalanceHedge(time.Now())
+	}
+	s.steps++
+	if s.steps == 1 {
+		// The first tick always sends an order, so the Activity feed is
+		// never empty for long; afterwards events come at random (a minute
+		// without one failed a loaded test run).
+		s.submitRandomLeg()
+		return
+	}
 	switch r := rand.Float64(); {
 	case r < 0.04:
-		s.rollRandomLeg("rollout_roi")
+		if !s.steady {
+			s.rollRandomLeg("rollout_roi")
+		}
 	case r < 0.06:
 		s.journal.LogSkipped("no_expiry", s.ctx(nil, &orders.SlotRef{DTE: 25, Delta: 0.16}))
 	case r < 0.10:
-		l := s.legs[rand.Intn(len(s.legs))]
-		s.journal.LogSubmit(orders.PendingOrderRecord{OrderID: fmt.Sprintf("o-%d", rand.Intn(1e6)), Instrument: s.name(l),
-			OptionType: l.typ, Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
-			Qty: l.qty, LimitPrice: l.mark}, s.ctx(l, &l.slot))
+		s.submitRandomLeg()
 	}
+}
+
+// submitRandomLeg journals an entry order sent for a random leg. Call with
+// s.mu held.
+func (s *simulation) submitRandomLeg() {
+	l := s.legs[rand.Intn(len(s.legs))]
+	s.journal.LogSubmit(orders.PendingOrderRecord{OrderID: fmt.Sprintf("o-%d", rand.Intn(1e6)), Instrument: s.name(l),
+		OptionType: l.typ, Direction: orders.DirectionSell, OrderType: orders.TypeLimit, TriggerReason: orders.TriggerEntry,
+		Qty: l.qty, LimitPrice: l.mark}, s.ctx(l, &l.slot))
 }
 
 func (s *simulation) rollRandomLeg(reason string) {
@@ -392,8 +482,17 @@ func (s *simulation) View() strategy.View {
 		Risk:          rv,
 		Pending:       s.pending(now),
 	}
-	bySlot := map[string]*strategy.StrangleView{}
 	var unrealised, delta float64
+	v.Strangles, unrealised, delta = s.strangleViews(now)
+	v.Greeks = orders.MarketContext{NetDelta: delta, NetGamma: -0.00012, NetVega: -72, NetTheta: 27}
+	v.PnL = []strategy.PnLView{{Realised: s.realised, Unrealised: unrealised, Total: s.realised + unrealised, OpenLegs: len(s.legs), ClosedLegs: s.closed}}
+	return v
+}
+
+// strangleViews is the book as the view shows it, with its open P&L and net
+// delta (coin). Call with s.mu held.
+func (s *simulation) strangleViews(now time.Time) (out []strategy.StrangleView, unrealised, delta float64) {
+	bySlot := map[string]*strategy.StrangleView{}
 	for _, l := range s.legs {
 		st, ok := bySlot[l.strangle]
 		if !ok {
@@ -414,11 +513,89 @@ func (s *simulation) View() strategy.View {
 		delta -= pos.CurrentGreeks.Delta * l.qty
 	}
 	for _, id := range []string{"st-1", "st-2", "st-3"} {
-		v.Strangles = append(v.Strangles, *bySlot[id])
+		out = append(out, *bySlot[id])
 	}
-	v.Greeks = orders.MarketContext{NetDelta: delta, NetGamma: -0.00012, NetVega: -72, NetTheta: 27}
-	v.PnL = []strategy.PnLView{{Realised: s.realised, Unrealised: unrealised, Total: s.realised + unrealised, OpenLegs: len(s.legs), ClosedLegs: s.closed}}
-	return v
+	return out, unrealised, delta
+}
+
+// perpInstrument is the hedged scenario's perpetual.
+func (s *simulation) perpInstrument() string { return s.underlying + "-PERPETUAL" }
+
+// rebalanceHedge is the hedged scenario's futures hedge (#827). The real
+// hedge holds the book's coin delta within a band; the demo does the same on
+// the worst case's own model: when its two one-day moves (perpetual
+// included) lose amounts more than hedgeLeanPct apart, it trades the
+// perpetual that makes them equal at spot — selling when the book gains as
+// the coin rises — and journals a hedge_fill, so the Last action can be the
+// hedge's. Call with s.mu held.
+func (s *simulation) rebalanceHedge(now time.Time) {
+	strangles, _, optionsDelta := s.strangleViews(now)
+	wc := api.WorstCaseWithPerp(api.WorstCaseOf(strangles, s.spot, s.dvol, demoEquity, now), s.perp.SizeUSD, s.perp.AvgPrice, demoEquity)
+	down, up := wc.Down.LossCoin, wc.Up.LossCoin
+	if !wc.Available || math.Abs(down-up) <= hedgeLeanPct/100.0*math.Max(math.Abs(down), math.Abs(up)) {
+		return
+	}
+	// A trade of x USD at spot gains x × (1/spot − 1/moved) at each move.
+	perUSD := hedge.PerpPnL(1, s.spot, wc.Down.Spot) - hedge.PerpPnL(1, s.spot, wc.Up.Spot)
+	usd := math.Round((down-up)/perUSD/perpContractUSD) * perpContractUSD
+	if usd == 0 {
+		return
+	}
+	side := hedge.SideBuy
+	if usd < 0 {
+		side = hedge.SideSell
+	}
+	fee := hedge.TakerFee(usd, s.spot, perpTakerFee)
+	perpDelta := hedge.PerpDelta(s.perp.SizeUSD, s.spot)
+	s.perp.Book(usd, s.spot, fee)
+	s.hedgeTrades = append(s.hedgeTrades, now)
+	s.journal.LogHedge(orders.HedgeRecord{
+		Timestamp: now, StrategyID: strategy.DefaultStrategyID, Change: orders.HedgeFill,
+		Detail: fmt.Sprintf("%s %.0f USD of %s: the worst case's moves %.5f / %.5f %s apart by more than %d %% (demo)",
+			side, math.Abs(usd), s.perpInstrument(), down, up, s.underlying, hedgeLeanPct),
+		Instrument: s.perpInstrument(), Side: side, AmountUSD: math.Abs(usd), FilledUSD: math.Abs(usd),
+		Price: s.spot, LedgerPrice: s.spot, FeeCoin: fee, OrderID: fmt.Sprintf("o-%d", rand.Intn(1e6)),
+		OptionsDelta: optionsDelta, PerpDelta: perpDelta, BandCoin: hedge.Band(demoEquity, false, s.spot, hedgeBandPct),
+		Market: orders.MarketSnapshot{AsOf: now, Spot: s.spot, DVOL: s.dvol, IVPercentile: 55, GEXRegime: "POSITIVE/PINNING"},
+	})
+}
+
+// HedgeState implements api.HedgeController: the hedged scenario's
+// perpetual, switched on, on a test account's prices.
+func (s *simulation) HedgeState() strategy.HedgeView {
+	now := time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, _, optionsDelta := s.strangleViews(now)
+	perpDelta := hedge.PerpDelta(s.perp.SizeUSD, s.spot)
+	lastHour := 0
+	for _, at := range s.hedgeTrades {
+		if now.Sub(at) < time.Hour {
+			lastHour++
+		}
+	}
+	return strategy.HedgeView{
+		Available: true, Enabled: true, Since: s.hedgeSince, By: "demo", Underlying: s.underlying,
+		Instrument: s.perpInstrument(), ContractUSD: perpContractUSD,
+		PerpUSD: s.perp.SizeUSD, PerpDeltaCoin: perpDelta, PerpAvg: s.perp.AvgPrice, PerpMark: s.spot, LedgerAvg: s.perp.AvgPrice,
+		UnrealisedCoin: hedge.PerpPnL(s.perp.SizeUSD, s.perp.AvgPrice, s.spot), PerpAsOf: now,
+		OptionsDelta: optionsDelta, NetDelta: optionsDelta + perpDelta,
+		BandCoin: hedge.Band(demoEquity, false, s.spot, hedgeBandPct), BandPct: hedgeBandPct,
+		OrdersLastHour: lastHour, MaxPerHour: hedgeMaxPerHour, Testnet: true,
+		RealisedCoin: s.perp.Realised, FeesCoin: s.perp.Fees,
+		BookScenarios: []hedge.BookScenario{},
+	}
+}
+
+// HedgePreview implements api.HedgeController: the demo reads no exchange.
+func (s *simulation) HedgePreview(context.Context) (strategy.HedgePreview, error) {
+	return strategy.HedgePreview{}, errors.New("demo: no exchange to read")
+}
+
+// SetFuturesHedge implements api.HedgeController; the demo's switch is not
+// served (no token), so this is never called.
+func (s *simulation) SetFuturesHedge(context.Context, bool, orders.Actor) (strategy.HedgeSwitchResult, error) {
+	return strategy.HedgeSwitchResult{}, errors.New("demo: the futures hedge cannot be switched")
 }
 
 // pending simulates one working repair order on the 45-day put, re-sent

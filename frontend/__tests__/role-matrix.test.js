@@ -18,6 +18,8 @@ import { getAuth, resetAuth } from "@/lib/auth/server";
 import { hashPassword } from "@/lib/auth/password";
 import { hashToken } from "@/lib/auth/service";
 import { ACCESS_COOKIE, authKey, REFRESH_COOKIE, signAccess } from "@/lib/auth/tokens";
+import { readRun } from "@/lib/lab";
+import { buildPreview, confirmToken } from "@/lib/labpreview";
 import { OPTIONAL_KINDS } from "@/lib/notifications";
 import { CALLERS, callerAllowed, ROLE_GUARDED_READS, routeKey, STATE_CHANGING_ROUTES, STATE_METHODS, unlistedRoutes } from "@/lib/auth/routeRoles";
 import { TEST_SECRET, useTestAuth } from "@/test/auth";
@@ -116,6 +118,13 @@ const FIXTURES = {
   "POST /api/admin/users/[id]/password": async ({ who }) => ({ ...(await target(who, "/password")), body: { password: NEW_PASSWORD } }),
   "POST /api/admin/users/[id]/reset-link": async ({ who }) => target(who, "/reset-link"),
   "POST /api/admin/users/[id]/signout": async ({ who }) => target(who, "/signout"),
+  "POST /api/admin/users/[id]/unlock": async ({ who }) => {
+    // A locked person (#846): only then does an allowed unlock write its audit line.
+    const t = await target(who, "/unlock");
+    const name = auth.store.userById(Number(t.params.id)).username;
+    auth.store.lockLogin(name, Date.now() + 15 * 60 * 1000, Date.now(), Date.now() - 15 * 60 * 1000);
+    return t;
+  },
   "POST /api/assistant": async () => ({ path: "/api/assistant", body: { question: "What is a strangle?" } }),
   "POST /api/assistant/feedback": async () => ({ path: "/api/assistant/feedback", body: { id: "a-1", helped: true } }),
   "POST /api/assistant/flag": async () => ({ path: "/api/assistant/flag", body: { id: "a-1" } }),
@@ -159,6 +168,17 @@ const FIXTURES = {
     process.env.COMPARE_DIR = path.join(dir, "compare"); // the queue in the test's folder, never the clone's data/
     return { path: "/api/lab/requests", body: { settings: [{ key: "gamma_flip_buffer_sd", value: 1.2 }] }, actor: who?.user.username };
   },
+  "POST /api/lab/runs/[id]/apply": async ({ who }) => {
+    // A fresh run per caller (one confirm records a run once), and the token its preview gives this person.
+    const id = labRun();
+    const preview = buildPreview(readRun(process.env.COMPARE_DIR, id).run, who?.user.username ?? "nobody", Date.now());
+    return { path: `/api/lab/runs/${id}/apply`, params: { id }, body: { confirm_token: confirmToken(preview, authKey(TEST_SECRET), Date.now()) }, actor: who?.user.username };
+  },
+  "POST /api/lab/runs/[id]/drop": async ({ who }) => {
+    // A fresh run per caller: a drop records a run once (#890).
+    const id = labRun();
+    return { path: `/api/lab/runs/${id}/drop`, params: { id }, body: {}, actor: who?.user.username };
+  },
   "POST /api/lab/validate": async ({ who }) => ({ path: "/api/lab/validate", body: { key: "delta_drift_threshold", value: 0.05 }, actor: who?.user.username }),
   "POST /api/events": async ({ who }) => {
     if (who) auth.store.setAnalyticsConsent(who.user.id, true);
@@ -178,7 +198,37 @@ const FIXTURES = {
     return { path: "/api/survey/answers", body: { action: "shown" }, actor: who?.user.username };
   },
   "POST /api/survey/nps": async ({ who }) => ({ path: "/api/survey/nps", body: { action: "opt_out" }, actor: who?.user.username }),
+  "PUT /api/admin/users/[id]/accounts": async ({ who }) => {
+    const m = await person("manager");
+    return { path: `/api/admin/users/${m.user.id}/accounts`, params: { id: String(m.user.id) }, body: { accounts: ["acct-a"] }, actor: who?.user.username };
+  },
 };
+
+// The account registry's status file (#655, #760): account A trades BTC, account B ETH.
+const ACCOUNTS_STATUS = {
+  version: 1,
+  checked_at: "2026-11-12T00:00:00Z",
+  accounts: [
+    { account_id: "acct-a", label: "Account A", exchange: "deribit", environment: "testnet", bots: [{ currency: "BTC", config: "config_btc.yaml" }], key_status: "ok" },
+    { account_id: "acct-b", label: "Account B", exchange: "deribit", environment: "testnet", bots: [{ currency: "ETH", config: "config_eth.yaml" }], key_status: "ok" },
+  ],
+  violations: [],
+};
+
+/** A fresh done BTC lab run with one proposal, in the test's folder (never the clone's data/): its id. */
+function labRun() {
+  process.env.COMPARE_DIR = path.join(dir, "compare");
+  const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  fs.mkdirSync(path.join(process.env.COMPARE_DIR, id), { recursive: true });
+  const figures = { return_pct: 1, worst_week_pct: -1, max_drawdown_pct: 1, fees_usd: 10 };
+  const report = {
+    underlying: "BTC",
+    diffs: [{ key: "backtest.slippage_pct", base: "0.001", proposed: "0.002" }],
+    backtest: { ran: true, equity_usd: 100000, base: figures, proposed: figures },
+  };
+  fs.writeFileSync(path.join(process.env.COMPARE_DIR, id, "report.json"), JSON.stringify(report));
+  return id;
+}
 
 /** A user an admin route acts on; `suffix` follows /api/admin/users/<id>. */
 async function target(who, suffix = "") {
@@ -224,6 +274,8 @@ beforeEach(async () => {
   process.env.ANALYTICS_SALT = SALT;
   process.env.BOT_APIS = "btc=http://bot-btc:8081";
   process.env.BOT_ADMIN_TOKEN = "admin token for tests";
+  process.env.ACCOUNTS_STATUS_PATH = path.join(dir, "accounts_status.json");
+  fs.writeFileSync(process.env.ACCOUNTS_STATUS_PATH, JSON.stringify(ACCOUNTS_STATUS));
   delete process.env.ANTHROPIC_API_KEY;
   resetAuth();
   auth = await getAuth();
@@ -235,7 +287,7 @@ afterEach(() => {
   global.fetch = realFetch;
   resetAuth();
   fs.rmSync(dir, { recursive: true, force: true });
-  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN", "COMPARE_DIR"]) delete process.env[k];
+  for (const k of ["AUTH_DB_PATH", "MONITOR_API_TOKEN", "ANALYTICS_SALT", "BOT_APIS", "BOT_ADMIN_TOKEN", "COMPARE_DIR", "ACCOUNTS_STATUS_PATH"]) delete process.env[k];
   if (modelKey !== undefined) process.env.ANTHROPIC_API_KEY = modelKey;
 });
 
@@ -321,6 +373,116 @@ describe("Scenario: an allowed action", () => {
   });
 });
 
+describe("Manager–account links (#760)", () => {
+  const BODIES = { close: { position_ids: ["p1"] }, hedge: { enabled: true }, rebalance: { dry_run: true } };
+  beforeEach(() => {
+    process.env.BOT_APIS = "btc=http://bot-btc:8081,eth=http://bot-eth:8082";
+  });
+
+  /** A bot action (close, hedge, rebalance) on `bot` as the caller with these headers. */
+  const botAction = (action, bot, headers) =>
+    send(stateHandlers().get(`POST /api/bots/[bot]/${action}`), "POST", { path: `/api/bots/${bot}/${action}`, params: { bot }, body: BODIES[action] }, headers);
+
+  /** Manager "ana" linked to `accounts` by an admin: { ana, admin }. */
+  async function linkedManager(accounts) {
+    const admin = await person("admin");
+    const ana = await person("manager");
+    expect(auth.setAccountLinks(admin.user, ana.user.id, accounts, ACCOUNTS_STATUS.accounts)).toEqual(expect.objectContaining({ ok: true, accounts }));
+    return { ana, admin };
+  }
+
+  test("Scenario: a linked manager acts on their account", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    const res = await botAction("close", "btc", { cookie: ana.cookie });
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(auditLines().at(-1)).toEqual(expect.objectContaining({ action: "manual_close", username: ana.user.username, bot: "btc" }));
+  });
+
+  test("Scenario: a linked manager is refused on another account", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    for (const action of ["close", "rebalance"]) {
+      const before = auditLines().length;
+      global.fetch.mockClear();
+      const res = await botAction(action, "eth", { cookie: ana.cookie });
+      expect([action, res.status]).toEqual([action, 403]);
+      expect((await res.json()).error).toBe(
+        "you do not manage account Account B (acct-b), which bot eth trades for: ask an admin to link it to you on the Users page",
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(auditLines().slice(before)).toEqual([]);
+    }
+  });
+
+  test("Scenario: a manager with no links keeps today's behaviour", async () => {
+    const bo = await person("manager");
+    for (const bot of ["btc", "eth"]) {
+      const res = await botAction("close", bot, { cookie: bo.cookie });
+      expect([bot, res.status]).toEqual([bot, 200]);
+    }
+    expect(auditLines().filter((l) => l.action === "manual_close").map((l) => l.bot)).toEqual(["btc", "eth"]);
+  });
+
+  test("Scenario: an admin edits links", async () => {
+    const { ana, admin } = await linkedManager(["acct-a"]);
+    expect((await botAction("close", "eth", { cookie: ana.cookie })).status).toBe(403);
+    const handler = stateHandlers().get("PUT /api/admin/users/[id]/accounts");
+    const res = await send(
+      handler,
+      "PUT",
+      { path: `/api/admin/users/${ana.user.id}/accounts`, params: { id: String(ana.user.id) }, body: { accounts: ["acct-a", "acct-b"] } },
+      { cookie: admin.cookie },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accounts: ["acct-a", "acct-b"], added: ["acct-b"], removed: [] });
+    expect(auditLines().at(-1)).toEqual(
+      expect.objectContaining({ action: "account_link_added", username: admin.user.username, role: "admin", target: ana.user.username, account_id: "acct-b" }),
+    );
+    expect((await botAction("close", "eth", { cookie: ana.cookie })).status).toBe(200);
+  });
+
+  test("Scenario: a manager cannot edit links", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    const handler = stateHandlers().get("PUT /api/admin/users/[id]/accounts");
+    for (const role of ["manager", "user"]) {
+      const { headers } = await caller(role);
+      const before = auditLines().length;
+      const res = await send(handler, "PUT", { path: `/api/admin/users/${ana.user.id}/accounts`, params: { id: String(ana.user.id) }, body: { accounts: ["acct-b"] } }, headers);
+      expect([role, res.status]).toEqual([role, 403]);
+      expect(auditLines().slice(before)).toEqual([]);
+    }
+    expect(auth.store.accountLinks(ana.user.id)).toEqual(["acct-a"]);
+  });
+
+  test("Scenario: the role matrix covers the new route — every route that targets a bot checks the link (100 %)", async () => {
+    const botRoutes = STATE_CHANGING_ROUTES.filter((r) => r.route.includes("[bot]"));
+    expect(botRoutes.length).toBeGreaterThan(0);
+    expect(botRoutes.filter((r) => !r.linked).map((r) => r.route)).toEqual([]);
+    const { ana, admin } = await linkedManager(["acct-b"]);
+    for (const entry of botRoutes) {
+      const action = entry.route.split("/").at(-1);
+      global.fetch.mockClear();
+      const asManager = await botAction(action, "btc", { cookie: ana.cookie });
+      expect([entry.route, asManager.status]).toEqual([entry.route, 403]);
+      if (entry.roles.includes("manager")) expect((await asManager.json()).error).toMatch(/do not manage account Account A \(acct-a\)/);
+      expect(global.fetch).not.toHaveBeenCalled();
+      // An admin is never limited by links.
+      const asAdmin = await botAction(action, "btc", { cookie: admin.cookie });
+      expect([entry.route, asAdmin.status]).toEqual([entry.route, 200]);
+    }
+  });
+
+  test("a linked manager is refused when the monitor cannot tell the bot's account (no status file); an unlinked one is not", async () => {
+    const { ana } = await linkedManager(["acct-a"]);
+    fs.rmSync(process.env.ACCOUNTS_STATUS_PATH);
+    const res = await botAction("close", "btc", { cookie: ana.cookie });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/cannot tell which account bot btc trades for/);
+    const bo = await person("manager");
+    expect((await botAction("close", "btc", { cookie: bo.cookie })).status).toBe(200);
+  });
+});
+
 /** The module of a route ("GET /api/lab/runs/[id]" → app/api/lab/runs/[id]/route.js). */
 function routeModule(route) {
   return require(path.join(API_DIR, route.split(" ")[1].replace(/^\/api\//, ""), "route.js"));
@@ -344,6 +506,8 @@ const RUN_ID = "20261012T093000Z";
 const READ_FIXTURES = {
   "GET /api/admin/audit/export": { path: "/api/admin/audit/export", params: {} },
   "GET /api/admin/audit/verify": { path: "/api/admin/audit/verify", params: {} },
+  "GET /api/auth/my-data": { path: "/api/auth/my-data", params: {} },
+  "GET /api/auth/security-summary": { path: "/api/auth/security-summary", params: {} },
   "GET /api/auth/sessions": { path: "/api/auth/sessions", params: {} },
   "GET /api/lab/runs": { path: "/api/lab/runs", params: {} },
   "GET /api/lab/runs/[id]": { path: `/api/lab/runs/${RUN_ID}`, params: { id: RUN_ID } },

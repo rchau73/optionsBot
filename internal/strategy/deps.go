@@ -6,6 +6,7 @@ import (
 	"optionsbot/internal/exchange"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/history"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/shadow"
 )
@@ -13,8 +14,8 @@ import (
 // The strategy talks to the outside world only through the small interfaces
 // below. What it asks of the exchange — orders, account, margin simulation,
 // market data, open interest — is the exchange boundary in internal/exchange
-// (#182); Deribit's *orders.Executor, *marketdata.Manager and *gex.Manager
-// are its only adapter. The rest (journal, hedge report, histories) are the
+// (#182); Deribit's *deribit.Adapter (its executor and market-data manager,
+// #761) and *gex.Manager are its only adapter. The rest (journal, hedge report, histories) are the
 // bot's own and defined here where they are consumed. Tests substitute fakes.
 
 // Exchange is everything the strategy asks of an exchange account.
@@ -23,6 +24,11 @@ type Exchange = exchange.Trading
 // MarketData provides the latest option chain snapshot, index price and
 // volatility index.
 type MarketData = exchange.MarketData
+
+// InstrumentNames fills an instrument's expiry, strike and option type from
+// its name — MarketData.InstrumentFromName, the exchange's reading of its own
+// names. The strategy never parses a name itself (#773).
+type InstrumentNames func(name string) (marketdata.Instrument, error)
 
 // TradeJournal records every order event, with its market snapshot, and the
 // periodic P&L to the audit log (orders.log).

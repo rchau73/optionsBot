@@ -17,6 +17,7 @@ It makes no Claude call and places no order.
 3. [`evidence_week.py`](../../scripts/agents/evidence_week.py) builds one comment from the `.json` reports, posted on the E2 epic: a row per env × bot with net P&L (% of equity), the account reconciliation's gap (#566: the margin balance's change minus the booked P&L, % of the starting balance only, `⚠` over the 1 % tolerance, or why not known), excess return vs holding the coin, worst 7 days, replay gap, the worst stress shock,
    E1 reliability (#361: mean IM ÷ limit against the 60 % target and whether it was met, the largest cause of idle slot time, startups and how many were restart-made — with their lots on testnet only — or `not measured` and why)
    and the missing days with the market books' share of the week's hours (`(replay partial)` under 90 %, #362),
+   then one **gap split** line per env × bot (#802, see "Gap split" below),
    then one line per env × bot × dataset with a **recorder gap** over 3 h
    (the dataset, how many such gaps, the longest with its start — times and hours only, so for live accounts too;
    `evidence_week.py gaps` prints the same lines and `evidence.sh` sends the first as a notify, so the recorder can be fixed before the next week),
@@ -32,9 +33,82 @@ each kind once ever (deduplicated by its title's start against every issue, open
 `[E2] Direction trial: first GEX shed in <week>, review bias vs sma`,
 `… early stop in <week>, decide bias vs sma` (bias's replay net under sma's by more than the noise for 3 counted weeks in a row) and `… review due in <week>, decide bias vs sma` (6 counted weeks, or the report made on or after 2026-12-07).
 A ticket only asks: a change of `gex_direction` is a person's config PR.
-The kill rule's live drawdown is not in the scorecard; the ticket points to the weekly reports.
+The kill rule's live drawdown (stable BTC's live max drawdown over 2× mvp BTC's in any week, #850) is in the scorecard's verdict (`verdict.live_drawdown`), copied from both clones' weekly reports.
+When it fires, the early-stop ticket is filed too, naming the weeks; `evidence_week.py` reads the field and never recomputes it.
+The scorecard's `## Verdict` block (#788, `verdict` in its JSON) applies the brief's rule to every trial week up to its own: `needs more weeks` (with the weeks missing), `no difference`, `bias better`, `sma better` or `kill rule hit` (the half that fired, `replay streak` and/or `live drawdown`, and its weeks named).
+A week lacking either bot's live max drawdown, or with mvp's at 0, is `not checked` for the live half with its reason, and `not_checked` names it; the figures are percentages only, so a live account shows no amount.
+It lists d, the noise, the tail, every week and why it counted or not, and the thresholds named as assumptions; "span too short: extend by 4 weeks" when the sign of bias − sma flips with no trend.
+The comment's block and each decision ticket carry its one line (`verdict.line`), never recomputed; a scorecard written before #788 says so.
+
+**Futures-hedge trial** (#780, [`docs/hedge-trial.md`](../hedge-trial.md)): each weekly report's hedge section ends with one verdict line — `needs more days` (with the days missing), `keep running`, `stop` or `propose as a core-policy change` — and the figures it used (advantage, fees, worst day, `hedge_unavailable` and `hedge_rate_limited` lines of the journal since the ledger began, days).
+None when the trial has not started, without a spot, or on a live account.
+The verdict only proposes: it changes no hedge mode, setting or config, and the E2 comment does not carry it yet.
 
 A failed step (stress inputs, a report, a scorecard) is listed in the comment and the rest goes on.
 `data/agents/evidence/<week>.done` marks the week done once the comment is posted; a week whose comment could not be posted is tried once more on a later tick and then marked done whatever happened.
 Logs of each step: `data/agents/evidence/<week>/`.
 Tests: `test_evidence.py` (the comment, and `evidence.sh` end to end on throwaway clones with stub `go`/`gh`/`curl`).
+
+## Sample size
+
+Every figure of the evidence pack, and the weekly report's headline figures (its "Sample size" table, `samples` in the JSON), carry how much data stands behind them (#772, `internal/evidence/sample.go`).
+A `Sample` is the days of data, the whole weeks and, where the figure depends on them, the events: leg closes by a stop-loss, a delta exit or a GEX shed, or for the hedge trial its hedge orders (real and paper) and shed legs.
+A figure is **thin** below any floor and then reads "too few to conclude (N days)" beside its number, which stays visible.
+
+The floors are **assumptions**, chosen from rules already in the repo while the history is a few weeks long, to be revisited after 8 more weeks of history (from 2026-11-13, so in 2027-W02):
+
+| Floor | Value | Why |
+|---|---|---|
+| `SampleMinWeeks` | 12 weeks | PRD §6's kill test reads 12 weekly reports (`ScoreboardWeeks`): under them, the go/no-go itself says "not enough weeks" |
+| `SampleMinDays` | 84 days | the same 12 weeks in days, for figures over a span of history |
+| `SampleMinEvents` | 10 events | a short strangle's result is made by its few bad days; under ten stops, delta exits and sheds nothing says how the next ones go |
+
+Holding the coin and the scoreboard's ratios depend on days or weeks only; the net return, drawdown, worst 7 days, excess over holding and the replay-vs-live gap also on the tail events; the hedge trial on its days and orders.
+One week's report is always thin: a week is one sample, not a result.
+`tests/evidence_sample_test.go` fails on a pack figure with a number and no sample, and on a weekly headline figure missing from the table, naming it.
+
+## Gap split
+
+Each weekly report cuts the Gap section's replay − live into its causes (#802, `internal/evidence/gapsplit.go`, `gap_split` in the JSON, [README](../../README.md#evidence-report)): fill price, fees, trades one side made, marks and unexplained.
+Each part is in coin, pp of the starting equity and % of the gap, with the legs behind it as its `Sample` (events named `legs`).
+The comment's line per env × bot gives each part's pp and share of the gap (a live account: the share only), whether the gap is explained, the one-sided legs counted and `partial` when the books are.
+
+**The bar (an assumption a person confirms):** a week's gap is **explained** when its unexplained line is within `GapExplainedPct` (20 %) of the gap.
+The metric to follow is the share of weekly reports that meet it.
+A one-sided leg is a leg one side filled and the other did not within `FillMatchWindow` (1 h, one recorded-book interval); a wider window would match more legs and move their difference from "trades one side made" to "fill price".
+A journal close without its fill price, the perpetual hedge's P&L and an expiry the two sides book differently land in the unexplained line, never in a named part.
+
+## Gap over time
+
+Each weekly report follows the replay − live gap over its last 12 weekly reports, this week's included (#820, `internal/evidence/gaptrend.go`, `gap_trend` in the JSON, [README](../../README.md#evidence-report)), so one good week is not read as proof that replay stands in for live.
+It reads each report's `replay_vs_live` and `gap_split` as written and replays nothing; a partial or not-comparable week and a week without a gap are listed with their reason and left out of the statistics.
+The E2 comment posts the report's verdict line as written (`evidence_week.py` `trend_line`), never recomputing it; the pack copies it with the statistics behind it.
+
+| Verdict | When |
+|---|---|
+| too few to conclude (N weeks) | under `SampleMinWeeks` (12) comparable weeks; the figures stay visible |
+| stable | the comparable weeks' gaps keep one sign and range (largest − smallest) within `GapStableRangePP` (1 pp of each week's starting equity) |
+| drifting | otherwise: the sign changed, or the range is over the bar |
+
+**The bar is an assumption** about the size of a typical week's live result: a gap that moves by more than 1 pp of equity from week to week cannot stand in for live.
+Verify it in 2027-W02, with the sample floors: put the range next to the spread of the weekly live results over the same 12 weeks (the trend's net %), and lower or raise the constant in a PR that says why.
+The causes' shares sum each part's pp of equity over the comparable weeks that carry a split, against their summed gap, so a week's share weighs by its size.
+
+## Daily recording check
+
+A short recorded day is told the next morning, not in the weekly report (#716).
+On the first tick of each UTC day, [`recording_check.sh`](../../scripts/agents/recording_check.sh) checks **yesterday** for every environment that records the market (its `deploy.env` without `BOT_RECORD_MARKET=0`: stable) and bot (`RECORDING_BOTS`, default `btc eth`) whose folder exists.
+It makes no Claude call and no Deribit call, and writes nothing in a clone.
+
+1. `go run ./cmd/datacoverage -dir <clone>/data/<bot> -yesterday -json` (`evidence.CheckYesterday`, the reader of `cmd/datacoverage` and of the weekly coverage section) gives, per market recording (the books and the minute GEX; not the P&L history), the covered hours of the previous UTC day out of its 24 market hours, the share, the longest gap and each gap over `LongGapHours` (3 h).
+   A dataset is short under `ReplayFullCoveragePct` (90 %), the floor under which the weekly report labels the replay partial, or with a gap over 3 h.
+   A folder without the day's file is 0 %; a folder that does not exist is `not recorded` (the bot never records it) and never short; a damaged stretch of a day file is a gap (#661).
+2. Every dataset at the floor → one log line, nothing sent, nothing posted.
+3. Otherwise [`recording_day.py`](../../scripts/agents/recording_day.py) builds one notification — the bot, the dataset, the day, the covered share and the longest gap with its start, `+n more` — and one comment on the E2 epic (`🤖 **Recording check**`, marker `<!-- agent:recording day=<day> -->`) with every short dataset, its gaps over 3 h and a table of every recorded dataset.
+   Hours and percentages only, so the text is the same for a live bot.
+   A check that could not run is named the same way.
+
+`data/agents/recording/<day>.done` marks the day done once the comment is posted (or there is no open E2 epic); a comment that could not be posted is retried on a later tick, the notification is sent once (`<day>/notified`).
+Run ledger: agent `recording`, outcome `complete`, `short` or `posted`.
+Files: `data/agents/recording/<day>/` (`<env>-<bot>.json`, `.err`, `comment.md`).
+Tests: `test_recording.py` (the message, and the script end to end with the real `cmd/datacoverage` and a fake `gh`) and `tests/evidence_daily_test.go` (the check, one test per scenario, the floor pinned to the weekly constant).

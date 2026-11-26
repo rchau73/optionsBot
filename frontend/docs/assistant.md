@@ -28,6 +28,7 @@ It answers from the published help, the bot's live page data and the user's own 
 
   - For a question about results, the bot's 7- and 30-day performance, below (#648).
   - For a question about an idle book or unused margin, the bot's book now, below (#719).
+  - For a manager's or an admin's question about a comparison run, the lab's latest comparisons, below (#742).
 
   **The sources are the help, the live page data, the journal (7 days + the open positions' whole history)** (#427), **for a results question the performance** (#648) **and for an idle question the book now** (#719).
   The read is `/api/journal?days=7&held=1`, which adds every older event of each instrument the bot holds now, however old.
@@ -68,6 +69,29 @@ It answers from the published help, the bot's live page data and the user's own 
   Percentages and counts only: no amount, no account detail, because a bot may run live and the review log is a file.
   A status that cannot be read makes it "Book now: unknown: the bot's status route did not answer…", so the answer says why it cannot tell and invents no reason.
   Any other question sends no book passage.
+
+  **Hedge now** (#877, `hedgePassage` in `lib/assistant/hedgeNow.js`, `botHedge` in `lib/assistant/server.js`): with `bot`, a question about the futures hedge (`asksAboutHedge`: "hedge", "hedging", "perp", "perpetual", "futures"…) also gets one passage, `live:<bot>/hedge`.
+  It reads the bot's `GET /api/hedge` once, kept `LIVE_CACHE_MS` (10 s) per bot, and the question's journal passages (the hedge lines carry their `side`, #877).
+  It holds, in this order:
+  - whether the hedge is on, off or unavailable, and why it cannot trade when on (halted with its reason, standing down on a one-sided book, not holding the delta, the kill switch), and that the experiment is testnet only;
+  - the perpetual's side and size as % of the margin balance (|`perp_delta_coin`| ÷ (`band_coin` ÷ `band_pct` %)), or none open;
+  - the book's coin delta as % of the margin balance against its ±`band_pct` % band and the hour's hedge orders against the cap, or "the hedge holds none while it is off";
+  - the newest `hedge_fill` or `hedge_closed` line of the journal read, as "A sale/purchase of the perpetual" and its reason (`hedgeOrderSentence`, `lib/hedgeWords.js`), never its size;
+  - the trial's days since the ledger began, "not started" when it was never switched on and "needs more days" under 7 (`docs/hedge-trial.md`), with its risks.
+  Percentages and counts only: no amount, no account detail (not who switched it), because a bot may run live and the review log is a file.
+  A route that does not answer makes it "Hedge now: unknown: the bot's hedge route did not answer…" (WARN log, not cached), so the answer says it cannot tell.
+  Any other question reads nothing more and sends no hedge passage.
+  The answer guard still refuses advice: "should I turn the hedge on?" gets the refusal, with the trial's days and its risks beside it; the assistant never switches the hedge.
+
+  **The lab's comparisons** (#742, `labPassages`, `labRuns` in `lib/assistant/server.js`): a question about a comparison run (`asksAboutLab`: "comparison", "the lab", "proposed", "my last run", "apply this change", "does the change help"…), with or without `bot`, also gets the lab's latest comparisons — for a manager or an admin only, the roles of `/api/lab/runs`.
+  For anyone else `labRuns` reads nothing and sends nothing, so no run figure reaches the answer or the review log; the help answers that the lab is for managers.
+  The run list and the requests not run yet are read from `COMPARE_DIR` as `/api/lab/runs` reads them (`listRuns`, `pendingRequests`), kept `LAB_CACHE_MS` (10 s); a failed read sends nothing (WARN log, not cached).
+  They become these passages:
+  - one `lab:<run id>/headline` per run, the latest `LAB_RUNS` (3): what changed, then for the backtest and the replay the return, worst week, max drawdown and fees of the current and the proposed settings, in percentages only as `lib/lab.js` gives them, labelled "backtested, not a forecast", with the worst week and the drawdown named as the risk beside each return;
+  - one `lab:<request id>/status` per request not run yet, the latest `LAB_REQUESTS` (3): queued, running, failed with its reason or expired, and "It has no figures";
+  - the newest of all says "the newest comparison listed"; with none, `lab:none`: "unknown: no comparison has been run".
+  The written analysis (`analysis.json`) is never read or quoted: while the L10 gate is closed the passage says "The written analysis is not available yet."
+  The answer guard still refuses advice: "should I apply it?" gets the refusal, with the run's figures and their risks beside it when the model cites them.
   A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
   With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
@@ -109,10 +133,17 @@ The server checks it (`checkRequest`, pure).
 Outcomes: `needs_info` (the checklist, no draft), `answered` (the model's answer through the guard, with the checklist; an enhancement may still come with a draft), `draft` (the card, citing its evidence); kind `none` is answered as any other question.
 A report with nothing to check it against gets the checklist without a model call.
 The draft is logged with its answer in `assistant.jsonl` (`request: {checklist, draft}`, every AI output is reviewable) and is **never queued without the person's click**.
-Send appends to `data/monitor/requests.jsonl` (`ASSISTANT_REQUESTS_PATH`; off for an in-memory database): `id`, `ts`, `user`, `role`, `environment` (`MONITOR_DEPLOYMENT`), `kind`, `fields` (as the person edited them), `citations` and `journal_refs` (taken from the logged draft, never from the browser), `answer_id`.
+Send appends to `data/monitor/requests.jsonl` (`ASSISTANT_REQUESTS_PATH`; off for an in-memory database): `id`, `ts`, `user`, `role`, `environment` (`MONITOR_DEPLOYMENT`), `kind`, `fields` (as the person edited them), `citations` and `journal_refs` (taken from the logged draft, never from the browser), `explained_by`, `answer_id`.
+`explained_by` lists the help passages that explained an answered report, taken from the logged answer (#852).
 The review writes `data/monitor/requests_status.jsonl` (`{id, status, note?, issue_url?, ts}`, status `in_review` \| `filed` \| `fixed` \| `not_a_bug` \| `duplicate` \| `needs_info`; the latest line of an id wins; an `issue_url` that is not https is dropped).
 Both files are gitignored, never copied into the repository (it is public) and in the nightly backup (`scripts/agents/backup_data.sh`, `<date>/<env>/monitor/`).
-Filing a public issue is the next story's.
+Nothing goes to GitHub from the monitor: `scripts/agents/requests.sh` reads both files and files public issues (`docs/agents/requests.md`).
+It reads the requests with no status line yet or still `in_review`.
+Its mechanical filter (`scripts/agents/request_filter.py`, #852) comes first: a duplicate of a card or an earlier request, no cited evidence with fewer than two steps (`needs_info`), or an `explained_by` passage (`not_a_bug`), each with a plain-words note.
+The PM agent's review judges the rest.
+An accepted one is filed in Triage with its kind's and its epic's labels, sanitised (`requests.py` `sanitise`: amounts, sizes, account and user names, emails and tokens removed, each journal reference as "journal line from <date>"), with "Sent from the assistant, request <id>".
+Text the sanitiser cannot classify holds the request as `needs_info` for a person.
+Without `--file` the script is a dry run.
 
 **The panel** (#408, the E10 prototype the product owner approved on #161): `components/AssistantProvider.jsx` sits in the root layout for a signed-in person, so the panel stays open across page changes and the conversation lasts for this browser tab only (the review log keeps the rest).
 **Ask** (`components/AskButton.jsx`, #419) is a floating chat button fixed at the bottom-right of every signed-in page (a chat-bubble icon, "Ask" beside it from 640 px; rendered once by the provider, asking about the page's `?bot=`); it is dimmed with the reason as its tooltip while `GET /api/assistant` (or a question) answers 503.

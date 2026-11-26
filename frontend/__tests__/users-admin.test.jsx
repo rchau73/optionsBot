@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import UsersAdmin from "@/components/UsersAdmin";
 import UserMenu from "@/components/UserMenu";
-import { confirmText, newUserProblem, passwordFormProblem } from "@/lib/users";
+import { confirmText, lockedLabel, newUserProblem, passwordFormProblem } from "@/lib/users";
 
 // #306: the Users page. The routes enforce the role; these check what the page shows and sends.
 
@@ -161,6 +161,146 @@ describe("Users page", () => {
     expect(url).toBe("/api/admin/users");
     expect(JSON.parse(init.body)).toEqual({ username: "carol", email: null, role: "user", password: "carol's password" });
     await waitFor(() => expect(global.fetch.mock.calls.filter(([u, i]) => u === "/api/admin/users" && !i?.method)).toHaveLength(2));
+  });
+});
+
+describe("Locked usernames (#846)", () => {
+  // 17:32 UTC = 14:32 BRT.
+  const LOCKED = [USERS[0], { ...USERS[1], locked_until: "2026-11-18T17:32:00.000Z" }];
+
+  function mockLocked(answer) {
+    global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users: LOCKED }) : answer));
+  }
+
+  test("a locked row shows Locked until with the time in words and Unlock; a row not locked shows neither", async () => {
+    mockLocked(reply(200, { unlocked: true }));
+    render(<UsersAdmin me="admin" />);
+    const bob = await screen.findByTestId("user-bob");
+    expect(bob).toHaveTextContent("Locked until 14:32 BRT");
+    expect(within(bob).getByRole("button", { name: "Unlock bob" })).toHaveClass("min-h-11");
+    const me = screen.getByTestId("user-admin");
+    expect(me).not.toHaveTextContent("Locked");
+    expect(within(me).queryByRole("button", { name: /Unlock/ })).toBeNull();
+  });
+
+  test("Unlock asks first with what follows, then POSTs and refreshes the list", async () => {
+    mockLocked(reply(200, { unlocked: true }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(sent()).toEqual([]);
+
+    fireEvent.click(within(screen.getByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Unlock" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob is unlocked and can sign in again now.");
+    expect(sent()).toEqual([["/api/admin/users/2/unlock", expect.objectContaining({ method: "POST" })]]);
+    await waitFor(() => expect(global.fetch.mock.calls.filter(([u, i]) => u === "/api/admin/users" && !i?.method)).toHaveLength(2));
+  });
+
+  test("a lock that already ended says there was nothing to unlock", async () => {
+    mockLocked(reply(200, { unlocked: false }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Unlock" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob was not locked: nothing to unlock.");
+  });
+
+  test("lockedLabel", () => {
+    expect(lockedLabel({ locked_until: "2026-11-18T17:32:59.000Z" })).toBe("Locked until 14:32 BRT");
+    expect(lockedLabel({})).toBeNull();
+    expect(lockedLabel(null)).toBeNull();
+  });
+});
+
+describe("Accounts column and dialog (#760)", () => {
+  const ACCOUNTS = [
+    { account_id: "acct-a", label: "Account A", environment: "testnet" },
+    { account_id: "acct-b", label: "Account B", environment: "testnet" },
+  ];
+  const LINKED = [...USERS, { id: 3, username: "ana", role: "manager", email: null, created_at: "2026-10-21T10:00:00Z", last_sign_in_at: null, accounts: ["acct-a"] }];
+
+  /** fetch: GET of the list answers `users` and `accounts`; any other call answers `answer`. */
+  function mockList({ users = LINKED, accounts = ACCOUNTS, answer = reply(200, {}) } = {}) {
+    global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users, accounts }) : answer));
+  }
+
+  test("each row says which accounts the person may act on; only managers have Edit accounts", async () => {
+    mockList({ users: [...LINKED, { id: 4, username: "uma", role: "user", email: null, created_at: "2026-10-21T10:00:00Z", last_sign_in_at: null, accounts: [] }] });
+    render(<UsersAdmin me="admin" />);
+    expect(await screen.findByTestId("user-ana")).toHaveTextContent("Account A (acct-a)");
+    expect(screen.getByRole("columnheader", { name: "Accounts" })).toBeInTheDocument();
+    expect(screen.getByTestId("user-bob")).toHaveTextContent("All accounts (no links)");
+    expect(screen.getByTestId("user-admin")).toHaveTextContent("All accounts");
+    expect(screen.getByTestId("user-uma")).toHaveTextContent("None: sees only");
+    expect(screen.getByRole("button", { name: "Edit accounts of ana" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit accounts of bob" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit accounts of admin" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit accounts of uma" })).toBeNull();
+  });
+
+  test("the dialog says the consequence, Cancel sends nothing, Save sends the whole list with PUT", async () => {
+    mockList({ answer: reply(200, { accounts: ["acct-a", "acct-b"], added: ["acct-b"], removed: [] }) });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog", { name: "Accounts ana manages" });
+    expect(within(dialog).getByRole("checkbox", { name: /Account A/ })).toBeChecked();
+    expect(within(dialog).getByRole("button", { name: "Save accounts" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Account B/ }));
+    expect(dialog).toHaveTextContent("ana may close legs and rebalance only on Account A (acct-a), Account B (acct-b); the monitor refuses them on any other account.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sent()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /Account B/ }));
+    await clickAndSettle(screen.getByRole("button", { name: "Save accounts" }));
+    expect(screen.getByRole("status")).toHaveTextContent("ana's accounts: added acct-b.");
+    const [[url, init]] = sent();
+    expect(url).toBe("/api/admin/users/3/accounts");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ accounts: ["acct-a", "acct-b"] });
+  });
+
+  test("unticking every account says the manager acts on every account again", async () => {
+    mockList();
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Account A/ }));
+    expect(dialog).toHaveTextContent("ana may close legs and rebalance on every account of this deployment, as without links.");
+  });
+
+  test("the server's refusal is shown in the dialog", async () => {
+    mockList({ answer: reply(400, { error: "account acct-b is not in the account registry" }) });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("checkbox", { name: /Account B/ }));
+    await clickAndSettle(screen.getByRole("button", { name: "Save accounts" }));
+    expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("account acct-b is not in the account registry");
+  });
+
+  test("without a registry the dialog says no account can be linked; a link the registry dropped can still be removed", async () => {
+    mockList({ accounts: [] });
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of bob" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("No account registry found, so no account can be linked.");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit accounts of ana" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("no longer in the registry");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /acct-a/ }));
+    expect(within(dialog).getByRole("button", { name: "Save accounts" })).toBeEnabled();
+  });
+
+  test("Escape closes the dialog", async () => {
+    mockList();
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

@@ -13,6 +13,7 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
   It is built from the bot's in-memory state — **no Deribit calls, no order endpoints**.
 - The browser talks only to the Next.js server, which forwards an allow-list of GET endpoints (`lib/bots.js`).
   Bot URLs are configured with `BOT_APIS` and never reach the browser.
+- Who may read each monitor `GET` route is one table, `READ_ROUTES` in `lib/auth/routeRoles.js` (#782; `frontend/docs/users-and-roles.md` "The read matrix"); a new `GET` route needs its line, or `__tests__/read-matrix.test.js` fails naming it.
 - Events are fetched incrementally (`/events?since=<seq>`); a bot restart is detected and the feed resumes.
 - Every item of `/api/events` and `/api/trades` carries `plain` (#201): one sentence in everyday words — what happened, why, what follows — from the bot's catalogue (`internal/api/explain.go`; the same words as `last_action.reason`).
   A journal value the catalogue does not know yet gets a generic sentence beginning "The bot recorded a step that has no plain-words explanation yet".
@@ -64,13 +65,21 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
     `exit_line` is the coin's price at which the leg's Black–Scholes |Δ| reaches `delta_exit_threshold`.
     The model uses the leg's IV (DVOL when missing), a zero rate and today.
     It is a model; the bot's delta exit reads Deribit's live delta.
-  - `last_action` is null before the first trade, else the journal's latest open or close.
-    - `at`, `kind` (open | close), `instrument`, `option_type` and `qty`.
+  - `last_action` is null before the first trade, else the journal's latest open or close (or hedge trade, below).
+    - `at`, `kind` (open | close | hedge), `instrument`, `option_type` and `qty`.
     - `rule` is the journal's reason, e.g. `stop_loss`.
     - `reason` is the rule in plain words, e.g. "Bought back the put: it lost twice its premium (stop-loss)".
     - `detail` is the rule's numbers.
     - For a close, `pnl_coin` and `pnl_usd`.
     - `spot` (#320) is the coin's index price at the action, in USD; it is omitted when the journal has none.
+    - `kind: "hedge"` (#794) when the futures hedge's newest `hedge_fill` or `hedge_closed` is newer than the last open or close (a tie keeps the option trade).
+      Then `rule` is the change, `reason` its `ExplainHedge` sentence, `instrument` the perpetual, `side` buy | sell and `size_usd` the USD filled; `qty` is 0 and `option_type` empty.
+      A `hedge_closed` carries `pnl_coin` (the journal's realised, net of the fee) and `pnl_usd` (at its price).
+      `side` and `size_usd` are absent otherwise; `lib/hedgeWords.js` `hedgeActionWhat` words it ("sold 300 USD of the perpetual").
+  - `idle` (#781, `internal/api/idle.go`, pure `IdleOf`) is null while the bot holds a strangle (or works an entry) with entries allowed, else why it is not trading.
+    - `reason` is the journal's latest skip word (`strategy.Skip*`) or freeze (`risk_frozen`) after its latest open or close, `halted` after the kill switch, or empty when no line says why.
+    - While entries are blocked only a reason that blocks every entry counts (`risk_frozen`, `gex_wait`, `stop_deferred`, `margin_limit`, `margin_unknown`); a freeze with no such line takes the view's freeze reason as `detail`, `seq` 0.
+    - `blocked` (entries not allowed), `held`, `seq` and `at` of the journal line (0/null without one), `plain` its sentence, `detail` its numbers; no amount and no secret.
 - `GET /api/performance?range=7d|30d|all` (#232; default `30d`, any other range → 400; in the proxy allow-list, readable by any signed-in role and the read-only service token; not shown on screen yet) is `internal/perf`'s summary of the bot's P&L history (`data/pnl_history.jsonl`, every recorded point, never a Deribit call).
   `all` starts at the first recorded point.
   Coin amounts are in the bot's underlying:
@@ -149,6 +158,15 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
   - `source` is `"journal"`.
   An event (or a trade's event) no longer in memory → 404 `{"error": "not in recent history"}`, never a reconstruction; neither or both parameters, or a non-positive integer → 400.
 
+### `POST /api/admin/users/<id>/unlock` (#846)
+
+Lifts the sign-in lock of a person's username, on the monitor's own server (`app/api/admin/users/[id]/unlock/route.js`, `AuthService.unlockUser`); no bot call.
+Admins only, same-origin JSON `{}`; the Users page's **Unlock** button sends it.
+- `{"unlocked": true}` when the username was locked: its lock and recent failures are deleted from `auth.db` and one audit line, `login_unlocked`, names the admin, the person and the lifted `locked_until`.
+- `{"unlocked": false}` when it was not locked: nothing changes and no audit line is written.
+- Sessions and the password are untouched; `GET /api/admin/users` shows `locked_until` on a row only while it is locked.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/admin/users/<id>/unlock`".
+
 ### `GET` and `POST /api/bots/<bot>/hedge` (#657)
 
 The futures hedge experiment of one bot (`app/api/bots/[bot]/hedge/route.js`), shown as a card per bot on the Account page (`components/FuturesHedge.jsx`).
@@ -187,8 +205,32 @@ Says what confirming a finished lab run would change, on the monitor's own serve
 Managers and admins.
 - Each setting's current and proposed value, the account, the person, the numbers labelled as backtested, the fragility flags and the text of the audit line.
 - `confirm_token` is null when `needs_product_owner` or `stale` is true, or the run has no numbers for the proposal; `reasons` says why.
+- `may_confirm` (#890) says whether this person may confirm for this account; when false, `may_confirm_reason` says why in plain words and `confirm_token` is null.
+  It is the apply route's own role and account-link check (`decisionRefusal`, `lib/labapply.js`), so the field and the refusal cannot disagree.
 - Each answered preview writes one audit line, `parameter_change_previewed`; a refusal writes none.
 - The full answer and refusals: `users-and-roles.md` "`GET /api/lab/runs/<id>/preview`".
+- No screen uses it yet.
+
+### `POST /api/lab/runs/<id>/apply` (#741)
+
+Records the change a manager confirms with the preview's token, on the monitor's own server (`app/api/lab/runs/[id]/apply/route.js`, `lib/labapply.js`); no bot call, no config written, nothing applied.
+Managers and admins, same-origin JSON `{"confirm_token"}`.
+- The server recomputes the preview and refuses a token that does not match it or is over 15 minutes old, a core policy (the product owner approves those), a stale or out-of-range value, a run not done, a run already recorded and a run whose proposal was dropped (#890).
+- Success is `COMPARE_DIR/applied/<id>.json`, written once, and 201 `applied: false, recorded: true` with the numbers labelled as backtested and the risks beside them.
+- Each recorded change writes one audit line, `parameter_change_recorded`; a refusal writes none.
+- A record never stands without its audit line: when the audit line cannot be written, the record is removed and the answer is 500, so the manager can confirm again.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/apply`".
+- No screen uses it yet.
+
+### `POST /api/lab/runs/<id>/drop` (#890)
+
+Records a manager's decision to leave the setting as it is, on the monitor's own server (`app/api/lab/runs/[id]/drop/route.js`, `lib/labapply.js`); no bot call, no config written, nothing applied.
+Managers and admins, same-origin JSON (no body needed), the apply route's role and account-link check.
+- Only a done run with a proposal; a run already dropped, or whose change was recorded, is refused with the reason, and a dropped run can no longer be confirmed.
+- Success is `COMPARE_DIR/dropped/<id>.json`, written once (the person as an 8-character hash, the account, the run and the time; no setting value, no amount), and 201 `applied: false, dropped: true`.
+- Each drop writes one audit line, `parameter_change_dropped`; a refusal writes none, and an audit line that cannot be written takes the record back (500).
+- `cmd/labstats` counts the drops beside the recorded changes.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/drop`".
 - No screen uses it yet.
 
 ### `POST /api/lab/requests` (#641)
@@ -215,4 +257,6 @@ Managers and admins, same-origin JSON `{"key", "value", "underlying"?}` (BTC by 
 - **Every page and every `/api` route needs a signed-in session** (below).
   The bots' APIs know nothing about it: they stay unpublished on the compose network and the monitor reaches them as before (with `BOT_ADMIN_TOKEN` for close and rebalance).
 - `GET /api/auth/sessions` and `DELETE /api/auth/sessions/<id>` (#584) are the monitor's own, never forwarded to a bot: a person's sessions and signing out the other ones ([Sign-in](sign-in.md#active-sessions), [Users and roles](users-and-roles.md)).
+- `GET /api/auth/security-summary` (#803) is the monitor's own, never forwarded to a bot: the signed-in person's previous sign-in and the wrong passwords typed for their username since ([Sign-in](sign-in.md#sign-in-summary), [Users and roles](users-and-roles.md)).
+- `GET /api/auth/my-data` (#750) is the monitor's own, never forwarded to a bot: the signed-in person's own data as one JSON file ([Sign-in](sign-in.md#download-my-data), [Users and roles](users-and-roles.md)).
 - `GET /api/admin/audit/export?user=&action=&from=&to=` (#702) is the monitor's own too, never forwarded to a bot: an admin downloads the filtered audit trail as CSV, at most 50,000 lines, and the export writes an `audit_exported` line ([Audit](audit.md#routes)).

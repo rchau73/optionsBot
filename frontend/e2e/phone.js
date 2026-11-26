@@ -2,6 +2,7 @@
 // pages to measure, turn what the browser measured (e2e/measure.js) into the
 // report, and compare a report with the recorded baseline. No browser, no
 // file system: Jest tests them directly.
+import { MIN_TAP_PX, MIN_TEXT_PX, tapTargetOk } from "../lib/a11y.js";
 import { menuItems } from "../lib/menu.js";
 
 /** Every page is measured at these widths (#425): a small phone, a tablet upright, a laptop. */
@@ -40,13 +41,14 @@ export const HEADER_TOLERANCE_PX = 24;
 
 /**
  * A label stable across runs: spaces collapsed, numbers replaced by "#"
- * (prices, counts and times change on demo data), at most 40 characters.
+ * (prices, counts and times change on demo data) with their sign, since a
+ * demo P&L turns from + to − between runs (#896), at most 40 characters.
  */
 export function normaliseLabel(text) {
   const s = String(text ?? "")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/\d+([.,:]\d+)*/g, "#");
+    .replace(/[+\u2212-]?(\$?)\d+([.,:]\d+)*/g, "$1#");
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
 
@@ -272,4 +274,129 @@ export function baselineNotes(baseline) {
     }
   }
   return notes;
+}
+
+// --- The accessibility report (#763): report-only, it fails nothing yet ---
+
+/** The phone width the accessibility report is taken at. */
+export const A11Y_WIDTH = "360";
+
+// Findings of one kind, one entry per key (rows repeat on demo data), each
+// with the first element's selector, its smallest size and how many there are.
+function groupFindings(items, keyOf, sizeOf) {
+  const by = new Map();
+  for (const it of items) {
+    const key = keyOf(it);
+    const prev = by.get(key);
+    if (!prev) by.set(key, { key, selector: it.selector ?? "", ...sizeOf(it), count: 1 });
+    else prev.count += 1;
+  }
+  return [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/**
+ * One page's raw measurement (measurePage's result) → its accessibility
+ * findings: text under MIN_TEXT_PX and controls under MIN_TAP_PX × MIN_TAP_PX,
+ * each with a selector.
+ */
+export function a11yOfPage(raw) {
+  const smallText = (raw.texts ?? []).filter((t) => t.fontPx > 0 && t.fontPx < MIN_TEXT_PX);
+  const smallTargets = (raw.controls ?? []).filter((c) => !tapTargetOk(c.width, c.height));
+  return {
+    small_text: groupFindings(
+      smallText,
+      (t) => `${normaliseLabel(t.panel) || "Page"} › ${t.tag} "${normaliseLabel(t.text) || "(no text)"}"`,
+      (t) => ({ font_px: t.fontPx }),
+    ),
+    small_targets: groupFindings(smallTargets, controlKey, (c) => ({ width: Math.round(c.width), height: Math.round(c.height) })),
+  };
+}
+
+/**
+ * Every finding of `pages` ({ name: a11yOfPage result }) ranked by the number
+ * of pages it is on, most first, then by kind and key: { kind, key, pages, page_count }.
+ * The order of docs/product/responsive-a11y-baseline.md.
+ */
+export function rankA11y(pages) {
+  const by = new Map();
+  for (const [page, p] of Object.entries(pages)) {
+    for (const [kind, list] of [
+      ["small_text", p.small_text],
+      ["small_target", p.small_targets],
+    ]) {
+      for (const f of list ?? []) {
+        const id = `${kind}|${f.key}`;
+        if (!by.has(id)) by.set(id, { kind, key: f.key, pages: [] });
+        by.get(id).pages.push(page);
+      }
+    }
+  }
+  return [...by.values()]
+    .map((f) => ({ ...f, pages: f.pages.sort(), page_count: f.pages.length }))
+    .sort((a, b) => b.page_count - a.page_count || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key));
+}
+
+/**
+ * What e2e/a11y-report.json holds: the bar, each page's findings at 360 px, the
+ * ranked list and, when `resize` ({ page: { pass: summariseResize result } })
+ * is given (#887), each page's counts at 200 % text size and at 320 px, ranked.
+ */
+export function a11yReport(pages, generatedAt, resize) {
+  const report = {
+    generated_at: generatedAt,
+    viewport_px: Number(A11Y_WIDTH),
+    bar: { min_text_px: MIN_TEXT_PX, min_tap_px: MIN_TAP_PX },
+    report_only: true,
+    pages,
+    ranked: rankA11y(pages),
+  };
+  if (resize) {
+    report.resize = { passes: RESIZE_PASSES.map((p) => ({ name: p.name, font_scale: p.fontScale, width_px: p.width })), pages: resize, ranked: rankResize(resize) };
+  }
+  return report;
+}
+
+// --- Text resize and reflow (#887): 200 % text size and a 320 px screen, report-only ---
+
+/** The two extra passes on every page: the root font size doubled, and a very narrow screen. */
+export const RESIZE_PASSES = [
+  { name: "text_200", fontScale: 2, width: 360, height: 800 },
+  { name: "width_320", fontScale: 1, width: 320, height: 800 },
+];
+
+/** One pass's raw measurement (measureResize's result) → counts and the kinds behind them. */
+export function summariseResize(raw) {
+  const kinds = (items, keyOf) => [...new Set(items.map(keyOf))].sort();
+  const clipped = raw.clipped ?? [];
+  const offscreen = raw.offscreen ?? [];
+  return {
+    overflow_px: Math.max(0, Math.round(raw.overflowPx ?? 0)),
+    clipped_text: clipped.length,
+    offscreen_controls: offscreen.length,
+    clipped_kinds: kinds(clipped, (c) => `${c.tag} "${normaliseLabel(c.text) || "(no text)"}" (${c.selector})`),
+    offscreen_kinds: kinds(offscreen, (c) => `${c.kind} "${normaliseLabel(c.label) || "(no label)"}" (${c.selector})`),
+  };
+}
+
+/**
+ * Pages with a problem in a pass, ranked by pages affected, most first:
+ * { pass, kind: overflow|clipped_text|offscreen_control, pages, page_count }.
+ */
+export function rankResize(pages) {
+  const by = new Map();
+  const add = (pass, kind, page) => {
+    const id = `${pass}|${kind}`;
+    if (!by.has(id)) by.set(id, { pass, kind, pages: [] });
+    by.get(id).pages.push(page);
+  };
+  for (const [page, passes] of Object.entries(pages)) {
+    for (const [pass, m] of Object.entries(passes)) {
+      if (m.overflow_px > 0) add(pass, "overflow", page);
+      if (m.clipped_text > 0) add(pass, "clipped_text", page);
+      if (m.offscreen_controls > 0) add(pass, "offscreen_control", page);
+    }
+  }
+  return [...by.values()]
+    .map((f) => ({ ...f, pages: f.pages.sort(), page_count: f.pages.length }))
+    .sort((a, b) => b.page_count - a.page_count || a.pass.localeCompare(b.pass) || a.kind.localeCompare(b.kind));
 }

@@ -79,6 +79,90 @@ func LoadDirection(bot string, envs []DirectionEnvRoot, base, booksRoot string, 
 	return in
 }
 
+// ReadDirectionWeeks reads the scorecards written for the trial weeks before
+// r's week (<root>/data/evidence/direction/<week>.json) and returns them with
+// r last; a week without a readable file has a nil card. Every week also
+// carries both bots' live max drawdown from their weekly evidence reports
+// (<root>/data/evidence/<week>/<bot>.json and mvpRoot's, #850). Outside the
+// trial (before DirectionTrialStart, or a -from/-to window) it returns nil.
+func ReadDirectionWeeks(root, mvpRoot string, r DirectionReport) []DirectionWeekCard {
+	labels := DirectionTrialLabels(r.Week)
+	if len(labels) == 0 {
+		return nil
+	}
+	bot := r.Bot
+	if bot == "" {
+		bot = "btc"
+	}
+	out := make([]DirectionWeekCard, 0, len(labels))
+	for _, label := range labels {
+		wc := DirectionWeekCard{Week: label, Card: &r}
+		if label != r.Week {
+			wc.Card = readDirectionCard(root, label)
+		}
+		var dd DirectionLiveDD
+		dd.StablePct, dd.StableNote = LiveMaxDrawdownPct(readWeeklyReport(root, label, bot))
+		dd.MVPPct, dd.MVPNote = LiveMaxDrawdownPct(readWeeklyReport(mvpRoot, label, bot))
+		wc.Live = &dd
+		out = append(out, wc)
+	}
+	return out
+}
+
+// readWeeklyReport is the bot's weekly evidence report of label under root;
+// nil when absent or unreadable.
+func readWeeklyReport(root, label, bot string) *Report {
+	_, js := OutPaths(root, label, bot)
+	data, err := os.ReadFile(js)
+	if err != nil {
+		return nil
+	}
+	var r Report
+	if json.Unmarshal(data, &r) != nil || r.Week != label {
+		return nil
+	}
+	return &r
+}
+
+// LiveMaxDrawdownPct is a weekly report's live max drawdown, % of the
+// starting equity, as written (Live.Perf), or nil and why there is none.
+func LiveMaxDrawdownPct(r *Report) (*float64, string) {
+	switch {
+	case r == nil:
+		return nil, "no weekly evidence report"
+	case r.Live.Perf.Points == 0:
+		return nil, "no P&L history point in the week"
+	case !r.Live.Perf.EquityKnown:
+		return nil, "equity unknown: no percentage"
+	}
+	v := r.Live.Perf.MaxDrawdownPct
+	return &v, ""
+}
+
+func readDirectionCard(root, label string) *DirectionReport {
+	_, js := DirectionOutPaths(root, label)
+	data, err := os.ReadFile(js)
+	if err != nil {
+		return nil
+	}
+	var c DirectionReport
+	if json.Unmarshal(data, &c) != nil {
+		return nil
+	}
+	return &c
+}
+
+// WithDirectionVerdict sets r's verdict from the trial weeks through r's
+// own, read under root (stable's clone) and mvpRoot (mvp's weekly reports);
+// r is unchanged outside the trial.
+func WithDirectionVerdict(r DirectionReport, root, mvpRoot string) DirectionReport {
+	if weeks := ReadDirectionWeeks(root, mvpRoot, r); weeks != nil {
+		v := BuildDirectionVerdict(weeks)
+		r.Verdict = &v
+	}
+	return r
+}
+
 // ReadDirectionHistory reads data/direction_history.jsonl (history.
 // DirectionLog), oldest first as written; unreadable lines are counted and
 // skipped.

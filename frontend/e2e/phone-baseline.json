@@ -1,0 +1,550 @@
+{
+  "pages": {
+    "overview": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 63
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "BTC › span",
+            "ETH › span",
+            "Page › Ask",
+            "untitled panel › span"
+          ],
+          "header_height_px": 0
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "BTC › span",
+            "ETH › span",
+            "Page › Ask",
+            "untitled panel › span"
+          ],
+          "header_height_px": 0
+        }
+      }
+    },
+    "details": {
+      "widths": {
+        "360": {
+          "overflow_px": 918,
+          "overflow_causes": [
+            "TRADES AND RESULTS › table"
+          ],
+          "under_24": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "under_44": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "OPEN POSITIONS › select \"Bot\"",
+            "OPEN POSITIONS › select \"Group by\"",
+            "OPEN POSITIONS › select \"Moneyness\"",
+            "OPEN POSITIONS › select \"Strategy\"",
+            "OPEN POSITIONS › select \"Type\"",
+            "P&L IN USD (EVERY RANGE) › button \"P&L IN USD (EVERY RANGE)\"",
+            "Page › a \"Missing legs #\"",
+            "Page › a \"Not managed #\"",
+            "Page › a \"Positions #\"",
+            "Page › a \"Trades #\"",
+            "Page › a \"Working orders #\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › button \"Show # more\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-call\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-put\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-call\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-put\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "title_only": [
+            "NOT MANAGED BY THE BOT (STILL USES MARG… › NOT MANAGED BY THE BOT (STILL USES MARG…",
+            "OPEN POSITIONS › #",
+            "OPEN POSITIONS › Close…",
+            "OPEN POSITIONS › ENTRY → MARK",
+            "OPEN POSITIONS › OPENED",
+            "OPEN POSITIONS › POSITION Δ",
+            "OPEN POSITIONS › PREMIUM KEPT",
+            "OPEN POSITIONS › STOP AT",
+            "OPEN POSITIONS › UNREALIZED P&L",
+            "OPEN POSITIONS › net # BTC · $# per # %",
+            "OPEN POSITIONS › net # ETH · $# per # %",
+            "OPEN POSITIONS › |Δ| PER CONTRACT → EXIT",
+            "OPEN POSITIONS › —",
+            "Page › button",
+            "TRADES AND RESULTS › % KEPT",
+            "TRADES AND RESULTS › Avg win ÷ avg loss",
+            "TRADES AND RESULTS › Roll (DTE) Bought back the put: only fe…",
+            "TRADES AND RESULTS › Stop-loss Bought back the call: it lost…",
+            "TRADES AND RESULTS › Take-profit Bought back the call: most …",
+            "TRADES AND RESULTS › Take-profit Bought back the put: most o…",
+            "TRADES AND RESULTS › span",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › TIMEOUT",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › WORKING ORDERS (PLACED, NOT FILLED YET)"
+          ],
+          "header_height_px": 88
+        },
+        "768": {
+          "overflow_px": 510,
+          "overflow_causes": [
+            "TRADES AND RESULTS › table"
+          ],
+          "under_24": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "under_44": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "OPEN POSITIONS › select \"Bot\"",
+            "OPEN POSITIONS › select \"Group by\"",
+            "OPEN POSITIONS › select \"Moneyness\"",
+            "OPEN POSITIONS › select \"Strategy\"",
+            "OPEN POSITIONS › select \"Type\"",
+            "P&L IN USD (EVERY RANGE) › button \"P&L IN USD (EVERY RANGE)\"",
+            "Page › a \"Missing legs #\"",
+            "Page › a \"Not managed #\"",
+            "Page › a \"Positions #\"",
+            "Page › a \"Trades #\"",
+            "Page › a \"Working orders #\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › button \"Show # more\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-call\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-put\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-call\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-put\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "title_only": [
+            "NOT MANAGED BY THE BOT (STILL USES MARG… › NOT MANAGED BY THE BOT (STILL USES MARG…",
+            "OPEN POSITIONS › #",
+            "OPEN POSITIONS › Close…",
+            "OPEN POSITIONS › ENTRY → MARK",
+            "OPEN POSITIONS › OPENED",
+            "OPEN POSITIONS › POSITION Δ",
+            "OPEN POSITIONS › PREMIUM KEPT",
+            "OPEN POSITIONS › STOP AT",
+            "OPEN POSITIONS › UNREALIZED P&L",
+            "OPEN POSITIONS › net # BTC · $# per # %",
+            "OPEN POSITIONS › net # ETH · $# per # %",
+            "OPEN POSITIONS › |Δ| PER CONTRACT → EXIT",
+            "OPEN POSITIONS › —",
+            "Page › Ask",
+            "TRADES AND RESULTS › % KEPT",
+            "TRADES AND RESULTS › Avg win ÷ avg loss",
+            "TRADES AND RESULTS › Roll (DTE) Bought back the put: only fe…",
+            "TRADES AND RESULTS › Stop-loss Bought back the call: it lost…",
+            "TRADES AND RESULTS › Take-profit Bought back the call: most …",
+            "TRADES AND RESULTS › Take-profit Bought back the put: most o…",
+            "TRADES AND RESULTS › span",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › TIMEOUT",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › WORKING ORDERS (PLACED, NOT FILLED YET)"
+          ],
+          "header_height_px": 48
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "under_44": [
+            "OPEN POSITIONS › button \"#\"",
+            "OPEN POSITIONS › button \"Close…\"",
+            "OPEN POSITIONS › select \"Bot\"",
+            "OPEN POSITIONS › select \"Group by\"",
+            "OPEN POSITIONS › select \"Moneyness\"",
+            "OPEN POSITIONS › select \"Strategy\"",
+            "OPEN POSITIONS › select \"Type\"",
+            "P&L IN USD (EVERY RANGE) › button \"P&L IN USD (EVERY RANGE)\"",
+            "Page › a \"Missing legs #\"",
+            "Page › a \"Not managed #\"",
+            "Page › a \"Positions #\"",
+            "Page › a \"Trades #\"",
+            "Page › a \"Working orders #\"",
+            "TRADES AND RESULTS › button \"All\"",
+            "TRADES AND RESULTS › button \"Closes\"",
+            "TRADES AND RESULTS › button \"Opens\"",
+            "TRADES AND RESULTS › button \"Show # more\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-call\"",
+            "TRADES AND RESULTS › button \"Show details of the close of demo-put\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-call\"",
+            "TRADES AND RESULTS › button \"Why? Closed demo-put\"",
+            "TRADES AND RESULTS › select \"Bot\"",
+            "TRADES AND RESULTS › select \"Exit reason\""
+          ],
+          "title_only": [
+            "NOT MANAGED BY THE BOT (STILL USES MARG… › NOT MANAGED BY THE BOT (STILL USES MARG…",
+            "OPEN POSITIONS › #",
+            "OPEN POSITIONS › Close…",
+            "OPEN POSITIONS › ENTRY → MARK",
+            "OPEN POSITIONS › OPENED",
+            "OPEN POSITIONS › POSITION Δ",
+            "OPEN POSITIONS › PREMIUM KEPT",
+            "OPEN POSITIONS › STOP AT",
+            "OPEN POSITIONS › UNREALIZED P&L",
+            "OPEN POSITIONS › net # BTC · $# per # %",
+            "OPEN POSITIONS › net # ETH · $# per # %",
+            "OPEN POSITIONS › |Δ| PER CONTRACT → EXIT",
+            "OPEN POSITIONS › —",
+            "Page › Ask",
+            "TRADES AND RESULTS › % KEPT",
+            "TRADES AND RESULTS › Avg win ÷ avg loss",
+            "TRADES AND RESULTS › Roll (DTE) Bought back the put: only fe…",
+            "TRADES AND RESULTS › Stop-loss Bought back the call: it lost…",
+            "TRADES AND RESULTS › Take-profit Bought back the call: most …",
+            "TRADES AND RESULTS › Take-profit Bought back the put: most o…",
+            "TRADES AND RESULTS › span",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › TIMEOUT",
+            "WORKING ORDERS (PLACED, NOT FILLED YET) › WORKING ORDERS (PLACED, NOT FILLED YET)"
+          ],
+          "header_height_px": 48
+        }
+      }
+    },
+    "positions": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 46
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 46
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 46
+        }
+      }
+    },
+    "income": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 127
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 71
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 71
+        }
+      }
+    },
+    "worst-case": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 69
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 69
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 69
+        }
+      }
+    },
+    "activity": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 53
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        }
+      }
+    },
+    "account": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "untitled panel › button \"Rebalance\""
+          ],
+          "under_44": [
+            "PRIVACY › button[switch] \"button\"",
+            "untitled panel › button \"Rebalance\""
+          ],
+          "title_only": [
+            "Page › button",
+            "untitled panel › IM (PROJ.)",
+            "untitled panel › MARGIN BALANCE",
+            "untitled panel › MM (PROJ.)",
+            "untitled panel › REBALANCE",
+            "untitled panel › RESERVED",
+            "untitled panel › Rebalance",
+            "untitled panel › span"
+          ],
+          "header_height_px": 193
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "untitled panel › button \"Rebalance\""
+          ],
+          "under_44": [
+            "PRIVACY › button[switch] \"button\"",
+            "untitled panel › button \"Rebalance\""
+          ],
+          "title_only": [
+            "Page › Ask",
+            "untitled panel › IM (PROJ.)",
+            "untitled panel › MARGIN BALANCE",
+            "untitled panel › MM (PROJ.)",
+            "untitled panel › REBALANCE",
+            "untitled panel › RESERVED",
+            "untitled panel › Rebalance",
+            "untitled panel › span"
+          ],
+          "header_height_px": 97
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "untitled panel › button \"Rebalance\""
+          ],
+          "under_44": [
+            "PRIVACY › button[switch] \"button\"",
+            "untitled panel › button \"Rebalance\""
+          ],
+          "title_only": [
+            "Page › Ask",
+            "untitled panel › IM (PROJ.)",
+            "untitled panel › MARGIN BALANCE",
+            "untitled panel › MM (PROJ.)",
+            "untitled panel › REBALANCE",
+            "untitled panel › RESERVED",
+            "untitled panel › Rebalance",
+            "untitled panel › span"
+          ],
+          "header_height_px": 55
+        }
+      }
+    },
+    "how-it-works": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 69
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 69
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 69
+        }
+      }
+    },
+    "assistant": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 63
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "BTC › span",
+            "ETH › span",
+            "Page › Ask",
+            "untitled panel › span"
+          ],
+          "header_height_px": 0
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [],
+          "title_only": [
+            "BTC › span",
+            "ETH › span",
+            "Page › Ask",
+            "untitled panel › span"
+          ],
+          "header_height_px": 0
+        }
+      }
+    }
+  },
+  "dialogs": {
+    "close": {
+      "portrait": {
+        "fits": true
+      },
+      "landscape": {
+        "fits": true
+      }
+    },
+    "rebalance": {
+      "portrait": {
+        "fits": true
+      },
+      "landscape": {
+        "fits": true
+      }
+    },
+    "change_password": {
+      "portrait": {
+        "fits": true
+      },
+      "landscape": {
+        "fits": true
+      }
+    }
+  }
+}

@@ -10,7 +10,7 @@ Every event answers at least one of these. An event that answers none is not col
 
 | ID | Question | Feeds | Answered in (`cmd/usage`) |
 |---|---|---|---|
-| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "Active users" (day, week, 30 days; by role and environment) |
+| Q1 | How many accounts are active each month — a person visited at least once while a strategy ran? | PRD §7 north star (product phase) | "North star" (#801: environments with a strategy-running day — a non-seeded line in a bot's `data/regime_history.jsonl` — and a `session_started` in the 30 days; visits without a running strategy, running without visits; no new event) and "Active users" (day, week, 30 days; by role and environment) |
 | Q2 | Do people come back: weekly and monthly cohort retention of signed-in users? | PRD §7 retention | "Weekly cohort retention" (+1 … +12 weeks, each cohort's curve `flattening`, `falling`, `rising` or `too few to judge`, #607: PRD §7's "curve flattens by month 3"), "Active users", "Lapsed" (#569: people with a `session_started` in the 4 weeks before and none in the week, by role and weeks away; counts only, from the same consented events, no new event or property), "Activation in the first day" (#620, §8) |
 | Q3 | Which parts of the monitor do people actually use, and which do they never open? | E3 investor view, E13 engagement | "What is opened" (panels, never-opened panels, drill levels, filters, page views per screen) |
 | Q4 | Can a new person answer E3's four questions within 5 minutes without help (what it holds, making or losing, worst case, why the last trade)? | E3 5-minute test | "First answers within the first session" (share, median `elapsed_ms`), "Activation in the first day" (#620, §8: time-to-value) |
@@ -18,6 +18,7 @@ Every event answers at least one of these. An event that answers none is not col
 | Q6 | Are the state-changing flows (manual close, rebalance) understood — how often is one started, previewed, cancelled or confirmed, and do they fail? | E7 roles, guardrails | "Manual close funnel", "Rebalance funnel" |
 | Q7 | Do people trust what they see: how often is the page stale, errored or signed out under them? | guardrails, E6 | "Trust" (stale data per source, sign-outs per reason) |
 | Q8 | Why do people stay or leave: NPS, its coded reason, and every exit's coded reason (`surveys.md`)? | PRD §7 retention (every cancellation gets a coded reason), E13 churn | "Why they stay or leave" (#342: each survey's shown/answered/dismissed and response rate, NPS bands and the score from 10 answers, coded why, came for / hardest to find, exit reasons with the top 3) |
+| Q9 | Do people activated in their first day come back more often than those who are not (does time-to-value predict that a person stays)? | PRD §7 north star and retention, E3, E11 | "Retention by activation" (#818, §9: each cohort's activated and not activated and their weeks +1 … +4, pooled week 4 in the E13 comment; an association, not proof; no new event) |
 
 **Are users stopping?** The engagement-drop alert (§7) answers it every week from Q1, Q2 (the lapsed share), Q4, Q5 and Q6.
 
@@ -45,6 +46,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `manual_close_confirmed` | the person confirms the close | `side`, `last_leg` | Q6 |
 | `manual_close_opened` | the manual-close dialog opens for a leg | `side`, `allowed` | Q6 |
 | `manual_close_result` | the close request returns | `side`, `outcome` | Q6, Q7 |
+| `my_data_downloaded` | Account › Download my data returns (#750): the file was saved (`ok`), refused at 3 downloads an hour (`refused`) or failed (`error`); counts only, never the file or its counts | `outcome` | Q3, Q7 |
 | `notification_followed` | the person follows an item of the bell (opens the question, My requests, the public issue, or Why?); its kind only, never its text (#447: the share of Needs you items acted on within 7 days) | `kind` | Q3, Q5 |
 | `notifications_opened` | the bell's list opens: its dropdown, or the `/notifications` page on a phone (#447) | — | Q3 |
 | `overview_layer_toggle` | a layer pill of a bot band's price chart is toggled (#404) | `layer` | Q3 |
@@ -54,6 +56,7 @@ Every event carries the envelope (§3) plus its own properties. Property names a
 | `rebalance_confirmed` | the person confirms the real rebalance | `outcome` | Q6, Q7 |
 | `rebalance_previewed` | the rebalance dry run is shown | `outcome` | Q6 |
 | `screen_viewed` | a signed-in page is shown (one `screen` per page of the menu, `frontend/lib/analytics/screens.js`, #424, and `analytics` for the admin Analytics page, #445, whose view also carries its `topic`, #473, sent again when the topic changes); `login` is in the list but never sent (signed out, no consent known) | `screen`, `topic` | Q1, Q2, Q3 |
+| `security_summary_seen` | the Active sessions dialog shows the person's sign-in summary (#803): the wrong passwords typed for their username since the previous sign-in as a bucket, never the count above 1, a name or the times; no property on a first sign-in (no count is shown) | `failed_since` | Q3, Q7 |
 | `session_started` | first page load after sign-in, or after 30 min without an event | `entry_screen`, `viewport` | Q1, Q2 |
 | `signed_out` | sign-out, or the session expired and the page went to `/login` | `reason` | Q2, Q7 |
 | `survey_answered` | the person sends a survey: NPS with at least a score, the four-answers card or the exit reason; free text never travels here | `survey_id`, `score`, `reason_code`, `came_for`, `hardest_to_find` | Q4, Q8 |
@@ -92,6 +95,7 @@ The only properties an event may carry. Every one is an enumeration, a flag, a c
 | `elapsed_ms` | duration | milliseconds since `session_started`, capped at 1 h |
 | `entry` | enum | `menu`, `why` (the assistant panel's opener: the menu bar's Ask, or Why? on a trade) |
 | `entry_screen` | enum | `monitor`, `login` |
+| `failed_since` | enum | `0`, `1`, `2_4`, `5_plus` (wrong passwords since the previous sign-in, as a bucket, #803) |
 | `filter` | enum | `bot`, `strategy`, `type`, `moneyness`, `group_by` |
 | `hardest_to_find` | enum | `holding`, `income`, `worst_case`, `last_action`, `none` |
 | `helped` | bool | `true`, `false` |
@@ -173,3 +177,19 @@ Does a new person reach a useful answer early, and how fast? `cmd/usage` answers
 - **No alert:** §7's drop rules do not read it.
 
 Only people who said yes send events (§5), so a person who did not accept analytics is in no figure; counts and shares only, never a `user_id`.
+
+## 9. Retention by activation (Q9, #818)
+
+Does reaching a useful answer in the first day go with staying? `cmd/usage` answers it in "Retention by activation" (Q9) by joining §8's rule with the cohort table (Q2): no new event or property.
+
+- **Cohorts:** the report's week and the 11 before it (`usage.ActivationWeeks`); a cohort is the new people of the week (first `session_started` ever, as Q2).
+- **Split:** each cohort into *activated* (§8's rule, unchanged: within 24 h, the Overview and then a step) and *not activated* (everyone else of the cohort).
+- **Came back:** a person of a group with any accepted event in week +1, +2, +3 and +4 after the cohort's week (`usage.ActivationReturnWeeks`) — the cohort table's "active"; counts and the share of the group.
+- **Small group:** under 10 people (`usage.ActivationMinUsers`) a group is `too few to judge`: its counts, no share.
+- **Not ended:** a later week that has not ended reads `not yet`, never 0.
+- **Missing weeks:** a cohort week with no event at all is noted and left out; a later week with no event at all reads `no events` — no count, and it is in no base.
+- **Pooled:** per later week, the cohorts whose week has ended and had events, summed per group; the E13 weekly comment carries the week 4 line ("activated come back 62 % in week 4, not activated 31 % (n = 14 / 22)", shares only for a live account).
+- **Association, not proof:** said beside every figure — a person curious enough to activate may also be one who stays.
+- **No alert:** §7's drop rules do not read it.
+
+Only people who said yes send events (§5); counts and shares only, never a `user_id`.

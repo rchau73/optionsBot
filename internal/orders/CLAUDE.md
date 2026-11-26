@@ -9,6 +9,8 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too; its 
     `Position.Fees` holds the opening fees (read from Deribit with `OrderFee` when a fill is booked) and unrealised P&L is `NetPnL()`.
   - The exit rules keep using the gross premium.
   - The backtest charges Deribit's fee (`orders.OptionFee`: 0.03 % of the underlying, capped at 12.5 % of the price) and reports net trades; `strategy/pnl.go` writes periodic P&L lines.
+  - A USDC-settled option (SOL, XRP, #832) is priced, fee'd (`LinearOptionFee`: the same terms on the USDC index, in USDC) and booked in USDC:
+    its journal lines carry `unit: "USDC"` and its `_usd` fields equal its amounts (no × spot); BTC/ETH lines have no `unit` and are unchanged.
   - Every start journals one `config_loaded` line (`orders.LogStartConfig`, #256):
     the fingerprint of `config.Effective` (YAML keys and fixed values only — never anything from `.env`), the full settings and `config.Diff` against the journal's last `config_loaded` (`Replay.LastConfig`, kept raw so the replay's fast path is unchanged);
     `first`/`unchanged` flags; `/api/status` `config: {fingerprint, since}`.

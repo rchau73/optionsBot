@@ -22,6 +22,8 @@ type TickSizeStep struct {
 type Instrument struct {
 	Name            string
 	Underlying      string
+	Settlement      string  // currency it settles in: the coin (BTC, ETH: inverse) or USDC (SOL, XRP: linear)
+	ContractSize    float64 // underlying per contract: 1 BTC or ETH, 10 SOL, 1,000 XRP (0 when read from a name)
 	Strike          float64
 	Expiry          time.Time
 	OptionType      string // "call" or "put"
@@ -54,6 +56,16 @@ func (i *Instrument) EffectiveTick(price float64) float64 {
 		return i.TickSize
 	}
 	return 0.0001
+}
+
+// OrderStep is the size grid an order of this option must sit on: Deribit's
+// minimum for an inverse option (0.1 BTC); a linear option trades whole
+// contracts (10 SOL, 1,000 XRP, #832), never less than its minimum.
+func (i *Instrument) OrderStep() float64 {
+	if i.Settlement == LinearSettlement && i.ContractSize > i.MinTradeAmount {
+		return i.ContractSize
+	}
+	return i.MinTradeAmount
 }
 
 // Tick is one row of historical option data replayed by the backtest feed.

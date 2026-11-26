@@ -193,7 +193,7 @@ describe("the read never writes", () => {
 
 describe("lib/audit.js", () => {
   test("the known actions include every action the code audits", () => {
-    for (const a of ["signed_in", "role_changed", "password_reset", "reset_link_issued", "password_reset_by_link", "manual_close", "manual_rebalance"]) {
+    for (const a of ["signed_in", "role_changed", "password_reset", "reset_link_issued", "password_reset_by_link", "manual_close", "manual_rebalance", "session_expired"]) {
       expect(AUDIT_ACTIONS).toContain(a);
     }
   });

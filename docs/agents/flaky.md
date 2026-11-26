@@ -23,3 +23,13 @@ Past the time limit everything is stopped, nothing is filed and the log says it 
 Results and logs: `data/agents/flaky/<date>/`.
 Run ledger agent `flaky`, outcomes `filed`, `none` or `timed_out`.
 Tests: `test_flaky.py` (the parsing, dedup and issue body, and `flaky.sh` end to end on a throwaway origin with stub `go`/`npm`/`gh`).
+
+## Repeat offenders
+
+One issue per test hides a file that keeps producing flakes (#747: `reset-audit-ui.test.jsx` #731 and #732, `answers-card.test.jsx` #587 and #589), and each issue costs a Dev run and a review round.
+`flaky.py`'s pure `repeat_offenders(issues, now)` groups the `Flaky test:` issues, open or closed in the last 30 days (`REPEAT_DAYS`), by test file (`file_key`):
+for jest the part of the name before ` › `, for Go the top-level `Test…` name (a subtest counts for its parent), so a Go test and a jest file never share a group.
+- The weekly [agent metrics](metrics.md) report lists every file with 2 or more in its "Flaky repeat offenders (30 days)" section, from the issue list it already reads.
+- A new issue whose file reaches 3 or more (`REPEAT_HINT_MIN`, itself and that night's earlier filings included) carries one more line in its body:
+  "This file has N flaky issues in 30 days: fix the shared cause in the file (timers, shared state, ordering), not only this test."
+  The title, the 14-day dedup and the Triage column are unchanged.

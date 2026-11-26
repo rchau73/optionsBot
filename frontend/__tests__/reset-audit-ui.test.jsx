@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import AuditPage from "@/app/admin/audit/page";
 import AuditTrail from "@/components/AuditTrail";
 import ResetPasswordForm from "@/components/ResetPasswordForm";
@@ -10,7 +10,11 @@ import { viewer } from "@/lib/auth/viewer";
 
 jest.mock("@/lib/auth/viewer", () => ({ viewer: jest.fn() }));
 
-jest.setTimeout(20_000); // every reply is a resolved mock, nothing waits; the role queries over the Users table passed 5 s under a full parallel run (#731)
+// Every reply is a resolved mock, so these tests take milliseconds; in a full parallel run the worker can
+// stall for seconds behind the password-hashing suites — the role queries over the Users table (#731) and
+// the refusal's find (#732) passed 5 s. A refusal that never shows still fails, only later.
+jest.setTimeout(30_000);
+configure({ asyncUtilTimeout: 10_000 });
 
 const reply = (status, body = {}) => ({ ok: status < 300, status, headers: new Headers(), json: async () => body });
 const realFetch = global.fetch;

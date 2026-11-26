@@ -14,7 +14,7 @@
 // The bot data a question needs comes from the question's own fixture
 // (`bot`, `request`): invented figures, never a live account's.
 import path from "node:path";
-import { answerQuestion, bookPassage, explainPassages, journalPassages, livePassages, mergePassages, perfPassages } from "./service";
+import { answerQuestion, bookPassage, explainPassages, hedgePassage, journalPassages, labPassages, livePassages, mergePassages, perfPassages } from "./service";
 
 // The fixtures name one bot (their ids read "live:btc/…", "journal:btc/…").
 export const GOLDEN_BOT = "btc";
@@ -52,10 +52,14 @@ function journalItems(passages) {
  * What the monitor would hand answerQuestion for one golden question, built
  * from its fixture: `bot` (#427: the bot's routes' answers → live and journal
  * passages, plus /api/explain's facts for a Why?, #534, and /api/performance's
- * 7- and 30-day answers as `perf`, #648, and the book now as `book`, #719) or `request` (#409:
+ * 7- and 30-day answers as `perf`, #648, the book now as `book`, #719, and
+ * /api/hedge's answer as `hedge`, #877), `lab` (#742:
+ * /api/lab/runs's runs and requests → the lab passages) or `request` (#409:
  * journal facts and P&L history points); none → a question with no bot.
  */
 export function goldenInputs(q) {
+  // A lab question (#742): the lab's run list and requests, as /api/lab/runs answers them; no bot.
+  if (q.lab) return { bot: null, live: [], journal: [], perf: [], book: [], lab: labPassages(q.lab), reportPassages: async () => [] };
   if (q.bot) {
     const b = q.bot;
     let journal = journalPassages(GOLDEN_BOT, b.journal?.items, b.journal?.held);
@@ -63,7 +67,10 @@ export function goldenInputs(q) {
     const perf = perfPassages(GOLDEN_BOT, b.perf?.["7d"] ?? null, b.perf?.["30d"] ?? null);
     // A fixture whose status is null is a bot whose status route did not answer (#719).
     const book = [bookPassage(GOLDEN_BOT, { status: b.status ?? null, positions: b.positions ?? null, journal, error: b.status ? "" : "the bot's status route did not answer" })];
-    return { bot: GOLDEN_BOT, live: livePassages(GOLDEN_BOT, b), journal, perf, book, reportPassages: async () => [] };
+    // A fixture with `hedge` (#877): /api/hedge's answer, null = the route did not answer; read at the status's as_of, so the trial's days stay fixed.
+    const nowMs = Date.parse(b.status?.as_of ?? "") || Date.now();
+    const hedge = "hedge" in b ? [hedgePassage(GOLDEN_BOT, { route: b.hedge, journal, nowMs, error: b.hedge ? "" : "the bot's hedge route did not answer" })] : [];
+    return { bot: GOLDEN_BOT, live: livePassages(GOLDEN_BOT, b), journal, perf, book, hedge, reportPassages: async () => [] };
   }
   const passages = q.request?.passages ?? [];
   if (passages.length) {

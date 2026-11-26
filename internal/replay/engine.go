@@ -53,6 +53,9 @@ type Settings struct {
 	// each makes the next rebalance a startup pass (rebalance.go).
 	Limits   []LimitAt
 	Restarts []time.Time
+	// Hedge is the one-sided hedge study's variant (hedgemode.go, #812): the
+	// zero value runs no study hedge.
+	Hedge HedgeMode
 	// Shed is what a GEX shed does (shed.go, #637): the zero value is the
 	// bot's (buy the whole side back).
 	Shed ShedVariant
@@ -65,8 +68,13 @@ type Settings struct {
 	// FullStrangle is the rule set of the full-strangle study (fullstrangle.go,
 	// #677): the zero value is today's.
 	FullStrangle FullStrangleVariant
-	Book         []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace        func(at time.Time, line string) // every action, as it happens (nil = none)
+	// ChainIVMinDays is, for a coin without DVOL (SOL, XRP: its book's chain
+	// ATM IV stands in, #834), how many daily closes it needs before the
+	// bands apply; the lowest band until then. 0 = none; the bot's is
+	// config.FixedChainIVMinDays (cmd/stress -chainivdays).
+	ChainIVMinDays int
+	Book           []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace          func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -103,6 +111,7 @@ type Result struct {
 	Entries, Repairs  int
 	Sheds, Stops      int
 	DeltaExits, Rolls int // rolls: DTE rolls, take-profits and delta drifts (legs)
+	CloseOnly         int // of the rolls, drifts and take-profits closed only under the close-only floor (#753)
 	MMCuts, Unfilled  int // Unfilled: orders that found an empty side of the book and waited
 	LiquidityCapped   int // entry legs cut (or blocked) by the liquidity cap
 	// The liquidity-cap study (#487, liqcap.go).
@@ -131,13 +140,18 @@ type Result struct {
 	TopUpLots          float64    // lots sold by the complements
 	DownsizeLog        []Downsize // every leg cut, for the journal comparison
 	// The shed study (#637, shed.go).
-	ShedBreaks    int     // negative breaks: decisions where a shed starts after one without
-	ShedPnL       float64 // realised on the GEX shed buy-backs, net of fees
-	HedgePnL      float64 // the perp hedge: its price moves, less fees and funding
-	HedgeTrades   int     // perp orders (opens, re-hedges, unwinds)
-	MaxMMPct      float64 // MM as % of the margin balance, highest over the decisions
-	AvgIM         float64 // IM in the coin, averaged over the decisions
-	MaxGapLossPct float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
+	ShedBreaks  int     // negative breaks: decisions where a shed starts after one without
+	ShedPnL     float64 // realised on the GEX shed buy-backs, net of fees
+	HedgePnL    float64 // the perp hedge: its price moves, less fees and funding
+	HedgeTrades int     // perp orders (opens, re-hedges, unwinds)
+	// The delta-exit study (#769, deltaexit.go): what each exit realised
+	// against the premium it had received, and the closed legs sold again.
+	DeltaExitPnL, DeltaExitPremium float64 // realised net of fees; premium received by the legs closed
+	StopPnL, StopPremium           float64
+	ReEntries                      int     // repairs of a leg a stop, delta exit or MM cut closed
+	MaxMMPct                       float64 // MM as % of the margin balance, highest over the decisions
+	AvgIM                          float64 // IM in the coin, averaged over the decisions
+	MaxGapLossPct                  float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
 	// The full-strangle study (#677, fullstrangle.go).
 	MissingLegHours    float64 // one-legged strangles × hours they were so, every rule set
 	PerpTradedUSD      float64 // the perpetual's turnover, USD
@@ -148,6 +162,27 @@ type Result struct {
 	MaxDrawdown        float64
 	MaxIMPct, AvgIMPct float64
 	Days               []Day
+	// The option legs it filled and its book at both ends, for the evidence
+	// report's split of the gap to live (#802).
+	Fills              []LegFill
+	StartBook, EndBook []BookLeg
+}
+
+// LegFill is one option leg the replay filled: a sale (open) or a buy-back
+// or an expiry (close). The perpetual's orders are not in it.
+type LegFill struct {
+	At         time.Time
+	Instrument string
+	Kind       string  // open | close
+	Qty, Price float64 // price per option, coin
+	Fee        float64
+	Why        string // the rule: entry, repair, top-up, STOP, DELTA EXIT, GEX shed, expired, …
+}
+
+// BookLeg is one short leg of the replay's book and the mid it was valued at.
+type BookLeg struct {
+	Instrument string
+	Qty, Mid   float64
 }
 
 type strangle struct {
@@ -199,6 +234,8 @@ type engine struct {
 	book       []*strangle
 	nextID     int
 	stopped    map[string]time.Time // strangle/side → when a stop, delta exit or MM cut closed it
+	closeOnly  map[string]bool      // strangle/side closed under the close-only floor: not repaired (#753)
+	closed     strategy.ClosedExpiries
 	anchors    map[string]*strategy.ShedAnchor
 	deferSince map[string]time.Time // position → when its stop was first deferred
 	rb         rebalanceState
@@ -231,8 +268,9 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	}
 	e := &engine{set: set, cfg: cfg, lot: 0.1, src: &snapSource{},
 		dvol:    marketdata.NewDVOLTracker(cfg.IVPercentileWindow),
-		policy:  cfg.RiskPolicy(true),
+		policy:  strategy.IVPolicy(cfg.RiskPolicy(true), marketdata.VolSource(cfg.Underlying), set.ChainIVMinDays),
 		stopped: map[string]time.Time{}, anchors: map[string]*strategy.ShedAnchor{}, deferSince: map[string]time.Time{},
+		closeOnly: map[string]bool{}, closed: strategy.ClosedExpiries{},
 		cash: set.Equity}
 	if !strings.EqualFold(cfg.Underlying, "BTC") {
 		e.lot = 1 // Deribit's minimum: 0.1 BTC, 1 ETH
@@ -284,6 +322,11 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	}
 	for _, s := range e.book {
 		e.res.OpenAtEnd += len(s.legs())
+		for _, p := range s.legs() {
+			if p.Qty > 1e-9 {
+				e.res.EndBook = append(e.res.EndBook, BookLeg{Instrument: p.Instrument, Qty: p.Qty, Mid: p.CurrentMid})
+			}
+		}
 	}
 	return e.res, nil
 }
@@ -333,6 +376,7 @@ func (e *engine) openBook(snap recorder.Snapshot) {
 		}
 		st.set(typ, p)
 		e.cash += p.CurrentMid * p.Qty
+		e.res.StartBook = append(e.res.StartBook, BookLeg{Instrument: l.Instrument, Qty: l.Qty, Mid: p.CurrentMid})
 	}
 }
 
@@ -364,6 +408,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 		return
 	}
 	e.now = at
+	if dvol <= 0 && !marketdata.HasVolIndex(e.cfg.Underlying) {
+		dvol, _ = marketdata.ChainATMIV30(snap.Instruments(e.lot), spot, at) // as the bot reads it (#834)
+	}
 	if dvol > 0 {
 		e.dvol.Record(at, dvol)
 	}
@@ -411,7 +458,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	} else if e.set.Rebalance != "" {
 		e.rebalance(at, snap, dec, st, quotes, spot, gexErr == nil, stopsDeferred)
 	}
-	e.holdBookDelta(at, u.MarginBalance, spot)
+	if !e.set.Hedge.After {
+		e.holdBookDelta(at, u.MarginBalance, spot)
+	}
 	// No new risk without a fresh GEX snapshot (gexready.go): the side to
 	// avoid is unknown.
 	entriesAllowed := !mmBreach && !stopsDeferred && gexErr == nil && !st.Frozen
@@ -420,6 +469,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 		if entriesAllowed {
 			e.entries(at, snap, dec, st, quotes, spot)
 		}
+	}
+	if e.set.Hedge.After {
+		e.holdBookDelta(at, e.usage(spot).MarginBalance, spot)
 	}
 
 	e.noteMissingLegs(at)
@@ -507,7 +559,7 @@ func (e *engine) riskStatus(at time.Time, dec strategy.GammaDecision) risk.Statu
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date.Before(closes[j].Date) })
 	return risk.Evaluate(e.policy, closes, risk.Day{Date: today, IVPct: ivToday.Percentile, IVKnown: ivToday.Known,
-		Negative: strings.HasPrefix(dec.Regime, "NEGATIVE"), RegimeKnown: known})
+		Negative: strings.HasPrefix(dec.Regime, "NEGATIVE"), RegimeKnown: known, IVDays: e.dvol.Closes(at)})
 }
 
 // refreshMarks copies each held leg's recorded quote onto it (refreshMarks):
@@ -541,7 +593,7 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 			if p.Qty <= 0 {
 				continue
 			}
-			d := strategy.EvaluateLeg(p, at, c.RolloutDTE, c.DeltaDriftThreshold, c.ROITakeProfit, c.StopLossMultiplier, c.DeltaExitThreshold)
+			d := strategy.EvaluateLeg(p, at, c.RolloutDTE, c.DeltaDriftThreshold, c.ROITakeProfit, c.StopLossMultiplier, c.DeltaExitThreshold, c.CloseOnlyBelowDTE)
 			if d.Action != strategy.ActionStopLoss {
 				delete(e.deferSince, p.ID)
 			}
@@ -558,14 +610,20 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 					continue
 				}
 				delete(e.deferSince, p.ID)
+				premium, realised := p.PremiumReceived, e.res.Realised
 				if e.buyBack(at, s, p, p.Qty, quotes, "STOP") {
 					e.stopped[key(s, p.OptionType)] = at
 					e.res.Stops++
+					e.res.StopPremium += premium
+					e.res.StopPnL += e.res.Realised - realised
 				}
 			case strategy.ActionDeltaExit:
+				premium, realised := p.PremiumReceived, e.res.Realised
 				if e.buyBack(at, s, p, p.Qty, quotes, "DELTA EXIT") {
 					e.stopped[key(s, p.OptionType)] = at
 					e.res.DeltaExits++
+					e.res.DeltaExitPremium += premium
+					e.res.DeltaExitPnL += e.res.Realised - realised
 				}
 			case strategy.ActionRollNextMonth:
 				for _, l := range s.legs() {
@@ -577,6 +635,14 @@ func (e *engine) exits(at time.Time, quotes map[string]recorder.Quote) (stopsDef
 				what := map[string]string{orders.TriggerRolloutDelta: "drift roll", orders.TriggerRolloutROI: "take-profit"}[d.Reason]
 				if e.buyBack(at, s, p, p.Qty, quotes, what) {
 					e.res.Rolls++
+				}
+			case strategy.ActionClose: // under the close-only floor (#753): no repair, the slot re-enters elsewhere
+				what := map[string]string{orders.TriggerRolloutDelta: "drift close only", orders.TriggerRolloutROI: "take-profit close only"}[d.Reason]
+				e.closeOnly[key(s, p.OptionType)] = true
+				e.closed.Hold(s.slot.TargetDTE, s.slot.EntryDelta, p.Expiry)
+				if e.buyBack(at, s, p, p.Qty, quotes, what) {
+					e.res.Rolls++
+					e.res.CloseOnly++
 				}
 			}
 		}
@@ -628,11 +694,14 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if present == nil || e.shedSkips(missing, dec) || present.DTEAt(at) <= c.RolloutDTE {
 			continue
 		}
+		k := key(s, missing)
+		if e.closeOnly[k] {
+			continue // closed under the close-only floor: not re-sold on this expiry (#753)
+		}
 		if e.sideHold(missing, dec, st) != "" {
 			e.res.RegimeSideHolds++
 			continue
 		}
-		k := key(s, missing)
 		if a, ok := e.anchors[k]; ok {
 			if bias {
 				if strategy.BiasRepairBlockReason(a, missing, at, time.Duration(c.GEXBiasRepairCooldownHours)*time.Hour, c.GEXRepairConfirmSnapshots) != "" {
@@ -668,6 +737,9 @@ func (e *engine) repairs(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 			continue
 		}
 		e.sell(at, s, q, present.Qty, f.Price, "repair")
+		if _, ok := e.stopped[k]; ok {
+			e.res.ReEntries++
+		}
 		delete(e.anchors, k)
 		delete(e.stopped, k)
 		e.res.Repairs++
@@ -701,7 +773,9 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 		if occupied[sl] {
 			continue
 		}
-		exp, _ := strategy.SelectSlotExpiry(insts, at, sl.TargetDTE, c.MaxDTEDeviation, c.RolloutDTE, c.ExpiryStretch, held)
+		e.closed.Prune(at)
+		exp, _ := strategy.SelectSlotExpiry(insts, at, sl.TargetDTE, c.MaxDTEDeviation, c.RolloutDTE, c.ExpiryStretch,
+			e.closed.WithHeld(held, insts, sl.TargetDTE, sl.EntryDelta))
 		if exp.IsZero() {
 			continue
 		}
@@ -756,7 +830,7 @@ func (e *engine) entries(at time.Time, snap recorder.Snapshot, dec strategy.Gamm
 				e.res.Unfilled++
 				continue
 			}
-			e.sellInto(at, s, sd.q, float64(lots)*e.lot, sd.fill.Price)
+			e.sellInto(at, s, sd.q, float64(lots)*e.lot, sd.fill.Price, "entry")
 			names = append(names, sd.q.Instrument)
 		}
 		if len(s.legs()) == 0 {
@@ -792,6 +866,14 @@ func (e *engine) size(sides []entrySide, spot float64, st risk.Status, vacant, n
 	}
 	book := e.marginLegs()
 	perLot := scanPortfolioIM(append(book, extra(1)...), e.hedge.usd, spot) - u.IM
+	if e.set.Hedge.on() {
+		// The study (#812) prices a lot without the perpetual: next to the
+		// hedge a short leg lowers the scenario IM, perLot ≤ 0 sizes one lot,
+		// and the modes would compare book sizes, not the hedge (the bot kept
+		// selling 28–126 ETH lots with the hedge on). The post-trade check
+		// below still counts the perpetual.
+		perLot = scanPortfolioIM(append(book, extra(1)...), 0, spot) - scanPortfolioIM(book, 0, spot)
+	}
 	lots := strategy.EntryLots(share, perLot)
 	normal := strategy.TargetLots(slotShare, scanIM(extra(1), spot))
 	lots, _ = strategy.CapLots(lots, normal, e.cfg.MaxLegSizeMultiple)
@@ -840,12 +922,13 @@ func (e *engine) usage(spot float64) risk.Usage {
 
 // sell books a repair onto s.
 func (e *engine) sell(at time.Time, s *strangle, q recorder.Quote, qty, price float64, why string) {
-	e.sellInto(at, s, q, qty, price)
+	e.sellInto(at, s, q, qty, price, why)
 	e.act(at, "%s: sell %s ×%.1f at %.4f", why, q.Instrument, qty, price)
 }
 
-func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, price float64) {
+func (e *engine) sellInto(at time.Time, s *strangle, q recorder.Quote, qty, price float64, why string) {
 	fee := e.fee(price, qty)
+	e.res.Fills = append(e.res.Fills, LegFill{At: at, Instrument: q.Instrument, Kind: "open", Qty: qty, Price: price, Fee: fee, Why: why})
 	p := &orders.Position{ID: fmt.Sprintf("%s#%d", q.Instrument, at.Unix()), Instrument: q.Instrument, Strike: q.Strike,
 		Expiry: q.Expiry, OptionType: q.OptionType, Side: orders.DirectionSell, Qty: qty, EntryPrice: price,
 		UnderlyingPrice: q.UnderlyingPrice, EntryTime: at, PremiumReceived: price * qty, Fees: fee,
@@ -881,6 +964,7 @@ func (e *engine) buyBack(at time.Time, s *strangle, p *orders.Position, qty floa
 // leg's share of its opening fees (orders.ClosedNetPnL).
 func (e *engine) close(at time.Time, s *strangle, p *orders.Position, qty, price, fee float64, why string) float64 {
 	qty = math.Min(qty, p.Qty)
+	e.res.Fills = append(e.res.Fills, LegFill{At: at, Instrument: p.Instrument, Kind: "close", Qty: qty, Price: price, Fee: fee, Why: why})
 	share := qty / p.Qty
 	part := &orders.Position{Qty: qty, PremiumReceived: p.PremiumReceived * share, Fees: p.Fees * share}
 	pnl := orders.ClosedNetPnL(part, orders.Fill{FillPrice: price, Qty: qty, Fee: fee})
@@ -913,6 +997,7 @@ func (e *engine) prune() {
 		for _, typ := range []string{"call", "put"} { // the slot re-enters: its records go
 			delete(e.anchors, key(s, typ))
 			delete(e.stopped, key(s, typ))
+			delete(e.closeOnly, key(s, typ))
 		}
 	}
 	e.book = keep

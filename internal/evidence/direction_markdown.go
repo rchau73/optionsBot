@@ -19,6 +19,10 @@ func WriteDirectionMarkdown(w io.Writer, r DirectionReport) error {
 	p("# Direction trial scorecard — %s, %s (%s → %s UTC)\n\n", u, r.Week, r.From.Format(time.DateOnly), last.Format(time.DateOnly))
 	p("The GEX direction sources side by side: `bias` and `sma`. Units: %s. Facts only; a person decides the trial.\n\n", r.Units)
 
+	if r.Verdict != nil {
+		writeDirectionVerdict(p, *r.Verdict)
+	}
+
 	p("## Missing inputs\n\n")
 	missing := func(name string, days []string) {
 		if len(days) == 0 {
@@ -86,6 +90,67 @@ func WriteDirectionMarkdown(w io.Writer, r DirectionReport) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeDirectionVerdict writes the verdict block: the status, the figures it
+// used (running only while weeks are missing), every week and the
+// thresholds as assumptions. It only proposes.
+func writeDirectionVerdict(p func(string, ...any), v DirectionVerdict) {
+	p("## Verdict\n\n")
+	p("**%s** — %s.\n\n", v.Status, v.Why)
+	running := ""
+	if v.Status == DirectionVerdictMoreWeeks {
+		running = " (running figures, not a conclusion)"
+	}
+	p("- weeks counted: %d of %d%s\n", v.Counted, v.Needed, running)
+	p("- d (bias − sma, replay net, mean of the counted weeks): %s pp · noise (mean |live − replay|): %s pp\n", pctCell(v.DPP), plainCell(v.NoisePP))
+	p("- tail: worst week bias %s %% / sma %s %% · max drawdown bias %s %% / sma %s %%\n",
+		pctCell(v.BiasWorstWeekPct), pctCell(v.SMAWorstWeekPct), plainCell(v.BiasMaxDDPct), plainCell(v.SMAMaxDDPct))
+	if v.SpanTooShort {
+		p("- **span too short: extend by %d weeks** — the sign of bias − sma changed on %d of %d week-to-week steps, no trend\n", DirectionExtendWeeks, v.SignChanges, v.SignSteps)
+	} else {
+		p("- span: the sign of bias − sma changed on %d of %d week-to-week steps\n", v.SignChanges, v.SignSteps)
+	}
+	if len(v.KillWeeks) > 0 {
+		p("- kill rule: **hit** in %s (%s)\n", strings.Join(v.KillWeeks, ", "), DirectionHalfReplay)
+	}
+	switch lh := v.LiveDrawdown; lh.Status {
+	case DirectionLiveFired:
+		p("- kill rule, %s: **hit** in %s — stable BTC's live max drawdown over %g× mvp BTC's (%s)\n", DirectionHalfLive, v.liveFiredText(), DirectionLiveDDRatio, lh.Sample.Text())
+	case DirectionLiveNotFired:
+		p("- kill rule, %s: not hit — stable BTC's live max drawdown at most %g× mvp BTC's in every week checked (%s)\n", DirectionHalfLive, DirectionLiveDDRatio, lh.Sample.Text())
+	default:
+		p("- kill rule, %s: not checked — no week had both bots' live max drawdown\n", DirectionHalfLive)
+	}
+	if v.NotChecked != "" {
+		p("- not checked here: %s\n", v.NotChecked)
+	}
+	p("\n")
+
+	p("| Week | Counted | bias net %% | sma net %% | bias − sma pp | bias max DD %% | sma max DD %% | live − replay, size pp | live max DD stable / mvp %% | Why |\n")
+	p("|---|---|---|---|---|---|---|---|---|---|\n")
+	for _, w := range v.Weeks {
+		gaps := make([]string, 0, len(w.GapsPP))
+		for _, g := range w.GapsPP {
+			gaps = append(gaps, fmt.Sprintf("%.2f", g))
+		}
+		counted := "no"
+		if w.Counted {
+			counted = "yes"
+		}
+		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s / %s · %s | %s |\n", w.Week, counted, pctCell(w.BiasNetPct), pctCell(w.SMANetPct), pctCell(w.DPP),
+			plainCell(w.BiasDDPct), plainCell(w.SMADDPct), strings.Join(gaps, ", "),
+			pctCell(w.StableLiveDDPct), pctCell(w.MVPLiveDDPct), w.LiveHalf, w.Why)
+	}
+	p("\nAssumptions (%s): %s. The verdict only proposes: it files nothing and changes no config; a person decides.\n\n",
+		v.Rule, strings.Join(v.Assumptions, "; "))
+}
+
+func plainCell(v *float64) string {
+	if v == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.2f", *v)
 }
 
 func pctCell(v *float64) string {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"optionsbot/internal/gateway"
+	"optionsbot/internal/marketdata"
 )
 
 // ParsePriceTooLow extracts the exchange minimum price from a Deribit price_too_low
@@ -54,17 +55,54 @@ type rpcCaller interface {
 type Executor struct {
 	gw rpcCaller
 
-	simMu   sync.Mutex
-	nextSim time.Time // earliest time the next simulate_portfolio may go out
+	simMu      sync.Mutex
+	nextSim    time.Time     // earliest time the next simulate_portfolio may go out
+	simBackoff time.Duration // the first wait after a rate-limited simulation (doubled per retry)
+
+	stats CallStats // margin calls per minute and the share rate limited (#888)
 }
 
 // simulateSpacing honours Deribit's limit of one simulate_portfolio call per
 // second (portfolio margin is expensive to compute), with a little slack.
 const simulateSpacing = 1100 * time.Millisecond
 
+// A simulation Deribit rejects as rate limited (10028) is sent again up to
+// SimulateRetries times, after SimulateBackoff, then twice that (#888: the
+// gateway retries only public/* and private/get_*, so one rejection used to
+// skip the slot for the whole cycle). The wait also holds back every other
+// simulation, so the 1 call/s spacing is never undercut.
+const (
+	SimulateRetries = 2
+	SimulateBackoff = 2 * time.Second
+)
+
 // NewExecutor returns an Executor that sends every request through gw.
 func NewExecutor(gw rpcCaller) *Executor {
-	return &Executor{gw: gw}
+	return &Executor{gw: gw, simBackoff: SimulateBackoff}
+}
+
+// SetSimulateBackoff changes the first wait after a rate-limited simulation
+// (tests; never below the call spacing in effect, which still applies).
+func (e *Executor) SetSimulateBackoff(d time.Duration) {
+	e.simMu.Lock()
+	defer e.simMu.Unlock()
+	e.simBackoff = d
+}
+
+// count records one margin call and logs the method's previous minute when
+// this call starts a new one.
+func (e *Executor) count(method string, err error) {
+	m, ok := e.stats.Record(method, gateway.IsRateLimited(err), time.Now())
+	if !ok {
+		return
+	}
+	level := slog.LevelInfo
+	if m.RateLimited > 0 {
+		level = slog.LevelWarn
+	}
+	slog.Log(context.Background(), level, "exchange calls per minute",
+		"method", m.Method, "minute", m.Minute.Format(time.RFC3339), "calls", m.Calls,
+		"rate_limited", m.RateLimited, "rejected_pct", fmt.Sprintf("%.0f", m.RejectedPct()))
 }
 
 // ErrForbidden is returned when Deribit rejects a call for missing API key
@@ -240,11 +278,51 @@ func submitPriority(reason string) int {
 // CancelByLabel cancels every open order of currency carrying label and
 // returns how many were cancelled. Used to make sure an order whose submit
 // outcome is unknown can no longer fill.
+// A linear coin's orders are listed under USDC (#833); every label is unique
+// to the order (uniqueOrderLabel), so the wider currency reaches nothing else.
 func (e *Executor) CancelByLabel(ctx context.Context, currency, label string) (int, error) {
 	return call[int](ctx, e.gw, "private/cancel_by_label", map[string]any{
 		"label":    label,
-		"currency": currency,
+		"currency": marketdata.SettlementCurrency(currency),
 	}, gateway.PriorityHigh)
+}
+
+// OwnRows keeps the rows of coin's own instruments (#833): a linear coin's
+// positions are read from the whole USDC list, every coin's together, and
+// only its "<COIN>_USDC-" names (options and its perpetual) are its own.
+// An inverse coin's list is its own already: rows are returned as given.
+func OwnRows(coin string, rows []RawPosition) []RawPosition {
+	if !marketdata.IsLinear(coin) {
+		return rows
+	}
+	prefix := marketdata.OptionPrefix(coin)
+	own := make([]RawPosition, 0, len(rows))
+	for _, r := range rows {
+		if strings.HasPrefix(r.InstrumentName, prefix) {
+			own = append(own, r)
+		}
+	}
+	return own
+}
+
+// CurrencyPair is Deribit's currency pair of a linear coin's instruments,
+// e.g. "sol_usdc": the key private/cancel_all_by_currency_pair cancels by.
+func CurrencyPair(coin string) string {
+	return strings.ToLower(coin + "_" + marketdata.LinearSettlement)
+}
+
+// checkSettlement refuses a summary whose currency is not the coin's
+// settlement currency (#833): a SOL bot's margin must be read in USDC.
+// An empty currency is the one asked for.
+func checkSettlement(coin string, sum *AccountSummary) error {
+	want := marketdata.SettlementCurrency(coin)
+	if sum.Currency == "" {
+		sum.Currency = want
+	}
+	if marketdata.IsLinear(coin) && sum.Currency != want {
+		return fmt.Errorf("%s margin answered in %s, want %s", coin, sum.Currency, want)
+	}
+	return nil
 }
 
 // MaybePlaced reports whether a failed order submit may still have reached
@@ -302,7 +380,25 @@ func (e *Executor) CancelAll(ctx context.Context, instrument string) error {
 // currency (private/cancel_all_by_currency — private/cancel_all takes no
 // currency and would clear every currency) so a BTC bot restart leaves an ETH
 // bot's orders alone.
+//
+// A linear coin (SOL, XRP) shares the USDC currency with every other linear
+// coin: cancel_all_by_currency USDC would clear their orders too. Its options
+// and futures (its perpetual) are cancelled by its own currency pair instead
+// (private/cancel_all_by_currency_pair "sol_usdc", #833), which cannot reach
+// another coin; spot orders of the pair are left alone.
 func (e *Executor) CancelAllOrders(ctx context.Context, currency string) error {
+	if marketdata.IsLinear(currency) {
+		var errs []error
+		for _, kind := range []string{"option", "future"} {
+			if _, err := call[any](ctx, e.gw, "private/cancel_all_by_currency_pair", map[string]any{
+				"currency_pair": CurrencyPair(currency),
+				"kind":          kind,
+			}, gateway.PriorityHigh); err != nil {
+				errs = append(errs, fmt.Errorf("cancel %s %s orders: %w", CurrencyPair(currency), kind, err))
+			}
+		}
+		return errors.Join(errs...)
+	}
 	_, err := call[any](ctx, e.gw, "private/cancel_all_by_currency", map[string]any{
 		"currency": currency,
 	}, gateway.PriorityHigh)
@@ -340,21 +436,31 @@ func (e *Executor) AmendOrder(ctx context.Context, orderID string, qty, price fl
 }
 
 // GetPositions returns all open option positions for the given currency.
+// A linear coin's are read from currency=USDC and only its own
+// "<COIN>_USDC-" options are returned (OwnRows, #833): reconcile, the
+// position check, the long check and the kill switch never see, adopt,
+// close or count another coin's shorts.
 func (e *Executor) GetPositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
-		"currency": currency,
-		"kind":     "option",
-	}, gateway.PriorityLow)
+	return e.ownPositions(ctx, currency, "option")
 }
 
 // GetFuturePositions returns the currency's open futures positions
 // (perpetual included). Kept apart from GetPositions, which is option-only,
 // so reconcile and the position check never adopt a hedge (#657).
+// A linear coin's are its own "<COIN>_USDC-" futures only, as GetPositions.
 func (e *Executor) GetFuturePositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
-		"currency": currency,
-		"kind":     "future",
+	return e.ownPositions(ctx, currency, "future")
+}
+
+func (e *Executor) ownPositions(ctx context.Context, currency, kind string) ([]RawPosition, error) {
+	rows, err := call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
+		"currency": marketdata.SettlementCurrency(currency),
+		"kind":     kind,
 	}, gateway.PriorityLow)
+	if err != nil {
+		return rows, err
+	}
+	return OwnRows(currency, rows), nil
 }
 
 // GetInstrumentSpec reads an instrument's contract size, minimum amount and
@@ -373,11 +479,21 @@ func (e *Executor) GetTicker(ctx context.Context, name string) (Ticker, error) {
 }
 
 // GetAccountSummary returns the full account summary including margin details.
+// Counted per minute (#888); the gateway's own retries of a rate-limited
+// read are not seen here, only what reaches the caller.
+// A linear coin's margin is the USDC account's (#833): its summary is read
+// with currency=USDC and must answer in USDC (cross-collateral totals as
+// for any coin, AccountSummary.MarginUsage).
 func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (AccountSummary, error) {
-	return call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
-		"currency": currency,
+	sum, err := call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
+		"currency": marketdata.SettlementCurrency(currency),
 		"extended": true,
 	}, gateway.PriorityLow)
+	e.count("private/get_account_summary", err)
+	if err == nil && marketdata.IsLinear(currency) {
+		err = checkSettlement(currency, &sum)
+	}
+	return sum, err
 }
 
 // SimulatePortfolio asks Deribit what the account's margin would be with
@@ -394,7 +510,36 @@ func (e *Executor) SimulateAlone(ctx context.Context, currency string, positions
 	return e.simulate(ctx, currency, positions, false)
 }
 
+// simulate sends one simulation, spaced, and retries it after a backoff while
+// Deribit rate-limits it (SimulateRetries). Any other error returns at once.
 func (e *Executor) simulate(ctx context.Context, currency string, positions map[string]float64, addToBook bool) (AccountSummary, error) {
+	const method = "private/simulate_portfolio"
+	for attempt := 0; ; attempt++ {
+		if err := e.waitSimSlot(ctx); err != nil {
+			return AccountSummary{}, err
+		}
+		sum, err := call[AccountSummary](ctx, e.gw, method, map[string]any{
+			"currency":            marketdata.SettlementCurrency(currency),
+			"add_positions":       addToBook,
+			"simulated_positions": positions,
+		}, gateway.PriorityLow)
+		e.count(method, err)
+		if err == nil {
+			// A linear coin simulates its USDC instruments under USDC and the
+			// answer must be in USDC (#833).
+			return sum, checkSettlement(currency, &sum)
+		}
+		if !gateway.IsRateLimited(err) || attempt >= SimulateRetries {
+			return sum, err
+		}
+		wait := e.holdSims(attempt)
+		slog.Warn("simulate_portfolio rate limited: retrying after a backoff",
+			"currency", currency, "attempt", attempt+1, "of", SimulateRetries+1, "backoff", wait, "err", err)
+	}
+}
+
+// waitSimSlot waits for the next free simulation slot (simulateSpacing apart).
+func (e *Executor) waitSimSlot(ctx context.Context) error {
 	e.simMu.Lock()
 	at := time.Now()
 	if at.Before(e.nextSim) {
@@ -408,19 +553,24 @@ func (e *Executor) simulate(ctx context.Context, currency string, positions map[
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			return AccountSummary{}, ctx.Err()
+			return ctx.Err()
 		case <-t.C:
 		}
 	}
-	sum, err := call[AccountSummary](ctx, e.gw, "private/simulate_portfolio", map[string]any{
-		"currency":            currency,
-		"add_positions":       addToBook,
-		"simulated_positions": positions,
-	}, gateway.PriorityLow)
-	if err == nil && sum.Currency == "" {
-		sum.Currency = currency
+	return nil
+}
+
+// holdSims pushes the next simulation slot back by the attempt's backoff
+// (simBackoff doubled per retry) and returns that wait. Every simulation
+// waits for it, not only the retry: the pressure is on the whole pool.
+func (e *Executor) holdSims(attempt int) time.Duration {
+	e.simMu.Lock()
+	defer e.simMu.Unlock()
+	wait := e.simBackoff << attempt
+	if until := time.Now().Add(wait); until.After(e.nextSim) {
+		e.nextSim = until
 	}
-	return sum, err
+	return wait
 }
 
 // chartData is the subset of public/get_tradingview_chart_data we use.
@@ -431,6 +581,16 @@ type chartData struct {
 	High   []float64 `json:"high"`
 	Low    []float64 `json:"low"`
 	Close  []float64 `json:"close"`
+}
+
+// PerpetualName is Deribit's name of a currency's perpetual future, e.g.
+// "BTC-PERPETUAL" (exchange.InstrumentNamer, #786); a linear coin's is its
+// USDC perpetual, "SOL_USDC-PERPETUAL" (#838). It sends nothing.
+func (e *Executor) PerpetualName(currency string) string {
+	if marketdata.IsLinear(currency) {
+		return strings.TrimSuffix(marketdata.OptionPrefix(currency), "-") + "-PERPETUAL"
+	}
+	return currency + "-PERPETUAL"
 }
 
 // GetDailyCloses fetches daily closing prices for the given instrument going back

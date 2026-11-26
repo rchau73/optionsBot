@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"optionsbot/internal/gex"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -42,7 +43,7 @@ func TestJournal_ShedAndStopSurviveARestart(t *testing.T) {
 		t.Fatalf("replay: %v %+v", err, r.Trades)
 	}
 	nov27 := time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC)
-	sheds := strategy.ShedsFromTrades(r.Trades)
+	sheds := strategy.ShedsFromTrades(r.Trades, marketdata.InstrumentFromName)
 	s, ok := sheds[strategy.StopSide{Expiry: nov27, OptionType: "put"}]
 	if !ok || len(sheds) != 1 {
 		t.Fatalf("sheds = %+v, want the put", sheds)
@@ -50,7 +51,7 @@ func TestJournal_ShedAndStopSurviveARestart(t *testing.T) {
 	if s.Flip != 83595 || s.BufferPct != 2.0 || s.DVOL != 38 || math.Abs(s.At.Sub(r.Trades[0].At).Seconds()) > 1 {
 		t.Errorf("shed = %+v, want flip 83595, buffer 2.0, DVOL 38 at the close", s)
 	}
-	stops := strategy.StopsFromTrades(r.Trades)
+	stops := strategy.StopsFromTrades(r.Trades, marketdata.InstrumentFromName)
 	if _, ok := stops[strategy.StopSide{Expiry: nov27, OptionType: "call"}]; !ok || len(stops) != 1 {
 		t.Errorf("stops = %+v, want the stopped-out call (close_reason %q)", stops, r.Trades[1].Reason)
 	}
@@ -69,7 +70,7 @@ func TestShedsFromTrades(t *testing.T) {
 		{Kind: "close", Reason: "stop_loss", Instrument: "BTC-25DEC26-69000-P", At: at(4)}, // a later stop replaces it
 		{Kind: "close", Reason: shed, Instrument: "not-an-option", At: at(5)},
 	}
-	got := strategy.ShedsFromTrades(trades)
+	got := strategy.ShedsFromTrades(trades, marketdata.InstrumentFromName)
 	want := strategy.StopSide{Expiry: time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC), OptionType: "put"}
 	if len(got) != 1 || got[want].Flip != 83595 || got[want].BufferPct != 2 || !got[want].At.Equal(at(0)) {
 		t.Errorf("got %+v, want only the Nov 27 put shed at flip 83595", got)

@@ -50,7 +50,11 @@ type fakeExchange struct {
 	simCalls        []map[string]float64
 	nextID          int
 	dailyCloses     []orders.DailyClose
+	dailyClosesFor  []string // the instrument of each GetDailyCloses call
 	amended         []string
+	// perpSuffix, when set, replaces Deribit's "-PERPETUAL" in PerpetualName,
+	// so a test can tell the exchange's name from one the strategy built.
+	perpSuffix string
 
 	// onSubmit decides each fill. Default: sells rest unfilled on the book,
 	// buys fill completely at once.
@@ -376,9 +380,17 @@ func (f *fakeExchange) setMargin(im, mm float64) {
 	f.summary.InitialMargin, f.summary.MaintenanceMargin = im, mm
 }
 
-func (f *fakeExchange) GetDailyCloses(context.Context, string, int) ([]orders.DailyClose, error) {
+func (f *fakeExchange) PerpetualName(currency string) string {
+	if f.perpSuffix != "" {
+		return currency + f.perpSuffix
+	}
+	return currency + "-PERPETUAL"
+}
+
+func (f *fakeExchange) GetDailyCloses(_ context.Context, instrument string, _ int) ([]orders.DailyClose, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.dailyClosesFor = append(f.dailyClosesFor, instrument)
 	if f.dailyCloses == nil {
 		return nil, errors.New("no history in tests")
 	}
@@ -448,6 +460,10 @@ type fakeMarket struct {
 	instruments map[string]*marketdata.Instrument
 	dvolCloses  []marketdata.DayIV
 	dvolToday   marketdata.DayIV
+	ivSource    string // "" = DVOL
+	ivCloses    int    // 0 = len(dvolCloses)
+	// dvolRejected is what TakeDVOLRejections hands the strategy next.
+	dvolRejected []marketdata.DVOLRejection
 }
 
 func (m *fakeMarket) Track(_ context.Context, names []string) error {
@@ -477,9 +493,44 @@ func (m *fakeMarket) setIVHistory(closes []float64, today float64) {
 	m.dvolToday = marketdata.DayIV{Day: day, Percentile: today, Known: true}
 }
 
+// TakeDVOLRejections drains the rejections a test queued with rejectDVOL.
+func (m *fakeMarket) TakeDVOLRejections() []marketdata.DVOLRejection {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := m.dvolRejected
+	m.dvolRejected = nil
+	return out
+}
+
+func (m *fakeMarket) rejectDVOL(r marketdata.DVOLRejection) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dvolRejected = append(m.dvolRejected, r)
+}
+
 func (m *fakeMarket) UnderlyingPrice() float64 { m.mu.Lock(); defer m.mu.Unlock(); return m.price }
 func (m *fakeMarket) DVOL() float64            { return 55 }
 func (m *fakeMarket) IVPercentile() float64    { return 50 }
+
+// IVSource is DVOL unless a test sets ivSource (a coin's chain IV, #834).
+func (m *fakeMarket) IVSource() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ivSource == "" {
+		return marketdata.DVOLSource
+	}
+	return m.ivSource
+}
+
+// IVCloses is ivCloses, else the closes setIVHistory gave.
+func (m *fakeMarket) IVCloses(time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ivCloses > 0 {
+		return m.ivCloses
+	}
+	return len(m.dvolCloses)
+}
 
 func (m *fakeMarket) GetInstrument(name string) (*marketdata.Instrument, bool) {
 	m.mu.Lock()
@@ -490,6 +541,11 @@ func (m *fakeMarket) GetInstrument(name string) (*marketdata.Instrument, bool) {
 	}
 	cp := *inst
 	return &cp, true
+}
+
+// InstrumentFromName reads names as the real market data does (Deribit's).
+func (m *fakeMarket) InstrumentFromName(name string) (marketdata.Instrument, error) {
+	return marketdata.InstrumentFromName(name)
 }
 
 func (m *fakeMarket) AllInstruments() []*marketdata.Instrument {
@@ -664,6 +720,7 @@ type strategyFixture struct {
 	futures strategy.FuturesTrader     // optional: the futures hedge experiment (#657)
 	hedgeAt string                     // optional: its mode file
 	shadow  *shadow.Book               // optional: the shadow legs record (#676)
+	hedge   strategy.HedgeReporter     // optional: nopHedge{} when nil
 	// hedgeRecheck, when set, shortens a halted hedge's re-check.
 	hedgeRecheck time.Duration
 	journal      *recordingJournal
@@ -728,9 +785,13 @@ func newStrategyFixture(t *testing.T) *strategyFixture {
 		if f.logger != nil {
 			journal = f.logger
 		}
+		var hedgeReport strategy.HedgeReporter = nopHedge{}
+		if f.hedge != nil {
+			hedgeReport = f.hedge
+		}
 		f.strat = strategy.New(f.cfg, strategy.Deps{
 			Market: f.market, Exchange: f.exch, State: f.state,
-			Journal: journal, Hedge: nopHedge{}, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
+			Journal: journal, Hedge: hedgeReport, GEX: f.gex, OI: f.oi, Regimes: f.regimes, Directions: f.dirs,
 			Futures: f.futures, HedgeModePath: f.hedgeAt, HedgeRecheck: f.hedgeRecheck, ShadowLegs: f.shadow,
 		})
 		if f.beforeRun != nil {

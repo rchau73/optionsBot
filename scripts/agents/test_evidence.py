@@ -93,6 +93,85 @@ class ReconCell(unittest.TestCase):
         self.assertEqual(evidence_week.recon_cell(report()), "— (not measured)")
 
 
+def gap_split(**over):
+    """A report's gap_split section (#802), testnet amounts."""
+    def part(name, coin, pp, share, legs):
+        return {"part": name, "coin": coin, "equity_pp": pp, "gap_pct": share, "legs": legs}
+    s = {"label": "gap split", "known": True, "explained": True, "explained_bar_pct": 20,
+         "parts": [part("fill price", 0.001, 0.05, 50.0, 4), part("fees", -0.0002, -0.01, -10.0, 9),
+                   part("trades one side made", 0.0008, 0.04, 40.0, 2), part("marks", 0.0003, 0.015, 15.0, 6),
+                   part("unexplained", 0.0001, 0.005, 5.0, 9)],
+         "one_sided": [{"side": "live", "reason": "repair"}, {"side": "replay", "reason": "entry"}]}
+    s.update(over)
+    return s
+
+
+class GapSplitLine(unittest.TestCase):
+    """One line per env × bot for the gap split (#802): no amount ever."""
+
+    def test_testnet_line_has_pp_share_legs_and_the_bar(self):
+        line = evidence_week.split_line(report(gap_split=gap_split()), live=False)
+        self.assertEqual(line, "fill price +0.05 pp, +50.0 % of the gap (4 legs) · fees -0.01 pp, -10.0 % of the gap (9 legs)"
+                               " · trades one side made +0.04 pp, +40.0 % of the gap (2 legs) · marks +0.01 pp, +15.0 % of the gap (6 legs)"
+                               " · unexplained +0.01 pp, +5.0 % of the gap (9 legs) · explained within 20 % · 2 one-sided legs")
+        self.assertNotIn("0.001", line)
+
+    def test_live_line_is_the_share_of_the_gap_only(self):
+        line = evidence_week.split_line(report(gap_split=gap_split(explained=False, partial="partial: 80 %")), live=True)
+        self.assertIn("fill price +50.0 % of the gap (4 legs)", line)
+        self.assertNotIn("pp", line)
+        self.assertIn("⚠ not explained (unexplained over 20 % of the gap)", line)
+        self.assertTrue(line.endswith("· partial"))
+
+    def test_no_replay_and_older_reports_say_why(self):
+        r = report(gap_split={"known": False, "note": "the replay did not run: no recorded book"})
+        self.assertEqual(evidence_week.split_line(r, False), "— (the replay did not run: no recorded book)")
+        self.assertEqual(evidence_week.split_line(report(), False), "— (report without the gap split)")
+        r = report(gap_split=gap_split(parts=[{"part": "fees", "equity_pp": 0, "gap_pct": None, "legs": 0}]))
+        self.assertIn("fees the gap is 0 (0 legs)", evidence_week.split_line(r, True))
+
+
+def gap_trend(line="stable: replay above live on 12 of 12 weeks, below on 0", weeks=12, listed=12, status="stable"):
+    """A report's gap_trend section (#820): the verdict line as cmd/evidence wrote it."""
+    return {"label": "replay-vs-live gap over time", "weeks": [{"week": f"2026-W{32 + i}"} for i in range(listed)],
+            "summary": {"weeks": weeks, "median_abs_pp": 0.4, "replay_above": weeks, "replay_below": 0},
+            "verdict": {"status": status, "line": line}}
+
+
+class GapTrendLine(unittest.TestCase):
+    """Scenario: one source for the verdict — the line is the report's, never recomputed."""
+
+    def test_the_verdict_line_is_posted_as_written(self):
+        # A line the figures beside it would contradict: posted anyway, nothing recomputed.
+        t = gap_trend(line="drifting: written by cmd/evidence", weeks=12, status="stable")
+        line = evidence_week.trend_line(report(gap_trend=t))
+        self.assertEqual(line, "drifting: written by cmd/evidence · 12 comparable of 12 weekly reports")
+
+    def test_too_few_weeks_keeps_the_reports_wording(self):
+        t = gap_trend(line="too few to conclude (3 weeks): 3 comparable of the 12 weeks the verdict needs", weeks=3, listed=4,
+                      status="too few to conclude")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend=t)),
+                         "too few to conclude (3 weeks): 3 comparable of the 12 weeks the verdict needs · 3 comparable of 4 weekly reports")
+
+    def test_older_reports_and_a_note_say_why(self):
+        self.assertEqual(evidence_week.trend_line(report()), "— (report without the gap trend)")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend={"note": "a -from/-to report is not an ISO week"})),
+                         "— (a -from/-to report is not an ISO week)")
+        self.assertEqual(evidence_week.trend_line(report(gap_trend={"weeks": []})), "— (no verdict in the report) · 0 comparable of 0 weekly reports")
+
+    def test_live_env_line_has_no_amount(self):
+        envs = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, envs, True)
+        write(os.path.join(envs, "stable", ".env"), "DERIBIT_ENV=live\n")
+        write(os.path.join(envs, "stable", "data", "evidence", "2026-W43", "btc.json"), json.dumps(report(gap_trend=gap_trend())))
+        fail = os.path.join(envs, "failures.tsv")
+        write(fail, "")
+        text = evidence_week.comment("2026-W43", envs, fail, ["btc"], ("stable",))
+        trend = [l for l in text.splitlines() if l.startswith("- **stable (live) btc**: stable:")]
+        self.assertEqual(len(trend), 1)
+        self.assertNotIn("BTC", trend[0])
+
+
 class Comment(unittest.TestCase):
     def setUp(self):
         self.envs = tempfile.mkdtemp()
@@ -132,9 +211,16 @@ class Comment(unittest.TestCase):
         self.assertIn("`stable/data/evidence/2026-W43/btc.md`", row)
         self.assertIn("+0.0123 ETH", self.row(text, "mvp", "eth"))
         self.assertEqual(sum(l.startswith("| stable") or l.startswith("| mvp") for l in text.splitlines()), 4)
+        # One gap split line (#802) and one gap-over-time line (#820) per env × bot.
+        self.assertIn("**Gap split**", text)
+        self.assertIn("**Gap over time**", text)
+        self.assertEqual(sum(l.startswith(f"- **{env} {bot}**: ") for l in text.splitlines()
+                             for env in ("stable", "mvp") for bot in ("btc", "eth")), 8)
+        self.assertIn("- **stable btc**: — (report without the gap split)", text)
+        self.assertIn("- **stable btc**: — (report without the gap trend)", text)
 
     def test_live_env_shows_no_coin_or_usd_amount(self):
-        self.put("stable", "btc", report(), "DERIBIT_CLIENT_ID=x\nDERIBIT_ENV='live'\n")
+        self.put("stable", "btc", report(gap_split=gap_split()), "DERIBIT_CLIENT_ID=x\nDERIBIT_ENV='live'\n")
         self.put("mvp", "btc", report())
         write(self.fail_tsv, "stable\tbtc\tstress inputs\tspot 108123.5 USD\n")
         text = self.build()
@@ -149,6 +235,9 @@ class Comment(unittest.TestCase):
         self.assertNotIn("USD", text)
         self.assertNotIn("108123", text)                       # failure details hidden for a live env
         self.assertIn("- stable btc: stress inputs", text)
+        split = next(l for l in text.splitlines() if l.startswith("- **stable (live) btc**: "))
+        self.assertIn("fill price +50.0 % of the gap", split)
+        self.assertNotIn(" pp", split)
         self.assertIn("+0.0123 BTC", self.row(text, "mvp", "btc"))  # the testnet env keeps its amounts
 
     def test_unknown_sections_say_why(self):
@@ -257,6 +346,17 @@ class DirectionTrial(unittest.TestCase):
         self.assertNotIn("BTC |", text.split("**Direction trial**")[1])  # no amount column
         self.assertNotIn("🚩", text)
 
+    def test_the_scorecards_verdict_line_reaches_the_comment(self):
+        # #788: the line is the scorecard's own verdict, computed by cmd/evidence.
+        line = "needs more weeks — 5 week(s) missing of the 6 the trial needs (1 counted): no figure is a conclusion yet"
+        c = scorecard()
+        c["verdict"] = {"status": "needs more weeks", "line": line}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        self.assertIn(f"- **Verdict** (docs/direction-trial.md): {line}", self.comment("2026-W43"))
+        self.card("2026-W44")  # written before #788: no verdict field
+        self.assertIn("- **Verdict** (docs/direction-trial.md): not in the scorecard (built before #788", self.comment("2026-W44"))
+        self.assertIn("- **Verdict** (docs/direction-trial.md): no scorecard for the week", self.comment("2026-W45"))
+
     def test_no_scorecard_is_said_and_before_the_trial_no_block(self):
         self.assertIn("No scorecard for 2026-W43 (see the failed steps).", self.comment("2026-W43"))
         self.assertNotIn("Direction trial", self.comment("2026-W42"))
@@ -304,6 +404,29 @@ class DirectionTrial(unittest.TestCase):
         kinds = [k for k, _, _ in evidence_week.trial_tickets("2026-W45", self.stable, [])]
         self.assertEqual(kinds, ["early-stop"])
         self.assertIn("**early stop: decision ticket filed**", self.comment("2026-W45"))
+
+    def test_live_drawdown_half_read_from_the_verdict_files_the_early_stop(self):
+        # #850: the scorecard's verdict carries the live half; posted as written, never recomputed.
+        line = "kill rule hit — live drawdown: stable BTC's live max drawdown was over 2× mvp BTC's in 2026-W43 (-3.00 % vs -1.00 %) — it proposes the decision ticket, nothing else"
+        c = scorecard()
+        c["verdict"] = {"status": "kill rule hit", "line": line,
+                        "live_drawdown": {"status": "fired", "fired_weeks": ["2026-W43"]}}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        s = evidence_week.trial_state(self.stable, "2026-W43")
+        self.assertTrue(s["early_stop"])
+        self.assertLess(s["streak"], evidence_week.TRIAL_STREAK)  # the replay half did not fire
+        tickets = evidence_week.trial_tickets("2026-W43", self.stable, [])
+        self.assertEqual([k for k, _, _ in tickets], ["early-stop"])
+        self.assertIn("stable BTC's live max drawdown was over 2× mvp BTC's in 2026-W43", tickets[0][2])
+        self.assertNotIn("bias's replay net was under", tickets[0][2])
+        text = self.comment("2026-W43")
+        self.assertIn(f"- **Verdict** (docs/direction-trial.md): {line}", text)
+        self.assertIn("live drawdown (stable over 2× mvp, from the weekly reports): **hit** in 2026-W43", text)
+        # not fired: no ticket, the block points to the verdict line
+        c["verdict"]["live_drawdown"] = {"status": "not fired"}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        self.assertFalse(evidence_week.trial_state(self.stable, "2026-W43")["early_stop"])
+        self.assertIn("from the weekly reports): in the verdict line", self.comment("2026-W43"))
 
     def test_a_week_inside_the_noise_breaks_the_streak(self):
         self.card("2026-W43", bias=-1.0, sma=1.0, gaps=(1.0, 1.0))

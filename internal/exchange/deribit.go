@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"optionsbot/internal/exchange/deribit"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/gex"
 	"optionsbot/internal/marketdata"
@@ -22,6 +23,7 @@ var (
 	_ OrderTracker       = (*orders.Executor)(nil)
 	_ AccountReader      = (*orders.Executor)(nil)
 	_ PortfolioSimulator = (*orders.Executor)(nil)
+	_ InstrumentNamer    = (*orders.Executor)(nil)
 	_ Trading            = (*orders.Executor)(nil)
 
 	_ OptionChain = (*marketdata.Manager)(nil)
@@ -30,7 +32,11 @@ var (
 
 	_ OpenInterest = (*gex.Manager)(nil)
 
-	_ Transport = (*gateway.Gateway)(nil)
+	_ Transport  = (*gateway.Gateway)(nil)
+	_ Connection = (*gateway.Gateway)(nil)
+
+	// The adapter composes them (#761): main wires the strategy from it.
+	_ Exchange = (*deribit.Adapter)(nil)
 
 	_ OptionNameParser = marketdata.ParseOptionName
 	_ RateLimitPool    = gateway.IsMatchingEngine

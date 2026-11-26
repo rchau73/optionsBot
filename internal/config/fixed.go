@@ -39,6 +39,7 @@ const (
 	FixedMaxDTEDeviation          = 10       // an expiry may be this many days from the slot's DTE
 	FixedExpiryStretch            = 1.5      // or the nearest free one up to DTE × this
 	FixedDeltaSlippage            = 0.03     // strike delta at most this far from the entry delta
+	FixedCloseOnlyBelowDTE        = 25       // under 25 DTE, drift and take-profit buy the leg back only: no re-sale on that expiry (#753; cmd/stress -closeonly, 0 = off)
 	FixedStrikeIVMaxRatio         = 1.5      // a strike's mark IV within ATM IV ÷/× 1.5, or it is not picked (#553: 88 % vs 38 % ATM gave a far wing Δ 0.15)
 	FixedMinTradeAmount           = 0.1      // order lot when an instrument has no minimum (Deribit's is read per option)
 	FixedEvalIntervalMS           = 40000    // decision loop period
@@ -61,6 +62,11 @@ const (
 	FixedFuturesHedgeUnfilledCycles = 3  // cycles in a row with a hedge due and no fill: the shed is back (hedge_unavailable)
 	FixedFuturesHedgeRecheckMinutes = 10 // a halted hedge looks again this often (hedge_halted)
 	FixedFuturesHedgeMaxIndexGapPct = 1  // live: no hedge order priced more than this % from the index (hedge_price_away)
+	// A rule constant, never a YAML key (no Config field, so BTC's and ETH's
+	// effective settings are unchanged): a coin without DVOL (SOL, XRP) reads
+	// its chain's 30-day ATM IV, and while that has fewer daily closes than
+	// this the IM limit is the lowest band (#834; cmd/stress -chainivdays).
+	FixedChainIVMinDays = 90
 )
 
 // fixedKeys are the YAML keys of the settings above, with their value as the
@@ -139,6 +145,7 @@ func (c *Config) ApplyFixed() {
 	c.ExpiryStretch = FixedExpiryStretch
 	c.DeltaSlippage = FixedDeltaSlippage
 	c.StrikeIVMaxRatio = FixedStrikeIVMaxRatio
+	c.CloseOnlyBelowDTE = FixedCloseOnlyBelowDTE
 	c.MinTradeAmount = FixedMinTradeAmount
 	c.EvalIntervalMS = FixedEvalIntervalMS
 	c.ReportIntervalSec = FixedReportIntervalSec

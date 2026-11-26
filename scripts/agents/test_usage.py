@@ -102,6 +102,29 @@ class Pure(unittest.TestCase):
         self.put("mvp", r, drops())
         self.assertIn("| 2 of 3 (67 %) | — | 7 |", self.comment())
 
+    def test_scenario_retention_by_activation_line(self):
+        """#818: one line per env from the pooled week 4, 'association, not proof' beside it; live: shares only;
+        a group under 10 is too few to judge; no cohort with an ended week 4 is said in words; absent block → no line."""
+        r = report(activation_retention={"pooled": [
+            {"offset": 4, "cohorts": 3, "activated": 14, "activated_back": 9, "activated_pct": 64.28,
+             "not_activated": 22, "not_activated_back": 7, "not_activated_pct": 31.8}]})
+        self.put("mvp", r, drops())
+        self.put("stable", r, drops(), dotenv="DERIBIT_ENV=live\n")
+        text = self.comment()
+        self.assertIn("**Retention by activation**", text)
+        self.assertIn("- mvp: activated come back 64 % in week 4, not activated 32 % (n = 14 / 22) — association, not proof", text)
+        self.assertIn("- stable: activated come back 64 % in week 4, not activated 32 % — association, not proof", text)
+        r["activation_retention"]["pooled"][0].update(not_activated=4, not_activated_note="too few to judge")
+        del r["activation_retention"]["pooled"][0]["not_activated_pct"]
+        self.put("mvp", r, drops())
+        self.assertIn("- mvp: activated come back 64 % in week 4, not activated too few to judge (n = 14 / 4)", self.comment())
+        r["activation_retention"]["pooled"][0] = {"offset": 4, "cohorts": 0, "activated": 0, "not_activated": 0}
+        self.put("mvp", r, drops())
+        self.assertIn("- mvp: no cohort has an ended week 4 yet (association, not proof)", self.comment())
+        self.put("mvp", report(), drops())
+        self.put("stable", report(), drops())
+        self.assertNotIn("Retention by activation", self.comment())
+
     def test_curve_is_the_latest_cohort_with_four_ended_weeks(self):
         """#607: the newest cohort that can be judged by time gives the curve; its status only, from the fixed list."""
         r = report()
@@ -327,6 +350,20 @@ if [[ "$*" == *cmd/assistantreview* ]]; then
   else cp "$US_TEST_DIR/ar_summary.json" "$out/$week.summary.json"; fi
   exit 0
 fi
+if [[ "$*" == *cmd/labstats* ]]; then
+  # go run ./cmd/labstats -compare D → the lab usage section on stdout
+  echo "$*" >> "$US_TEST_DIR/lab.log"
+  [[ -f "$US_TEST_DIR/lab_fail" ]] && { echo "labstats: broken" >&2; exit 1; }
+  printf '## Lab usage\\n\\n| Requests | 4 |\\n'
+  exit 0
+fi
+if [[ "$*" == *cmd/labfollow* ]]; then
+  # go run ./cmd/labfollow -all -compare D -root R → the lab follow-up section on stdout
+  echo "$*" >> "$US_TEST_DIR/labfollow.log"
+  [[ -f "$US_TEST_DIR/labfollow_fail" ]] && { echo "labfollow: broken" >&2; exit 1; }
+  printf '## Lab follow-up\\n\\n### Run 20261104T230000Z\\n'
+  exit 0
+fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
 echo "$*" >> "$US_TEST_DIR/go.log"
 while [[ $# -gt 0 ]]; do
@@ -427,6 +464,7 @@ class UsageScript(unittest.TestCase):
         self.assertIn(f"-week {self.week}", go[0])
         self.assertIn("-alert", go[0])
         self.assertIn("-events " + self.t("envs", "mvp", "data", "monitor", "events.jsonl"), go[0])
+        self.assertIn("-env mvp", go[0])  # the north star's running days are that clone's (#801)
         self.assertTrue(os.path.exists(self.t("envs", "mvp", "data", "monitor", "reports", self.week + ".md")))
         comments = self.files("comment-")
         self.assertEqual(len(comments), 1)
@@ -544,6 +582,77 @@ class UsageScript(unittest.TestCase):
         self.run_script()
         self.assertEqual(self.read("ar.log"), "")
         self.assertNotIn("assistant_review", [r["agent"] for r in self.ledger()])
+
+    def test_scenario_the_security_digest_is_the_reports_security_section(self):
+        """#717: security.sh's digest of the week is appended to the env's report, once."""
+        self.events("mvp")
+        write(self.t("repo", "data", "agents", "security", self.week, "mvp", "digest.md"), "## Security\n\nAudit chain intact — 3 lines checked.\n")
+        self.run_script()
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertTrue(md.startswith(f"# usage {self.week}\n"), md)
+        self.assertEqual(md.count("## Security"), 1, md)
+        self.assertIn("Audit chain intact", md)
+
+    def test_scenario_the_lab_usage_is_the_reports_lab_section(self):
+        """#824: an env with a lab queue gets cmd/labstats' report appended once; one without none."""
+        self.events("mvp")
+        self.events("stable")
+        os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        # #876: lab.sh's line per request the tick started; one is too old, one is another queue's.
+        now = dt.datetime.now(dt.timezone.utc)
+        stamp = lambda days: (now - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mvp_queue = self.t("envs", "mvp", "data", "compare", "requests")
+        write(self.t("repo", "data", "agents", "lab", "started.jsonl"), "".join(json.dumps(d) + "\n" for d in (
+            {"ts": stamp(1), "queue": mvp_queue, "id": "20261120T000000Z-a1b2c3d4"},
+            {"ts": stamp(2), "queue": mvp_queue, "id": "20261119T000000Z-a1b2c3d5"},
+            {"ts": stamp(40), "queue": mvp_queue, "id": "20261010T000000Z-a1b2c3d6"},
+            {"ts": stamp(1), "queue": "/elsewhere/requests", "id": "20261120T000000Z-a1b2c3d7"})))
+        self.run_script()
+        lab = self.read("lab.log").splitlines()
+        self.assertEqual(lab, ["run ./cmd/labstats -compare " + self.t("envs", "mvp", "data", "compare")], self.output)
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertEqual(md.count("## Lab usage"), 1, md)
+        self.assertIn("| Requests | 4 |", md)
+        self.assertIn("- Requests the agents' tick started (last 28 days): 2\n", md)
+        self.assertNotIn("## Lab usage", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
+        self.assertTrue(self.done())
+
+    def test_a_failed_lab_report_never_stops_the_usage_report(self):
+        self.events("mvp")
+        os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        write(self.t("lab_fail"), "")
+        self.run_script()
+        self.assertIn("lab usage report failed", self.output)
+        self.assertNotIn("## Lab usage", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
+        self.assertEqual(len(self.files("comment-")), 1)
+        self.assertTrue(self.done())
+
+    def test_the_lab_follow_up_is_the_reports_section_when_a_live_day_is_on_file(self):
+        """#855: an env with an applied/<id>.live gets cmd/labfollow -all appended once; one without none."""
+        self.events("mvp")
+        self.events("stable")
+        compare = self.t("envs", "mvp", "data", "compare")
+        write(os.path.join(compare, "applied", "20261104T230000Z.json"), "{}\n")
+        write(os.path.join(compare, "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("envs", "stable", "data", "compare", "applied", "20261101T000000Z.json"), "{}\n")  # no .live
+        self.run_script()
+        calls = self.read("labfollow.log").splitlines()
+        self.assertEqual(calls, ["run ./cmd/labfollow -all -compare " + compare + " -root " + self.t("envs", "mvp")], self.output)
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertEqual(md.count("## Lab follow-up"), 1, md)
+        self.assertIn("### Run 20261104T230000Z", md)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
+        self.assertTrue(self.done())
+
+    def test_a_failed_lab_follow_up_never_stops_the_usage_report(self):
+        self.events("mvp")
+        write(self.t("envs", "mvp", "data", "compare", "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("labfollow_fail"), "")
+        self.run_script()
+        self.assertIn("lab follow-up failed", self.output)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
+        self.assertEqual(len(self.files("comment-")), 1)
+        self.assertTrue(self.done())
 
     def test_tick_starts_usage(self):
         with open(os.path.join(SCRIPTS, "agents", "tick.sh")) as f:

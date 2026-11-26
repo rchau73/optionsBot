@@ -6,7 +6,13 @@
 #     go run ./cmd/usage -events <clone>/data/monitor/events.jsonl -week <week>
 #       -out <clone>/data/monitor/reports -alert
 #     → <clone>/data/monitor/reports/<week>.md and .json, and the drop check
-#       (its DROPS line → <state>/<week>/<env>.drops.json);
+#       (its DROPS line → <state>/<week>/<env>.drops.json), and the week's
+#       security digest appended as its "Security" section when security.sh
+#       has built it (#717; security.sh appends it when it comes later), and
+#       the lab's usage (go run ./cmd/labstats -compare <clone>/data/compare,
+#       #824) as its "Lab usage" section when the clone has a lab queue, and
+#       the lab follow-up (go run ./cmd/labfollow -all, #855) as its "Lab
+#       follow-up" section when a recorded change has a live-from day on file;
 #   one `bug` issue "[E13] Engagement drop: <metrics> <week>" in Triage when a
 #   key number fell (usage_week.py issue: one per week, deduplicated by title
 #   against open issues and those closed in 14 days);
@@ -16,8 +22,9 @@
 # and skipped; when no environment has events in the week nothing is posted
 # and no marker is written, so a later tick retries (at most hourly). A week whose comment
 # could not be posted is tried once more and then marked done:
-# data/agents/usage/<week>.done. Reads the monitors' event files only: no bot
-# state, no order. No Claude call.
+# data/agents/usage/<week>.done. Reads the monitors' event files and, for the
+# north star (#801), the days of each bot's data/regime_history.jsonl: no other
+# bot state, no order. No Claude call.
 # First it runs assistant_review.sh, the assistant's weekly quality review
 # (#438: its own marker, ledger agent assistant_review, the E10 epic), then
 # assistant_golden.sh, the live golden-set run (#536: its own marker, ledger
@@ -61,7 +68,7 @@ for env in $ENV_NAMES; do
   if [[ ! -s "$events" ]]; then
     log "usage: $env: $([[ -e "$events" ]] && echo "events file empty" || echo "no events file") ($events), skipped"; continue
   fi
-  if ! go run ./cmd/usage -events "$events" -week "$week" -out "$root/data/monitor/reports" -alert > "$dir/$env.log" 2>&1; then
+  if ! go run ./cmd/usage -events "$events" -env "$env" -week "$week" -out "$root/data/monitor/reports" -alert > "$dir/$env.log" 2>&1; then
     log "usage: $env: cmd/usage failed (log $dir/$env.log), skipped"; continue
   fi
   { grep '^DROPS ' "$dir/$env.log" || true; } | tail -1 | sed 's/^DROPS //' > "$dir/$env.drops.json"
@@ -71,6 +78,12 @@ for env in $ENV_NAMES; do
     log "usage: $env: no event in $week ($events), skipped"; continue
   fi
   log "usage: $env: $n events in $week, report $root/data/monitor/reports/$week.md"
+  # The week's security digest (#717, security.sh) as the report's "Security" section, when it is built.
+  security_section "$root/data/monitor/reports/$week.md" "$AGENT_STATE_DIR/security/$week/$env/digest.md"
+  # The lab's usage over 28 days (#824, cmd/labstats) as its "Lab usage" section, when the env has a lab queue.
+  lab_section "$root/data/monitor/reports/$week.md" "$root/data/compare" "$dir/$env.lab.md"
+  # The recorded changes with a live-from day on file (#855, cmd/labfollow) as its "Lab follow-up" section.
+  lab_follow_section "$root/data/monitor/reports/$week.md" "$root/data/compare" "$root" "$dir/$env.labfollow.md"
   envs_csv="${envs_csv:+$envs_csv,}$env"
 done
 if [[ -z "$envs_csv" ]]; then

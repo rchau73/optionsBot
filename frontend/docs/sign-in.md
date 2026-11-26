@@ -32,6 +32,10 @@ JWT HS256 (`jose`), 15 min, cookie `access_token_<env>` (`<env>` = `MONITOR_DEPL
 
 32 random bytes, only its SHA-256 stored, 14 days, cookie `refresh_token_<env>` on path `/api/auth`; reusable until logout (several tabs).
 Each session row (`refresh_tokens`) also keeps a random public id (16 hex characters, the only id a person sees), the browser name read from the User-Agent at sign-in (`lib/auth/browser.js`, e.g. `Chrome on Windows`; the header itself is not stored) and when it was last refreshed (written at most once a minute), #584.
+A session nobody used for its role's idle limit ends by itself (#821; fixed values in `lib/auth/idle.js`, not settings): **12 hours** for an admin, **14 days** for a manager or a user (the lifetime above, which still applies to every role).
+The refresh of such a session deletes its row and answers the monitor's own 401 (`x-monitor-session: required`) with `idle_limit_hours`, so `apiFetch` sends the page to `/login?next=…&idle=<hours>`.
+The login page then says "You were signed out because the session was not used for 12 hours." (the role's limit in words); it says nothing for an ordinary expiry, a sign-out or any other `idle` value.
+Audited as `session_expired` (`username`, `role`, `target_session`: the short id, `idle_hours`: whole hours unused); logged `session expired: not used`.
 A password change, a role change or a deletion ends every session of that user
 
 ### Silent refresh
@@ -69,6 +73,24 @@ The session in use is refused with 409 (use **Sign out**); someone else's or an 
 Audited as `session_ended` (`username`, `role`, `target_session`: the first 8 characters of the public id); logged `session ended`.
 No analytics event is sent.
 
+### Sign-in summary
+
+The Active sessions dialog opens with the person's previous sign-in and the wrong passwords typed for their username since (#803), so a stranger's attempt is noticed by the owner and not only by the admin's [security digest](#security-digest).
+The line reads "Last sign-in: <date and time>. <N> wrong-password attempts since.", then "Not you? Change your password and sign out the other browsers." and a **Change your password** button that opens that dialog.
+A first sign-in reads "This is your first sign-in." with no count; a sign-in before #803 shipped reads "Your sign-in before this one was not recorded.".
+While the username is locked the dialog also says until when.
+`GET /api/auth/security-summary` (any role, a live session re-read like `GET /api/auth/sessions`) answers `{previous_sign_in, first_sign_in, failed_since, notice_id, locked_until?}` from the person's own `users` row and the lock ([API routes](api-routes.md)); never an IP, a browser, a token or another person's data.
+The count is not derivable from what existed: `login_failures` loses its rows after 15 minutes, at a lock and at a sign-in, and the audit trail is a file the monitor does not read per request.
+So `users` has three columns: `failed_sign_ins` (wrong passwords at the sign-in form for an existing username since the last sign-in), `failed_sign_ins_before` (those between the previous sign-in and the last one) and `previous_sign_in_at`.
+A successful sign-in moves `last_sign_in_at` to `previous_sign_in_at` and `failed_sign_ins` to `failed_sign_ins_before`, and sets `failed_sign_ins` to 0: the count starts again from 0.
+`failed_since` = both counters, so an attempt while the person is signed in shows at once.
+Not counted: an unknown username (no row), an attempt refused while the username is locked (its password is never checked) and a wrong current password in Change password (the person is signed in).
+The counter is written without its own save, in the same file write as the lockout's failure record, so a known username costs no extra write and still looks the same as an unknown one; the 401 text, the lockout thresholds and the audit lines are unchanged.
+When `failed_since` > 0 (not on a first sign-in) the bell lists one Needs you item, kind `security` (the bell, [Menu and pages](menu-and-pages.md)), with the id `notice_id` (`security:<last sign-in>:<count>`): opening Active sessions marks it read, and a new attempt brings a new one.
+The bell's badge drops at its next refresh (at most a minute).
+The count is never logged: the existing `sign-in failed` line keeps its fields.
+Analytics: `security_summary_seen` with `failed_since` as a bucket (`0`, `1`, `2_4`, `5_plus`; none on a first sign-in), for consenting people only ([event plan](../../docs/product/analytics/event-plan.md)).
+
 ### Reset link
 
 For a person who forgot their password, no e-mail is needed (#307).
@@ -88,7 +110,10 @@ The admin's direct **Reset password** stays as it was
 ### Lockout
 
 5 failed sign-ins for a username within 15 min lock it until 15 min after the last one (same 401); 20 sign-ins a minute per IP, then 429 with `Retry-After`.
-The username failures and locks are kept per environment in `auth.db` (`login_failures`, `login_locks`; failures older than 15 min are deleted at the next failure), so a restart or deploy of the monitor does not clear a lockout; the per-IP limit is short-lived and stays in memory (a restart forgets it)
+The username failures and locks are kept per environment in `auth.db` (`login_failures`, `login_locks`; failures older than 15 min are deleted at the next failure), so a restart or deploy of the monitor does not clear a lockout; the per-IP limit is short-lived and stays in memory (a restart forgets it).
+A locked person still sees the same refusal and waits, unless an admin lifts the lock (#846): the Users page shows **Locked until HH:MM** on that person's row with an **Unlock** button (`POST /api/admin/users/[id]/unlock`, `frontend/docs/users-and-roles.md`).
+Unlock deletes the lock and the recent failures, so the person can sign in at once and the next 5 wrong passwords lock again; it ends or starts no session and leaves the password as it is.
+It is audited `login_unlocked`; it is not a lockout, and the security digest counts it apart ("Lockouts lifted by an admin")
 
 ### Secure cookies
 
@@ -104,11 +129,13 @@ Never a page, a close or a rebalance
 
 One JSON line for each of these, with username and IP:
 - a sign-in, a failure (reason, `locked`), a lockout, a rate limit, a sign-out and the first admin;
-- a user change: `user created`, `role changed`, `password reset` (with `event: password_reset`), `reset link issued` (with `expires_at`), `signed out everywhere` and `user deleted`, each with `by`;
+- a user change: `user created`, `role changed`, `password reset` (with `event: password_reset`), `reset link issued` (with `expires_at`), `signed out everywhere`, `sign-in lock lifted` (with `event: login_unlocked` and `locked_until`) and `user deleted`, each with `by`;
 - a reset by link: `password reset by link`, with `event: password_reset`, `via: link`, the person, `by` (the admin who issued it) and the IP;
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
 - another session signed out by its owner: `session ended` (with `event: session_ended` and `target_session`, #584);
+- a session ended for inactivity: `session expired: not used` (with `event: session_expired`, `target_session`, `idle_hours` and `limit_hours`, #821);
+- a person's own data downloaded: `my data exported` with the counts per section (#750);
 - a refused action.
 
 Never a password, hash, token or `AUTH_SECRET`
@@ -119,16 +146,21 @@ Never a password, hash, token or `AUTH_SECRET`
 It is append-only and owner-only.
 Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `signed_in`, `sign_in_failed` (reason), `locked` and `signed_out`;
+- `login_unlocked` (an admin lifted a sign-in lock, #846), with `target` and the lifted `locked_until`, where `username` and `role` are the admin's;
 - `password_changed` and `password_change_failed` (reason `password` or `locked`);
 - `user_created` (`to` = the role) and `role_changed`;
 - `password_reset` (an admin set another person's password, #306);
 - `reset_link_issued` (with `expires_at`, #307);
 - `user_deleted` and `signed_out_everywhere`, each with `target`, where `username` and `role` are the admin's;
 - `account_deleted` (a person deleted their own account, #543), where `username` and `role` are the person's;
+- `account_link_added` and `account_link_removed` (#760), with `target` (the manager) and `account_id`, where `username` and `role` are the admin's;
 - `session_ended` (a person signed out one of their other sessions, #584), with `target_session` (a short id, never the token or its hash);
+- `session_expired` (a session unused for its role's idle limit ended at its next refresh, #821), with `target_session` (the short id) and `idle_hours`; never a token, hash or address;
+- `my_data_exported` (a person downloaded their own data, #750), with `counts` per section, never the content;
 - `password_reset_by_link`, where `username` and `role` are the person's, `by` is the admin who issued the link, and `ip` is set;
 - the analytics retention lines `events_pruned`, `events_deleted`, `events_exported` and their `_failed` forms (counts only, never an event; see "Analytics");
 - `survey_answers_deleted` and `survey_answers_delete_failed` (counts only, never an answer);
+- `survey_text_purged` and `survey_text_purge_failed` (the daily erasure of survey free text older than 24 months, #849: `retention_days` and the `erased` count, never a text, user id or name);
 - `analytics_consent_changed` (`consent` true or false);
 - `survey_answered` (`survey_id` only, never the codes or text, #490);
 - `nps_survey_changed` (`change`: shown, opt_out or opt_in, #490);
@@ -136,7 +168,9 @@ Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `manual_close` and `manual_rebalance` (bot, position ids or dry run, the bot's status and, for a close, what it filled).
 - `audit_exported` (an admin downloaded the trail as CSV, #702: `filters`, `lines`, `cut`, `skipped` and `complete`, never an exported line);
 - `futures_hedge_switched` (bot, `enabled` true or false and the bot's status; #657, admins only);
-- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token).
+- `parameter_change_previewed` (#682, a lab apply preview was read: `run_id`, `underlying`, `config`, `changes` with each `key`, `current` and `proposed`, `needs_product_owner`, `stale` and `line`, the same in plain words; never the confirm token);
+- `parameter_change_recorded` (#741, a manager confirmed a lab run's change and it was recorded, nothing applied: `run_id`, `underlying`, `config`, `changes` with each `key`, `old` and `new`, `token_id` (a hash prefix, never the token), `applied: false` and `line`);
+- `parameter_change_dropped` (#890, a manager decided to leave the setting as it is and the drop was recorded, nothing applied: `run_id`, `underlying`, `config`, `applied: false` and `line`; no setting value).
 Every line ends with two fields of the hash chain (#619, `lib/auth/auditchain.js`): `prev`, the SHA-256 of the previous line's exact bytes (`""` for the first line of the trail), and `line_hash`, the SHA-256 of the line itself up to `,"line_hash"`.
 Both are hashes of audit lines, never of a password or a token; the Audit page leaves them out of the detail column and the export out of the file.
 Never a password, hash or token (nor a reset link).
@@ -144,3 +178,23 @@ Admins read it on the Audit page (below)
 
 The first start with no users creates an admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL`; later starts never touch existing users.
 The server exits at start (`instrumentation-node.js`) when `AUTH_SECRET` is missing or shorter than 32 bytes, or the database cannot be opened.
+
+### Security digest
+
+An admin hears about password guessing and odd account changes from a weekly digest and a same-day alert (#717), not by reading the audit trail.
+Both come from the agents' host (`scripts/agents/security.sh`, `go run ./cmd/security`, pure rules in `internal/security`), as Mac notifications; the monitor has no new page or route for them.
+They read the audit trail (above) and its archives, never write it, and hold counts only: never a password, token, reset link, IP address or a person's name.
+They read the trail rather than `login_failures`, because failures there are deleted after 15 minutes and a weekly count needs the history.
+The weekly digest of the last ISO week (Monday to Sunday, UTC), per environment:
+- the audit chain first: "Audit chain intact — N lines checked." or "Audit chain BROKEN: <file, line and reason>", which opens the digest before any count;
+- for failed sign-ins, lockouts, lockouts lifted by an admin, failed password changes, passwords set by an admin, reset links issued, passwords reset with a link, role changes, users created, users deleted by an admin, accounts deleted by their owner, sessions ended and signed out everywhere: the count this week and the week before;
+- usernames locked out this week, and distinct sources (IP addresses) signing in this week, as counts;
+- the date of the last change of the admin role (any line that gave or took it, the first-admin setup included);
+- "No data yet" when the trail has no line.
+It is one notification per environment ("Security 2026-W45: chain intact; 12 failed sign-ins (3 the week before), 2 lockouts (0), 0 role changes (0).") and the "Security" section of that week's usage report.
+The alert rules, fixed values in `internal/security/alerts.go`, not settings:
+- at least 10 failed sign-ins for one username within any hour: one alert per username and UTC day, with the most in any hour;
+- 3 or more lockouts in one UTC day: one alert per day;
+- any role change to admin outside the first-admin setup (a `role_changed` to admin, or an admin creating another admin; the first start's own admin is the setup): one alert per change, with its date and time.
+The check runs at most every 30 minutes over the last 48 hours of lines, so an alert reaches the admin the same day.
+Its text states the count and the rule that fired and says the Audit page names it; the IDs of alerts raised are kept (with a hash of the username, never the name), so one pattern never alerts twice.

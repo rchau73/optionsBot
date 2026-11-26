@@ -16,7 +16,9 @@ bash scripts/product/assistant_run.sh --env mvp [--accept]   # live golden-set r
       (#648) for a results question only (`asksAboutResults`) its `/api/performance?range=7d|30d` as `perf:<bot>/7d|30d` passages (`perfPassages`, cached 10 s, unknowns with the route's reason; golden `results` cases) +
       (#719) for an idle-book or unused-margin question only (`asksAboutIdle`) its book now as `live:<bot>/book` (`bookPassage`, golden `idle` cases):
       entries allowed or why not, IM against its limit, slots held, each vacant slot's latest skip — percentages and counts only,
-      from the cached `/api/status` + `/api/positions` and the journal read, "unknown: …" when status is down
+      from the cached `/api/status` + `/api/positions` and the journal read, "unknown: …" when status is down +
+      (#742) for a manager's or an admin's comparison question only (`asksAboutLab`; `labRuns` reads nothing for a user) the lab's latest runs as `lab:<run id>/headline` and requests not run yet as `lab:<request id>/status` (`labPassages`, cached 10 s, golden `lab` cases):
+      return, worst week, drawdown and fees of current and proposed in percentages only, labelled backtested, a failed or expired request's reason, `lab:none` with no run; the analysis is never quoted ("not available yet" while the L10 gate is closed)
     - — a mixed question gets its facts answered and only the advice declined with `Refusal`, `ANTHROPIC_API_KEY` in the monitor's `.env` or 503,
       Q&A logged in `data/monitor/assistant.jsonl`, `POST /api/assistant/flag`, `POST /api/assistant/feedback` (#579: "Helped"/"Didn't help", the asker only, two lines per answer), 30 questions/h per person;
     - #409: a question that reads as a report runs the request check — `lib/assistant/request.js`, the model's structured verdict checked server-side for what/where/evidence/not explained,

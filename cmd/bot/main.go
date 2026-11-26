@@ -55,6 +55,10 @@ const gexHistoryDir = "data/market_gex"
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
 
+// chainIVHistoryPath keeps a coin's daily chain ATM IV when Deribit has no
+// DVOL for it (SOL, XRP, #834): the IV percentile ranks against it.
+const chainIVHistoryPath = "data/chain_iv_history.jsonl"
+
 // hedgeModePath keeps the futures hedge experiment's mode and benchmark (#657).
 const hedgeModePath = "data/hedge_mode.json"
 const directionHistoryPath = "data/direction_history.jsonl"
@@ -175,12 +179,22 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		}
 	}()
 
-	md := marketdata.New(cfg, gw, deribit.NewChainSource(gw))
+	// Deribit as the strategy's exchange (#761): the trading connection, its
+	// order executor and the market-data manager in one adapter.
+	ex := deribit.NewAdapter(cfg, gw)
+	md := ex.Manager
+	if !marketdata.HasVolIndex(cfg.Underlying) {
+		ivHistory, err := marketdata.OpenIVHistory(chainIVHistoryPath)
+		if err != nil {
+			return fmt.Errorf("chain IV history: %w", err)
+		}
+		defer ivHistory.Close()
+		md.UseIVHistory(ivHistory)
+	}
+	slog.Info("volatility source", "underlying", cfg.Underlying, "source", md.IVSource())
 	if err := md.Start(ctx); err != nil {
 		return fmt.Errorf("marketdata start: %w", err)
 	}
-
-	exec := orders.NewExecutor(gw)
 
 	// Replay the journal before appending to it: realised P&L, closes, event
 	// counts, the activity feed and the trade history continue across restarts.
@@ -242,6 +256,9 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		return fmt.Errorf("pnl history: %w", err)
 	}
 	defer pnlHistory.Close()
+	if config.IsLinear(cfg.Underlying) {
+		pnlHistory.SetPnLUnit(history.LinearPnLUnit) // a USDC bot's P&L is dollars (#832)
+	}
 	regimes, err := history.OpenRegimes(regimeHistoryPath)
 	if err != nil {
 		return fmt.Errorf("regime history: %w", err)
@@ -263,8 +280,8 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	}
 
 	strat := strategy.New(cfg, strategy.Deps{
-		Market:   md,
-		Exchange: exec,
+		Market:   ex,
+		Exchange: ex,
 		State:    orders.NewStateManager(),
 		Journal:  orderLog,
 		Hedge:    hedge.New("hedge_report.json", cfg.HedgeReportThreshold),
@@ -275,7 +292,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 		// The SMA trend next to the GEX bias, for comparing the two.
 		Directions: directions,
 		// The futures hedge experiment (#657): off unless switched on from the monitor.
-		Futures:       exec,
+		Futures:       ex,
 		HedgeModePath: hedgeModePath,
 		ShadowLegs:    shadowLegs,
 	})
@@ -307,7 +324,7 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	if cfg.APIAddr != "" {
 		// Account/collateral summary for the monitor, cached: one read-only
 		// call every BOT_ACCOUNT_POLL_SEC, never one per page refresh.
-		acct := account.NewPoller(gw)
+		acct := account.NewPoller(deribit.NewAccountSource(gw))
 		acct.Start(ctx, time.Duration(cfg.AccountPollSec)*time.Second)
 		opts := []api.Option{api.WithPnLHistory(pnlHistory), api.WithAccount(acct), api.WithConnection("trading", gw),
 			api.WithDeployment(cfg.Deployment, cfg.Version), api.WithConfig(settings.Fingerprint, settings.Since),

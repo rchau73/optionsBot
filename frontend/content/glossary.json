@@ -6,6 +6,13 @@
     "source": "frontend/docs/menu-and-pages.md#income-page",
     "labels": ["% of start", "Bot result", "Bot + holding", "Bot result, % of start", "Holding alone, % of start", "Bot + holding, % of start", "Worst week, % of start"]
   },
+  "account links": {
+    "short": "Which accounts a person may act on: an admin every account, a user none, a manager those an admin linked.",
+    "long": "Users page (admins only), the Accounts column. A manager with no linked account acts on every account, as before. Edit accounts lets an admin tick the accounts a manager manages. The monitor then refuses that manager's close or rebalance on any other account, and says which account it is. Each change is in the audit trail.",
+    "risk_income": "A linked manager cannot close a leg or rebalance on an account that is not theirs; nothing else changes.",
+    "source": "frontend/docs/users-and-roles.md#users-page-306",
+    "labels": ["Accounts"]
+  },
   "action funnel": {
     "short": "Each step of a manual close or rebalance, from opening the dialog to confirming, with how many times it happened.",
     "long": "Analytics page (admins only). The manual close and rebalance cards list each step people took that week: the dialog opened, cancelled or confirmed. A big gap between opened and confirmed shows where people stop.",
@@ -179,6 +186,13 @@
     "risk_income": "A close turns open P&L into realized P&L and ends that leg's risk.",
     "source": "OptionStrategy.md#4-how-a-trade-can-end",
     "labels": ["Closes", "Closed"]
+  },
+  "close only": {
+    "short": "Under 25 days to expiry, a take-profit or delta drift buys the leg back and does not sell it again on that expiry.",
+    "long": "From 25 days to expiry the bot sells a fresh leg on the same expiry after a take-profit or a delta drift. Under 25 days that leg would be closed by the time roll within days, so it is only bought back. Once the strangle has no leg left, the slot opens a new strangle on another expiry.",
+    "risk_income": "It stops carrying the last of the premium and its risk, and puts the margin back to work on a later expiry.",
+    "source": "OptionStrategy.md#4-how-a-trade-can-end",
+    "labels": ["close only"]
   },
   "coin delta": {
     "short": "How much the account's coin balance moves when the price moves, counting the options and the perpetual.",

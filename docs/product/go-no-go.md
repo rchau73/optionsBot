@@ -21,6 +21,12 @@ They are quoted, not set, here: changing them is a PRD pull request.
 | 3 | **E2:** does the engine beat holding the coin, risk-adjusted | `cmd/evidence` weekly reports → `<clone>/data/evidence/<ISO week>/<bot>.json`, `hold.return_usd_pct` and `hold.hold_return_usd_pct` (weeks where both are known); worst `live.perf.MaxDrawdownPct` shown beside | §3 | fails when the engine's ratio is not above hold's (**PRD §6 kill**); missing under the window (`not enough weeks`) or with no spread |
 | 4 | **Legal gate:** L1–L6 and L9 | `docs/legal/preliminary-answers.md`: a question's line carries `**Counsel (date):**` once counsel answers | every one answered by counsel | meets when all seven are answered (read the answers: the script cannot judge them); missing while any is preliminary. Never fails on its own |
 
+An **informational line** follows the table and never decides:
+
+| – | **Interviews:** delegation share among qualified interviews (#787) | `interview_tally.py` (reads `data/product/interviews/interviews.csv`, `--interviews`) | none; the kill rule reads row 1 | `info` with the share, its n and the survey's share beside it; `missing` with no file, a refused sheet or no delegation answer |
+
+It sits outside `rows` in `-json` (`informational`), so the overall line (section 4) and the weekly reading never move with it.
+
 Every row prints its value, threshold, status, source file and date (the file's date; for E2 the latest week).
 A missing input is `missing`, never assumed.
 
@@ -59,6 +65,14 @@ python3 scripts/product/go_no_go.py --tally data/product/interviews/tally.json \
 python3 scripts/product/go_no_go.py -json
 ```
 
+**Weekly reading (#738).**
+`scripts/agents/go_no_go.sh` (the agents' tick, first tick of a Monday UTC after the evidence report, else from Wednesday; ledger agent `go_no_go`) runs `scripts/product/go_no_go_week.py`.
+It calls `go_no_go.py -json` on stable's clone (`--bot btc`) and the newest tally and fake-door files under `data/product/`, and appends one dated line to the gitignored `data/product/go_no_go_history.jsonl`: the overall line and, per row, status, value, threshold, source and date.
+Shares and ratios only: a value that carries a coin or USD amount is written as "—", and a source is a repo- or clone-relative name.
+A missing input stays `missing`; a checkout with no `data/product/` writes a reading with every row `missing` and opens nothing.
+When a row changes status since the last line, or the overall line becomes `kill criterion met` or `no kill criterion met`, one `agent:pm` + `agent:needs-human` issue goes to Triage with the old and new reading and the source file.
+It applies PRD §6's own kill rule and recommends nothing else; no change, no issue.
+
 Related: the survey's verdict section `discovery/synthesis.md` §4; pricing options `pricing-options.md` (nothing to price if a kill criterion is met).
 
 ## 7. Each go-to-market criterion: evidence or assumption
@@ -72,8 +86,8 @@ The file `data/product/` does not exist in a fresh checkout, so "no data" below 
 |---|---|---|---|
 | **Buyer:** the cycle holder (PRD §3) | Evidence for the choice, **assumption** for the size | The product owner confirmed the persona (`decisions/2026-10-18-primary-persona.md`, 2026-10-18). Screener `discovery/screener.md` defines who qualifies (#178) | How many cycle holders there are is an assumption. Verify: send the survey (`discovery/survey.md`) and read the screener's qualified count in the tally (`survey_tally.py`, #247) |
 | **Pain:** opaque yield, no control of risk, too complex by hand (PRD §3) | **Assumption** | Written from the product owner's own experience and the persona table (PRD v0.2, 2026-10-18) | Verify: the survey's Q4 and F2 answers, coded in `discovery/synthesis.md` §2 (a pain counts when it happened to the respondent). No answers yet |
-| **Delegation:** would let software trade their account | **No data** | Survey and tally tool ready (#178, #247); the scorecard row 1 reads the result | Verify: a tally with at least 15 qualified cycle holders. Below 15 the share is noted, not trusted |
-| **Willingness to pay** | **Assumption** | Options and trade-offs only: `pricing-options.md` (#236, prepared before any data); unit-economics tool `unit_economics.py` (#235) | No customer answer yet. Verify: the survey's price questions and the fake door (below). The decision is the product owner's, after counsel answers L8 |
+| **Delegation:** would let software trade their account | **No data** | Survey and tally tool ready (#178, #247); the scorecard row 1 reads the result. Interviews: coding sheet in `discovery/interview-guide.md` and `interview_tally.py` (#787), shown as the informational line | Verify: a tally with at least 15 qualified cycle holders. Below 15 the share is noted, not trusted |
+| **Willingness to pay** | **Assumption** | Options and trade-offs only: `pricing-proposal.md` (#762, the decision page) and `pricing-options.md` (#236, prepared before any data); unit-economics tool `unit_economics.py` (#235) | No customer answer yet. Verify: the survey's price questions and the fake door (below). The decision is the product owner's, after counsel answers L8 |
 | **Demand signal:** a waiting list | **No data** | Experiment brief `experiments/fake-door-landing.md` (#234) and copy draft `landing-copy-draft.md`; result reader `fakedoor.py` (#303) | The page is not online. Verify: publish it after counsel clears L5, L7, L9 and L13, then read the result. Scorecard row 2 |
 | **Competitors and positioning gaps** (PRD §4) | **No data** | The method and checker exist (`competitors/README.md`, #304) | The research goes in `data/product/competitors/` and has not been done. Verify: one entry per competitor with its source and date; `competitors.py --summary` feeds PRD §4 |
 | **What we may legally offer** | **Assumption** (preliminary, not counsel's) | Questions L1–L24 in `legal-brief.md` (#179); the legal counsel skill's preliminary answers in `docs/legal/preliminary-answers.md` (#228), written as a draft for a lawyer | No `Counsel (date):` line yet, so no question is answered by counsel. Verify: counsel's written answers, then record them as in `docs/legal/counsel-engagement.md`. Until then: internal use and testnet only |
@@ -106,4 +120,5 @@ Open state is checked on the board, not here: if a ticket above is closed and it
 - Update sections 7 and 8 when a source changes: a tally, a fake-door result, counsel's answer or a new scorecard reading, each with its date.
 - No name, price, revenue figure or survey answer goes here, only the path under `data/product/` where it lives.
 - A change to the kill criteria is a PRD pull request, never an edit here.
+- The weekly reading's history (`data/product/go_no_go_history.jsonl`) is the dated record of the scorecard; this page keeps only the latest reading (section 8).
 - What each launch phase needs, measures and does to step back is `launch-plan.md`.

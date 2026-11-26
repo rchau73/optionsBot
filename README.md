@@ -8,6 +8,7 @@
 > How it works and its guardrails: **[AGENTIC.md](AGENTIC.md)**.
 
 > **👋 Recruiters and hiring managers:** a one-page summary of the project, my role and the skills it shows is in **[PORTFOLIO.md](PORTFOLIO.md)**.
+> Short films of it running are on my site: **[rchau73.github.io](https://rchau73.github.io/)**.
 
 A concurrent Go service that sells BTC/ETH option strangles on [Deribit](https://www.deribit.com), manages them through their life (fill tracking, take-profit, rolls, stop-loss, regime-based leg shedding, kill switch) and backtests the same rules on historical data.
 
@@ -304,6 +305,7 @@ The settings are the bot's config (`-config`, default `config_<currency>.yaml`);
 `-trace` prints every action.
 `-rebalance prorata` (#638; default `off`) adds the bot's rebalance: downsizes on a confirmed limit change and on retries of a short top-up, top-ups below the slot targets; `-limits journal` takes the IM limit, freeze and restarts from the journal's `risk_limit` lines instead of rebuilding them.
 `-rebalances prorata,cheapest,winners` compares which strangle a downsize cuts (`docs/studies/downsize-cut.md`).
+`-deltaexits 0.25,0.30,0.35,off` (or `all`) compares delta-exit thresholds with the 2× stop alone (`docs/studies/delta-exit.md`, #769).
 Output: one line per day (spot, DVOL, live/confirmed regime, direction, limit, IM %, equity, day P&L, fees, trades, sheds, repairs, actions), a summary (net, realised, fees, trades, entries, repairs, sheds, stops, delta exits, rolls, MM cuts, unfilled orders, worst drawdown, IM max/avg) and a tab-separated `REPLAY` line for scripts.
 
 **GEX at the bot's pace** (#122).
@@ -358,6 +360,7 @@ It reads one bot's files only (no Deribit call, nothing written) and prints coun
 go run ./cmd/datacoverage -dir data/btc                                   # first → last recorded day
 go run ./cmd/datacoverage -dir data/btc -from 2026-10-12 -to 2026-10-18   # a replay's window (-to day included)
 go run ./cmd/datacoverage -dir data/eth -json
+go run ./cmd/datacoverage -dir data/btc -yesterday                        # the daily recording check (#716): yesterday's books and GEX against the 90 % floor
 ```
 
 `-dir` is the bot's folder (`data/btc`, files in `data/btc/data/`) or its data directory.
@@ -431,10 +434,24 @@ Sections, each naming its source:
   Books are mainnet data: mvp records none, so pass stable's clone as `-books-root`.
   Needs the starting margin balance (`-equity`, one bot only, else `account.json` in `data/stress/<bot>/` — the balance when captured).
 - **Gap** — replay − live over the replay's window, the live side being the journal marked at the recorded mids (`replay.ActualPnL`, as `cmd/stress -replay -journal`), with the list of what the replay does not model.
+- **Gap split** (#802, `gap_split` in the JSON) — that gap cut into its causes, each in coin, in pp of the starting equity and in % of the gap, with the legs behind it as its sample, from the journal's fills and the replay's own (`replay.Result.Fills`, no second replay):
+  - fill price: legs both sides filled (same instrument and kind within 1 h), the replay's price against live's;
+  - fees: live's close fees − the replay's;
+  - trades one side made: valued to the window's last recorded mid, each listed with the journal's reason or the replay's rule;
+  - marks: each side's open book at the window's ends, its own marks against the recorded mids;
+  - **unexplained**: the gap minus the four, always shown.
+  With a journal whose closes carry their fill prices the parts add to the gap; a gap counts as explained when the unexplained line is within 20 % of it (a proposed bar, `GapExplainedPct`).
+  The exchange's marks (the P&L history's unrealised) against the recorded mids stand on a line outside the sum.
+  Labelled partial like the Gap; no figures when the replay did not run; a live account shows percentages only, and the pack and the E2 comment the share of the gap only.
 - **Replay vs live** (#488) — the Replay and Gap figures side by side, both net of fees: the result in coin, in USD (at the replay's last recorded spot) and in % of the starting equity, the fees, the trades (filled legs, opens and closes) and the worst day (live: each day marked from the book nearest its start to the one nearest its end); then the gap in coin and as a % of the live result.
   The week is **not comparable** — its missing market hours and gaps listed, no gap computed — when the books cover under 90 % of its hours, have a gap over 3 h, the coverage was not measured or the replay did not run.
   Likely causes are listed only when the journal shows them: entries frozen (slot-hours), rebalance orders sent by a startup in its first 30 min, closes a person asked for from the monitor; never guessed.
   When the environment's `.env` says `DERIBIT_ENV=live`, the section shows percentages only, in the Markdown and the `.json`.
+- **Replay-vs-live gap over time** (#820, `gaptrend.go`, `gap_trend` in the JSON) — the last 12 weekly reports' gap (this week's included), each read as its report wrote it, with no second replay: per week the gap in coin, in pp of the starting equity and in % of the live result, and its split by cause in % of the gap.
+  A partial or not-comparable week (books under 90 % of the hours, a gap over 3 h) and a week without a gap are listed with their reason and left out of the statistics.
+  The summary gives the median and the worst absolute gap (pp of equity), the range, the weeks the replay was above and below live, the cause that explains most of the summed gap and the share left unexplained.
+  The verdict line is computed once: `stable` when the comparable weeks' gaps keep one sign and range within 1 pp of equity (`GapStableRangePP`, an assumption, docs/agents/evidence.md "Gap over time"), `drifting` otherwise, and "too few to conclude (N weeks)" under 12 comparable weeks.
+  The E2 comment posts that line as written; a live account shows percentages only (no coin, the split's shares only).
 - **Stress** — the standard shocks (`crash`, `rally`, `crash40`, `rally40`, `chop`, no calm days) of `cmd/stress` on the book in `data/stress/<bot>/` with the config's slots, exits, cap, flip buffer, direction and bands (`-stress-cmd`, default `go run ./cmd/stress`, run from the repository; `none` skips).
   The book's capture time is shown and flagged when it is more than a day from the week's end: run `scripts/stress_inputs.sh` at the week's end first.
 - **Return on margin (north star)** (#278, the PRD's engine-phase north star) — net P&L in coin, net of fees, ÷ the mean initial margin used, in %, with its 30-day rate (× 30 ÷ the days the net covers — first line to last, downtime included, like the replay's whole window; not a forecast) and the measured hours.
@@ -452,6 +469,7 @@ Sections, each naming its source:
   A journal or history that cannot be read makes the part say `not measured` and why; without `deploys.tsv` the startups come from the journal alone (commits unnamed, a restart into a flat book not counted), which the section says.
 - **Futures hedge trial** (#678, `hedgetrial.go`) — the hedge experiment against the GEX shed, from the benchmark's ledger in `data/hedge_mode.json` through `hedge.Summary`: mode now, advantage in coin (positive: the hedge did better), hedge P&L net of fees, real and paper trades, fees, the worst day of shed decisions and the counterfactual legs still open, each with the days measured.
   Testnet and shadow-based, cumulative since the ledger began, not a result.
+  It ends with one verdict line from the rule in `docs/hedge-trial.md` (#780): `needs more days`, `keep running`, `stop` or `propose as a core-policy change`, citing the figures it used; the verdict changes no setting.
   A bot never switched on says the trial has not started; under 7 days it says `not enough days` with the days missing and shows no figure; a live account shows days and counts only.
 
 **Weekly, by itself** (#244): the first agents' tick of each Monday (UTC) runs `scripts/agents/evidence.sh`, which captures each bot's book with `stress_inputs.sh` and runs `cmd/evidence` for the last complete week on stable and on mvp (mvp with stable's books), then posts a one-row-per-env × bot summary on the E2 epic — percentages only for a live account.
@@ -494,12 +512,15 @@ The header names the account (`live` when the clone's `.env` says `DERIBIT_ENV=l
 go run ./cmd/evidence -env stable -track-record -trend -pack  # refresh both, then write the pack; -pack alone reads them as they stand
 ```
 
-It writes `data/evidence/pack/<bot>.md|.json` from `data/evidence/track-record/<bot>.json`, `data/evidence/trend/<bot>.json` and the latest weekly report's `scoreboard`, `replay_vs_live` and `hedge_trial`.
+It writes `data/evidence/pack/<bot>.md|.json` from `data/evidence/track-record/<bot>.json`, `data/evidence/trend/<bot>.json` and the latest weekly report's `scoreboard`, `replay_vs_live`, `gap_split`, `gap_trend` and `hedge_trial`.
+The replay-vs-live section carries the gap over time (#820) as "Gap over time" rows: the verdict line as written, the comparable weeks, the median and worst absolute gap (pp of equity), the weeks the replay was above and below live, the largest cause's and the unexplained share of the summed gap, each with its weeks as its sample and no amount.
 No figure is recomputed, and a source that is missing, or an older report without the section, reads "not reported".
 
 - **Order:** the headline (the weeks it covers, net return in coin and %, holding the coin over the same window, the worst 7 days and worst ISO week, max drawdown), the twelve-week scoreboard, replay vs live, the weeks missing, the hedge trial.
 - **Every figure** sits next to its source file, its window and "testnet, past result, not a forecast"; a live account's says "live account, past result, not a forecast", since its figures are not testnet.
   Every section also shows the replay-vs-live label: `comparable`, `partial`, `not comparable` or `not reported`.
+- **Sample** (#772): every figure with a number also shows the days, whole weeks and, where it depends on them, the stops, delta exits and sheds (the hedge trial: hedge orders and shed legs) behind it.
+  Under 84 days, 12 weeks or 10 such events it reads "too few to conclude (N days)" beside the number, which stays; the weekly report's "Sample size" table does the same for its headline figures (floors and why: [`docs/agents/evidence.md`](docs/agents/evidence.md#sample-size)).
 - **Risks** are rows of the same table as the figures, and nothing in a table is bold, so a loss reads exactly like a gain: its minus sign and unit, same size and weight.
 - **Live accounts** show percentages, ratios and counts only, when the clone's `.env`, the track record or the weekly report says `live`.
 - Paths are relative to the clone and the output is deterministic: the same files give the same JSON.
@@ -509,16 +530,19 @@ No figure is recomputed, and a source that is missing, or an older report withou
 ## Usage report
 
 `cmd/usage` (#295, epic E13) turns the monitor's analytics events (`data/monitor/events.jsonl`, written by the collector of #193 under the event plan `docs/product/analytics/event-plan.md`) into the weekly usage and cohort report the plan's questions Q1–Q8 ask for.
-It reads that file only and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
+It reads that file and, for the north star, the days in each bot's `data/regime_history.jsonl`, and writes `data/monitor/reports/<week>.md` and `.json` (`-out` changes the folder); nothing leaves the host and the bot never reads it.
 
 ```bash
 go run ./cmd/usage -week 2026-W43                                                      # default -events data/monitor/events.jsonl
-go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl   # no week: the last complete one
+go run ./cmd/usage -events ~/dev/go/optionsBot-env/stable/data/monitor/events.jsonl -env stable   # no week: the last complete one
 ```
 
 Pure core: `usage.Build(events, from, to)` in `internal/usage` (an ISO week, Monday 00:00 UTC to the next Monday, as `cmd/evidence`).
 Sections, each naming the source file and the span of its accepted events:
 
+- **North star** (Q1, PRD §7, #801; JSON `north_star`, `internal/usage/northstar.go`) — the monthly active accounts with a strategy running: environments (one Deribit account each) with at least one strategy-running day and at least one `session_started` in the 30 days ending with the week.
+  A strategy-running day is a UTC day with a line in a bot's `data/regime_history.jsonl` (the bot writes one when a day starts; seeded lines are left out; only the day is read, and the file holds no amount), from the clone two levels above `-events` (`-bots` changes it; `-env` names its environment, else the one the visits name).
+  It counts the active accounts, those with visits but no running strategy and those running without visits; under 10 people with a visit `too few to judge` and no share. Shown even in a week without events; no drop rule reads it.
 - **Active users** (Q1, Q2) — distinct users with any event per UTC day, in the week and in the 30 days ending with it, split by role and environment.
 - **Weekly cohort retention** (Q2) — the users whose first `session_started` fell in each of the week and the 12 before it, and how many had any event in each later week (+1 … +12, #607; a week not yet ended is `—`, never 0; columns stop at the last week any cohort has ended, a week with no first session is listed under the table).
   Each cohort has a **curve** status (`usage.Flattening`, `internal/usage/flatten.go`): `flattening` when it has at least 10 users and each of its last 3 ended weeks is within 5 points of the week before, `falling` when one of them fell by more, `rising` when none fell by more but one rose by more, `too few to judge` under 10 users or 4 ended weeks.
@@ -528,6 +552,9 @@ Sections, each naming the source file and the span of its accepted events:
 - **Activation in the first day** (Q2, Q4, #620; JSON `activation`, `internal/usage/activation.go`) — for the week and the 11 before it, the new people who within 24 h of their first `session_started` viewed the Overview and then the worst case, a trade's reason or a tip or the assistant (event plan §8).
   It gives counts, share, median minutes and the step; under 10 new people `too few to judge`, a week with no event listed apart; no drop rule reads it.
   `cmd/usage` also prints the week's line ("activation 2026-W43: 8 of 12 new people activated (67 %), median 9.0 min to the first answer").
+- **Retention by activation** (Q9, #818; JSON `activation_retention`, `internal/usage/activation_retention.go`) — each of the same 12 cohorts split into activated in the first day and not, and how many of each had any event in weeks +1 … +4 (event plan §9).
+  Counts and shares; a group under 10 `too few to judge` (counts, no share), a week not ended `not yet`, a week with no event listed apart and in no base; then each later week pooled over the cohorts.
+  An association, not proof; no drop rule reads it. `cmd/usage` prints the pooled week-4 line ("retention by activation: activated come back 62 % in week 4, not activated 31 % (n = 14 / 22; association, not proof)").
 - **What is opened** (Q3) — `panel_expanded` per panel and the panels never opened, `drill_opened` per level, `filter_changed` per filter, `screen_viewed` per screen — one per page of the monitor's menu (`overview`, `income`, `worst_case`, `positions`, `how_it_works`, `activity`, `account`, `details`) plus `login` (#424).
 - **First answers within the first session** (Q4) — of the users whose first session started in the week, the share whose first session had `first_answers_seen`, and its median `elapsed_ms`.
 - **Help** (Q5) — tips opened, videos played and completed per catalogue id, and the share of `help_resolved` with `helped=true`.
@@ -630,11 +657,12 @@ Nothing is applied: a change still takes effect only after a manager confirms it
 **Proposed values instead of a file** (#641): `-set key=value` (repeatable, e.g. `-set gamma_flip_buffer_sd=1.2 -set gex_direction=sma`) makes the proposed config `-proposed`, or without it `-base`, with only those values, on a temporary copy removed after the run; `[]` in a key sets every element of the list.
 The report's `proposed` names it "config_btc.yaml with gamma_flip_buffer_sd=1.2".
 The lab's runner (`scripts/lab_runner.sh`, `cmd/labrun`) uses it for the run requests managers queue in the monitor (`docs/product/lab/README.md`).
+A change a manager then confirms is only recorded; `cmd/labapply` (#806) re-checks the record and writes a candidate config with its diff for a person's pull request (`docs/operations.md` "Lab candidates"), applying nothing.
 
 ## AI analysis of a comparison
 
 `cmd/analyze` (#426, epic E9) turns one comparison's `report.json` into a plain-words analysis and writes `analysis.md` and `analysis.json` beside it.
-Offline only: no monitor page or route serves it (that waits for legal question L10 and E9's UI prototype), and the AI never changes a setting.
+No monitor page or route serves it (that waits for legal question L10 and E9's UI prototype), and the AI never changes a setting.
 
 ```bash
 go run ./cmd/analyze -report data/compare/20261028T120000Z/report.json            # one Messages API call (ANTHROPIC_API_KEY)
@@ -646,6 +674,9 @@ The settings the stress does not model (`stress.not_modelled`) are always named 
 `analysis.md` starts with the comparison's `Disclaimer`, then the label.
 An answer that fails is **not written**: the command prints each violation and exits 1.
 Without `ANTHROPIC_API_KEY` in the environment of whoever runs it (and without `-fake`) it stops with that message before sending anything.
+The lab's runner (`scripts/lab_runner.sh`, #792) runs the same step after each comparison it finishes: one call per done run, none for a failed or expired request.
+It is best effort: without `ANTHROPIC_API_KEY` on the runner (nothing is sent), on a model error or an answer that fails the checks, the run stays done, nothing is written and the request file gets one `note` ("analysis not written: <reason>"), logged with the request and run ids.
+The monitor still withholds every analysis (`L10_ANALYSIS_GATE_OPEN` in `frontend/lib/lab.js` is false until counsel answers legal question L10).
 A saved example: `docs/product/lab/example-analysis.md`.
 
 ## Testing and CI

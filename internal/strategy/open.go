@@ -69,6 +69,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 	}
 	share := EntryShare(headroom, SlotShare(m.status.LimitIMPct, m.usage.MarginBalance, len(slots)), needsOpen)
 	instruments := s.md.AllInstruments()
+	s.closedExpiries.Prune(time.Now())
 
 	for _, slot := range slots {
 		if occupied[makeSlotKey(slot.TargetDTE, slot.EntryDelta)] {
@@ -79,21 +80,24 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 
-		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, s.heldExpiries())
+		// An expiry a close-only exit left counts as held for this slot (#753).
+		held := s.closedExpiries.WithHeld(s.heldExpiries(), instruments, slot.TargetDTE, slot.EntryDelta)
+		expiry, pick := SelectSlotExpiry(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE, s.cfg.ExpiryStretch, held)
 		switch pick {
 		case marketdata.PickNone:
+			listed := NoExpiryDetail(instruments, time.Now(), slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.RolloutDTE)
 			slog.Info("skip slot: no suitable expiry available",
-				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta)
-			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, "")
+				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "expiries", listed)
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoExpiry, listed)
 			continue
 		case marketdata.PickAllHeld:
 			hi := marketdata.StretchHi(slot.TargetDTE, s.cfg.MaxDTEDeviation, s.cfg.ExpiryStretch)
 			slog.Info("skip slot: its expiry is held by another slot and no free one up to the stretch",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta, "max_dte", hi)
-			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoFreeExpiry, fmt.Sprintf("every expiry up to %d DTE is held by another slot", hi))
+			s.noteSkip(slot.TargetDTE, slot.EntryDelta, SkipNoFreeExpiry, fmt.Sprintf("every expiry up to %d DTE is held by another slot or was closed under the close-only floor", hi))
 			continue
 		case marketdata.PickStretched:
-			slog.Info("slot: own expiry held by another slot, using the next free one",
+			slog.Info("slot: own expiry held by another slot (or closed under the close-only floor), using the next free one",
 				"target_dte", slot.TargetDTE, "entry_delta", slot.EntryDelta,
 				"expiry", expiry.Format("2006-01-02"), "dte", marketdata.DaysToExpiry(expiry, time.Now()))
 		}
@@ -107,7 +111,7 @@ func (s *Strategy) maybeOpenStrangles(ctx context.Context, gammaDec GammaDecisio
 			continue
 		}
 
-		lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+		lot := math.Max(call.OrderStep(), put.OrderStep())
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}
@@ -213,9 +217,10 @@ func (s *Strategy) heldExpiries() map[time.Time]bool {
 // upsize (see rebalance.go). It returns the size sent on each leg, which the
 // exchange minimum and the liquidity cap may have cut below qty.
 func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instrument, targetDTE int, entryDelta, qty float64, gammaDec GammaDecision, st risk.Status, complement bool) (float64, error) {
-	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC); an amount off
-	// that grid is rejected, so snap qty down onto it.
-	if exchStep := math.Max(call.MinTradeAmount, put.MinTradeAmount); exchStep > 0 {
+	// Deribit enforces per-instrument minimums (e.g. 0.1 BTC) and a linear
+	// option trades whole contracts (1,000 XRP); an amount off that grid is
+	// rejected, so snap qty down onto it.
+	if exchStep := math.Max(call.OrderStep(), put.OrderStep()); exchStep > 0 {
 		qty = orders.FloorToStep(qty, exchStep)
 		if qty < exchStep {
 			return 0, fmt.Errorf("qty %.6f below exchange minimum %.6f (call=%s put=%s)",
@@ -255,7 +260,7 @@ func (s *Strategy) openStrangle(ctx context.Context, call, put *marketdata.Instr
 	}
 
 	// No order larger than the strike's market can take (liquidity.go).
-	lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+	lot := math.Max(call.OrderStep(), put.OrderStep())
 	if lot <= 0 {
 		lot = s.cfg.MinTradeAmount
 	}
@@ -321,14 +326,26 @@ func entryLimitPrice(inst *marketdata.Instrument) float64 {
 }
 
 // checkPremiumFloor rejects a leg whose lowest price — where the step-down
-// can take it (see StepDownPrice) — is under min_premium_btc.
+// can take it (see StepDownPrice) — is under min_premium, in the option's
+// settlement currency.
 func (s *Strategy) checkPremiumFloor(inst *marketdata.Instrument, floor string) error {
 	price := FloorPrice(inst.Bid, entryLimitPrice(inst), inst.EffectiveTick(inst.Ask), floor)
 	if s.cfg.MinPremiumBTC > 0 && price < s.cfg.MinPremiumBTC {
-		return fmt.Errorf("%s premium %.6f below floor %.6f — skipping (%s)",
-			inst.OptionType, price, s.cfg.MinPremiumBTC, inst.Name)
+		unit := linearUnit(inst.Name)
+		return fmt.Errorf("%s premium %.6f%s below floor %.6f%s — skipping (%s)",
+			inst.OptionType, price, unit, s.cfg.MinPremiumBTC, unit, inst.Name)
 	}
 	return nil
+}
+
+// linearUnit is " USDC" after an amount of a USDC-settled option (#832), so
+// its journal lines name the unit; empty for BTC/ETH, whose lines stay as
+// they were (amounts in the coin).
+func linearUnit(instrument string) string {
+	if u := marketdata.SettlementOf(instrument); u == marketdata.LinearSettlement {
+		return " " + u
+	}
+	return ""
 }
 
 // submitEntryLeg places one limit sell for slot and journals the submission

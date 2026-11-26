@@ -359,6 +359,49 @@ bots_environment() {
   echo "${any:-unknown}"
 }
 
+# security_section <usage report.md> <digest.md> — appends the security digest
+# (#717, security.sh) to the weekly usage report as its "Security" section,
+# once: a report that already has one, or a missing file, is left as it is.
+security_section() {
+  [[ -f "$1" && -s "$2" ]] || return 0
+  grep -q '^## Security$' "$1" && return 0
+  { printf '\n'; cat "$2"; } >> "$1"
+}
+
+# lab_section <usage report.md> <COMPARE_DIR> <work file> — appends the lab's
+# usage report (#824, cmd/labstats: counts only, no name or setting value) to
+# the weekly usage report as its "Lab usage" section, once: an env without a
+# lab queue, or a report that already has one, is left as it is. A failed
+# run is logged and never stops the report. Run from the repository.
+lab_section() {
+  [[ -f "$1" && -d "$2/requests" ]] || return 0
+  grep -q '^## Lab usage$' "$1" && return 0
+  if go run ./cmd/labstats -compare "$2" > "$3" 2> "$3.log"; then
+    # The requests the agents' tick started (#876, lab.sh: data/agents/lab/started.jsonl).
+    printf -- '\n- Requests the agents'"'"' tick started (last 28 days): %s\n' \
+      "$(python3 "$AGENT_REPO_DIR/scripts/agents/lab_queue.py" count "$AGENT_STATE_DIR/lab/started.jsonl" "$2/requests" --days 28)" >> "$3"
+    { printf '\n'; cat "$3"; } >> "$1"
+  else
+    log "lab usage report failed for $2 (log $3.log)"
+  fi
+}
+
+# lab_follow_section <usage report.md> <COMPARE_DIR> <clone> <work file> —
+# appends the lab follow-up (#855, cmd/labfollow -all: each recorded change's
+# backtested figures beside the realised ones, percentages only) as the
+# report's "Lab follow-up" section, once, when at least one record has a
+# live-from day on file (applied/<id>.live). A failed run is logged and never
+# stops the report. Run from the repository.
+lab_follow_section() {
+  [[ -f "$1" ]] && compgen -G "$2/applied/*.live" > /dev/null || return 0
+  grep -q '^## Lab follow-up$' "$1" && return 0
+  if go run ./cmd/labfollow -all -compare "$2" -root "$3" > "$4" 2> "$4.log"; then
+    { printf '\n'; cat "$4"; } >> "$1"
+  else
+    log "lab follow-up failed for $2 (log $4.log)"
+  fi
+}
+
 # require_tools <tool>... — fails (and notifies) when a tool is not on PATH, so
 # an agent stops before it takes a card instead of blocking it for a broken
 # environment. Run scripts/agents/install.sh again after installing a tool.

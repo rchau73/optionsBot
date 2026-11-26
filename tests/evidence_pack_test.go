@@ -157,7 +157,8 @@ func TestEvidencePack_FromExistingReports(t *testing.T) {
 	if strings.Contains(md+js, root) || strings.Contains(md+js, filepath.Dir(root)) {
 		t.Errorf("a machine path in the pack:\n%s", md)
 	}
-	wantIn(t, md, "**"+evidence.PackLabel+"**", "| Net return in coin | "+packFigure(t, h, "Net return in coin").Display+" | "+wantSource+" | "+span+" | "+evidence.PackCaveat+" |")
+	net := packFigure(t, h, "Net return in coin")
+	wantIn(t, md, "**"+evidence.PackLabel+"**", "| Net return in coin | "+net.Display+" | "+net.Sample.Text()+" | "+wantSource+" | "+span+" | "+evidence.PackCaveat+" |")
 
 	if again := packFromClone(t, root); !bytes.Equal(mustJSON(t, again), mustJSON(t, p)) {
 		t.Error("the same files must give the same pack")

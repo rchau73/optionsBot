@@ -143,9 +143,9 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
   - after `order_fill_timeout_sec` cancel, read back the final fill and **book filled legs** (one-legged strangles are completed by repair).
 - **Marks:** `refreshMarks` copies a quote onto a position only when the instrument `HasQuote()`, which sets `Position.MarkLive`; otherwise the last known mark stays (from the exchange at reconcile).
   Reconcile converts Deribit's size-weighted position greeks to per-option greeks (`PerOptionGreeks`).
-- **Exit priority** (`EvaluateLeg`): stop-loss → DTE roll → **delta exit** → delta drift → ROI take-profit.
-  The delta exit closes a short leg whose |Δ| reaches `delta_exit_threshold` (0.30) — the move is real — before the 2× stop.
-  Delta exit, drift and take-profit act only on a `MarkLive` position; stop-loss and the DTE roll always act (on the last known mark).
+- **Exit priority** (`EvaluateLeg`): stop-loss → DTE roll → **delta exit** → delta drift → ROI take-profit (both close only under 25 DTE, `closeonly.go`).
+  The delta exit closes a short leg at |Δ| ≥ `delta_exit_threshold` (0.30), before the 2× stop.
+  Delta exit, drift and take-profit need a `MarkLive` position; stop-loss and the DTE roll always act (on the last known mark).
   Stop-loss = market buy, high priority — except while the leg's book is empty:
   - `StopDeferReason` (`stopguard.go`, pure) defers it while the ask is more than `stop_spread_guard_pct` (20) above the mid (or there is no bid),
     re-checked each cycle (fires once the spread is normal if the stop still applies, dropped if the price came back), at most `stop_spread_max_wait_minutes` (5), then at market;
@@ -193,7 +193,7 @@ Each rule's history, numbers and mechanics continue in `internal/strategy/CLAUDE
 - **Futures hedge experiment** (`futureshedge.go`, #657; off unless switched from the monitor, `data/hedge_mode.json`, testnet only): while on, the GEX shed closes nothing (`shed_hedged` skip)
   and the perpetual holds the **coin** delta (each leg's delta less its mark in coin, `TotalCoinDelta`: what a coin-margined account's equity moves with)
   within 5 % of the margin balance (`hedge.HedgeOrder`, IOC, ≤ 12 orders/h); stops, exits and the MM cut still close legs (`internal/strategy/CLAUDE.md`).
-  A hedge that cannot trade gives the shed back (`hedge.Health`, `hedge_unavailable`, #664).
+  A hedge that cannot trade, or a one-sided book, gives the shed back (`hedge_unavailable` #664, `hedge_stood_down` #813).
 - **Startup** (reconcile, regrouping, slot assignment: `internal/strategy/CLAUDE.md`).
   **No new risk without fresh GEX** (`gexready.go`, pure `GEXWaitReason`): with GEX wired, entries (`gex_wait` skip), top-ups and repairs wait until the first snapshot and whenever it is older than `GEXStaleAfter` (5 min)
   — before it the regime and trend are unknown (2026-10-09: both bots sold puts seconds after a restart into a negative regime with a bear trend).

@@ -10,8 +10,14 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   - the test fails on a page that is in neither.
   It also updates the user-facing guide, `frontend/content/monitor-guide.md` (#418): one `##` section named as the menu item; `tests/monitor_guide_test.go` fails on a menu page with no section.
   Then re-run `go test ./tests -run Help -args -update-help` (the guide is an assistant source).
+  - The planned Lab page (E9, not built): its spec, menu change and menu-test expectations are in `docs/product/lab/lab-screens.md` (#841).
 
 - **The password rule beyond length** (#680): `guessablePasswordProblem` (`lib/auth/password.js`) is its one definition, the list is `lib/auth/commonPasswords.js`; a new way to set a password calls it (`frontend/docs/sign-in.md` "Passwords").
+
+- **Manager–account links** (#760, epic E7): `lib/auth/accountLinks.js` (the registry's status file, the bot → account rule and the refusal in words), `account_links` in `auth.db`, `components/AccountLinksDialog.jsx` on the Users page;
+  a new route that targets a bot calls `refuseOtherAccount` after its role check and is `linked: true` in `STATE_CHANGING_ROUTES`, or the role matrix fails (`frontend/docs/users-and-roles.md`).
+
+- **The read matrix** (#782): a new `GET` route under `app/api` needs its row in `READ_ROUTES` (`lib/auth/routeRoles.js`: roles, `token`, why), or `__tests__/read-matrix.test.js` fails naming it.
 
 - **The team's cards in the Ask panel** (#446, #498): `NpsCard.jsx` and `AnswersCard.jsx`, one at a time (NPS first, never both in one tab);
   their due rules share `surveyNotEligibleReason` (`lib/analytics/nps.js`) and are decided on the server from the user's row, so a new card reuses it rather than a second copy.
@@ -24,5 +30,20 @@ Folder notes for `CLAUDE.md`; UI/UX documentation lives in `frontend/README.md` 
   the worst case in money, and the last trade's one-click Why? (`LastTrade`, from `/api/summary`'s `last_action`).
 - **The hedge's lines in plain words** (#679, epic E3): `lib/hedgeWords.js` has one sentence per `orders.Hedge*` change and `shed_hedged`, for the Activity page and "Since you last looked";
   a new hedge change needs its sentence there (`__tests__/hedge-words.test.jsx` reads the Go constants), besides the bot's own in `internal/api/explain.go`.
+  A hedge trade newer than the last option trade is the Last action (#794, `kind: "hedge"`): `hedgeActionWhat` words it on the desktop summary, the phone card and the band's last trade.
 - **Losses as visible as gains** (#582, epic E3): `__tests__/loss-visibility.test.jsx` renders Income, Details (pro), the phone overview, Worst case and Positions on the shared fixtures of `test/resultFixtures.js` (profit, loss, nothing held)
   and fails, naming the page, on a loss without its minus sign and unit, smaller or lighter than the gain, folded away, or a 0 shown for nothing held; a new page that shows a result gets its row in `PAGES`.
+  Its checks live in `test/lossVisibility.js`.
+- **Colour contrast pinned** (#763, epic E12): `__tests__/a11y-tokens.test.js` checks every text-on-background pair (`PAIRS`) against WCAG AA from `app/globals.css` and `test/tailwindPalette.js` (rules in `lib/a11y.js`);
+  a new text colour needs its pair, a new failing pair fails, and a fixed one leaves `KNOWN_FINDINGS`. `npm run test:phone` writes `e2e/a11y-report.json` (small text, small tap targets at 360 px), report-only.
+  The pairs and `KNOWN_FINDINGS` live in `test/contrastPairs.js`; `__tests__/contrast-candidates.test.js` (#878) writes the designer's sheet of the nearest passing colours, `docs/product/responsive-a11y-contrast-candidates.md` (`UPDATE_CONTRAST_SHEET=1` regenerates it).
+  `__tests__/a11y-pages.test.jsx` (#840) pins each menu page's and the phone overview's screen-reader structure (axe, `PAGE_RULES`) in `a11y-pages-baseline.json`, ranked in `docs/product/responsive-a11y-baseline.md`; a new menu page gets its row in `PAGES`.
+- **Text resize and reflow** (#887, epic E12): the same phone run repeats each page at 200 % root font size and at 320 px (`measureResize`, `RESIZE_PASSES`)
+  and writes overflow, clipped text and off-screen controls under `resize` in `e2e/a11y-report.json`, report-only; ranked in `docs/product/responsive-a11y-baseline.md`.
+- **The four answers on the demo scenarios** (#743, epic E3): `__tests__/scenario-answers.test.jsx` renders the investor summary and the phone overview on `test/demoScenarios.json` (the demo's data for baseline, mixed, drawdown, hedged)
+  and fails, naming the scenario, the layout and the question, when the first screen stops answering a question of the usability kit's key (docs/usability/e3-investor-monitor-test.md).
+  On hedged (#827, the kit's section 6c) it also fails when the Last action is not the hedge trade or the worst case shown is not the one with the perpetual.
+- **The first screen in plain words** (#844, epic E3): `__tests__/first-screen-words.test.jsx` reads the four sections of the investor summary and the phone overview on every demo scenario with `longSentences` and `undefinedJargon` (`test/plainWords.js`)
+  and fails naming the scenario, the layout, the section and the sentence or term; fix the wording in the component or its word map, or put a term that must stay in its `ALLOW` with a one-line reason.
+  A long sentence the bot writes itself (Go) sits in `KNOWN_LONG` until fixed there; a fixed one must leave it.
+  The desktop worst case shows the model in plain words, the bot's formula under "How it is computed".

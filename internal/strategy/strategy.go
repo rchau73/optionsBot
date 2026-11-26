@@ -33,7 +33,8 @@ var ErrKillSwitch = errors.New("kill switch activated")
 type Strategy struct {
 	cfg     *config.Config
 	md      MarketData
-	exch    Exchange
+	exch    Exchange  // wrapped in orderWatch: every order action drops sims
+	sims    *SimCache // recent margin simulations (simcache.go, #888)
 	state   *orders.StateManager
 	journal TradeJournal
 	hedge   HedgeReporter
@@ -71,6 +72,12 @@ type Strategy struct {
 	// the journal (RestoreStops); the startup regrouping prefers it.
 	journalSlots OpenSlots
 	repairHeld   map[string]string
+	// Close-only exits (closeonly.go, #753), decision loop only: the strangle
+	// sides not repaired (by stopKey, their expiry), the expiries held per
+	// slot, and the journal's records applied at startup.
+	closeOnlySides   map[string]time.Time
+	closedExpiries   ClosedExpiries
+	journalCloseOnly JournalCloseOnly
 	// Legs shed by GEX, by strangle and type: the flip they were shed at
 	// (shed.go). In memory like stopped, and rebuilt from the journal at
 	// startup the same way (applyJournalSheds).
@@ -153,15 +160,17 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
 	}
+	sims := NewSimCache(SimReuse)
 	s := &Strategy{
 		cfg:              cfg,
 		md:               d.Market,
-		exch:             d.Exchange,
+		exch:             orderWatch{Exchange: d.Exchange, sims: sims},
+		sims:             sims,
 		state:            d.State,
 		journal:          d.Journal,
 		hedge:            d.Hedge,
 		gamma:            gamma,
-		riskCfg:          cfg.RiskPolicy(d.GEX != nil),
+		riskCfg:          IVPolicy(cfg.RiskPolicy(d.GEX != nil), d.Market.IVSource(), config.FixedChainIVMinDays),
 		regimes:          regimes,
 		directions:       d.Directions,
 		appliedLimit:     math.NaN(),
@@ -174,6 +183,8 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		noQuote:          make(map[string]bool),
 		stopped:          make(map[string]time.Time),
 		repairHeld:       make(map[string]string),
+		closeOnlySides:   make(map[string]time.Time),
+		closedExpiries:   ClosedExpiries{},
 		shedAnchors:      make(map[string]*ShedAnchor),
 		stopDefer:        make(map[string]time.Time),
 		unconfirmed:      make(map[string]unconfirmedOrder),
@@ -206,9 +217,11 @@ func (s *Strategy) Run(ctx context.Context) error {
 
 	s.loadGammaPriceHistory(ctx)
 	s.logStartupState(ctx)
+	s.noteFirstStart() // a SOL/XRP bot's hedge switched on at its first start (#836)
 	s.reconcilePositions(ctx)
 	s.applyJournalStops()
 	s.applyJournalSheds()
+	s.applyJournalCloseOnly()
 	s.trackPositions(ctx)
 	s.waitForTickerData(ctx, 30*time.Second)
 
@@ -502,8 +515,10 @@ func (s *Strategy) marketContext() orders.MarketContext {
 	}
 }
 
+// suggestedHedgeInst is the underlying's perpetual future, named by the
+// exchange (#786): the hedge report, the futures hedge and the daily closes.
 func (s *Strategy) suggestedHedgeInst() string {
-	return s.cfg.Underlying + "-PERPETUAL"
+	return s.exch.PerpetualName(s.cfg.Underlying)
 }
 
 // loadGammaPriceHistory seeds the gamma monitor with recent daily closes so
@@ -528,5 +543,6 @@ func (s *Strategy) evaluateLeg(pos *orders.Position) RolloutDecision {
 		s.cfg.ROITakeProfit,
 		s.cfg.StopLossMultiplier,
 		s.cfg.DeltaExitThreshold,
+		s.cfg.CloseOnlyBelowDTE,
 	)
 }

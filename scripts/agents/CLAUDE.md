@@ -44,6 +44,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - a check failure (the script's, or CI red on an In review head) → Ready with `needs-fix` and the failing log tails, read first by the next run; the second → Blocked, `agent:needs-human`
       (count: `<!-- dev:check-fail n=… -->` on the issue since the last `<!-- dev:blocked -->`; `lib.sh check_failed`);
     - a failing test the change does not touch is re-run (script: that test ×3; gate: the failed jobs, 3 times a head); a pass makes it flaky (`lib.sh note_flaky`: the PR and its flaky issue);
+      a jest file failed only by timeouts over a minute late is `stalled` (the Mac slept, #869): re-run, logged, never filed; the script runs under `caffeinate -is`;
     - `checkfail.py suites` (CI's path filter and the script's) runs a suite on code it builds or a doc its tests open; any `.md` runs the doc-wide line checks, a CLAUDE.md only those;
       `phone` (#739, CI's "Phone viewport check", required) runs `npm run test:phone` on non-doc `frontend/` files, `cmd/monitor-demo/`, `internal/api/` and `ci.yml`, never on the Mac (`frontend/docs/testing.md` "In CI");
     - a user-visible change is done only with its monitor-guide section, a golden question and `go run ./cmd/helpindex`; the Reviewer blocks one without them (#483, both prompts);
@@ -67,7 +68,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - a policy-free one, up to date with main, is merged by the gate itself, one per run (#468, product owner 2026-10-28);
     - `PR_AUTO_MERGE=0` in `agents.env` turns it off;
   - a human merges every policy change (ruleset: PR + green CI); a review that left a changed file unread is `incomplete`, never clean, and counts as no review (#476);
-  - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
+  - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), building its images one service at a time
+    (a build killed for memory is built once more before it fails, `deploy_issue.py oom`, #892), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
     - a failed compose or health check (#204) resets the clone to `mvp.deployed`, rebuilds and re-checks it (a `rollback` line in `deploys.tsv`; unhealthy too → loud notify, no retry),
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)
@@ -92,7 +94,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - every agent run appends a `start` and an `end` JSON line to `<envs>/history/agent_runs.jsonl`
     (`lib.sh` `run_begin <agent> [issue] [pr] [log]` / `run_end <outcome> [detail]`, `RUN_PR`/`RUN_COMMIT` set on the way; one `printf` under the `agent-runs` mutex;
     the `EXIT` trap ends an open run `failed` on a non-zero exit)
-  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `requeue`, `stuck`;
+  - agent names (`runs.py` `AGENTS`): `sme`, `pm`, `pm_answer`, `dev`, `review`, `pr_gate`, `deploy`, `flaky`, `backup`, `usage`, `requests`, `assistant_review`, `assistant_golden`, `dora`, `release`, `metrics`, `evidence`, `go_no_go`, `requeue`, `stuck`, `security`, `recording`, `lab`;
   - — a new agent script or exit path needs them too; only a tick that does work is a run; paths and ids only;
   - `tests/ledger_coverage_test.go` (#722) fails on a `scripts/agents/*.sh` without `run_begin`/`run_end` that is not on its `ledgerExempt` list (one reason per entry, the file must exist),
     and on an agent name missing from `runs.py`, `docs/agents/run-ledger.md` or the list above;
@@ -107,29 +109,57 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     plus the Runs table from the ledger (#290), what a person overruled (#292) and the stuck cards;
   - its Trend section (#707) puts the week beside the 3 before it from the same dumps (`metrics.sh` fetches 4 weeks): an arrow when worse than their mean, a base under 3 "too few to judge", a week with no data "–";
   - its Funnel section follows the issues filed in the week with an `E#` label through to verified fixed: numbers and counts only.
+  - its "Flaky repeat offenders (30 days)" section (#747) lists each test file with 2 or more flaky issues (`flaky.repeat_offenders`; the dumps reach 30 days before the week's end), else "none".
+  - agent health (#755, pure `health`/`health_issues`): an agent with 4 runs or more whose failed % or limit % reached 25 % gets one `bug` `[E6] Agent health: <agent> <metric> <week>` in Triage
+    (counts, run ids, the report's link; more than 3 crossings → one combined issue; dedup by title, open or closed); the Runs section names them, else "no agent crossed a threshold".
 - Weekly evidence (#244, docs/agents/evidence.md "Weekly evidence report"):
   - `evidence.sh` (from the tick, first tick of a Monday UTC, `data/agents/evidence/<week>.done`, retried once) runs `stress_inputs.sh` + `cmd/evidence` for each env × bot (mvp with stable's books)
     and posts `evidence_week.py`'s summary on the E2 epic — percentages only for an env whose `.env` is `DERIBIT_ENV=live`;
   - it also runs the direction trial's scorecard (`cmd/evidence -compare-direction`, #440: last week plus every week since 2026-W43 without one)
     and adds a "Direction trial" block (% and counts: replay net/drawdown/sheds, live sheds, live − replay, the brief's counters), naming the first week with a GEX shed on the comment's first line;
   - `agent:needs-human` decision tickets (first shed, early stop, review due — each kind once ever, by title) go to Triage, never a config change.
+- Daily recording check (#716, docs/agents/evidence.md "Daily recording check"):
+  - `recording_check.sh` (from the tick, first tick of a UTC day, `data/agents/recording/<yesterday>.done`, no Claude) runs `cmd/datacoverage -yesterday -json` for each env that records the market (`BOT_RECORD_MARKET`, stable) × bot;
+  - a market recording under `evidence.ReplayFullCoveragePct` (90) of yesterday's hours or with a gap over `LongGapHours` (3) → one notify and one comment on the E2 epic (pure `recording_day.py`, hours and % only); all at the floor → silent;
+  - ledger agent `recording`.
+- Lab runner on the tick (#876, docs/operations.md "Lab runner on the tick"):
+  - `lab.sh` (from the tick, in the background; no Claude of its own; rules in pure `lab_queue.py`) works on the mvp clone's lab queue (`LAB_ENV`, `<clone>/data/compare/requests/`); no such folder → exits silently;
+  - a queued request with the runner's lock (`.runner.lock`, under a day old) free → one `scripts/lab_runner.sh` pass from that clone (cmd/labrun's rules unchanged: one at a time, the analysis one call per done run, no key → a note);
+    the lock held → a "skipped" log line; nothing queued → nothing starts; each request it took is a line of `data/agents/lab/started.jsonl`, counted in the usage report's "Lab usage" (`lib.sh lab_section`);
+  - a request queued over 2 h, or `running` with the lock free (the runner died), files one `bug` `E9` `[E9] Lab queue stalled: <id> <status> <age>` in Triage (ids and ages only), none while one is open;
+  - ledger agent `lab`.
+- Weekly go / no-go reading (#738, docs/product/go-no-go.md §6):
+  - `go_no_go.sh` (from the tick, first tick of a Monday UTC after the evidence report, else from Wednesday; `data/agents/go_no_go/<week>.done`, no Claude)
+    runs `scripts/product/go_no_go_week.py`: `go_no_go.py -json` on stable's clone and the newest tally and fake-door files, one line appended to the gitignored `data/product/go_no_go_history.jsonl` (shares and ratios only);
+  - a row changing status, or the overall line becoming `kill criterion met` / `no kill criterion met`, files one `agent:pm` + `agent:needs-human` issue in Triage (old and new reading, source file; recommends nothing beyond PRD §6); ledger agent `go_no_go`;
+  - an issue that cannot be filed (`gh` failed) is notified and kept in `data/agents/go_no_go/<week>/alert` with the week not done, retried each tick without re-reading — the next reading's baseline is the new one, so the change would never alert again.
 - Nightly flaky-test hunt (#248, docs/agents/flaky.md "Nightly flaky-test hunt"):
   - `flaky.sh` (from the tick, first tick of a UTC night from 03:00, `data/agents/flaky/<date>.done`, no Claude)
     runs `go test ./tests/... -race -count=5 -json` and `npm test -- --ci` ×3 on a clean `origin/main` worktree within 30 min (a time-out files nothing)
     and files one `bug` `[E6] Flaky test: <name>` in Triage per test that both passed and failed
     (pure `flaky.py`: dedup against open issues and those closed in 14 days, secrets redacted as `deploy_issue.py`; always-failing tests are only logged);
   - a jest timeout that fired over a minute late is `stalled` (the process was frozen: the Mac slept, #587), logged and not counted; `caffeinate -is` keeps the Mac awake during the hunt.
+  - repeat offenders (#747, `repeat_offenders`): flaky issues open or closed in 30 days grouped by test file (jest: before ` › `; Go: the top-level `Test…`);
+    the metrics report lists files with 2 or more, and a new issue of a file reaching 3 carries a "fix the shared cause" line (body only).
 - Weekly usage report (#340, #341, #252, docs/agents/usage.md "Weekly usage report"):
   - `usage.sh` (from the tick, first tick of a Monday UTC, `data/agents/usage/<week>.done`, no Claude) runs `cmd/usage -alert` in each env with a non-empty `data/monitor/events.jsonl`
     (none with events in the week → nothing posted, no marker, re-looked at hourly),
   - files one `bug` `[E13] Engagement drop: <metrics> <week>` in Triage when pure `usage.Drops`
     (`internal/usage/drops.go`: active users or help used ≥ 30 % under the 3 weeks' mean, a funnel ≥ 20 points under, a base under 10 = too few to judge, a week without events left out)
     finds one (dedup by week as `flaky.py`),
+  - appends each env's lab usage (`cmd/labstats`, #824, counts only) to its report as "Lab usage" when the clone has `data/compare/requests/` (`lib.sh lab_section`; a failure is logged, never stops the report),
+    and the lab follow-up (`cmd/labfollow -all`, #855, percentages only) as "Lab follow-up" when a record has an `applied/<id>.live` day (`lib.sh lab_follow_section`, the same way),
   - and posts `usage_week.py`'s summary on the E13 epic — named figures only, so no user, session or amount field; percentages only for a live env.
   - after the assistant quality review (`assistant_review.sh`, #438) it runs `assistant_golden.sh` (#536): in `ASSISTANT_GOLDEN_ENV` (mvp) when its `.env` has `ANTHROPIC_API_KEY`,
     `scripts/product/assistant_run.sh` asks the real assistant every golden question (a test run: its own log, `test_run`), grades it against `golden_baseline.json`
     and posts counts and % per category on the E10 epic (`<week>.done`, ledger agent `assistant_golden`; a regression is reported, not a failure).
   - `assistant_review.sh` also posts for a week with no answers while a row is open, with the overdue count and, above 0, a line that a person reads the private review list (#704: `closures.jsonl`, never on GitHub).
+- Security digest and alerts (#717, docs/agents/usage.md "Weekly usage report"):
+  - `security.sh` (from the tick, no Claude, no GitHub) reads each env's audit trail (the running monitor's volume, audit files only, else the clone's) and runs `cmd/security` (pure `internal/security`);
+  - alerts at most every 30 min (`SECURITY_ALERT_MIN`): 10 failed sign-ins for one username within an hour, 3 lockouts in a UTC day, a role change to admin outside the first-admin setup — one notify each, IDs in `data/agents/security/<env>.alerts` (never twice);
+  - the weekly digest (`<week>.done`, retried once): counts this week vs the week before, the chain check first, "No data yet" for an empty trail
+    → `data/agents/security/<week>/<env>/digest.md|json`, one notify, the usage report's "Security" section (`lib.sh security_section`, also called by `usage.sh`);
+  - counts only, never a name, IP, password, token or reset link; ledger agent `security`.
 - Daily delivery report (#470, docs/agents/dora.md "Delivery report (DORA)"):
   - `dora.sh` (from the tick, once a UTC day, `data/agents/dora/<date>.done`, no Claude) dumps main's first-parent history, tags, merged PRs and issues
     and runs `cmd/dora` → `<envs>/history/delivery/dora.json|<week>.md`, and posts each finished week's four numbers on the E6 epic once (`<week>.posted`);
@@ -147,10 +177,13 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
   - `requests.sh` (each tick; exits at once unless a request in some env's `data/monitor/requests.jsonl` has no status line, or a filed one is open
     — that sweep at most hourly; rules in pure `requests.py`, files only)
   - marks a filed request `fixed`/`not_planned` when its issue closes, `filed` when an issue already carries its `<!-- assistant-request: <env>/R-NNNN -->` marker (never filed twice),
+  - runs the mechanical filter first (#852, pure `request_filter.py`, no Claude; `in_review` requests are read again): duplicate of a card or an earlier request, no evidence with fewer than two steps → `needs_info`, `explained_by` → `not_a_bug`;
   - redacts the rest (`.env` secrets as `deploy_issue.py`, emails, account ids, the requester's username and @mentions, long tokens, coin/USD amounts → "an amount"; no user, role or answer id)
   - and hands at most the day's cap left (10 issues a UTC day, all envs) to one read-only PM agent run (`docs/product/assistant/request-triage.md`, request text fenced as untrusted data):
     duplicate (an issue open or closed in 14 days, else refused), not_a_bug (reason), needs_info,
-    accept → a `bug`/`enhancement` issue `[E?] …` in Triage, redacted again, with the request id and "From the in-product assistant";
+    accept → a `bug`/`enhancement` + epic-labelled issue `[E?] …` in Triage, through `requests.py` `sanitise` (account names, sizes, journal references as "journal line from <date>"), with "Sent from the assistant, request <id>" and `<!-- agent:pm -->`;
+    text the sanitiser cannot classify holds it as `needs_info` for a person; each filing is one `data/agents/requests/audit.jsonl` line (role, request key, issue);
+  - without `--file` a dry run (writes and files nothing); the tick passes `--file` unless `REQUESTS_FILE=0`; it leaves out a `DERIBIT_ENV=live` env unless `REQUESTS_FILE_LIVE=1` (`agents.env`);
   - every verdict appends `{id, status, note, issue, issue_url, ts}` to that env's `requests_status.jsonl` (My requests; `not_planned` added to `STATUSES`);
   - no valid verdict → retried, 3 runs at most (`requests_attempts.json`); ledger agent `requests`.
 - Token savers (2026-10-27, AGENTIC.md "Parallel runs and limits"):

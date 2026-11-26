@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS notification_settings (
   enabled INTEGER NOT NULL,
   PRIMARY KEY (user_id, kind)
 );
+-- Manager–account links (#760): which exchange accounts (ids of the registry,
+-- data/accounts_status.json) a manager may act on. No row for a manager =
+-- every account of this deployment. created_by is the admin's username,
+-- created_at in Unix seconds.
+CREATE TABLE IF NOT EXISTS account_links (
+  user_id    INTEGER NOT NULL REFERENCES users(id),
+  account_id TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, account_id)
+);
 `;
 
 /** Lower-cases and trims a username; null when it is not 3–64 of a-z 0-9 . _ - */
@@ -142,6 +153,12 @@ export class AuthStore {
       ["nps_opted_out", "INTEGER NOT NULL DEFAULT 0"],
       // The four answers card (#498, surveys.md §2): the day it was last shown (Unix seconds, NULL = never).
       ["answers_last_shown_at", "INTEGER"],
+      // Sign-in awareness (#803): the sign-in before the last one (Unix
+      // seconds, NULL = none recorded), the wrong passwords typed for this
+      // username since the last sign-in, and those typed between the two.
+      ["previous_sign_in_at", "INTEGER"],
+      ["failed_sign_ins", "INTEGER NOT NULL DEFAULT 0"],
+      ["failed_sign_ins_before", "INTEGER NOT NULL DEFAULT 0"],
     ].filter(([name]) => !cols.includes(name));
     for (const [name, type] of added) this.db.exec(`ALTER TABLE users ADD COLUMN ${name} ${type}`);
     const sessionCols = this.all("PRAGMA table_info(refresh_tokens)").map((c) => c.name);
@@ -239,9 +256,43 @@ export class AuthStore {
     return this.all("SELECT id, username, role, email, created_at, last_sign_in_at FROM users ORDER BY id");
   }
 
-  /** Records a successful sign-in (its time, and one more in the count). */
+  /**
+   * Records a successful sign-in (its time, and one more in the count). The
+   * last sign-in becomes the previous one and the wrong passwords counted
+   * since then move to failed_sign_ins_before, so the count starts again
+   * from 0 (#803).
+   */
   recordSignIn(id, nowMs = Date.now()) {
-    this.write("UPDATE users SET last_sign_in_at = ?, sign_in_count = sign_in_count + 1 WHERE id = ?", [Math.floor(nowMs / 1000), id]);
+    this.write(
+      `UPDATE users SET previous_sign_in_at = last_sign_in_at, failed_sign_ins_before = failed_sign_ins, failed_sign_ins = 0,
+        last_sign_in_at = ?, sign_in_count = sign_in_count + 1 WHERE id = ?`,
+      [Math.floor(nowMs / 1000), id],
+    );
+  }
+
+  /**
+   * Counts one wrong password typed at sign-in for an existing user (#803).
+   * Not saved here: the lockout's failure record that follows saves the file,
+   * so a known username costs no extra write an unknown one does not.
+   */
+  countFailedSignIn(id) {
+    this.db.run("UPDATE users SET failed_sign_ins = failed_sign_ins + 1 WHERE id = ?", [id]);
+  }
+
+  /**
+   * What the sign-in summary reads (#803): { lastSignInSec, previousSignInSec
+   * (null = none recorded), signIns, failedSince (wrong passwords since the
+   * previous sign-in) }, or null for an unknown user.
+   */
+  signInState(id) {
+    const r = this.one("SELECT last_sign_in_at, previous_sign_in_at, sign_in_count, failed_sign_ins, failed_sign_ins_before FROM users WHERE id = ?", [id]);
+    if (!r) return null;
+    return {
+      lastSignInSec: r.last_sign_in_at ?? null,
+      previousSignInSec: r.previous_sign_in_at ?? null,
+      signIns: r.sign_in_count,
+      failedSince: r.failed_sign_ins + r.failed_sign_ins_before,
+    };
   }
 
   /**
@@ -368,6 +419,18 @@ export class AuthStore {
     return removed;
   }
 
+  /**
+   * Erases the free text of the answers created before cutoffSec (Unix
+   * seconds, #849); the row and its codes stay, so counts do not change.
+   * → how many texts were erased.
+   */
+  purgeSurveyText(cutoffSec) {
+    this.db.run("UPDATE survey_answers SET free_text = NULL WHERE free_text IS NOT NULL AND created_at < ?", [cutoffSec]);
+    const erased = this.db.getRowsModified();
+    if (erased > 0) this.save();
+    return erased;
+  }
+
   /** The ids of the notification items a person has read (#447), as a Set. */
   notificationReads(userId) {
     return new Set(this.all("SELECT item_id FROM notification_reads WHERE user_id = ?", [userId]).map((r) => r.item_id));
@@ -394,8 +457,33 @@ export class AuthStore {
     this.write("INSERT OR REPLACE INTO notification_settings (user_id, kind, enabled) VALUES (?, ?, ?)", [userId, kind, enabled ? 1 : 0]);
   }
 
-  /** Deletes a user, every session of theirs, their reset links and their notification state. */
+  /** The account ids a user is linked to (#760), sorted; [] = no link. */
+  accountLinks(userId) {
+    return this.all("SELECT account_id FROM account_links WHERE user_id = ? ORDER BY account_id", [userId]).map((r) => r.account_id);
+  }
+
+  /** Every user's links for the Users page: user id → sorted account ids (users without a link are absent). */
+  allAccountLinks() {
+    const out = {};
+    for (const r of this.all("SELECT user_id, account_id FROM account_links ORDER BY user_id, account_id")) {
+      (out[r.user_id] ??= []).push(r.account_id);
+    }
+    return out;
+  }
+
+  /** Replaces a user's links with `add` added and `remove` removed, in one save. */
+  changeAccountLinks(userId, { add = [], remove = [] }, createdBy, nowMs = Date.now()) {
+    const t = Math.floor(nowMs / 1000);
+    for (const id of remove) this.db.run("DELETE FROM account_links WHERE user_id = ? AND account_id = ?", [userId, id]);
+    for (const id of add) {
+      this.db.run("INSERT OR IGNORE INTO account_links (user_id, account_id, created_by, created_at) VALUES (?, ?, ?, ?)", [userId, id, createdBy, t]);
+    }
+    this.save();
+  }
+
+  /** Deletes a user, every session of theirs, their reset links, their account links and their notification state. */
   deleteUser(id) {
+    this.db.run("DELETE FROM account_links WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM refresh_tokens WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM reset_tokens WHERE user_id = ?", [id]);
     this.db.run("DELETE FROM notification_reads WHERE user_id = ?", [id]);
@@ -451,6 +539,15 @@ export class AuthStore {
   sessionUser(tokenHash, nowMs = Date.now()) {
     const row = this.one("SELECT user_id FROM refresh_tokens WHERE token_hash = ? AND expires_at > ?", [tokenHash, Math.floor(nowMs / 1000)]);
     return row?.user_id ?? null;
+  }
+
+  /** A live session for the refresh route (#821): { userId, publicId, lastUsedSec }, or null when unknown or expired. */
+  liveSession(tokenHash, nowMs = Date.now()) {
+    const row = this.one("SELECT user_id, public_id, created_at, last_used_at FROM refresh_tokens WHERE token_hash = ? AND expires_at > ?", [
+      tokenHash,
+      Math.floor(nowMs / 1000),
+    ]);
+    return row ? { userId: row.user_id, publicId: row.public_id, lastUsedSec: row.last_used_at ?? row.created_at } : null;
   }
 
   /** Ends one session (logout). */
@@ -529,6 +626,20 @@ export class AuthStore {
   /** The time (ms) a username's lock ends, or 0 when it has none (an ended lock still answers its time). */
   loginLockUntil(username) {
     return this.one("SELECT until FROM login_locks WHERE username = ?", [username])?.until ?? 0;
+  }
+
+  /**
+   * An admin lifts a username's lock (#846): deletes its lock and its recent
+   * failures, so the next wrong password counts as the first. Returns the
+   * time (ms) the lock would have ended, or 0 when it was not locked at nowMs
+   * (nothing is written then).
+   */
+  clearLoginLock(username, nowMs) {
+    const until = this.loginLockUntil(username);
+    if (until <= nowMs) return 0;
+    this.db.run("DELETE FROM login_failures WHERE username = ?", [username]);
+    this.write("DELETE FROM login_locks WHERE username = ?", [username]);
+    return until;
   }
 
   /** Forgets the failures of a username; writes the file only when it had some. */

@@ -52,6 +52,11 @@ Only the scheduled agents run from the mvp clone, which `deploy.sh` keeps on `ma
 Two environments on one account would cancel each other's orders and manage each other's positions.
 `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 The account check covers every folder of `~/dev/go/optionsBot-env` with a `.env`, not only stable and mvp (#538, `env_accounts_distinct`), and names both folders.
+When a clone holds an account registry (`data/accounts.json`, `internal/accounts`), the check also reads it through `go run ./cmd/accounts -check -json` (#800, `env_registry_check`, `scripts/env_registry.py`; read-only):
+- each bot is matched to its account by currency and config file name (BTC: `BOT_CONFIG_BTC` of `deploy.env`, else `config_btc.yaml`; ETH: `config_eth.yaml`);
+- it refuses a registry that breaks a rule, an account whose key is not `ok` (missing, revoked, may move funds, unknown scope), a bot listed under two accounts, and two folders whose registries map a bot to the same account id (naming both folders);
+- a bot not in the registry is noted on stderr, and refused only when the registry lists its currency under another account;
+- the refusal names the account id and the state, never a key id, client id or scope string; without a registry file nothing changes.
 Each bot also checks its own API key at startup: a key that can move funds (withdraw or transfer) logs an ERROR, shows `key_scope.can_move_funds: true` in `/api/status` and is journaled as `key_scope`, but the bot still starts — replace it with a trade-only key (`account:read trade:read_write`).
 
 ```bash
@@ -222,6 +227,13 @@ When `audit.jsonl` reaches `AUDIT_MAX_BYTES` (`.env`, default 20 MB), the next a
 The Audit page reads the current file, then the archives newest first; the app deletes nothing — how long audit data is kept is a data protection question for counsel (PRD §11).
 One process writes each line whole (read the last line, link, append in one synchronous step); `scripts/analytics-user.mjs`, run by hand in another process, appends to the same file, so do not run it during heavy use.
 
+**Security digest and alerts (#717).** The agents' host reads each environment's audit trail (`scripts/agents/security.sh`, from the tick).
+At most every 30 minutes it checks the alert rules (10 failed sign-ins for one username within an hour, 3 lockouts in a day, any role change to admin outside the first-admin setup) and shows each new alert as a Mac notification.
+After each week it notifies a one-line digest and adds a "Security" section to the usage report (`data/monitor/reports/<week>.md`).
+Counts only, never a name or an address; the Audit page names who.
+A digest that opens with "Audit chain BROKEN" is handled as a broken chain above.
+To build a digest by hand: `go run ./cmd/security -audit-dir <folder with audit.jsonl> -week 2026-W45 -out /tmp/digest` (files: `data/agents/security/`; rules: `frontend/docs/sign-in.md` "Security digest").
+
 ## Watch the logs
 
 **Market history.** Each bot records the option market every 60 minutes to `data/<coin>/data/market/YYYY-MM-DD.csv.gz` — one gzip CSV per UTC day, one block appended per snapshot (`zcat` reads it whole).
@@ -231,6 +243,12 @@ About 0.5 MB a day per coin.
 `--reset-history` does not touch it.
 Log lines: `market snapshot recorded` / `market snapshot not recorded`.
 A block reaches the file whole or not at all (#661); an older file with a damaged block fails `gzip -t`, but `cmd/stress -replay`, `cmd/compare` and the coverage reports read its complete blocks, warn `recorded day damaged` with the day, `last_good` and `resumes`, and show the missing hours as a gap.
+
+**Daily recording check** (#716).
+The morning after, the agents' `recording_check.sh` checks yesterday's (UTC) books and minute GEX of every bot of the recording environment: `go run ./cmd/datacoverage -dir data/btc -yesterday` prints each dataset's covered hours of 24, its share and its longest gap (`-json` for the script).
+Under 90 % (`ReplayFullCoveragePct`, the weekly report's floor for a `full` replay) or with a gap over 3 h, it notifies once and comments on the E2 epic with the bot, dataset, day, share and gap — hours and percentages only; a complete day is silent.
+A dataset folder without yesterday's file counts as 0 %; a damaged stretch is a gap, not an error.
+Fix the recorder (logs above) the same day, so the week's replay stays `full` ([docs/agents/evidence.md](agents/evidence.md#daily-recording-check)).
 
 The same record for the coin's **USDC-settled** options (`BTC_USDC-…`, prices in USDC; `underlying` = `BTC_USDC`) goes to `data/<coin>/data/market_usdc/`, one extra mainnet `public/get_book_summary_by_currency` (USDC) call per snapshot.
 It exists to compare their liquidity with the coin-settled options (2026-10-13: as tight or tighter on a calm day, but under 0.5 % of the open interest), especially on volatile hours; trading never reads it.
@@ -309,6 +327,67 @@ grep '"event":"config_loaded"' orders.log | jq -c 'select(.unchanged != true) | 
 grep '"event":"config_loaded"' orders.log | tail -1 | jq .settings
 ```
 
+### Lab candidates
+
+A change a manager confirms in the strategy-change lab is only recorded (`data/compare/applied/<run id>.json`, #741); `cmd/labapply` (#806) turns the record into a checked candidate and applies nothing.
+
+```bash
+go run ./cmd/labapply -id 20261104T230000Z -compare data/compare   # → data/compare/candidates/<id>/: candidate.json (ready | refused, reasons), diff.md, config.candidate.yaml when ready
+```
+
+A core-policy setting is refused (`needs_product_owner`) unless the record carries `product_owner_approval`, the reference of the product owner's approval that a person adds.
+`refused` lists the reasons in plain words (a fixed key, a value out of range, the shipped setting changed since the run, no report); fix the cause and run it again: a second run on an unchanged record rewrites nothing.
+
+A `ready` candidate reaches the bot only through a pull request a person merges (decision `docs/product/decisions/2026-11-20-lab-change-reaches-bot-by-pr.md`, #862).
+A person runs `cmd/labpr` by hand, from a clone whose `origin` is GitHub and with `gh` signed in; nothing schedules it.
+
+```bash
+go run ./cmd/labpr -id 20261104T230000Z -compare data/compare -dry-run   # prints the branch, the config diff and the PR body; touches nothing
+go run ./cmd/labpr -id 20261104T230000Z -compare data/compare            # branch lab/<id> from origin/main, one commit, one draft PR; exit 0 opened or already there, 2 refused, 1 error
+```
+
+- It acts only on a `ready` candidate whose `config.candidate.yaml` still matches the shipped config on `origin/main`; anything else exits 2 with the reasons and starts no git command (run `cmd/labapply` again after the shipped config moved).
+- The branch changes only the recorded values, in the config named by the candidate and in its twin (`config_btc.yaml` ↔ `config_btc.mvp.yaml`, except `gex_direction`); the twin must still hold the value the run started from.
+  `scripts/regen.sh` then rewrites the generated files (the effective-config goldens); any other changed file stops it before the commit.
+- The draft PR's body has the run id, each setting with its old and new value, the headline numbers in percentages ("backtested, not a forecast"), the fragility flags, the risks, the requester as the 8-character hash `cmd/labstats` uses and a line that the merge is the approval.
+  It has no name, account or amount (checked: a body naming the person or holding an amount is refused), and the AI analysis stays out while L10 is open.
+- One PR per run id: a second run reports the open (or merged) PR and changes nothing; a PR a person closed unmerged is not reopened.
+- It never merges, never pushes to `main`, restarts no bot and sends no order: after the merge the usual deploy (`deploy.sh` for mvp, `scripts/promote.sh` for stable) restarts the bot on the new config.
+
+### Lab usage report
+
+`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, `dropped/`, the candidates' status and the analyses written), read-only.
+
+```bash
+go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, dropped proposals, done runs ending in a decision, analyses written
+go run ./cmd/labstats -compare data/compare -days 7 -json
+```
+
+No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
+It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
+A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
+A deliberate drop (#890, `POST /api/lab/runs/<id>/drop`, `dropped/<id>.json`) counts beside the recorded changes, and "Done runs ending in a decision (recorded or dropped)" is the lab's metric; a run with both files counts once, as recorded.
+The section ends with one more line, the requests the agents' tick started in the last 28 days (below).
+
+### Lab runner on the tick
+
+The agents' tick runs the lab runner itself (#876, `scripts/agents/lab.sh`, in the background, so a long comparison never delays the tick), on the mvp clone's queue (`data/compare/requests/`; `LAB_ENV` in the agents' environment names another clone):
+- a queued request and the runner's lock free → one `scripts/lab_runner.sh` pass from that clone: each request goes `running`, then `done` with a run id or `failed`; one run in the ledger (agent `lab`);
+- the lock held (a run in progress) → a "skipped" line in `data/agents/tick-lab.log`, no second run; nothing queued → nothing starts and no model call; a clone without the folder → skipped silently;
+- a request queued over 2 hours, or left `running` with the lock free (the runner died), files one bug `[E9] Lab queue stalled: <id> <status> <age>` in Triage, as the agent-health alert does: ids and ages only, no setting value, account or amount, and none while one is open.
+The runner's rules do not change: one run at a time, a run applies nothing, one model call per done run with the `ANTHROPIC_API_KEY` of the agents' environment (none → `done` with a note, withheld until L10).
+`bash scripts/lab_runner.sh` by hand still works; while a tick's pass runs it takes nothing.
+
+`cmd/labfollow` (#855) follows a recorded change after it went live: the run's backtested return, worst week, drawdown and fees beside the realised ones over the days after, and the gap in points (percentages only, read-only).
+
+```bash
+go run ./cmd/labfollow -id 20261104T230000Z -live-from 2026-11-10 -record-live-from -root .   # once a person knows the day the change reached the bot: prints the follow-up, keeps the day in data/compare/applied/<id>.live
+go run ./cmd/labfollow -all -compare data/compare -root .                                     # every record with a .live day
+```
+
+The weekly usage report appends `-all` as the "Lab follow-up" section of each environment's `<week>.md` when one of its records has a `.live` day (`lib.sh lab_follow_section`).
+"Too early to judge" and "no data" are printed in words, never as a zero; a bad id or day exits 1 and writes nothing.
+
 ## Agents (SME review, PM, Dev agent, mvp deploy)
 
 The repo is developed with AI agents and a person approving: the **SME agent** reviews the bots daily and files GitHub issues, the **Dev agent** implements issues moved to *Ready* as pull requests, and merging to `main` redeploys **mvp** (stable moves only with `scripts/promote.sh`).
@@ -336,6 +415,13 @@ Secret values from mvp's `.env` (the `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*`/
 The issue is deduplicated by the sha in its title.
 If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
+
+**A build killed for memory is built once more** (#892: on 2026-11-26 the monitor's `next build` ran 770 s and the Docker VM killed it, "cannot allocate memory", while compose built every image at once).
+`deploy.sh` builds mvp's images one service at a time (`docker compose build <service>`), then runs `docker compose up -d --build` on the cached images.
+When a build fails and its log reads as an out-of-memory kill (`cannot allocate memory`, `ResourceExhausted`, `signal SIGKILL`, `exit code: 137`, a Node heap limit; `deploy_issue.py oom`), it builds once more, one image at a time, before the failure counts.
+A second failure, or any other build error, fails the step `docker compose build` and rolls back as above.
+The monitor's image caps Node's heap during the build (`BUILD_HEAP_MB`, 3072 MB, in `frontend/Dockerfile`) and sends no Next.js telemetry.
+If it fails again, give the Docker VM more memory (Docker Desktop → Settings → Resources) or stop what else builds or runs on the host at deploy time.
 
 **An exchange outage is not a failed deploy** (#631: on 2026-11-04 Deribit testnet answered HTTP 502 to every connect, and a good commit was rolled back).
 When the health check fails and every bot exit in the log is a connect Deribit or the network refused (a 5xx handshake, a refused, reset or timed-out dial, an unknown host; `deploy_issue.py outage`), `deploy.sh` waits `DEPLOY_OUTAGE_WAIT_SEC` (600) more.
@@ -490,6 +576,8 @@ A real pass is journaled as `risk_limit` `rebalance_manual`.
 
 **Unused approved margin** (#369, the other direction): when entries have been allowed and IM has stayed under 60 % of the limit for 6 h (`IMUnderUseWindowMinutes`, fixed; a gap of more than 15 min between readings restarts the window), the bot journals one `risk_limit` `im_under_use` line and a WARN (`approved margin unused with entries allowed`) with IM, the limit, the share used (`utilisation_pct`), the minutes and the `cause`, and sets `risk.im_under_use` / `risk.im_under_use_since` (when the under-use began) in `/api/status`.
 The cause uses `cmd/idlemargin`'s vocabulary: an empty slot's last skip reason (`no_free_expiry`, `liquidity_cap`, `regime_side`, `repair_held`, …) or `no_skip_logged`; with every slot taken, `rebalance_waiting` (a short top-up waits for its retry), `sized_small_liquidity_cap` or `all_full`.
+When the cause changes during the episode (a slot rolled out and left waiting), another `im_under_use` line and WARN (`approved margin unused: cause changed`) give the new cause, its detail `cause: all_full → no_expiry` (#768).
+A `no_expiry` cause, like the `no_expiry` skip itself, lists the slot's DTE window and every expiry the exchange lists with its DTE (`window 20–35 DTE; the exchange lists 2026-11-27 (14 DTE), …`), so the journal shows whether only monthlies are listed.
 It sends no order and relaxes no rule.
 **What to do:** read the cause; for a slot cause, check that slot's skips in the monitor's events; for `all_full` the slots' normal size is what holds IM low (the Rebalance dry run shows any top-up due); run `go run ./cmd/idlemargin` over the episode for the hours by cause.
 A change of rule to act on it is a separate proposal with a replay or stress comparison.
