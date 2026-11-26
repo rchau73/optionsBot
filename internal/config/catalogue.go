@@ -192,6 +192,7 @@ func Tunables() []Tunable {
 			Key: "min_premium", Title: "Minimum premium", Kind: KindNumber, Unit: "coin per contract",
 			Policy: PolicyEntry,
 			Plain: "The least premium a leg must bring at the lowest price its order can step down to; a leg under it is not sold, and 0 accepts any. " +
+				"It is in the settlement currency: the coin for BTC and ETH, USDC for SOL and XRP. " +
 				"Higher: skips thin strikes, less income when premiums are low.",
 			VariedBy: []string{toolCompare},
 		},

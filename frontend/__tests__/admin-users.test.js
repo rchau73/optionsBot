@@ -7,8 +7,10 @@ import { GET as list, POST as create } from "@/app/api/admin/users/route";
 import { DELETE as remove, PATCH as patch } from "@/app/api/admin/users/[id]/route";
 import { POST as reset } from "@/app/api/admin/users/[id]/password/route";
 import { POST as signout } from "@/app/api/admin/users/[id]/signout/route";
+import { POST as unlock } from "@/app/api/admin/users/[id]/unlock/route";
 import { POST as changeOwnPassword } from "@/app/api/auth/password/route";
 import { POST as refresh } from "@/app/api/auth/refresh/route";
+import { hashToken } from "@/lib/auth/service";
 import { AuthStore } from "@/lib/auth/store";
 import { ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/auth/tokens";
 import { signedIn, useTestAuth } from "@/test/auth";
@@ -69,6 +71,7 @@ describe("Scenario: a manager cannot administer users", () => {
       expect((await patch(req(`/api/admin/users/${id}`, { method: "PATCH", cookie, body: { role: "user" } }), ctx(id))).status).toBe(403);
       expect((await reset(req(`/api/admin/users/${id}/password`, { cookie, body: { password: NEW_PASSWORD } }), ctx(id))).status).toBe(403);
       expect((await signout(req(`/api/admin/users/${id}/signout`, { cookie }), ctx(id))).status).toBe(403);
+      expect((await unlock(req(`/api/admin/users/${id}/unlock`, { cookie }), ctx(id))).status).toBe(403);
       expect((await remove(req(`/api/admin/users/${id}`, { method: "DELETE", cookie }), ctx(id))).status).toBe(403);
     }
     expect(admin.auth.store.userById(admin.user.id).role).toBe("admin");
@@ -78,6 +81,60 @@ describe("Scenario: a manager cannot administer users", () => {
     const res = await list(req("/api/admin/users", { method: "GET", cookie: admin.cookie }));
     expect(res.status).toBe(401);
     expect(res.headers.get("x-monitor-session")).toBe("required");
+  });
+});
+
+describe("Scenario: an admin unlocks a locked username (#846)", () => {
+  async function lockBob(auth) {
+    for (let i = 0; i < 5; i++) await auth.login({ username: "bob", password: "a wrong password", ip: `10.0.0.${i}` });
+  }
+
+  test("the list shows locked_until on bob's row only; Unlock lets him sign in at once, keeps his session and is audited", async () => {
+    const { cookie, auth, audit } = await asAdmin();
+    expect((await createBob(cookie)).status).toBe(201);
+    const session = await auth.login({ username: "bob", password: BOB_PASSWORD });
+    await lockBob(auth);
+    expect((await auth.login({ username: "bob", password: BOB_PASSWORD })).ok).toBe(false);
+
+    const rows = (await (await list(req("/api/admin/users", { method: "GET", cookie }))).json()).users;
+    expect(rows.find((u) => u.username === "bob").locked_until).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(rows.find((u) => u.username === "admin")).not.toHaveProperty("locked_until");
+
+    const bob = auth.store.userByName("bob");
+    const res = await unlock(req(`/api/admin/users/${bob.id}/unlock`, { cookie }), ctx(bob.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ unlocked: true });
+    // No session ends or starts: bob's earlier one is still live.
+    expect(auth.store.sessionUser(hashToken(session.refresh), Date.now())).toBe(bob.id);
+
+    const lines = audit.filter((e) => e.action === "login_unlocked");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ username: "admin", role: "admin", target: "bob" });
+    expect(lines[0].locked_until).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const text = JSON.stringify(audit) + logs.join("\n");
+    for (const secret of [BOB_PASSWORD, "a wrong password", "$argon2id$"]) expect(text).not.toContain(secret);
+    expect((await auth.login({ username: "bob", password: BOB_PASSWORD })).ok).toBe(true);
+  });
+
+  test("a username not locked answers unlocked: false and writes no audit line; an unknown id 404", async () => {
+    const { cookie, auth, audit } = await asAdmin();
+    await createBob(cookie);
+    const bob = auth.store.userByName("bob");
+    const res = await unlock(req(`/api/admin/users/${bob.id}/unlock`, { cookie }), ctx(bob.id));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ unlocked: false });
+    expect(audit.filter((e) => e.action === "login_unlocked")).toEqual([]);
+    expect((await unlock(req("/api/admin/users/9999/unlock", { cookie }), ctx(9999))).status).toBe(404);
+  });
+
+  test("a manager's unlock is 403 and the lock stays", async () => {
+    const admin = await asAdmin();
+    await createBob(admin.cookie);
+    await lockBob(admin.auth);
+    const bob = admin.auth.store.userByName("bob");
+    const { cookie } = await signedIn("mia", "manager");
+    expect((await unlock(req(`/api/admin/users/${bob.id}/unlock`, { cookie }), ctx(bob.id))).status).toBe(403);
+    expect(admin.auth.listUsers().find((u) => u.username === "bob").locked_until).toBeTruthy();
   });
 });
 

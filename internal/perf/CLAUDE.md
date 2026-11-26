@@ -6,6 +6,7 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   - net P&L in coin and USD, return % of the equity passed in (coin, from the account summary — never recomputed from P&L), hold-the-coin return over the same window (spot first → last),
     excess return, max drawdown, worst 7 days, and the UTC days with no point (reported, never filled in).
   Served by `/api/performance` (above) and used by `internal/evidence`.
+  A USDC bot's points carry `pnl_unit: "USDC"` (`history.Store.SetPnLUnit`, set by `main`, #832): its USD figures are the amounts as they are, `Summary.Unit` says so, and the spot is only the hold benchmark.
   Pure `ReturnOnMargin(points, equity, from, to)` (`margin.go`, #278) is the PRD's engine-phase north star:
   - net P&L ÷ (time-weighted mean `im_pct`, each line ≤ `history.MaxSampleGap` as in `Utilisation`, × the equity passed in), in %,
     plus a 30-day rate (scaled by the span the net covers, downtime included, like the replay's window) and the measured hours;

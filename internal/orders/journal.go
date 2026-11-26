@@ -304,6 +304,11 @@ type OrderLog struct {
 	Market    MarketSnapshot `json:"market"`
 	Portfolio MarketContext  `json:"portfolio"`
 
+	// Unit is the currency of the line's prices, premium, fees and P&L when
+	// it is not the underlying's coin: "USDC" for a SOL/XRP option, whose
+	// _usd fields equal its amounts (#832). Absent on BTC/ETH lines.
+	Unit string `json:"unit,omitempty"`
+
 	// Closing records only
 	CloseReason     string  `json:"close_reason,omitempty"`
 	PremiumReceived float64 `json:"premium_received,omitempty"` // coin
@@ -334,7 +339,10 @@ type PnLRecord struct {
 	RealisedUSD   float64   `json:"realised_usd"`
 	UnrealisedUSD float64   `json:"unrealised_usd"`
 	TotalUSD      float64   `json:"total_usd"`
-	Spot          float64   `json:"spot"` // conversion price for the USD fields
-	OpenLegs      int       `json:"open_legs"`
-	ClosedLegs    int       `json:"closed_legs"`
+	Spot          float64   `json:"spot"` // conversion price for the USD fields (not used when Unit is USDC)
+	// Unit is "USDC" for a USDC-settled bot (#832): the coin fields are USDC
+	// and equal the USD ones. Absent for BTC/ETH.
+	Unit       string `json:"unit,omitempty"`
+	OpenLegs   int    `json:"open_legs"`
+	ClosedLegs int    `json:"closed_legs"`
 }

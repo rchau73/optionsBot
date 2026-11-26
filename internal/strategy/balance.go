@@ -43,8 +43,8 @@ func (s *Strategy) balanceStrangles(ctx context.Context) {
 		}
 		lot := s.cfg.MinTradeAmount
 		for _, p := range []*orders.Position{call, put} {
-			if inst, ok := s.md.GetInstrument(p.Instrument); ok && inst.MinTradeAmount > lot {
-				lot = inst.MinTradeAmount
+			if inst, ok := s.md.GetInstrument(p.Instrument); ok && inst.OrderStep() > lot {
+				lot = inst.OrderStep()
 			}
 		}
 		larger, smaller := call, put
