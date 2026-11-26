@@ -291,6 +291,19 @@ describe("Scenario: drop twice, or drop an applied run", () => {
     expect(linesOf(record, RECORD_AUDIT_ACTION)).toEqual([]);
   });
 
+  test("an apply and a drop sent together: exactly one stands", async () => {
+    for (const order of ["apply-first", "drop-first"]) {
+      const id = newRun();
+      const { cookie } = await person(`ana-${order}`, "manager");
+      const a = () => apply(cookie, id, { confirm_token: tokenOf(id, `ana-${order}`) });
+      const d = () => drop(cookie, id);
+      const statuses = (await Promise.all(order === "apply-first" ? [a(), d()] : [d(), a()])).map((r) => r.status).sort();
+      expect([order, statuses]).toEqual([order, [201, 409]]);
+      const kept = [files(recordsDir(dir)).includes(`${id}.json`), files(droppedDir(dir)).includes(`${id}.json`)];
+      expect([order, kept.filter(Boolean)]).toEqual([order, [true]]);
+    }
+  });
+
   test.each([
     ["a run that changed nothing", () => newRun({ diffs: [] }), 409, "there is no proposal to drop"],
     ["a run whose request is still running", () => {

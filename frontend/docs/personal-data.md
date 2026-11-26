@@ -87,7 +87,7 @@ Never sent in an event or a log line.
 | `user_id` | Whose answer it is (so it can be deleted with the person) | with the row; **proposal**: unlink answers after a period (question L16) |
 | `survey_id` | Which survey | with the row |
 | `codes` | The allow-listed coded answers | with the row |
-| `free_text` | Optional free text, which may hold anything the person types | with the row |
+| `free_text` | Optional free text, which may hold anything the person types | erased after `SURVEY_TEXT_RETENTION_DAYS` (730, 24 months) by the daily retention job (#849; needs legal review, C2), or with the row if sooner |
 | `created_at` | When it was given | with the row |
 
 ## `notification_reads` and `notification_settings`
@@ -142,7 +142,7 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
   - `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
   - `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
   - `parameter_change_dropped` (#890: which manager dropped a run's proposal, with the account and the run, no setting value; that run's drop record, `data/compare/dropped/<id>.json`, holds only an 8-character hash of the username and the role, kept with the run);
-- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
+- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_text_purged`, `survey_text_purge_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The security digest and alerts
 

@@ -419,6 +419,18 @@ export class AuthStore {
     return removed;
   }
 
+  /**
+   * Erases the free text of the answers created before cutoffSec (Unix
+   * seconds, #849); the row and its codes stay, so counts do not change.
+   * → how many texts were erased.
+   */
+  purgeSurveyText(cutoffSec) {
+    this.db.run("UPDATE survey_answers SET free_text = NULL WHERE free_text IS NOT NULL AND created_at < ?", [cutoffSec]);
+    const erased = this.db.getRowsModified();
+    if (erased > 0) this.save();
+    return erased;
+  }
+
   /** The ids of the notification items a person has read (#447), as a Set. */
   notificationReads(userId) {
     return new Set(this.all("SELECT item_id FROM notification_reads WHERE user_id = ?", [userId]).map((r) => r.item_id));

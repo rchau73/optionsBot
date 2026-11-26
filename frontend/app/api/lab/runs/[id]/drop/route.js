@@ -59,6 +59,8 @@ export async function POST(request, { params }) {
   const problem = decisionRefusal(auth, user, r.run, readAccounts);
   if (problem) return Response.json({ error: problem }, { status: 403 });
 
+  // From here to writeRecord nothing awaits: the monitor is one Node process, so an apply of the same run
+  // cannot run between this check of applied/ and the write to dropped/ (the apply route keeps the same rule).
   const now = Date.now();
   const dropped = droppedDir(dir);
   const checked = checkDrop({ run: r.run, now, requests: readRequests(queueDir(dir)), recorded: readRecord(recordsDir(dir), id), dropped: readRecord(dropped, id) });
