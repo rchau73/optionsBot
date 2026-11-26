@@ -176,9 +176,8 @@ func TestLinearHedge_OnAtFirstStart(t *testing.T) {
 	if err != nil || !st.Enabled || st.By.User != strategy.FirstStartActor.User {
 		t.Fatalf("the mode file says ON: %+v, %v", st, err)
 	}
-	if !f.strat.HedgeState().Enabled {
-		t.Error("the view says ON")
-	}
+	// The view is published at the end of the cycle that journaled the switch.
+	eventually(t, 2*time.Second, "the view says ON", func() bool { return f.strat.HedgeState().Enabled })
 	eventually(t, 2*time.Second, "the hedge trades", func() bool { return len(f.exch.solPerpOrders()) >= 1 })
 }
 
