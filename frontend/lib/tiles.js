@@ -3,6 +3,7 @@
 // per bot in that bot's coin; different coins are never added together, only
 // their ≈ USD on the footer. Missing data says "unknown: <reason>", never 0.
 import { riskRows } from "./account";
+import { unitOf } from "./details";
 import { MISSING, formatCoin, formatDateTime, formatPct, isNumber } from "./format";
 import { hedgeShown } from "./futuresHedge";
 import { clockHM, coinOf, plainFreeze, stateWords, worstCaseLine } from "./overview";
@@ -28,7 +29,7 @@ function summaryUnknown(bot) {
  * text is the coin figure, or the reason it is unknown.
  */
 function line(bot, value, usd, extra = {}) {
-  return { bot: bot.name, coin: coinOf(bot), value, usd, text: fmtCoin(value, coinOf(bot)), tone: toneOf(value), unknown: null, ...extra };
+  return { bot: bot.name, coin: coinOf(bot), value, usd, text: fmtCoin(value, unitOf(bot)), tone: toneOf(value), unknown: null, ...extra };
 }
 const unknownLine = (bot, why) => ({ bot: bot.name, coin: coinOf(bot), value: null, usd: null, text: why, tone: "muted", unknown: why });
 

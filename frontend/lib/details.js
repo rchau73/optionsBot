@@ -4,6 +4,25 @@
 import { formatCoin, formatDate, formatTime, isNumber, MISSING } from "./format";
 import { formatSignedUSD } from "./summary";
 
+/**
+ * The unit of a bot's amounts (#837): /api/status's `unit` — the coin for
+ * BTC and ETH, USDC for the SOL and XRP bots — else its underlying, else its
+ * name (an older bot without the field).
+ */
+export function unitOf(bot) {
+  return bot?.status?.unit || bot?.status?.underlying || String(bot?.name ?? "").toUpperCase();
+}
+
+/**
+ * An amount in unit as ≈ USD: a USDC amount as it is, a coin amount at spot.
+ * null when it is not a number, or a coin amount without a spot.
+ */
+export function toUSD(value, unit, spot) {
+  if (!isNumber(value)) return null;
+  if (unit === "USDC") return value;
+  return isNumber(spot) ? value * spot : null;
+}
+
 /** Fixed decimals of each coin's P&L: BTC 5, ETH 4; another coin 5. */
 export const COIN_DIGITS = { BTC: 5, ETH: 4 };
 
@@ -116,7 +135,7 @@ export function positionDeltaTip(rows) {
  * perpDelta, book, optionsCoin, netCoin, band, inside }, unavailable }.
  */
 export function bookDelta(bot, rows, shown) {
-  const unit = bot.status?.underlying ?? bot.name.toUpperCase();
+  const unit = unitOf(bot);
   const spot = bot.status?.market?.spot ?? null;
   const options = netPositionDelta(rows);
   const h = bot.hedge;

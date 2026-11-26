@@ -151,6 +151,7 @@ type Result struct {
 	ReEntries                      int     // repairs of a leg a stop, delta exit or MM cut closed
 	MaxMMPct                       float64 // MM as % of the margin balance, highest over the decisions
 	AvgIM                          float64 // IM in the coin, averaged over the decisions
+	Linear                         bool    // USDC-settled options (#837): every amount is in USDC
 	MaxGapLossPct                  float64 // the worst loss of the held book if spot gapped GapMove at a decision, % of the margin balance
 	// The full-strangle study (#677, fullstrangle.go).
 	MissingLegHours    float64 // one-legged strangles × hours they were so, every rule set
@@ -225,6 +226,7 @@ type engine struct {
 	set     Settings
 	cfg     *config.Config
 	lot     float64
+	linear  bool // USDC-settled options (SOL, XRP, #837): prices, fees, margin and P&L in USDC
 	gamma   *strategy.GammaMonitor
 	src     *snapSource
 	dvol    *marketdata.DVOLTracker
@@ -247,6 +249,7 @@ type engine struct {
 	missingLegs  int
 
 	now  time.Time              // the snapshot being replayed
+	spot float64                // its spot (the linear fee is a share of it)
 	dec  strategy.GammaDecision // its GEX decision
 	cash float64                // margin balance + what buying every short back at its mid costs
 	peak float64
@@ -266,15 +269,12 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	if set.Equity <= 0 {
 		return Result{}, fmt.Errorf("replay: starting equity must be positive")
 	}
-	e := &engine{set: set, cfg: cfg, lot: 0.1, src: &snapSource{},
+	e := &engine{set: set, cfg: cfg, lot: LotFor(cfg.Underlying), linear: config.IsLinear(cfg.Underlying), src: &snapSource{},
 		dvol:    marketdata.NewDVOLTracker(cfg.IVPercentileWindow),
 		policy:  strategy.IVPolicy(cfg.RiskPolicy(true), marketdata.VolSource(cfg.Underlying), set.ChainIVMinDays),
 		stopped: map[string]time.Time{}, anchors: map[string]*strategy.ShedAnchor{}, deferSince: map[string]time.Time{},
 		closeOnly: map[string]bool{}, closed: strategy.ClosedExpiries{},
 		cash: set.Equity}
-	if !strings.EqualFold(cfg.Underlying, "BTC") {
-		e.lot = 1 // Deribit's minimum: 0.1 BTC, 1 ETH
-	}
 	e.regimes, _ = history.OpenRegimes("") // in memory; cannot fail
 	e.gamma = strategy.NewGammaMonitor(cfg.GammaTrendLookbackDays, cfg.SwingPivotN)
 	e.gamma.SetGEXSource(e.src)
@@ -312,7 +312,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 		return Result{}, fmt.Errorf("replay: no snapshot in the window from %s", set.From.Format(time.DateOnly))
 	}
 	e.closeDay()
-	e.res.Equity0 = set.Equity
+	e.res.Equity0, e.res.Linear = set.Equity, e.linear
 	e.res.Equity = e.res.Days[len(e.res.Days)-1].Equity
 	e.res.Net = e.res.Equity - e.res.Equity0
 	if e.imN > 0 {
@@ -407,7 +407,7 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	if spot <= 0 {
 		return
 	}
-	e.now = at
+	e.now, e.spot = at, spot
 	if dvol <= 0 && !marketdata.HasVolIndex(e.cfg.Underlying) {
 		dvol, _ = marketdata.ChainATMIV30(snap.Instruments(e.lot), spot, at) // as the bot reads it (#834)
 	}
@@ -481,7 +481,7 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 	e.res.AvgIM += u.IM
 	e.res.MaxMMPct = math.Max(e.res.MaxMMPct, u.MMPct())
 	if u.MarginBalance > 0 {
-		gap := gapLoss(e.marginLegs(), e.hedge.usd, spot, GapMove, GapIVMultiple)
+		gap := gapLoss(e.linear, e.marginLegs(), e.hedge.usd, spot, GapMove, GapIVMultiple)
 		e.res.MaxGapLossPct = math.Max(e.res.MaxGapLossPct, gap/u.MarginBalance*100)
 	}
 	use := 0.0
@@ -569,7 +569,7 @@ func (e *engine) refreshMarks(at time.Time, quotes map[string]recorder.Quote, sp
 	for _, s := range e.book {
 		for _, p := range s.legs() {
 			if !at.Before(p.Expiry) {
-				v := inversePrice(p.OptionType, spot, p.Strike, 0, 0)
+				v := optionPrice(e.linear, p.OptionType, spot, p.Strike, 0, 0)
 				e.close(at, s, p, p.Qty, v, 0, "expired")
 				continue
 			}
@@ -865,20 +865,20 @@ func (e *engine) size(sides []entrySide, spot float64, st risk.Status, vacant, n
 		return out
 	}
 	book := e.marginLegs()
-	perLot := scanPortfolioIM(append(book, extra(1)...), e.hedge.usd, spot) - u.IM
+	perLot := scanPortfolioIM(e.linear, append(book, extra(1)...), e.hedge.usd, spot) - u.IM
 	if e.set.Hedge.on() {
 		// The study (#812) prices a lot without the perpetual: next to the
 		// hedge a short leg lowers the scenario IM, perLot ≤ 0 sizes one lot,
 		// and the modes would compare book sizes, not the hedge (the bot kept
 		// selling 28–126 ETH lots with the hedge on). The post-trade check
 		// below still counts the perpetual.
-		perLot = scanPortfolioIM(append(book, extra(1)...), 0, spot) - scanPortfolioIM(book, 0, spot)
+		perLot = scanPortfolioIM(e.linear, append(book, extra(1)...), 0, spot) - scanPortfolioIM(e.linear, book, 0, spot)
 	}
 	lots := strategy.EntryLots(share, perLot)
-	normal := strategy.TargetLots(slotShare, scanIM(extra(1), spot))
+	normal := strategy.TargetLots(slotShare, scanIM(e.linear, extra(1), spot))
 	lots, _ = strategy.CapLots(lots, normal, e.cfg.MaxLegSizeMultiple)
 	for attempt := 0; attempt < 3 && lots >= 1; attempt++ {
-		im := scanPortfolioIM(append(e.marginLegs(), extra(lots)...), e.hedge.usd, spot)
+		im := scanPortfolioIM(e.linear, append(e.marginLegs(), extra(lots)...), e.hedge.usd, spot)
 		post := risk.Usage{IM: im, MM: im * MMRatio, MarginBalance: u.MarginBalance}
 		if risk.Fits(post, st.LimitIMPct, st.MaxMMPct) {
 			return lots
@@ -910,14 +910,14 @@ func (e *engine) marginLegs() []marginLeg {
 // usage is the book's margin now (MODEL, see scanIM) against its margin
 // balance: cash less what buying every short back at its mid would cost.
 func (e *engine) usage(spot float64) risk.Usage {
-	im := scanPortfolioIM(e.marginLegs(), e.hedge.usd, spot)
+	im := scanPortfolioIM(e.linear, e.marginLegs(), e.hedge.usd, spot)
 	value := 0.0
 	for _, s := range e.book {
 		for _, p := range s.legs() {
 			value += p.CurrentMid * p.Qty
 		}
 	}
-	return risk.Usage{IM: im, MM: im * MMRatio, MarginBalance: e.cash - value, Unit: e.cfg.Underlying}
+	return risk.Usage{IM: im, MM: im * MMRatio, MarginBalance: e.cash - value, Unit: config.SettlementCurrency(e.cfg.Underlying)}
 }
 
 // sell books a repair onto s.

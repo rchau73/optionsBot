@@ -296,7 +296,7 @@ func TestConfigLoad_DeploymentFromEnv(t *testing.T) {
 
 // The shipped configs must always load and validate.
 func TestConfigLoad_RepositoryConfigsAreValid(t *testing.T) {
-	for _, name := range []string{"config_btc.yaml", "config_eth.yaml"} {
+	for _, name := range []string{"config_btc.yaml", "config_eth.yaml", "config_sol.yaml", "config_xrp.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadWithDummyCreds(t, filepath.Join("..", name)); err != nil {
 				t.Errorf("%s: %v", name, err)

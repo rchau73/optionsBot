@@ -203,7 +203,7 @@ func HedgeModeMarkdown(coin string, rows []HedgeModeRow, missing []time.Time, ma
 		}
 		ww, _ := WorstWeek(res.Days, res.Equity0)
 		fmt.Fprintf(b, "| %s | %g× | %+.4f | %+.0f | %+.2f | %+.4f | %+.4f | %d | %.0f | %.0f | %.4f | %+.2f | %+.2f | %.1f | %.1f | %.1f | %d | %d | %s |\n",
-			r.Mode, r.CostMultiple, res.Net, NetUSD(res.Days), net, res.HedgePnL, res.Net-res.HedgePnL,
+			r.Mode, r.CostMultiple, res.Net, res.NetInUSD(), net, res.HedgePnL, res.Net-res.HedgePnL,
 			res.HedgeTrades, res.PerpTradedUSD, res.MaxPerpUSD, res.PerpFees,
 			WorstDay(res.Days, res.Equity0), ww, res.AvgIMPct, res.MaxMMPct, res.MaxGapLossPct, res.Stops, res.DeltaExits,
 			HedgeModeVerdict(r, base[r.CostMultiple], maxMMPct))

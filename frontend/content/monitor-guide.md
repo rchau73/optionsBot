@@ -756,6 +756,18 @@ Numbers from the two environments are never added together.
 
 Learn more: OptionStrategy.md section 12.
 
+## SOL and XRP bots
+
+The mvp monitor also shows a SOL and an XRP bot, beside BTC and ETH, as two more chips in the coin selector; every page that lists bots lists them too.
+They trade options on Deribit's test exchange with test money: 5,000 USDC each, on an account of their own.
+Their options are settled in USDC, so every amount they show — premium, fees, profit and loss, margin, worst case — is in **USDC**, not in SOL or XRP.
+A BTC or ETH bot still shows its amounts in its own coin; USDC is already dollars, so its USD figure is the same number.
+Each order is whole contracts: 10 SOL or 1,000 XRP.
+They sell a strangle about 30 and about 50 days out, and their futures hedge is on from the first start (Positions shows the perpetual).
+For their first 90 days the margin limit stays at the lowest band, because these coins have no volatility index and the bot needs 90 days of their own implied volatility to rank it.
+
+Learn more: OptionStrategy.md section 3, "SOL and XRP bots".
+
 ## How-to videos
 
 Short how-to videos explain one task each: reading the summary card, one position and the worst case, why the last trade, the margin bar, why entries are frozen, closing a leg by hand, previewing a rebalance, and income month by month.
