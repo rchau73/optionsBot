@@ -598,12 +598,22 @@ class UsageScript(unittest.TestCase):
         self.events("mvp")
         self.events("stable")
         os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        # #876: lab.sh's line per request the tick started; one is too old, one is another queue's.
+        now = dt.datetime.now(dt.timezone.utc)
+        stamp = lambda days: (now - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mvp_queue = self.t("envs", "mvp", "data", "compare", "requests")
+        write(self.t("repo", "data", "agents", "lab", "started.jsonl"), "".join(json.dumps(d) + "\n" for d in (
+            {"ts": stamp(1), "queue": mvp_queue, "id": "20261120T000000Z-a1b2c3d4"},
+            {"ts": stamp(2), "queue": mvp_queue, "id": "20261119T000000Z-a1b2c3d5"},
+            {"ts": stamp(40), "queue": mvp_queue, "id": "20261010T000000Z-a1b2c3d6"},
+            {"ts": stamp(1), "queue": "/elsewhere/requests", "id": "20261120T000000Z-a1b2c3d7"})))
         self.run_script()
         lab = self.read("lab.log").splitlines()
         self.assertEqual(lab, ["run ./cmd/labstats -compare " + self.t("envs", "mvp", "data", "compare")], self.output)
         md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
         self.assertEqual(md.count("## Lab usage"), 1, md)
         self.assertIn("| Requests | 4 |", md)
+        self.assertIn("- Requests the agents' tick started (last 28 days): 2\n", md)
         self.assertNotIn("## Lab usage", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
         self.assertTrue(self.done())
 
