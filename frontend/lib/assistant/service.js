@@ -10,6 +10,8 @@
 // person to a document, or for not being in English (#565), is asked once
 // more with what failed (#534); any other
 // rejected answer, or a second rejection, becomes the fallback reply.
+import { asksAboutHedge } from "./hedgeNow";
+export { asksAboutHedge, hedgePassage } from "./hedgeNow";
 import { REASON_LANGUAGE, REASON_NO_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, check, isCanonical, isEnglish } from "./guard";
 import { appendLine, newAnswerId } from "./log";
 import { AI_NOTICE, DONT_KNOW, FALLBACK_REPLY, REFUSAL } from "./phrases";
@@ -116,6 +118,8 @@ export function journalPassages(bot, items, held = []) {
         trade: TRADE_EVENTS.has(e.event),
         reason: typeof e.reason === "string" ? e.reason : "",
         event: e.event,
+        // buy | sell: an order's direction or a hedge line's side (#877).
+        side: typeof e.side === "string" ? e.side : "",
         slot: e.slot ?? null,
         lastAt: e.last ?? e.at,
         instrument,
@@ -882,7 +886,8 @@ function applyRequestCheck(entry, verdict, passages) {
     entry.citations = cites;
     entry.verdict = [...g.details, ...r.details];
     [entry.outcome, entry.answer] = outcomeOf({ text: v.text }, g);
-    if (r.outcome === REQUEST_ANSWERED && entry.outcome === OUTCOME_ANSWERED) entry.request = { checklist: r.checklist, draft: r.draft };
+    // explained_by goes with a sent draft to the queue: the review closes it as not_a_bug (#852).
+    if (r.outcome === REQUEST_ANSWERED && entry.outcome === OUTCOME_ANSWERED) entry.request = { checklist: r.checklist, draft: r.draft, explained_by: r.explained_by };
     return;
   }
   entry.verdict = r.details;
@@ -909,7 +914,8 @@ function applyRequestCheck(entry, verdict, passages) {
  * little or nothing is open (asksAboutIdle, #719); lab: the lab's latest
  * comparisons from labPassages, sent only when the question asks about one
  * (asksAboutLab, #742) — the caller passes them for a manager or an admin
- * only (labRuns); reportPassages:
+ * only (labRuns); hedge: the bot's futures hedge now from hedgePassage, sent
+ * only when the question asks about the hedge (asksAboutHedge, #877); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
@@ -929,6 +935,7 @@ export async function answerQuestion({
   perf = [],
   book = [],
   lab = [],
+  hedge = [],
   reportPassages = async () => [],
   takeRetry = () => true,
   user,
@@ -946,7 +953,9 @@ export async function answerQuestion({
   const present = asksAboutIdle(question) ? book : [];
   // The lab's comparisons go only with a question about one (#742); the caller gives them to managers only.
   const comparisons = asksAboutLab(question) ? lab : [];
-  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...results, ...comparisons, ...facts];
+  // The hedge now goes only with a question about the hedge or the perpetual (#877).
+  const hedgeNow = asksAboutHedge(question) ? hedge : [];
+  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...hedgeNow, ...results, ...comparisons, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -974,7 +983,7 @@ export async function answerQuestion({
   // best hits go to the model anyway, so an advice or forecast question gets
   // the refusal, not "I don't know"; the guard checks the answer as any other.
   const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
-  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && results.length === 0 && comparisons.length === 0) {
+  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && hedgeNow.length === 0 && results.length === 0 && comparisons.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;

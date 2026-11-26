@@ -96,7 +96,7 @@ Read routes trust the token.
 An access token from before #171 has no `sid`: its first close answers 401, the page refreshes into a new token and retries.
 
 The route sends the person to the bot with the request — `"actor": {"user": "bob", "role": "manager"}` beside `BOT_ADMIN_TOKEN` — and the bot logs and journals it (the close's `actor` and `detail` "manual close from the monitor by bob (manager)", `rebalance_manual`'s `actor`).
-User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`, `deleteUser`, `signOutEverywhere`: never zero admins, never delete yourself, every change ends that user's sessions), behind the Users page below.
+User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`, `deleteUser`, `signOutEverywhere`, `unlockUser` (#846): never zero admins, never delete yourself, every change ends that user's sessions), behind the Users page below.
 
 ## Users page (#306)
 
@@ -104,12 +104,15 @@ User management is in `AuthService` (`createUser`, `changeRole`, `resetPassword`
 The page lists every person (username, role, email, accounts, created, last sign-in) and has an **Add user** form; each row changes the role, resets the password, signs the person out everywhere or deletes them, each after a confirmation that says what follows.
 The **Accounts** column says what each person may act on: "All accounts" (admin), "None: sees only" (user), "All accounts (no links)" or the linked accounts (manager); **Edit accounts** on a manager's row opens a dialog of the registry's accounts with checkboxes, the consequence in words, and **Save accounts** (#760, `AccountLinksDialog.jsx`).
 Your own row cannot be deleted or reset (use **Change password**).
+A row whose username is locked after 5 wrong passwords shows a **Locked until HH:MM** badge in words and an **Unlock** button (#846); its confirmation says "They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead." and the row refreshes after it.
 
 ### Routes
 
 #### `GET /api/admin/users`
 
-**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never); a user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760); never a hash
+**Does:** `{"users": [{id, username, role, email, created_at, last_sign_in_at, accounts, locked_until?}], "accounts": [{account_id, label, environment}]}` (ISO times, `null` = never).
+A user's `accounts` are the ids they are linked to (`[]` = none), the top-level ones the registry's (`[]` without a status file, #760).
+`locked_until` is there only while the username is locked after 5 wrong passwords (#846); never a hash.
 
 **Refusals:** 403 not admin
 
@@ -149,6 +152,15 @@ Admins only, same-origin JSON; in the role matrix
 **Does:** `signOutEverywhere`; audited `signed_out_everywhere`
 
 **Refusals:** 404
+
+#### `POST /api/admin/users/<id>/unlock` `{}` (#846)
+
+**Does:** `unlockUser` → `{"unlocked": true}`: the username's sign-in lock and recent failures are deleted (`LoginLimiter.unlock`, `AuthStore.clearLoginLock`), so the person can sign in at once and the next 5 wrong passwords lock again; audited `login_unlocked` with `target` and the lifted `locked_until`, never any password data.
+`{"unlocked": false}` when the username was not locked: nothing changes, no audit line.
+No session ends or starts and the password is unchanged.
+Admins only, same-origin JSON; in the role matrix
+
+**Refusals:** 403 not admin · 404
 
 #### `GET /api/auth/sessions` (#584)
 
@@ -232,8 +244,8 @@ The server recomputes the preview of the run now, for the person asking, and che
 It then re-checks everything the preview checks: the role (re-read from the database), the range and cross rules, the account's value, the run's age and numbers, and the core-policy block.
 On success it writes `COMPARE_DIR/applied/<id>.json` once (mode 0600, created exclusively, so a second confirm, or two at once, records one) with `run_id`, `recorded_at`, `person`, `role`, `account`, `changes` (`key`, `title`, `old`, `new`), `token_id` (the first 16 hex of the token's SHA-256, never the token), `applied: false` and `recorded: true`.
 201 with that record, `message` (what was recorded, that the result was backtested, not a forecast, and that nothing was applied to a running bot), `next_step`, `backtested`, `risks` (worst week, drawdown and fees in %, the fragility check, "past data only") and `audit_line`.
-How a recorded change reaches the running bot is not decided yet (a reviewed config PR and a restart, or a later hot-reload): until then the record is the whole effect.
-On the bot side `cmd/labapply` (#806) re-checks the record and writes a candidate config and its diff under `COMPARE_DIR/candidates/<id>/` for a person's pull request (`docs/operations.md` "Lab candidates"); it applies nothing.
+A recorded change reaches the running bot only through a reviewed config pull request and the usual deploy (decision of 2026-11-20, #862; hot-reload is a later story): the record itself changes nothing.
+On the bot side `cmd/labapply` (#806) re-checks the record and writes a candidate config and its diff under `COMPARE_DIR/candidates/<id>/`, and a person runs `cmd/labpr` (#862) to open it as a draft pull request; a person's merge is the approval (`docs/operations.md` "Lab candidates").
 Manager or admin (`STATE_CHANGING_ROUTES`); one audit line, `parameter_change_recorded`, with the person, the account, the run, each `key` with `old` and `new`, and `token_id`.
 A manager linked to accounts (#760) is refused 403 on a run whose bot (its underlying: BTC → bot btc) trades for another account, as the bot routes are; a manager without a link may confirm for every account, and a token works only for the person it was shown to.
 

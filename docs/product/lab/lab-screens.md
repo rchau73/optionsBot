@@ -223,3 +223,6 @@ Each goes to Ready only after the prototype is approved (`prototype:approved` on
    Routes: `GET /api/lab/runs`, `GET /api/lab/runs/<id>`.
 4. **Preview and confirm:** the preview, the stale, core-policy and no-numbers states, the confirm dialog, the recorded and refused states.
    Routes: `GET /api/lab/runs/<id>/preview`, `POST /api/lab/runs/<id>/apply`.
+
+A later story could show the lab follow-up (README item 9, `cmd/labfollow`, #855) beside a recorded change: the backtested return, worst week, drawdown and fees ("backtested, not a forecast") next to the realised ones ("realised, one short window"), the gap in points, the "too early to judge" and "no data" states and the "worse than the backtest" flag.
+No route serves it yet; it is a file tool and a section of the weekly usage report.

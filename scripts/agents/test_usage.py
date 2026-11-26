@@ -357,6 +357,13 @@ if [[ "$*" == *cmd/labstats* ]]; then
   printf '## Lab usage\\n\\n| Requests | 4 |\\n'
   exit 0
 fi
+if [[ "$*" == *cmd/labfollow* ]]; then
+  # go run ./cmd/labfollow -all -compare D -root R → the lab follow-up section on stdout
+  echo "$*" >> "$US_TEST_DIR/labfollow.log"
+  [[ -f "$US_TEST_DIR/labfollow_fail" ]] && { echo "labfollow: broken" >&2; exit 1; }
+  printf '## Lab follow-up\\n\\n### Run 20261104T230000Z\\n'
+  exit 0
+fi
 # go run ./cmd/usage -events E -week W -out O -alert → O/W.{md,json}, a DROPS line
 echo "$*" >> "$US_TEST_DIR/go.log"
 while [[ $# -gt 0 ]]; do
@@ -591,12 +598,22 @@ class UsageScript(unittest.TestCase):
         self.events("mvp")
         self.events("stable")
         os.makedirs(self.t("envs", "mvp", "data", "compare", "requests"))
+        # #876: lab.sh's line per request the tick started; one is too old, one is another queue's.
+        now = dt.datetime.now(dt.timezone.utc)
+        stamp = lambda days: (now - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        mvp_queue = self.t("envs", "mvp", "data", "compare", "requests")
+        write(self.t("repo", "data", "agents", "lab", "started.jsonl"), "".join(json.dumps(d) + "\n" for d in (
+            {"ts": stamp(1), "queue": mvp_queue, "id": "20261120T000000Z-a1b2c3d4"},
+            {"ts": stamp(2), "queue": mvp_queue, "id": "20261119T000000Z-a1b2c3d5"},
+            {"ts": stamp(40), "queue": mvp_queue, "id": "20261010T000000Z-a1b2c3d6"},
+            {"ts": stamp(1), "queue": "/elsewhere/requests", "id": "20261120T000000Z-a1b2c3d7"})))
         self.run_script()
         lab = self.read("lab.log").splitlines()
         self.assertEqual(lab, ["run ./cmd/labstats -compare " + self.t("envs", "mvp", "data", "compare")], self.output)
         md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
         self.assertEqual(md.count("## Lab usage"), 1, md)
         self.assertIn("| Requests | 4 |", md)
+        self.assertIn("- Requests the agents' tick started (last 28 days): 2\n", md)
         self.assertNotIn("## Lab usage", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
         self.assertTrue(self.done())
 
@@ -607,6 +624,33 @@ class UsageScript(unittest.TestCase):
         self.run_script()
         self.assertIn("lab usage report failed", self.output)
         self.assertNotIn("## Lab usage", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
+        self.assertEqual(len(self.files("comment-")), 1)
+        self.assertTrue(self.done())
+
+    def test_the_lab_follow_up_is_the_reports_section_when_a_live_day_is_on_file(self):
+        """#855: an env with an applied/<id>.live gets cmd/labfollow -all appended once; one without none."""
+        self.events("mvp")
+        self.events("stable")
+        compare = self.t("envs", "mvp", "data", "compare")
+        write(os.path.join(compare, "applied", "20261104T230000Z.json"), "{}\n")
+        write(os.path.join(compare, "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("envs", "stable", "data", "compare", "applied", "20261101T000000Z.json"), "{}\n")  # no .live
+        self.run_script()
+        calls = self.read("labfollow.log").splitlines()
+        self.assertEqual(calls, ["run ./cmd/labfollow -all -compare " + compare + " -root " + self.t("envs", "mvp")], self.output)
+        md = self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md")
+        self.assertEqual(md.count("## Lab follow-up"), 1, md)
+        self.assertIn("### Run 20261104T230000Z", md)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "stable", "data", "monitor", "reports", self.week + ".md"))
+        self.assertTrue(self.done())
+
+    def test_a_failed_lab_follow_up_never_stops_the_usage_report(self):
+        self.events("mvp")
+        write(self.t("envs", "mvp", "data", "compare", "applied", "20261104T230000Z.live"), "2026-11-10\n")
+        write(self.t("labfollow_fail"), "")
+        self.run_script()
+        self.assertIn("lab follow-up failed", self.output)
+        self.assertNotIn("## Lab follow-up", self.read("envs", "mvp", "data", "monitor", "reports", self.week + ".md"))
         self.assertEqual(len(self.files("comment-")), 1)
         self.assertTrue(self.done())
 

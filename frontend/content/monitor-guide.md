@@ -426,6 +426,12 @@ It gives the margin in use against its limit as percentages, how many slots hold
 When every slot is full and the margin is near its limit, it says so; whether to change a limit is your decision, and the assistant does not advise it.
 When the bot does not answer, the reason is called unknown, never guessed.
 
+**What is the futures hedge doing, and why did it trade the perpetual?**: ask, such as "what is the hedge doing?" or "why did it sell the perpetual?", and the answer reads the bot's hedge as it is now.
+It says whether the hedge is on, off or cannot trade, and why: no futures connection, the exchange refusing its orders, a book holding one side only, or the kill switch.
+It gives the perpetual's side and size as a percentage of the margin balance, the book's coin delta against its band, and the newest hedge order with its reason, such as a sale of the perpetual to bring the delta back inside its band.
+It also says how many days the trial has run and whether it needs more days or has not started, with its risks; whether to switch the hedge on is your decision, and the assistant does not advise it or predict its result.
+Percentages only, never an amount; when the bot does not answer, the hedge is called unknown.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
@@ -456,6 +462,10 @@ Each person may send 10 requests a day.
 
 **My requests**: the tab in the Ask panel lists the requests you sent, newest first, with their status (In review, Filed, Fixed, Not planned, Not a bug, Duplicate or Needs info) and the team's note.
 You see only your own.
+A request close to an existing ticket or to an earlier request becomes Duplicate, and the note names it.
+One with no journal entry or P&L point cited and fewer than two steps comes back as Needs info, and the note says what is missing.
+One the help already explains becomes Not a bug.
+An accepted one becomes Filed, with a link to its public issue, which carries the request's id and never your name.
 <!-- guide: route:POST /api/assistant/requests -->
 
 **When something looks wrong**: a dimmed Ask button means the assistant is off or not set up; hover for the reason.
@@ -487,6 +497,10 @@ The assistant works the same whether you answer or not.
 **Is my survey answer in the audit trail?** Only the fact that you answered, and which survey, with your username and the time.
 Your score, reasons and comment are not in it.
 Turning the survey off or back on is recorded the same way.
+
+**How long is my survey comment kept?** At most 24 months.
+Once a day the monitor erases every comment older than that; your score and the reasons you picked stay.
+Deleting your account erases the comment at once.
 
 **When it shows**: at most once every 30 days, counted from the day it was shown, answered or not.
 It shows only when you said yes to usage analytics, only after your account is 14 days old and you have signed in at least 3 times, and not while a bot's last 7 days is a net loss or cannot be read.
@@ -539,6 +553,9 @@ Your sessions on other devices end when you change it.
 Too common means it is on a list of about 1,000 common passwords, even with capitals, with look-alikes such as p@ssw0rd, or with digits or symbols added before or after.
 The rule applies to a new user, a password change and both kinds of reset.
 A password you already have keeps working, and a refused password on a reset link leaves the link usable.
+
+**Locked after wrong passwords**: 5 wrong passwords in 15 minutes lock your username for 15 minutes.
+Wait, or ask an admin to unlock it on the Users page; then you can sign in at once with your password.
 
 **How to reset a forgotten password**: ask an admin.
 An admin issues a single-use reset link on the Users page.
@@ -742,6 +759,14 @@ An admin creates a user (a username of 3 to 64 letters, digits, dots, underscore
 Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
+
+**Unlock a locked username**: after 5 wrong passwords in 15 minutes a username is locked for 15 minutes.
+The person's row on the Users page then shows "Locked until" and the time, and an Unlock button.
+Unlock asks you to confirm: they can sign in again now, and their failed attempts are forgotten.
+If you think someone else is guessing the password, reset it instead.
+Unlock does not sign the person out or in, and does not change their password.
+Each unlock is recorded in the audit trail with your username and the person's, never any password.
+<!-- guide: route:POST /api/admin/users/[id]/unlock -->
 
 **Accounts a manager manages**: the Accounts column of the Users page says what each person may act on.
 An admin acts on every account, and a user on none.

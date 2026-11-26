@@ -97,7 +97,7 @@ function Earned({ sp, coin }) {
 /** The strangle's net delta, each leg's, and the bot's for comparison. */
 function DeltaBox({ sp, report, coin }) {
   return (
-    <aside aria-label="Delta" className="space-y-1 rounded border border-line p-3 text-sm tabular-nums">
+    <div role="group" aria-label="Delta" className="space-y-1 rounded border border-line p-3 text-sm tabular-nums">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Delta (short-signed)</h4>
       <p className="text-base font-semibold">{deltaLine(sp.net_delta_coin, sp.net_delta_usd_per_1pct, coin)}</p>
       <ul className="space-y-0.5">
@@ -109,6 +109,6 @@ function DeltaBox({ sp, report, coin }) {
       </ul>
       {hasHedgeShare(sp) ? <HedgeDeltaRows sp={sp} coin={coin} /> : null}
       <p className="text-muted">Whole bot: {deltaLine(report?.bot_net_delta, report?.bot_net_delta_usd_per_1pct, coin)}</p>
-    </aside>
+    </div>
   );
 }

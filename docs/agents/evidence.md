@@ -33,8 +33,10 @@ each kind once ever (deduplicated by its title's start against every issue, open
 `[E2] Direction trial: first GEX shed in <week>, review bias vs sma`,
 `… early stop in <week>, decide bias vs sma` (bias's replay net under sma's by more than the noise for 3 counted weeks in a row) and `… review due in <week>, decide bias vs sma` (6 counted weeks, or the report made on or after 2026-12-07).
 A ticket only asks: a change of `gex_direction` is a person's config PR.
-The kill rule's live drawdown is not in the scorecard; the ticket points to the weekly reports.
-The scorecard's `## Verdict` block (#788, `verdict` in its JSON) applies the brief's rule to every trial week up to its own: `needs more weeks` (with the weeks missing), `no difference`, `bias better`, `sma better` or `kill rule hit` (the weeks named).
+The kill rule's live drawdown (stable BTC's live max drawdown over 2× mvp BTC's in any week, #850) is in the scorecard's verdict (`verdict.live_drawdown`), copied from both clones' weekly reports.
+When it fires, the early-stop ticket is filed too, naming the weeks; `evidence_week.py` reads the field and never recomputes it.
+The scorecard's `## Verdict` block (#788, `verdict` in its JSON) applies the brief's rule to every trial week up to its own: `needs more weeks` (with the weeks missing), `no difference`, `bias better`, `sma better` or `kill rule hit` (the half that fired, `replay streak` and/or `live drawdown`, and its weeks named).
+A week lacking either bot's live max drawdown, or with mvp's at 0, is `not checked` for the live half with its reason, and `not_checked` names it; the figures are percentages only, so a live account shows no amount.
 It lists d, the noise, the tail, every week and why it counted or not, and the thresholds named as assumptions; "span too short: extend by 4 weeks" when the sign of bias − sma flips with no trend.
 The comment's block and each decision ticket carry its one line (`verdict.line`), never recomputed; a scorecard written before #788 says so.
 

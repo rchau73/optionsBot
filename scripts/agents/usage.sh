@@ -10,7 +10,9 @@
 #       security digest appended as its "Security" section when security.sh
 #       has built it (#717; security.sh appends it when it comes later), and
 #       the lab's usage (go run ./cmd/labstats -compare <clone>/data/compare,
-#       #824) as its "Lab usage" section when the clone has a lab queue;
+#       #824) as its "Lab usage" section when the clone has a lab queue, and
+#       the lab follow-up (go run ./cmd/labfollow -all, #855) as its "Lab
+#       follow-up" section when a recorded change has a live-from day on file;
 #   one `bug` issue "[E13] Engagement drop: <metrics> <week>" in Triage when a
 #   key number fell (usage_week.py issue: one per week, deduplicated by title
 #   against open issues and those closed in 14 days);
@@ -80,6 +82,8 @@ for env in $ENV_NAMES; do
   security_section "$root/data/monitor/reports/$week.md" "$AGENT_STATE_DIR/security/$week/$env/digest.md"
   # The lab's usage over 28 days (#824, cmd/labstats) as its "Lab usage" section, when the env has a lab queue.
   lab_section "$root/data/monitor/reports/$week.md" "$root/data/compare" "$dir/$env.lab.md"
+  # The recorded changes with a live-from day on file (#855, cmd/labfollow) as its "Lab follow-up" section.
+  lab_follow_section "$root/data/monitor/reports/$week.md" "$root/data/compare" "$root" "$dir/$env.labfollow.md"
   envs_csv="${envs_csv:+$envs_csv,}$env"
 done
 if [[ -z "$envs_csv" ]]; then

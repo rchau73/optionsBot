@@ -34,8 +34,12 @@
 #     when one is short, notifies once and comments on the E2 epic (#716),
 #     else exits at once;
 #   - requests.sh, which judges the assistant's private request queue with one
-#     PM agent run and files the accepted ones as redacted issues (#410), else
-#     exits at once;
+#     PM agent run and files the accepted ones as redacted issues (#410; its
+#     mechanical filter and sanitiser #852; REQUESTS_FILE=0 in agents.env
+#     turns it off), else exits at once;
+#   - lab.sh, which runs the lab runner (scripts/lab_runner.sh) on the mvp
+#     clone's queued comparison requests and files one Triage bug when the
+#     queue stalls (#876), else exits at once;
 #   - release.sh, only after a healthy deploy step: the weekly release of the
 #     newest mvp build soaked 3 days (first tick of a Monday UTC), or a
 #     `release:hotfix` bug fix live 1 h on mvp (#471; AUTO_RELEASE=0 in
@@ -63,12 +67,12 @@ deploy_ok=1
 "$dir/deploy.sh" || { echo "deploy step failed (exit $?)"; deploy_ok=0; }
 "$dir/pr_gate.sh" || echo "pr gate step failed (exit $?)"
 
-start() { # script, instances
+start() { # script, instances, [its arguments…]
   local i=0
   while [[ $i -lt $2 ]]; do
     # Own session (setsid via python3: macOS has no setsid(1)), so nothing that
     # ends the tick's process group — launchd included — stops a running agent.
-    python3 -c 'import os, sys; os.setsid(); os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$dir/$1" \
+    python3 -c 'import os, sys; os.setsid(); os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$dir/$1" "${@:3}" \
       >> "$logs/tick-${1%.sh}.log" 2>&1 < /dev/null &
     i=$((i + 1))
   done
@@ -100,7 +104,10 @@ start flaky.sh 1 # nightly: exits at once before 03 UTC or once tonight's done-m
 start backup_data.sh 1 # nightly: exits at once once today's (UTC) done-marker exists
 start dora.sh 1 # daily: exits at once once today's (UTC) done-marker exists
 start recording_check.sh 1 # daily: exits at once once yesterday's (UTC) done-marker exists
-start requests.sh 1 # exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget)
+start lab.sh 1 # exits at once unless the mvp clone's lab queue has a queued or stalled request (#876)
+# Exits at once unless an assistant request waits or a filed one is open (its Claude run checks the budget);
+# REQUESTS_FILE=0 in agents.env stops it (a person runs requests.sh alone for a dry run, #852).
+if [[ "${REQUESTS_FILE:-1}" == 1 ]]; then start requests.sh 1 --file; fi
 # Only after a healthy deploy step (#471): weekly, or a hotfix live 1 h on mvp.
 if [[ $deploy_ok -eq 1 ]]; then start release.sh 1; else echo "release step skipped: the deploy step failed"; fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] tick: agents started (logs in data/agents/tick-*.log)"

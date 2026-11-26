@@ -7,6 +7,9 @@
 #      requests_status.jsonl (files only, never the monitor or the network);
 #   2. a filed request whose issue closed → fixed | not_planned; a request an
 #      issue already carries (its marker) → filed with that issue;
+#   2b. the mechanical filter (request_filter.py, #852, no Claude): a duplicate
+#      of a card or an earlier request, no evidence, or explained by the help
+#      → duplicate | needs_info | not_a_bug with a plain-words note;
 #   3. the rest — at most what is left of the day's cap of 10 issues (all
 #      environments; above it they wait for the next UTC day) — redacted and
 #      fenced as untrusted text, go to one PM agent run (product-manager skill,
@@ -15,11 +18,22 @@
 #      not_a_bug (with the reason), needs_info, or accept;
 #   4. each verdict appends {id, status, note, issue, issue_url, ts} to the
 #      request's environment's requests_status.jsonl; an accept is filed as a
-#      `bug` or `enhancement` issue in Triage, titled "[E?] …", its body
-#      redacted again, with the request id and "From the in-product assistant".
+#      `bug` or `enhancement` issue in Triage, labelled with its epic (E10 by
+#      default), titled "[E?] …", its title and body sanitised (requests.py
+#      `sanitise`: text it cannot classify holds it as needs_info for a
+#      person), with "Sent from the assistant, request <id>" and the
+#      `<!-- agent:pm -->` marker; each filing is one line of
+#      data/agents/requests/audit.jsonl (role, request key, issue number).
 # The requester is never named, commented on or mentioned. A request with no
 # valid verdict is retried, 3 runs at most. The sweep of closed issues runs at
 # most hourly when nothing waits. GitHub: issue list and the filed issues only.
+#
+# Usage: requests.sh [--file]. Without --file it is a dry run (#852): it reads
+# GitHub, prints the status lines it would write and how many requests would
+# go to the PM review, and writes, asks and files nothing. tick.sh passes
+# --file unless agents.env sets REQUESTS_FILE=0. An environment whose .env is
+# DERIBIT_ENV=live is left out unless REQUESTS_FILE_LIVE=1: a person confirms
+# the consent text first (the request text is personal data, LGPD/GDPR).
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -27,11 +41,17 @@ cd "$AGENT_REPO_DIR"
 RQ_PY="$AGENT_REPO_DIR/scripts/agents/requests.py"
 state="$AGENT_STATE_DIR/requests"
 mkdir -p "$state"
+file_on=0
+[[ "${1:-}" == "--file" ]] && file_on=1
 
 envs=()
 for env in $ENV_NAMES; do
   q="$(env_dir "$env")/data/monitor/requests.jsonl"
-  [[ -s "$q" ]] && envs+=("$env=$(env_dir "$env")")
+  [[ -s "$q" ]] || continue
+  if grep -qx 'DERIBIT_ENV=live' "$(env_dir "$env")/.env" 2>/dev/null && [[ "${REQUESTS_FILE_LIVE:-0}" != 1 ]]; then
+    continue # a live environment's requests wait for a person (REQUESTS_FILE_LIVE)
+  fi
+  envs+=("$env=$(env_dir "$env")")
 done
 [[ ${#envs[@]} -gt 0 ]] || exit 0 # no queue anywhere: no run
 read -r waiting filed < <(python3 "$RQ_PY" pending "${envs[@]}")
@@ -53,9 +73,15 @@ gh issue list -R "$slug" --state all -L 300 --search '"assistant-request" in:bod
   --json number,state,stateReason,author,body -q "$(mine_jq "$slug")"'mine' > "$run/marked.json" # the owner's only (#575)
 gh issue list -R "$slug" --state all -L 300 \
   --json number,title,state,closedAt,labels,author,body -q "$(mine_jq "$slug")"'mine' > "$run/issues.json"
-read -r judge held < <(python3 "$RQ_PY" prepare "$run" "$run/marked.json" "$run/issues.json" "$slug" "${envs[@]}" 2> "$run/prepare.log")
+dry=()
+[[ $file_on -eq 1 ]] || dry=(--dry-run)
+read -r judge held < <(python3 "$RQ_PY" prepare ${dry[@]+"${dry[@]}"} "$run" "$run/marked.json" "$run/issues.json" "$slug" "${envs[@]}" 2> "$run/prepare.log")
 while IFS= read -r line; do log "$line"; done < "$run/prepare.log"
 [[ "$held" -eq 0 ]] || log "requests: the day's cap of issues is reached: $held request(s) wait for the next UTC day"
+if [[ $file_on -eq 0 ]]; then
+  log "requests: dry run — $judge request(s) would go to the PM review; no status line written, nothing filed (--file files)"
+  run_end dry_run "$judge request(s) would be judged"; exit 0
+fi
 if [[ "$judge" -eq 0 ]]; then run_end none "nothing to judge"; exit 0; fi
 
 # The judgement asks Claude: it waits out a limit pause and the budget like the others.
@@ -95,10 +121,10 @@ n=0
 for t in "$run"/filings/*.title; do
   [[ -f "$t" ]] || continue
   base="${t%.title}"
-  kind="$(py 'import json,sys; print(json.load(open(sys.argv[1]))["kind"])' "$base.json")"
-  if url="$(gh issue create -R "$slug" --label "$kind" --title "$(cat "$t")" --body-file "$base.body")"; then
+  labels="$(py 'import json,sys; print(",".join(json.load(open(sys.argv[1]))["labels"]))' "$base.json")"
+  if url="$(gh issue create -R "$slug" --label "$labels" --title "$(cat "$t")" --body-file "$base.body")"; then
     # A status write that fails is repaired next run: the issue carries the marker.
-    python3 "$RQ_PY" filed "$base.json" "$url" || log "requests: $url filed, status not written (next run)"
+    python3 "$RQ_PY" filed "$base.json" "$url" "$state/audit.jsonl" || log "requests: $url filed, status not written (next run)"
     add_to_board "$url" "Triage" >/dev/null || log "requests: $url filed but not put on the board"
     log "requests: filed $url"; n=$((n + 1))
   else
