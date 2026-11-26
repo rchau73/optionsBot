@@ -20,6 +20,7 @@ import {
   PERF_CACHE_MS,
   bookPassage,
   explainPassages,
+  hedgePassage,
   journalPassages,
   labPassages,
   livePassages,
@@ -34,7 +35,7 @@ const JOURNAL_TIMEOUT_MS = 5000;
 const LIVE_TIMEOUT_MS = 3000;
 
 function shared() {
-  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map(), perfs: new Map(), lab: null };
+  globalThis[KEY] ??= { index: null, limiter: new QuestionLimiter(), model: undefined, journals: new Map(), lives: new Map(), perfs: new Map(), hedges: new Map(), lab: null };
   return globalThis[KEY];
 }
 
@@ -54,7 +55,7 @@ export function assistantModel() {
   return s.model === undefined ? anthropicClient() : s.model;
 }
 
-/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal, live, performance or lab data. */
+/** Tests: a fake model (undefined = back to the real client), a fresh limiter and no cached journal, live, performance, hedge or lab data. */
 export function setAssistantModel(model) {
   const s = shared();
   s.model = model;
@@ -62,6 +63,7 @@ export function setAssistantModel(model) {
   s.journals = new Map();
   s.lives = new Map();
   s.perfs = new Map();
+  s.hedges = new Map();
   s.lab = null;
 }
 
@@ -130,6 +132,32 @@ export async function botBook(bot, journal = [], nowMs = Date.now()) {
   if (!pages) return null;
   if (pages.error) return [bookPassage(bot, { error: "the bot's status route did not answer" })];
   return [bookPassage(bot, { status: pages.status, positions: pages.positions, journal })];
+}
+
+/**
+ * A configured bot's futures hedge now (#877) as one passage (hedgePassage),
+ * from its GET /api/hedge, read once and kept LIVE_CACHE_MS per bot, and the
+ * journal passages of the same question (botJournal). A bot that does not
+ * answer gets the passage that says the hedge is unknown and why, with a WARN
+ * (not cached: the next question tries again). null for a bot that is not
+ * configured.
+ */
+export async function botHedge(bot, journal = [], nowMs = Date.now()) {
+  const target = configuredBots().find((b) => b.name === bot);
+  if (!target) return null;
+  const s = shared();
+  const cached = s.hedges.get(bot);
+  let route = cached && nowMs - cached.at < LIVE_CACHE_MS ? cached.route : null;
+  if (!route) {
+    try {
+      route = await readBot(target, "/api/hedge");
+      s.hedges.set(bot, { at: nowMs, route });
+    } catch (err) {
+      authLog("WARN", "assistant: bot hedge unavailable", { component: "assistant", bot, error: err.message });
+      return [hedgePassage(bot, { error: "the bot's hedge route did not answer", nowMs })];
+    }
+  }
+  return [hedgePassage(bot, { route, journal, nowMs })];
 }
 
 /**

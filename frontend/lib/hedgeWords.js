@@ -66,12 +66,19 @@ function modeWords(d) {
   return `${who} switched the futures hedge experiment from the monitor.`;
 }
 
+// Why the hedge trades the perpetual, by change.
+const FILL_WHY = "to bring the book's coin delta back inside its band";
+const CLOSE_WHY = {
+  kill: "to close the hedge: the kill switch closes what the bot holds",
+  off: "to close the hedge: the experiment was switched off",
+  either: "to close the hedge: the experiment was switched off, or the kill switch closed what the bot held",
+};
+
 // One sentence per orders.Hedge* change: (journal line, coin) → text.
 const WORDS = {
-  hedge_closed: (d, coin) =>
-    tradeWords(d, coin, (d.detail ?? "").startsWith("kill switch") ? "to close the hedge: the kill switch closes what the bot holds" : "to close the hedge: the experiment was switched off"),
+  hedge_closed: (d, coin) => tradeWords(d, coin, (d.detail ?? "").startsWith("kill switch") ? CLOSE_WHY.kill : CLOSE_WHY.off),
   hedge_failed: (d) => `${orderWords(d)} did not go through: the next cycle reads the position from the exchange before trying again.`,
-  hedge_fill: (d, coin) => tradeWords(d, coin, "to bring the book's coin delta back inside its band"),
+  hedge_fill: (d, coin) => tradeWords(d, coin, FILL_WHY),
   hedge_halted: () =>
     "The futures hedge paused: the exchange will not take its orders for a reason a retry cannot cure, such as maintenance. The GEX shed protects the book meanwhile; the bot looks again every 10 minutes and resumes by itself.",
   hedge_mode_changed: modeWords,
@@ -122,6 +129,21 @@ export function hedgeFilters(change, filledUSD) {
   if (change === "hedge_closed") return filled ? ["money"] : ["waiting"];
   if (change === "hedge_failed" || change === "hedge_price_away" || change === "hedge_rate_limited") return ["waiting"];
   return RISK_CHANGES.has(change) ? ["protection"] : [];
+}
+
+/** The changes that send an order of the perpetual. */
+export const HEDGE_ORDER_CHANGES = ["hedge_closed", "hedge_fill"];
+
+/**
+ * "A sale of the perpetual to bring the book's coin delta back inside its
+ * band.": a hedge order and its reason without its size (#877: the
+ * assistant's passage holds no amount) and without whether it filled (a
+ * journal item does not say); null for a change that sends no order.
+ */
+export function hedgeOrderSentence(change, side) {
+  if (!HEDGE_ORDER_CHANGES.includes(change)) return null;
+  const why = change === "hedge_fill" ? FILL_WHY : CLOSE_WHY.either;
+  return `${ORDER[side] ?? "An order"} of the perpetual ${why}.`;
 }
 
 /** True for /api/summary's last_action when it is a futures hedge trade (#794). */
