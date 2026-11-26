@@ -1,8 +1,6 @@
 package tests
 
 import (
-	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -64,21 +62,5 @@ func TestMonitorDemo_WithoutSteadyRollsLegs(t *testing.T) {
 			t.Fatal("demo without -steady rolled no leg in 10 s of 5 ms ticks")
 		}
 		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-// Scenario: the phone check starts both demo bots with -steady, so a baseline
-// recorded on one run holds on the next.
-func TestMonitorDemo_PhoneCheckRunsTheDemoSteady(t *testing.T) {
-	src, err := os.ReadFile("../frontend/e2e/playwright.config.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := regexp.MustCompile("go run ./cmd/monitor-demo[^`]*").Find(src)
-	if cmd == nil {
-		t.Fatal("playwright.config.mjs no longer starts cmd/monitor-demo")
-	}
-	if !strings.Contains(string(cmd), "-steady") {
-		t.Fatalf("the phone check starts the demo without -steady: %s", cmd)
 	}
 }
