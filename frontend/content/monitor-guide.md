@@ -426,6 +426,12 @@ It gives the margin in use against its limit as percentages, how many slots hold
 When every slot is full and the margin is near its limit, it says so; whether to change a limit is your decision, and the assistant does not advise it.
 When the bot does not answer, the reason is called unknown, never guessed.
 
+**What is the futures hedge doing, and why did it trade the perpetual?**: ask, such as "what is the hedge doing?" or "why did it sell the perpetual?", and the answer reads the bot's hedge as it is now.
+It says whether the hedge is on, off or cannot trade, and why: no futures connection, the exchange refusing its orders, a book holding one side only, or the kill switch.
+It gives the perpetual's side and size as a percentage of the margin balance, the book's coin delta against its band, and the newest hedge order with its reason, such as a sale of the perpetual to bring the delta back inside its band.
+It also says how many days the trial has run and whether it needs more days or has not started, with its risks; whether to switch the hedge on is your decision, and the assistant does not advise it or predict its result.
+Percentages only, never an amount; when the bot does not answer, the hedge is called unknown.
+
 **Why?** buttons on trade rows (Details and Activity) ask for the reason behind one trade, using the facts the journal recorded for it: the rule, its numbers, the instrument, the time and the market then.
 
 **A question from the team**: about once a month, a "1" on the Ask button means one optional question is waiting: how likely you are to recommend the monitor, from 0 to 10.
