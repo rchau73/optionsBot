@@ -18,7 +18,10 @@ The fixes come with the E12 UI stories, once the prototype (#654) is approved.
 - Text size and tap targets: `npm run test:phone` writes `frontend/e2e/a11y-report.json` at 360 px, report-only.
   Its `ranked` list is the browser's count of pages per finding and replaces the source estimates below once the first run is reviewed.
 
-- Text resize and reflow (#887): the same run repeats every page with the root font size at 200 % (360 px wide) and at 320 px (normal text) and writes, per page and pass, `overflow_px`, `clipped_text` (text in an `overflow: hidden` box whose content is larger than the box) and `offscreen_controls` (visible controls past the screen's edge, not those inside a box that scrolls sideways by design) under `resize` in `a11y-report.json`, with a `resize.ranked` list.
+- Text resize and reflow (#887): the same run repeats every page with the root font size at 200 % (360 px wide) and at 320 px (normal text).
+  It writes, per page and pass, under `resize` in `a11y-report.json`, with a `resize.ranked` list:
+  `overflow_px`, `clipped_text` (text in an `overflow: hidden` box whose content is larger than the box)
+  and `offscreen_controls` (visible controls past the screen's edge, not those inside a box that scrolls sideways by design).
   Report-only, like the rest: the run exits 0 whatever it finds.
 
 ## Findings, ranked by pages affected
