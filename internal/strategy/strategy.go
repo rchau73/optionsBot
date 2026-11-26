@@ -217,6 +217,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 
 	s.loadGammaPriceHistory(ctx)
 	s.logStartupState(ctx)
+	s.noteFirstStart() // a SOL/XRP bot's hedge switched on at its first start (#836)
 	s.reconcilePositions(ctx)
 	s.applyJournalStops()
 	s.applyJournalSheds()

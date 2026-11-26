@@ -62,9 +62,14 @@ type HedgeRecord struct {
 	RealisedCoin float64 `json:"realised_coin,omitempty"`
 	// FundingCoin is the perpetual's realised funding as Deribit reported it
 	// on the read before this trade (coin, a running figure, not this trade's).
-	FundingCoin float64        `json:"funding_coin,omitempty"`
-	Market      MarketSnapshot `json:"market"`
-	Portfolio   MarketContext  `json:"portfolio"`
+	FundingCoin float64 `json:"funding_coin,omitempty"`
+	// A linear (USDC) perpetual's line (SOL, XRP, #836): AmountUnit is the
+	// coin amount_usd/filled_usd are in ("SOL"), Unit the USDC the _coin
+	// fields are in. Both empty for BTC/ETH, whose lines are unchanged.
+	AmountUnit string         `json:"amount_unit,omitempty"`
+	Unit       string         `json:"unit,omitempty"`
+	Market     MarketSnapshot `json:"market"`
+	Portfolio  MarketContext  `json:"portfolio"`
 }
 
 // TrendRecord is one change of the SMA trend with the levels behind it. It
