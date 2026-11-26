@@ -26,6 +26,9 @@ Read both before changing a rule.
     until then the pass cuts to the exact limit, any other pass (a top-up's retry, startup, the Rebalance button, its dry run) only above limit + `rebalance_startup_band_pct`.
     A strangle left over its target is reported `kept` and the pass's `rebalance` line ends "drift, no leg bought back"; top-ups still need IM under the limit, the MM cut never waits.
     2026-10-29 stable BTC: a retry 15 min after a top-up read 20.4 % of 20 % and cut 0.2 of four legs (−0.0016 BTC + fees); 10-28 the same with four legs.
+- **Margin policy** — a coin without DVOL (SOL, XRP, #834): `IVPolicy` (pure, at `New`) sets `risk.Config.IVSource` = `marketdata.ChainIVSource` and `MinIVDays` = `config.FixedChainIVMinDays` (90, a constant: no Config field, so BTC/ETH's effective settings are unchanged);
+  - `policyDays` passes `IVCloses` as the live `IVDays`; under 90 the IM limit is the lowest band ("chain ATM IV 30d: 10 of 90 days of history: lowest band"), nothing pending, `CanRebalance` true; then the bands as for BTC/ETH;
+  - the `config_loaded` settings add `iv_source` for such a coin only (`orders.StartSettings`); `cmd/stress -replay -chainivdays N` varies the 90 (the replay reads the recorded book's chain IV when it has no DVOL).
 - **Size cap:** Portfolio margin can price a leg almost free when it offsets the book; the offset disappears when the rest of the book is closed.
 - **Liquidity cap:**
   - A strike missing from the mainnet book has no open interest (nothing sent); a wired source without a snapshot sends nothing.

@@ -23,6 +23,7 @@ import (
 	"optionsbot/internal/hedge"
 	"optionsbot/internal/history"
 	"optionsbot/internal/logger"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
 	"optionsbot/internal/shadow"
@@ -53,6 +54,10 @@ const gexHistoryDir = "data/market_gex"
 // regimeHistoryPath keeps the gamma regime at each daily close: Deribit has
 // no history of it, and the margin policy confirms regime changes on it.
 const regimeHistoryPath = "data/regime_history.jsonl"
+
+// chainIVHistoryPath keeps a coin's daily chain ATM IV when Deribit has no
+// DVOL for it (SOL, XRP, #834): the IV percentile ranks against it.
+const chainIVHistoryPath = "data/chain_iv_history.jsonl"
 
 // hedgeModePath keeps the futures hedge experiment's mode and benchmark (#657).
 const hedgeModePath = "data/hedge_mode.json"
@@ -178,6 +183,15 @@ func runLive(cfg *config.Config, cfgFile string) error {
 	// order executor and the market-data manager in one adapter.
 	ex := deribit.NewAdapter(cfg, gw)
 	md := ex.Manager
+	if !marketdata.HasVolIndex(cfg.Underlying) {
+		ivHistory, err := marketdata.OpenIVHistory(chainIVHistoryPath)
+		if err != nil {
+			return fmt.Errorf("chain IV history: %w", err)
+		}
+		defer ivHistory.Close()
+		md.UseIVHistory(ivHistory)
+	}
+	slog.Info("volatility source", "underlying", cfg.Underlying, "source", md.IVSource())
 	if err := md.Start(ctx); err != nil {
 		return fmt.Errorf("marketdata start: %w", err)
 	}

@@ -271,6 +271,11 @@ Every rule that opens, closes or holds a position, by market state.
   Stress-tested on 2026-10-12 the bias shed 3–5× as often and returned 16–139 % less than the trend; BTC trades on it as a live trial since 2026-10-12, ETH stays on the trend as the control.
 - **No fresh GEX data:** the first minute after a start (before the first GEX snapshot), or the last snapshot is more than 5 minutes old.
   The regime and trend are unknown, so the bot cannot tell which side is safe to sell.
+- **A coin without DVOL (SOL, XRP):** Deribit publishes no volatility index for them, so wherever this document says DVOL these bots read the coin's own **30-day at-the-money implied volatility** ("chain ATM IV 30d", #834).
+  It is the mean mark IV of the call and put at the strike nearest the price, taken on the two expiries either side of 30 days and blended to 30 days by variance (one expiry only: its own).
+  The bot records one value a day; until **90 daily closes** exist it cannot rank today's value, so the margin limit stays at the lowest band (20 %) and every margin line says how far the history is ("chain ATM IV 30d: 10 of 90 days of history: lowest band").
+  From the 90th day the bands apply exactly as for BTC and ETH.
+  BTC and ETH keep DVOL.
 
 | What the bot does | Normal | Change pending (freeze) | Confirmed negative regime | GEX shedding a side | MM limit |
 |---|---|---|---|---|---|

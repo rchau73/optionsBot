@@ -170,7 +170,7 @@ func New(cfg *config.Config, d Deps) *Strategy {
 		journal:          d.Journal,
 		hedge:            d.Hedge,
 		gamma:            gamma,
-		riskCfg:          cfg.RiskPolicy(d.GEX != nil),
+		riskCfg:          IVPolicy(cfg.RiskPolicy(d.GEX != nil), d.Market.IVSource(), config.FixedChainIVMinDays),
 		regimes:          regimes,
 		directions:       d.Directions,
 		appliedLimit:     math.NaN(),

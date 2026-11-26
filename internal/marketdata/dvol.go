@@ -116,6 +116,22 @@ func (d *DVOLTracker) Daily() (closes []DayIV, today DayIV) {
 	return closes, day(n - 1)
 }
 
+// Closes counts the completed daily closes held before now's UTC day — the
+// history a chain-IV coin needs FixedChainIVMinDays of before its bands apply
+// (#834). The tracker holds the percentile window and DVOLHistoryExtraDays.
+func (d *DVOLTracker) Closes(now time.Time) int {
+	today := now.UTC().Truncate(24 * time.Hour)
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	n := 0
+	for _, day := range d.days {
+		if day.day.Before(today) {
+			n++
+		}
+	}
+	return n
+}
+
 // Current returns the latest DVOL value, or 0 before any reading.
 func (d *DVOLTracker) Current() float64 {
 	d.mu.RLock()

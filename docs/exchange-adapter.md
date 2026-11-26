@@ -99,6 +99,7 @@ package adapter
 
 import (
 	"context"
+	"time"
 
 	"optionsbot/internal/exchange"
 	"optionsbot/internal/exchange/deribit"
@@ -136,11 +137,15 @@ type OptionChain interface {
 	Track(ctx context.Context, instruments []string) error
 }
 
-// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability.
+// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability:
+// a coin without one (SOL, XRP) reads its chain's 30-day ATM IV through the
+// same methods, named by IVSource, with IVCloses daily closes (#834).
 type VolIndex interface {
 	DVOL() float64
 	IVPercentile() float64
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	IVSource() string
+	IVCloses(now time.Time) int
 	TakeDVOLRejections() []marketdata.DVOLRejection // readings the sanity gate kept out (#796)
 }
 
