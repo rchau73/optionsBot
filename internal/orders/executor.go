@@ -278,11 +278,51 @@ func submitPriority(reason string) int {
 // CancelByLabel cancels every open order of currency carrying label and
 // returns how many were cancelled. Used to make sure an order whose submit
 // outcome is unknown can no longer fill.
+// A linear coin's orders are listed under USDC (#833); every label is unique
+// to the order (uniqueOrderLabel), so the wider currency reaches nothing else.
 func (e *Executor) CancelByLabel(ctx context.Context, currency, label string) (int, error) {
 	return call[int](ctx, e.gw, "private/cancel_by_label", map[string]any{
 		"label":    label,
-		"currency": currency,
+		"currency": marketdata.SettlementCurrency(currency),
 	}, gateway.PriorityHigh)
+}
+
+// OwnRows keeps the rows of coin's own instruments (#833): a linear coin's
+// positions are read from the whole USDC list, every coin's together, and
+// only its "<COIN>_USDC-" names (options and its perpetual) are its own.
+// An inverse coin's list is its own already: rows are returned as given.
+func OwnRows(coin string, rows []RawPosition) []RawPosition {
+	if !marketdata.IsLinear(coin) {
+		return rows
+	}
+	prefix := marketdata.OptionPrefix(coin)
+	own := make([]RawPosition, 0, len(rows))
+	for _, r := range rows {
+		if strings.HasPrefix(r.InstrumentName, prefix) {
+			own = append(own, r)
+		}
+	}
+	return own
+}
+
+// CurrencyPair is Deribit's currency pair of a linear coin's instruments,
+// e.g. "sol_usdc": the key private/cancel_all_by_currency_pair cancels by.
+func CurrencyPair(coin string) string {
+	return strings.ToLower(coin + "_" + marketdata.LinearSettlement)
+}
+
+// checkSettlement refuses a summary whose currency is not the coin's
+// settlement currency (#833): a SOL bot's margin must be read in USDC.
+// An empty currency is the one asked for.
+func checkSettlement(coin string, sum *AccountSummary) error {
+	want := marketdata.SettlementCurrency(coin)
+	if sum.Currency == "" {
+		sum.Currency = want
+	}
+	if marketdata.IsLinear(coin) && sum.Currency != want {
+		return fmt.Errorf("%s margin answered in %s, want %s", coin, sum.Currency, want)
+	}
+	return nil
 }
 
 // MaybePlaced reports whether a failed order submit may still have reached
@@ -340,7 +380,25 @@ func (e *Executor) CancelAll(ctx context.Context, instrument string) error {
 // currency (private/cancel_all_by_currency — private/cancel_all takes no
 // currency and would clear every currency) so a BTC bot restart leaves an ETH
 // bot's orders alone.
+//
+// A linear coin (SOL, XRP) shares the USDC currency with every other linear
+// coin: cancel_all_by_currency USDC would clear their orders too. Its options
+// and futures (its perpetual) are cancelled by its own currency pair instead
+// (private/cancel_all_by_currency_pair "sol_usdc", #833), which cannot reach
+// another coin; spot orders of the pair are left alone.
 func (e *Executor) CancelAllOrders(ctx context.Context, currency string) error {
+	if marketdata.IsLinear(currency) {
+		var errs []error
+		for _, kind := range []string{"option", "future"} {
+			if _, err := call[any](ctx, e.gw, "private/cancel_all_by_currency_pair", map[string]any{
+				"currency_pair": CurrencyPair(currency),
+				"kind":          kind,
+			}, gateway.PriorityHigh); err != nil {
+				errs = append(errs, fmt.Errorf("cancel %s %s orders: %w", CurrencyPair(currency), kind, err))
+			}
+		}
+		return errors.Join(errs...)
+	}
 	_, err := call[any](ctx, e.gw, "private/cancel_all_by_currency", map[string]any{
 		"currency": currency,
 	}, gateway.PriorityHigh)
@@ -378,21 +436,31 @@ func (e *Executor) AmendOrder(ctx context.Context, orderID string, qty, price fl
 }
 
 // GetPositions returns all open option positions for the given currency.
+// A linear coin's are read from currency=USDC and only its own
+// "<COIN>_USDC-" options are returned (OwnRows, #833): reconcile, the
+// position check, the long check and the kill switch never see, adopt,
+// close or count another coin's shorts.
 func (e *Executor) GetPositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
-		"currency": currency,
-		"kind":     "option",
-	}, gateway.PriorityLow)
+	return e.ownPositions(ctx, currency, "option")
 }
 
 // GetFuturePositions returns the currency's open futures positions
 // (perpetual included). Kept apart from GetPositions, which is option-only,
 // so reconcile and the position check never adopt a hedge (#657).
+// A linear coin's are its own "<COIN>_USDC-" futures only, as GetPositions.
 func (e *Executor) GetFuturePositions(ctx context.Context, currency string) ([]RawPosition, error) {
-	return call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
-		"currency": currency,
-		"kind":     "future",
+	return e.ownPositions(ctx, currency, "future")
+}
+
+func (e *Executor) ownPositions(ctx context.Context, currency, kind string) ([]RawPosition, error) {
+	rows, err := call[[]RawPosition](ctx, e.gw, "private/get_positions", map[string]any{
+		"currency": marketdata.SettlementCurrency(currency),
+		"kind":     kind,
 	}, gateway.PriorityLow)
+	if err != nil {
+		return rows, err
+	}
+	return OwnRows(currency, rows), nil
 }
 
 // GetInstrumentSpec reads an instrument's contract size, minimum amount and
@@ -413,12 +481,18 @@ func (e *Executor) GetTicker(ctx context.Context, name string) (Ticker, error) {
 // GetAccountSummary returns the full account summary including margin details.
 // Counted per minute (#888); the gateway's own retries of a rate-limited
 // read are not seen here, only what reaches the caller.
+// A linear coin's margin is the USDC account's (#833): its summary is read
+// with currency=USDC and must answer in USDC (cross-collateral totals as
+// for any coin, AccountSummary.MarginUsage).
 func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (AccountSummary, error) {
 	sum, err := call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
-		"currency": currency,
+		"currency": marketdata.SettlementCurrency(currency),
 		"extended": true,
 	}, gateway.PriorityLow)
 	e.count("private/get_account_summary", err)
+	if err == nil && marketdata.IsLinear(currency) {
+		err = checkSettlement(currency, &sum)
+	}
 	return sum, err
 }
 
@@ -445,16 +519,15 @@ func (e *Executor) simulate(ctx context.Context, currency string, positions map[
 			return AccountSummary{}, err
 		}
 		sum, err := call[AccountSummary](ctx, e.gw, method, map[string]any{
-			"currency":            currency,
+			"currency":            marketdata.SettlementCurrency(currency),
 			"add_positions":       addToBook,
 			"simulated_positions": positions,
 		}, gateway.PriorityLow)
 		e.count(method, err)
 		if err == nil {
-			if sum.Currency == "" {
-				sum.Currency = currency
-			}
-			return sum, nil
+			// A linear coin simulates its USDC instruments under USDC and the
+			// answer must be in USDC (#833).
+			return sum, checkSettlement(currency, &sum)
 		}
 		if !gateway.IsRateLimited(err) || attempt >= SimulateRetries {
 			return sum, err
