@@ -263,6 +263,9 @@ describe("Scenario: a new overflow not in the baseline fails naming page, viewpo
     expect(normaliseLabel("  Show 50\n more ")).toBe("Show # more");
     expect(normaliseLabel("IM 12.4 % at 10:42")).toBe("IM # % at #");
     expect(normaliseLabel("x".repeat(60))).toHaveLength(40);
+    // #896: a demo P&L flips sign between runs; the label must not.
+    expect(normaliseLabel("net +0.01 BTC · +$12 per +3 %")).toBe(normaliseLabel("net \u22120.02 BTC · $9 per +1 %"));
+    expect(normaliseLabel("net +0.01 BTC · +$12")).toBe("net # BTC · $#");
   });
 });
 

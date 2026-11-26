@@ -41,13 +41,14 @@ export const HEADER_TOLERANCE_PX = 24;
 
 /**
  * A label stable across runs: spaces collapsed, numbers replaced by "#"
- * (prices, counts and times change on demo data), at most 40 characters.
+ * (prices, counts and times change on demo data) with their sign, since a
+ * demo P&L turns from + to − between runs (#896), at most 40 characters.
  */
 export function normaliseLabel(text) {
   const s = String(text ?? "")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/\d+([.,:]\d+)*/g, "#");
+    .replace(/[+\u2212-]?(\$?)\d+([.,:]\d+)*/g, "$1#");
   return s.length > 40 ? `${s.slice(0, 39)}…` : s;
 }
 
