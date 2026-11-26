@@ -384,175 +384,175 @@
       "source": "parameters.md#tunable-parameters",
       "title": "Tunable parameters",
       "text": "Every setting a `config_*.yaml` file may hold, in plain words. Everything else is fixed in code (`internal/config/fixed.go`); a file that sets a fixed key fails to load. The range is what `Validate` accepts when the bot loads the file; \"not checked\" means it accepts any value. The texts are a first draft (#255).\n\n**Core policies.** A setting whose policy is not `none` belongs to a core policy of the strategy: **a change to its default needs the product owner** (PRD §3). Test a change first with the tools listed under \"Tested by\".",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#tunable-parameters/2",
       "source": "parameters.md#tunable-parameters",
       "title": "Tunable parameters",
       "text": "| Key | Title | Policy | Range | Unit |\n|---|---|---|---|---|\n| `underlying` | Coin | none | not checked | — |\n| `strategy_id` | Strategy name | none | not checked | — |\n| `dte_delta_matrix[].dte` | Slot days to expiry | entry | see \"Also\" | days |\n| `dte_delta_matrix[].deltas[]` | Slot entry delta | entry | 0.01 to 0.49 (step 0.01) | delta (absolute) |\n| `rollout_dte` | Roll at days to expiry | exits | see \"Also\" | days |\n| `delta_drift_threshold` | Roll when delta falls below | exits | ≥ 0 (step 0.01) | delta (absolute) |\n| `roi_take_profit` | Take profit at | exits | not checked | fraction of premium |\n| `stop_loss_multiplier` | Stop-loss at | exits | ≥ 0.1 (step 0.1) | × premium |\n| `delta_exit_threshold` | Delta exit at | exits | ≤ 0.99 (step 0.01) | delta (absolute) |\n| `repair_cooldown_hours` | Repair cooldown | repair | ≥ 0 (step 1) | hours |\n| `gamma_flip_buffer_sd` | Gamma flip buffer | gex | 0 to 3 (step 0.1) | daily standard deviations |\n| `gex_direction` | Direction source | gex | sma \\| bias | — |\n| `iv_margin_bands[].min_iv_pct` | Margin band start | margin | 0 to 100 (step 1) | DVOL percentile |\n| `iv_margin_bands[].max_im_pct` | Margin band limit | margin | 1 to 100 (step 1) | % of margin balance |",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#tunable-parameters/3",
       "source": "parameters.md#tunable-parameters",
       "title": "Tunable parameters",
       "text": "| Key | Title | Policy | Range | Unit |\n|---|---|---|---|---|\n| `max_mm_pct` | Maintenance-margin limit | margin | 1 to 99 (step 1) | % of margin balance |\n| `max_leg_size_multiple` | Leg size cap | sizing | ≥ 1 (step 0.1) | × normal size |\n| `min_premium` | Minimum premium | entry | not checked | coin per contract |\n| `backtest.fill_model` | Backtest fill model | none | not checked | — |\n| `backtest.slippage_pct` | Backtest market slippage | none | not checked | fraction of mid |\n| `backtest.limit_fill_rule` | Backtest limit fills | none | not checked | — |\n| `backtest.commission_per_contract` | Backtest fee rate | none | not checked | fraction of the underlying |\n| `backtest.margin_call_liquidation` | Backtest margin-call liquidation | none | true \\| false | — |",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#underlying--coin/1",
       "source": "parameters.md#underlying--coin",
       "title": "`underlying` — Coin",
       "text": "The coin this bot trades (BTC or ETH). There is one config file per coin; it names the bot rather than tunes it.\n\n- **Range:** not checked\n- **Policy:** none",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#strategy_id--strategy-name/1",
       "source": "parameters.md#strategy_id--strategy-name",
       "title": "`strategy_id` — Strategy name",
       "text": "Names the strategy in the journal and in order labels. The shipped files leave it unset; it does not change any trading rule.\n\n- **Range:** not checked\n- **Policy:** none",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#dte_delta_matrixdte--slot-days-to-expiry/1",
       "source": "parameters.md#dte_delta_matrixdte--slot-days-to-expiry",
       "title": "`dte_delta_matrix[].dte` — Slot days to expiry",
       "text": "Each slot sells one strangle on an expiry about this many days away. Longer: more premium per trade and larger moves to sit through; shorter: faster decay, more rolls and fees.\n\n- **Range:** see \"Also\"\n- **Unit:** days\n- **Also:** above rollout_dte, or a new strangle would be rolled at once\n- **Policy:** entry — a change to its default needs the product owner\n- **Tested by:** backtest --sweep; backtest --sweep-ladders; cmd/stress -slots; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#dte_delta_matrixdeltas--slot-entry-delta/1",
       "source": "parameters.md#dte_delta_matrixdeltas--slot-entry-delta",
       "title": "`dte_delta_matrix[].deltas[]` — Slot entry delta",
       "text": "How far from the price each leg is sold, as option delta (0.16 is about one standard deviation away). Higher: more premium, and moves reach the strikes more often; lower: less premium, fewer stops.\n\n- **Range:** 0.01 to 0.49 (step 0.01)\n- **Unit:** delta (absolute)\n- **Also:** delta_drift_threshold at most 75 % of it\n- **Also:** delta_exit_threshold above it\n- **Policy:** entry — a change to its default needs the product owner\n- **Tested by:** backtest --sweep; cmd/stress -slots DTE:delta, -slotdelta; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#rollout_dte--roll-at-days-to-expiry/1",
       "source": "parameters.md#rollout_dte--roll-at-days-to-expiry",
       "title": "`rollout_dte` — Roll at days to expiry",
       "text": "A strangle is bought back when its expiry is this close, and its slot opens a new one. Higher: leaves the riskier last weeks earlier and keeps less of the time decay.\n\n- **Range:** see \"Also\"\n- **Unit:** days\n- **Also:** below every slot's dte\n- **Policy:** exits — a change to its default needs the product owner\n- **Tested by:** backtest --sweep; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#delta_drift_threshold--roll-when-delta-falls-below/1",
       "source": "parameters.md#delta_drift_threshold--roll-when-delta-falls-below",
       "title": "`delta_drift_threshold` — Roll when delta falls below",
       "text": "A leg whose |delta| falls below this has little premium left: it is bought back and re-sold nearer the entry delta. Higher: rolls sooner and more often, paying spread and fees for fresher premium.\n\n- **Range:** ≥ 0 (step 0.01)\n- **Unit:** delta (absolute)\n- **Also:** at most 75 % of every entry delta (config.MaxDriftToEntryRatio)\n- **Policy:** exits — a change to its default needs the product owner\n- **Tested by:** cmd/stress -drift; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#roi_take_profit--take-profit-at/1",
       "source": "parameters.md#roi_take_profit--take-profit-at",
       "title": "`roi_take_profit` — Take profit at",
       "text": "A leg is bought back once it has earned this share of its premium (0.50 = half) and is re-sold. Lower: takes gains sooner and trades more; higher: holds longer for the rest, exposed to moves meanwhile.\n\n- **Range:** not checked\n- **Unit:** fraction of premium\n- **Policy:** exits — a change to its default needs the product owner\n- **Tested by:** backtest --sweep; cmd/stress -tp; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#stop_loss_multiplier--stop-loss-at/1",
       "source": "parameters.md#stop_loss_multiplier--stop-loss-at",
       "title": "`stop_loss_multiplier` — Stop-loss at",
       "text": "A leg is bought back at market when its loss reaches this multiple of its premium (2 = twice the premium). Lower: cuts losses earlier with more stops on noise; higher: fewer stops, larger losses when one fires.\n\n- **Range:** ≥ 0.1 (step 0.1)\n- **Unit:** × premium\n- **Policy:** exits — a change to its default needs the product owner\n- **Tested by:** backtest --sweep; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#delta_exit_threshold--delta-exit-at/1",
       "source": "parameters.md#delta_exit_threshold--delta-exit-at",
       "title": "`delta_exit_threshold` — Delta exit at",
       "text": "A leg whose |delta| reaches this is bought back before the stop-loss and re-sold only after the repair cooldown. Lower: exits earlier on smaller moves; higher: waits longer, closer to the stop.\n\n- **Range:** ≤ 0.99 (step 0.01)\n- **Unit:** delta (absolute)\n- **When absent:** 0.30 (also when 0)\n- **Also:** above every entry delta\n- **Policy:** exits — a change to its default needs the product owner\n- **Tested by:** cmd/stress -breach; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#repair_cooldown_hours--repair-cooldown/1",
       "source": "parameters.md#repair_cooldown_hours--repair-cooldown",
       "title": "`repair_cooldown_hours` — Repair cooldown",
       "text": "After a stop-loss, delta exit or manual close, the leg is re-sold no sooner than this, and only while entries are not frozen and the gamma regime is not negative. Longer: less re-selling into a move, more time one-sided.\n\n- **Range:** ≥ 0 (step 1)\n- **Unit:** hours\n- **When absent:** 72 (also when 0)\n- **Policy:** repair — a change to its default needs the product owner\n- **Tested by:** cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#gamma_flip_buffer_sd--gamma-flip-buffer/1",
       "source": "parameters.md#gamma_flip_buffer_sd--gamma-flip-buffer",
       "title": "`gamma_flip_buffer_sd` — Gamma flip buffer",
       "text": "In a negative gamma regime a leg is shed only once spot is this many daily standard deviations beyond the gamma flip. Higher: fewer sheds and more exposure in a falling market; lower: sheds sooner and more often.\n\n- **Range:** 0 to 3 (step 0.1)\n- **Unit:** daily standard deviations\n- **When absent:** 1 (also when 0)\n- **Policy:** gex — a change to its default needs the product owner\n- **Tested by:** cmd/stress -flipbufsd; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#gex_direction--direction-source/1",
       "source": "parameters.md#gex_direction--direction-source",
       "title": "`gex_direction` — Direction source",
       "text": "Which side to avoid in a negative gamma regime: sma (the trend of daily moving averages) or bias (spot against the gamma flip, as the reference script). It decides which legs are shed and when they are re-sold.\n\n- **Range:** sma \\| bias\n- **When absent:** sma\n- **Policy:** gex — a change to its default needs the product owner\n- **Tested by:** cmd/stress -direction; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#iv_margin_bandsmin_iv_pct--margin-band-start/1",
       "source": "parameters.md#iv_margin_bandsmin_iv_pct--margin-band-start",
       "title": "`iv_margin_bands[].min_iv_pct` — Margin band start",
       "text": "Where a margin band starts, as the percentile of today's DVOL in the last year. With max_im_pct it sets how much initial margin the bot may use when volatility is rich or calm.\n\n- **Range:** 0 to 100 (step 1)\n- **Unit:** DVOL percentile\n- **When absent:** bands 70 / 30 / 0 at 50 / 35 / 20 %\n- **Also:** the lowest band starts at 0\n- **Also:** no two bands start at the same percentile\n- **Policy:** margin — a change to its default needs the product owner\n- **Tested by:** cmd/stress -bands (three bands); cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#iv_margin_bandsmax_im_pct--margin-band-limit/1",
       "source": "parameters.md#iv_margin_bandsmax_im_pct--margin-band-limit",
       "title": "`iv_margin_bands[].max_im_pct` — Margin band limit",
       "text": "The most initial margin the bot may use in that band. Higher: larger positions and more premium, and larger losses in a move. A confirmed negative gamma regime uses the lowest band.\n\n- **Range:** 1 to 100 (step 1)\n- **Unit:** % of margin balance\n- **When absent:** bands 70 / 30 / 0 at 50 / 35 / 20 %\n- **Policy:** margin — a change to its default needs the product owner\n- **Tested by:** cmd/stress -bands (three bands); cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#max_mm_pct--maintenance-margin-limit/1",
       "source": "parameters.md#max_mm_pct--maintenance-margin-limit",
       "title": "`max_mm_pct` — Maintenance-margin limit",
       "text": "Above this maintenance margin the bot reduces positions at market at once and opens nothing new; Deribit liquidates at 100. Higher: more room before forced cuts, less before liquidation.\n\n- **Range:** 1 to 99 (step 1)\n- **Unit:** % of margin balance\n- **When absent:** 35 (also when 0)\n- **Policy:** margin — a change to its default needs the product owner\n- **Tested by:** cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#max_leg_size_multiple--leg-size-cap/1",
       "source": "parameters.md#max_leg_size_multiple--leg-size-cap",
       "title": "`max_leg_size_multiple` — Leg size cap",
       "text": "A new leg is at most this many times its slot's normal size (its margin share ÷ the strangle's own margin per lot), so offsets in the book cannot inflate a size. Higher: larger legs when the book offsets them.\n\n- **Range:** ≥ 1 (step 0.1)\n- **Unit:** × normal size\n- **When absent:** 2 (also when 0)\n- **Policy:** sizing — a change to its default needs the product owner\n- **Tested by:** cmd/stress -cap; cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#min_premium--minimum-premium/1",
       "source": "parameters.md#min_premium--minimum-premium",
       "title": "`min_premium` — Minimum premium",
-      "text": "The least premium a leg must bring at the lowest price its order can step down to; a leg under it is not sold, and 0 accepts any. Higher: skips thin strikes, less income when premiums are low.\n\n- **Range:** not checked\n- **Unit:** coin per contract\n- **Policy:** entry — a change to its default needs the product owner\n- **Tested by:** cmd/compare (two configs: backtest, replay, stress)",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "text": "The least premium a leg must bring at the lowest price its order can step down to; a leg under it is not sold, and 0 accepts any. It is in the settlement currency: the coin for BTC and ETH, USDC for SOL and XRP. Higher: skips thin strikes, less income when premiums are low.\n\n- **Range:** not checked\n- **Unit:** coin per contract\n- **Policy:** entry — a change to its default needs the product owner\n- **Tested by:** cmd/compare (two configs: backtest, replay, stress)",
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#backtestfill_model--backtest-fill-model/1",
       "source": "parameters.md#backtestfill_model--backtest-fill-model",
       "title": "`backtest.fill_model` — Backtest fill model",
       "text": "Backtest only: mid, bid_ask or slippage. The simulator does not read it today; the trading bot never does.\n\n- **Range:** not checked\n- **Policy:** none\n- **Tested by:** backtest",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#backtestslippage_pct--backtest-market-slippage/1",
       "source": "parameters.md#backtestslippage_pct--backtest-market-slippage",
       "title": "`backtest.slippage_pct` — Backtest market slippage",
       "text": "Backtest only: a simulated market order fills this fraction of the mid worse than the mid. No effect on trading.\n\n- **Range:** not checked\n- **Unit:** fraction of mid\n- **Policy:** none\n- **Tested by:** backtest",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#backtestlimit_fill_rule--backtest-limit-fills/1",
       "source": "parameters.md#backtestlimit_fill_rule--backtest-limit-fills",
       "title": "`backtest.limit_fill_rule` — Backtest limit fills",
       "text": "Backtest only: next_tick fills a simulated limit order on the next tick; any other value fills it at once. No effect on trading.\n\n- **Range:** not checked\n- **Policy:** none\n- **Tested by:** backtest",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#backtestcommission_per_contract--backtest-fee-rate/1",
       "source": "parameters.md#backtestcommission_per_contract--backtest-fee-rate",
       "title": "`backtest.commission_per_contract` — Backtest fee rate",
       "text": "Backtest only: the fee per contract as a fraction of the underlying (0.0003 = Deribit's 0.03 %), capped at 12.5 % of the price. No effect on trading.\n\n- **Range:** not checked\n- **Unit:** fraction of the underlying\n- **Policy:** none\n- **Tested by:** backtest",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "parameters.md#backtestmargin_call_liquidation--backtest-margin-call-liquidation/1",
       "source": "parameters.md#backtestmargin_call_liquidation--backtest-margin-call-liquidation",
       "title": "`backtest.margin_call_liquidation` — Backtest margin-call liquidation",
       "text": "Backtest only. The simulator does not read it today; the trading bot never does.\n\n- **Range:** true \\| false\n- **Policy:** none\n- **Tested by:** backtest",
-      "blob": "02adb73bd6ab3bf253c8769d71e1112f514d09f1"
+      "blob": "81956d8b600983cb32fc97a7c75fee9cd3dc3eef"
     },
     {
       "id": "monitor-guide.md#monitor-guide/1",

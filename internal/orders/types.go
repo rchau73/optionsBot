@@ -242,7 +242,24 @@ type Fill struct {
 // of the underlying, in the option's price unit) capped at 12.5 % of the
 // option price. The backtest uses it; the live bot books Deribit's own fees.
 func OptionFee(feePerContract, optionPrice, qty float64) float64 {
-	return math.Min(feePerContract, 0.125*optionPrice) * qty
+	return math.Min(feePerContract, OptionFeeCap*optionPrice) * qty
+}
+
+// Deribit's option fee terms: a share of the underlying per unit, capped at a
+// share of the option price. Inverse options charge it in the coin (0.0003
+// BTC), linear USDC options in USDC on the index (#832).
+const (
+	OptionFeeRate = 0.0003 // 0.03 % of the underlying
+	OptionFeeCap  = 0.125  // 12.5 % of the option price
+)
+
+// LinearOptionFee is Deribit's fee for qty units of a USDC-settled option
+// (SOL, XRP: qty in the coin, price in USDC per coin), in USDC: 0.03 % of
+// the USDC index per unit, capped at 12.5 % of the option price. Like
+// OptionFee it is the model the backtest charges; the live bot books
+// Deribit's own fee.
+func LinearOptionFee(index, optionPrice, qty float64) float64 {
+	return OptionFee(OptionFeeRate*index, optionPrice, qty)
 }
 
 // DailyClose holds the closing price for a single UTC day, with the day's

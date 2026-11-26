@@ -31,7 +31,10 @@ type Summary struct {
 	// Net P&L: the change of the cumulative total (realised + unrealised,
 	// net of fees) from the window's first point to its last.
 	NetPnL    float64 // coin
-	NetPnLUSD float64 // coin earned, valued at the window's last spot
+	NetPnLUSD float64 // coin earned, valued at the window's last spot (as is for USDC)
+	// Unit is "USDC" when the coin figures are USDC (a SOL/XRP bot, the
+	// points' PnLUnit, #832); "" when they are the underlying's coin.
+	Unit string
 
 	Equity      float64 // coin, at the window start (the parameter)
 	EquityKnown bool    // Equity > 0: the percentages below are defined
@@ -85,7 +88,8 @@ func Summarize(points []history.Point, equity float64, from, to time.Time) Summa
 
 	first, last := in[0], in[len(in)-1]
 	s.NetPnL = last.Total - first.Total
-	s.NetPnLUSD = s.NetPnL * lastSpot(in)
+	s.Unit = last.PnLUnit
+	s.NetPnLUSD = s.NetPnL * lastUSDPerUnit(in)
 	if s.EquityKnown {
 		s.ReturnPct = pct(s.NetPnL, equity)
 	}
@@ -95,8 +99,8 @@ func Summarize(points []history.Point, equity float64, from, to time.Time) Summa
 		s.HoldKnown = true
 		s.HoldReturnUSDPct = (s.SpotEnd/s.SpotStart - 1) * 100
 		if s.EquityKnown {
-			endUSD := (equity + s.NetPnL) * s.SpotEnd
-			startUSD := equity * s.SpotStart
+			endUSD := (equity + s.NetPnL) * lastUSDPerUnit(in)
+			startUSD := equity * firstUSDPerUnit(in)
 			s.ReturnUSDPct = (endUSD/startUSD - 1) * 100
 			s.ExcessReturnPct = s.ReturnUSDPct - s.HoldReturnUSDPct
 		}
@@ -165,6 +169,27 @@ func lastSpot(in []history.Point) float64 {
 	for i := len(in) - 1; i >= 0; i-- {
 		if in[i].Spot > 0 {
 			return in[i].Spot
+		}
+	}
+	return 0
+}
+
+// firstUSDPerUnit and lastUSDPerUnit value the P&L unit in dollars at the
+// window's first and last point that can: the spot for a coin, 1 for USDC
+// (a SOL/XRP bot, read from the points' PnLUnit, #832).
+func firstUSDPerUnit(in []history.Point) float64 {
+	for _, p := range in {
+		if v := p.USDPerUnit(); v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+func lastUSDPerUnit(in []history.Point) float64 {
+	for i := len(in) - 1; i >= 0; i-- {
+		if v := in[i].USDPerUnit(); v > 0 {
+			return v
 		}
 	}
 	return 0
