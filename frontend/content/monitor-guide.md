@@ -554,6 +554,9 @@ Too common means it is on a list of about 1,000 common passwords, even with capi
 The rule applies to a new user, a password change and both kinds of reset.
 A password you already have keeps working, and a refused password on a reset link leaves the link usable.
 
+**Locked after wrong passwords**: 5 wrong passwords in 15 minutes lock your username for 15 minutes.
+Wait, or ask an admin to unlock it on the Users page; then you can sign in at once with your password.
+
 **How to reset a forgotten password**: ask an admin.
 An admin issues a single-use reset link on the Users page.
 Open the link, choose a new password and sign in with it.
@@ -767,6 +770,14 @@ An admin creates a user (a username of 3 to 64 letters, digits, dots, underscore
 Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
+
+**Unlock a locked username**: after 5 wrong passwords in 15 minutes a username is locked for 15 minutes.
+The person's row on the Users page then shows "Locked until" and the time, and an Unlock button.
+Unlock asks you to confirm: they can sign in again now, and their failed attempts are forgotten.
+If you think someone else is guessing the password, reset it instead.
+Unlock does not sign the person out or in, and does not change their password.
+Each unlock is recorded in the audit trail with your username and the person's, never any password.
+<!-- guide: route:POST /api/admin/users/[id]/unlock -->
 
 **Accounts a manager manages**: the Accounts column of the Users page says what each person may act on.
 An admin acts on every account, and a user on none.

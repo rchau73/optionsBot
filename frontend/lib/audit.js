@@ -8,6 +8,7 @@ export const AUDIT_ACTIONS = [
   "signed_in",
   "sign_in_failed",
   "locked",
+  "login_unlocked",
   "signed_out",
   "password_changed",
   "password_change_failed",

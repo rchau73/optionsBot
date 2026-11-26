@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import UsersAdmin from "@/components/UsersAdmin";
 import UserMenu from "@/components/UserMenu";
-import { confirmText, newUserProblem, passwordFormProblem } from "@/lib/users";
+import { confirmText, lockedLabel, newUserProblem, passwordFormProblem } from "@/lib/users";
 
 // #306: the Users page. The routes enforce the role; these check what the page shows and sends.
 
@@ -161,6 +161,56 @@ describe("Users page", () => {
     expect(url).toBe("/api/admin/users");
     expect(JSON.parse(init.body)).toEqual({ username: "carol", email: null, role: "user", password: "carol's password" });
     await waitFor(() => expect(global.fetch.mock.calls.filter(([u, i]) => u === "/api/admin/users" && !i?.method)).toHaveLength(2));
+  });
+});
+
+describe("Locked usernames (#846)", () => {
+  // 17:32 UTC = 14:32 BRT.
+  const LOCKED = [USERS[0], { ...USERS[1], locked_until: "2026-11-18T17:32:00.000Z" }];
+
+  function mockLocked(answer) {
+    global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users: LOCKED }) : answer));
+  }
+
+  test("a locked row shows Locked until with the time in words and Unlock; a row not locked shows neither", async () => {
+    mockLocked(reply(200, { unlocked: true }));
+    render(<UsersAdmin me="admin" />);
+    const bob = await screen.findByTestId("user-bob");
+    expect(bob).toHaveTextContent("Locked until 14:32 BRT");
+    expect(within(bob).getByRole("button", { name: "Unlock bob" })).toHaveClass("min-h-11");
+    const me = screen.getByTestId("user-admin");
+    expect(me).not.toHaveTextContent("Locked");
+    expect(within(me).queryByRole("button", { name: /Unlock/ })).toBeNull();
+  });
+
+  test("Unlock asks first with what follows, then POSTs and refreshes the list", async () => {
+    mockLocked(reply(200, { unlocked: true }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(sent()).toEqual([]);
+
+    fireEvent.click(within(screen.getByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Unlock" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob is unlocked and can sign in again now.");
+    expect(sent()).toEqual([["/api/admin/users/2/unlock", expect.objectContaining({ method: "POST" })]]);
+    await waitFor(() => expect(global.fetch.mock.calls.filter(([u, i]) => u === "/api/admin/users" && !i?.method)).toHaveLength(2));
+  });
+
+  test("a lock that already ended says there was nothing to unlock", async () => {
+    mockLocked(reply(200, { unlocked: false }));
+    render(<UsersAdmin me="admin" />);
+    fireEvent.click(within(await screen.findByTestId("user-bob")).getByRole("button", { name: "Unlock bob" }));
+    await clickAndSettle(within(screen.getByRole("dialog")).getByRole("button", { name: "Unlock" }));
+    expect(screen.getByRole("status")).toHaveTextContent("bob was not locked: nothing to unlock.");
+  });
+
+  test("lockedLabel", () => {
+    expect(lockedLabel({ locked_until: "2026-11-18T17:32:59.000Z" })).toBe("Locked until 14:32 BRT");
+    expect(lockedLabel({})).toBeNull();
+    expect(lockedLabel(null)).toBeNull();
   });
 });
 

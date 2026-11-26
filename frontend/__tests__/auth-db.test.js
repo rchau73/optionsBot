@@ -266,6 +266,74 @@ describe("lockout kept in auth.db (#213)", () => {
     expect(store.loginLockUntil("bob")).toBe(clock.t + LOCK_WINDOW_MS);
   });
 
+  describe("an admin unlocks a username (#846)", () => {
+    const ADMIN_USER = { id: 99, username: "root", role: "admin" };
+
+    test("Scenario: unlock survives and respects restarts", async () => {
+      const { auth, clock, restart } = await fileSetup();
+      const lockedAt = await lockAna(auth, clock);
+      const lockedUntil = new Date(lockedAt + LOCK_WINDOW_MS).toISOString();
+
+      // Restarted while locked: the Users list still shows it.
+      const second = await restart();
+      const ana = second.store.userByName("ana");
+      expect(second.auth.listUsers().find((u) => u.username === "ana").locked_until).toBe(lockedUntil);
+
+      const audit = [];
+      second.auth.auditSink = (e) => audit.push(e);
+      expect(second.auth.unlockUser(ADMIN_USER, ana.id)).toEqual({ ok: true, unlocked: true });
+      expect(audit).toEqual([{ time: new Date(clock.t).toISOString(), action: "login_unlocked", username: "root", role: "admin", target: "ana", locked_until: lockedUntil }]);
+      expect(JSON.stringify(audit)).not.toMatch(/password|hash|token/i);
+      expect(second.auth.listUsers().find((u) => u.username === "ana")).not.toHaveProperty("locked_until");
+
+      // Restarted after the unlock: still unlocked, failures forgotten, signs in at once.
+      const third = await restart();
+      expect(third.store.loginLockUntil("ana")).toBe(0);
+      expect(third.store.loginFailureTimes("ana")).toEqual([]);
+      expect((await right(third.auth)).ok).toBe(true);
+    });
+
+    test("Scenario: a wrong guess after an unlock counts afresh", async () => {
+      const { auth, store, clock } = await fileSetup();
+      await lockAna(auth, clock);
+      const ana = store.userByName("ana");
+      auth.unlockUser(ADMIN_USER, ana.id);
+      for (let i = 0; i < 4; i++) await fail(auth);
+      expect(store.loginLockUntil("ana")).toBe(0);
+      expect((await right(auth)).ok).toBe(true);
+
+      for (let i = 0; i < 5; i++) await fail(auth);
+      expect(store.loginLockUntil("ana")).toBe(clock.t + LOCK_WINDOW_MS);
+      expect((await right(auth)).ok).toBe(false);
+    });
+
+    test("Scenario: nothing to unlock — no change, no audit line", async () => {
+      const { auth, store, clock } = await fileSetup();
+      const ana = store.userByName("ana");
+      for (let i = 0; i < 3; i++) await fail(auth);
+      const audit = [];
+      auth.auditSink = (e) => audit.push(e);
+      expect(auth.unlockUser(ADMIN_USER, ana.id)).toEqual({ ok: true, unlocked: false });
+      expect(store.loginFailureTimes("ana")).toHaveLength(3);
+      expect(auth.listUsers().find((u) => u.username === "ana")).not.toHaveProperty("locked_until");
+
+      // An ended lock is not a lock either.
+      const lockedAt = await lockAna(auth, clock);
+      clock.t = lockedAt + LOCK_WINDOW_MS;
+      expect(auth.unlockUser(ADMIN_USER, ana.id)).toEqual({ ok: true, unlocked: false });
+      expect(audit.filter((e) => e.action === "login_unlocked")).toEqual([]);
+    });
+
+    test("an unknown user is 404 and a non-admin 403; the lock stays", async () => {
+      const { auth, store, clock } = await fileSetup();
+      await lockAna(auth, clock);
+      const ana = store.userByName("ana");
+      expect(auth.unlockUser(ADMIN_USER, 12345)).toMatchObject({ ok: false, status: 404 });
+      expect(auth.unlockUser({ ...ADMIN_USER, role: "manager" }, ana.id)).toMatchObject({ ok: false, status: 403 });
+      expect(store.loginLockUntil("ana")).toBeGreaterThan(clock.t);
+    });
+  });
+
   test("Scenario: existing database", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "monitor-old-"));
     const file = path.join(dir, "auth.db");

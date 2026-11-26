@@ -71,9 +71,9 @@ The IP is not stored here; the per-IP limit lives in memory and a restart forget
 
 | Column | Purpose | Retention |
 | --- | --- | --- |
-| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, and at a successful sign-in |
+| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, at a successful sign-in, and when an admin unlocks the username (#846) |
 | `login_failures.at` | When each failure happened | same |
-| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure |
+| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure, or when an admin unlocks it (#846) |
 | `login_locks.until` | When the lock ends | same |
 
 ## `survey_answers`
@@ -131,7 +131,7 @@ Retention: the file rotates to `audit.<UTC time>.jsonl` at `AUDIT_MAX_BYTES` (de
 **Proposal**: a retention period for archives, decided with counsel (L14).
 
 Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
-- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
+- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `login_unlocked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - manager–account links (#760): `account_link_added`, `account_link_removed` (the admin, the manager as `target` and the `account_id`);

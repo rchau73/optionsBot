@@ -158,6 +158,15 @@ browser ──1 s polls──▶ Next.js server ──read-only proxy──▶ b
   - `source` is `"journal"`.
   An event (or a trade's event) no longer in memory → 404 `{"error": "not in recent history"}`, never a reconstruction; neither or both parameters, or a non-positive integer → 400.
 
+### `POST /api/admin/users/<id>/unlock` (#846)
+
+Lifts the sign-in lock of a person's username, on the monitor's own server (`app/api/admin/users/[id]/unlock/route.js`, `AuthService.unlockUser`); no bot call.
+Admins only, same-origin JSON `{}`; the Users page's **Unlock** button sends it.
+- `{"unlocked": true}` when the username was locked: its lock and recent failures are deleted from `auth.db` and one audit line, `login_unlocked`, names the admin, the person and the lifted `locked_until`.
+- `{"unlocked": false}` when it was not locked: nothing changes and no audit line is written.
+- Sessions and the password are untouched; `GET /api/admin/users` shows `locked_until` on a row only while it is locked.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/admin/users/<id>/unlock`".
+
 ### `GET` and `POST /api/bots/<bot>/hedge` (#657)
 
 The futures hedge experiment of one bot (`app/api/bots/[bot]/hedge/route.js`), shown as a card per bot on the Account page (`components/FuturesHedge.jsx`).

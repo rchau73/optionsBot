@@ -381,21 +381,28 @@ export class AuthService {
 
   /**
    * Every user for the Users page: id, username, role, email, created and last
-   * sign-in (ISO, null = never) and the account ids they are linked to (#760,
-   * [] = none); never a hash.
+   * sign-in (ISO, null = never), the account ids they are linked to (#760,
+   * [] = none) and, only while their username is locked, locked_until (ISO,
+   * #846); never a hash.
    */
   listUsers() {
     const iso = (sec) => (sec ? new Date(sec * 1000).toISOString() : null);
     const links = this.store.allAccountLinks();
-    return this.store.listUsers().map((u) => ({
-      id: u.id,
-      username: u.username,
-      role: u.role,
-      email: u.email ?? null,
-      created_at: iso(u.created_at),
-      last_sign_in_at: iso(u.last_sign_in_at),
-      accounts: links[u.id] ?? [],
-    }));
+    const now = this.now();
+    return this.store.listUsers().map((u) => {
+      const row = {
+        id: u.id,
+        username: u.username,
+        role: u.role,
+        email: u.email ?? null,
+        created_at: iso(u.created_at),
+        last_sign_in_at: iso(u.last_sign_in_at),
+        accounts: links[u.id] ?? [],
+      };
+      const locked = this.limiter.lockedUntil(u.username, now);
+      if (locked > 0) row.locked_until = new Date(locked).toISOString();
+      return row;
+    });
   }
 
   /**
@@ -567,6 +574,26 @@ export class AuthService {
     authLog("INFO", "signed out everywhere", { by: by.username, username: target.username });
     this.audit("signed_out_everywhere", { username: by.username, role: by.role, target: target.username });
     return { ok: true };
+  }
+
+  /**
+   * An admin lifts the sign-in lock of a username (#846): its lock and recent
+   * failures go, so the person can sign in at once and a later wrong password
+   * counts afresh. Sessions and the password are untouched. Audited
+   * `login_unlocked` with the lifted `locked_until`; a username that is not
+   * locked changes nothing and writes no audit line.
+   * → { ok: true, unlocked: true | false } | { ok: false, status (403 not an admin, 404 no user), error }
+   */
+  unlockUser(by, targetId) {
+    if (by?.role !== "admin") return { ok: false, status: 403, error: "admins only" };
+    const target = this.store.userById(targetId);
+    if (!target) return { ok: false, status: 404, error: "no such user" };
+    const lifted = this.limiter.unlock(target.username, this.now());
+    if (lifted === 0) return { ok: true, unlocked: false };
+    const lockedUntil = new Date(lifted).toISOString();
+    authLog("INFO", "sign-in lock lifted", { event: "login_unlocked", by: by.username, username: target.username, locked_until: lockedUntil });
+    this.audit("login_unlocked", { username: by.username, role: by.role, target: target.username, locked_until: lockedUntil });
+    return { ok: true, unlocked: true };
   }
 
   /** Audits an action a person took through a route (close, rebalance with what the bot answered; a survey answer). */

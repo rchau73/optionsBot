@@ -41,6 +41,9 @@ type Trade struct {
 	Vega    float64 `json:"vega"`
 	Premium float64 `json:"premium"`
 	OpenFee float64 `json:"open_fee,omitempty"` // opens only, coin: what the fill was charged
+	// Unit is "USDC" when Premium, fees and P&L are USDC (a SOL/XRP option,
+	// #832); absent when they are the underlying's coin.
+	Unit string `json:"unit,omitempty"`
 	// Closes only.
 	PnL      float64 `json:"pnl,omitempty"`
 	Fees     float64 `json:"fees,omitempty"` // coin: the opening share + the closing fee, already in PnL
@@ -96,7 +99,7 @@ func tradeOf(seq uint64, rec OrderLog) (Trade, bool) {
 		Premium: rec.PremiumReceived, Spot: rec.Market.Spot, DVOL: rec.Market.DVOL, IVPct: rec.Market.IVPercentile,
 		Moneyness: rec.Market.Moneyness, GEXRegime: rec.Market.GEXRegime,
 		GammaFlip: rec.Market.GammaFlip, FlipBufferPct: rec.Market.FlipBufferPct,
-		Detail: rec.Detail, Actor: rec.Actor, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
+		Detail: rec.Detail, Actor: rec.Actor, Unit: rec.Unit, Delta: rec.Delta, Gamma: rec.Gamma, Theta: rec.Theta, Vega: rec.Vega,
 	}
 	switch rec.Event {
 	case EventFilled:

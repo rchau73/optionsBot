@@ -36,6 +36,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/admin/users/[id]/password", roles: ADMINS, audit: "password_reset" },
   { route: "POST /api/admin/users/[id]/reset-link", roles: ADMINS, audit: "reset_link_issued" },
   { route: "POST /api/admin/users/[id]/signout", roles: ADMINS, audit: "signed_out_everywhere" },
+  { route: "POST /api/admin/users/[id]/unlock", roles: ADMINS, audit: "login_unlocked" },
   { route: "POST /api/assistant", roles: SIGNED_IN, audit: null, why: "each question is logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/feedback", roles: SIGNED_IN, audit: null, why: "the person who asked says whether the answer helped; logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/flag", roles: SIGNED_IN, audit: null, why: "the flag is logged with the person in assistant.jsonl" },

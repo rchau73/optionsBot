@@ -87,6 +87,15 @@ export class LoginLimiter {
     return true;
   }
 
+  /**
+   * An admin unlocks a username (#846): its lock and recent failures are
+   * deleted. Returns the time (ms) the lifted lock would have ended, or 0
+   * when it was not locked (nothing changes).
+   */
+  unlock(username, now) {
+    return this.store.clearLoginLock(username, now);
+  }
+
   /** Forgets the failures of a username (after a successful sign-in). */
   clear(username) {
     this.store.clearLoginFailures(username);

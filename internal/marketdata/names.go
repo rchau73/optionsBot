@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"optionsbot/internal/config"
 )
 
 // SettlementHourUTC is when Deribit options expire: 08:00 UTC on the expiry date.
@@ -45,24 +47,16 @@ func ParseOptionName(name string) (underlying string, expiry time.Time, strike f
 
 // LinearSettlement is the currency of Deribit's linear options: their names
 // start "<COIN>_USDC-" and they are listed under currency=USDC.
-const LinearSettlement = "USDC"
+const LinearSettlement = config.LinearSettlement
 
-// linearCoins are the underlyings Deribit lists only as USDC-settled options
-// (#838: the SOL and XRP bots). BTC and ETH trade their inverse options.
-var linearCoins = map[string]bool{"SOL": true, "XRP": true}
-
-// IsLinear reports whether the bot trades underlying's USDC-settled options.
-func IsLinear(underlying string) bool { return linearCoins[strings.ToUpper(underlying)] }
+// IsLinear reports whether the bot trades underlying's USDC-settled options
+// (the list lives in config, which names min_premium's unit with it, #832).
+func IsLinear(underlying string) bool { return config.IsLinear(underlying) }
 
 // SettlementCurrency is the currency underlying's options settle in and are
 // listed under: the coin itself for BTC and ETH (returned as given, so their
 // requests stay byte-identical), USDC for SOL and XRP.
-func SettlementCurrency(underlying string) string {
-	if IsLinear(underlying) {
-		return LinearSettlement
-	}
-	return underlying
-}
+func SettlementCurrency(underlying string) string { return config.SettlementCurrency(underlying) }
 
 // OptionPrefix is how every option name of a linear underlying starts,
 // e.g. "SOL_USDC-": it picks the coin's options out of the USDC list.
@@ -77,6 +71,23 @@ func SplitUnderlying(part string) (coin, settlement string) {
 		return coin, settlement
 	}
 	return part, part
+}
+
+// SettlementOf is the currency an option name settles in, the unit of its
+// prices, premiums, fees and P&L: "USDC" for "SOL_USDC-…", "BTC" for "BTC-…".
+func SettlementOf(name string) string {
+	part, _, _ := strings.Cut(name, "-")
+	_, settlement := SplitUnderlying(part)
+	return settlement
+}
+
+// USDPerUnit is the dollar value of one unit of settlement: a USDC amount is
+// already dollars (no conversion, #832), a coin amount is worth spot.
+func USDPerUnit(settlement string, spot float64) float64 {
+	if settlement == LinearSettlement {
+		return 1
+	}
+	return spot
 }
 
 // InstrumentFromName is an instrument's fixed fields — underlying, settlement

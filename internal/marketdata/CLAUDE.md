@@ -12,3 +12,5 @@ Folder notes for `CLAUDE.md` (the root file's trading rules apply here too).
   `Track(ctx, names)` subscribes to the tickers of held instruments outside those expiries (positions loaded at startup); the strategy calls it every cycle.
   `Instrument.HasQuote()` is false until the first ticker: never use such an instrument's zero prices as a mark.
   `Instrument.Settlement` (the coin, or USDC) and `ContractSize` (1 BTC/ETH, 10 SOL, 1,000 XRP) come from `public/get_instruments` (#838); `InstrumentFromName` splits `SOL_USDC` into SOL settled in USDC, while `ParseOptionName` keeps the part whole for the research tools.
+  `Instrument.OrderStep()` is every order's size grid (#832): the minimum for BTC/ETH, whole contracts for a USDC option (2,700 XRP → 2,000); `SettlementOf(name)` and `USDPerUnit` (1 for USDC, else spot) give an amount's unit and dollar value.
+  The linear coin list itself is `config.IsLinear` (config names `min_premium`'s unit with it, `Config.PremiumUnit`).

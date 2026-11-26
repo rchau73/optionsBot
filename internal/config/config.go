@@ -271,6 +271,10 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("slot %d DTE is at or below rollout_dte %d: it would roll immediately", sl.TargetDTE, c.RolloutDTE)
 		}
 	}
+	if c.MinPremiumBTC < 0 {
+		return fmt.Errorf("min_premium %g %s must be ≥ 0 (0 accepts any premium; it is in the settlement currency, %s per contract)",
+			c.MinPremiumBTC, c.PremiumUnit(), c.PremiumUnit())
+	}
 	if err := c.RiskPolicy(false).Validate(); err != nil {
 		return err
 	}
