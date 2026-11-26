@@ -55,17 +55,54 @@ type rpcCaller interface {
 type Executor struct {
 	gw rpcCaller
 
-	simMu   sync.Mutex
-	nextSim time.Time // earliest time the next simulate_portfolio may go out
+	simMu      sync.Mutex
+	nextSim    time.Time     // earliest time the next simulate_portfolio may go out
+	simBackoff time.Duration // the first wait after a rate-limited simulation (doubled per retry)
+
+	stats CallStats // margin calls per minute and the share rate limited (#888)
 }
 
 // simulateSpacing honours Deribit's limit of one simulate_portfolio call per
 // second (portfolio margin is expensive to compute), with a little slack.
 const simulateSpacing = 1100 * time.Millisecond
 
+// A simulation Deribit rejects as rate limited (10028) is sent again up to
+// SimulateRetries times, after SimulateBackoff, then twice that (#888: the
+// gateway retries only public/* and private/get_*, so one rejection used to
+// skip the slot for the whole cycle). The wait also holds back every other
+// simulation, so the 1 call/s spacing is never undercut.
+const (
+	SimulateRetries = 2
+	SimulateBackoff = 2 * time.Second
+)
+
 // NewExecutor returns an Executor that sends every request through gw.
 func NewExecutor(gw rpcCaller) *Executor {
-	return &Executor{gw: gw}
+	return &Executor{gw: gw, simBackoff: SimulateBackoff}
+}
+
+// SetSimulateBackoff changes the first wait after a rate-limited simulation
+// (tests; never below the call spacing in effect, which still applies).
+func (e *Executor) SetSimulateBackoff(d time.Duration) {
+	e.simMu.Lock()
+	defer e.simMu.Unlock()
+	e.simBackoff = d
+}
+
+// count records one margin call and logs the method's previous minute when
+// this call starts a new one.
+func (e *Executor) count(method string, err error) {
+	m, ok := e.stats.Record(method, gateway.IsRateLimited(err), time.Now())
+	if !ok {
+		return
+	}
+	level := slog.LevelInfo
+	if m.RateLimited > 0 {
+		level = slog.LevelWarn
+	}
+	slog.Log(context.Background(), level, "exchange calls per minute",
+		"method", m.Method, "minute", m.Minute.Format(time.RFC3339), "calls", m.Calls,
+		"rate_limited", m.RateLimited, "rejected_pct", fmt.Sprintf("%.0f", m.RejectedPct()))
 }
 
 // ErrForbidden is returned when Deribit rejects a call for missing API key
@@ -374,11 +411,15 @@ func (e *Executor) GetTicker(ctx context.Context, name string) (Ticker, error) {
 }
 
 // GetAccountSummary returns the full account summary including margin details.
+// Counted per minute (#888); the gateway's own retries of a rate-limited
+// read are not seen here, only what reaches the caller.
 func (e *Executor) GetAccountSummary(ctx context.Context, currency string) (AccountSummary, error) {
-	return call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
+	sum, err := call[AccountSummary](ctx, e.gw, "private/get_account_summary", map[string]any{
 		"currency": currency,
 		"extended": true,
 	}, gateway.PriorityLow)
+	e.count("private/get_account_summary", err)
+	return sum, err
 }
 
 // SimulatePortfolio asks Deribit what the account's margin would be with
@@ -395,7 +436,37 @@ func (e *Executor) SimulateAlone(ctx context.Context, currency string, positions
 	return e.simulate(ctx, currency, positions, false)
 }
 
+// simulate sends one simulation, spaced, and retries it after a backoff while
+// Deribit rate-limits it (SimulateRetries). Any other error returns at once.
 func (e *Executor) simulate(ctx context.Context, currency string, positions map[string]float64, addToBook bool) (AccountSummary, error) {
+	const method = "private/simulate_portfolio"
+	for attempt := 0; ; attempt++ {
+		if err := e.waitSimSlot(ctx); err != nil {
+			return AccountSummary{}, err
+		}
+		sum, err := call[AccountSummary](ctx, e.gw, method, map[string]any{
+			"currency":            currency,
+			"add_positions":       addToBook,
+			"simulated_positions": positions,
+		}, gateway.PriorityLow)
+		e.count(method, err)
+		if err == nil {
+			if sum.Currency == "" {
+				sum.Currency = currency
+			}
+			return sum, nil
+		}
+		if !gateway.IsRateLimited(err) || attempt >= SimulateRetries {
+			return sum, err
+		}
+		wait := e.holdSims(attempt)
+		slog.Warn("simulate_portfolio rate limited: retrying after a backoff",
+			"currency", currency, "attempt", attempt+1, "of", SimulateRetries+1, "backoff", wait, "err", err)
+	}
+}
+
+// waitSimSlot waits for the next free simulation slot (simulateSpacing apart).
+func (e *Executor) waitSimSlot(ctx context.Context) error {
 	e.simMu.Lock()
 	at := time.Now()
 	if at.Before(e.nextSim) {
@@ -409,19 +480,24 @@ func (e *Executor) simulate(ctx context.Context, currency string, positions map[
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			return AccountSummary{}, ctx.Err()
+			return ctx.Err()
 		case <-t.C:
 		}
 	}
-	sum, err := call[AccountSummary](ctx, e.gw, "private/simulate_portfolio", map[string]any{
-		"currency":            currency,
-		"add_positions":       addToBook,
-		"simulated_positions": positions,
-	}, gateway.PriorityLow)
-	if err == nil && sum.Currency == "" {
-		sum.Currency = currency
+	return nil
+}
+
+// holdSims pushes the next simulation slot back by the attempt's backoff
+// (simBackoff doubled per retry) and returns that wait. Every simulation
+// waits for it, not only the retry: the pressure is on the whole pool.
+func (e *Executor) holdSims(attempt int) time.Duration {
+	e.simMu.Lock()
+	defer e.simMu.Unlock()
+	wait := e.simBackoff << attempt
+	if until := time.Now().Add(wait); until.After(e.nextSim) {
+		e.nextSim = until
 	}
-	return sum, err
+	return wait
 }
 
 // chartData is the subset of public/get_tradingview_chart_data we use.

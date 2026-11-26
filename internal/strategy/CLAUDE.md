@@ -34,6 +34,9 @@ Read both before changing a rule.
   - 2026-10-15: ETH sent 1,454 on a strike whose OI was 164 and filled 152; mvp's 2–12 % of OI filled whole.
   - `cmd/stress -replay … -liqcap N` studies it.
 - **Sizing:** The backtest has no simulator: `backtest.ApproxIMLimitPct` (premium as margin, DVOL band only) is a labelled approximation.
+  - A rate-limited simulation (10028) is retried by the executor (`orders.SimulateRetries` 2, after `SimulateBackoff` 2 s then 4 s, the 1 call/s spacing kept); refused every time → no new risk as before (#888: ETH skipped most cycles for days).
+  - `simcache.go` reuses a result ≤ `SimReuse` (30 s) only for the same request against the same book (`SimKey`/`SimBookKey`: the cycle's margin reading, the IM limit, every position's size);
+    `orderWatch` wraps `s.exch` and drops it on every submit, amend or cancel; errors are never kept. `exchange calls per minute` (executor) counts calls and the share refused.
 - **Exit priority** — close only under 25 DTE (`closeonly.go`, #753, the product owner's decision 2026-11-10):
   - from `config.FixedCloseOnlyBelowDTE` (25) up, drift and take-profit roll (`ActionRollSameLeg`, repair re-sells on the same expiry);
     under it, down to the time roll, they return `ActionClose`: the same resting close, the detail ending "close only: < 25 DTE …" (`CloseOnlyMarker`).

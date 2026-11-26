@@ -112,12 +112,23 @@ func writeDirectionVerdict(p func(string, ...any), v DirectionVerdict) {
 		p("- span: the sign of bias − sma changed on %d of %d week-to-week steps\n", v.SignChanges, v.SignSteps)
 	}
 	if len(v.KillWeeks) > 0 {
-		p("- kill rule: **hit** in %s\n", strings.Join(v.KillWeeks, ", "))
+		p("- kill rule: **hit** in %s (%s)\n", strings.Join(v.KillWeeks, ", "), DirectionHalfReplay)
 	}
-	p("- not checked here: %s\n\n", v.NotChecked)
+	switch lh := v.LiveDrawdown; lh.Status {
+	case DirectionLiveFired:
+		p("- kill rule, %s: **hit** in %s — stable BTC's live max drawdown over %g× mvp BTC's (%s)\n", DirectionHalfLive, v.liveFiredText(), DirectionLiveDDRatio, lh.Sample.Text())
+	case DirectionLiveNotFired:
+		p("- kill rule, %s: not hit — stable BTC's live max drawdown at most %g× mvp BTC's in every week checked (%s)\n", DirectionHalfLive, DirectionLiveDDRatio, lh.Sample.Text())
+	default:
+		p("- kill rule, %s: not checked — no week had both bots' live max drawdown\n", DirectionHalfLive)
+	}
+	if v.NotChecked != "" {
+		p("- not checked here: %s\n", v.NotChecked)
+	}
+	p("\n")
 
-	p("| Week | Counted | bias net %% | sma net %% | bias − sma pp | bias max DD %% | sma max DD %% | live − replay, size pp | Why |\n")
-	p("|---|---|---|---|---|---|---|---|---|\n")
+	p("| Week | Counted | bias net %% | sma net %% | bias − sma pp | bias max DD %% | sma max DD %% | live − replay, size pp | live max DD stable / mvp %% | Why |\n")
+	p("|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, w := range v.Weeks {
 		gaps := make([]string, 0, len(w.GapsPP))
 		for _, g := range w.GapsPP {
@@ -127,8 +138,9 @@ func writeDirectionVerdict(p func(string, ...any), v DirectionVerdict) {
 		if w.Counted {
 			counted = "yes"
 		}
-		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", w.Week, counted, pctCell(w.BiasNetPct), pctCell(w.SMANetPct), pctCell(w.DPP),
-			plainCell(w.BiasDDPct), plainCell(w.SMADDPct), strings.Join(gaps, ", "), w.Why)
+		p("| %s | %s | %s | %s | %s | %s | %s | %s | %s / %s · %s | %s |\n", w.Week, counted, pctCell(w.BiasNetPct), pctCell(w.SMANetPct), pctCell(w.DPP),
+			plainCell(w.BiasDDPct), plainCell(w.SMADDPct), strings.Join(gaps, ", "),
+			pctCell(w.StableLiveDDPct), pctCell(w.MVPLiveDDPct), w.LiveHalf, w.Why)
 	}
 	p("\nAssumptions (%s): %s. The verdict only proposes: it files nothing and changes no config; a person decides.\n\n",
 		v.Rule, strings.Join(v.Assumptions, "; "))

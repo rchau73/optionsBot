@@ -33,7 +33,8 @@ var ErrKillSwitch = errors.New("kill switch activated")
 type Strategy struct {
 	cfg     *config.Config
 	md      MarketData
-	exch    Exchange
+	exch    Exchange  // wrapped in orderWatch: every order action drops sims
+	sims    *SimCache // recent margin simulations (simcache.go, #888)
 	state   *orders.StateManager
 	journal TradeJournal
 	hedge   HedgeReporter
@@ -159,10 +160,12 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
 	}
+	sims := NewSimCache(SimReuse)
 	s := &Strategy{
 		cfg:              cfg,
 		md:               d.Market,
-		exch:             d.Exchange,
+		exch:             orderWatch{Exchange: d.Exchange, sims: sims},
+		sims:             sims,
 		state:            d.State,
 		journal:          d.Journal,
 		hedge:            d.Hedge,
