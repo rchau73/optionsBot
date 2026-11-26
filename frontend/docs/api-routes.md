@@ -196,6 +196,8 @@ Says what confirming a finished lab run would change, on the monitor's own serve
 Managers and admins.
 - Each setting's current and proposed value, the account, the person, the numbers labelled as backtested, the fragility flags and the text of the audit line.
 - `confirm_token` is null when `needs_product_owner` or `stale` is true, or the run has no numbers for the proposal; `reasons` says why.
+- `may_confirm` (#890) says whether this person may confirm for this account; when false, `may_confirm_reason` says why in plain words and `confirm_token` is null.
+  It is the apply route's own role and account-link check (`decisionRefusal`, `lib/labapply.js`), so the field and the refusal cannot disagree.
 - Each answered preview writes one audit line, `parameter_change_previewed`; a refusal writes none.
 - The full answer and refusals: `users-and-roles.md` "`GET /api/lab/runs/<id>/preview`".
 - No screen uses it yet.
@@ -204,11 +206,22 @@ Managers and admins.
 
 Records the change a manager confirms with the preview's token, on the monitor's own server (`app/api/lab/runs/[id]/apply/route.js`, `lib/labapply.js`); no bot call, no config written, nothing applied.
 Managers and admins, same-origin JSON `{"confirm_token"}`.
-- The server recomputes the preview and refuses a token that does not match it or is over 15 minutes old, a core policy (the product owner approves those), a stale or out-of-range value, a run not done and a run already recorded.
+- The server recomputes the preview and refuses a token that does not match it or is over 15 minutes old, a core policy (the product owner approves those), a stale or out-of-range value, a run not done, a run already recorded and a run whose proposal was dropped (#890).
 - Success is `COMPARE_DIR/applied/<id>.json`, written once, and 201 `applied: false, recorded: true` with the numbers labelled as backtested and the risks beside them.
 - Each recorded change writes one audit line, `parameter_change_recorded`; a refusal writes none.
 - A record never stands without its audit line: when the audit line cannot be written, the record is removed and the answer is 500, so the manager can confirm again.
 - The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/apply`".
+- No screen uses it yet.
+
+### `POST /api/lab/runs/<id>/drop` (#890)
+
+Records a manager's decision to leave the setting as it is, on the monitor's own server (`app/api/lab/runs/[id]/drop/route.js`, `lib/labapply.js`); no bot call, no config written, nothing applied.
+Managers and admins, same-origin JSON (no body needed), the apply route's role and account-link check.
+- Only a done run with a proposal; a run already dropped, or whose change was recorded, is refused with the reason, and a dropped run can no longer be confirmed.
+- Success is `COMPARE_DIR/dropped/<id>.json`, written once (the person as an 8-character hash, the account, the run and the time; no setting value, no amount), and 201 `applied: false, dropped: true`.
+- Each drop writes one audit line, `parameter_change_dropped`; a refusal writes none, and an audit line that cannot be written takes the record back (500).
+- `cmd/labstats` counts the drops beside the recorded changes.
+- The full answer and refusals: `users-and-roles.md` "`POST /api/lab/runs/<id>/drop`".
 - No screen uses it yet.
 
 ### `POST /api/lab/requests` (#641)

@@ -669,6 +669,7 @@ It shows each setting with its current value and the proposed one, the account, 
 If the setting is a core policy, the preview says a product owner must approve it.
 If the run is more than seven days old, or the value it started from is no longer the account's, the preview says the run is stale.
 In both cases, or when the run has no numbers for the proposed value, it cannot be confirmed, and the preview says why.
+The preview also says whether you may confirm it for this account, before you click: a manager linked only to other accounts sees why not, and gets no confirm token.
 The audit trail records one line with your username, the account, the run and both values.
 The preview changes nothing: no config file or bot setting is touched.
 No screen shows it yet.
@@ -685,6 +686,16 @@ How a recorded change will reach the bot is not decided yet.
 No screen shows it yet.
 
 <!-- guide: route:POST /api/lab/runs/[id]/apply -->
+
+**Can I decide to leave a setting as it is after a comparison run?** Yes: managers and admins can drop a finished run's proposal instead of confirming it.
+The monitor records that decision once, so the lab counts the runs that end in a decision, not only the confirmed changes.
+The same role and account checks as a confirm apply.
+A dropped proposal can no longer be confirmed, and a confirmed change cannot be dropped.
+The audit trail records one line with your username, the account and the run; the drop itself keeps only a short code for you, never a setting value or an amount.
+Dropping changes nothing: no config file is written, no bot is restarted and no order is placed.
+No screen shows it yet.
+
+<!-- guide: route:POST /api/lab/runs/[id]/drop -->
 
 **Can the assistant tell me what a comparison run showed?** Managers and admins can ask it, for example "what did my last comparison show?".
 It answers from the lab's latest runs: the return, the worst week, the drawdown and the fees of the current and the proposed settings, in percentages only, labelled backtested, with the worst week and the drawdown beside each return, and it names the run it read.

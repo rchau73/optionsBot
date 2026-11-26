@@ -42,11 +42,14 @@ Each step names its route, the fields it shows and its role check; the role chec
    Role: manager or admin (`ROLE_GUARDED_READS`).
 6. **Preview the change.** `GET /api/lab/runs/<id>/preview`, on the button "Preview this change".
    Shows per change `title`, `tip`, `current`, `base`, `proposed`, `core_policy`, `policy_note`; then `account.underlying`, `account.config`, `person`, `backtested`, `fragility`, `audit_line`, `reasons`.
-   `confirmable` and `confirm_token` decide whether Confirm is enabled; `stale` and `needs_product_owner` choose the state (section 5).
+   `confirmable`, `may_confirm` and `confirm_token` decide whether Confirm is enabled; `stale`, `needs_product_owner` and `may_confirm_reason` choose the state (section 5).
    Role: manager or admin (`ROLE_GUARDED_READS`); each answered preview writes one audit line, `parameter_change_previewed`.
 7. **Confirm.** `POST /api/lab/runs/<id>/apply` `{"confirm_token"}` from the confirm dialog (section 6).
    Shows the 201 answer's `message`, `next_step`, `risks` and `changes` (`old` → `new`), or the refusal's `error`, `reasons` and `approver`.
    Role: manager or admin (`STATE_CHANGING_ROUTES`, `linked: true`: a linked manager is refused on another account); audited `parameter_change_recorded`.
+8. **Or drop the proposal.** `POST /api/lab/runs/<id>/drop` `{}` (#890), on the button "Leave the setting as it is", for a done run with no recorded change.
+   Shows the 201 answer's `message`, or the refusal's `error` (already dropped, already recorded, not done).
+   Role: manager or admin, the same role and account-link check as the confirm; audited `parameter_change_dropped`; a dropped run can no longer be confirmed.
 
 Step 0, opening `/lab`: the page reads the signed-in person's role (the `person` the layout already passes to `MenuBar`); a user is shown the no-access state (section 5), and every route refuses them anyway.
 
@@ -111,13 +114,14 @@ Each state names the route field that triggers it.
 - **No numbers for the proposal** (preview `confirmable: false`, `confirm_token: null`, not stale, not core policy): "There are no results for the proposed value, so it cannot be confirmed." Confirm disabled.
 - **Core policy** (`core_policy: true` in validate or preview, `needs_product_owner: true`, `policy_note`): "Changing this default needs the product owner. You can still compare it, but you cannot confirm it here."
   Confirm hidden, the reason in its place; the apply route refuses it with `approver` anyway.
-- **Manager not linked to this account** (apply's 403, its `error` in words): "You do not manage this account, so you cannot confirm a change to it." followed by the route's own text.
-  The preview does not say whether the person may confirm (open question 3), so the page learns it only from the confirm.
+- **Manager not linked to this account** (preview `may_confirm: false`, `may_confirm_reason`; the apply's and the drop's 403 give the same words): "You do not manage this account, so you cannot confirm a change to it." followed by the route's own text.
+  Confirm and drop are disabled before any click (open question 3, answered by #890).
 - **Admin** (session role `admin`): the comparison and the preview are shown, Confirm is not: "Admins see the lab but do not change a running account's settings. The account's manager confirms."
   The apply route accepts an admin today (open question 2).
 - **User** (session role `user`; every lab route answers 403): "The lab is for managers. Ask your account's manager to compare a change." No form, no figures.
 - **Recorded** (apply 201): `message` and `next_step` from the answer, then "Nothing changed on the exchange." Confirm gone; the run row shows "Recorded".
 - **Already recorded** (apply 409, "a confirm is used once"): "This change was already recorded."
+- **Dropped** (drop 201, or apply 409 "a dropped proposal cannot be confirmed"): "You left this setting as it is. Nothing changed." Confirm and drop gone; the run row shows "Dropped".
 - **Token too old or changed** (apply 409, "open the preview again"): "The preview is older than 15 minutes. Open the preview again to confirm."
 - **Too many requests** (requests 429): "You already have 3 requests waiting or running. Wait for one to finish."
 - **Server error** (any 500): "The lab could not answer. Try again in a minute." The figures already on screen stay.
@@ -131,7 +135,7 @@ Every sentence is within the glossary's checks: at most 25 words, no promised re
 - Menu: "Lab".
 - Steps: "1. Choose a setting", "2. New value", "3. Compare", "4. Preview", "5. Confirm".
 - Field: "{title} ({unit})", hint "From {min} to {max}, in steps of {step}. Now: {current}."
-- Buttons: "Check value", "Request a comparison", "Preview this change", "Confirm change", "Cancel".
+- Buttons: "Check value", "Request a comparison", "Preview this change", "Confirm change", "Leave the setting as it is", "Cancel".
 - Table: "Return", "Worst week", "Max drawdown", "Fees", rows "Current" and "Proposed", blocks "Backtest" and "Replay of recorded books".
 - The label: "Backtested, not a forecast".
 
@@ -204,12 +208,13 @@ Ready to post on the E9 epic with the label `prototype:review`; only a person ad
   - "Lab" in Operational ▾ after Account, for managers and admins.
 - **Screens to prototype:** empty, picker with a refused value, queued/running/failed/expired list, comparison (desktop and 360 px), preview with a stale run, preview with a core policy, confirm dialog, recorded.
 - **Open questions:**
-  1. A "Drop this proposal" action: no route records a deliberate drop, so the metric counts confirmations only. A small route and a `cmd/labstats` count would close it.
+  1. ~~A "Drop this proposal" action~~ — answered by #890: `POST /api/lab/runs/<id>/drop` records a deliberate drop once (`data/compare/dropped/<id>.json`, audited `parameter_change_dropped`), and `cmd/labstats` counts it beside the confirmations.
   2. Admins: the apply route accepts an admin today; should it refuse one on an onboarded account, as PRD §3 says, or is hiding the button enough?
-  3. Linked managers: the preview does not say whether this person may confirm for this account; a field would let the page disable Confirm before the 403.
+     Still open for a person (#890 left the rule as it is); recommendation: refuse an admin on an onboarded account once E8's tenancy defines one.
+  3. ~~Linked managers: whether this person may confirm~~ — answered by #890: the preview's `may_confirm` and `may_confirm_reason` come from the apply route's own check, so the page disables Confirm before the 403.
   4. The menu position: no comparison entry exists; is Operational ▾ after Account right, or should Lab be a bar item of its own?
   5. How a recorded change reaches the running bot is not decided (README item 7); the confirm copy says "a person's pull request", which matches `cmd/labapply`'s candidates.
-- **Metric:** the share of done runs that reach a recorded change (and, once question 1 is answered, a deliberate drop), from `cmd/labstats`.
+- **Metric:** the share of done runs that end in a decision, a recorded change or a deliberate drop (#890), from `cmd/labstats`; guardrail: no apply refused for the role or the account after a preview said `may_confirm: true`.
 
 ## 11. UI stories that follow once approved
 

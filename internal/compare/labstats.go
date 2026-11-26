@@ -17,7 +17,8 @@ import (
 
 // The lab's usage report (#824, epic E9, cmd/labstats): how the lab is used
 // and whether its runs finish, from its own files only — the request queue
-// (COMPARE_DIR/requests/), the recorded changes (applied/), their candidates'
+// (COMPARE_DIR/requests/), the recorded changes (applied/), the dropped
+// proposals (dropped/, #890), the candidates'
 // status (candidates/<id>/candidate.json) and whether a done run's analysis
 // was written (<run id>/analysis.json). It reads ids, statuses and times:
 // no setting value, amount, account detail or name reaches the report; a
@@ -41,6 +42,8 @@ type LabUsageFiles struct {
 	Unreadable        int             // request files that cannot be read or parsed
 	Applied           map[string]bool // run ids with a recorded change (applied/<id>.json)
 	AppliedUnreadable int             // applied/ files whose name is not a run id
+	Dropped           map[string]bool // run ids whose proposal a manager dropped (dropped/<id>.json, #890)
+	DroppedUnreadable int             // dropped/ files whose name is not a run id
 	CorePolicyRefused map[string]bool // run ids whose candidate was refused for the product owner
 	Analysed          map[string]bool // run ids with an analysis written beside their report
 }
@@ -49,7 +52,7 @@ type LabUsageFiles struct {
 // empty lab; a request file that cannot be read is counted, never skipped
 // silently.
 func ReadLabUsage(compareDir string) (LabUsageFiles, error) {
-	f := LabUsageFiles{Applied: map[string]bool{}, CorePolicyRefused: map[string]bool{}, Analysed: map[string]bool{}}
+	f := LabUsageFiles{Applied: map[string]bool{}, Dropped: map[string]bool{}, CorePolicyRefused: map[string]bool{}, Analysed: map[string]bool{}}
 	reqs, skipped, err := ReadLabRequests(filepath.Join(compareDir, "requests"))
 	if err != nil {
 		return f, fmt.Errorf("read the request queue: %w", err)
@@ -72,6 +75,21 @@ func ReadLabUsage(compareDir string) (LabUsageFiles, error) {
 		if refusedForProductOwner(filepath.Join(compareDir, "candidates", id, CandidateStatusFile)) {
 			f.CorePolicyRefused[id] = true
 		}
+	}
+	dropped, err := os.ReadDir(filepath.Join(compareDir, "dropped"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return f, fmt.Errorf("read the dropped proposals: %w", err)
+	}
+	for _, e := range dropped {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok {
+			continue
+		}
+		if !runIDRe.MatchString(id) {
+			f.DroppedUnreadable++
+			continue
+		}
+		f.Dropped[id] = true
 	}
 	for _, r := range reqs {
 		if r.Status != StatusDone || !runIDRe.MatchString(r.RunID) {
@@ -118,6 +136,10 @@ type LabStats struct {
 	PerManagerWeek    []LabManagerWeek  `json:"per_manager_week"`
 	Recorded          int               `json:"recorded_changes"`
 	RecordedPctOfDone float64           `json:"recorded_pct_of_done"`
+	Dropped           int               `json:"dropped_proposals"`   // done runs whose proposal was dropped, none recorded (#890)
+	Decided           int               `json:"decided"`             // done runs ending in a decision: recorded or dropped
+	DecidedPctOfDone  float64           `json:"decided_pct_of_done"` // the lab's metric (#890)
+	DroppedUnreadable int               `json:"dropped_unreadable"`
 	CorePolicyRefused int               `json:"core_policy_refused"`
 	AnalysesWritten   int               `json:"analyses_written"`
 	Targets           []LabTargetResult `json:"targets"`
@@ -151,7 +173,7 @@ func ComputeLabStats(f LabUsageFiles, now time.Time, days int) LabStats {
 	}
 	to := now.UTC()
 	s := LabStats{From: to.AddDate(0, 0, -days), To: to, Days: days, Unreadable: f.Unreadable,
-		AppliedUnreadable: f.AppliedUnreadable, PerManagerWeek: []LabManagerWeek{}}
+		AppliedUnreadable: f.AppliedUnreadable, DroppedUnreadable: f.DroppedUnreadable, PerManagerWeek: []LabManagerWeek{}}
 	var minutes []float64
 	perWeek := map[LabManagerWeek]int{}
 	managers := map[string]bool{}
@@ -170,6 +192,9 @@ func ComputeLabStats(f LabUsageFiles, now time.Time, days int) LabStats {
 				if f.CorePolicyRefused[r.RunID] {
 					s.CorePolicyRefused++
 				}
+			} else if f.Dropped[r.RunID] {
+				// A run is one decision: a recorded change wins over a drop file beside it.
+				s.Dropped++
 			}
 			if f.Analysed[r.RunID] && r.Note == "" {
 				s.AnalysesWritten++
@@ -203,6 +228,8 @@ func ComputeLabStats(f LabUsageFiles, now time.Time, days int) LabStats {
 	})
 	s.DonePct, s.FailedPct, s.ExpiredPct = pctOf(s.Done, s.Requests), pctOf(s.Failed, s.Requests), pctOf(s.Expired, s.Requests)
 	s.RecordedPctOfDone = pctOf(s.Recorded, s.Done)
+	s.Decided = s.Recorded + s.Dropped
+	s.DecidedPctOfDone = pctOf(s.Decided, s.Done)
 	if len(minutes) > 0 {
 		m := math.Round(median(minutes)*10) / 10
 		s.MedianMinutes = &m
@@ -258,6 +285,8 @@ func LabStatsMarkdown(s LabStats) string {
 	fmt.Fprintf(&b, "| Median time to a finished run | %s |\n", medianText)
 	fmt.Fprintf(&b, "| Managers | %d |\n", s.Managers)
 	fmt.Fprintf(&b, "| Done runs with a recorded change | %d of %d (%s %%) |\n", s.Recorded, s.Done, num(s.RecordedPctOfDone))
+	fmt.Fprintf(&b, "| Done runs with a dropped proposal | %d |\n", s.Dropped)
+	fmt.Fprintf(&b, "| Done runs ending in a decision (recorded or dropped) | %d of %d (%s %%) |\n", s.Decided, s.Done, num(s.DecidedPctOfDone))
 	fmt.Fprintf(&b, "| Recorded changes refused as a core policy | %d |\n", s.CorePolicyRefused)
 	fmt.Fprintf(&b, "| AI analyses written (withheld until L10) | %d |\n", s.AnalysesWritten)
 	b.WriteString("\n| Week | Manager | Requests |\n|---|---|---|\n")
@@ -284,5 +313,8 @@ func writeUnreadable(b *strings.Builder, s LabStats) {
 	}
 	if s.AppliedUnreadable > 0 {
 		fmt.Fprintf(b, "\nRecorded-change files not named by a run id: %d.\n", s.AppliedUnreadable)
+	}
+	if s.DroppedUnreadable > 0 {
+		fmt.Fprintf(b, "\nDropped-proposal files not named by a run id: %d.\n", s.DroppedUnreadable)
 	}
 }

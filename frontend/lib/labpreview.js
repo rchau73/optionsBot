@@ -119,6 +119,9 @@ export function buildPreview(run, person, now) {
     stale: staleReasons.length > 0,
     confirmable: reasons.length === 0,
     reasons,
+    // Whether this person may confirm for this account (#890): the route fills them from the apply route's check; closed until then.
+    may_confirm: false,
+    may_confirm_reason: null,
     confirm_token: null,
     analysis: run.analysis,
     applied: NOTHING_APPLIED,
