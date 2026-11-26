@@ -118,6 +118,13 @@ const FIXTURES = {
   "POST /api/admin/users/[id]/password": async ({ who }) => ({ ...(await target(who, "/password")), body: { password: NEW_PASSWORD } }),
   "POST /api/admin/users/[id]/reset-link": async ({ who }) => target(who, "/reset-link"),
   "POST /api/admin/users/[id]/signout": async ({ who }) => target(who, "/signout"),
+  "POST /api/admin/users/[id]/unlock": async ({ who }) => {
+    // A locked person (#846): only then does an allowed unlock write its audit line.
+    const t = await target(who, "/unlock");
+    const name = auth.store.userById(Number(t.params.id)).username;
+    auth.store.lockLogin(name, Date.now() + 15 * 60 * 1000, Date.now(), Date.now() - 15 * 60 * 1000);
+    return t;
+  },
   "POST /api/assistant": async () => ({ path: "/api/assistant", body: { question: "What is a strangle?" } }),
   "POST /api/assistant/feedback": async () => ({ path: "/api/assistant/feedback", body: { id: "a-1", helped: true } }),
   "POST /api/assistant/flag": async () => ({ path: "/api/assistant/flag", body: { id: "a-1" } }),

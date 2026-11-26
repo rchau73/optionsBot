@@ -110,7 +110,10 @@ The admin's direct **Reset password** stays as it was
 ### Lockout
 
 5 failed sign-ins for a username within 15 min lock it until 15 min after the last one (same 401); 20 sign-ins a minute per IP, then 429 with `Retry-After`.
-The username failures and locks are kept per environment in `auth.db` (`login_failures`, `login_locks`; failures older than 15 min are deleted at the next failure), so a restart or deploy of the monitor does not clear a lockout; the per-IP limit is short-lived and stays in memory (a restart forgets it)
+The username failures and locks are kept per environment in `auth.db` (`login_failures`, `login_locks`; failures older than 15 min are deleted at the next failure), so a restart or deploy of the monitor does not clear a lockout; the per-IP limit is short-lived and stays in memory (a restart forgets it).
+A locked person still sees the same refusal and waits, unless an admin lifts the lock (#846): the Users page shows **Locked until HH:MM** on that person's row with an **Unlock** button (`POST /api/admin/users/[id]/unlock`, `frontend/docs/users-and-roles.md`).
+Unlock deletes the lock and the recent failures, so the person can sign in at once and the next 5 wrong passwords lock again; it ends or starts no session and leaves the password as it is.
+It is audited `login_unlocked`; it is not a lockout, and the security digest counts it apart ("Lockouts lifted by an admin")
 
 ### Secure cookies
 
@@ -126,7 +129,7 @@ Never a page, a close or a rebalance
 
 One JSON line for each of these, with username and IP:
 - a sign-in, a failure (reason, `locked`), a lockout, a rate limit, a sign-out and the first admin;
-- a user change: `user created`, `role changed`, `password reset` (with `event: password_reset`), `reset link issued` (with `expires_at`), `signed out everywhere` and `user deleted`, each with `by`;
+- a user change: `user created`, `role changed`, `password reset` (with `event: password_reset`), `reset link issued` (with `expires_at`), `signed out everywhere`, `sign-in lock lifted` (with `event: login_unlocked` and `locked_until`) and `user deleted`, each with `by`;
 - a reset by link: `password reset by link`, with `event: password_reset`, `via: link`, the person, `by` (the admin who issued it) and the IP;
 - a refused link: a WARN `reset by link refused` with the IP only;
 - a password change: `password changed` (with `event: password_changed`) or `password change failed`;
@@ -143,6 +146,7 @@ Never a password, hash, token or `AUTH_SECRET`
 It is append-only and owner-only.
 Each line is JSON, `{time, action, username, role, …}`, one per action:
 - `signed_in`, `sign_in_failed` (reason), `locked` and `signed_out`;
+- `login_unlocked` (an admin lifted a sign-in lock, #846), with `target` and the lifted `locked_until`, where `username` and `role` are the admin's;
 - `password_changed` and `password_change_failed` (reason `password` or `locked`);
 - `user_created` (`to` = the role) and `role_changed`;
 - `password_reset` (an admin set another person's password, #306);
@@ -182,7 +186,7 @@ They read the audit trail (above) and its archives, never write it, and hold cou
 They read the trail rather than `login_failures`, because failures there are deleted after 15 minutes and a weekly count needs the history.
 The weekly digest of the last ISO week (Monday to Sunday, UTC), per environment:
 - the audit chain first: "Audit chain intact — N lines checked." or "Audit chain BROKEN: <file, line and reason>", which opens the digest before any count;
-- for failed sign-ins, lockouts, failed password changes, passwords set by an admin, reset links issued, passwords reset with a link, role changes, users created, users deleted by an admin, accounts deleted by their owner, sessions ended and signed out everywhere: the count this week and the week before;
+- for failed sign-ins, lockouts, lockouts lifted by an admin, failed password changes, passwords set by an admin, reset links issued, passwords reset with a link, role changes, users created, users deleted by an admin, accounts deleted by their owner, sessions ended and signed out everywhere: the count this week and the week before;
 - usernames locked out this week, and distinct sources (IP addresses) signing in this week, as counts;
 - the date of the last change of the admin role (any line that gave or took it, the first-admin setup included);
 - "No data yet" when the trail has no line.
