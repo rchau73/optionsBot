@@ -202,6 +202,34 @@ func TestAPI_Journal(t *testing.T) {
 	})
 }
 
+// #877: a futures hedge line carries its side ("side", not "direction") for the
+// assistant's "Hedge now" passage, and a filled hedge trade is never collapsed;
+// hedge lines that filled nothing still collapse, by side.
+func TestAPI_JournalHedgeSide(t *testing.T) {
+	now := time.Now()
+	perp := `"instrument":"BTC-PERPETUAL","change":"hedge_fill"`
+	var lines []string
+	add := func(at time.Time, rest string) { lines = append(lines, jline(at, orders.EventHedge, rest)) }
+	add(now.Add(-3*time.Hour), perp+`,"side":"sell","amount_usd":300,"filled_usd":300`)
+	add(now.Add(-2*time.Hour), perp+`,"side":"sell","amount_usd":300,"filled_usd":300`)
+	add(now.Add(-time.Hour), perp+`,"side":"buy","amount_usd":200`)
+	add(now.Add(-time.Hour+time.Minute), perp+`,"side":"buy","amount_usd":200`)
+	add(now.Add(-30*time.Minute), perp+`,"side":"sell","amount_usd":100`)
+	_, h := journalFixture(t, lines)
+
+	w := getJournal(t, h, "/api/journal")
+	var got []string
+	for _, it := range w.Items {
+		if it.Event == orders.EventHedge {
+			got = append(got, fmt.Sprintf("%s ×%d", it.Side, it.Count))
+		}
+	}
+	want := []string{"sell ×1", "sell ×1", "buy ×2", "sell ×1"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("hedge items %v, want %v", got, want)
+	}
+}
+
 // #427: held=1 adds every older event of the instruments held now (sampleView
 // holds BTC-X-110000-C and BTC-X-90000-P), and a fill or a close carries the
 // market its line recorded.

@@ -109,7 +109,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 			rep.add(st, ActionSkipped, "", 0, 0, "instrument not in market data")
 			continue
 		}
-		lot := math.Max(callInst.MinTradeAmount, putInst.MinTradeAmount)
+		lot := math.Max(callInst.OrderStep(), putInst.OrderStep())
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}
@@ -117,14 +117,14 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 		// Buying one lot back (positive size) frees this strangle's IM per
 		// lot — measured against the book now, which includes complements
 		// sent earlier in this pass.
-		base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
+		base, err := s.simulate(ctx, map[string]float64{}, m.usage)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
 			rep.add(st, ActionSkipped, "", 0, 0, "margin simulation failed: "+err.Error())
 			continue
 		}
-		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage.Unit)
+		freed, err := s.simulate(ctx, map[string]float64{callInst.Name: lot, putInst.Name: lot}, m.usage)
 		if err != nil {
 			slog.Warn("rebalance: simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
@@ -138,7 +138,7 @@ func (s *Strategy) rebalancePositions(ctx context.Context, m marginState, dryRun
 			rep.add(st, ActionSkipped, "", 0, 0, "adds no IM (portfolio netting): size kept")
 			continue
 		}
-		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage.Unit); err != nil {
+		if targetLots, err = s.capToNormalSize(ctx, callInst.Name, putInst.Name, lot, targetLots, share, m.usage); err != nil {
 			slog.Warn("rebalance: standalone simulation failed, will retry", "strangle_id", st.ID, "err", err)
 			rep.Done = false
 			rep.add(st, ActionSkipped, "", 0, 0, "standalone margin simulation failed: "+err.Error())
@@ -296,7 +296,7 @@ func (s *Strategy) openComplementStrangle(ctx context.Context, st *orders.Strang
 	act.Detail = fmt.Sprintf("sell %g of each leg (limit) toward the slot target %g", addQty, targetQty)
 	if dryRun {
 		// Report the size the liquidity cap would let out (liquidity.go).
-		lot := math.Max(call.MinTradeAmount, put.MinTradeAmount)
+		lot := math.Max(call.OrderStep(), put.OrderStep())
 		if lot <= 0 {
 			lot = s.cfg.MinTradeAmount
 		}

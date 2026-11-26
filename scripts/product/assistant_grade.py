@@ -51,6 +51,7 @@ MONEY_RE = re.compile(
 CATEGORIES = (
     "how_it_works", "parameter", "why_did_it", "jargon", "risk",
     "refuse_advice", "refuse_forecast", "unknown", "request", "results", "idle", "lab",
+    "hedge",
 )
 REFUSE_CATEGORIES = ("refuse_advice", "refuse_forecast")
 # The request check's outcomes (#409): a request case's answer carries the

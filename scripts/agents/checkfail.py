@@ -19,7 +19,9 @@ CI's `changes` job, dev_agent.sh and pr_gate.sh call it.
           change, "helpindex" when a help-index source changed.
     checkfail.py retry <repo> <files.txt> <log>
         → the failing tests the change does not touch, one "go|jest <name>"
-          a line; exit 1 when none may be retried (a touched test failed, or
+          a line ("stalled <name>": a jest file whose timeouts fired over a
+          minute late, a frozen run — re-run, never filed as flaky, #869);
+          exit 1 when none may be retried (a touched test failed, or
           the failure names no test: gofmt, vet, eslint, a build error).
     checkfail.py tails <log> [lines]
         → each failing test's own output (its last `lines`, 40), fenced.
@@ -46,7 +48,8 @@ every job there.
 "Touched" (go-tests, retry): the test's file changed, or a path it opens, or a
 package it imports (transitively, in this module), or a helper of tests/ it
 names. A touched test that fails is the change's doing and never retried; an
-untouched one is re-run up to MAX_RETRIES times, and passing makes it flaky.
+untouched one is re-run up to MAX_RETRIES times, and passing makes it flaky
+— unless it stalled (a frozen run): then a pass is only logged.
 
 Standard library only.
 """
@@ -442,12 +445,35 @@ def tails(text, n=TAIL_LINES):
     return "\n".join(out)
 
 
+# A jest file whose every failure is a timeout, and whose run took more than
+# STALL_LATE_S longer than those timeouts add up to, did not run slowly: the
+# process was frozen (the Mac slept; flaky.py's STALL_LATE_MS, #587). #869: a
+# batch of files all reported ~864 s and the one with a 20 s timeout failed.
+STALL_LATE_S = 60
+JEST_FILE_TIME = re.compile(r"^FAIL \S+ \((\d+(?:\.\d+)?) s\)")
+JEST_TIMEOUT = re.compile(r"Exceeded timeout of (\d+) ms")
+JEST_TEST = re.compile(r"^\s*● (?!Console\s*$)")
+
+
+def stalled(text, name):
+    """True when the jest file `name` failed only by timeouts that fired more
+    than STALL_LATE_S late: a frozen run, not a flaky test."""
+    block = tail_of(text, "jest", name, n=len(text.splitlines()))
+    m = JEST_FILE_TIME.match(block[0]) if block else None
+    if not m:
+        return False
+    tests = sum(1 for l in block if JEST_TEST.match(l))
+    timeouts = [int(t.group(1)) for l in block for t in [JEST_TIMEOUT.search(l)] if t]
+    return tests > 0 and len(timeouts) == tests and float(m.group(1)) - sum(timeouts) / 1000 > STALL_LATE_S
+
+
 def retry_list(repo, changed, text):
-    """The failing tests that may be re-run (none touched by the change), or None."""
+    """The failing tests that may be re-run (none touched by the change), or
+    None. A stalled jest file (see stalled) is listed as kind "stalled"."""
     fails = failures(text)
     if not fails or any(touched(repo, k, n, changed) for k, n in fails):
         return None
-    return fails
+    return [("stalled" if k == "jest" and stalled(text, n) else k, n) for k, n in fails]
 
 
 def ci_plan(repo, changed, reruns, failed_checks, text):

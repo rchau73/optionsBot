@@ -18,6 +18,12 @@ The fixes come with the E12 UI stories, once the prototype (#654) is approved.
 - Text size and tap targets: `npm run test:phone` writes `frontend/e2e/a11y-report.json` at 360 px, report-only.
   Its `ranked` list is the browser's count of pages per finding and replaces the source estimates below once the first run is reviewed.
 
+- Text resize and reflow (#887): the same run repeats every page with the root font size at 200 % (360 px wide) and at 320 px (normal text).
+  It writes, per page and pass, under `resize` in `a11y-report.json`, with a `resize.ranked` list:
+  `overflow_px`, `clipped_text` (text in an `overflow: hidden` box whose content is larger than the box)
+  and `offscreen_controls` (visible controls past the screen's edge, not those inside a box that scrolls sideways by design).
+  Report-only, like the rest: the run exits 0 whatever it finds.
+
 ## Findings, ranked by pages affected
 
 Pages are the eight menu pages (Overview, Details, Positions, Income, Worst case, Activity, Account, How it works) and the assistant panel.
@@ -58,6 +64,18 @@ Ties are ordered by how often a person meets them (the overview before Positions
 Fixed by #851, with no visual change: #1 (the phone overview had no main landmark) and #2 (its "This month" heading, "Since you last looked" and footer note sat outside any landmark) — its cards, "Since you last looked" and the note, now a `<footer>`, are in one `<main>`;
 #3 (the payoff card's Delta box was an `<aside>`, a page-level landmark inside the content) — it is a group named "Delta".
 The assistant panel and the dialogs are measured one by one in `a11y.test.jsx`, not here: they open over a page.
+
+## Text resize and reflow
+
+Whether a page still shows all its content when the text is enlarged to 200 % (WCAG 1.4.4) or the screen is 320 px wide (WCAG 1.4.10).
+Measured by `npm run test:phone` into `resize` of `frontend/e2e/a11y-report.json`; report-only, no component, colour or layout changed.
+Counts from `resize.ranked` of the run of 2026-11-26 on demo data (pages affected, most first), out of the eight menu pages and the assistant panel; Positions, Income, Worst case, Activity and How it works have none in either pass.
+
+| # | Finding | Pass | Pages affected | What the fix needs | Owner |
+|---|---|---|---|---|---|
+| 1 | Page scrolls sideways (`overflow_px` > 0) | 200 % text, 320 px | 4: account, assistant, details, overview at 200 %; details also at 320 px | the designer decides which tables wrap, stack or scroll inside their own box at these sizes | designer, then developer |
+| 2 | Text clipped by its box (`clipped_text` > 0) | 200 % text, 320 px | 3: assistant, details, overview, at 200 % and at 320 px | boxes that grow with their text (no fixed height) or show the full text another way | designer, then developer |
+| 3 | Controls pushed off screen (`offscreen_controls` > 0) | 200 % text | 3: assistant, details, overview at 200 %; none at 320 px | a header and menu bar that wrap or collapse instead of running past the edge | designer, then developer |
 
 ## What passes
 
