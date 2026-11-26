@@ -24,9 +24,11 @@ const LINK = "inline-flex min-h-11 items-center text-base text-testnet underline
 
 /**
  * bots: every bot; selected/onSelect: the bot shown (by name). Its menu opens
- * the other views, Details (pro) included (/details, #405).
+ * the other views, Details (pro) included (/details, #405). children go under
+ * the cards inside the same <main> ("Since you last looked"), so a screen
+ * reader jumps past the menu to all of it (#851).
  */
-export default function PhoneOverview({ bots, selected, onSelect, now }) {
+export default function PhoneOverview({ bots, selected, onSelect, now, children }) {
   const bot = bots.find((b) => b.name === selected) ?? bots[0];
   if (!bot) return null;
   const s = bot.summary;
@@ -34,30 +36,33 @@ export default function PhoneOverview({ bots, selected, onSelect, now }) {
   return (
     <div className="space-y-3 pb-3" data-testid="phone-overview">
       <PhoneHeader bots={bots} bot={bot} onSelect={onSelect} />
-      <div className="space-y-3 px-3">
-        {isFirstDay(bot) ? (
-          <FirstDayPanel bot={bot} headingLevel={1} />
-        ) : failure ? (
-          <p role="alert" className="rounded-lg border border-line bg-panel px-4 py-3 text-base text-warn">
-            Summary unavailable: {failure}. Nothing is shown until the bot answers again.
-          </p>
-        ) : !s ? (
-          <p className="text-base text-muted">Loading the summary…</p>
-        ) : (
-          <>
-            <Headline bot={bot} />
-            <HedgeLine bot={bot} now={now} net />
-            <Card title={`${coinOf(bot)} market regime`}>
-              <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
-            </Card>
-            <HoldsCard summary={s} bot={bot} />
-            <MakingCard summary={s} bot={bot.name} />
-            <WorstCard summary={s} bot={bot.name} />
-            <LastActionCard summary={s} bot={bot.name} />
-          </>
-        )}
-        <p className="text-center text-xs text-muted">From the bot&apos;s journal, after fees. Worst case is an estimate. Not investment advice.</p>
-      </div>
+      <main className="space-y-3">
+        <div className="space-y-3 px-3">
+          {isFirstDay(bot) ? (
+            <FirstDayPanel bot={bot} headingLevel={1} />
+          ) : failure ? (
+            <p role="alert" className="rounded-lg border border-line bg-panel px-4 py-3 text-base text-warn">
+              Summary unavailable: {failure}. Nothing is shown until the bot answers again.
+            </p>
+          ) : !s ? (
+            <p className="text-base text-muted">Loading the summary…</p>
+          ) : (
+            <>
+              <Headline bot={bot} />
+              <HedgeLine bot={bot} now={now} net />
+              <Card title={`${coinOf(bot)} market regime`}>
+                <RegimeChart status={bot.status} positions={bot.positions} coin={coinOf(bot)} />
+              </Card>
+              <HoldsCard summary={s} bot={bot} />
+              <MakingCard summary={s} bot={bot.name} />
+              <WorstCard summary={s} bot={bot.name} />
+              <LastActionCard summary={s} bot={bot.name} />
+            </>
+          )}
+          <footer className="text-center text-xs text-muted">From the bot&apos;s journal, after fees. Worst case is an estimate. Not investment advice.</footer>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
