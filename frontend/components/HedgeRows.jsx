@@ -8,7 +8,7 @@ import Panel from "./Panel";
 import TermTip from "./TermTip";
 import { approxUSD } from "@/lib/details";
 import { formatAge, formatCoin, formatUSD, isNumber } from "@/lib/format";
-import { HEDGE_BADGE, bandWords, hedgeShown, hedgeStaleAge, hedgeState, pausedWords, positionWords, pricedAtIndex } from "@/lib/futuresHedge";
+import { HEDGE_BADGE, bandWords, hedgeAmount, hedgeMoneyUnit, hedgeShown, hedgeStaleAge, hedgeState, pausedWords, positionWords, pricedAtIndex } from "@/lib/futuresHedge";
 import { coinOf } from "@/lib/overview";
 import { formatSignedUSD } from "@/lib/summary";
 
@@ -17,7 +17,10 @@ const tone = (v) => (v > 0 ? "text-profit" : v < 0 ? "text-loss" : "");
 /** The perpetual's six figures, coin first; stacks to two columns on a phone. */
 export function HedgeFigures({ h, unit }) {
   const realised = isNumber(h.realised_coin) && isNumber(h.fees_coin) ? h.realised_coin - h.fees_coin : null;
-  const usd = (coin) => approxUSD(isNumber(coin) && isNumber(h.perp_mark_price) ? coin * h.perp_mark_price : null);
+  // Money in the bot's unit (#837): USDC for SOL/XRP, already dollars, so no ≈ USD beside it.
+  const money = hedgeMoneyUnit(h, unit);
+  const amount = (v) => (money === "USDC" ? hedgeAmount(h, v, unit, money) : formatCoin(v, unit, 4));
+  const usd = (coin) => (money === "USDC" ? null : approxUSD(isNumber(coin) && isNumber(h.perp_mark_price) ? coin * h.perp_mark_price : null));
   return (
     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm tabular-nums sm:grid-cols-3 lg:grid-cols-6">
       <div>
@@ -41,18 +44,18 @@ export function HedgeFigures({ h, unit }) {
       <div>
         <dt className="text-xs text-muted">Unrealised</dt>
         <dd className={tone(h.unrealised_coin)}>
-          {formatCoin(h.unrealised_coin, unit, 4)} <span className="text-xs">{usd(h.unrealised_coin)}</span>
+          {amount(h.unrealised_coin)} <span className="text-xs">{usd(h.unrealised_coin)}</span>
         </dd>
       </div>
       <div>
         <dt className="text-xs text-muted">Realised − fees</dt>
         <dd className={tone(realised)}>
-          {formatCoin(realised, unit, 4)} <span className="text-xs">{usd(realised)}</span>
+          {amount(realised)} <span className="text-xs">{usd(realised)}</span>
         </dd>
       </div>
       <div>
         <dt className="text-xs text-muted">Funding</dt>
-        <dd>{pricedAtIndex(h) ? <span className="text-muted">left out on testnet</span> : formatCoin(h.funding_coin, unit, 4)}</dd>
+        <dd>{pricedAtIndex(h) ? <span className="text-muted">left out on testnet</span> : amount(h.funding_coin)}</dd>
       </div>
     </dl>
   );

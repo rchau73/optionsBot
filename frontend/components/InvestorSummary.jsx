@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import Link from "next/link";
-import { formatCoin, formatDate, formatDateTime, formatNumber, formatPct, formatUSD, isNumber } from "@/lib/format";
+import { formatMoney, settlementUnit, summaryUnit, worstValue } from "@/lib/details";
+import { formatDate, formatDateTime, formatNumber, formatPct, formatUSD, isNumber } from "@/lib/format";
 import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
 import { isFirstDay } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD, hasIncome, holdingLine, incomeRows, toneOf, worstCaseRows } from "@/lib/summary";
@@ -46,8 +47,8 @@ export function BotSummary({ bot }) {
         <div className="grid gap-4 p-4 md:grid-cols-2">
           <Holding holding={s.holding} bot={bot.name} idle={<IdleNote bot={bot} />} />
           <Income income={s.income} bot={bot.name} />
-          <WorstCase wc={s.worst_case} bot={bot.name} />
-          <LastAction action={s.last_action} coin={s.underlying} />
+          <WorstCase wc={s.worst_case} bot={bot.name} unit={summaryUnit(s)} />
+          <LastAction action={s.last_action} unit={summaryUnit(s)} />
         </div>
       )}
     </section>
@@ -104,7 +105,9 @@ function Holding({ holding: h, bot, idle }) {
 }
 
 function Income({ income, bot }) {
-  const coin = income?.coin ?? "";
+  // The amounts' unit (#837): the coin for BTC and ETH, USDC for SOL and XRP.
+  const coin = income?.unit || settlementUnit(income?.coin ?? "");
+  const usdc = coin === "USDC"; // already dollars: no USD copy beside it
   return (
     <Answer question="Income per month (realised, net of fees)">
       {hasIncome(income) ? (
@@ -113,7 +116,7 @@ function Income({ income, bot }) {
             <tr>
               <th>Month</th>
               <th>{coin}</th>
-              <th>USD</th>
+              {usdc ? null : <th>USD</th>}
               <th>Closes</th>
             </tr>
           </thead>
@@ -129,17 +132,19 @@ function Income({ income, bot }) {
                 {m.closes ? (
                   <>
                     <td className="py-0.5 pr-2 text-right">
-                      <Signed value={m.coin}>{formatCoin(m.coin, coin)}</Signed>
+                      <Signed value={m.coin}>{formatMoney(m.coin, coin)}</Signed>
                     </td>
-                    <td className="py-0.5 pr-2 text-right">
-                      <Signed value={m.usd}>{formatSignedUSD(m.usd)}</Signed>
-                    </td>
+                    {usdc ? null : (
+                      <td className="py-0.5 pr-2 text-right">
+                        <Signed value={m.usd}>{formatSignedUSD(m.usd)}</Signed>
+                      </td>
+                    )}
                     <td className="py-0.5 text-right text-muted">
                       {m.closes} close{m.closes === 1 ? "" : "s"}
                     </td>
                   </>
                 ) : (
-                  <td colSpan={3} className="py-0.5 text-right text-muted">
+                  <td colSpan={usdc ? 2 : 3} className="py-0.5 text-right text-muted">
                     no closes
                   </td>
                 )}
@@ -149,14 +154,19 @@ function Income({ income, bot }) {
         </table>
       ) : (
         <p className="text-base">
-          No closed trades in the last six months yet. Each month&apos;s net income (in {coin || "coin"} and USD, after fees) appears
+          No closed trades in the last six months yet. Each month&apos;s net income (in {usdc ? "USDC" : `${coin || "coin"} and USD`}, after fees) appears
           here once the bot buys back or lets expire its first option.
         </p>
       )}
       <p className="text-base">
         Open positions now (not realised):{" "}
-        <Signed value={income?.unrealised_coin}>{formatCoin(income?.unrealised_coin, coin)}</Signed> ·{" "}
-        <Signed value={income?.unrealised_usd}>{formatSignedUSD(income?.unrealised_usd)}</Signed>
+        <Signed value={income?.unrealised_coin}>{formatMoney(income?.unrealised_coin, coin)}</Signed>
+        {usdc ? null : (
+          <>
+            {" "}
+            · <Signed value={income?.unrealised_usd}>{formatSignedUSD(income?.unrealised_usd)}</Signed>
+          </>
+        )}
       </p>
       {income?.basis ? <p className="text-xs text-muted">{income.basis}</p> : null}
       <Link
@@ -169,8 +179,10 @@ function Income({ income, bot }) {
   );
 }
 
-function WorstCase({ wc, bot }) {
+function WorstCase({ wc, bot, unit = wc?.coin }) {
   const rows = worstCaseRows(wc);
+  // A USDC bot's loss is the model's dollar loss; its % of equity waits for a USDC balance in /api/summary (#837 follow-up).
+  const usdc = unit === "USDC";
   return (
     <Answer question="Worst case now (one day)">
       {rows.length ? (
@@ -178,8 +190,14 @@ function WorstCase({ wc, bot }) {
           {rows.map((r) => (
             <li key={r.key}>
               If {wc.coin} {r.label} {formatPct(wc.move_pct)} to {formatUSD(r.spot)}:{" "}
-              <Signed value={r.coin}>{formatCoin(r.coin, wc.coin)}</Signed> · <Signed value={r.usd}>{formatSignedUSD(r.usd)}</Signed> ·{" "}
-              {r.pct == null ? <span className="text-muted">% of equity unknown</span> : <Signed value={r.pct}>{formatSignedPct(r.pct)} of equity</Signed>}
+              {usdc ? (
+                <Signed value={r.usd}>{formatMoney(worstValue(r.coin, r.usd, unit), unit)}</Signed>
+              ) : (
+                <>
+                  <Signed value={r.coin}>{formatMoney(r.coin, unit)}</Signed> · <Signed value={r.usd}>{formatSignedUSD(r.usd)}</Signed> ·{" "}
+                  {r.pct == null ? <span className="text-muted">% of equity unknown</span> : <Signed value={r.pct}>{formatSignedPct(r.pct)} of equity</Signed>}
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -208,7 +226,7 @@ function WorstCase({ wc, bot }) {
   );
 }
 
-function LastAction({ action, coin }) {
+function LastAction({ action, unit }) {
   if (!action) {
     return (
       <Answer question="Last action">
@@ -226,8 +244,13 @@ function LastAction({ action, coin }) {
       </p>
       {(action.kind === "close" || hedge) && (isNumber(action.pnl_coin) || isNumber(action.pnl_usd)) ? (
         <p className="text-base">
-          Result of that trade (net of fees): <Signed value={action.pnl_coin}>{formatCoin(action.pnl_coin, coin)}</Signed> ·{" "}
-          <Signed value={action.pnl_usd}>{formatSignedUSD(action.pnl_usd)}</Signed>
+          Result of that trade (net of fees): <Signed value={action.pnl_coin}>{formatMoney(action.pnl_coin, unit)}</Signed>
+          {unit === "USDC" ? null : (
+            <>
+              {" "}
+              · <Signed value={action.pnl_usd}>{formatSignedUSD(action.pnl_usd)}</Signed>
+            </>
+          )}
         </p>
       ) : null}
       {action.detail ? <p className="text-xs text-muted">{action.detail}</p> : null}

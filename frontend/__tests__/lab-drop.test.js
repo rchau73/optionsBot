@@ -36,8 +36,9 @@ const REGISTRY = [
 const OTHER_ACCOUNT = "you do not manage account Account A (acct-a), which bot btc trades for: ask an admin to link it to you on the Users page";
 
 let root, dir, seq, base;
-// A run id is a time to the second, so it counts back from one clock reading per test (#912):
-// Date.now() read on each call let a run made a second later take the previous run's id.
+// Ids count back from one time fixed per test, one second apart: from the clock
+// at each call, a test running over a second (the race loop on a busy CI runner)
+// gave its second run the first one's id, already recorded, so both refused.
 const newRun = (over) => {
   seq += 1;
   const id = new Date(base - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");

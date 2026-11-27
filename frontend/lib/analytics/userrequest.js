@@ -66,7 +66,9 @@ export async function runUserRequest({ argv, env = process.env, cwd = process.cw
   const salt = analyticsSalt(env.ANALYTICS_SALT);
   if (!salt) return { code: 1, out: [`ANALYTICS_SALT is not set (≥ ${MIN_SALT} chars): use the environment's .env value`, USAGE] };
   const dbPath = path.resolve(cwd, env.AUTH_DB_PATH);
-  if (!fs.existsSync(dbPath)) return { code: 1, out: [`no user database at ${dbPath}`] };
+  // A path chosen at run time (the CLI's AUTH_DB_PATH): not traced, or Next
+  // copies the whole project into the monitor's build output (#903).
+  if (!fs.existsSync(/* turbopackIgnore: true */ dbPath)) return { code: 1, out: [`no user database at ${dbPath}`] };
   const file = path.resolve(cwd, eventsPath(dbPath, env.EVENTS_PATH));
   const audit = fileAudit(path.resolve(cwd, auditPath(dbPath, env.AUDIT_PATH)));
 

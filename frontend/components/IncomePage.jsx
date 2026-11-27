@@ -60,6 +60,8 @@ function useUnit() {
 /** The page's content for one state of the data (pure: easy to test). */
 export function IncomeView({ bot, income, error, loading, unit = "coin", onUnit = () => {} }) {
   const coin = income?.coin || bot?.toUpperCase() || "coin";
+  // The amounts' unit (#837): the coin for BTC and ETH, USDC for SOL and XRP.
+  const amountUnit = income?.unit || coin;
   return (
     <div className="min-h-screen">
       <header className="flex flex-wrap items-center gap-3 border-b border-line bg-panel px-4 py-3">
@@ -70,7 +72,7 @@ export function IncomeView({ bot, income, error, loading, unit = "coin", onUnit 
         {income?.summary?.label ? (
           <Badge tone={income.summary.label === "live" ? "live" : "testnet"}>{income.summary.label.toUpperCase()}</Badge>
         ) : null}
-        <UnitToggle coin={coin} unit={unit} onUnit={onUnit} />
+        <UnitToggle coin={amountUnit} unit={unit} onUnit={onUnit} />
       </header>
       <main className="mx-auto max-w-5xl space-y-4 p-4">
         {!bot ? (
@@ -91,11 +93,11 @@ export function IncomeView({ bot, income, error, loading, unit = "coin", onUnit 
               </p>
             ) : null}
             {unit === "pct" ? (
-              <IncomeStartView income={income} coin={coin} />
+              <IncomeStartView income={income} coin={amountUnit} />
             ) : (
               <>
-                <Tiles income={income} unit={unit} coin={coin} onUnit={onUnit} />
-                <MonthTable income={income} unit={unit} coin={coin} />
+                <Tiles income={income} unit={unit} coin={amountUnit} market={coin} onUnit={onUnit} />
+                <MonthTable income={income} unit={unit} coin={amountUnit} market={coin} />
               </>
             )}
             <HowItWorks coin={coin} />
@@ -159,7 +161,7 @@ function Tile({ label, loss, children, sub, action }) {
   );
 }
 
-function Tiles({ income, unit, coin, onUnit }) {
+function Tiles({ income, unit, coin, market, onUnit }) {
   const s = income.summary;
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
   // No close in the window: the total is "not yet", never an invented 0 (#582).
@@ -191,7 +193,7 @@ function Tiles({ income, unit, coin, onUnit }) {
       <Tile
         label="Worst month"
         loss={s?.worst_month?.coin < 0}
-        sub={s?.worst_month ? [monthLabel(s.worst_month.month), worstMonthMove(s.worst_month, coin)].filter(Boolean).join(" · ") : "not yet: no month with a close"}
+        sub={s?.worst_month ? [monthLabel(s.worst_month.month), worstMonthMove(s.worst_month, market)].filter(Boolean).join(" · ") : "not yet: no month with a close"}
       >
         {isNumber(worst) ? amount(worst) : <span className="text-muted">not yet</span>}
       </Tile>
@@ -206,7 +208,7 @@ function Tiles({ income, unit, coin, onUnit }) {
   );
 }
 
-function MonthTable({ income, unit, coin }) {
+function MonthTable({ income, unit, coin, market }) {
   const rows = incomeTableRows(income, unit);
   const amount = (v) => <Signed value={v}>{formatAmount(v, unit, coin)}</Signed>;
   const hedged = hasHedgeIncome(income);
@@ -262,8 +264,16 @@ function MonthTable({ income, unit, coin }) {
         </p>
       ) : null}
       <p className="border-t border-line px-4 py-2 text-sm text-muted">
-        Counted in {coin}, holding alone neither gains nor loses: every {coin} earned here is extra. In dollars, both move with the {coin} price;
-        switch to <span className="font-semibold">USD</span> above to compare.
+        {coin === market ? (
+          <>
+            Counted in {coin}, holding alone neither gains nor loses: every {coin} earned here is extra. In dollars, both move with the {coin} price;
+            switch to <span className="font-semibold">USD</span> above to compare.
+          </>
+        ) : (
+          <>
+            Counted in {coin}, a dollar coin: the account holds {coin}, not {market}, so every {coin} earned here is extra, in dollars too.
+          </>
+        )}
       </p>
       {income.summary?.to ? <p className="px-4 pb-2 text-xs text-muted">as of {formatDateTime(income.summary.to)}</p> : null}
     </section>

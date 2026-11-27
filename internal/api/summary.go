@@ -4,6 +4,8 @@ import (
 	"math"
 	"time"
 
+	"optionsbot/internal/config"
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/strategy"
 )
@@ -81,7 +83,10 @@ type NearestStrangle struct {
 // IncomeSummary is realised P&L per calendar month (net of fees, from the
 // journal's closes) and the unrealised P&L of the open book.
 type IncomeSummary struct {
-	Coin           string        `json:"coin"`
+	Coin string `json:"coin"`
+	// Unit is the amounts' unit (#837): the coin for BTC and ETH, USDC for
+	// the SOL and XRP bots — every *_coin field below is in it.
+	Unit           string        `json:"unit"`
 	Months         []MonthIncome `json:"months"` // oldest first, the current month last
 	ThisMonth      MonthIncome   `json:"this_month"`
 	UnrealisedCoin float64       `json:"unrealised_coin"`
@@ -233,9 +238,11 @@ func BuildSummary(v strategy.View, trades []orders.Trade, now time.Time) Summary
 func incomeOfView(v strategy.View, trades []orders.Trade, now time.Time) IncomeSummary {
 	inc := IncomeOf(trades, now, SummaryMonths)
 	inc.Coin = v.Underlying
+	inc.Unit = config.SettlementCurrency(v.Underlying)
 	if n := len(v.PnL); n > 0 {
 		inc.UnrealisedCoin = v.PnL[n-1].Unrealised // last row = strategy total
-		inc.UnrealisedUSD = inc.UnrealisedCoin * v.Market.Spot
+		// a USDC amount is already dollars; a coin amount is valued at spot
+		inc.UnrealisedUSD = inc.UnrealisedCoin * marketdata.USDPerUnit(inc.Unit, v.Market.Spot)
 	}
 	return inc
 }

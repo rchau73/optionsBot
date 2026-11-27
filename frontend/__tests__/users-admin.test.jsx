@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import UsersAdmin from "@/components/UsersAdmin";
 import UserMenu from "@/components/UserMenu";
-import { confirmText, lockedLabel, newUserProblem, passwordFormProblem } from "@/lib/users";
+import { confirmText, lockedLabel, newUserProblem, passwordFormProblem, UNUSED_DAYS, unusedLabel } from "@/lib/users";
 
 // #306: the Users page. The routes enforce the role; these check what the page shows and sends.
 
@@ -301,6 +301,87 @@ describe("Accounts column and dialog (#760)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Edit accounts of ana" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Unused accounts (#910)", () => {
+  const NOW = Date.parse("2026-11-27T12:00:00Z");
+  const ago = (days) => new Date(NOW - days * 24 * 60 * 60 * 1000).toISOString();
+  const ROWS = [
+    { id: 1, username: "admin", role: "admin", email: null, created_at: ago(400), last_sign_in_at: ago(0) },
+    { id: 2, username: "recent", role: "user", email: null, created_at: ago(200), last_sign_in_at: ago(3) },
+    { id: 3, username: "stale", role: "manager", email: null, created_at: ago(300), last_sign_in_at: ago(91) },
+    { id: 4, username: "ghost", role: "user", email: null, created_at: ago(120), last_sign_in_at: null },
+    { id: 5, username: "newbie", role: "user", email: null, created_at: ago(10), last_sign_in_at: null },
+  ];
+  const show = async () => {
+    global.fetch = jest.fn(async (url, init = {}) => (url === "/api/admin/users" && !init.method ? reply(200, { users: ROWS, accounts: [] }) : reply(200, {})));
+    render(<UsersAdmin me="admin" now={NOW} />);
+    await screen.findByTestId("user-stale");
+  };
+  const names = () => screen.getAllByTestId(/^user-/).map((r) => r.dataset.testid.slice(5));
+
+  test("Scenario: a person who signed in recently — the row shows that date and no unused tag", async () => {
+    await show();
+    const row = screen.getByTestId("user-recent");
+    expect(row).not.toHaveTextContent("never");
+    expect(row).not.toHaveTextContent(/Unused|Never signed in/);
+  });
+
+  test("Scenario: an account unused for 90 days — the tag, and the Unused filter lists that row in the list's order", async () => {
+    await show();
+    expect(screen.getByTestId("user-stale")).toHaveTextContent("Unused for 90 days");
+    const chip = screen.getByRole("button", { name: "Unused (2)" });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(names()).toEqual(["stale", "ghost"]);
+    fireEvent.click(chip);
+    expect(names()).toEqual(["admin", "recent", "stale", "ghost", "newbie"]);
+  });
+
+  test("Scenario: an account that never signed in — tagged once older than 90 days, not before", async () => {
+    await show();
+    const ghost = screen.getByTestId("user-ghost");
+    expect(ghost).toHaveTextContent("never");
+    expect(ghost).toHaveTextContent("Never signed in, created 120 days ago");
+    const newbie = screen.getByTestId("user-newbie");
+    expect(newbie).toHaveTextContent("never");
+    expect(newbie).not.toHaveTextContent(/Unused|Never signed in/);
+  });
+
+  test("Scenario: nothing changes by itself — showing and filtering send no request beyond the list", async () => {
+    await show();
+    fireEvent.click(screen.getByRole("button", { name: "Unused (2)" }));
+    expect(sent()).toEqual([]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("without a `now` the tags use the time the list was read", async () => {
+    const real = Date.now();
+    const old = { id: 9, username: "old", role: "user", email: null, created_at: new Date(real - 400 * 86400000).toISOString(), last_sign_in_at: null };
+    global.fetch = jest.fn(async () => reply(200, { users: [old], accounts: [] }));
+    render(<UsersAdmin me="admin" />);
+    expect(await screen.findByTestId("user-old")).toHaveTextContent("Never signed in, created 400 days ago");
+  });
+
+  test("the Unused filter with nothing flagged says so in words, never an empty table", async () => {
+    global.fetch = jest.fn(async () => reply(200, { users: ROWS.slice(0, 2), accounts: [] }));
+    render(<UsersAdmin me="admin" now={NOW} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Unused (0)" }));
+    expect(screen.getByText(/No account is unused/)).toBeInTheDocument();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  test("unusedLabel: the 90-day boundary, never signed in, unreadable times", () => {
+    expect(unusedLabel({ last_sign_in_at: ago(89), created_at: ago(500) }, NOW)).toBeNull();
+    expect(unusedLabel({ last_sign_in_at: ago(90), created_at: ago(500) }, NOW)).toBe("Unused for 90 days");
+    expect(unusedLabel({ last_sign_in_at: null, created_at: ago(89) }, NOW)).toBeNull();
+    expect(unusedLabel({ last_sign_in_at: null, created_at: ago(90) }, NOW)).toBe("Never signed in, created 90 days ago");
+    expect(unusedLabel({ last_sign_in_at: "garbage", created_at: ago(500) }, NOW)).toBeNull();
+    expect(unusedLabel({ last_sign_in_at: null, created_at: null }, NOW)).toBeNull();
+    expect(unusedLabel(null, NOW)).toBeNull();
+    expect(UNUSED_DAYS).toBe(90);
   });
 });
 

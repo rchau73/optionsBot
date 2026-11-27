@@ -4,7 +4,8 @@ import clsx from "clsx";
 import { useMemo, useState } from "react";
 import { useActivity } from "@/hooks/useActivity";
 import { ACTIVITY_FILTERS, DAYS_PER_PAGE, buildActivity, clockOf, filterActivity, groupByDay } from "@/lib/activity";
-import { formatCoin, isNumber } from "@/lib/format";
+import { formatMoney, settlementUnit } from "@/lib/details";
+import { isNumber } from "@/lib/format";
 import { toneOf } from "@/lib/summary";
 import WhyButton from "./WhyButton";
 
@@ -21,6 +22,8 @@ export default function ActivityPage({ bot }) {
 /** The page's content for one state of the data (pure apart from the filter and the days shown). */
 export function ActivityView({ bot, events = [], trades = [], error = null, loading = false, now }) {
   const coin = bot ? bot.toUpperCase() : "coin";
+  // The amounts' unit (#837): the coin for BTC and ETH, USDC for SOL and XRP; the sentences keep the coin.
+  const unit = bot ? settlementUnit(coin) : coin;
   const [filter, setFilter] = useState("all");
   const [days, setDays] = useState(DAYS_PER_PAGE);
   const entries = useMemo(() => buildActivity(events, trades, coin), [events, trades, coin]);
@@ -58,7 +61,7 @@ export function ActivityView({ bot, events = [], trades = [], error = null, load
             ) : (
               <>
                 {groups.slice(0, days).map((g) => (
-                  <DayGroup key={g.day} group={g} coin={coin} bot={bot} />
+                  <DayGroup key={g.day} group={g} coin={unit} bot={bot} />
                 ))}
                 {groups.length > days ? (
                   <button
@@ -148,7 +151,7 @@ function Amount({ amount, coin }) {
       {amount.label}{" "}
       {isNumber(amount.value) ? (
         <span className={clsx("font-semibold tabular-nums", tone === "profit" && "text-profit", tone === "loss" && "text-loss")}>
-          {formatCoin(amount.value, coin)}
+          {formatMoney(amount.value, coin)}
         </span>
       ) : (
         <span className="text-muted">unknown: not in the journal</span>

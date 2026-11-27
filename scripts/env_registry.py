@@ -14,7 +14,8 @@ runs `cmd/accounts -check -json` on each folder's registry and key store
 
 A bot is matched by its currency and config file name, as docker-compose.yml
 runs them: BTC on BOT_CONFIG_BTC of deploy.env (default config_btc.yaml), ETH
-on config_eth.yaml. The status document holds no key, key id, client id or
+on config_eth.yaml, and with BOT_LINEAR=1 SOL on config_sol.yaml and XRP on
+config_xrp.yaml (#837). The status document holds no key, key id, client id or
 scope string, and cmd/accounts' own stderr (a parse error may quote the file)
 is never printed. ACCOUNTS_BIN runs a built cmd/accounts instead of go run.
 Notes that do not refuse go to stderr."""
@@ -55,9 +56,14 @@ def dotenv_var(path, key):
 
 
 def env_bots(env_dir):
-    """The (currency, config file name) of each bot the folder's stack runs."""
-    btc = dotenv_var(os.path.join(env_dir, "deploy.env"), "BOT_CONFIG_BTC")
-    return [("BTC", os.path.basename(btc) if btc else "config_btc.yaml"), ("ETH", "config_eth.yaml")]
+    """The (currency, config file name) of each bot the folder's stack runs:
+    BTC and ETH, plus SOL and XRP with BOT_LINEAR=1 in deploy.env (#837)."""
+    deploy = os.path.join(env_dir, "deploy.env")
+    btc = dotenv_var(deploy, "BOT_CONFIG_BTC")
+    bots = [("BTC", os.path.basename(btc) if btc else "config_btc.yaml"), ("ETH", "config_eth.yaml")]
+    if dotenv_var(deploy, "BOT_LINEAR") == "1":
+        bots += [("SOL", "config_sol.yaml"), ("XRP", "config_xrp.yaml")]
+    return bots
 
 
 def status(env_dir):

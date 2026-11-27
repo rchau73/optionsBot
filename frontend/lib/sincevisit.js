@@ -4,6 +4,7 @@
 // now and a warning that began meanwhile. Pure: every function takes `now` and
 // the stored visit. The visit is kept only in this browser (localStorage);
 // nothing here is sent anywhere.
+import { unitOf, worstValue } from "./details";
 import { formatAge, isNumber } from "./format";
 import { hedgeResult, hedgeSentence, isHedgeRisk } from "./hedgeWords";
 import { coinOf, worstCaseLine } from "./overview";
@@ -56,7 +57,10 @@ export function warningsOf(bot) {
   return out;
 }
 
-/** The worst case now, as positive losses: { coin, usd }, { none } when nothing is held, or { unknown }. */
+/**
+ * The worst case now, as positive losses: { coin, usd }, { none } when nothing is held, or { unknown }.
+ * `coin` is the loss in the bot's unit: the coin for BTC and ETH, USDC (the dollar loss) for SOL and XRP (#837).
+ */
 export function worstNow(bot) {
   const failure = bot?.summaryError ?? bot?.error;
   if (failure) return { unknown: failure };
@@ -65,8 +69,9 @@ export function worstNow(bot) {
   if (s.holding?.legs === 0) return { none: true };
   const w = worstCaseLine(s.worst_case);
   if (w.unknown) return { unknown: w.unknown };
-  if (!isNumber(w.lossCoin)) return { unknown: "not computed yet" };
-  return { coin: Math.abs(w.lossCoin), usd: isNumber(w.lossUSD) ? Math.abs(w.lossUSD) : null };
+  const loss = worstValue(w.lossCoin, w.lossUSD, unitOf(bot));
+  if (!isNumber(loss)) return { unknown: "not computed yet" };
+  return { coin: Math.abs(loss), usd: isNumber(w.lossUSD) ? Math.abs(w.lossUSD) : null };
 }
 
 /**
@@ -124,7 +129,8 @@ export function hedgeSince(events, from, coin) {
 
 /**
  * One bot's summary since its last visit at `now`:
- *   { coin, from, capped, unknown, loading, closes, shown, more, opens, result, worst, pointers, hedge, nothing }.
+ *   { coin, unit, from, capped, unknown, loading, closes, shown, more, opens, result, worst, pointers, hedge, nothing }.
+ * coin names the market; unit is the amounts' (USDC for SOL and XRP, #837: closes, results, the hedge's and the worst case).
  * from: the window's start (ms; at most MAX_WINDOW_DAYS back, capped says so); closes newest first;
  * result { coin, usd } net of fees, null without a close (never a 0); loading: the closes are not all in yet;
  * hedge: hedgeSince's, from hedgeEvents (useMonitor's: the journal lines the bot keeps).
@@ -138,7 +144,7 @@ export function sinceLastVisit({ bot, trades, tradesComplete = true, hedgeEvents
     .filter((w) => !visit.warnings.includes(w))
     .map((w) => ({ chip: w, words: WARNING_WORDS[w] }));
   const hedge = hedgeSince(hedgeEvents, from, coin);
-  const base = { coin, from, capped, pointers, hedge, worst: compareWorst(visit.worst, worstNow(bot)) };
+  const base = { coin, unit: unitOf(bot), from, capped, pointers, hedge, worst: compareWorst(visit.worst, worstNow(bot)) };
   if (!bot.summary && (bot.summaryError ?? bot.error)) return { ...base, unknown: bot.summaryError ?? bot.error };
   if (!Array.isArray(trades) || !tradesComplete) return { ...base, loading: true };
   const after = trades.filter((t) => Date.parse(t.at) > from);

@@ -9,7 +9,7 @@ import ResetLinkDialog from "./ResetLinkDialog";
 import UserActionDialog from "./UserActionDialog";
 import { fetchUsers } from "@/lib/api/users";
 import { formatDateTime } from "@/lib/format";
-import { accountsSummary, lockedLabel, ROLES } from "@/lib/users";
+import { accountsSummary, lockedLabel, ROLES, UNUSED_DAYS, unusedLabel } from "@/lib/users";
 
 const BUTTON =
   "rounded border border-line px-2 py-0.5 text-xs hover:bg-line/40 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
@@ -19,10 +19,11 @@ const BUTTON =
  * every person with role, email, created and last sign-in; add a person;
  * change a role, reset a password, make a reset link (#307), sign out
  * everywhere, unlock a username locked by wrong passwords (#846) and delete,
- * each after a confirmation; the accounts a manager may act on (#760). `me`
- * is the signed-in admin's username.
+ * each after a confirmation; the accounts a manager may act on (#760); a tag
+ * on accounts unused for 90 days and an "Unused" filter (#910). `me` is the
+ * signed-in admin's username; `now` (ms) is for tests, else the time the list was read.
  */
-export default function UsersAdmin({ me }) {
+export default function UsersAdmin({ me, now = null }) {
   const [users, setUsers] = useState(null);
   const [accounts, setAccounts] = useState([]); // the registry's, for the account links
   const [error, setError] = useState(null);
@@ -32,6 +33,8 @@ export default function UsersAdmin({ me }) {
   const [notice, setNotice] = useState(null); // { tone, text } of the last action
   const [linkFor, setLinkFor] = useState(null); // the user a reset link is being made for
   const [accountsFor, setAccountsFor] = useState(null); // the manager whose account links are being edited
+  const [onlyUnused, setOnlyUnused] = useState(false); // the "Unused" filter chip (#910)
+  const [loadedAt, setLoadedAt] = useState(0); // when the list was read (ms): the tags' clock
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -39,6 +42,7 @@ export default function UsersAdmin({ me }) {
       (list) => {
         setUsers(list.users);
         setAccounts(list.accounts);
+        setLoadedAt(Date.now());
         setError(null);
       },
       (err) => {
@@ -47,6 +51,11 @@ export default function UsersAdmin({ me }) {
     );
     return () => ctrl.abort();
   }, [reload]);
+
+  // #910: the unused tag of each row (id → words), and the "Unused" filter; the list keeps its order.
+  const at = now ?? loadedAt;
+  const unused = new Map((users ?? []).map((u) => [u.id, unusedLabel(u, at)]).filter(([, label]) => label));
+  const shown = (users ?? []).filter((u) => !onlyUnused || unused.has(u.id));
 
   const done = (result) => {
     setPending(null);
@@ -77,6 +86,22 @@ export default function UsersAdmin({ me }) {
         ) : null}
         {!users && !error ? <p className="text-muted">Loading users…</p> : null}
         {users ? (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              aria-pressed={onlyUnused}
+              onClick={() => setOnlyUnused((on) => !on)}
+              className={`${BUTTON} min-h-11 ${onlyUnused ? "bg-slate-700 font-semibold" : ""}`}
+            >
+              Unused ({unused.size})
+            </button>
+            <span className="text-xs text-muted">No sign-in for {UNUSED_DAYS} days</span>
+          </div>
+        ) : null}
+        {users && onlyUnused && shown.length === 0 ? (
+          <p className="text-muted">No account is unused: everyone signed in within {UNUSED_DAYS} days or was created since.</p>
+        ) : null}
+        {users && !(onlyUnused && shown.length === 0) ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase text-muted">
@@ -91,7 +116,7 @@ export default function UsersAdmin({ me }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => {
+                {shown.map((u) => {
                   const self = u.username === me;
                   const picked = roles[u.id] ?? u.role;
                   const locked = lockedLabel(u);
@@ -138,7 +163,16 @@ export default function UsersAdmin({ me }) {
                         </div>
                       </td>
                       <td className="px-2 py-1 tabular-nums text-muted">{formatDateTime(u.created_at)}</td>
-                      <td className="px-2 py-1 tabular-nums text-muted">{u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "never"}</td>
+                      <td className="px-2 py-1">
+                        <span className="tabular-nums text-muted">{u.last_sign_in_at ? formatDateTime(u.last_sign_in_at) : "never"}</span>
+                        {unused.get(u.id) ? (
+                          <span className="block">
+                            <Badge tone="warn" title="No sign-in for 90 days: delete it or lower its role if nobody needs it. Nothing changes by itself.">
+                              {unused.get(u.id)}
+                            </Badge>
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-2 py-1">
                         <div className="flex flex-wrap gap-1">
                           {locked ? (
