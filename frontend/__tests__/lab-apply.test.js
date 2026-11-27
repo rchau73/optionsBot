@@ -32,11 +32,15 @@ const report = (over = {}) => ({
   ...over,
 });
 
-let root, dir, logs, seq;
-/** A run id a few seconds old and unique in the test: a report folder's time. */
+let root, dir, logs, seq, base;
+/**
+ * A run id a few seconds old and unique in the test: a report folder's time,
+ * counted back from a time fixed per test (from Date.now(), a test taking a
+ * second gave two runs one id).
+ */
 const freshId = () => {
   seq += 1;
-  return new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  return new Date(base - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 };
 const put = (id, content) => {
   fs.mkdirSync(path.join(dir, id), { recursive: true });
@@ -74,6 +78,7 @@ beforeEach(() => {
   fs.mkdirSync(dir);
   process.env.COMPARE_DIR = dir;
   seq = 0;
+  base = Date.now();
   logs = [];
   jest.spyOn(console, "error").mockImplementation((l) => logs.push(l));
   jest.spyOn(console, "log").mockImplementation((l) => logs.push(l));
