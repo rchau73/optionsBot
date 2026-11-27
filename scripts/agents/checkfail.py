@@ -6,7 +6,7 @@ CI's `changes` job, dev_agent.sh and pr_gate.sh call it.
     checkfail.py suites [<files.txt>]
         → "<suite>=true|false" lines (GITHUB_OUTPUT form) for the changed
           paths (stdin without a file): go, go_lint, frontend, docs,
-          scripts, docker, vuln.
+          scripts, docker, vuln, phone.
     checkfail.py frontend-needed <task.md> [<branch files.txt>]
         → "yes" when the Dev agent's worktree needs frontend/node_modules
           before the agent starts (#900), else "no".
@@ -95,7 +95,10 @@ SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/
                  "go.sum", "internal/", "scripts/")
 DOCKER_READS = ("Dockerfile", ".dockerignore", "cmd/", "frontend/", "go.mod", "go.sum", "internal/")
 VULN_READS = ("frontend/package-lock.json", "go.mod", "go.sum")
-SUITES = ("go", "go_lint", "frontend", "docs", "scripts", "docker", "vuln")
+# The phone viewport check (#739) measures the monitor (every non-doc file under
+# frontend/) on cmd/monitor-demo's data, served through internal/api; ci.yml holds the job.
+PHONE_READS = (".github/workflows/ci.yml", "cmd/monitor-demo/", "internal/api/")
+SUITES = ("go", "go_lint", "frontend", "docs", "scripts", "docker", "vuln", "phone")
 # Go tests that read every tracked .md (or every CLAUDE.md): fast line checks,
 # run for any doc change. file → the changed paths it reads.
 DOC_TESTS = {
@@ -131,6 +134,8 @@ def suites_for(path):
         out.add("docker")
     if matches(path, VULN_READS):
         out.add("vuln")
+    if matches(path, PHONE_READS) or (front and not doc):
+        out.add("phone")
     return out
 
 

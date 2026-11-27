@@ -131,6 +131,46 @@ func regexpAll(pattern, s string) []string {
 	return out
 }
 
+// The phone viewport check (#739): its own job on the monitor's pull requests,
+// required, its screenshots and report attached on failure, and never the one
+// that writes e2e/phone-baseline.json.
+func TestCIWorkflow_PhoneCheckNeverRecordsTheBaseline(t *testing.T) {
+	w := readCIWorkflow(t)
+	job, ok := w.Jobs["phone"]
+	if !ok {
+		t.Fatal("ci.yml has no phone job")
+	}
+	if job.Name != "Phone viewport check" {
+		t.Errorf("phone job named %q: setup_github.sh requires \"Phone viewport check\"", job.Name)
+	}
+	if job.If != "needs.changes.outputs.phone == 'true'" {
+		t.Errorf("phone job if: %q, want it gated on the phone suite", job.If)
+	}
+	var runs []string
+	for _, s := range job.Steps {
+		runs = append(runs, s.Run)
+	}
+	all := strings.Join(runs, "\n")
+	for _, want := range []string{"npx playwright install --with-deps chromium", "npm run test:phone", "git diff --exit-code -- e2e/phone-baseline.json"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("phone job does not run %q", want)
+		}
+	}
+	ci, _ := os.ReadFile(filepath.Join("..", ".github", "workflows", "ci.yml"))
+	if regexp.MustCompile(`UPDATE_PHONE_BASELINE[=:]\s*"?1`).Match(ci) {
+		t.Error("ci.yml sets UPDATE_PHONE_BASELINE=1: CI never records the baseline")
+	}
+	for _, want := range []string{"frontend/test-results/phone/", "frontend/docs/responsive-measured.json"} {
+		if !strings.Contains(string(ci), want) {
+			t.Errorf("phone job does not upload %s", want)
+		}
+	}
+	setup, _ := os.ReadFile(filepath.Join("..", "scripts", "agents", "setup_github.sh"))
+	if !strings.Contains(string(setup), `{ "context": "Phone viewport check" }`) {
+		t.Error("setup_github.sh's ruleset does not require the Phone viewport check")
+	}
+}
+
 func TestCIWorkflow_RequiredCheckAndNightlyRun(t *testing.T) {
 	w := readCIWorkflow(t)
 	// The PR gate re-runs a red CI by this name (checkfail.py AGGREGATOR).
