@@ -406,7 +406,7 @@ Reports and the data each review read: `data/sme/<date>/`; Dev runs, deploys and
 The agents run from the **mvp clone** (`~/dev/go/optionsBot-env/mvp/scripts/agents/install.sh`), so each deploy also updates their scripts; automatic deploys need that clone on a clean `main` and its bots on testnet; set `DEPLOY_ENABLED=0` to pause them, `SME_PUBLISH=0` to keep the SME's findings local.
 
 **A failed mvp deploy rolls back** (#204).
-When `docker compose up --build` or the health check fails for a new commit, `deploy.sh` resets the mvp clone (still on `main`) to the last commit that passed (`history/mvp.deployed`), rebuilds it and health-checks it again.
+When the build, `docker compose up` or the health check fails for a new commit, `deploy.sh` resets the mvp clone (still on `main`) to the last commit that passed (`history/mvp.deployed`), rebuilds it one image at a time, starts it and health-checks it again.
 A healthy rollback is recorded in `deploys.tsv` as `<time> mvp <commit> rollback` (a commit that had already run, so the soak clock `promote.sh` reads does not move) and notified as "Deploy FAILED, rolled back to …".
 If the rollback is unhealthy too, the script notifies "ROLLBACK FAILED" and stops; nothing retries it, so look at `scripts/envctl.sh mvp logs`.
 Either way the bad commit stays in `history/mvp.failed` and is not retried until main moves.
@@ -417,7 +417,8 @@ If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
 
 **A build killed for memory is built once more** (#892: on 2026-11-26 the monitor's `next build` ran 770 s and the Docker VM killed it, "cannot allocate memory", while compose built every image at once).
-`deploy.sh` builds mvp's images one service at a time (`docker compose build <service>`), then runs `docker compose up -d --build` on the cached images.
+`deploy.sh` builds mvp's images one service at a time (`docker compose build <service>`), then starts them with `docker compose up -d --no-build`.
+It never runs `up --build` after that (#903: on 2026-11-27 `up --build` built every image once more, all at once, and the monitor's `next build` compiled for 38 min and timed out on its static pages).
 When a build fails and its log reads as an out-of-memory kill (`cannot allocate memory`, `ResourceExhausted`, `signal SIGKILL`, `exit code: 137`, a Node heap limit; `deploy_issue.py oom`), it builds once more, one image at a time, before the failure counts.
 A second failure, or any other build error, fails the step `docker compose build` and rolls back as above.
 The monitor's image caps Node's heap during the build (`BUILD_HEAP_MB`, 3072 MB, in `frontend/Dockerfile`) and sends no Next.js telemetry.
