@@ -519,6 +519,303 @@
           "header_height_px": 0
         }
       }
+    },
+    "users": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\""
+          ],
+          "under_44": [
+            "ADD USER › button \"Add user\"",
+            "ADD USER › input \"Confirm password\"",
+            "ADD USER › input \"Email (optional)\"",
+            "ADD USER › input \"Password\"",
+            "ADD USER › input \"Username\"",
+            "ADD USER › select \"Role\"",
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\"",
+            "USERS › button \"Reset password\"",
+            "USERS › button \"Sign out everywhere\"",
+            "USERS › select \"Role of phonecheck\""
+          ],
+          "title_only": [
+            "Page › button",
+            "USERS › Delete",
+            "USERS › Reset link",
+            "USERS › Reset password"
+          ],
+          "header_height_px": 53
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\"",
+            "USERS › button \"Reset password\"",
+            "USERS › button \"Sign out everywhere\""
+          ],
+          "under_44": [
+            "ADD USER › button \"Add user\"",
+            "ADD USER › input \"Confirm password\"",
+            "ADD USER › input \"Email (optional)\"",
+            "ADD USER › input \"Password\"",
+            "ADD USER › input \"Username\"",
+            "ADD USER › select \"Role\"",
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\"",
+            "USERS › button \"Reset password\"",
+            "USERS › button \"Sign out everywhere\"",
+            "USERS › select \"Role of phonecheck\""
+          ],
+          "title_only": [
+            "Page › Ask",
+            "USERS › Delete",
+            "USERS › Reset link",
+            "USERS › Reset password"
+          ],
+          "header_height_px": 53
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\"",
+            "USERS › button \"Reset password\"",
+            "USERS › button \"Sign out everywhere\""
+          ],
+          "under_44": [
+            "ADD USER › button \"Add user\"",
+            "ADD USER › input \"Confirm password\"",
+            "ADD USER › input \"Email (optional)\"",
+            "ADD USER › input \"Password\"",
+            "ADD USER › input \"Username\"",
+            "ADD USER › select \"Role\"",
+            "Header › a \"← Monitor\"",
+            "USERS › button \"Delete\"",
+            "USERS › button \"Reset link\"",
+            "USERS › button \"Reset password\"",
+            "USERS › button \"Sign out everywhere\"",
+            "USERS › select \"Role of phonecheck\""
+          ],
+          "title_only": [
+            "Page › Ask",
+            "USERS › Delete",
+            "USERS › Reset link",
+            "USERS › Reset password"
+          ],
+          "header_height_px": 53
+        }
+      }
+    },
+    "audit": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "FILTERS › button \"Apply\"",
+            "FILTERS › button \"Clear\"",
+            "FILTERS › button \"Export CSV\"",
+            "FILTERS › input \"From (UTC day)\"",
+            "FILTERS › input \"Person\"",
+            "FILTERS › input \"To (UTC day)\"",
+            "FILTERS › select \"Action\"",
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 53
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "FILTERS › button \"Apply\"",
+            "FILTERS › button \"Clear\"",
+            "FILTERS › button \"Export CSV\"",
+            "FILTERS › input \"From (UTC day)\"",
+            "FILTERS › input \"Person\"",
+            "FILTERS › input \"To (UTC day)\"",
+            "FILTERS › select \"Action\"",
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "FILTERS › button \"Apply\"",
+            "FILTERS › button \"Clear\"",
+            "FILTERS › button \"Export CSV\"",
+            "FILTERS › input \"From (UTC day)\"",
+            "FILTERS › input \"Person\"",
+            "FILTERS › input \"To (UTC day)\"",
+            "FILTERS › select \"Action\"",
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        }
+      }
+    },
+    "analytics": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 53
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        }
+      }
+    },
+    "analytics-delivery": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › button"
+          ],
+          "header_height_px": 53
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [
+            "Header › a \"← Monitor\""
+          ],
+          "under_44": [
+            "Header › a \"← Monitor\""
+          ],
+          "title_only": [
+            "Page › Ask"
+          ],
+          "header_height_px": 53
+        }
+      }
+    },
+    "sign-in": {
+      "widths": {
+        "360": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [
+            "Page › button \"Sign in\"",
+            "Page › input \"Password\"",
+            "Page › input \"Username\""
+          ],
+          "title_only": [],
+          "header_height_px": 0
+        },
+        "768": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [
+            "Page › button \"Sign in\"",
+            "Page › input \"Password\"",
+            "Page › input \"Username\""
+          ],
+          "title_only": [],
+          "header_height_px": 0
+        },
+        "1280": {
+          "overflow_px": 0,
+          "overflow_causes": [],
+          "under_24": [],
+          "under_44": [
+            "Page › button \"Sign in\"",
+            "Page › input \"Password\"",
+            "Page › input \"Username\""
+          ],
+          "title_only": [],
+          "header_height_px": 0
+        }
+      }
     }
   },
   "dialogs": {

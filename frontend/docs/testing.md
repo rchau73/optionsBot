@@ -11,6 +11,8 @@ The monitor runs with a throwaway admin and a random `AUTH_SECRET` on an in-memo
 It has no audit, analytics or service token, and a `.env.local` cannot redirect it.
 It renders **every page of the menu**, plus the assistant panel opened over the overview, each at 360, 768 and 1280 px.
 The page list is read from `lib/menu.js` (`viewportPages()` in `e2e/phone.js`), so a page added to the menu is checked without editing the test.
+It also renders the pages a person reaches off the menu bar (#883): the admin pages of the person's menu (`ADMIN_PAGES`: `users`, `audit`, `analytics`), Analytics' Delivery topic (`analytics-delivery`, `/admin/analytics?topic=delivery`) and Sign in (`sign-in`, `/login`).
+The admin pages are opened as the throwaway admin; Sign in is opened signed out, in a fresh browser context with no session (`signedOut: true`).
 On each it measures horizontal overflow of the document and its cause (panel, table, menu bar), every control's box (kinds under 24 and 44 px), hover-only `title`s and the header's height; on the overview, whether each dialog fits 360 × 640 and 640 × 360.
 Results: `docs/responsive-measured.json` and screenshots `test-results/phone/<page>-<width>.png`, both git-ignored.
 **Baseline:** `e2e/phone-baseline.json` keeps today's overflows and small controls per page and width (`pages.<page>.widths.<width>`), so the check is green on them and fails on anything new, naming page, viewport and element (e.g. `income 360 px: page overflow now caused by Income › table (540 px wide)`).

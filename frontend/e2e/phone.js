@@ -3,7 +3,7 @@
 // report, and compare a report with the recorded baseline. No browser, no
 // file system: Jest tests them directly.
 import { MIN_TAP_PX, MIN_TEXT_PX, tapTargetOk } from "../lib/a11y.js";
-import { menuItems } from "../lib/menu.js";
+import { ADMIN_PAGES, menuItems } from "../lib/menu.js";
 
 /** Every page is measured at these widths (#425): a small phone, a tablet upright, a laptop. */
 export const WIDTHS = [
@@ -13,16 +13,37 @@ export const WIDTHS = [
 ];
 
 /** The assistant panel, measured open over the overview (it is on every signed-in page). */
-export const ASSISTANT_PAGE = { name: "assistant", path: "/", assistant: true };
+export const ASSISTANT_PAGE = { name: "assistant", path: "/", assistant: true, signedOut: false };
 
 /**
- * What the check measures, each { name, path, assistant }: every page of the
- * menu (lib/menu.js — a page added there is measured without editing the
- * check), then the assistant panel opened.
+ * Pages a person reaches on a phone that are not menu-bar items (#883), so
+ * menuItems() alone misses them:
+ * - the admin pages (lib/menu.js ADMIN_PAGES) are links in the person's menu,
+ *   shown to admins only — the check signs in as a throwaway admin, so it can
+ *   open them; a page added to ADMIN_PAGES is measured without editing this;
+ * - Analytics' Delivery topic is the same route with ?topic=delivery, a
+ *   different screen (DORA tiles, release train, the table of what went live);
+ * - sign-in shows no menu at all (lib/menu.js NO_MENU) and is measured signed
+ *   out, in a fresh browser context (signedOut: true).
+ */
+export const DELIVERY_PAGE = { name: "analytics-delivery", path: "/admin/analytics?topic=delivery", assistant: false, signedOut: false };
+export const SIGN_IN_PAGE = { name: "sign-in", path: "/login", assistant: false, signedOut: true };
+
+/**
+ * What the check measures, each { name, path, assistant, signedOut }: every
+ * page of the menu (lib/menu.js — a page added there is measured without
+ * editing the check), the assistant panel opened, then the admin pages, the
+ * Delivery topic and sign-in.
  */
 export function viewportPages() {
-  const pages = menuItems("/").map((item) => ({ name: item.key, path: item.href, assistant: false }));
-  return [...pages, ASSISTANT_PAGE];
+  const pages = menuItems("/").map((item) => ({ name: item.key, path: item.href, assistant: false, signedOut: false }));
+  const admin = (ADMIN_PAGES ?? []).map((item) => ({ name: item.key, path: item.href, assistant: false, signedOut: false }));
+  return [...pages, ASSISTANT_PAGE, ...admin, DELIVERY_PAGE, SIGN_IN_PAGE];
+}
+
+/** The path part of a page's address ("/admin/analytics?topic=delivery" → "/admin/analytics"): what the browser's URL must stay on. */
+export function pagePathname(target) {
+  return new URL(target.path, "http://localhost").pathname;
 }
 
 /** Where each dialog must fit: a small phone held upright and on its side. */

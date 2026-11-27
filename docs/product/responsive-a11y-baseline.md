@@ -47,6 +47,19 @@ Contrast ratios are measured by the token test; text sizes and tap targets come 
 Ties are ordered by how often a person meets them (the header before a dialog).
 The admin pages (Users, Audit, Analytics) are outside the customer's view and are counted only where noted; their small text (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) is in the report.
 
+### Admin pages and sign-in (#883)
+
+`npm run test:phone` measures them too since #883: `users`, `audit`, `analytics`, `analytics-delivery` (signed in as the throwaway admin) and `sign-in` (signed out), each in `a11y-report.json` at 360 px.
+They enter `ranked` with the menu pages, so a finding shared with the header is counted on them as well; rows found only on these pages are marked **admin** (or **sign-in**) here.
+Measured by the first reviewed run (2026-11-26, `e2e/phone-baseline.json` committed; counts at 360 px against the 44 px and 12 px bars, `resize` from #887):
+
+| Finding | Measured (360 px) | Pages affected | What the fix needs | Owner |
+|---|---|---|---|---|
+| Table actions 22 px high ("Delete" 55×22, "Reset link" 73×22), the role `select` 87×25, "Reset password" and "Sign out everywhere" 38 px, the Add user form's inputs 34 px and button 28 px | 12 controls under 44 px, 3 under 24 px; no overflow, nothing clipped at 200 % or 320 px | admin: Users | the touch size of #1 for table actions and form fields | designer, then developer |
+| Filter fields and buttons 29–30 px (Apply, Clear, Export CSV, From, To, Person, Action) | 8 controls under 44 px, 1 under 24 px; at 200 % text the filter form overflows by 118 px and pushes 2 fields off screen | admin: Audit | as #1, and a filter row that wraps at large text | designer, then developer |
+| Small text in the tiles, release train and usage cards (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) | not seen: 0 small text, 1 control under 24 px (the shared "← Monitor" link). The phone check has no analytics data, so these cards may not render; re-measure with data before closing this row | admin: Analytics, Analytics · Delivery | as #4 | designer |
+| Inputs 34 px (Username, Password), Sign in 38 px; 14 px inputs zoom on iOS | 3 controls under 44 px, none under 24 px; no overflow, nothing clipped at 200 % or 320 px | sign-in | as #1, and 16 px inputs | designer, then developer |
+
 ## Screen-reader structure
 
 What a screen reader meets on each whole page (#840): landmarks, regions, heading order, the names of buttons, links and fields, table headers and dialog names.
