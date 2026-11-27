@@ -35,14 +35,15 @@ How to read the columns:
 | `private/edit` | orders / `executor.go`; gateway / `ratelimiter.go` (pool) | re-prices a resting entry/repair (`AmendOrder`, step-down) | private | matching | no | low | trading | the step-down (cancel and re-send instead) |
 | `private/cancel` | orders / `executor.go`; gateway / `ratelimiter.go` (pool prefix) | cancels one order by ID (timeouts, freeze, shed, resting closes) | private | matching | no | high | trading | every timeout and freeze |
 | `private/cancel_by_label` | orders / `executor.go` | cancels an order whose submit outcome is unknown (`orders.MaybePlaced`) | private | matching | no | high | trading | the unknown-outcome guard: slot or instrument stays blocked |
-| `private/cancel_all_by_currency` | orders / `executor.go` | startup reconcile and kill switch | private | matching | no | high | trading | a clean start and the kill switch |
+| `private/cancel_all_by_currency` | orders / `executor.go` | startup reconcile and kill switch (BTC, ETH) | private | matching | no | high | trading | a clean start and the kill switch |
+| `private/cancel_all_by_currency_pair` | orders / `executor.go` | startup reconcile and kill switch of a linear coin (SOL, XRP): its own `<coin>_usdc` options, then futures, never another USDC coin's orders (#833) | private | matching | no | high | trading | a clean start and the kill switch |
 | `private/cancel_all_by_instrument` | orders / `executor.go` | `Executor.CancelAll` — **not called** by any package today | private | matching | no | high | trading | nothing |
 | `private/get_order_state` | orders / `executor.go` | fill tracking of resting orders, read-back after cancel | private | non-matching | yes | low | trading | fills of resting orders |
 | `private/get_user_trades_by_order` | orders / `executor.go` | the fees of an order's fills (`OrderFee`), booked into net P&L | private | non-matching | yes | low | trading | net P&L (gross only) |
-| `private/get_positions` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
-| `private/get_account_summary` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | IM, MM, margin balance (`extended`) for the margin policy; per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
+| `private/get_positions` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | option shorts for reconcile and the position check (orders, `kind=option`); the futures hedge's perpetual (orders, `kind=future`, `GetFuturePositions`, #657); a linear coin reads `currency=USDC` and keeps only its `<COIN>_USDC-` rows (`OwnRows`, #833); every position of each held currency for the monitor (account) | private | non-matching | yes | low | trading | reconcile, the position check, adoption of orphans |
+| `private/get_account_summary` | orders / `executor.go`; exchange/deribit / `account.go` (for `account.Poller`) | IM, MM, margin balance (`extended`) for the margin policy (a linear coin's from `currency=USDC`, refused in any other currency, #833); per-currency fallback of the monitor's account view | private | non-matching | yes | low | trading | the margin policy: no new risk while margin is unknown |
 | `private/get_account_summaries` | exchange/deribit / `account.go` (for `account.Poller`) | every currency's summary at once for `/api/account` (monitor only) | private | non-matching | yes | low | trading | nothing in trading (monitor only) |
-| `private/simulate_portfolio` | orders / `executor.go` | sizing of entries and top-ups and the size cap (`SimulatePortfolio`, `SimulateAlone`, ≤ 1 call/s spaced in the executor) | private | non-matching | no (not `get_`) | low | trading | every entry and top-up (a failed simulation → no new risk) |
+| `private/simulate_portfolio` | orders / `executor.go` | sizing of entries and top-ups and the size cap (`SimulatePortfolio`, `SimulateAlone`, ≤ 1 call/s spaced in the executor) | private | non-matching | not by the gateway (not `get_`); the executor retries a 10028 twice, after 2 s then 4 s, spacing kept (#888) | low | trading | every entry and top-up (a failed simulation → no new risk) |
 | `private/close_position` | gateway / `ratelimiter.go` | named only in the matching-pool list (`IsMatchingEngine`) — **not called** by any package today | private | matching | no | — | — | nothing |
 | `private/get_margins` | orders / `executor.go` | margin of one order (`GetMargins`) — in the strategy's `AccountReader` but **not called** today | private | non-matching | yes | low | trading | nothing today |
 
@@ -99,6 +100,7 @@ package adapter
 
 import (
 	"context"
+	"time"
 
 	"optionsbot/internal/exchange"
 	"optionsbot/internal/exchange/deribit"
@@ -136,11 +138,16 @@ type OptionChain interface {
 	Track(ctx context.Context, instruments []string) error
 }
 
-// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability.
+// VolIndex: the implied-volatility index (Deribit: DVOL). Optional capability:
+// a coin without one (SOL, XRP) reads its chain's 30-day ATM IV through the
+// same methods, named by IVSource, with IVCloses daily closes (#834).
 type VolIndex interface {
 	DVOL() float64
 	IVPercentile() float64
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	IVSource() string
+	IVCloses(now time.Time) int
+	TakeDVOLRejections() []marketdata.DVOLRejection // readings the sanity gate kept out (#796)
 }
 
 // Candles: daily closes for the trend. Today on the Executor

@@ -2,6 +2,8 @@
 // words of each confirmation. The server checks everything again
 // (lib/auth/service.js); these only spare a round trip and say what follows.
 
+import { DISPLAY_TZ_LABEL, localClock } from "./time";
+
 export const ROLES = ["admin", "manager", "user"];
 /** The sign-in rule (lib/auth/password.js MIN_PASSWORD_LENGTH; that file is server-only). */
 export const MIN_PASSWORD = 12;
@@ -51,9 +53,19 @@ export function linksConsequence(user, picked, accounts = []) {
 }
 
 /**
+ * The Users page's lock badge (#846): "Locked until 14:32 BRT" from a row's
+ * `locked_until` (ISO, display zone), or null when the row is not locked.
+ */
+export function lockedLabel(user) {
+  if (!user?.locked_until) return null;
+  const clock = localClock(user.locked_until);
+  return clock ? `Locked until ${clock.slice(0, 5)} ${DISPLAY_TZ_LABEL}` : "Locked";
+}
+
+/**
  * The confirmation of an action on `user` by the admin `me` (a username):
  * { title, body, button } in plain words, saying what follows.
- * action: "role" (with `role`), "password", "link" (a reset link), "signout" or "delete".
+ * action: "role" (with `role`), "password", "link" (a reset link), "signout", "unlock" or "delete".
  */
 export function confirmText(action, user, { role = null, me = null } = {}) {
   const self = user.username === me;
@@ -83,6 +95,12 @@ export function confirmText(action, user, { role = null, me = null } = {}) {
         title: `Sign ${user.username} out everywhere`,
         body: `${sessions}; ${again} with the same password.`,
         button: "Sign out everywhere",
+      };
+    case "unlock":
+      return {
+        title: `Unlock ${user.username}`,
+        body: "They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead.",
+        button: "Unlock",
       };
     case "delete":
       return {

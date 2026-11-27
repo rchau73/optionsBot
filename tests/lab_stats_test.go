@@ -160,6 +160,56 @@ func TestLabStats_RecordedChanges(t *testing.T) {
 	}
 }
 
+// #890 "Scenario: the usage report counts decisions": 4 done runs, 1 applied
+// and 1 dropped → 1 recorded change, 1 dropped, 2 of 4 with a decision.
+func TestLabStats_CountsDecisions(t *testing.T) {
+	runs := []string{"20261116T081000Z", "20261116T082000Z", "20261116T083000Z", "20261116T084000Z"}
+	var reqs []labStatsReq
+	for i, id := range runs {
+		reqs = append(reqs, labStatsReq{n: i + 1, requester: "Maria Silva", status: compare.StatusDone, minutes: 10, runID: id})
+	}
+	dir := labStatsDir(t, reqs...)
+	labStatsWrite(t, filepath.Join(dir, "applied", runs[0]+".json"), `{"run_id":"`+runs[0]+`","person":"Maria Silva"}`)
+	labStatsWrite(t, filepath.Join(dir, "dropped", runs[1]+".json"),
+		`{"run_id":"`+runs[1]+`","person":"`+compare.ManagerHash("Maria Silva")+`","account":{"underlying":"BTC","config":"config_btc.yaml"}}`)
+	// A file not named by a run id is counted apart, never as a decision.
+	labStatsWrite(t, filepath.Join(dir, "dropped", "not-a-run.json"), "{}")
+	s, md, js := labStatsRun(t, dir)
+	if s.Done != 4 || s.Recorded != 1 || s.Dropped != 1 || s.Decided != 2 || s.DecidedPctOfDone != 50 || s.DroppedUnreadable != 1 {
+		t.Fatalf("done %d, recorded %d, dropped %d, decided %d (%v %%), unreadable %d; want 4, 1, 1, 2 (50 %%), 1",
+			s.Done, s.Recorded, s.Dropped, s.Decided, s.DecidedPctOfDone, s.DroppedUnreadable)
+	}
+	for _, want := range []string{"| Done runs with a recorded change | 1 of 4 (25 %) |", "| Done runs with a dropped proposal | 1 |",
+		"| Done runs ending in a decision (recorded or dropped) | 2 of 4 (50 %) |", "Dropped-proposal files not named by a run id: 1."} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md)
+		}
+	}
+	for _, key := range []string{`"dropped_proposals":1`, `"decided":2`, `"decided_pct_of_done":50`} {
+		if !strings.Contains(js, key) {
+			t.Errorf("json lacks %s: %s", key, js)
+		}
+	}
+	// No values, names or accounts.
+	for _, leak := range []string{"Maria", "Silva", "config_btc", "BTC", "20261116T08"} {
+		if strings.Contains(md, leak) || strings.Contains(js, leak) {
+			t.Errorf("the report carries %q", leak)
+		}
+	}
+}
+
+// A run with both a record and a drop file (written by hand) is one decision, the recorded change.
+func TestLabStats_RecordedAndDroppedCountOnce(t *testing.T) {
+	id := "20261116T081000Z"
+	dir := labStatsDir(t, labStatsReq{n: 1, requester: "ana", status: compare.StatusDone, minutes: 10, runID: id})
+	labStatsWrite(t, filepath.Join(dir, "applied", id+".json"), "{}")
+	labStatsWrite(t, filepath.Join(dir, "dropped", id+".json"), "{}")
+	s, _, _ := labStatsRun(t, dir)
+	if s.Recorded != 1 || s.Dropped != 0 || s.Decided != 1 {
+		t.Fatalf("recorded %d, dropped %d, decided %d; want 1, 0, 1", s.Recorded, s.Dropped, s.Decided)
+	}
+}
+
 func TestLabStats_NothingInTheWindow(t *testing.T) {
 	for name, dir := range map[string]string{"no folder": filepath.Join(t.TempDir(), "absent"), "empty queue": labStatsDir(t)} {
 		s, md, _ := labStatsRun(t, dir)

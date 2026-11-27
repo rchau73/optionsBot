@@ -419,6 +419,18 @@ export class AuthStore {
     return removed;
   }
 
+  /**
+   * Erases the free text of the answers created before cutoffSec (Unix
+   * seconds, #849); the row and its codes stay, so counts do not change.
+   * → how many texts were erased.
+   */
+  purgeSurveyText(cutoffSec) {
+    this.db.run("UPDATE survey_answers SET free_text = NULL WHERE free_text IS NOT NULL AND created_at < ?", [cutoffSec]);
+    const erased = this.db.getRowsModified();
+    if (erased > 0) this.save();
+    return erased;
+  }
+
   /** The ids of the notification items a person has read (#447), as a Set. */
   notificationReads(userId) {
     return new Set(this.all("SELECT item_id FROM notification_reads WHERE user_id = ?", [userId]).map((r) => r.item_id));
@@ -614,6 +626,20 @@ export class AuthStore {
   /** The time (ms) a username's lock ends, or 0 when it has none (an ended lock still answers its time). */
   loginLockUntil(username) {
     return this.one("SELECT until FROM login_locks WHERE username = ?", [username])?.until ?? 0;
+  }
+
+  /**
+   * An admin lifts a username's lock (#846): deletes its lock and its recent
+   * failures, so the next wrong password counts as the first. Returns the
+   * time (ms) the lock would have ended, or 0 when it was not locked at nowMs
+   * (nothing is written then).
+   */
+  clearLoginLock(username, nowMs) {
+    const until = this.loginLockUntil(username);
+    if (until <= nowMs) return 0;
+    this.db.run("DELETE FROM login_failures WHERE username = ?", [username]);
+    this.write("DELETE FROM login_locks WHERE username = ?", [username]);
+    return until;
   }
 
   /** Forgets the failures of a username; writes the file only when it had some. */

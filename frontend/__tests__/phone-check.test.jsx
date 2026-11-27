@@ -332,6 +332,9 @@ describe("Scenario: a new overflow not in the baseline fails naming page, viewpo
     expect(normaliseLabel("  Show 50\n more ")).toBe("Show # more");
     expect(normaliseLabel("IM 12.4 % at 10:42")).toBe("IM # % at #");
     expect(normaliseLabel("x".repeat(60))).toHaveLength(40);
+    // #896: a demo P&L flips sign between runs; the label must not.
+    expect(normaliseLabel("net +0.01 BTC · +$12 per +3 %")).toBe(normaliseLabel("net \u22120.02 BTC · $9 per +1 %"));
+    expect(normaliseLabel("net +0.01 BTC · +$12")).toBe("net # BTC · $#");
   });
 });
 
@@ -381,11 +384,19 @@ describe("Scenario: nothing private", () => {
   test("the monitor reads the two demo bots only, with a throwaway in-memory sign-in", () => {
     const bots = config.match(/BOT_APIS: `([^`]+)`/)[1];
     expect(bots).toBe("btc=http://127.0.0.1:${DEMO_PORTS.btc},eth=http://127.0.0.1:${DEMO_PORTS.eth}");
-    expect(config).toMatch(/go run \.\/cmd\/monitor-demo -underlying/);
+    expect(config).toMatch(/go run \.\/cmd\/monitor-demo -steady -underlying/);
     expect(config).toMatch(/AUTH_DB_PATH: ":memory:"/);
     expect(config).toMatch(/PHONE_ADMIN_PASSWORD \?\?= crypto\.randomBytes/);
     expect(config).toMatch(/PHONE_AUTH_SECRET \?\?= crypto\.randomBytes/);
     for (const off of ["AUDIT_PATH", "ANALYTICS_SALT", "EVENTS_PATH", "MONITOR_API_TOKEN"]) expect(config).toMatch(new RegExp(`${off}: ""`));
+  });
+
+  // #896: a random roll in the demo widened the Details trade log 30–60 s
+  // into a run, so a baseline recorded on one run failed on the next.
+  test("both demo bots run -steady, so the trade log keeps its seeded rows", () => {
+    const starts = config.match(/go run \.\/cmd\/monitor-demo[^`]*/g);
+    expect(starts).toHaveLength(1); // one demo() helper starts BTC and ETH
+    expect(starts[0]).toMatch(/ -steady /);
   });
 
   test("screenshots and the report are git-ignored and kept out of the image", () => {

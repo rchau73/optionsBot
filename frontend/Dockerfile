@@ -4,7 +4,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN NEXT_OUTPUT=standalone npm run build
+# A bounded build (#892: `next build` grew until the Docker VM killed it for
+# memory): Node's heap is capped, so it collects garbage instead of growing,
+# and no telemetry is sent. BUILD_HEAP_MB raises it: docker compose build --build-arg.
+ARG BUILD_HEAP_MB=3072
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN NODE_OPTIONS="--max-old-space-size=${BUILD_HEAP_MB}" NEXT_OUTPUT=standalone npm run build
 
 # ── Run: Next.js standalone server, non-root ──────────────────────────────────
 FROM node:24-alpine

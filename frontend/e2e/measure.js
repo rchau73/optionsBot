@@ -63,10 +63,18 @@ export function measurePage() {
   }
 
   const CONTROLS = "a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [tabindex]:not([tabindex='-1'])";
+  // A <label> wrapping its control holds the control's text too (a select's
+  // options, whose order follows the demo's prices, #896): its own text only.
+  const labelText = (label) => {
+    if (!label) return "";
+    const own = label.cloneNode(true);
+    own.querySelectorAll("select, input, textarea, button").forEach((c) => c.remove());
+    return (own.textContent ?? "").replace(/\s+/g, " ").trim();
+  };
   const labelOf = (el) => {
     const tag = el.tagName.toLowerCase();
     if (tag === "select" || tag === "input" || tag === "textarea") {
-      return el.getAttribute("aria-label") || text(el.labels?.[0]) || el.name || el.type || tag;
+      return el.getAttribute("aria-label") || labelText(el.labels?.[0]) || el.name || el.type || tag;
     }
     return el.getAttribute("aria-label") || text(el.querySelector("h2")) || text(el) || el.getAttribute("title") || tag;
   };
@@ -109,6 +117,68 @@ export function measurePage() {
     titleOnly,
     headerHeight: header ? header.getBoundingClientRect().height : 0,
   };
+}
+
+/**
+ * Text resize and reflow (#887): what the page loses when the text is enlarged
+ * or the screen is very narrow. Measures only. Returns the page's horizontal
+ * overflow in px, the elements whose own text is clipped by an `overflow:
+ * hidden|clip` box (scroll size larger than client size), and the visible
+ * controls pushed past the screen's edge (a control inside a box that scrolls
+ * sideways by design is not counted). Labels are raw: e2e/phone.js normalises them.
+ */
+export function measureResize() {
+  const root = document.documentElement;
+  const text = (el) => (el?.innerText ?? el?.textContent ?? "").replace(/\s+/g, " ").trim();
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return false;
+    const s = getComputedStyle(el);
+    return s.visibility !== "hidden" && s.display !== "none";
+  };
+  const selectorOf = (el) => {
+    const steps = [];
+    for (let e = el; e && e !== document.body && steps.length < 4; e = e.parentElement) {
+      const tag = e.tagName.toLowerCase();
+      if (e.id) {
+        steps.unshift(`${tag}#${e.id}`);
+        break;
+      }
+      const same = e.parentElement ? [...e.parentElement.children].filter((c) => c.tagName === e.tagName) : [];
+      steps.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(e) + 1})` : tag);
+    }
+    return steps.join(" > ");
+  };
+  const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+  const hides = (v) => v === "hidden" || v === "clip";
+
+  const clipped = [...document.querySelectorAll("body *")]
+    .filter((el) => {
+      if (!ownText(el) || !visible(el)) return false;
+      const s = getComputedStyle(el);
+      if (!hides(s.overflowX) && !hides(s.overflowY)) return false;
+      return (hides(s.overflowX) && el.scrollWidth > el.clientWidth + 1) || (hides(s.overflowY) && el.scrollHeight > el.clientHeight + 1);
+    })
+    .map((el) => ({ tag: el.tagName.toLowerCase(), text: text(el), selector: selectorOf(el) }));
+
+  const CONTROLS = "a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=tab], [role=menuitem], [tabindex]:not([tabindex='-1'])";
+  const scrollsSideways = (el) => {
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      const v = getComputedStyle(e).overflowX;
+      if (v === "auto" || v === "scroll") return true;
+    }
+    return false;
+  };
+  const width = root.clientWidth;
+  const offscreen = [...document.querySelectorAll(CONTROLS)]
+    .filter((el) => {
+      if (!visible(el) || scrollsSideways(el)) return false;
+      const r = el.getBoundingClientRect();
+      return r.right > width + 1 || r.left < -1;
+    })
+    .map((el) => ({ kind: el.tagName.toLowerCase(), label: el.getAttribute("aria-label") || text(el) || el.getAttribute("title") || el.tagName.toLowerCase(), selector: selectorOf(el) }));
+
+  return { overflowPx: Math.max(0, root.scrollWidth - root.clientWidth), clipped, offscreen };
 }
 
 /** The open dialog's box (the card inside the overlay: a div or a form), or null. */

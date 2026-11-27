@@ -26,6 +26,9 @@ Read both before changing a rule.
     until then the pass cuts to the exact limit, any other pass (a top-up's retry, startup, the Rebalance button, its dry run) only above limit + `rebalance_startup_band_pct`.
     A strangle left over its target is reported `kept` and the pass's `rebalance` line ends "drift, no leg bought back"; top-ups still need IM under the limit, the MM cut never waits.
     2026-10-29 stable BTC: a retry 15 min after a top-up read 20.4 % of 20 % and cut 0.2 of four legs (−0.0016 BTC + fees); 10-28 the same with four legs.
+- **Margin policy** — a coin without DVOL (SOL, XRP, #834): `IVPolicy` (pure, at `New`) sets `risk.Config.IVSource` = `marketdata.ChainIVSource` and `MinIVDays` = `config.FixedChainIVMinDays` (90, a constant: no Config field, so BTC/ETH's effective settings are unchanged);
+  - `policyDays` passes `IVCloses` as the live `IVDays`; under 90 the IM limit is the lowest band ("chain ATM IV 30d: 10 of 90 days of history: lowest band"), nothing pending, `CanRebalance` true; then the bands as for BTC/ETH;
+  - the `config_loaded` settings add `iv_source` for such a coin only (`orders.StartSettings`); `cmd/stress -replay -chainivdays N` varies the 90 (the replay reads the recorded book's chain IV when it has no DVOL).
 - **Size cap:** Portfolio margin can price a leg almost free when it offsets the book; the offset disappears when the rest of the book is closed.
 - **Liquidity cap:**
   - A strike missing from the mainnet book has no open interest (nothing sent); a wired source without a snapshot sends nothing.
@@ -34,6 +37,9 @@ Read both before changing a rule.
   - 2026-10-15: ETH sent 1,454 on a strike whose OI was 164 and filled 152; mvp's 2–12 % of OI filled whole.
   - `cmd/stress -replay … -liqcap N` studies it.
 - **Sizing:** The backtest has no simulator: `backtest.ApproxIMLimitPct` (premium as margin, DVOL band only) is a labelled approximation.
+  - A rate-limited simulation (10028) is retried by the executor (`orders.SimulateRetries` 2, after `SimulateBackoff` 2 s then 4 s, the 1 call/s spacing kept); refused every time → no new risk as before (#888: ETH skipped most cycles for days).
+  - `simcache.go` reuses a result ≤ `SimReuse` (30 s) only for the same request against the same book (`SimKey`/`SimBookKey`: the cycle's margin reading, the IM limit, every position's size);
+    `orderWatch` wraps `s.exch` and drops it on every submit, amend or cancel; errors are never kept. `exchange calls per minute` (executor) counts calls and the share refused.
 - **Exit priority** — close only under 25 DTE (`closeonly.go`, #753, the product owner's decision 2026-11-10):
   - from `config.FixedCloseOnlyBelowDTE` (25) up, drift and take-profit roll (`ActionRollSameLeg`, repair re-sells on the same expiry);
     under it, down to the time roll, they return `ActionClose`: the same resting close, the detail ending "close only: < 25 DTE …" (`CloseOnlyMarker`).
@@ -121,6 +127,13 @@ Read both before changing a rule.
     Allowed while frozen (it only reduces delta); never during the kill switch.
     Each fill journals `hedge_fill` with the market snapshot.
     A cycle with the margin unknown (band 0) or a leg without greeks (`UnpricedLegs`: it would count as its mark alone) trades nothing, real or paper.
+  - **A SOL/XRP bot** (#836, `hedge.Perp{Linear: true}`): the perpetual is the linear `<COIN>_USDC-PERPETUAL` (read from `currency=USDC`, its own rows only), its size and orders in the coin, in whole steps of the larger of its contract size and minimum trade amount (`Perp.Step`);
+    the options count in their Black–Scholes delta (`hedgeOptionsDelta` = `TotalNetDelta`: no mark subtraction, the equity is dollars); the band = 5 % of the USDC balance ÷ spot;
+    the ledger (`PerpBook.Linear`) books P&L and fees in USDC, the benchmark's `unit` is `USDC`, hedge lines carry `amount_unit` (the coin) and `unit: "USDC"`; BTC/ETH lines and orders are unchanged.
+    `GET /api/hedge` and the preview keep their units (`linearView`, `linearPreview`): `perp_size`/`size_unit` the coin,
+    `perp_usd`/`contract_usd` at the average price (so the inverse P&L the summary and payoff count is exact),
+    the `_coin` figures and the benchmark (`Summary.InCoin`) in coin at the mark; `book_scenarios` use `Perp.BookScenarios`.
+    **On at first start:** no mode file on a testnet USDC bot with a futures connection → switched on, the file written (unwritable → OFF), journaled `hedge_mode_changed` by `first start`/`system` once Run starts; a file a person switched off stays off.
   - An order whose outcome is unknown is cancelled by label and journaled `hedge_failed`; the next cycle reads the position before sending anything.
   - **A hedge that cannot trade gives the shed back** (`hedge.Health`, in memory, #664; 2026-11-05 mvp: testnet maintenance, 12 `locked_by_admin` rejections an hour, the book with neither shed nor hedge):
     `hedgeKeepsShed` is false while the hedge is halted, its last order was rejected, or `FixedFuturesHedgeUnfilledCycles` (3) cycles in a row had nothing filled (a hedge due, or the perpetual, its contract or its quote unreadable;
@@ -155,7 +168,7 @@ Read both before changing a rule.
   - `data/shadow_legs.jsonl`: every line is the leg's whole state (open and close add the market and the book's coin delta; `update` every `shadow.UpdateEvery`, 5 min, or on a change of hold), so a restart restores from the last line.
     The key is `shadow.LegKey` (open leg's instrument + side): strangle and position IDs change at reconcile (`tests/restart_invariance_test.go`).
     A file that cannot be opened logs an error and the bot trades without the record.
-- **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency`, load positions, regroup with `GroupPositions`
+- **Startup:** reconcile from the exchange (cancel this currency's orders via `private/cancel_all_by_currency` — a SOL/XRP bot only its own pair's, `cancel_all_by_currency_pair`, #833 — load positions, regroup with `GroupPositions`
   - — an expiry may hold several strangles: calls and puts paired by size, then rank from the money;
   - leftovers one-legged, except that an uneven pair's excess is split onto a lone leg of the other type on the same expiry,
     and two uneven pairs whose excesses offset (one a call too many, the other a put) are split into one more strangle

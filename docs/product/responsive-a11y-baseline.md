@@ -3,6 +3,7 @@
 What the monitor misses today on colour contrast, text size, tap targets and screen-reader structure, ranked by the pages affected, and what each fix needs from the designer.
 It measures only: no component or colour changes with it.
 The fixes come with the E12 UI stories, once the prototype (#654) is approved.
+For each failing contrast pair, the nearest passing colours and what each does to the same token's other pairs are in [`responsive-a11y-contrast-candidates.md`](responsive-a11y-contrast-candidates.md) (#878), the designer's decision sheet.
 
 ## The bar
 
@@ -17,6 +18,12 @@ The fixes come with the E12 UI stories, once the prototype (#654) is approved.
   The failures below are pinned there: a new one fails the test, a fixed one must leave the list.
 - Text size and tap targets: `npm run test:phone` writes `frontend/e2e/a11y-report.json` at 360 px, report-only.
   Its `ranked` list is the browser's count of pages per finding and replaces the source estimates below once the first run is reviewed.
+
+- Text resize and reflow (#887): the same run repeats every page with the root font size at 200 % (360 px wide) and at 320 px (normal text).
+  It writes, per page and pass, under `resize` in `a11y-report.json`, with a `resize.ranked` list:
+  `overflow_px`, `clipped_text` (text in an `overflow: hidden` box whose content is larger than the box)
+  and `offscreen_controls` (visible controls past the screen's edge, not those inside a box that scrolls sideways by design).
+  Report-only, like the rest: the run exits 0 whatever it finds.
 
 ## Findings, ranked by pages affected
 
@@ -44,14 +51,14 @@ The admin pages (Users, Audit, Analytics) are outside the customer's view and ar
 
 `npm run test:phone` measures them too since #883: `users`, `audit`, `analytics`, `analytics-delivery` (signed in as the throwaway admin) and `sign-in` (signed out), each in `a11y-report.json` at 360 px.
 They enter `ranked` with the menu pages, so a finding shared with the header is counted on them as well; rows found only on these pages are marked **admin** (or **sign-in**) here.
-From the source until the first run is reviewed:
+Measured by the first reviewed run (2026-11-26, `e2e/phone-baseline.json` committed; counts at 360 px against the 44 px and 12 px bars, `resize` from #887):
 
-| Finding | Measured | Pages affected | What the fix needs | Owner |
+| Finding | Measured (360 px) | Pages affected | What the fix needs | Owner |
 |---|---|---|---|---|
-| Row buttons `px-2 py-0.5 text-xs` (22 px) and the role `select` (about 30 px) | source | admin: Users | the touch size of #1 for table actions | designer, then developer |
-| Filter fields and buttons about 30 px, "Older" 30 px | source | admin: Audit | as #1 | designer, then developer |
-| Small text in the tiles, release train and usage cards (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) | source | admin: Analytics, Analytics · Delivery | as #4 | designer |
-| Inputs 34 px, Sign in 38 px; 14 px inputs zoom on iOS | source | sign-in | as #1, and 16 px inputs | designer, then developer |
+| Table actions 22 px high ("Delete" 55×22, "Reset link" 73×22), the role `select` 87×25, "Reset password" and "Sign out everywhere" 38 px, the Add user form's inputs 34 px and button 28 px | 12 controls under 44 px, 3 under 24 px; no overflow, nothing clipped at 200 % or 320 px | admin: Users | the touch size of #1 for table actions and form fields | designer, then developer |
+| Filter fields and buttons 29–30 px (Apply, Clear, Export CSV, From, To, Person, Action) | 8 controls under 44 px, 1 under 24 px; at 200 % text the filter form overflows by 118 px and pushes 2 fields off screen | admin: Audit | as #1, and a filter row that wraps at large text | designer, then developer |
+| Small text in the tiles, release train and usage cards (`DeliveryTiles`, `ReleaseTrain`, `UsageCards`) | not seen: 0 small text, 1 control under 24 px (the shared "← Monitor" link). The phone check has no analytics data, so these cards may not render; re-measure with data before closing this row | admin: Analytics, Analytics · Delivery | as #4 | designer |
+| Inputs 34 px (Username, Password), Sign in 38 px; 14 px inputs zoom on iOS | 3 controls under 44 px, none under 24 px; no overflow, nothing clipped at 200 % or 320 px | sign-in | as #1, and 16 px inputs | designer, then developer |
 
 ## Screen-reader structure
 
@@ -72,12 +79,24 @@ Fixed by #851, with no visual change: #1 (the phone overview had no main landmar
 #3 (the payoff card's Delta box was an `<aside>`, a page-level landmark inside the content) — it is a group named "Delta".
 The assistant panel and the dialogs are measured one by one in `a11y.test.jsx`, not here: they open over a page.
 
+## Text resize and reflow
+
+Whether a page still shows all its content when the text is enlarged to 200 % (WCAG 1.4.4) or the screen is 320 px wide (WCAG 1.4.10).
+Measured by `npm run test:phone` into `resize` of `frontend/e2e/a11y-report.json`; report-only, no component, colour or layout changed.
+Counts from `resize.ranked` of the run of 2026-11-26 on demo data (pages affected, most first), out of the eight menu pages and the assistant panel; Positions, Income, Worst case, Activity and How it works have none in either pass.
+
+| # | Finding | Pass | Pages affected | What the fix needs | Owner |
+|---|---|---|---|---|---|
+| 1 | Page scrolls sideways (`overflow_px` > 0) | 200 % text, 320 px | 4: account, assistant, details, overview at 200 %; details also at 320 px | the designer decides which tables wrap, stack or scroll inside their own box at these sizes | designer, then developer |
+| 2 | Text clipped by its box (`clipped_text` > 0) | 200 % text, 320 px | 3: assistant, details, overview, at 200 % and at 320 px | boxes that grow with their text (no fixed height) or show the full text another way | designer, then developer |
+| 3 | Controls pushed off screen (`offscreen_controls` > 0) | 200 % text | 3: assistant, details, overview at 200 %; none at 320 px | a header and menu bar that wrap or collapse instead of running past the edge | designer, then developer |
+
 ## What passes
 
 Body text (`#e2e8f0`), the muted grey and every accent colour (profit, loss, warn, testnet, call, put, action) on the page and the panels meet AA, as do the badges' green, amber, blue and purple on their tints.
 
 ## What changes this list
 
-- A fix lands: remove its line from `KNOWN_FINDINGS` (the test asks for it) and from this table.
+- A fix lands: remove its line from `KNOWN_FINDINGS` (the test asks for it) and from this table, and regenerate the candidates sheet (`UPDATE_CONTRAST_SHEET=1 npm test -- contrast-candidates`).
 - A new failing pair: the token test fails naming it; the designer either fixes it or accepts it here first.
 - A light theme: its tokens and pairs go into the test before it ships.

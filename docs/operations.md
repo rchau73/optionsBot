@@ -356,16 +356,27 @@ go run ./cmd/labpr -id 20261104T230000Z -compare data/compare            # branc
 
 ### Lab usage report
 
-`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, the candidates' status and the analyses written), read-only.
+`cmd/labstats` (#824) measures the lab from its own files (the request queue, `applied/`, `dropped/`, the candidates' status and the analyses written), read-only.
 
 ```bash
-go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, analyses written
+go run ./cmd/labstats -compare data/compare            # Markdown: requests in the last 28 days, done/failed/expired %, median minutes to a finished run, requests per manager per week, recorded changes, dropped proposals, done runs ending in a decision, analyses written
 go run ./cmd/labstats -compare data/compare -days 7 -json
 ```
 
 No one runs it by hand: the weekly usage report (`scripts/agents/usage.sh`) appends it to each environment's `data/monitor/reports/<week>.md` as its "Lab usage" section when that clone has a lab queue (`data/compare/requests/`).
 It prints counts, shares and minutes only: a manager is an 8-character hash, never a name, and no setting value, amount or account appears.
 A request file that cannot be read is counted as unreadable; an empty window says "no requests in the window" and exits 0.
+A deliberate drop (#890, `POST /api/lab/runs/<id>/drop`, `dropped/<id>.json`) counts beside the recorded changes, and "Done runs ending in a decision (recorded or dropped)" is the lab's metric; a run with both files counts once, as recorded.
+The section ends with one more line, the requests the agents' tick started in the last 28 days (below).
+
+### Lab runner on the tick
+
+The agents' tick runs the lab runner itself (#876, `scripts/agents/lab.sh`, in the background, so a long comparison never delays the tick), on the mvp clone's queue (`data/compare/requests/`; `LAB_ENV` in the agents' environment names another clone):
+- a queued request and the runner's lock free → one `scripts/lab_runner.sh` pass from that clone: each request goes `running`, then `done` with a run id or `failed`; one run in the ledger (agent `lab`);
+- the lock held (a run in progress) → a "skipped" line in `data/agents/tick-lab.log`, no second run; nothing queued → nothing starts and no model call; a clone without the folder → skipped silently;
+- a request queued over 2 hours, or left `running` with the lock free (the runner died), files one bug `[E9] Lab queue stalled: <id> <status> <age>` in Triage, as the agent-health alert does: ids and ages only, no setting value, account or amount, and none while one is open.
+The runner's rules do not change: one run at a time, a run applies nothing, one model call per done run with the `ANTHROPIC_API_KEY` of the agents' environment (none → `done` with a note, withheld until L10).
+`bash scripts/lab_runner.sh` by hand still works; while a tick's pass runs it takes nothing.
 
 `cmd/labfollow` (#855) follows a recorded change after it went live: the run's backtested return, worst week, drawdown and fees beside the realised ones over the days after, and the gap in points (percentages only, read-only).
 
@@ -404,6 +415,13 @@ Secret values from mvp's `.env` (the `*SECRET*`/`*TOKEN*`/`*CLIENT_ID*`/`*KEY*`/
 The issue is deduplicated by the sha in its title.
 If GitHub is unreachable, filing is retried on the next tick.
 The PM triages it like any bug, and the next merge redeploys.
+
+**A build killed for memory is built once more** (#892: on 2026-11-26 the monitor's `next build` ran 770 s and the Docker VM killed it, "cannot allocate memory", while compose built every image at once).
+`deploy.sh` builds mvp's images one service at a time (`docker compose build <service>`), then runs `docker compose up -d --build` on the cached images.
+When a build fails and its log reads as an out-of-memory kill (`cannot allocate memory`, `ResourceExhausted`, `signal SIGKILL`, `exit code: 137`, a Node heap limit; `deploy_issue.py oom`), it builds once more, one image at a time, before the failure counts.
+A second failure, or any other build error, fails the step `docker compose build` and rolls back as above.
+The monitor's image caps Node's heap during the build (`BUILD_HEAP_MB`, 3072 MB, in `frontend/Dockerfile`) and sends no Next.js telemetry.
+If it fails again, give the Docker VM more memory (Docker Desktop → Settings → Resources) or stop what else builds or runs on the host at deploy time.
 
 **An exchange outage is not a failed deploy** (#631: on 2026-11-04 Deribit testnet answered HTTP 502 to every connect, and a good commit was rolled back).
 When the health check fails and every bot exit in the log is a connect Deribit or the network refused (a 5xx handshake, a refused, reset or timed-out dial, an unknown host; `deploy_issue.py outage`), `deploy.sh` waits `DEPLOY_OUTAGE_WAIT_SEC` (600) more.

@@ -64,7 +64,8 @@ var replayFlags = map[string]func(c *config.Config, v string) error{
 var replayOwnFlags = map[string]bool{"replay": true, "from": true, "to": true, "config": true, "equity": true,
 	"journal": true, "start": true, "dir": true, "quiet": true, "currency": true, "biasflipwindow": true, "trace": true,
 	"gex": true, "liqcaps": true, "regimehold": true, "regimeholds": true, "shed": true, "sheds": true, "costs": true, "perpfunding": true,
-	"fullstrangle": true, "hedgemodes": true, "deltaexits": true, "rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true}
+	"fullstrangle": true, "hedgemodes": true, "deltaexits": true, "rebalance": true, "rebalances": true, "limits": true, "pnlhistory": true,
+	"chainivdays": true}
 
 func floatField(f func(*config.Config) *float64) func(*config.Config, string) error {
 	return func(c *config.Config, v string) (err error) {
@@ -96,6 +97,7 @@ type replayOpts struct {
 	rebalances                                        string // the downsize study's rules (e.g. "prorata,cheapest,winners"); "" = one replay
 	limits                                            string // the IM limit, freeze and restarts: replay (rebuilt) | journal (the bot's risk_limit lines)
 	pnlHistory                                        string // the bot's pnl_history.jsonl (balances); "" = data/pnl_history.jsonl beside -journal
+	chainIVDays                                       int    // a coin without DVOL: daily chain-IV closes before the bands apply (#834)
 	equity, flipWindowMin, perpFundingPct             float64
 	quiet, trace                                      bool
 	set                                               map[string]string // flags given on the command line
@@ -141,7 +143,7 @@ func runReplay(o replayOpts) error {
 	}
 
 	set := replay.Settings{Cfg: cfg, From: from, To: to, Equity: o.equity,
-		FlipWindow: time.Duration(o.flipWindowMin * float64(time.Minute))}
+		FlipWindow: time.Duration(o.flipWindowMin * float64(time.Minute)), ChainIVMinDays: o.chainIVDays}
 	gexDir := o.gexDir
 	if gexDir == "" {
 		gexDir = filepath.Join(filepath.Dir(filepath.Clean(o.dir)), "market_gex")
