@@ -1,3 +1,4 @@
+import { unitOf } from "./details";
 import { formatNumber, isNumber } from "./format";
 import { hedgeActionWhat, isHedgeAction } from "./hedgeWords";
 import { loopStalled } from "./monitor";
@@ -60,9 +61,10 @@ export function plainFreeze(reason) {
 export function firstDaySteps(bot) {
   const st = bot?.status ?? {};
   const coin = coinOf(bot);
+  const unit = unitOf(bot); // the balance's unit: USDC for SOL/XRP (#837)
   const testnet = st.environment !== "live";
   const equity = st.account?.equity;
-  const balance = isNumber(equity) && equity > 0 ? `Balance ${formatNumber(equity, 4)} ${coin}${testnet ? " (practice on testnet)" : ""}.` : "Balance not read yet.";
+  const balance = isNumber(equity) && equity > 0 ? `Balance ${formatNumber(equity, unit === "USDC" ? 2 : 4)} ${unit}${testnet ? " (practice on testnet)" : ""}.` : "Balance not read yet.";
   const gexReady = Boolean(st.market?.gex_regime);
   const frozen = Boolean(st.risk?.status?.frozen);
   const reading = gexReady && !frozen;

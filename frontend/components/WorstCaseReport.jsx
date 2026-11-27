@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { formatMoney, summaryUnit } from "@/lib/details";
 import { formatCoin, formatNumber, formatUSD, isNumber } from "@/lib/format";
 import { formatSignedPct, formatSignedUSD, toneOf } from "@/lib/summary";
 import { clockHHMM, formatMove, headlineLoss, optionsOnlyLoss, scenarioRows, stopWord, whyNoScenarios } from "@/lib/worstcase";
@@ -23,9 +24,13 @@ export default function WorstCaseReport({ summary }) {
   const wc = summary.worst_case;
   const rows = scenarioRows(summary);
   const worstFall = rows[0]?.move;
+  // A SOL/XRP bot's amounts are in USDC (#837): its result is the model's dollar result (the `_coin`
+  // figures are that ÷ the moved spot), and its % of the account waits for a USDC balance in /api/summary.
+  const unit = summaryUnit(summary);
+  const usdc = unit === "USDC";
   return (
     <section aria-label="Worst case right now" className="space-y-4">
-      <Headline summary={summary} coin={coin} />
+      <Headline summary={summary} coin={coin} unit={unit} />
 
       <Card title="What different days would do">
         <div className="overflow-x-auto">
@@ -54,12 +59,16 @@ export default function WorstCaseReport({ summary }) {
                   </th>
                   <td className="py-2 pr-3">{r.swing}</td>
                   <td className="py-2 pr-3 text-right">
-                    <Result value={r.usd}>
-                      {formatCoin(r.coin, coin)} · {formatSignedUSD(r.usd)}
-                    </Result>
+                    <Result value={r.usd}>{usdc ? formatMoney(r.usd, unit) : `${formatCoin(r.coin, coin)} · ${formatSignedUSD(r.usd)}`}</Result>
                   </td>
                   <td className="py-2 text-right">
-                    {r.pct == null ? <span className="text-muted">unknown: no equity reading</span> : <Result value={r.pct}>{formatSignedPct(r.pct)}</Result>}
+                    {usdc ? (
+                      <span className="text-muted">not yet for a USDC account</span>
+                    ) : r.pct == null ? (
+                      <span className="text-muted">unknown: no equity reading</span>
+                    ) : (
+                      <Result value={r.pct}>{formatSignedPct(r.pct)}</Result>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -92,7 +101,7 @@ export default function WorstCaseReport({ summary }) {
         <p className="px-4 pb-4 text-base">
           Each position is re-priced for the move, with today&apos;s implied volatility (DVOL {formatNumber(wc.dvol, 1)}). &ldquo;Very
           bad&rdquo; is {wc.sigmas ?? 3} daily standard deviations: {formatNumber(wc.dvol, 1)} % ÷ √365 × {wc.sigmas ?? 3} ≈{" "}
-          {formatNumber(wc.move_pct, 1)} %. The account figure is Deribit&apos;s equity in {coin}. Exits are not modelled here: the real loss
+          {formatNumber(wc.move_pct, 1)} %. The account figure is Deribit&apos;s equity in {unit}. Exits are not modelled here: the real loss
           stops at the exit lines if prices move smoothly.
           {wc.hedge ? ` The figures include the open perpetual's gain or loss at each moved price, from its average price of ${formatUSD(wc.hedge.avg_price)}.` : null}
         </p>
@@ -101,10 +110,14 @@ export default function WorstCaseReport({ summary }) {
   );
 }
 
-function Headline({ summary, coin }) {
+function Headline({ summary, coin, unit }) {
   const loss = headlineLoss(summary);
   const optionsOnly = optionsOnlyLoss(summary);
   const at = clockHHMM(summary.as_of);
+  const usdc = unit === "USDC";
+  // "0.0123 BTC ($1,234)", or for a USDC bot "1,234.00 USDC" alone (already dollars, #837).
+  const amount = (x) => (usdc ? formatMoney(Math.abs(x.usd), unit).replace(/^[+−]/, "") : `${Math.abs(x.coin).toFixed(4)} ${coin} (${formatUSD(Math.abs(x.usd))})`);
+  const share = (x) => (usdc ? null : isNumber(x.pct) ? `${Math.abs(x.pct).toFixed(1)} % of the account` : "% of the account unknown: no equity reading");
   return (
     <div className="space-y-1">
       <h1 className="text-xl font-bold">
@@ -112,10 +125,8 @@ function Headline({ summary, coin }) {
         {loss && loss.usd > 0 ? (
           <>
             you&apos;d lose about{" "}
-            <strong className="text-loss">
-              {Math.abs(loss.coin).toFixed(4)} {coin} ({formatUSD(Math.abs(loss.usd))})
-            </strong>
-            , {isNumber(loss.pct) ? `${Math.abs(loss.pct).toFixed(1)} % of the account` : "% of the account unknown: no equity reading"}
+            <strong className="text-loss">{amount(loss)}</strong>
+            {share(loss) ? `, ${share(loss)}` : null}
           </>
         ) : (
           <>this model shows no loss on either side</>
@@ -128,9 +139,9 @@ function Headline({ summary, coin }) {
             <>
               about{" "}
               <strong className="text-loss">
-                −{Math.abs(optionsOnly.coin).toFixed(4)} {coin} (−{formatUSD(Math.abs(optionsOnly.usd))})
+                {usdc ? `−${amount(optionsOnly)}` : `−${Math.abs(optionsOnly.coin).toFixed(4)} ${coin} (−${formatUSD(Math.abs(optionsOnly.usd))})`}
               </strong>
-              {isNumber(optionsOnly.pct) ? `, ${Math.abs(optionsOnly.pct).toFixed(1)} % of the account` : null}
+              {!usdc && isNumber(optionsOnly.pct) ? `, ${Math.abs(optionsOnly.pct).toFixed(1)} % of the account` : null}
             </>
           ) : (
             "no loss on either side"

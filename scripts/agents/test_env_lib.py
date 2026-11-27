@@ -81,6 +81,79 @@ class EnvCheck(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("mvp and stable use the same MONITOR_PORT", r.stdout)
 
+    # ── The SOL and XRP bots (#837): BOT_LINEAR=1, each on its own account ──
+
+    def _linear(self, sol="sol-id", xrp="xrp-id", secrets=True, flag="1"):
+        d = os.path.join(self.envs, "mvp")
+        self._write(os.path.join(d, "deploy.env"), f"OPTIONSBOT_ENV=mvp\nMONITOR_PORT=3100\nBOT_LINEAR={flag}\n")
+        lines = ["DERIBIT_CLIENT_ID=mvp-id", "DERIBIT_ENV=testnet"]
+        for coin, cid in (("SOL", sol), ("XRP", xrp)):
+            if cid:
+                lines.append(f"{coin}_DERIBIT_CLIENT_ID={cid}")
+                if secrets:
+                    lines.append(f"{coin}_DERIBIT_CLIENT_SECRET=s-{coin.lower()}")
+        self._write(os.path.join(d, ".env"), "\n".join(lines) + "\n")
+        return d
+
+    def test_linear_bots_on_their_own_accounts_pass(self):
+        self._linear()
+        r = self._bash("env_check mvp")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sol_and_xrp_on_one_account_are_refused(self):
+        # Scenario: two coins never share an account — bot-sol and bot-xrp configured with one account.
+        d = self._linear(sol="usdc-id", xrp="usdc-id")
+        r = self._bash("env_check mvp")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(r.stdout.strip(), f"{d} (SOL_DERIBIT_CLIENT_ID) and {d} (XRP_DERIBIT_CLIENT_ID) use the same Deribit account: "
+                                           "each bot needs its own subaccount")
+
+    def test_a_linear_bot_on_the_btc_eth_account_is_refused(self):
+        d = self._linear(sol="mvp-id")
+        r = self._bash("env_check mvp")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"{d} (DERIBIT_CLIENT_ID) and {d} (SOL_DERIBIT_CLIENT_ID) use the same Deribit account", r.stdout)
+
+    def test_a_linear_bot_on_another_environments_account_is_refused(self):
+        self._linear(xrp="stable-id")
+        r = self._bash("env_check mvp")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"{os.path.join(self.envs, 'stable')} (DERIBIT_CLIENT_ID)", r.stdout)
+        self.assertIn(f"{os.path.join(self.envs, 'mvp')} (XRP_DERIBIT_CLIENT_ID)", r.stdout)
+        self.assertIn("each bot needs its own subaccount", r.stdout)
+
+    def test_linear_bots_without_their_keys_are_refused(self):
+        d = self._linear(xrp="")
+        r = self._bash("env_check mvp")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"{d}/deploy.env has BOT_LINEAR=1 but .env has no XRP_DERIBIT_CLIENT_ID and XRP_DERIBIT_CLIENT_SECRET", r.stdout)
+        self._linear(secrets=False)
+        self.assertIn("no SOL_DERIBIT_CLIENT_ID and SOL_DERIBIT_CLIENT_SECRET", self._bash("env_check mvp").stdout)
+
+    def test_without_the_switch_nothing_is_asked(self):
+        # BOT_LINEAR missing or 0: the SOL/XRP keys are not needed (stable, an mvp before the person adds them).
+        self._linear(sol="", xrp="", flag="0")
+        self.assertEqual(self._bash("env_check mvp").returncode, 0)
+
+    def test_compose_vars_follow_the_switch(self):
+        self._linear()
+        r = self._bash("env_compose_vars mvp")
+        self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=linear",
+                                                 "MONITOR_LINEAR_APIS=,sol=http://bot-sol:8083,xrp=http://bot-xrp:8084"])
+        r = self._bash("env_compose_vars stable")
+        self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=", "MONITOR_LINEAR_APIS="])
+
+    def test_switched_off_still_stops_the_linear_bots(self):
+        # #906 review: back to BOT_LINEAR=0, up leaves bot-sol/bot-xrp out, but
+        # down/stop/rm/kill take the profile so the running containers stop.
+        self._linear(sol="", xrp="", flag="0")
+        for cmd in ("down", "stop", "rm", "kill"):
+            r = self._bash(f"env_compose_vars mvp {cmd}")
+            self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=linear", "MONITOR_LINEAR_APIS="], cmd)
+        for cmd in ("up", "logs", ""):
+            r = self._bash(f"env_compose_vars mvp {cmd}")
+            self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=", "MONITOR_LINEAR_APIS="], cmd)
+
 
 class RegistryCheck(EnvCheck):
     """env_check's account-registry step (#800, scripts/env_registry.py): the
@@ -215,6 +288,33 @@ class RegistryCheck(EnvCheck):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("the ETH bot (config_eth.yaml) is not in data/accounts.json, which lists ETH under account acct-other",
                       r.stdout)
+
+    def test_envctl_up_refuses_sol_and_xrp_on_one_account(self):
+        # Scenario: two coins never share an account — envctl up refuses, no container starts.
+        self._linear(sol="usdc-id", xrp="usdc-id")
+        r = self._envctl("mvp", "up")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("refusing to start mvp:", r.stderr)
+        self.assertIn("use the same Deribit account: each bot needs its own subaccount", r.stderr)
+        self.assertFalse(os.path.exists(self.docker_log), "docker was called")
+
+    def test_registry_matches_the_linear_bots(self):
+        # With BOT_LINEAR=1 the SOL and XRP bots are matched too: one of them under
+        # the BTC/ETH account's currency elsewhere is refused like any bot.
+        self._linear()
+        self._registry("mvp", [("acct-mvp", "key-mvp", [("BTC", "config_btc.yaml"), ("ETH", "config_eth.yaml")]),
+                               ("acct-sol", "key-sol", [("SOL", "config_sol.yaml")]),
+                               ("acct-xrp", "key-xrp", [("XRP", "config_xrp.yaml")])],
+                       {k: ("active", "trade_only") for k in ("key-mvp", "key-sol", "key-xrp")})
+        r = self._bash("env_check mvp")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self._registry("mvp", [("acct-mvp", "key-mvp", [("BTC", "config_btc.yaml"), ("ETH", "config_eth.yaml")]),
+                               ("acct-sol", "key-sol", [("SOL", "config_sol.yaml")]),
+                               ("acct-xrp", "key-xrp", [("XRP", "config_xrp.yaml")])],
+                       {"key-mvp": ("active", "trade_only"), "key-sol": ("active", "trade_only"), "key-xrp": ("revoked", "trade_only")})
+        r = self._bash("env_check mvp")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("the XRP bot (config_xrp.yaml) runs on account acct-xrp, and the key is revoked", r.stdout)
 
     def test_rule_break_refuses_and_prints_no_key_id(self):
         # Two accounts on one key: a rule break, named by rule; the key id never printed.

@@ -13,6 +13,7 @@ import PayoffModal from "./PayoffModal";
 import SinceLastVisit from "./SinceLastVisit";
 import { useLastVisit } from "@/hooks/useLastVisit";
 import { useMonitor } from "@/hooks/useMonitor";
+import { unitOf } from "@/lib/details";
 import { summarise } from "@/lib/monitor";
 import { pickBot } from "@/lib/overview";
 import { DISPLAY_TZ_LABEL } from "@/lib/time";
@@ -44,7 +45,7 @@ export default function Monitor({ bot = null }) {
   };
 
   const kpi = summarise(bots);
-  const units = Object.fromEntries(bots.map((b) => [b.name, b.status?.underlying ?? b.name.toUpperCase()]));
+  const units = Object.fromEntries(bots.map((b) => [b.name, unitOf(b)]));
 
   return (
     <div className="min-h-screen">

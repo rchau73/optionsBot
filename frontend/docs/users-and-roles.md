@@ -107,6 +107,16 @@ The **Accounts** column says what each person may act on: "All accounts" (admin)
 Your own row cannot be deleted or reset (use **Change password**).
 A row whose username is locked after 5 wrong passwords shows a **Locked until HH:MM** badge in words and an **Unlock** button (#846); its confirmation says "They can sign in again now. Their failed attempts are forgotten. If someone else is guessing this password, reset it instead." and the row refreshes after it.
 
+### Unused accounts (#910)
+
+The **Last sign-in** cell shows `last_sign_in_at` in the display time zone, or "never"; it was already on the page and in `GET /api/admin/users` (#306), so the server is unchanged.
+A row whose last sign-in is 90 days or more ago shows the tag **Unused for 90 days**; a row that never signed in shows **Never signed in, created N days ago** once `created_at` is 90 days or more ago, and no tag before.
+The rule is `unusedLabel` (`lib/users.js`, pure, `now` passed in) and the 90 days are `UNUSED_DAYS`, fixed in code, not a setting.
+The **Unused (N)** button above the table (`aria-pressed`) shows only the tagged rows in the list's own order; with none it says so in words instead of an empty table.
+The tag is shown only: it never blocks a sign-in, and nothing is deleted, downgraded or signed out by it — Delete and the role change stay the only ways, each confirmed and audited.
+Viewing or filtering reads nothing beyond the list (no audit-trail read, no IP address) and writes no audit line.
+N, the number of tagged accounts, is the metric: the accounts without a sign-in in 90 days.
+
 ### Routes
 
 #### `GET /api/admin/users`

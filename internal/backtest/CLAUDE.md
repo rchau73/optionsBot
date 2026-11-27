@@ -16,6 +16,9 @@ go run ./cmd/stress -replay data/btc/data/market -from 2026-10-12 -dir data/stre
   `-replay <data/market dir>` (`internal/replay`, reader `recorder.ReadDir`) runs the bot's pure rules and its `GammaMonitor` (`PushPriceAt`) hour by hour on the recorded mainnet books:
   - GEX rebuilt with `gex.Build`, fills at the recorded bid/ask/mid by the bot's price floors, margin modelled;
   - where minute GEX records exist (`-gex`, default `market_gex` beside the books; `none` = hourly) it decides at each record on the last hourly book's prices (`replay/ticks.go`), hourly where they are absent;
+  - a USDC-settled coin (SOL, XRP: `-replay data/btc/data/market_usdc_sol -config config_sol.yaml -equity 5000`, #837) replays in USDC (`engine.linear`):
+    the margin scan prices each leg at Black–Scholes × spot, fees are `LinearFee` (0.03 % of the index), the perpetual is linear, orders are whole contracts (`LotFor`: 10 SOL, 1,000 XRP);
+    `-equity` is USDC, `Result.NetInUSD` is the net as it is, and `-gex` defaults to `none` for it (`DefaultGEXDir`: `market_gex` is the BTC book's); BTC/ETH replays are unchanged;
   - `-journal` prints the bot's actual P&L over the window to measure the gap.
   - `-liqcaps 5,10,20` (study, #487, `replay/liqcap.go`): one replay per `liquidity_cap_oi_pct`, one table — IM as % of the limit, decisions under 60 % of it with entries allowed, entries and lots cut, worst week;
     days with no recording are listed and the table marked indicative (`docs/studies/liquidity-cap.md`). The bot's cap stays fixed at 10.

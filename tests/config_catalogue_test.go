@@ -19,7 +19,7 @@ import (
 // holds is described, its range is the one Validate enforces, and
 // docs/parameters.md is generated from it.
 
-var shippedConfigs = []string{"config_btc.yaml", "config_btc.mvp.yaml", "config_eth.yaml"}
+var shippedConfigs = []string{"config_btc.yaml", "config_btc.mvp.yaml", "config_eth.yaml", "config_sol.yaml", "config_xrp.yaml"}
 
 func catalogueByKey(t *testing.T) map[string]config.Tunable {
 	t.Helper()

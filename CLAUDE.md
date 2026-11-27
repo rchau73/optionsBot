@@ -7,13 +7,13 @@ One sentence per line; a long one continues as sub-bullets.
 ## Build, run, test
 
 ```bash
-make build                     # go build -o bot ./cmd/bot
-make check                     # gofmt + go vet + shell scripts + race tests + coverage floor (what CI runs)
+make build   # go build -o bot ./cmd/bot
+make check   # gofmt + go vet + shell scripts + race tests + coverage floor (what CI runs)
 scripts/check_cover.sh --update   # coverage floor (#330): fails when ./internal/... falls > 0.2 pt under scripts/cover_baseline.txt (names the packages that fell); --update raises it — only by a person or a PR that says so
 bash scripts/check_shell.sh    # bash -n + shellcheck -x --severity=warning on scripts/**/*.sh and .githooks/* (shellcheck skipped if not installed; CI requires it); every disable needs "disable=SCxxxx # why"
-make test                      # scripts/go_tests.sh all: core tests under -race, then the report/research tests (single goroutine) without it (#429)
+make test   # scripts/go_tests.sh all: core tests under -race, then the report/research tests (single goroutine) without it (#429)
 scripts/go_tests.sh core|reports [PROFILE]   # one group; CI runs both as parallel jobs, merges their coverage profiles and on a PR runs only the jobs its files need (`scripts/agents/checkfail.py suites`, #472); a new slow single-goroutine test goes in REPORT_TESTS
-make cover                     # coverage across ./internal/... (tests live in ./tests)
+make cover   # coverage across ./internal/... (tests live in ./tests)
 bash scripts/regen.sh [--resolve]   # rewrite the generated files (.gitattributes linguist-generated); --resolve settles a merge conflict in them (#465) — never by hand
 make diagrams                  # re-render docs/*.mmd → 4× PNG (needs mmdc)
 scripts/envctl.sh stable|mvp up|status|logs -f bot-btc  # the two local environments (never plain docker compose)
@@ -22,13 +22,13 @@ scripts/promote.sh v0.3.1 --commit <sha> --escalate "<reason>"   # admin escalat
 scripts/prune_branches.sh      # delete local branches already in main (GitHub deletes merged PR branches itself)
 make hooks                     # once per clone: pre-commit refuses .env files and any .env secret value (public repo)
 
-./bot --config config_btc.yaml                     # trade on testnet (default)
-DERIBIT_ENV=live ./bot --config config_btc.yaml    # live — real capital, explicit opt-in
+./bot --config config_btc.yaml   # trade on testnet (default)
+DERIBIT_ENV=live ./bot --config config_btc.yaml   # live — real capital, explicit opt-in
 ./bot --mode=backtest --config config_btc.yaml --from=2026-01-01 --to=2026-12-31
 ./bot --mode=backtest --config config_btc.yaml --sweep=true --from=… --to=…
 ./bot --mode=backtest --config config_btc.yaml --sweep-ladders=true --from=… --to=…   # DTE ladders: slot occupancy, return on margin, worst week
-./bot --debug                                      # per-cycle diagnostics
-go test ./tests/... -run TestStrategy_ -v          # one group
+./bot --debug   # per-cycle diagnostics
+go test ./tests/... -run TestStrategy_ -v   # one group
 ```
 
 The research tools' commands (`cmd/stress`, `cmd/compare`, …) are in the folder files below.
@@ -50,6 +50,7 @@ Never reintroduce env-var overrides for logic parameters.
 - `~/dev/go/optionsBot-env/stable` (a release tag, moved only by `scripts/promote.sh`; the track record, market recorder on) and `~/dev/go/optionsBot-env/mvp` (main, auto-deployed by `deploy.sh`; the agents run from it).
 - Each clone has its own `.env` — **its own Deribit account** (a bot cancels every order of its currency at startup and adopts every short it finds); `env_check` refuses a shared port or account (#538), compose refuses without `OPTIONSBOT_ENV`.
 - mvp runs BTC on `config_btc.mvp.yaml` (`gex_direction: sma`, #168): `config_btc.yaml` with only that line different (`TestConfig_MVPBTCDiffersOnlyInDirection`): change both.
+- mvp also runs `bot-sol`, `bot-xrp` (#837, `BOT_LINEAR=1`), each on its own account (`SOL_`/`XRP_DERIBIT_CLIENT_ID`).
 - The dev checkout runs nothing; `data/btc` there links to stable's for the research tools.
 - The monitor requires a signed-in session on every page and `/api` route (#170, `frontend/README.md` "Sign-in");
   a script that reads it sends that environment's read-only `MONITOR_API_TOKEN` (`env_monitor_token`), as `wait_healthy`, the agents and `stress_inputs.sh` do.
