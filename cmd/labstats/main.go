@@ -3,7 +3,8 @@
 // it prints, over the last -days, the requests made and the share ending
 // done, failed and expired, the median minutes to a finished run, the
 // requests per manager per week (a short hash, never a name), the done runs
-// with a recorded change and the AI analyses written — counts only, no
+// with a recorded change, those with a dropped proposal (dropped/, #890), the
+// share ending in a decision and the AI analyses written — counts only, no
 // setting value, amount or account detail. Read-only; exit 0 also when the
 // window is empty, 1 when the folder cannot be read.
 //

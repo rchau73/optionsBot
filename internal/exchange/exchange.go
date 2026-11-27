@@ -101,12 +101,19 @@ type OptionChain interface {
 // VolIndex is the exchange's implied-volatility index and its percentile —
 // Deribit's DVOL. It drives the margin bands and the flip buffer; an exchange
 // without one needs a substitute (e.g. Deribit's DVOL read over a public
-// connection, as GEX already reads mainnet).
+// connection, as GEX already reads mainnet). A coin Deribit has no index for
+// (SOL, XRP) reads its chain's 30-day ATM IV through the same methods (#834).
 type VolIndex interface {
 	DVOL() float64
 	IVPercentile() float64
 	// DVOLDaily returns recent daily closes and today, with percentiles.
 	DVOLDaily() ([]marketdata.DayIV, marketdata.DayIV)
+	// IVSource names the reading: marketdata.DVOLSource or ChainIVSource.
+	IVSource() string
+	// IVCloses counts the reading's completed daily closes before now.
+	IVCloses(now time.Time) int
+	// TakeDVOLRejections drains the readings the sanity gate kept out (#796).
+	TakeDVOLRejections() []marketdata.DVOLRejection
 }
 
 // MarketData is everything the strategy reads from the market.

@@ -460,6 +460,10 @@ type fakeMarket struct {
 	instruments map[string]*marketdata.Instrument
 	dvolCloses  []marketdata.DayIV
 	dvolToday   marketdata.DayIV
+	ivSource    string // "" = DVOL
+	ivCloses    int    // 0 = len(dvolCloses)
+	// dvolRejected is what TakeDVOLRejections hands the strategy next.
+	dvolRejected []marketdata.DVOLRejection
 }
 
 func (m *fakeMarket) Track(_ context.Context, names []string) error {
@@ -489,9 +493,44 @@ func (m *fakeMarket) setIVHistory(closes []float64, today float64) {
 	m.dvolToday = marketdata.DayIV{Day: day, Percentile: today, Known: true}
 }
 
+// TakeDVOLRejections drains the rejections a test queued with rejectDVOL.
+func (m *fakeMarket) TakeDVOLRejections() []marketdata.DVOLRejection {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := m.dvolRejected
+	m.dvolRejected = nil
+	return out
+}
+
+func (m *fakeMarket) rejectDVOL(r marketdata.DVOLRejection) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.dvolRejected = append(m.dvolRejected, r)
+}
+
 func (m *fakeMarket) UnderlyingPrice() float64 { m.mu.Lock(); defer m.mu.Unlock(); return m.price }
 func (m *fakeMarket) DVOL() float64            { return 55 }
 func (m *fakeMarket) IVPercentile() float64    { return 50 }
+
+// IVSource is DVOL unless a test sets ivSource (a coin's chain IV, #834).
+func (m *fakeMarket) IVSource() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ivSource == "" {
+		return marketdata.DVOLSource
+	}
+	return m.ivSource
+}
+
+// IVCloses is ivCloses, else the closes setIVHistory gave.
+func (m *fakeMarket) IVCloses(time.Time) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ivCloses > 0 {
+		return m.ivCloses
+	}
+	return len(m.dvolCloses)
+}
 
 func (m *fakeMarket) GetInstrument(name string) (*marketdata.Instrument, bool) {
 	m.mu.Lock()

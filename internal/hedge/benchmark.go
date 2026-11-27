@@ -53,17 +53,23 @@ func (c Counterfactual) Value() float64 {
 
 // PerpBook is an inverse perpetual position kept from its trades: the real
 // hedge from its fills, the paper one (mode OFF) at the index price.
+//
+// Linear (a SOL/XRP USDC perpetual, #836): SizeUSD is the size in the coin
+// and Realised and Fees are USDC; the field names stay for the BTC/ETH files.
 type PerpBook struct {
 	SizeUSD  float64 `json:"size_usd"` // signed
 	AvgPrice float64 `json:"avg_price"`
 	Realised float64 `json:"realised_coin"`
 	Fees     float64 `json:"fees_coin"`
 	Trades   int     `json:"trades"`
+	Linear   bool    `json:"linear,omitempty"`
 }
+
+func (v PerpBook) perp() Perp { return Perp{Linear: v.Linear} }
 
 // Trade books a paper trade of usd (signed: + buy) at price with the taker fee rate.
 func (v *PerpBook) Trade(usd, price, feeRate float64) {
-	v.Book(usd, price, TakerFee(usd, price, feeRate))
+	v.Book(usd, price, v.perp().Fee(usd, price, feeRate))
 }
 
 // Book books a trade of usd (signed: + buy) at price that cost fee (coin).
@@ -74,6 +80,10 @@ func (v *PerpBook) Book(usd, price, fee float64) {
 	v.Trades++
 	v.Fees += fee
 	switch {
+	case (v.SizeUSD == 0 || (v.SizeUSD > 0) == (usd > 0)) && v.Linear: // open or add: average by size
+		size := math.Abs(v.SizeUSD) + math.Abs(usd)
+		v.AvgPrice = (math.Abs(v.SizeUSD)*v.avgOr(price) + math.Abs(usd)*price) / size
+		v.SizeUSD += usd
 	case v.SizeUSD == 0 || (v.SizeUSD > 0) == (usd > 0): // open or add: average in coin terms
 		coin := math.Abs(v.SizeUSD)/v.avgOr(price) + math.Abs(usd)/price
 		v.SizeUSD += usd
@@ -81,7 +91,7 @@ func (v *PerpBook) Book(usd, price, fee float64) {
 	default: // reduce (and maybe flip)
 		closed := math.Min(math.Abs(usd), math.Abs(v.SizeUSD))
 		sign := math.Copysign(1, v.SizeUSD)
-		v.Realised += PerpPnL(sign*closed, v.AvgPrice, price)
+		v.Realised += v.perp().PnL(sign*closed, v.AvgPrice, price)
 		v.SizeUSD += usd
 		switch {
 		case math.Abs(v.SizeUSD) < 1e-9:
@@ -101,7 +111,7 @@ func (v *PerpBook) avgOr(price float64) float64 {
 
 // PnL is the position's P&L net of fees, the open part marked at mark.
 func (v PerpBook) PnL(mark float64) float64 {
-	return v.Realised + PerpPnL(v.SizeUSD, v.AvgPrice, mark) - v.Fees
+	return v.Realised + v.perp().PnL(v.SizeUSD, v.AvgPrice, mark) - v.Fees
 }
 
 // Pricing is what the benchmark books the real perpetual at (#664).
@@ -219,6 +229,8 @@ type Summary struct {
 	Note          string           `json:"note"`
 	Pricing       string           `json:"pricing"`      // "index" or "exchange"
 	PricingNote   string           `json:"pricing_note"` // the same in plain words
+	// Unit is "USDC" when the coin figures are USDC (a SOL/XRP bot, #836).
+	Unit string `json:"unit,omitempty"`
 }
 
 // BenchmarkNote says what the number is, and what it is not.
@@ -238,8 +250,25 @@ func (l Ledger) Summarise(funding, mark float64) Summary {
 	}
 	s.AdvantageCoin = s.HedgeCoin + s.LegsCoin
 	s.AdvantageUSD = s.AdvantageCoin * mark
+	if l.Real.Linear { // a USDC book's figures are dollars already (#836)
+		s.AdvantageUSD, s.Unit = s.AdvantageCoin, "USDC"
+	}
 	start := max(0, len(l.Legs)-50)
 	s.Legs = append([]Counterfactual{}, l.Legs[start:]...)
+	return s
+}
+
+// InCoin is a USDC summary (Unit "USDC") with its _coin totals in the coin
+// at mark, as the monitor labels them (#836); AdvantageUSD stays. Any other
+// summary, or no mark, is returned as it is.
+func (s Summary) InCoin(mark float64) Summary {
+	if s.Unit != "USDC" || mark <= 0 {
+		return s
+	}
+	for _, f := range []*float64{&s.AdvantageCoin, &s.HedgeCoin, &s.RealCoin, &s.VirtualCoin, &s.LegsCoin} {
+		*f /= mark
+	}
+	s.Unit = ""
 	return s
 }
 

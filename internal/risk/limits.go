@@ -40,6 +40,21 @@ type Config struct {
 	// UseRegime enables the gamma-regime rule (off when no GEX source exists,
 	// e.g. in backtests).
 	UseRegime bool
+	// IVSource names the volatility reading in the reasons; "" is DVOL. A coin
+	// without DVOL reads its chain's 30-day ATM IV (#834).
+	IVSource string
+	// MinIVDays: while the reading has fewer daily closes (Day.IVDays of the
+	// live observation), the limit is the lowest band and the bands wait
+	// (0 = none: DVOL has years of history at Deribit).
+	MinIVDays int
+}
+
+// ivName is the reading's name in the reasons.
+func (c Config) ivName() string {
+	if c.IVSource == "" {
+		return "DVOL"
+	}
+	return c.IVSource
 }
 
 // SortedBands returns the bands from the highest IV floor to the lowest.
@@ -97,6 +112,9 @@ type Day struct {
 	IVKnown     bool
 	Negative    bool // gamma regime is negative (acceleration)
 	RegimeKnown bool
+	// IVDays is how many completed daily closes the IV reading has; read on
+	// the live observation only, against Config.MinIVDays.
+	IVDays int
 }
 
 // Pending is a change seen at daily closes but not yet confirmed.
@@ -186,10 +204,14 @@ func Evaluate(cfg Config, closes []Day, live Day) Status {
 		LiveIVPct: live.IVPct, LiveIVKnown: live.IVKnown, Pending: []Pending{},
 	}
 
+	// A reading with too short a history (a coin's chain IV, #834) ranks
+	// against too few days: the bands wait, the lowest applies.
+	warmup := cfg.MinIVDays > 0 && live.IVDays < cfg.MinIVDays
+	name := cfg.ivName()
 	ivObs := make([]obs, len(closes))
 	rgObs := make([]obs, len(closes))
 	for i, d := range closes {
-		ivObs[i] = obs{d.Date, cfg.BandIndex(d.IVPct), d.IVKnown}
+		ivObs[i] = obs{d.Date, cfg.BandIndex(d.IVPct), d.IVKnown && !warmup}
 		rgObs[i] = obs{d.Date, boolInt(d.Negative), d.RegimeKnown}
 	}
 	iv := confirm(ivObs, cfg.ConfirmDays)
@@ -205,7 +227,9 @@ func Evaluate(cfg Config, closes []Day, live Day) Status {
 	}
 
 	var freeze []string
-	st.CanRebalance = iv.known
+	// The warm-up's lowest band is a rule, not missing data: the book may be
+	// resized toward it.
+	st.CanRebalance = iv.known || warmup
 	if cfg.UseRegime {
 		rg := confirm(rgObs, cfg.ConfirmDays)
 		st.RegimeKnown, st.RegimeNegative = rg.known, rg.known && rg.value == 1
@@ -228,20 +252,27 @@ func Evaluate(cfg Config, closes []Day, live Day) Status {
 	if iv.known && live.IVKnown {
 		if liveBand := cfg.BandIndex(live.IVPct); liveBand != iv.value &&
 			limitFor(bands, liveBand, st.RegimeNegative) < limitFor(bands, iv.value, st.RegimeNegative) {
-			freeze = append(freeze, fmt.Sprintf("DVOL moved to %s (IV percentile %.0f), not yet confirmed", bandLabel(bands[liveBand]), live.IVPct))
+			freeze = append(freeze, fmt.Sprintf("%s moved to %s (IV percentile %.0f), not yet confirmed", name, bandLabel(bands[liveBand]), live.IVPct))
 		}
 	}
 
+	history := fmt.Sprintf("%s: %d of %d days of history", name, live.IVDays, cfg.MinIVDays)
 	switch {
 	case st.RegimeNegative:
 		st.LimitIMPct = bands[lowest].MaxIMPct
-		st.Reason = fmt.Sprintf("negative gamma regime (confirmed): lowest band %.0f%%; DVOL band would allow %.0f%%", st.LimitIMPct, st.BandLimitPct)
+		st.Reason = fmt.Sprintf("negative gamma regime (confirmed): lowest band %.0f%%; %s band would allow %.0f%%", st.LimitIMPct, name, st.BandLimitPct)
+		if warmup {
+			st.Reason += " · " + history
+		}
 	case iv.known:
 		st.LimitIMPct = st.BandLimitPct
-		st.Reason = fmt.Sprintf("DVOL %s (confirmed)", bandLabel(bands[band]))
+		st.Reason = fmt.Sprintf("%s %s (confirmed)", name, bandLabel(bands[band]))
+	case warmup:
+		st.LimitIMPct = bands[lowest].MaxIMPct
+		st.Reason = history + ": lowest band"
 	default:
 		st.LimitIMPct = bands[lowest].MaxIMPct
-		st.Reason = "DVOL percentile unknown: lowest band"
+		st.Reason = name + " percentile unknown: lowest band"
 	}
 	if len(freeze) > 0 {
 		st.Frozen = true

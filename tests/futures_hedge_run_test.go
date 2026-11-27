@@ -29,8 +29,9 @@ type fakeFutures struct {
 	index    float64
 	state    string // the ticker's state ("" = no reading)
 	contract float64
-	tickers  int   // ticker reads
-	posErr   error // the position read fails
+	minTrade float64 // the minimum trade amount (0 = the contract size)
+	tickers  int     // ticker reads
+	posErr   error   // the position read fails
 }
 
 func (ff *fakeFutures) set(apply func(*fakeFutures)) {
@@ -66,7 +67,11 @@ func (ff *fakeFutures) GetFuturePositions(context.Context, string) ([]orders.Raw
 func (ff *fakeFutures) GetInstrumentSpec(_ context.Context, name string) (orders.InstrumentSpec, error) {
 	ff.mu.Lock()
 	defer ff.mu.Unlock()
-	return orders.InstrumentSpec{Name: name, Kind: "future", ContractSize: ff.contract, MinTradeAmount: ff.contract, TickSize: 0.5}, nil
+	minTrade := ff.minTrade
+	if minTrade == 0 {
+		minTrade = ff.contract
+	}
+	return orders.InstrumentSpec{Name: name, Kind: "future", ContractSize: ff.contract, MinTradeAmount: minTrade, TickSize: 0.5}, nil
 }
 
 func (ff *fakeFutures) GetTicker(_ context.Context, name string) (orders.Ticker, error) {

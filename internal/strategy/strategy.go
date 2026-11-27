@@ -33,7 +33,8 @@ var ErrKillSwitch = errors.New("kill switch activated")
 type Strategy struct {
 	cfg     *config.Config
 	md      MarketData
-	exch    Exchange
+	exch    Exchange  // wrapped in orderWatch: every order action drops sims
+	sims    *SimCache // recent margin simulations (simcache.go, #888)
 	state   *orders.StateManager
 	journal TradeJournal
 	hedge   HedgeReporter
@@ -159,15 +160,17 @@ func New(cfg *config.Config, d Deps) *Strategy {
 	if regimes == nil {
 		regimes, _ = history.OpenRegimes("") // in memory only; cannot fail
 	}
+	sims := NewSimCache(SimReuse)
 	s := &Strategy{
 		cfg:              cfg,
 		md:               d.Market,
-		exch:             d.Exchange,
+		exch:             orderWatch{Exchange: d.Exchange, sims: sims},
+		sims:             sims,
 		state:            d.State,
 		journal:          d.Journal,
 		hedge:            d.Hedge,
 		gamma:            gamma,
-		riskCfg:          cfg.RiskPolicy(d.GEX != nil),
+		riskCfg:          IVPolicy(cfg.RiskPolicy(d.GEX != nil), d.Market.IVSource(), config.FixedChainIVMinDays),
 		regimes:          regimes,
 		directions:       d.Directions,
 		appliedLimit:     math.NaN(),
@@ -214,6 +217,7 @@ func (s *Strategy) Run(ctx context.Context) error {
 
 	s.loadGammaPriceHistory(ctx)
 	s.logStartupState(ctx)
+	s.noteFirstStart() // a SOL/XRP bot's hedge switched on at its first start (#836)
 	s.reconcilePositions(ctx)
 	s.applyJournalStops()
 	s.applyJournalSheds()

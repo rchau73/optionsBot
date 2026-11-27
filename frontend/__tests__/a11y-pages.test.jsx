@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cloneElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { AccountView } from "@/components/AccountPage";
 import { ActivityView } from "@/components/ActivityPage";
 import DetailsPage from "@/components/DetailsPage";
@@ -226,13 +226,43 @@ describe("Scenario: a new violation fails", () => {
 });
 
 describe("Scenario: a fixed violation asks for the baseline to be lowered", () => {
-  test("Positions with its nested aside fixed fails with the UPDATE_A11Y=1 command", async () => {
+  test("Positions with its Delta heading fixed fails with the UPDATE_A11Y=1 command", async () => {
     PAGES.Positions();
     const pinned = await pageAxeCounts(PAGE_RULES);
-    expect(pinned["landmark-complementary-is-top-level"]).toBe(1);
-    document.querySelector("main aside").setAttribute("role", "group");
+    expect(pinned["heading-order"]).toBe(1);
+    const h4 = screen.getByRole("heading", { level: 4, name: /^Delta/ });
+    const h2 = document.createElement("h2");
+    h2.textContent = h4.textContent;
+    h4.replaceWith(h2);
     expect(compareToBaseline("Positions", await pageAxeCounts(PAGE_RULES), pinned)).toEqual([
-      `Positions: landmark-complementary-is-top-level fell from 1 to 0 — lower the baseline with ${UPDATE_COMMAND}`,
+      `Positions: heading-order fell from 1 to 0 — lower the baseline with ${UPDATE_COMMAND}`,
     ]);
+  });
+});
+
+// #851: the developer's three findings fixed, the designer's (#4) left open.
+describe("Scenario: the phone overview has one main landmark", () => {
+  beforeEach(() => useMonitor.mockReturnValue(monitorData()));
+  test("the cards, the headline, Since you last looked and the footer note sit in one main", async () => {
+    PAGES["Phone overview"]();
+    const phone = screen.getByTestId("phone-overview");
+    const main = phone.querySelector("main");
+    expect(phone.querySelectorAll("main")).toHaveLength(1);
+    expect(main).toContainElement(screen.getAllByRole("heading", { level: 1 }).find((h) => phone.contains(h)));
+    expect(main).toContainElement(await within(phone).findByTestId("since-first-visit")); // a first visit on the fixtures
+    expect(main.querySelector("footer")).toHaveTextContent("Not investment advice.");
+    const counts = await pageAxeCounts(PAGE_RULES);
+    expect([counts["landmark-one-main"] ?? 0, counts.region ?? 0]).toEqual([0, 0]);
+  });
+});
+
+describe("Scenario: the Delta box is not a page-level landmark", () => {
+  test("Positions has no nested complementary landmark and the Delta box is a group named Delta", async () => {
+    PAGES.Positions();
+    expect(screen.getAllByRole("group", { name: "Delta" }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("complementary", { name: "Delta" })).toEqual([]);
+    const counts = await pageAxeCounts(PAGE_RULES);
+    expect(counts["landmark-complementary-is-top-level"] ?? 0).toBe(0);
+    expect(counts["heading-order"]).toBe(1); // finding #4 stays with the designer
   });
 });

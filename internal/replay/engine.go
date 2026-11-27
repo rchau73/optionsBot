@@ -68,8 +68,13 @@ type Settings struct {
 	// FullStrangle is the rule set of the full-strangle study (fullstrangle.go,
 	// #677): the zero value is today's.
 	FullStrangle FullStrangleVariant
-	Book         []StartLeg                      // the book at From (from the journal); empty = flat
-	Trace        func(at time.Time, line string) // every action, as it happens (nil = none)
+	// ChainIVMinDays is, for a coin without DVOL (SOL, XRP: its book's chain
+	// ATM IV stands in, #834), how many daily closes it needs before the
+	// bands apply; the lowest band until then. 0 = none; the bot's is
+	// config.FixedChainIVMinDays (cmd/stress -chainivdays).
+	ChainIVMinDays int
+	Book           []StartLeg                      // the book at From (from the journal); empty = flat
+	Trace          func(at time.Time, line string) // every action, as it happens (nil = none)
 }
 
 // StartLeg is one short leg of the starting book.
@@ -263,7 +268,7 @@ func Run(snaps []recorder.Snapshot, set Settings) (Result, error) {
 	}
 	e := &engine{set: set, cfg: cfg, lot: 0.1, src: &snapSource{},
 		dvol:    marketdata.NewDVOLTracker(cfg.IVPercentileWindow),
-		policy:  cfg.RiskPolicy(true),
+		policy:  strategy.IVPolicy(cfg.RiskPolicy(true), marketdata.VolSource(cfg.Underlying), set.ChainIVMinDays),
 		stopped: map[string]time.Time{}, anchors: map[string]*strategy.ShedAnchor{}, deferSince: map[string]time.Time{},
 		closeOnly: map[string]bool{}, closed: strategy.ClosedExpiries{},
 		cash: set.Equity}
@@ -403,6 +408,9 @@ func (e *engine) step(at time.Time, snap recorder.Snapshot, rec *recorder.GEXRec
 		return
 	}
 	e.now = at
+	if dvol <= 0 && !marketdata.HasVolIndex(e.cfg.Underlying) {
+		dvol, _ = marketdata.ChainATMIV30(snap.Instruments(e.lot), spot, at) // as the bot reads it (#834)
+	}
 	if dvol > 0 {
 		e.dvol.Record(at, dvol)
 	}
@@ -551,7 +559,7 @@ func (e *engine) riskStatus(at time.Time, dec strategy.GammaDecision) risk.Statu
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date.Before(closes[j].Date) })
 	return risk.Evaluate(e.policy, closes, risk.Day{Date: today, IVPct: ivToday.Percentile, IVKnown: ivToday.Known,
-		Negative: strings.HasPrefix(dec.Regime, "NEGATIVE"), RegimeKnown: known})
+		Negative: strings.HasPrefix(dec.Regime, "NEGATIVE"), RegimeKnown: known, IVDays: e.dvol.Closes(at)})
 }
 
 // refreshMarks copies each held leg's recorded quote onto it (refreshMarks):

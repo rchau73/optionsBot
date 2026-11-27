@@ -1,9 +1,21 @@
-import { refuseOtherAccount, requireRole, sameOrigin } from "@/lib/auth/server";
+import { readAccounts } from "@/lib/auth/accountLinks";
+import { requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { authKey } from "@/lib/auth/tokens";
 import { compareDir, validId } from "@/lib/compare";
 import { readRun } from "@/lib/lab";
-import { buildRecord, checkConfirm, readRecord, RECORD_AUDIT_ACTION, recordedAnswer, recordsDir, removeRecord, writeRecord } from "@/lib/labapply";
+import {
+  buildRecord,
+  checkConfirm,
+  decisionRefusal,
+  droppedDir,
+  readRecord,
+  RECORD_AUDIT_ACTION,
+  recordedAnswer,
+  recordsDir,
+  removeRecord,
+  writeRecord,
+} from "@/lib/labapply";
 import { queueDir, readRequests } from "@/lib/labrequests";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +30,8 @@ const MAX_BODY = 1024;
  * confirms the change the run's preview showed. The server recomputes the
  * preview now and refuses a token that does not match it (another run,
  * person or value) or is older than 15 minutes, a value out of range, a core
- * policy (the product owner approves those), a run not done and a run already
- * recorded (lib/labapply.js). On success it writes the record
+ * policy (the product owner approves those), a run not done, a run already
+ * recorded and a run whose proposal was dropped (#890; lib/labapply.js). On success it writes the record
  * (COMPARE_DIR/applied/<id>.json) and one audit line
  * (parameter_change_recorded) and answers 201 `applied: false, recorded: true`:
  * it writes no config, restarts no bot and places no order. Managers and
@@ -52,10 +64,13 @@ export async function POST(request, { params }) {
     authLog("ERROR", "lab run unreadable", { component: "lab", username: user.username, id });
     return Response.json({ error: "the run cannot be read: see the monitor's logs" }, { status: 500 });
   }
-  // The run's account is its underlying's bot ("BTC" → bot btc): a manager linked to other accounts is refused (#760).
-  const otherAccount = refuseOtherAccount(auth, user, String(r.run.report?.underlying ?? "").toLowerCase());
-  if (otherAccount) return otherAccount;
+  // The run's account is its underlying's bot ("BTC" → bot btc): a manager linked to other accounts is refused (#760),
+  // by the same check the preview's may_confirm reports (#890).
+  const problem = decisionRefusal(auth, user, r.run, readAccounts);
+  if (problem) return Response.json({ error: problem }, { status: 403 });
 
+  // From here to writeRecord nothing awaits: the monitor is one Node process, so a drop of the same run
+  // cannot run between this check of dropped/ and the write to applied/ (the drop route keeps the same rule).
   const now = Date.now();
   const records = recordsDir(dir);
   const checked = checkConfirm({
@@ -66,6 +81,7 @@ export async function POST(request, { params }) {
     now,
     requests: readRequests(queueDir(dir)),
     recorded: readRecord(records, id),
+    dropped: readRecord(droppedDir(dir), id),
   });
   if (checked.status) {
     authLog("WARN", "lab confirm refused", { component: "lab", username: user.username, id, status: checked.status, reason: checked.body.error });

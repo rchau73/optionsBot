@@ -24,7 +24,7 @@ import PositionsTable from "@/components/PositionsTable";
 import { RebalanceModal } from "@/components/Rebalance";
 import TradeHistory from "@/components/TradeHistory";
 import { consolidateRows, groupRows, legRows, summarise } from "@/lib/monitor";
-import { axeCounts, compareToBaseline, UPDATE_COMMAND } from "@/test/a11y";
+import { axeCounts, compareToBaseline, serialAxe, UPDATE_COMMAND } from "@/test/a11y";
 import { bot, positions, status } from "@/test/fixtures";
 
 const BASELINE_FILE = path.join(__dirname, "a11y-baseline.json");
@@ -32,7 +32,9 @@ const UPDATE = process.env.UPDATE_A11Y === "1";
 const baseline = fs.existsSync(BASELINE_FILE) ? JSON.parse(fs.readFileSync(BASELINE_FILE, "utf8")) : null;
 const recorded = {};
 
-jest.setTimeout(20_000); // axe walks the whole rendered tree
+// axe walks the whole rendered tree; a run waits for the previous one (#865),
+// so a case slowed by a full parallel run gets the same room as a11y-pages.
+jest.setTimeout(30_000);
 
 // --- test data, shaped like the bot API responses ---
 
@@ -201,6 +203,28 @@ describe("Scenario: a new unlabeled control fails", () => {
     added.container.querySelector("table").parentElement.appendChild(document.createElement("button"));
     const problems = compareToBaseline("PositionsTable", await axeCounts(added.container), today);
     expect(problems.some((p) => p.startsWith("PositionsTable: ") && p.includes("button-name"))).toBe(true);
+  });
+});
+
+describe("Scenario: axe runs one at a time (#865)", () => {
+  test("two checks started together both finish instead of 'Axe is already running'", async () => {
+    const first = render(<Header bots={[bot()]} />);
+    const second = render(<KpiStrip kpi={summarise([bot()])} />);
+    const [a, b] = await Promise.all([axeCounts(first.container), axeCounts(second.container)]);
+    expect(compareToBaseline("Header", a, baseline?.Header)).toEqual([]);
+    expect(compareToBaseline("KpiStrip", b, baseline?.KpiStrip)).toEqual([]);
+  });
+
+  test("a failed run does not block the next one", async () => {
+    const order = [];
+    const failed = serialAxe(async () => {
+      order.push("first");
+      throw new Error("boom");
+    });
+    const next = serialAxe(async () => order.push("second"));
+    await expect(failed).rejects.toThrow("boom");
+    await next;
+    expect(order).toEqual(["first", "second"]);
   });
 });
 

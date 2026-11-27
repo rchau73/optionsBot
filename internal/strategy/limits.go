@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"optionsbot/internal/marketdata"
 	"optionsbot/internal/orders"
 	"optionsbot/internal/risk"
 )
@@ -68,6 +69,11 @@ func (s *Strategy) riskStatus(now time.Time, gammaDec GammaDecision) risk.Status
 		slog.Warn("regime history seeded from the live regime", "regime", gammaDec.Regime, "days", s.riskCfg.ConfirmDays)
 		s.logRisk(orders.RiskRegimeSeeded, detail, st, risk.Usage{}, gammaDec.Regime)
 	}
+	// DVOL readings the sanity gate kept out since the last cycle (#796):
+	// the status above already uses the value that stayed.
+	for _, r := range s.md.TakeDVOLRejections() {
+		s.logRisk(orders.RiskDVOLRejected, r.Detail, st, risk.Usage{}, gammaDec.Regime)
+	}
 	s.noteRiskChange(st, gammaDec.Regime)
 	return st
 }
@@ -106,7 +112,7 @@ func (s *Strategy) policyDays(now time.Time, regime string, regimeKnown bool) ([
 	}
 	sort.Slice(closes, func(i, j int) bool { return closes[i].Date.Before(closes[j].Date) })
 
-	live := risk.Day{Date: today, RegimeKnown: regimeKnown, Negative: isNegativeRegime(regime)}
+	live := risk.Day{Date: today, RegimeKnown: regimeKnown, Negative: isNegativeRegime(regime), IVDays: s.md.IVCloses(now)}
 	if ivToday.Day.Equal(today) {
 		live.IVPct, live.IVKnown = ivToday.Percentile, ivToday.Known
 	}
@@ -114,6 +120,17 @@ func (s *Strategy) policyDays(now time.Time, regime string, regimeKnown bool) ([
 }
 
 func isNegativeRegime(regime string) bool { return strings.HasPrefix(regime, "NEGATIVE") }
+
+// IVPolicy is the margin policy for the market's volatility reading, chosen
+// once at startup: DVOL as ever (p unchanged), or a coin's chain ATM IV
+// (marketdata.ChainIVSource, #834) — named in every reason, and the lowest
+// band until it has minDays daily closes (config.FixedChainIVMinDays). Pure.
+func IVPolicy(p risk.Config, source string, minDays int) risk.Config {
+	if source == marketdata.ChainIVSource {
+		p.IVSource, p.MinIVDays = source, minDays
+	}
+	return p
+}
 
 // noteRiskChange journals a freeze, unfreeze or limit change once, when it happens.
 func (s *Strategy) noteRiskChange(st risk.Status, regime string) {
@@ -333,8 +350,8 @@ func (s *Strategy) reduceForMM(ctx context.Context, m marginState) {
 	for _, pos := range s.state.AllPositions() {
 		inst, ok := s.md.GetInstrument(pos.Instrument)
 		lot := s.cfg.MinTradeAmount
-		if ok && inst.MinTradeAmount > 0 {
-			lot = inst.MinTradeAmount
+		if ok && inst.OrderStep() > 0 {
+			lot = inst.OrderStep()
 		}
 		keep := MMKeepQty(pos.Qty, lot, mmPct, m.status.MaxMMPct)
 		if keep <= qtyEpsilon {
@@ -355,8 +372,11 @@ var errMarginUnknown = errors.New("margin data unavailable")
 // simulate returns Deribit's margin with positions added to the book. A
 // result in a different unit than the live account (e.g. cross-collateral
 // totals missing from one of them) cannot be compared and is an error.
-func (s *Strategy) simulate(ctx context.Context, positions map[string]float64, unit string) (risk.Usage, error) {
-	sum, err := s.exch.SimulatePortfolio(ctx, s.cfg.Underlying, positions)
+// acct is the cycle's margin reading: the book the result is reused for
+// (cachedSimulation).
+func (s *Strategy) simulate(ctx context.Context, positions map[string]float64, acct risk.Usage) (risk.Usage, error) {
+	unit := acct.Unit
+	sum, err := s.cachedSimulation(ctx, false, positions, acct)
 	if err != nil {
 		return risk.Usage{}, fmt.Errorf("%w: simulate_portfolio: %w", errMarginUnknown, err)
 	}
@@ -370,8 +390,8 @@ func (s *Strategy) simulate(ctx context.Context, positions map[string]float64, u
 // capToNormalSize limits lots to max_leg_size_multiple × the slot's normal
 // size: its slot share ÷ the strangle's margin per lot on its own (Deribit,
 // add_positions=false). See CapLots.
-func (s *Strategy) capToNormalSize(ctx context.Context, call, put string, lot float64, lots int, slotShare float64, unit string) (int, error) {
-	alone, err := s.simulateAlone(ctx, map[string]float64{call: -lot, put: -lot}, unit)
+func (s *Strategy) capToNormalSize(ctx context.Context, call, put string, lot float64, lots int, slotShare float64, acct risk.Usage) (int, error) {
+	alone, err := s.simulateAlone(ctx, map[string]float64{call: -lot, put: -lot}, acct)
 	if err != nil {
 		return 0, err
 	}
@@ -386,8 +406,9 @@ func (s *Strategy) capToNormalSize(ctx context.Context, call, put string, lot fl
 }
 
 // simulateAlone is simulate for positions on their own (no book offsets).
-func (s *Strategy) simulateAlone(ctx context.Context, positions map[string]float64, unit string) (risk.Usage, error) {
-	sum, err := s.exch.SimulateAlone(ctx, s.cfg.Underlying, positions)
+func (s *Strategy) simulateAlone(ctx context.Context, positions map[string]float64, acct risk.Usage) (risk.Usage, error) {
+	unit := acct.Unit
+	sum, err := s.cachedSimulation(ctx, true, positions, acct)
 	if err != nil {
 		return risk.Usage{}, fmt.Errorf("%w: simulate_portfolio (alone): %w", errMarginUnknown, err)
 	}
@@ -408,11 +429,11 @@ func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share, 
 	// Deribit counts resting orders) and the book plus one lot. Against the
 	// summary read at the start of the cycle, a top-up sent a second earlier
 	// made one ETH lot look like 25 ETH of margin.
-	base, err := s.simulate(ctx, map[string]float64{}, m.usage.Unit)
+	base, err := s.simulate(ctx, map[string]float64{}, m.usage)
 	if err != nil {
 		return 0, err
 	}
-	oneLot, err := s.simulate(ctx, map[string]float64{call: -lot, put: -lot}, m.usage.Unit)
+	oneLot, err := s.simulate(ctx, map[string]float64{call: -lot, put: -lot}, m.usage)
 	if err != nil {
 		return 0, err
 	}
@@ -421,14 +442,14 @@ func (s *Strategy) sizeEntry(ctx context.Context, call, put string, lot, share, 
 	if lots < 1 {
 		return 0, fmt.Errorf("one lot adds %.6f %s of IM, more than this slot's headroom %.6f", imPerLot, m.usage.Unit, share)
 	}
-	if lots, err = s.capToNormalSize(ctx, call, put, lot, lots, slotShare, m.usage.Unit); err != nil {
+	if lots, err = s.capToNormalSize(ctx, call, put, lot, lots, slotShare, m.usage); err != nil {
 		return 0, err
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		qty := float64(lots) * lot
 		post := oneLot
 		if lots > 1 {
-			if post, err = s.simulate(ctx, map[string]float64{call: -qty, put: -qty}, m.usage.Unit); err != nil {
+			if post, err = s.simulate(ctx, map[string]float64{call: -qty, put: -qty}, m.usage); err != nil {
 				return 0, err
 			}
 		}

@@ -156,5 +156,38 @@ class ExchangeOutage(unittest.TestCase):
             sys.stdin = stdin
 
 
+class OutOfMemory(unittest.TestCase):
+    """#892: a build the Docker VM killed for memory is built once more."""
+
+    def test_memory_kills_are_recognised(self):
+        for line in ("#41 771.3 npm error signal SIGKILL",
+                     'failed to solve: ResourceExhausted: process "/bin/sh -c npm run build" did not complete successfully: cannot allocate memory',
+                     "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory",
+                     'ERROR: process "/bin/sh -c go build" did not complete successfully: exit code: 137',
+                     "monitor OOMKilled"):
+            with self.subTest(line=line):
+                self.assertEqual(deploy_issue.out_of_memory("#40 DONE 0.1s\n" + line + "\nmore"), line)
+
+    def test_other_build_failures_are_not(self):
+        for log in ("", "src/app.go:1: syntax error",
+                    "Type error: Property 'x' does not exist",
+                    'ERROR: process "/bin/sh -c npm run build" did not complete successfully: exit code: 1',
+                    "exit code: 1370", "SIGKILLED"):
+            with self.subTest(log=log):
+                self.assertEqual(deploy_issue.out_of_memory(log), "")
+
+    def test_cli_exit_status(self):
+        import io
+        stdin, saved = sys.stdin, sys.stdout
+        try:
+            sys.stdin, sys.stdout = io.StringIO("x\ncannot allocate memory\n"), io.StringIO()
+            self.assertEqual(deploy_issue.main(["deploy_issue.py", "oom"]), 0)
+            self.assertEqual(sys.stdout.getvalue(), "cannot allocate memory\n")
+            sys.stdin = io.StringIO("syntax error")
+            self.assertEqual(deploy_issue.main(["deploy_issue.py", "oom"]), 1)
+        finally:
+            sys.stdin, sys.stdout = stdin, saved
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -405,6 +405,29 @@ class DirectionTrial(unittest.TestCase):
         self.assertEqual(kinds, ["early-stop"])
         self.assertIn("**early stop: decision ticket filed**", self.comment("2026-W45"))
 
+    def test_live_drawdown_half_read_from_the_verdict_files_the_early_stop(self):
+        # #850: the scorecard's verdict carries the live half; posted as written, never recomputed.
+        line = "kill rule hit — live drawdown: stable BTC's live max drawdown was over 2× mvp BTC's in 2026-W43 (-3.00 % vs -1.00 %) — it proposes the decision ticket, nothing else"
+        c = scorecard()
+        c["verdict"] = {"status": "kill rule hit", "line": line,
+                        "live_drawdown": {"status": "fired", "fired_weeks": ["2026-W43"]}}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        s = evidence_week.trial_state(self.stable, "2026-W43")
+        self.assertTrue(s["early_stop"])
+        self.assertLess(s["streak"], evidence_week.TRIAL_STREAK)  # the replay half did not fire
+        tickets = evidence_week.trial_tickets("2026-W43", self.stable, [])
+        self.assertEqual([k for k, _, _ in tickets], ["early-stop"])
+        self.assertIn("stable BTC's live max drawdown was over 2× mvp BTC's in 2026-W43", tickets[0][2])
+        self.assertNotIn("bias's replay net was under", tickets[0][2])
+        text = self.comment("2026-W43")
+        self.assertIn(f"- **Verdict** (docs/direction-trial.md): {line}", text)
+        self.assertIn("live drawdown (stable over 2× mvp, from the weekly reports): **hit** in 2026-W43", text)
+        # not fired: no ticket, the block points to the verdict line
+        c["verdict"]["live_drawdown"] = {"status": "not fired"}
+        write(evidence_week.scorecard_path(self.stable, "2026-W43"), json.dumps(c))
+        self.assertFalse(evidence_week.trial_state(self.stable, "2026-W43")["early_stop"])
+        self.assertIn("from the weekly reports): in the verdict line", self.comment("2026-W43"))
+
     def test_a_week_inside_the_noise_breaks_the_streak(self):
         self.card("2026-W43", bias=-1.0, sma=1.0, gaps=(1.0, 1.0))
         self.card("2026-W44", bias=-1.0, sma=1.0, gaps=(1.0, 1.0))

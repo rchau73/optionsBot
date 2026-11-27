@@ -25,7 +25,7 @@ const ANYONE = [...SIGNED_IN, "anonymous"];
  * bot: the bot API route it forwards to (internal/api/routes_actions.go).
  * linked: the route targets a bot, so a manager linked to other accounts is
  * refused (#760, lib/auth/accountLinks.js); every [bot] route must say so,
- * and the lab apply, whose run names its bot by the underlying.
+ * and the lab apply and drop, whose run names its bot by the underlying.
  */
 export const STATE_CHANGING_ROUTES = [
   { route: "DELETE /api/admin/users/[id]", roles: ADMINS, audit: "user_deleted" },
@@ -36,6 +36,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/admin/users/[id]/password", roles: ADMINS, audit: "password_reset" },
   { route: "POST /api/admin/users/[id]/reset-link", roles: ADMINS, audit: "reset_link_issued" },
   { route: "POST /api/admin/users/[id]/signout", roles: ADMINS, audit: "signed_out_everywhere" },
+  { route: "POST /api/admin/users/[id]/unlock", roles: ADMINS, audit: "login_unlocked" },
   { route: "POST /api/assistant", roles: SIGNED_IN, audit: null, why: "each question is logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/feedback", roles: SIGNED_IN, audit: null, why: "the person who asked says whether the answer helped; logged with the person in assistant.jsonl" },
   { route: "POST /api/assistant/flag", roles: SIGNED_IN, audit: null, why: "the flag is logged with the person in assistant.jsonl" },
@@ -52,6 +53,7 @@ export const STATE_CHANGING_ROUTES = [
   { route: "POST /api/events", roles: SIGNED_IN, audit: null, why: "usage events, many a minute, stored pseudonymous in events.jsonl" },
   { route: "POST /api/lab/requests", roles: MANAGERS, audit: "lab_request" },
   { route: "POST /api/lab/runs/[id]/apply", roles: MANAGERS, audit: "parameter_change_recorded", linked: true },
+  { route: "POST /api/lab/runs/[id]/drop", roles: MANAGERS, audit: "parameter_change_dropped", linked: true },
   { route: "POST /api/lab/validate", roles: MANAGERS, audit: "lab_validate" },
   { route: "POST /api/notifications", roles: SIGNED_IN, audit: null, why: "the person's own read marks and settings" },
   { route: "POST /api/survey", roles: SIGNED_IN, audit: "survey_answered" },

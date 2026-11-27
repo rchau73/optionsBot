@@ -42,6 +42,7 @@ var deribitMethods = map[string][]string{
 	"private/cancel":                      {"gateway", "orders"},
 	"private/cancel_by_label":             {"orders"},
 	"private/cancel_all_by_currency":      {"orders"},
+	"private/cancel_all_by_currency_pair": {"orders"},
 	"private/cancel_all_by_instrument":    {"orders"},
 	"private/get_order_state":             {"orders"},
 	"private/get_user_trades_by_order":    {"orders"},

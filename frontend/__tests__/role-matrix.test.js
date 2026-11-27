@@ -118,6 +118,13 @@ const FIXTURES = {
   "POST /api/admin/users/[id]/password": async ({ who }) => ({ ...(await target(who, "/password")), body: { password: NEW_PASSWORD } }),
   "POST /api/admin/users/[id]/reset-link": async ({ who }) => target(who, "/reset-link"),
   "POST /api/admin/users/[id]/signout": async ({ who }) => target(who, "/signout"),
+  "POST /api/admin/users/[id]/unlock": async ({ who }) => {
+    // A locked person (#846): only then does an allowed unlock write its audit line.
+    const t = await target(who, "/unlock");
+    const name = auth.store.userById(Number(t.params.id)).username;
+    auth.store.lockLogin(name, Date.now() + 15 * 60 * 1000, Date.now(), Date.now() - 15 * 60 * 1000);
+    return t;
+  },
   "POST /api/assistant": async () => ({ path: "/api/assistant", body: { question: "What is a strangle?" } }),
   "POST /api/assistant/feedback": async () => ({ path: "/api/assistant/feedback", body: { id: "a-1", helped: true } }),
   "POST /api/assistant/flag": async () => ({ path: "/api/assistant/flag", body: { id: "a-1" } }),
@@ -163,18 +170,14 @@ const FIXTURES = {
   },
   "POST /api/lab/runs/[id]/apply": async ({ who }) => {
     // A fresh run per caller (one confirm records a run once), and the token its preview gives this person.
-    process.env.COMPARE_DIR = path.join(dir, "compare");
-    const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-    fs.mkdirSync(path.join(process.env.COMPARE_DIR, id), { recursive: true });
-    const figures = { return_pct: 1, worst_week_pct: -1, max_drawdown_pct: 1, fees_usd: 10 };
-    const report = {
-      underlying: "BTC",
-      diffs: [{ key: "backtest.slippage_pct", base: "0.001", proposed: "0.002" }],
-      backtest: { ran: true, equity_usd: 100000, base: figures, proposed: figures },
-    };
-    fs.writeFileSync(path.join(process.env.COMPARE_DIR, id, "report.json"), JSON.stringify(report));
+    const id = labRun();
     const preview = buildPreview(readRun(process.env.COMPARE_DIR, id).run, who?.user.username ?? "nobody", Date.now());
     return { path: `/api/lab/runs/${id}/apply`, params: { id }, body: { confirm_token: confirmToken(preview, authKey(TEST_SECRET), Date.now()) }, actor: who?.user.username };
+  },
+  "POST /api/lab/runs/[id]/drop": async ({ who }) => {
+    // A fresh run per caller: a drop records a run once (#890).
+    const id = labRun();
+    return { path: `/api/lab/runs/${id}/drop`, params: { id }, body: {}, actor: who?.user.username };
   },
   "POST /api/lab/validate": async ({ who }) => ({ path: "/api/lab/validate", body: { key: "delta_drift_threshold", value: 0.05 }, actor: who?.user.username }),
   "POST /api/events": async ({ who }) => {
@@ -211,6 +214,21 @@ const ACCOUNTS_STATUS = {
   ],
   violations: [],
 };
+
+/** A fresh done BTC lab run with one proposal, in the test's folder (never the clone's data/): its id. */
+function labRun() {
+  process.env.COMPARE_DIR = path.join(dir, "compare");
+  const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  fs.mkdirSync(path.join(process.env.COMPARE_DIR, id), { recursive: true });
+  const figures = { return_pct: 1, worst_week_pct: -1, max_drawdown_pct: 1, fees_usd: 10 };
+  const report = {
+    underlying: "BTC",
+    diffs: [{ key: "backtest.slippage_pct", base: "0.001", proposed: "0.002" }],
+    backtest: { ran: true, equity_usd: 100000, base: figures, proposed: figures },
+  };
+  fs.writeFileSync(path.join(process.env.COMPARE_DIR, id, "report.json"), JSON.stringify(report));
+  return id;
+}
 
 /** A user an admin route acts on; `suffix` follows /api/admin/users/<id>. */
 async function target(who, suffix = "") {

@@ -1,5 +1,6 @@
 // The viewport check (#309, every page since #425): measures every page of the
-// menu (lib/menu.js) and the assistant panel opened on demo data at 360, 768
+// menu (lib/menu.js), the assistant panel opened, the admin pages, Analytics'
+// Delivery topic and, signed out, sign-in (#883) on demo data at 360, 768
 // and 1280 px, and the overview's dialogs at 360 × 640 / 640 × 360, writes
 // docs/responsive-measured.json and screenshots under test-results/phone/
 // (both git-ignored) and, report-only, e2e/a11y-report.json (small text and
@@ -9,8 +10,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { demoLoaded, expect, test } from "./fixtures.js";
-import { measureDialog, measurePage } from "./measure.js";
-import { A11Y_WIDTH, DIALOG_VIEWPORTS, WIDTHS, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, summariseDialog, summariseWidth, viewportPages } from "./phone.js";
+import { measureDialog, measurePage, measureResize } from "./measure.js";
+import { A11Y_WIDTH, DIALOG_VIEWPORTS, RESIZE_PASSES, WIDTHS, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, pagePathname, summariseDialog, summariseResize, summariseWidth, viewportPages } from "./phone.js";
 
 const FRONTEND = process.env.PHONE_FRONTEND_DIR;
 const REPORT = path.join(FRONTEND, "docs", "responsive-measured.json");
@@ -60,24 +61,42 @@ async function enableOrderDialogs(page) {
 
 const enabled = (page, name) => page.getByRole("button", { name, exact: true }).and(page.locator(":enabled")).first();
 
+// A menu page's path by its key (lib/menu.js), never typed here.
+const pathOf = (key) => viewportPages().find((p) => p.name === key && !p.assistant).path;
+
+// Each dialog with the menu page it opens from: Close… on Details (pro) (#405), Rebalance on Account.
 const DIALOGS = {
-  close: async (page) => {
-    await enabled(page, "Close").click();
+  close: {
+    page: "details",
+    ready: "Close…",
+    open: async (page) => {
+      await enabled(page, "Close…").click();
+    },
   },
-  rebalance: async (page) => {
-    await enabled(page, "Rebalance").click();
-    await expect(page.getByRole("dialog").getByText(/Would send|Nothing to send/)).toBeVisible();
+  rebalance: {
+    page: "account",
+    ready: "Rebalance",
+    open: async (page) => {
+      await enabled(page, "Rebalance").click();
+      await expect(page.getByRole("dialog").getByText(/Would send|Nothing to send/)).toBeVisible();
+    },
   },
-  change_password: async (page) => {
-    await page.getByRole("button", { name: /^Account/ }).click();
-    await page.getByRole("menuitem", { name: "Change password" }).click();
+  change_password: {
+    page: "details",
+    ready: "Close…",
+    open: async (page) => {
+      // The account menu is the signed-in name ▾ (UserMenu).
+      await page.getByRole("button", { name: `${process.env.PHONE_ADMIN_USERNAME} ▾`, exact: true }).click();
+      await page.getByRole("menuitem", { name: "Change password" }).click();
+    },
   },
 };
 
-// A page is rendered: the URL stayed on it (not sent to sign-in) and its <main> is shown.
+// A page is rendered: the URL stayed on it (not sent to sign-in, nor an admin
+// page sent away) and its <main> is shown. A query (?topic=delivery) is kept.
 async function openPage(page, target) {
   await page.goto(target.path);
-  await expect(page, `${target.name}: did not stay on ${target.path}`).toHaveURL((url) => url.pathname === target.path);
+  await expect(page, `${target.name}: did not stay on ${target.path}`).toHaveURL((url) => url.pathname === pagePathname(target));
   await expect(page.locator("main").first(), `${target.name}: no <main> rendered`).toBeVisible({ timeout: 30_000 });
   await page.waitForTimeout(2000); // the first poll of both demo bots arrives
   if (target.assistant) {
@@ -86,32 +105,68 @@ async function openPage(page, target) {
   }
 }
 
-test("every menu page and the assistant: measured on demo data, no worse than the baseline", async ({ page }) => {
+// One page at every width: its part of the report, at 360 px its accessibility
+// findings, then the text resize and reflow passes (#887, report-only).
+async function measureTarget(page, target, report, a11yPages, resizePages) {
+  await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
+  await openPage(page, target);
+  report.pages[target.name] = { path: target.path, signed_out: target.signedOut, widths: {} };
+  for (const vp of WIDTHS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.waitForTimeout(800);
+    const raw = await page.evaluate(measurePage);
+    report.pages[target.name].widths[vp.name] = summariseWidth(vp, raw);
+    if (vp.name === A11Y_WIDTH) a11yPages[target.name] = a11yOfPage(raw);
+    await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
+  }
+  // Text resize and reflow (#887), report-only: 200 % text size, then 320 px.
+  resizePages[target.name] = {};
+  for (const pass of RESIZE_PASSES) {
+    await page.setViewportSize({ width: pass.width, height: pass.height });
+    await page.evaluate((scale) => { document.documentElement.style.fontSize = `${scale * 100}%`; }, pass.fontScale);
+    await page.waitForTimeout(500);
+    resizePages[target.name][pass.name] = summariseResize(await page.evaluate(measureResize));
+    await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
+  }
+}
+
+// The measure itself (#887): a fixed-height box whose text outgrows it at 200 % is one clipped text.
+test("resize measure: a clipped label is counted once", async ({ page }) => {
+  await page.setContent(`<html style="font-size:200%"><body style="margin:0">
+    <div id="box" style="height:20px;overflow:hidden;width:200px">A long label that wraps onto several lines at double size</div>
+    <p>Fits.</p></body></html>`);
+  const raw = await page.evaluate(measureResize);
+  expect(summariseResize(raw).clipped_text).toBe(1);
+  expect(summariseResize(raw).offscreen_controls).toBe(0);
+});
+
+test("every page a person reaches and the assistant: measured on demo data, no worse than the baseline", async ({ page, browser }) => {
   fs.mkdirSync(SHOTS, { recursive: true });
   await enableOrderDialogs(page);
-  await page.reload();
   await demoLoaded(page);
 
   const report = { generated_at: new Date().toISOString(), source: "cmd/monitor-demo (BTC, ETH), simulated data", pages: {}, dialogs: {} };
   const a11yPages = {};
-  for (const target of viewportPages()) {
-    await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
-    await openPage(page, target);
-    report.pages[target.name] = { path: target.path, widths: {} };
-    for (const vp of WIDTHS) {
-      await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.waitForTimeout(800);
-      const raw = await page.evaluate(measurePage);
-      report.pages[target.name].widths[vp.name] = summariseWidth(vp, raw);
-      if (vp.name === A11Y_WIDTH) a11yPages[target.name] = a11yOfPage(raw);
-      await page.screenshot({ path: path.join(SHOTS, `${target.name}-${vp.name}.png`), fullPage: true });
+  const resizePages = {};
+  for (const target of viewportPages().filter((t) => !t.signedOut)) {
+    await measureTarget(page, target, report, a11yPages, resizePages);
+  }
+  // Sign-in is what a signed-out person sees (#883): a fresh context, no session cookie.
+  const { baseURL, colorScheme } = test.info().project.use;
+  const signedOut = await browser.newContext({ baseURL, colorScheme });
+  try {
+    const fresh = await signedOut.newPage();
+    for (const target of viewportPages().filter((t) => t.signedOut)) {
+      await measureTarget(fresh, target, report, a11yPages, resizePages);
     }
+  } finally {
+    await signedOut.close();
   }
 
-  // The dialogs are the overview's.
-  await page.goto("/");
-  await demoLoaded(page);
-  for (const [name, open] of Object.entries(DIALOGS)) {
+  for (const [name, { page: pageKey, ready, open }] of Object.entries(DIALOGS)) {
+    await page.setViewportSize({ width: WIDTHS[0].width, height: WIDTHS[0].height });
+    await page.goto(pathOf(pageKey));
+    await expect(page.getByRole("button", { name: ready, exact: true }).first()).toBeAttached({ timeout: 30_000 });
     report.dialogs[name] = {};
     for (const vp of DIALOG_VIEWPORTS) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -126,7 +181,7 @@ test("every menu page and the assistant: measured on demo data, no worse than th
   }
 
   fs.writeFileSync(REPORT, `${JSON.stringify(report, null, 2)}\n`);
-  fs.writeFileSync(A11Y_REPORT, `${JSON.stringify(a11yReport(a11yPages, report.generated_at), null, 2)}\n`);
+  fs.writeFileSync(A11Y_REPORT, `${JSON.stringify(a11yReport(a11yPages, report.generated_at, resizePages), null, 2)}\n`);
 
   // Every overflow is explained: the report names what causes it.
   for (const [pageName, p] of Object.entries(report.pages)) {

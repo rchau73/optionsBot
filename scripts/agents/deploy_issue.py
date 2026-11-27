@@ -6,6 +6,7 @@ deploy to mvp (#204). Pure text here; deploy.sh reads GitHub and acts.
     deploy_issue.py find <sha> < issues.json                     → number of an issue already filed for <sha>, or nothing
     deploy_issue.py body <sha> <meta> <tail> <range> [env...]    → the issue body (markdown)
     deploy_issue.py outage < log                                 → why the log reads as a Deribit outage; exit 1 when it does not (#631)
+    deploy_issue.py oom < log                                    → the line that reads as a build killed for memory; exit 1 when none does (#892)
 
 issues.json: gh issue list --json number,title. meta: the failed step on its
 first line, the rollback outcome on its second. tail: the log of the failed
@@ -115,6 +116,24 @@ def exchange_outage(log_tail):
     return f"Deribit unreachable: {common} on connect, {len(causes)} bot exits"
 
 
+# An image build the Docker VM killed for memory (#892, 2026-11-26: the
+# monitor's `next build` SIGKILLed after 770 s, "cannot allocate memory") is
+# the host's state, not the commit's: deploy.sh builds once more, one image at
+# a time, before it rolls back. Only words Docker, the kernel or Node print for
+# an out-of-memory kill count; a compile error does not.
+OUT_OF_MEMORY = re.compile(
+    r"cannot allocate memory|ResourceExhausted|JavaScript heap out of memory"
+    r"|\bsignal SIGKILL\b|\bexit code: 137\b|\bOOMKilled\b")
+
+
+def out_of_memory(log):
+    """The line that reads as a build killed for memory, or "" when none does."""
+    for line in log.splitlines():
+        if OUT_OF_MEMORY.search(line):
+            return line.strip()[:MAX_LINE]
+    return ""
+
+
 def body(sha, step, rollback, log_tail, commits, pairs):
     hint = cause_hint(rollback, log_tail)
     log_tail = redact(tail(log_tail), pairs) or "(empty)"
@@ -158,6 +177,11 @@ def main(argv):
         if not why:
             return 1
         print(why)
+    elif cmd == "oom" and len(argv) == 2:
+        line = out_of_memory(sys.stdin.read())
+        if not line:
+            return 1
+        print(line)
     elif cmd == "find" and len(argv) == 3:
         n = find(argv[2], json.load(sys.stdin))
         if n is not None:

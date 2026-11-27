@@ -71,9 +71,9 @@ The IP is not stored here; the per-IP limit lives in memory and a restart forget
 
 | Column | Purpose | Retention |
 | --- | --- | --- |
-| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, and at a successful sign-in |
+| `login_failures.username` | Count failed sign-ins per username | removed after 15 min at the next failure, at a successful sign-in, and when an admin unlocks the username (#846) |
 | `login_failures.at` | When each failure happened | same |
-| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure |
+| `login_locks.username` | Which username is locked | removed once the lock has ended, at the next failure, or when an admin unlocks it (#846) |
 | `login_locks.until` | When the lock ends | same |
 
 ## `survey_answers`
@@ -87,7 +87,7 @@ Never sent in an event or a log line.
 | `user_id` | Whose answer it is (so it can be deleted with the person) | with the row; **proposal**: unlink answers after a period (question L16) |
 | `survey_id` | Which survey | with the row |
 | `codes` | The allow-listed coded answers | with the row |
-| `free_text` | Optional free text, which may hold anything the person types | with the row |
+| `free_text` | Optional free text, which may hold anything the person types | erased after `SURVEY_TEXT_RETENTION_DAYS` (730, 24 months) by the daily retention job (#849; needs legal review, C2), or with the row if sooner |
 | `created_at` | When it was given | with the row |
 
 ## `notification_reads` and `notification_settings`
@@ -131,7 +131,7 @@ Retention: the file rotates to `audit.<UTC time>.jsonl` at `AUDIT_MAX_BYTES` (de
 **Proposal**: a retention period for archives, decided with counsel (L14).
 
 Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
-- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
+- sign-in and sessions: `signed_in`, `sign_in_failed`, `locked`, `login_unlocked`, `signed_out`, `signed_out_everywhere`, `session_ended`, `session_expired`;
 - passwords: `password_changed`, `password_change_failed`, `password_reset`, `reset_link_issued`, `password_reset_by_link`;
 - users: `user_created`, `role_changed`, `user_deleted`, `account_deleted`;
 - manager–account links (#760): `account_link_added`, `account_link_removed` (the admin, the manager as `target` and the `account_id`);
@@ -141,7 +141,8 @@ Actions recorded (the same list as `AUDIT_ACTIONS` in `lib/audit.js`):
 - the lab:
   - `parameter_change_previewed` (#682: which manager read what a confirm would change, with the account, the run and both values, as evidence of who saw it; never the confirm token; kept as every other line of this file);
   - `parameter_change_recorded` (#741: which manager confirmed a change, with the account, the run, both values and the token's hash prefix; the same username and role are in that run's record, `data/compare/applied/<id>.json`, kept with the run);
-- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
+  - `parameter_change_dropped` (#890: which manager dropped a run's proposal, with the account and the run, no setting value; that run's drop record, `data/compare/dropped/<id>.json`, holds only an 8-character hash of the username and the role, kept with the run);
+- analytics and surveys: `events_pruned`, `events_prune_failed`, `events_deleted`, `events_delete_failed`, `events_exported`, `analytics_consent_changed`, `survey_answers_deleted`, `survey_answers_delete_failed`, `survey_text_purged`, `survey_text_purge_failed`, `survey_answered`, `nps_survey_changed`, `answers_survey_shown`.
 
 ## The security digest and alerts
 
