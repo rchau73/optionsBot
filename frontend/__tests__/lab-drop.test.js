@@ -35,10 +35,13 @@ const REGISTRY = [
 ];
 const OTHER_ACCOUNT = "you do not manage account Account A (acct-a), which bot btc trades for: ask an admin to link it to you on the Users page";
 
-let root, dir, seq;
+let root, dir, seq, base;
+// Ids count back from one time fixed per test, one second apart: from the clock
+// at each call, a test running over a second (the race loop on a busy CI runner)
+// gave its second run the first one's id, already recorded, so both refused.
 const newRun = (over) => {
   seq += 1;
-  const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const id = new Date(base - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   fs.mkdirSync(path.join(dir, id), { recursive: true });
   fs.writeFileSync(path.join(dir, id, "report.json"), JSON.stringify(report(over)));
   return id;
@@ -82,6 +85,7 @@ beforeEach(() => {
   process.env.ACCOUNTS_STATUS_PATH = path.join(root, "accounts_status.json");
   fs.writeFileSync(process.env.ACCOUNTS_STATUS_PATH, JSON.stringify({ version: 1, accounts: REGISTRY }));
   seq = 0;
+  base = Date.now();
   jest.spyOn(console, "error").mockImplementation(() => {});
   jest.spyOn(console, "log").mockImplementation(() => {});
   useTestAuth();
