@@ -124,6 +124,8 @@ Since 2026-11 the mvp environment also runs a SOL and an XRP bot, the product ow
   Almost all of SOL's loss is two stop-losses on 2026-10-30 that bought back on an empty book at a placeholder ask (16 and 12 USDC for legs whose mid was near 1.4).
   These books are thin: a stop that fires on an empty book pays whatever the one quote asks.
   That is why these bots run on test money first.
+  The product owner accepted this on testnet (2026-11-26) with today's stop guard (wait while the spread is wide or there is no bid, at most 5 minutes, then at market).
+  A cap on what such a stop may pay is studied in #907, and decided there before any live SOL or XRP run.
 
 ## 4. How a trade can end
 

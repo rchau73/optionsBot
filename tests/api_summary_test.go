@@ -289,6 +289,28 @@ func TestAPISummary_IncomePerCalendarMonth(t *testing.T) {
 	}
 }
 
+// The income's unit (#837, review of #906): the coin for BTC, USDC for a SOL
+// bot, whose unrealised P&L is already dollars (never × spot).
+func TestAPISummary_IncomeUnit(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		underlying, unit string
+		spot, pnl, usd   float64
+	}{
+		{"BTC", "BTC", 100000, 0.01, 1000},
+		{"ETH", "ETH", 3000, 0.1, 300},
+		{"SOL", "USDC", 140, 4.5, 4.5},
+		{"XRP", "USDC", 2.2, 3, 3},
+	}
+	for _, c := range cases {
+		v := strategy.View{Underlying: c.underlying, Market: orders.MarketSnapshot{Spot: c.spot}, PnL: []strategy.PnLView{{Unrealised: c.pnl, Total: c.pnl}}}
+		inc := api.BuildSummary(v, nil, now).Income
+		if inc.Coin != c.underlying || inc.Unit != c.unit || math.Abs(inc.UnrealisedUSD-c.usd) > 1e-9 {
+			t.Errorf("%s: coin %q unit %q unrealised_usd %v, want %q %q %v", c.underlying, inc.Coin, inc.Unit, inc.UnrealisedUSD, c.underlying, c.unit, c.usd)
+		}
+	}
+}
+
 func TestAPISummary_EmptyBot(t *testing.T) {
 	code, body := getJSON(t, api.New(staticView{strategy.View{Underlying: "ETH"}}, summaryLogger()).Handler(), "/api/summary")
 	if code != 200 {

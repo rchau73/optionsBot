@@ -143,6 +143,17 @@ class EnvCheck(unittest.TestCase):
         r = self._bash("env_compose_vars stable")
         self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=", "MONITOR_LINEAR_APIS="])
 
+    def test_switched_off_still_stops_the_linear_bots(self):
+        # #906 review: back to BOT_LINEAR=0, up leaves bot-sol/bot-xrp out, but
+        # down/stop/rm/kill take the profile so the running containers stop.
+        self._linear(sol="", xrp="", flag="0")
+        for cmd in ("down", "stop", "rm", "kill"):
+            r = self._bash(f"env_compose_vars mvp {cmd}")
+            self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=linear", "MONITOR_LINEAR_APIS="], cmd)
+        for cmd in ("up", "logs", ""):
+            r = self._bash(f"env_compose_vars mvp {cmd}")
+            self.assertEqual(r.stdout.splitlines(), ["COMPOSE_PROFILES=", "MONITOR_LINEAR_APIS="], cmd)
+
 
 class RegistryCheck(EnvCheck):
     """env_check's account-registry step (#800, scripts/env_registry.py): the

@@ -76,6 +76,7 @@ Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD
 They trade Deribit's USDC-settled options on `config_sol.yaml` and `config_xrp.yaml` (slots 30 and 50 DTE at 0.16 Δ), with the futures hedge on from their first start.
 `BOT_LINEAR=1` in `deploy.env` turns them on: `env_compose` then starts the compose profile `linear` (`bot-sol` on `:8083`, `bot-xrp` on `:8084`, data in `data/sol` and `data/xrp`) and adds them to the monitor's `BOT_APIS` (`env_compose_vars`).
 Without it (stable, or an mvp clone whose `deploy.env` predates it) nothing changes; stable gets them only when a person adds the line and the keys there after a release.
+To switch them off, set `BOT_LINEAR=0` and run `scripts/envctl.sh mvp stop bot-sol bot-xrp`, then redeploy: a deploy's `up` leaves the two containers out but does not stop them, while `down`, `stop`, `rm` and `kill` always include the profile.
 Each runs on its **own** Deribit testnet account, never the BTC/ETH one: two USDC bots on one account would cancel each other's orders and share one USDC margin.
 The person adds the keys to the mvp clone's `.env`, each a trade-only key (`account:read trade:read_write`) of a subaccount holding 5,000 USDC:
 

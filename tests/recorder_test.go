@@ -69,7 +69,8 @@ func TestRecorderRows(t *testing.T) {
 func TestRecorderSnapshotAppendsAndSkipsStale(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Now().UTC()
-	src := &fakeSummary{rows: []gex.SummaryRow{{InstrumentName: "BTC-27NOV26-100000-C", UnderlyingPrice: 86000, MarkIV: 38, MidPrice: 0.0125}}, at: at}
+	// a far expiry: the rows are timed now, and an expired one is dropped
+	src := &fakeSummary{rows: []gex.SummaryRow{{InstrumentName: "BTC-25DEC36-100000-C", UnderlyingPrice: 86000, MarkIV: 38, MidPrice: 0.0125}}, at: at}
 	rec := recorder.New(src, func() float64 { return 36 }, dir, time.Hour)
 
 	for i := 0; i < 2; i++ {
@@ -90,7 +91,7 @@ func TestRecorderSnapshotAppendsAndSkipsStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 3 || all[0][0] != "date" || all[1][1] != "BTC-27NOV26-100000-C" || all[2][1] != "BTC-27NOV26-100000-C" {
+	if len(all) != 3 || all[0][0] != "date" || all[1][1] != "BTC-25DEC36-100000-C" || all[2][1] != "BTC-25DEC36-100000-C" {
 		t.Errorf("file = %v, want the header once and one row per snapshot", all)
 	}
 
@@ -107,10 +108,10 @@ func (c *usdcSummaryCaller) Call(_ context.Context, method string, params any, _
 		return gateway.JSONRPCResponse{}, fmt.Errorf("unexpected method %s", method)
 	}
 	return gateway.JSONRPCResponse{Result: json.RawMessage(`[
-		{"instrument_name":"BTC_USDC-27NOV26-96000-C","underlying_price":87000,"mark_iv":38,"bid_price":855,"ask_price":875,"mid_price":865,"mark_price":866,"open_interest":4},
-		{"instrument_name":"BTC_USDC-27NOV26-73000-P","underlying_price":87000,"mark_iv":42,"bid_price":1020,"ask_price":1040,"mid_price":1030,"mark_price":1031,"open_interest":2.1},
-		{"instrument_name":"ETH_USDC-27NOV26-3000-C","underlying_price":2500,"mark_iv":60,"mid_price":20},
-		{"instrument_name":"SOL_USDC-27NOV26-200-C","underlying_price":150,"mark_iv":70,"mid_price":2}]`)}, nil
+		{"instrument_name":"BTC_USDC-25DEC36-96000-C","underlying_price":87000,"mark_iv":38,"bid_price":855,"ask_price":875,"mid_price":865,"mark_price":866,"open_interest":4},
+		{"instrument_name":"BTC_USDC-25DEC36-73000-P","underlying_price":87000,"mark_iv":42,"bid_price":1020,"ask_price":1040,"mid_price":1030,"mark_price":1031,"open_interest":2.1},
+		{"instrument_name":"ETH_USDC-25DEC36-3000-C","underlying_price":2500,"mark_iv":60,"mid_price":20},
+		{"instrument_name":"SOL_USDC-25DEC36-200-C","underlying_price":150,"mark_iv":70,"mid_price":2}]`)}, nil
 }
 
 // 2026-10-13: the USDC-settled options are recorded beside the coin-settled

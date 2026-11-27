@@ -23,8 +23,8 @@ export function toUSD(value, unit, spot) {
   return isNumber(spot) ? value * spot : null;
 }
 
-/** Fixed decimals of each coin's P&L: BTC 5, ETH 4; another coin 5. */
-export const COIN_DIGITS = { BTC: 5, ETH: 4 };
+/** Fixed decimals of each unit's P&L: BTC 5, ETH 4, USDC 2 (cents, #837); another coin 5. */
+export const COIN_DIGITS = { BTC: 5, ETH: 4, USDC: 2 };
 
 export const coinDigits = (unit) => COIN_DIGITS[String(unit ?? "").toUpperCase()] ?? 5;
 

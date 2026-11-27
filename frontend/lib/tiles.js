@@ -9,8 +9,8 @@ import { hedgeShown } from "./futuresHedge";
 import { clockHM, coinOf, plainFreeze, stateWords, worstCaseLine } from "./overview";
 import { formatSignedPct, formatSignedUSD, toneOf } from "./summary";
 
-/** Fixed decimals per coin (product owner, #404): BTC 5, ETH 4; any other coin 4. */
-export const COIN_DECIMALS = { BTC: 5, ETH: 4 };
+/** Fixed decimals per coin (product owner, #404): BTC 5, ETH 4, USDC 2 (cents, #837); any other coin 4. */
+export const COIN_DECIMALS = { BTC: 5, ETH: 4, USDC: 2 };
 
 export const coinDigits = (coin) => COIN_DECIMALS[coin] ?? 4;
 

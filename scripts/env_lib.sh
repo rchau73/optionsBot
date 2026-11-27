@@ -116,17 +116,22 @@ env_linear_check() {
   done
 }
 
-# env_compose_vars <env> — the variables env_compose exports for the stack:
-# with BOT_LINEAR=1 the compose profile of the SOL and XRP bots and their
-# monitor entries (appended to BOT_APIS), else none of either.
+# env_compose_vars <env> [compose command] — the variables env_compose exports
+# for the stack: with BOT_LINEAR=1 the compose profile of the SOL and XRP bots
+# and their monitor entries (appended to BOT_APIS), else none of either.
+# down, stop, rm and kill always take the profile, so a stack switched back to
+# BOT_LINEAR=0 still stops the SOL and XRP containers it started (#906 review).
 env_compose_vars() {
   if env_linear "$1"; then
     echo "COMPOSE_PROFILES=linear"
     echo "MONITOR_LINEAR_APIS=,sol=http://bot-sol:8083,xrp=http://bot-xrp:8084"
-  else
-    echo "COMPOSE_PROFILES="
-    echo "MONITOR_LINEAR_APIS="
+    return 0
   fi
+  case "${2:-}" in
+    down | stop | rm | kill) echo "COMPOSE_PROFILES=linear" ;;
+    *) echo "COMPOSE_PROFILES=" ;;
+  esac
+  echo "MONITOR_LINEAR_APIS="
 }
 
 # env_platform_dirs — every environment directory of the platform: each
@@ -183,7 +188,7 @@ env_compose() {
   local name="$1"; shift
   local dir line; dir="$(env_dir "$name")"
   (cd "$dir" &&
-    while IFS= read -r line; do export "${line?}"; done < <(env_compose_vars "$name") &&
+    while IFS= read -r line; do export "${line?}"; done < <(env_compose_vars "$name" "${1:-}") &&
     BOT_VERSION="$(env_version "$name")" docker compose --env-file .env --env-file deploy.env "$@")
 }
 
