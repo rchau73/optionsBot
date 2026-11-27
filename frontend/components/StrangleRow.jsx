@@ -33,12 +33,15 @@ function RangeStrip({ r }) {
   );
 }
 
-/** sp: one strangle of /api/strangles/payoff; coin: its underlying; onOpen(strangleId, element). */
-export default function StrangleRow({ sp, coin, onOpen }) {
+/**
+ * sp: one strangle of /api/strangles/payoff; coin: its underlying; unit: its
+ * amounts' unit (USDC for SOL/XRP, #837; the coin by default); onOpen(strangleId, element).
+ */
+export default function StrangleRow({ sp, coin, unit = coin, onOpen }) {
   const days = daysLeft(sp);
   const r = rangeStrip(sp);
   const kept = keptOf(sp);
-  const pnl = fmtCoin(sp.unrealised_coin, coin);
+  const pnl = fmtCoin(sp.unrealised_coin, unit);
   const notes = (sp.missing ?? []).map(missingLine).filter(Boolean);
   const daysText = days != null ? `${days} d left` : "days left unknown";
   const distance = r ? r.distanceText : "spot unknown";
@@ -62,7 +65,7 @@ export default function StrangleRow({ sp, coin, onOpen }) {
         </span>
         <span className="text-right tabular-nums">
           <span className={clsx("block text-sm font-semibold", sp.unrealised_coin > 0 && "text-profit", sp.unrealised_coin < 0 && "text-loss")}>{pnl}</span>
-          <span className="block text-xs text-muted">≈ {formatSignedUSD(sp.unrealised_usd)}</span>
+          {unit === "USDC" ? null : <span className="block text-xs text-muted">≈ {formatSignedUSD(sp.unrealised_usd)}</span>}
         </span>
       </span>
       {r ? <RangeStrip r={r} /> : null}

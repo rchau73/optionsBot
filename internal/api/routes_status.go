@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"optionsbot/internal/account"
+	"optionsbot/internal/config"
 	"optionsbot/internal/gateway"
 	"optionsbot/internal/history"
 )
@@ -36,6 +37,7 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		"as_of":            v.AsOf,
 		"strategy_id":      v.StrategyID,
 		"underlying":       v.Underlying,
+		"unit":             config.SettlementCurrency(v.Underlying), // the amounts' unit: the coin, USDC for SOL and XRP (#837)
 		"environment":      v.Environment,
 		"deployment":       s.deployment,
 		"version":          s.version,

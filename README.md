@@ -212,6 +212,7 @@ It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go
 | Key | Default | Meaning |
 |---|---|---|
 | `DERIBIT_CLIENT_ID`, `DERIBIT_CLIENT_SECRET` | — | API credentials (needed to trade, not to backtest); never logged |
+| `SOL_DERIBIT_CLIENT_ID`, `SOL_DERIBIT_CLIENT_SECRET`, `XRP_DERIBIT_CLIENT_ID`, `XRP_DERIBIT_CLIENT_SECRET` | — | the SOL and XRP bots' own accounts ([SOL and XRP bots](#sol-and-xrp-bots)); compose hands each to its bot as `DERIBIT_CLIENT_ID`/`SECRET` |
 | `DERIBIT_ENV` | `testnet` | `testnet` or `live` (anything else is rejected) |
 | `DERIBIT_RATE_WS_NONMATCH_RPS` / `_WS_MATCH_RPS` | 20 / 8 | Deribit credit pools: general requests / order operations |
 | `DERIBIT_RATE_SAFETY_FACTOR` | 0.80 | use at most this share of each limit |
@@ -223,6 +224,15 @@ It is generated from `config.Tunables()` (`internal/config/catalogue.go`) by `go
 | `BOT_ACCOUNT_POLL_SEC` | 10 | how often the account/collateral summary is polled for the monitor (one read-only call; minimum 2) |
 | `BOT_API_ADDR` | empty (off) | address of the read-only monitor API, e.g. `127.0.0.1:8081`; Docker Compose sets it per service. Its read-only routes (`/api/status`, `/positions`, `/orders`, `/pnl`, `/pnl/history`, `/events`, `/account`, `/trades`, `/summary`, `/performance?range=7d\|30d\|all` — net return vs holding the coin, max drawdown, worst week, missing days, labelled live/testnet, #232) are described in [`frontend/README.md`](frontend/README.md) |
 | `BOT_ADMIN_TOKEN` | empty (off) | secret for the monitor's state-changing actions, bearer token; Docker Compose passes it to the monitor. **Manual close** (`POST /api/positions/close`): testnet only, and only for a leg under the regime-side block. **Manual rebalance** (`POST /api/rebalance[?dry_run=true]`): live and testnet, same gates as the automatic rebalance |
+
+### SOL and XRP bots
+
+The mvp environment runs `bot-sol` and `bot-xrp` beside BTC and ETH (#837): USDC-settled options on `config_sol.yaml` and `config_xrp.yaml`, slots 30 and 50 DTE at 0.16 Δ, the futures hedge on from the first start, 5,000 USDC each.
+They start only with `BOT_LINEAR=1` in the clone's `deploy.env` (`deploy.env.example`), and each needs its **own** Deribit testnet subaccount, never the BTC/ETH one.
+The person adds four variables to the mvp clone's `.env`: `SOL_DERIBIT_CLIENT_ID`, `SOL_DERIBIT_CLIENT_SECRET`, `XRP_DERIBIT_CLIENT_ID`, `XRP_DERIBIT_CLIENT_SECRET` (trade-only keys, `account:read trade:read_write`).
+`envctl up` and `deploy.sh` refuse while one is missing or any two bots share an account; Docker Desktop needs more than 3 GB of memory for six containers.
+Details: [`docs/operations.md`](docs/operations.md) "Environments".
+The monitor lists them in its coin selector like any bot, with every amount in USDC (`/api/status` `unit`).
 
 ## Backtesting
 

@@ -41,6 +41,7 @@ Your development checkout runs neither.
 | Market recorder | on | off (`BOT_RECORD_MARKET=0`): one dataset, no duplicate mainnet calls |
 | BTC direction source (`gex_direction`) | `bias` (`config_btc.yaml`) | `sma` (`config_btc.mvp.yaml`, `BOT_CONFIG_BTC` in `deploy.env`, #168): the two react to the same BTC moves with different shed rules |
 | Agents | the SME agent judges performance here | the agents run from this clone; the SME agent verifies fixes here |
+| Bots | `bot-btc`, `bot-eth` | also `bot-sol` and `bot-xrp` (#837, `BOT_LINEAR=1` in `deploy.env`), each on its **own** testnet account with 5,000 USDC |
 
 The environments folder is `optionsBot-env` beside your checkout (`~/dev/go/optionsBot` → `~/dev/go/optionsBot-env`), holding `stable/`, `mvp/`, `history/` (deploys and promotions) and `agent-worktrees/`; set `OPTIONSBOT_ENVS` to put it elsewhere.
 
@@ -53,7 +54,7 @@ Two environments on one account would cancel each other's orders and manage each
 `envctl.sh` refuses to start an environment whose `DERIBIT_CLIENT_ID` (or monitor port) another one uses.
 The account check covers every folder of `~/dev/go/optionsBot-env` with a `.env`, not only stable and mvp (#538, `env_accounts_distinct`), and names both folders.
 When a clone holds an account registry (`data/accounts.json`, `internal/accounts`), the check also reads it through `go run ./cmd/accounts -check -json` (#800, `env_registry_check`, `scripts/env_registry.py`; read-only):
-- each bot is matched to its account by currency and config file name (BTC: `BOT_CONFIG_BTC` of `deploy.env`, else `config_btc.yaml`; ETH: `config_eth.yaml`);
+- each bot is matched to its account by currency and config file name (BTC: `BOT_CONFIG_BTC` of `deploy.env`, else `config_btc.yaml`; ETH: `config_eth.yaml`; with `BOT_LINEAR=1`, SOL: `config_sol.yaml` and XRP: `config_xrp.yaml`);
 - it refuses a registry that breaks a rule, an account whose key is not `ok` (missing, revoked, may move funds, unknown scope), a bot listed under two accounts, and two folders whose registries map a bot to the same account id (naming both folders);
 - a bot not in the registry is noted on stderr, and refused only when the registry lists its currency under another account;
 - the refusal names the account id and the state, never a key id, client id or scope string; without a registry file nothing changes.
@@ -69,9 +70,31 @@ scripts/envctl.sh stable stop bot-eth   # any scripts/envctl.sh stable command, 
 scripts/envctl.sh stable down
 ```
 
-Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml`.
-That file is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there.
+Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml` and `BOT_LINEAR=1` (`deploy.env.example` shows both).
+`config_btc.mvp.yaml` is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there.
 `envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**).
+
+**The SOL and XRP bots (mvp, #837).**
+They trade Deribit's USDC-settled options on `config_sol.yaml` and `config_xrp.yaml` (slots 30 and 50 DTE at 0.16 Δ), with the futures hedge on from their first start.
+`BOT_LINEAR=1` in `deploy.env` turns them on: `env_compose` then starts the compose profile `linear` (`bot-sol` on `:8083`, `bot-xrp` on `:8084`, data in `data/sol` and `data/xrp`) and adds them to the monitor's `BOT_APIS` (`env_compose_vars`).
+Without it (stable, or an mvp clone whose `deploy.env` predates it) nothing changes; stable gets them only when a person adds the line and the keys there after a release.
+To switch them off, set `BOT_LINEAR=0` and run `scripts/envctl.sh mvp stop bot-sol bot-xrp`, then redeploy: a deploy's `up` leaves the two containers out but does not stop them, while `down`, `stop`, `rm` and `kill` always include the profile.
+Each runs on its **own** Deribit testnet account, never the BTC/ETH one: two USDC bots on one account would cancel each other's orders and share one USDC margin.
+The person adds the keys to the mvp clone's `.env`, each a trade-only key (`account:read trade:read_write`) of a subaccount holding 5,000 USDC:
+
+```bash
+SOL_DERIBIT_CLIENT_ID=…      SOL_DERIBIT_CLIENT_SECRET=…
+XRP_DERIBIT_CLIENT_ID=…      XRP_DERIBIT_CLIENT_SECRET=…
+```
+
+Compose passes them to the bot as its `DERIBIT_CLIENT_ID`/`SECRET`; the bot's `.env` never overrides a variable already set, so a SOL bot without its keys refuses to trade rather than use the BTC/ETH account.
+`env_check` refuses to start (`envctl up`, `deploy.sh`, `promote.sh`) when `BOT_LINEAR=1` and a key is missing, and when any two bots of the platform share a client id — SOL and XRP, either and the BTC/ETH account, or another folder's (`env_accounts_distinct` reads `DERIBIT_CLIENT_ID`, `SOL_DERIBIT_CLIENT_ID` and `XRP_DERIBIT_CLIENT_ID`).
+With an account registry the SOL and XRP bots are matched by `config_sol.yaml` and `config_xrp.yaml` too.
+Six containers need more memory: give Docker Desktop more than 3 GB before turning them on (2026-11-26: four bots ran it out).
+```bash
+scripts/envctl.sh mvp logs -f bot-sol
+```
+
 A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
 
 ### Releasing to stable

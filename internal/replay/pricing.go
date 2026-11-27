@@ -10,6 +10,10 @@ package replay
 
 import (
 	"math"
+	"path/filepath"
+	"strings"
+
+	"optionsbot/internal/config"
 
 	"optionsbot/internal/orders"
 	"optionsbot/internal/recorder"
@@ -51,10 +55,43 @@ func BuyFill(q recorder.Quote) Fill {
 // Fee is Deribit's fee for qty contracts traded at price.
 func Fee(price, qty float64) float64 { return orders.OptionFee(FeePerContract, price, qty) }
 
+// LinearFee is Deribit's fee for qty units of a USDC-settled option (SOL,
+// XRP, #837) traded at price with the index at spot, in USDC.
+func LinearFee(spot, price, qty float64) float64 { return orders.LinearOptionFee(spot, price, qty) }
+
+// linearLots are the contract steps of Deribit's USDC-settled options the
+// replay trades (#832: whole contracts of 10 SOL, 1,000 XRP).
+var linearLots = map[string]float64{"SOL": 10, "XRP": 1000}
+
+// DefaultGEXDir is the minute GEX records a replay of booksDir reads when
+// -gex is not given: market_gex beside the books, which the recorder writes
+// for the BTC book only — so "none" (hourly GEX rebuilt from the coin's own
+// book) for a linear coin, whose spot, regime and flip are not BTC's (#837).
+func DefaultGEXDir(booksDir, underlying string) string {
+	if config.IsLinear(underlying) {
+		return "none"
+	}
+	return filepath.Join(filepath.Dir(filepath.Clean(booksDir)), "market_gex")
+}
+
+// LotFor is the replay's order step for underlying: Deribit's minimum for an
+// inverse option (0.1 BTC, 1 ETH), the contract for a linear one.
+func LotFor(underlying string) float64 {
+	u := strings.ToUpper(underlying)
+	if lot, ok := linearLots[u]; ok {
+		return lot
+	}
+	if u == "BTC" {
+		return 0.1
+	}
+	return 1
+}
+
 // MODEL: portfolio margin. Deribit's portfolio margin is the worst loss over
 // a grid of underlying moves and volatility shocks; the scan below uses spot
 // ±16 % and IV −20 % / +30 %, each leg repriced with Black–Scholes on its own
-// recorded IV (inverse option: price in the coin). MM is MMRatio of IM.
+// recorded IV (inverse option: price in the coin; linear, #837: in USDC).
+// MM is MMRatio of IM.
 var (
 	spotShocks = []float64{0.84, 0.88, 0.92, 0.96, 1, 1.04, 1.08, 1.12, 1.16}
 	volShocks  = []float64{0.8, 1, 1.3}
@@ -70,37 +107,46 @@ type marginLeg struct {
 	years, iv   float64
 }
 
-// scanIM is the worst loss of the short legs over the shock grid, in the coin.
-func scanIM(legs []marginLeg, spot float64) float64 { return scanPortfolioIM(legs, 0, spot) }
+// scanIM is the worst loss of the short legs over the shock grid, in the
+// settlement currency (the coin; USDC when linear).
+func scanIM(linear bool, legs []marginLeg, spot float64) float64 {
+	return scanPortfolioIM(linear, legs, 0, spot)
+}
 
-// scanPortfolioIM is scanIM with an inverse perpetual of perpUSD (USD
-// notional, negative = short) in the book (the shed study's hedge, #637).
-func scanPortfolioIM(legs []marginLeg, perpUSD, spot float64) float64 {
+// scanPortfolioIM is scanIM with a perpetual of perpUSD (USD notional,
+// negative = short) in the book (the shed study's hedge, #637): inverse, or
+// the linear USDC perpetual when linear.
+func scanPortfolioIM(linear bool, legs []marginLeg, perpUSD, spot float64) float64 {
 	worst := 0.0
 	for _, sm := range spotShocks {
 		for _, vm := range volShocks {
-			worst = math.Max(worst, shockLoss(legs, perpUSD, spot, sm, vm))
+			worst = math.Max(worst, shockLoss(linear, legs, perpUSD, spot, sm, vm))
 		}
 	}
 	return worst
 }
 
-// shockLoss is the book's loss in the coin when spot moves × sm and every IV × vm.
-func shockLoss(legs []marginLeg, perpUSD, spot, sm, vm float64) float64 {
-	loss := -perpPnL(perpUSD, spot, spot*sm)
+// shockLoss is the book's loss in the settlement currency when spot moves ×
+// sm and every IV × vm.
+func shockLoss(linear bool, legs []marginLeg, perpUSD, spot, sm, vm float64) float64 {
+	loss := -perpPnL(linear, perpUSD, spot, spot*sm)
 	for _, l := range legs {
-		p0 := inversePrice(l.optType, spot, l.strike, l.years, l.iv)
-		p1 := inversePrice(l.optType, spot*sm, l.strike, l.years, l.iv*vm)
-		loss += l.qty * (p1 - p0) // a short owes more coin as its price rises
+		p0 := optionPrice(linear, l.optType, spot, l.strike, l.years, l.iv)
+		p1 := optionPrice(linear, l.optType, spot*sm, l.strike, l.years, l.iv*vm)
+		loss += l.qty * (p1 - p0) // a short owes more as its price rises
 	}
 	return loss
 }
 
-// perpPnL is what an inverse perpetual of usd (USD notional, negative =
-// short) earns in the coin when its price moves from p0 to p1.
-func perpPnL(usd, p0, p1 float64) float64 {
+// perpPnL is what a perpetual of usd (USD notional, negative = short) earns
+// when its price moves from p0 to p1: in the coin for the inverse one, in
+// USDC for the linear one (usd ÷ p0 coins × the move).
+func perpPnL(linear bool, usd, p0, p1 float64) float64 {
 	if p0 <= 0 || p1 <= 0 {
 		return 0
+	}
+	if linear {
+		return usd / p0 * (p1 - p0)
 	}
 	return usd * (1/p0 - 1/p1)
 }
@@ -114,8 +160,8 @@ const (
 
 // gapLoss is the held book's loss in the coin if spot gapped × move with IV ×
 // ivMult (no exit fills inside the gap).
-func gapLoss(legs []marginLeg, perpUSD, spot, move, ivMult float64) float64 {
-	return math.Max(shockLoss(legs, perpUSD, spot, move, ivMult), 0)
+func gapLoss(linear bool, legs []marginLeg, perpUSD, spot, move, ivMult float64) float64 {
+	return math.Max(shockLoss(linear, legs, perpUSD, spot, move, ivMult), 0)
 }
 
 // Widen is q with its spread m times as wide around the same mid (the
@@ -129,6 +175,16 @@ func Widen(q recorder.Quote, m float64) recorder.Quote {
 	q.Bid = math.Max(mid-m*(mid-q.Bid), q.Bid/m)
 	q.Ask = mid + m*(q.Ask-mid)
 	return q
+}
+
+// optionPrice is the option's model price in its settlement currency: the
+// inverse price in the coin, or ×spot (the USD price) for a linear option.
+func optionPrice(linear bool, optType string, s, k, t, sigma float64) float64 {
+	p := inversePrice(optType, s, k, t, sigma)
+	if linear {
+		return p * s
+	}
+	return p
 }
 
 // inversePrice is the Black–Scholes price of an option in the coin (USD

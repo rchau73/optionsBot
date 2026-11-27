@@ -204,13 +204,13 @@ func (e *engine) targetLots(s *strangle, spot, share float64) (lots int, imPerLo
 		return 0, imPerLot
 	}
 	alone := []marginLeg{e.marginLeg(s.call, e.lot), e.marginLeg(s.put, e.lot)}
-	lots, _ = strategy.CapLots(lots, strategy.TargetLots(share, scanIM(alone, spot)), e.cfg.MaxLegSizeMultiple)
+	lots, _ = strategy.CapLots(lots, strategy.TargetLots(share, scanIM(e.linear, alone, spot)), e.cfg.MaxLegSizeMultiple)
 	return lots, imPerLot
 }
 
 // imPerLot is the IM buying one lot of each of s's legs back frees.
 func (e *engine) imPerLot(s *strangle, spot float64) float64 {
-	return scanIM(e.marginLegs(), spot) - scanIM(e.marginLegsLess(s, e.lot), spot)
+	return scanIM(e.linear, e.marginLegs(), spot) - scanIM(e.linear, e.marginLegsLess(s, e.lot), spot)
 }
 
 func (e *engine) marginLeg(p *orders.Position, qty float64) marginLeg {
@@ -389,7 +389,7 @@ func (e *engine) slotShareRatio(spot, limitPct float64) float64 {
 				}
 			}
 		}
-		most = math.Max(most, scanIM(legs, spot))
+		most = math.Max(most, scanIM(e.linear, legs, spot))
 	}
 	return most / share
 }

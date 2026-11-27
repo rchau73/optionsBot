@@ -143,16 +143,17 @@ func TestLabRunner_FailedRunSaysSo(t *testing.T) {
 	}
 
 	// A request that cannot run at all (no config for its coin, no report written) fails too.
+	// ADA: a coin with no shipped config (SOL has one since #837).
 	o, _ = labQueue(t, labReqID)
 	body, _ := os.ReadFile(filepath.Join(o.QueueDir, labReqID+".json"))
-	_ = os.WriteFile(filepath.Join(o.QueueDir, labReqID+".json"), bytes.Replace(body, []byte(`"BTC"`), []byte(`"SOL"`), 1), 0o600)
+	_ = os.WriteFile(filepath.Join(o.QueueDir, labReqID+".json"), bytes.Replace(body, []byte(`"BTC"`), []byte(`"ADA"`), 1), 0o600)
 	if _, err := compare.RunLabQueue(context.Background(), o, func() time.Time { return labNow }, func(context.Context, []string) (string, error) {
 		t.Error("cmd/compare must not run without a config")
 		return "", nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if r := labRequest(t, o, labReqID); r.Status != compare.StatusFailed || r.Reason != "no config for SOL (config_sol.yaml)" {
+	if r := labRequest(t, o, labReqID); r.Status != compare.StatusFailed || r.Reason != "no config for ADA (config_ada.yaml)" {
 		t.Errorf("no config: %+v", r)
 	}
 	if _, err := compare.RunIDFromOutput("compare printed nothing useful"); err == nil {

@@ -17,6 +17,10 @@
 #   OPTIONSBOT_ENV=stable     the environment's name (stable | mvp)
 #   MONITOR_PORT=3000         its monitor on 127.0.0.1 (stable 3000, mvp 3100)
 #   BOT_RECORD_MARKET=1       market recorders: on in stable only
+#   BOT_LINEAR=1              the SOL and XRP bots (#837, mvp): the compose
+#                             profile "linear" and their monitor entries; each
+#                             trades on its own account, SOL_/XRP_DERIBIT_CLIENT_ID
+#                             and _SECRET in the clone's .env
 #
 # History (who ran what, when) lives outside both clones, in
 # <envs>/history/: deploys.tsv (mvp) and promotions.tsv (stable).
@@ -58,23 +62,76 @@ env_monitor_url() { echo "http://127.0.0.1:$(env_port "$1")"; }
 # monitor's read-only service token (GET /api/bots/* without a session).
 env_monitor_token() { env_file_var "$(env_dir "$1")/.env" MONITOR_API_TOKEN; }
 
-# env_accounts_distinct <dir>... — no two of these environment directories
-# hold the same DERIBIT_CLIENT_ID in their .env (#538: a bot cancels every
-# order of its currency at startup and adopts every short it finds, so two bots
-# on one account fight). Prints both directories and fails otherwise; a
+# ENV_LINEAR_COINS — the bots BOT_LINEAR=1 adds (#837), each on its own
+# account: <COIN>_DERIBIT_CLIENT_ID and <COIN>_DERIBIT_CLIENT_SECRET in .env.
+ENV_LINEAR_COINS="SOL XRP"
+# ENV_ACCOUNT_VARS — every .env variable naming a bot's Deribit account.
+ENV_ACCOUNT_VARS="DERIBIT_CLIENT_ID SOL_DERIBIT_CLIENT_ID XRP_DERIBIT_CLIENT_ID"
+
+# env_accounts_distinct <dir>... — no two bots of these environment
+# directories share a Deribit account: no client id (DERIBIT_CLIENT_ID, and the
+# SOL and XRP bots' own, ENV_ACCOUNT_VARS) appears twice, in one .env or across
+# two (#538: a bot cancels every order of its currency at startup and adopts
+# every short it finds, so two bots on one account fight; #837: two USDC bots
+# would also share one USDC margin). Prints both and fails otherwise; a
 # directory without a .env or a client id is skipped.
 env_accounts_distinct() {
-  local dirs=("$@") i j id oid
-  for ((i = 0; i < ${#dirs[@]}; i++)); do
-    id="$(env_file_var "${dirs[i]}/.env" DERIBIT_CLIENT_ID)"
-    [[ -n "$id" ]] || continue
-    for ((j = i + 1; j < ${#dirs[@]}; j++)); do
-      oid="$(env_file_var "${dirs[j]}/.env" DERIBIT_CLIENT_ID)"
-      if [[ "$oid" == "$id" ]]; then
-        echo "${dirs[i]} and ${dirs[j]} use the same Deribit account (DERIBIT_CLIENT_ID): each environment needs its own subaccount"; return 1
-      fi
+  local i j d v id
+  local ids=() wdir=() wvar=()
+  for d in "$@"; do
+    for v in $ENV_ACCOUNT_VARS; do
+      id="$(env_file_var "$d/.env" "$v")"
+      [[ -n "$id" ]] || continue
+      ids+=("$id"); wdir+=("$d"); wvar+=("$v")
     done
   done
+  for ((i = 0; i < ${#ids[@]}; i++)); do
+    for ((j = i + 1; j < ${#ids[@]}; j++)); do
+      [[ "${ids[i]}" == "${ids[j]}" ]] || continue
+      if [[ "${wvar[i]}" == DERIBIT_CLIENT_ID && "${wvar[j]}" == DERIBIT_CLIENT_ID ]]; then
+        echo "${wdir[i]} and ${wdir[j]} use the same Deribit account (DERIBIT_CLIENT_ID): each environment needs its own subaccount"
+      else
+        echo "${wdir[i]} (${wvar[i]}) and ${wdir[j]} (${wvar[j]}) use the same Deribit account: each bot needs its own subaccount"
+      fi
+      return 1
+    done
+  done
+}
+
+# env_linear <env> — the environment runs the SOL and XRP bots (BOT_LINEAR=1
+# in its deploy.env, #837).
+env_linear() { [[ "$(env_file_var "$(env_dir "$1")/deploy.env" BOT_LINEAR)" == "1" ]]; }
+
+# env_linear_check <env> — with BOT_LINEAR=1, each linear bot has its own
+# credentials in .env. Prints what is missing and fails otherwise.
+env_linear_check() {
+  local dir c
+  env_linear "$1" || return 0
+  dir="$(env_dir "$1")"
+  for c in $ENV_LINEAR_COINS; do
+    if [[ -z "$(env_file_var "$dir/.env" "${c}_DERIBIT_CLIENT_ID")" || -z "$(env_file_var "$dir/.env" "${c}_DERIBIT_CLIENT_SECRET")" ]]; then
+      echo "$dir/deploy.env has BOT_LINEAR=1 but .env has no ${c}_DERIBIT_CLIENT_ID and ${c}_DERIBIT_CLIENT_SECRET: the $c bot's own testnet account (README \"SOL and XRP bots\")"
+      return 1
+    fi
+  done
+}
+
+# env_compose_vars <env> [compose command] — the variables env_compose exports
+# for the stack: with BOT_LINEAR=1 the compose profile of the SOL and XRP bots
+# and their monitor entries (appended to BOT_APIS), else none of either.
+# down, stop, rm and kill always take the profile, so a stack switched back to
+# BOT_LINEAR=0 still stops the SOL and XRP containers it started (#906 review).
+env_compose_vars() {
+  if env_linear "$1"; then
+    echo "COMPOSE_PROFILES=linear"
+    echo "MONITOR_LINEAR_APIS=,sol=http://bot-sol:8083,xrp=http://bot-xrp:8084"
+    return 0
+  fi
+  case "${2:-}" in
+    down | stop | rm | kill) echo "COMPOSE_PROFILES=linear" ;;
+    *) echo "COMPOSE_PROFILES=" ;;
+  esac
+  echo "MONITOR_LINEAR_APIS="
 }
 
 # env_platform_dirs — every environment directory of the platform: each
@@ -108,6 +165,7 @@ env_check() {
   [[ -f "$dir/.env" ]] || { echo "$dir/.env is missing: this environment's own Deribit credentials"; return 1; }
   id="$(env_file_var "$dir/.env" DERIBIT_CLIENT_ID)"
   [[ -n "$id" ]] || { echo "$dir/.env has no DERIBIT_CLIENT_ID"; return 1; }
+  env_linear_check "$name" || return 1
   while IFS= read -r d; do dirs+=("$d"); done < <(env_platform_dirs)
   env_accounts_distinct "${dirs[@]}" || return 1
   for other in $ENV_NAMES; do
@@ -125,10 +183,13 @@ env_check() {
 env_version() { git -C "$(env_dir "$1")" describe --tags --always 2>/dev/null; }
 
 # env_compose <env> <docker compose args...> — the only way a stack is run.
+# The SOL and XRP bots run only with BOT_LINEAR=1 (env_compose_vars).
 env_compose() {
   local name="$1"; shift
-  local dir; dir="$(env_dir "$name")"
-  (cd "$dir" && BOT_VERSION="$(env_version "$name")" docker compose --env-file .env --env-file deploy.env "$@")
+  local dir line; dir="$(env_dir "$name")"
+  (cd "$dir" &&
+    while IFS= read -r line; do export "${line?}"; done < <(env_compose_vars "$name" "${1:-}") &&
+    BOT_VERSION="$(env_version "$name")" docker compose --env-file .env --env-file deploy.env "$@")
 }
 
 # wait_healthy <monitor url> <timeout sec> [token] — every bot's decision loop

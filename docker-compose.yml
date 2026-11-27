@@ -12,7 +12,7 @@ x-bot-env: &bot-env
 
 services:
   # One bot per underlying. Each runs in its own host folder (data/btc,
-  # data/eth): bot.log, orders.log (decision journal), hedge_report.json and
+  # data/eth, data/sol, data/xrp): bot.log, orders.log (decision journal), hedge_report.json and
   # data/ (P&L and gamma-regime history) persist there across rebuilds, and the
   # two bots never write the same file. Config and .env are mounted read-only.
   bot-btc:
@@ -42,13 +42,50 @@ services:
       <<: *bot-env
       BOT_API_ADDR: ":8082"
 
+  # SOL and XRP bots on USDC-settled options (#837): only with BOT_LINEAR=1 in
+  # deploy.env (mvp), which env_compose turns into the "linear" profile. Each
+  # trades on its OWN Deribit account: compose sets DERIBIT_CLIENT_ID/SECRET
+  # from SOL_*/XRP_* in .env, and the bot's .env never overrides a variable
+  # already set (godotenv.Load), so an empty one refuses to trade rather than
+  # fall back to the BTC/ETH account. env_check refuses missing or shared keys.
+  bot-sol:
+    build: .
+    profiles: [linear]
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--env-file", "/app/.env"]
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./config_sol.yaml:/app/config.yaml:ro
+      - ./data/sol:/app/run
+    environment:
+      <<: *bot-env
+      BOT_API_ADDR: ":8083"
+      DERIBIT_CLIENT_ID: ${SOL_DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${SOL_DERIBIT_CLIENT_SECRET:-}
+
+  bot-xrp:
+    build: .
+    profiles: [linear]
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--env-file", "/app/.env"]
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./config_xrp.yaml:/app/config.yaml:ro
+      - ./data/xrp:/app/run
+    environment:
+      <<: *bot-env
+      BOT_API_ADDR: ":8084"
+      DERIBIT_CLIENT_ID: ${XRP_DERIBIT_CLIENT_ID:-}
+      DERIBIT_CLIENT_SECRET: ${XRP_DERIBIT_CLIENT_SECRET:-}
+
   # Live monitor UI on this machine only: stable http://localhost:3000, mvp :3100.
   monitor:
     build: ./frontend
     restart: unless-stopped
     depends_on: [bot-btc, bot-eth]
     environment:
-      - BOT_APIS=btc=http://bot-btc:8081,eth=http://bot-eth:8082
+      # MONITOR_LINEAR_APIS: ",sol=…,xrp=…" with BOT_LINEAR=1 (env_compose_vars), else empty.
+      - BOT_APIS=btc=http://bot-btc:8081,eth=http://bot-eth:8082${MONITOR_LINEAR_APIS:-}
       - MONITOR_POLL_MS=1000   # page refresh; polling never touches Deribit rate limits
       # Manual close (testnet): the monitor's proxy adds it; the browser never sees it. From .env.
       - BOT_ADMIN_TOKEN=${BOT_ADMIN_TOKEN:-}
