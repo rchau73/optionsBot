@@ -295,6 +295,16 @@ describe("Scenario: drop twice, or drop an applied run", () => {
     expect(linesOf(record, RECORD_AUDIT_ACTION)).toEqual([]);
   });
 
+  test("runs made seconds apart in one test never share an id (#912)", () => {
+    const real = Date.now();
+    const clock = jest.spyOn(Date, "now");
+    const ids = [0, 1500, 3000].map((later) => {
+      clock.mockReturnValue(real + later);
+      return newRun();
+    });
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   test("an apply and a drop sent together: exactly one stands", async () => {
     for (const order of ["apply-first", "drop-first"]) {
       const id = newRun();
