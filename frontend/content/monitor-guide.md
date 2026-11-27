@@ -329,6 +329,10 @@ On testnet the comparison is priced at the index: fills and marks at the index p
 If the hedge cannot trade, the GEX shed works as usual until it can, so the book is never left with neither; the card shows "Not holding" with the reason.
 When the exchange will not take its orders for a reason a retry cannot cure, such as scheduled maintenance or too few funds, the card shows "Paused" with the reason: no hedge orders are sent, the bot looks again every 10 minutes and resumes by itself.
 Only an admin may switch it.
+A SOL or XRP bot, whose options are settled in USDC, starts with the hedge on: at its first start on testnet the bot switches it on by itself, and the card and the journal name "first start" as who switched it.
+Once an admin switches it off, it stays off after a restart.
+Its perpetual is the coin's USDC perpetual, such as SOL_USDC-PERPETUAL: its size is in the coin (for example 2.8 SOL) and is shown in USD at its average price, and its orders are whole steps of the exchange's minimum size.
+Its results, fees and funding are paid in USDC; the card shows them in the coin at the mark, with USD beside them, as for BTC and ETH.
 Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
 If that preview cannot be read, the window says so and the admin can still switch off.
 If the perpetual cannot be closed, the experiment stays on.

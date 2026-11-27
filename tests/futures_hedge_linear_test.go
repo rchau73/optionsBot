@@ -176,9 +176,8 @@ func TestLinearHedge_OnAtFirstStart(t *testing.T) {
 	if err != nil || !st.Enabled || st.By.User != strategy.FirstStartActor.User {
 		t.Fatalf("the mode file says ON: %+v, %v", st, err)
 	}
-	if !f.strat.HedgeState().Enabled {
-		t.Error("the view says ON")
-	}
+	// The view is published at the end of the cycle that journaled the switch.
+	eventually(t, 2*time.Second, "the view says ON", func() bool { return f.strat.HedgeState().Enabled })
 	eventually(t, 2*time.Second, "the hedge trades", func() bool { return len(f.exch.solPerpOrders()) >= 1 })
 }
 
@@ -267,6 +266,105 @@ func TestLinearHedge_LedgerInUSDC(t *testing.T) {
 	}
 	if (hedge.Ledger{}).Summarise(0, 70).Unit != "" {
 		t.Error("an inverse ledger names no unit")
+	}
+	// The monitor's view shows it in the coin at the mark.
+	if c := s.InCoin(70); c.Unit != "" || math.Abs(c.AdvantageCoin-s.AdvantageCoin/70) > 1e-12 || c.AdvantageUSD != s.AdvantageUSD || math.Abs(c.RealCoin-s.RealCoin/70) > 1e-12 {
+		t.Errorf("in coin at 70: %+v from %+v", c, s)
+	}
+	if inv := (hedge.Ledger{Real: hedge.PerpBook{SizeUSD: -100, AvgPrice: 100000}}).Summarise(0, 90000); inv.InCoin(90000).AdvantageCoin != inv.AdvantageCoin || inv.InCoin(90000).RealCoin != inv.RealCoin {
+		t.Error("an inverse summary is already in coin")
+	}
+}
+
+// The linear order grid is the larger of the contract size and the minimum
+// trade amount (review of #901); the inverse one stays the contract size.
+func TestLinearHedge_OrderStepIsTheMinimumTrade(t *testing.T) {
+	linear, inverse := hedge.Perp{Linear: true}, hedge.Perp{}
+	for _, c := range []struct {
+		name                string
+		p                   hedge.Perp
+		contract, min, want float64
+	}{
+		{"linear, minimum above the contract", linear, 0.01, 1, 1},
+		{"linear, contract above the minimum", linear, 1, 0.1, 1},
+		{"linear, equal", linear, 0.1, 0.1, 0.1},
+		{"linear, no minimum", linear, 0.1, 0, 0.1},
+		{"inverse: the contract, whatever the minimum", inverse, 10, 20, 10},
+	} {
+		if got := c.p.Step(c.contract, c.min); got != c.want {
+			t.Errorf("%s: step %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// End to end: a perpetual whose minimum trade (1 SOL) is above its contract
+// (0.01 SOL) is traded in whole minimums: 2.8 SOL due → 3 SOL sent.
+func TestLinearHedge_OrderInWholeMinimums(t *testing.T) {
+	f, ff := newSOLHedgeFixture(t, 0.16, -0.30, "on")
+	ff.contract, ff.minTrade = 0.01, 1
+	f.startRun()
+	eventually(t, 2*time.Second, "perpetual sold", func() bool { return len(f.exch.solPerpOrders()) >= 1 })
+	if o := f.exch.solPerpOrders()[0]; o.Qty != 3 || o.Direction != orders.DirectionSell {
+		t.Fatalf("hedge order %+v, want sell 3 SOL (whole 1-SOL minimums)", o)
+	}
+}
+
+// The monitor's hedge figures of a SOL bot (review of #901): the size in SOL
+// apart, perp_usd and contract_usd in USD, the book scenarios with the
+// perpetual's linear P&L, and the switch-off preview's fee and delta in SOL.
+func TestLinearHedge_MonitorFiguresInCoinAndUSD(t *testing.T) {
+	f, _ := newSOLHedgeFixture(t, 0.16, -0.30, "on")
+	f.startRun()
+	eventually(t, 2*time.Second, "the view holds the perpetual", func() bool { return f.strat.HedgeState().PerpSize == -2.8 })
+	v := f.strat.HedgeState()
+	at := v.PerpAvg
+	if at <= 0 {
+		at = v.PerpMark
+	}
+	if v.SizeUnit != "SOL" || math.Abs(v.PerpUSD-(-2.8*at)) > 1e-9 || math.Abs(v.ContractUSD-0.1*at) > 1e-9 {
+		t.Fatalf("view: size %v %s, perp_usd %v, contract_usd %v; want −2.8 SOL, %v USD, %v USD", v.PerpSize, v.SizeUnit, v.PerpUSD, v.ContractUSD, -2.8*at, 0.1*at)
+	}
+	if n := math.Abs(v.PerpUSD) / v.ContractUSD; math.Abs(n-28) > 1e-9 {
+		t.Errorf("contracts from the view = %v, want 28", n)
+	}
+	if v.Benchmark.Unit != "" {
+		t.Errorf("the view's benchmark is in the coin, as the monitor labels it: unit %q", v.Benchmark.Unit)
+	}
+	if len(v.BookScenarios) != len(hedge.ScenarioMoves) {
+		t.Fatalf("book scenarios: %+v", v.BookScenarios)
+	}
+	for _, sc := range v.BookScenarios {
+		perpUSDC := -2.8 * (sc.Spot - 75) // short 2.8 SOL from spot
+		if math.Abs(sc.BookUSD-(sc.OptionsUSD+perpUSDC)) > 1e-9 || math.Abs(sc.BookCoin-(sc.OptionsCoin+perpUSDC/sc.Spot)) > 1e-12 {
+			t.Errorf("move %v %%: book %v USD, want options %v + perpetual %v", sc.MovePct, sc.BookUSD, sc.OptionsUSD, perpUSDC)
+		}
+	}
+	p, err := f.strat.HedgePreview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fee := 2.8 * p.PerpMark * 0.0005
+	if p.SizeUnit != "SOL" || p.PerpSize != -2.8 || p.PerpDeltaCoin != -2.8 || math.Abs(p.DeltaNow) > 1e-9 || math.Abs(p.DeltaAfter-2.8) > 1e-9 ||
+		math.Abs(p.CloseFeeUSD-fee) > 1e-9 || math.Abs(p.CloseFeeCoin-fee/p.PerpMark) > 1e-12 {
+		t.Errorf("preview %+v: want −2.8 SOL, delta 0 → +2.8, fee %v USDC", p.Preview, fee)
+	}
+}
+
+// The preview's rules, pure: linear in coin and USDC, inverse unchanged.
+func TestLinearHedge_PreviewRule(t *testing.T) {
+	in := hedge.PreviewInput{Spot: 75, OptionsDelta: 2.8, ScenarioDelta: 2.8, PerpUSD: -2.8, PerpAvg: 75, PerpMark: 70, FeeRate: 0.0005, Funding: 0.7}
+	inv := hedge.BuildPreview(in)
+	in.Kind = hedge.Perp{Linear: true}
+	lin := hedge.BuildPreview(in)
+	if lin.PerpUSD != -210 || lin.PerpSize != -2.8 || lin.PerpDeltaCoin != -2.8 || math.Abs(lin.UnrealisedUSD-14) > 1e-9 ||
+		math.Abs(lin.UnrealisedCoin-0.2) > 1e-9 || math.Abs(lin.CloseFeeUSD-0.098) > 1e-12 || math.Abs(lin.FundingCoin-0.01) > 1e-12 {
+		t.Errorf("linear preview %+v: short 2.8 SOL from 75 at 70 = +14 USDC (0.2 SOL), fee 0.098 USDC, funding 0.01 SOL", lin)
+	}
+	if inv.PerpSize != 0 || inv.PerpUSD != -2.8 || inv.PerpDeltaCoin != hedge.PerpDelta(-2.8, 70) || inv.CloseFeeCoin != hedge.TakerFee(-2.8, 70, 0.0005) {
+		t.Errorf("inverse preview changed: %+v", inv)
+	}
+	if got, want := (hedge.Perp{}).BookScenarios(100000, 0.1, 0, -1000), hedge.BookScenarios(100000, 0.1, 0, -1000); len(got) != len(want) || got[0] != want[0] || got[3] != want[3] {
+		t.Errorf("inverse book scenarios changed: %+v vs %+v", got, want)
 	}
 }
 
