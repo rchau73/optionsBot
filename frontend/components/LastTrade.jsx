@@ -15,8 +15,8 @@ import { formatSignedUSD } from "@/lib/summary";
 const LINK =
   "inline-flex min-h-11 items-center text-sm text-testnet underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-testnet";
 
-/** bot: one bot of useMonitor (its summary's last_action); coin: its underlying. */
-export default function LastTrade({ bot, coin }) {
+/** bot: one bot of useMonitor (its summary's last_action); coin: its underlying; unit: its amounts' unit (USDC for SOL/XRP, #837). */
+export default function LastTrade({ bot, coin, unit = coin }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const t = lastTradeLine(bot);
@@ -58,7 +58,7 @@ export default function LastTrade({ bot, coin }) {
           {t.detail ? <p className="text-xs text-muted">{t.detail}</p> : null}
           {t.pnlCoin != null || t.pnlUSD != null ? (
             <p className="text-base">
-              Result of that trade (past, net of fees): <Signed value={t.pnlCoin}>{formatCoin(t.pnlCoin, coin)}</Signed> ·{" "}
+              Result of that trade (past, net of fees): <Signed value={t.pnlCoin}>{formatCoin(t.pnlCoin, unit, unit === "USDC" ? 2 : 5)}</Signed> ·{" "}
               <Signed value={t.pnlUSD}>{formatSignedUSD(t.pnlUSD)}</Signed>
             </p>
           ) : null}

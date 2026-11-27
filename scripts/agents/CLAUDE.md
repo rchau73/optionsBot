@@ -52,6 +52,8 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
       and a new PR `Refs #n`, linked on the issue; closed unmerged → Blocked with a question; "pushed changes" only once the PR head on GitHub is the pushed commit;
     - a run blocked with commits ahead of main and no open PR pushes its branch, and the next run resumes it; without a PR the commits counted are those ahead of main (#517, `branch_work.sh`, `test_branch_work.py`);
     - `lib.sh open_dev_pr` finds an issue's open PR on either branch form (Dev, Reviewer; the gate strips `-r<k>`);
+    - a card that needs the frontend (`checkfail.py frontend-needed`: Files line, labels, branch; unsure = always) gets `npm ci` in the worktree before the agent starts (`frontend_deps.sh`, #900; a failure blocks with the log tail),
+      and the agent runs the frontend from the worktree root with `npm --prefix frontend test -- --ci <file>` / `run lint|build|test:phone` (docs/agents/dev.md);
   - the Reviewer agents (`review_agent.sh`, up to `REVIEW_PARALLEL` 1, developer skill in Review mode, read-only) reviews each new PR commit, verifies every finding, posts one comment review
     and sends blocking findings back to Ready (≤ 2 fix rounds, then `agent:needs-human`; clean → `agent:reviewed`);
   - **only ready PRs reach a person** (product owner 2026-10-19): `pr_gate.sh` (each tick, no Claude; rules in `pr_gate.py`) updates a PR behind main itself (`gh pr update-branch`),
@@ -69,7 +71,7 @@ go run ./cmd/dora -main main.tsv -tags tags.tsv -prs prs.json -issues issues.jso
     - `PR_AUTO_MERGE=0` in `agents.env` turns it off;
   - a human merges every policy change (ruleset: PR + green CI); a review that left a changed file unread is `incomplete`, never clean, and counts as no review (#476);
   - `deploy.sh` redeploys the **mvp** environment only (testnet, its clean `main` clone), building its images one service at a time
-    (a build killed for memory is built once more before it fails, `deploy_issue.py oom`, #892), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
+    (a build killed for memory is built once more before it fails, `deploy_issue.py oom`, #892), starts them with `up --no-build` (never `up --build`, which built all at once again, #903), health-checks, records `~/dev/go/optionsBot-env/history/deploys.tsv` (the soak clock);
     - a failed compose or health check (#204) resets the clone to `mvp.deployed`, rebuilds and re-checks it (a `rollback` line in `deploys.tsv`; unhealthy too → loud notify, no retry),
       keeps the bad commit in `mvp.failed` and files one `bug` issue `[E6] mvp deploy failed: <sha> (<subject>)` in Triage
       (step, last 80 log lines with `.env` secrets redacted, commit range — `deploy_issue.py`; deduplicated by the sha, re-tried each tick until filed)

@@ -9,7 +9,7 @@
 #      reconcile with Deribit on every start, so a restart is safe); the
 #      images are built one service at a time, and a build the Docker VM killed
 #      for memory is built once more before it counts as failed (#892,
-#      deploy_issue.py oom);
+#      deploy_issue.py oom), then started without building again (#903);
 #   3. waits for every bot's decision loop to report again (health check) and
 #      records the deploy in <envs>/history/deploys.tsv — the soak
 #      clock scripts/promote.sh reads;
@@ -103,7 +103,7 @@ fail() {
     outcome=failed
     notify "Deploy FAILED" "mvp ${target:0:7}: $step; nothing to roll back to"
   elif log "deploy: rolling mvp back to ${deployed:0:7}" && git -C "$dir" reset -q --hard "$deployed" &&
-    env_compose mvp up -d --build && wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}" "$token"; then
+    build_images && start_images && wait_healthy "$url" "${DEPLOY_HEALTH_TIMEOUT_SEC:-300}" "$token"; then
     rollback="mvp rolled back to \`${deployed:0:7}\`, healthy"
     outcome=rolled_back
     env_record deploys.tsv mvp "$deployed" rollback
@@ -195,6 +195,13 @@ build_images() {
   done
 }
 
+# start_images — (re)starts mvp's stack on the images build_images just built,
+# never building again (#903): `up --build` after build_images built every
+# image once more, all at once — the parallel build #892 removed came back in
+# the next step, and the monitor's `next build` beside the bots' Go builds took
+# 38 min to compile and then timed out on its static pages (2026-11-27, c3e6335).
+start_images() { env_compose mvp up -d --no-build; }
+
 dir="$(env_dir mvp)"
 faildir="$AGENT_STATE_DIR/deploy/failed"
 if ! why="$(env_check mvp)"; then
@@ -255,8 +262,8 @@ if [[ $rc -ne 0 ]] && oom="$(python3 "$AGENT_REPO_DIR/scripts/agents/deploy_issu
   [[ $rc -ne 0 ]] || log "deploy: the second build passed"
 fi
 if [[ $rc -eq 0 ]]; then
-  step="docker compose up --build"
-  env_compose mvp up -d --build >> "$step_log" 2>&1 || rc=$?
+  step="docker compose up"
+  start_images >> "$step_log" 2>&1 || rc=$?
 fi
 cat "$step_log"
 [[ $rc -eq 0 ]] || fail "$step" "$step_log"

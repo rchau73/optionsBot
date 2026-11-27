@@ -33,11 +33,7 @@ const report = (over = {}) => ({
 });
 
 let root, dir, logs, seq, base;
-/**
- * A run id a few seconds old and unique in the test: a report folder's time,
- * counted back from a time fixed per test (from Date.now(), a test taking a
- * second gave two runs one id).
- */
+/** A run id a few seconds old and unique in the test: a report folder's time, counted back from one time fixed per test (the clock at each call repeats an id once a test runs over a second). */
 const freshId = () => {
   seq += 1;
   return new Date(base - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");

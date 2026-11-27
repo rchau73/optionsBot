@@ -5,8 +5,10 @@ import MarginBar from "./MarginBar";
 import MonthBars from "./MonthBars";
 import { riskRows } from "@/lib/account";
 import { formatCoin, formatPct, isNumber } from "@/lib/format";
+import { unitOf } from "@/lib/details";
 import { clockHM, coinOf, monthSoFar, worstCaseLine } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD, toneOf } from "@/lib/summary";
+import { fmtCoin } from "@/lib/tiles";
 
 // The overview's four stat tiles per bot (#394): numbers with a sign, a unit
 // and a time; the investor summary's sentences sit in each tile's tooltip.
@@ -37,19 +39,24 @@ const at = (iso) => (clockHM(iso) ? `as of ${clockHM(iso)}` : null);
 export default function DashboardTiles({ bot }) {
   const s = bot.summary;
   const coin = coinOf(bot);
+  const unit = unitOf(bot); // the amounts' unit: USDC for SOL/XRP (#837)
   const failure = bot.summaryError ?? bot.error;
   const unknown = failure ? `unknown: ${failure}` : !s ? "unknown: loading the summary" : null;
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid={`tiles-${bot.name}`}>
-      <ThisMonth s={s} coin={coin} bot={bot.name} unknown={unknown} />
-      <OpenNow s={s} coin={coin} unknown={unknown} />
-      <WorstCase s={s} coin={coin} bot={bot.name} unknown={unknown} />
+      <ThisMonth s={s} unit={unit} bot={bot.name} unknown={unknown} />
+      <OpenNow s={s} unit={unit} unknown={unknown} />
+      <WorstCase s={s} coin={coin} unit={unit} bot={bot.name} unknown={unknown} />
       <MarginUsed bot={bot} />
     </div>
   );
 }
 
-function ThisMonth({ s, coin, bot, unknown }) {
+// A USDC amount is already dollars: in cents, no "≈ $" beside it. A coin amount as before.
+const money = (v, unit) => (unit === "USDC" ? fmtCoin(v, unit) : formatCoin(v, unit));
+const approx =(unit, usd) => (unit === "USDC" ? null : `≈ ${formatSignedUSD(usd)}`);
+
+function ThisMonth({ s, unit, bot, unknown }) {
   const m = s?.income?.this_month;
   const closes = m?.closes ?? 0;
   const tip = "Realised income this UTC month: what the closed trades kept, after Deribit's fees, from the bot's journal. The bars are the last six months; a loss month is hatched.";
@@ -57,9 +64,9 @@ function ThisMonth({ s, coin, bot, unknown }) {
     <Tile
       label="This month"
       tip={tip}
-      value={unknown ?? (closes > 0 ? formatCoin(m.realised_coin, coin) : "not yet: no close this month")}
+      value={unknown ?? (closes > 0 ? money(m.realised_coin, unit) : "not yet: no close this month")}
       tone={unknown || !closes ? "muted" : toneOf(m.realised_coin)}
-      sub={unknown ? null : [closes > 0 ? `≈ ${formatSignedUSD(m.realised_usd)}` : null, monthSoFar(s?.as_of), at(s?.as_of)].filter(Boolean).join(" · ")}
+      sub={unknown ? null : [closes > 0 ? approx(unit, m.realised_usd) : null, monthSoFar(s?.as_of), at(s?.as_of)].filter(Boolean).join(" · ")}
     >
       {unknown ? null : <MonthBars income={s.income} className="h-8" />}
       <Link href={`/income?bot=${encodeURIComponent(bot)}`} className={LINK}>
@@ -69,7 +76,7 @@ function ThisMonth({ s, coin, bot, unknown }) {
   );
 }
 
-function OpenNow({ s, coin, unknown }) {
+function OpenNow({ s, unit, unknown }) {
   const v = s?.income?.unrealised_coin;
   const tip = "What the open positions would make or lose if bought back now at their marks, net of the fees paid to open them. Not realised: it moves with the market until each position closes.";
   const missing = unknown ?? (isNumber(v) ? null : "unknown: no mark yet");
@@ -77,31 +84,36 @@ function OpenNow({ s, coin, unknown }) {
     <Tile
       label="Open now"
       tip={tip}
-      value={missing ?? formatCoin(v, coin)}
+      value={missing ?? money(v, unit)}
       tone={missing ? "muted" : toneOf(v)}
-      sub={missing ? null : [`≈ ${formatSignedUSD(s.income.unrealised_usd)}`, "not realised", at(s.as_of)].join(" · ")}
+      sub={missing ? null : [approx(unit, s.income.unrealised_usd), "not realised", at(s.as_of)].filter(Boolean).join(" · ")}
     />
   );
 }
 
-function WorstCase({ s, coin, bot, unknown }) {
+function WorstCase({ s, coin, unit, bot, unknown }) {
   const w = unknown ? { unknown: unknown.replace(/^unknown: /, "") } : worstCaseLine(s?.worst_case);
   const tip = `A model, not a quote: ${s?.worst_case?.model || "Black–Scholes on each leg's IV"}. The worse of a very bad day each way (3 daily σ from DVOL), one day passed.`;
+  // A USDC bot's loss is the model's dollar loss; its % of account is left out
+  // until /api/summary divides by the USDC balance (#837 follow-up).
+  const usdc = unit === "USDC";
   return (
     <Tile
       label="Worst case"
       tip={tip}
-      value={w.unknown ? `unknown: ${w.unknown}` : formatCoin(-Math.abs(w.lossCoin), coin)}
+      value={w.unknown ? `unknown: ${w.unknown}` : usdc ? money(-Math.abs(w.lossUSD), unit) : formatCoin(-Math.abs(w.lossCoin), coin)}
       tone={w.unknown ? "muted" : "loss"}
       sub={
         w.unknown
           ? null
           : [
-              `≈ ${formatSignedUSD(-Math.abs(w.lossUSD))}`,
-              w.pct == null ? "% of account unknown" : `${formatSignedPct(-Math.abs(w.pct))} of account`,
+              usdc ? null : `≈ ${formatSignedUSD(-Math.abs(w.lossUSD))}`,
+              usdc ? null : w.pct == null ? "% of account unknown" : `${formatSignedPct(-Math.abs(w.pct))} of account`,
               `a very bad day (${coin} ${formatSignedPct(w.move)})`,
               at(s.as_of),
-            ].join(" · ")
+            ]
+              .filter(Boolean)
+              .join(" · ")
       }
     >
       <Link href={`/worst-case?bot=${encodeURIComponent(bot)}`} className={LINK}>

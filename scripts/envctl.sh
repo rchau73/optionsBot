@@ -30,11 +30,15 @@ case "$cmd" in
       echo "cloned into $dir"
     fi
     if [[ ! -f "$dir/deploy.env" ]]; then
-      if [[ "$name" == "stable" ]]; then port=3000; rec=1; else port=3100; rec=0; fi
-      printf 'OPTIONSBOT_ENV=%s\nMONITOR_PORT=%s\nBOT_RECORD_MARKET=%s\n' "$name" "$port" "$rec" > "$dir/deploy.env"
-      echo "wrote $dir/deploy.env (monitor :$port, market recorder $rec)"
+      # mvp also runs the SOL and XRP bots (#837), each on its own account.
+      if [[ "$name" == "stable" ]]; then port=3000; rec=1; linear=0; else port=3100; rec=0; linear=1; fi
+      printf 'OPTIONSBOT_ENV=%s\nMONITOR_PORT=%s\nBOT_RECORD_MARKET=%s\nBOT_LINEAR=%s\n' "$name" "$port" "$rec" "$linear" > "$dir/deploy.env"
+      echo "wrote $dir/deploy.env (monitor :$port, market recorder $rec, SOL/XRP bots $linear)"
     fi
     [[ -f "$dir/.env" ]] || echo "next: create $dir/.env with this environment's OWN Deribit subaccount (see .env.example)"
+    if [[ "$name" == "mvp" ]]; then
+      echo "mvp: SOL_ and XRP_DERIBIT_CLIENT_ID/_SECRET in $dir/.env, each bot its own testnet account (README \"SOL and XRP bots\")"
+    fi
     ;;
   check)
     env_check "$name" && echo "$name: ok ($dir, $(env_version "$name"), monitor $(env_monitor_url "$name"))" ;;

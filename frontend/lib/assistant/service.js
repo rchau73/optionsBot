@@ -211,7 +211,7 @@ function legPassage(bot, strangle, leg, chart, holds, unit) {
 export function livePassages(bot, { status = null, positions = null, payoff = null } = {}) {
   if (!status && !positions) return [];
   const out = status ? [marketPassage(bot, status)] : [];
-  const unit = status?.underlying ?? positions?.underlying ?? "";
+  const unit = status?.unit || status?.underlying || positions?.underlying || ""; // USDC for SOL/XRP (#837)
   const charts = new Map((payoff?.strangles ?? []).map((s) => [s.strangle_id, s]));
   for (const st of positions?.strangles ?? []) {
     const chart = charts.get(st.id);

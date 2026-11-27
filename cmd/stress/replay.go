@@ -146,7 +146,7 @@ func runReplay(o replayOpts) error {
 		FlipWindow: time.Duration(o.flipWindowMin * float64(time.Minute)), ChainIVMinDays: o.chainIVDays}
 	gexDir := o.gexDir
 	if gexDir == "" {
-		gexDir = filepath.Join(filepath.Dir(filepath.Clean(o.dir)), "market_gex")
+		gexDir = replay.DefaultGEXDir(o.dir, cfg.Underlying)
 	}
 	if gexDir != "none" {
 		if set.GEX, err = recorder.ReadGEXDir(gexDir, time.Time{}, to); err != nil {
@@ -178,7 +178,7 @@ func runReplay(o replayOpts) error {
 		}
 		balances = replay.BalanceSamples(recs, points, cfg.Underlying)
 	}
-	if set.Equity, err = startingBalance(o, balances, from, cfg.Underlying); err != nil {
+	if set.Equity, err = startingBalance(o, balances, from, config.SettlementCurrency(cfg.Underlying)); err != nil {
 		return err
 	}
 	switch o.limits {
@@ -260,8 +260,8 @@ func runReplay(o replayOpts) error {
 	if err != nil {
 		return err
 	}
-	u := cfg.Underlying
-	fmt.Printf("### REPLAY of recorded mainnet books — %s, direction %s, %s → %s, %d snapshots", u, cfg.GEXDirection,
+	u := config.SettlementCurrency(cfg.Underlying) // the amounts' unit: the coin, USDC for SOL and XRP (#837)
+	fmt.Printf("### REPLAY of recorded mainnet books — %s, direction %s, %s → %s, %d snapshots", cfg.Underlying, cfg.GEXDirection,
 		res.Start.Format("Jan 02 15:04"), res.End.Format("Jan 02 15:04"), res.Snapshots)
 	if len(changed) > 0 {
 		fmt.Printf(", %s", strings.Join(changed, " "))
@@ -289,7 +289,7 @@ func runReplay(o replayOpts) error {
 		fmt.Println()
 	}
 	fmt.Printf("**Replay %s %s:** net %+.4f %s (%+.2f %%) · realised %+.4f · fees %.4f · trades %d (entries %d, repairs %d) · GEX sheds %d · stops %d · delta exits %d · rolls %d · MM cuts %d · unfilled %d · liquidity-capped legs %d · legs open at end %d · worst drawdown %.4f %s · IM max %.1f %% avg %.1f %%\n",
-		u, cfg.GEXDirection, res.Net, u, res.Net/res.Equity0*100, res.Realised, res.Fees, res.Trades, res.Entries, res.Repairs,
+		cfg.Underlying, cfg.GEXDirection, res.Net, u, res.Net/res.Equity0*100, res.Realised, res.Fees, res.Trades, res.Entries, res.Repairs,
 		res.Sheds, res.Stops, res.DeltaExits, res.Rolls, res.MMCuts, res.Unfilled, res.LiquidityCapped, res.OpenAtEnd, res.MaxDrawdown, u, res.MaxIMPct, res.AvgIMPct)
 	fmt.Printf("Shed (%s): negative breaks %d · shed closes %+.4f %s · hedge P&L %+.4f (%d perp orders) · max MM %.1f %% · −20 %% gap loss up to %.1f %% of the balance\n",
 		set.Shed, res.ShedBreaks, res.ShedPnL, u, res.HedgePnL, res.HedgeTrades, res.MaxMMPct, res.MaxGapLossPct)
@@ -298,7 +298,7 @@ func runReplay(o replayOpts) error {
 			set.Rebalance, res.RebalancePasses, res.Downsizes, res.DownsizeLegs, res.DownsizeLots, res.DownsizeCost, u, res.DownsizeIMFreedPP,
 			res.TopUps, res.TopUpsHeld, res.CutsOverLimit, res.MaxSlotShareRatio)
 	}
-	fmt.Printf("REPLAY\t%s\t%s\t%.4f\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%.4f\t%.1f\n", u, cfg.GEXDirection, res.Net, res.Realised, res.Fees,
+	fmt.Printf("REPLAY\t%s\t%s\t%.4f\t%.4f\t%.4f\t%d\t%d\t%d\t%d\t%d\t%.4f\t%.1f\n", cfg.Underlying, cfg.GEXDirection, res.Net, res.Realised, res.Fees,
 		res.Trades, res.Entries, res.Repairs, res.Sheds, res.Stops, res.MaxDrawdown, res.AvgIMPct)
 	if trades != nil {
 		var window []recorder.Snapshot
@@ -503,7 +503,7 @@ func runShedStudy(snaps []recorder.Snapshot, set replay.Settings, o replayOpts, 
 	}
 	fmt.Printf(". Entries and repairs skip the shed side under every variant; stops, delta exits and the MM cut run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid by the hedge, re-hedged outside ±%.2f Δ per option; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
 		replay.PerpFeeRate*100, set.PerpFundingPct, replay.HedgeBand, (1-replay.GapMove)*100, replay.GapIVMultiple)
-	fmt.Print(replay.ShedStudyMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
+	fmt.Print(replay.ShedStudyMarkdown(config.SettlementCurrency(set.Cfg.Underlying), rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
 	return nil
 }
 
@@ -571,7 +571,7 @@ func runFullStrangleStudy(snaps []recorder.Snapshot, set replay.Settings, o repl
 	fmt.Printf(". today = the bot, no perpetual. hedged = the perpetual holds the book's coin delta within %d %% of the balance (at most %d orders/h), the shed closes nothing, neither the regime side nor the shed signal holds a leg, a stopped leg waits %d h, frozen or not (hedged:H = H h); the hedge is assumed to hold throughout. Stops, delta exits, the MM cut, the limits and the entry freeze run as the bot's. MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
 		config.FixedFuturesHedgeBandPct, config.FixedFuturesHedgeMaxPerHour, replay.DefaultHedgedCooldownHours,
 		replay.PerpFeeRate*100, set.PerpFundingPct, (1-replay.GapMove)*100, replay.GapIVMultiple)
-	fmt.Print(replay.FullStrangleMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
+	fmt.Print(replay.FullStrangleMarkdown(config.SettlementCurrency(set.Cfg.Underlying), rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
 	return nil
 }
 
@@ -605,7 +605,7 @@ func runHedgeModeStudy(snaps []recorder.Snapshot, set replay.Settings, o replayO
 	}
 	fmt.Printf(". %s MODEL: perp at spot, taker fee %.2f %%, funding %g %%/year paid; gap = spot −%.0f %% and IV ×%.1f at once on the held book.\n\n",
 		replay.HedgeModeNote(), replay.PerpFeeRate*100, set.PerpFundingPct, (1-replay.GapMove)*100, replay.GapIVMultiple)
-	fmt.Print(replay.HedgeModeMarkdown(set.Cfg.Underlying, rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
+	fmt.Print(replay.HedgeModeMarkdown(config.SettlementCurrency(set.Cfg.Underlying), rows, replay.MissingDays(snaps, set.From, set.To), set.Cfg.MaxMMPct))
 	return nil
 }
 

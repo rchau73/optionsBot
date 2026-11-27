@@ -180,7 +180,7 @@ class Deploy(unittest.TestCase):
         self._write(self.t("compose_fails"), "B\n")
         self.assertEqual(self.run_deploy(), 1, self.output)
         self.assertEqual(self.mvp_head(), self.a)
-        self.assertIn("docker compose up --build", self.read("body.md"))
+        self.assertIn("**Failed step:** docker compose up", self.read("body.md"))
         self.assertIn("build error in B", self.read("body.md"))
         self.assertEqual(len(self.creates()), 1)
 
@@ -198,6 +198,20 @@ class Deploy(unittest.TestCase):
         self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["B"])
         self.assertEqual(self.ledger_ends(), [("deployed", self.b[:7])])
 
+    # #903: `up --build` after the one-at-a-time builds built every image again,
+    # all at once. Scenario: an mvp deploy of main builds the monitor once, then starts it.
+    def test_up_starts_the_built_images_without_building_again(self):
+        Monitor.healthy = {"A", "B"}
+        self.assertEqual(self.run_deploy(), 0, self.output)
+        self.assertEqual(self.ups(), [u for u in self.ups() if "up -d --no-build @ " in u])
+        self.assertNotIn(" --build", self.read("docker.log"))  # " --no-build" does not match
+
+    def test_the_rollback_builds_one_image_at_a_time_then_starts(self):
+        self.assertEqual(self.run_deploy(), 1, self.output)  # B unhealthy
+        self.assertEqual(self.builds(), ["bot-btc @ B", "monitor @ B", "bot-btc @ A", "monitor @ A"])
+        self.assertEqual(self.ups(), [u for u in self.ups() if "up -d --no-build @ " in u])
+        self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["B", "A"])
+
     def test_a_build_killed_for_memory_is_built_once_more_and_deploys(self):
         Monitor.healthy = {"A", "B"}
         self._write(self.t("build_oom"), "1")
@@ -214,7 +228,7 @@ class Deploy(unittest.TestCase):
         Monitor.healthy = {"A", "B"}
         self._write(self.t("build_oom"), "2")
         self.assertEqual(self.run_deploy(), 1, self.output)
-        self.assertEqual(len(self.builds()), 4)  # one retry, never a loop
+        self.assertEqual(len(self.builds()), 6)  # one retry, never a loop; then the rollback's two
         self.assertEqual(self.mvp_head(), self.a)
         self.assertEqual(self.read("envs", "history", "mvp.failed").strip(), self.b)
         self.assertEqual([u.split(" @ ")[1] for u in self.ups()], ["A"])  # only the rollback
@@ -229,7 +243,7 @@ class Deploy(unittest.TestCase):
         self._write(self.t("build_fails"), "B\n")
         self.assertEqual(self.run_deploy(), 1, self.output)
         self.assertNotIn("building once more", self.output)
-        self.assertEqual(self.builds(), ["bot-btc @ B"])  # stopped at the first failing image
+        self.assertEqual(self.builds(), ["bot-btc @ B", "bot-btc @ A", "monitor @ A"])  # stopped at the first failing image, then the rollback
         self.assertEqual(self.mvp_head(), self.a)
         self.assertIn("syntax error in B", self.read("body.md"))
         self.assertEqual(len(self.creates()), 1)
