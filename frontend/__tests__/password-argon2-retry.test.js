@@ -7,10 +7,15 @@
 import { argon2id, argon2Verify } from "hash-wasm";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 
-jest.mock("hash-wasm", () => {
-  const actual = jest.requireActual("hash-wasm");
-  return { ...actual, argon2id: jest.fn(actual.argon2id), argon2Verify: jest.fn(actual.argon2Verify) };
-});
+jest.mock("hash-wasm", () => ({ ...jest.requireActual("hash-wasm"), argon2id: jest.fn(), argon2Verify: jest.fn() }));
+const real = jest.requireActual("hash-wasm");
+
+// Jest 29's restoreAllMocks (afterEach) also drops a jest.fn's implementation,
+// so each test puts the real argon2 back before its own one-off failures.
+function useRealArgon2() {
+  argon2id.mockReset().mockImplementation(real.argon2id);
+  argon2Verify.mockReset().mockImplementation(real.argon2Verify);
+}
 
 jest.setTimeout(60000);
 
@@ -20,14 +25,14 @@ const NO_MEMORY = new RangeError("WebAssembly.Memory(): could not allocate memor
 let logs;
 let hash;
 beforeAll(async () => {
+  useRealArgon2();
   hash = await hashPassword(PASSWORD);
 });
 beforeEach(() => {
   logs = [];
   jest.spyOn(console, "log").mockImplementation((l) => logs.push(l));
   jest.spyOn(console, "error").mockImplementation((l) => logs.push(l));
-  argon2Verify.mockClear();
-  argon2id.mockClear();
+  useRealArgon2();
 });
 afterEach(() => jest.restoreAllMocks());
 
