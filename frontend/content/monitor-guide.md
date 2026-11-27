@@ -777,6 +777,14 @@ A manager or a user who opens one is refused.
 An admin creates a user (a username of 3 to 64 letters, digits, dots, underscores or hyphens, and a password of at least 12 characters), changes a role, resets a password, issues a single-use reset link, signs a person out everywhere, or deletes a user.
 Every change signs that person out everywhere.
 There is always at least one admin, and you cannot delete yourself.
+
+**Unused accounts**: each row of the Users page shows when the person last signed in, in your time zone, or "never".
+A row with no sign-in for 90 days shows the tag "Unused for 90 days".
+A person who never signed in shows "never", and once the account is more than 90 days old also the tag "Never signed in, created N days ago".
+The Unused button above the list shows only the tagged rows, in the same order, and its number is how many there are; press it again to see everyone.
+The tag changes nothing by itself: the person keeps their role, sessions and password, and can still sign in.
+To remove an account nobody uses, delete it or lower its role with the row's own buttons, as for any change.
+The 90 days are fixed, not a setting.
 <!-- guide: page:/admin/users, route:POST /api/admin/users, route:PATCH /api/admin/users/[id], route:DELETE /api/admin/users/[id], route:POST /api/admin/users/[id]/password, route:POST /api/admin/users/[id]/reset-link, route:POST /api/admin/users/[id]/signout -->
 
 **Unlock a locked username**: after 5 wrong passwords in 15 minutes a username is locked for 15 minutes.
