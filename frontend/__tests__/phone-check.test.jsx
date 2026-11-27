@@ -8,7 +8,7 @@ import { render } from "@testing-library/react";
 import Panel from "@/components/Panel";
 import PendingOrders from "@/components/PendingOrders";
 import { measureDialog, measurePage } from "@/e2e/measure";
-import { A11Y_WIDTH, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, normaliseLabel, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
+import { A11Y_WIDTH, a11yOfPage, a11yReport, baselineNotes, baselineOf, compareToBaseline, normaliseLabel, pagePathname, summariseDialog, summariseWidth, viewportPages, WIDTHS } from "@/e2e/phone";
 import { menuItems } from "@/lib/menu";
 import { bot } from "@/test/fixtures";
 
@@ -169,8 +169,9 @@ describe("Scenario: a page listed in menu.js is checked at 360 px", () => {
 });
 
 describe("Scenario: a new page added to menu.js is checked without editing the test", () => {
-  test("the pages measured are the menu's, then the assistant panel opened", () => {
-    expect(viewportPages()).toEqual([...menuItems("/").map((m) => ({ name: m.key, path: m.href, assistant: false })), { name: "assistant", path: "/", assistant: true }]);
+  test("the pages measured are the menu's, then the assistant panel opened, then the pages off the menu bar", () => {
+    const menu = menuItems("/").map((m) => ({ name: m.key, path: m.href, assistant: false, signedOut: false }));
+    expect(viewportPages().slice(0, menu.length + 1)).toEqual([...menu, { name: "assistant", path: "/", assistant: true, signedOut: false }]);
     expect(viewportPages().map((p) => p.path)).toEqual(expect.arrayContaining(["/", "/income", "/details"]));
   });
 
@@ -178,15 +179,83 @@ describe("Scenario: a new page added to menu.js is checked without editing the t
     jest.isolateModules(() => {
       jest.doMock("@/lib/menu", () => ({ menuItems: () => [{ key: "overview", href: "/" }, { key: "news", href: "/news" }] }));
       const { viewportPages: pages } = require("@/e2e/phone");
-      expect(pages().map((p) => p.name)).toEqual(["overview", "news", "assistant"]);
+      expect(pages().map((p) => p.name)).toEqual(["overview", "news", "assistant", "analytics-delivery", "sign-in"]);
     });
     jest.dontMock("@/lib/menu");
   });
 
   test("the spec measures viewportPages(), not a typed list", () => {
     const spec = read("e2e/phone.spec.js");
-    expect(spec).toMatch(/for \(const target of viewportPages\(\)\)/);
-    expect(spec).not.toMatch(/"\/income"|"\/details"|"\/positions"/);
+    expect(spec).toMatch(/for \(const target of viewportPages\(\)\.filter\(\(t\) => !t\.signedOut\)\)/);
+    expect(spec).toMatch(/for \(const target of viewportPages\(\)\.filter\(\(t\) => t\.signedOut\)\)/);
+    expect(spec).not.toMatch(/"\/income"|"\/details"|"\/positions"|"\/admin\/|"\/login"/);
+  });
+});
+
+describe("Scenario: the check reaches the admin pages and sign-in (#883)", () => {
+  const NAMED = {
+    users: "/admin/users",
+    audit: "/admin/audit",
+    analytics: "/admin/analytics",
+    "analytics-delivery": "/admin/analytics?topic=delivery",
+    "sign-in": "/login",
+  };
+
+  test("each named page is in the list once, at its address", () => {
+    const pages = viewportPages();
+    for (const [name, path] of Object.entries(NAMED)) {
+      expect(pages.filter((p) => p.name === name)).toEqual([{ name, path, assistant: false, signedOut: name === "sign-in" }]);
+    }
+  });
+
+  test("no page name or address is measured twice (a name is a baseline key)", () => {
+    const pages = viewportPages();
+    expect(new Set(pages.map((p) => p.name)).size).toBe(pages.length);
+    const addresses = pages.filter((p) => !p.assistant).map((p) => p.path);
+    expect(new Set(addresses).size).toBe(addresses.length);
+  });
+
+  test("sign-in alone is measured signed out; the admin pages are measured signed in as the throwaway admin", () => {
+    expect(viewportPages().filter((p) => p.signedOut).map((p) => p.name)).toEqual(["sign-in"]);
+    const spec = read("e2e/phone.spec.js");
+    expect(spec).toMatch(/browser\.newContext\(/);
+    expect(read("e2e/fixtures.js")).toMatch(/PHONE_ADMIN_USERNAME/);
+  });
+
+  test("an admin page added to the person's menu is measured without editing the check", () => {
+    jest.isolateModules(() => {
+      jest.doMock("@/lib/menu", () => ({ menuItems: () => [{ key: "overview", href: "/" }], ADMIN_PAGES: [{ key: "billing", href: "/admin/billing" }] }));
+      const { viewportPages: pages } = require("@/e2e/phone");
+      expect(pages().map((p) => p.name)).toEqual(["overview", "assistant", "billing", "analytics-delivery", "sign-in"]);
+    });
+    jest.dontMock("@/lib/menu");
+  });
+
+  test("a page with a query is checked by its path: the URL must stay on /admin/analytics", () => {
+    expect(pagePathname({ path: "/admin/analytics?topic=delivery" })).toBe("/admin/analytics");
+    expect(pagePathname({ path: "/login" })).toBe("/login");
+    expect(read("e2e/phone.spec.js")).toMatch(/url\.pathname === pagePathname\(target\)/);
+  });
+
+  test("a new admin page missing from the baseline is held to the shared baseline: clean passes, a new small control fails", () => {
+    const baseline = baselineOf(report());
+    const now = report();
+    now.pages.audit = { widths: { 360: width(CLEAN), 768: width(CLEAN), 1280: width(CLEAN) } };
+    expect(compareToBaseline(baseline, now)).toEqual([]);
+    now.pages.audit.widths[360] = width({ ...CLEAN, under24: [{ key: 'Audit › button "Older"', width: 50, height: 20, count: 1 }] });
+    expect(compareToBaseline(baseline, now)).toEqual([
+      'audit 360 px: new control under 24 px: Audit › button "Older" (50×20 px)',
+      'audit 360 px: new control under 44 px: Audit › button "Older" (50×20 px)',
+    ]);
+  });
+
+  test("once recorded, a new control under 24 px on Audit fails naming the page, the width and the control", () => {
+    const recorded = report();
+    recorded.pages.audit = { widths: { 360: width(CLEAN), 768: width(CLEAN), 1280: width(CLEAN) } };
+    const baseline = baselineOf(recorded);
+    const now = JSON.parse(JSON.stringify(recorded));
+    now.pages.audit.widths[768].controls.under_24_kinds.push({ key: 'Audit › button "Check again"', width: 60, height: 18, count: 1 });
+    expect(compareToBaseline(baseline, now)).toEqual(['audit 768 px: new control under 24 px: Audit › button "Check again" (60×18 px)']);
   });
 
   test("a new page not in the baseline: clean passes, held to what the recorded pages accept", () => {
