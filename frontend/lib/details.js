@@ -6,12 +6,37 @@ import { formatSignedUSD } from "./summary";
 
 /**
  * The unit of a bot's amounts (#837): /api/status's `unit` — the coin for
- * BTC and ETH, USDC for the SOL and XRP bots — else its underlying, else its
- * name (an older bot without the field).
+ * BTC and ETH, USDC for the SOL and XRP bots — else the settlement unit of its
+ * underlying, else of its name (an older bot, or status not in yet).
  */
 export function unitOf(bot) {
-  return bot?.status?.unit || bot?.status?.underlying || String(bot?.name ?? "").toUpperCase();
+  return bot?.status?.unit || settlementUnit(bot?.status?.underlying || bot?.summary?.underlying || String(bot?.name ?? "").toUpperCase());
 }
+
+/** The coins whose options settle in USDC: the Go map `linearCoins` (internal/config/settlement.go), pinned by linear-units.test.js. */
+export const LINEAR_COINS = ["SOL", "XRP"];
+
+/** The unit a coin's option amounts are in (Go `config.SettlementCurrency`): USDC for SOL and XRP, else the coin as given. */
+export function settlementUnit(coin) {
+  return LINEAR_COINS.includes(String(coin ?? "").toUpperCase()) ? "USDC" : coin;
+}
+
+/** The unit of /api/summary's amounts: its income's `unit`, else the settlement unit of its underlying (an older bot). */
+export function summaryUnit(summary) {
+  return summary?.income?.unit || settlementUnit(summary?.underlying ?? summary?.income?.coin ?? "");
+}
+
+/** An amount in its unit: USDC in cents ("+9.00 USDC"), a coin with formatCoin's 5 decimals as before. */
+export function formatMoney(v, unit) {
+  return unit === "USDC" ? formatCoin(v, unit, 2) : formatCoin(v, unit);
+}
+
+/**
+ * A worst-case loss or scenario result in its unit: `{coin, usd}` → the USD
+ * figure for a USDC bot (its `_coin` field is the dollar loss ÷ the moved
+ * spot, a quantity of the coin), the coin figure otherwise.
+ */
+export const worstValue = (coinValue, usdValue, unit) => (unit === "USDC" ? usdValue : coinValue);
 
 /**
  * An amount in unit as ≈ USD: a USDC amount as it is, a coin amount at spot.

@@ -6,6 +6,11 @@ import HedgeRows from "@/components/HedgeRows";
 import { IncomeView } from "@/components/IncomePage";
 import LastTrade from "@/components/LastTrade";
 import StrangleRow from "@/components/StrangleRow";
+import { ActivityView } from "@/components/ActivityPage";
+import { BotSummary } from "@/components/InvestorSummary";
+import PhoneOverview from "@/components/PhoneOverview";
+import SinceLastVisit from "@/components/SinceLastVisit";
+import WorstCaseReport from "@/components/WorstCaseReport";
 
 // The SOL and XRP bots' amounts are in USDC on every page (#837, review of
 // #906): the coin names the market, never the money. The shapes are those the
@@ -132,11 +137,128 @@ describe("Scenario: the overview of a SOL bot is in USDC", () => {
     expect(screen.getByText(/Balance 5,000.00 USDC \(practice on testnet\)/)).toBeInTheDocument();
   });
 
-  test("BTC keeps its coin and its ≈ $", () => {
+  test("BTC keeps its coin and its ≈ $ on the tiles", () => {
     const btc = { name: "btc", status: { underlying: "BTC", unit: "BTC" }, summary: { ...summary, underlying: "BTC", income: { ...summary.income, this_month: { closes: 2, realised_coin: 0.004, realised_usd: 410 } } } };
     render(<DashboardTiles bot={btc} />);
     const month = screen.getByRole("region", { name: "This month" });
     expect(month).toHaveTextContent("+0.00400 BTC");
     expect(month).toHaveTextContent("≈ +$410");
+  });
+});
+
+// Round 2 of the review: the phone overview, the investor summary, "Since you
+// last looked", Worst case and Activity. A SOL worst case's `loss_coin` is the
+// dollar loss ÷ the moved spot (a quantity of SOL), so the pages show
+// `loss_usd`, and no % of the account until /api/summary has a USDC balance.
+const scenario = (sigmas, usd) => ({ sigmas, move_pct: sigmas * 4, spot: 140 * (1 + sigmas * 0.04), result_coin: usd / 140, result_usd: usd, pct_of_equity: usd / 50 });
+const solWorst = {
+  available: true,
+  coin: "SOL",
+  move_pct: 12,
+  sigmas: 3,
+  dvol: 80,
+  down: { spot: 123.2, loss_coin: 0.57, loss_usd: 70, pct_of_equity: 0.01 },
+  up: { spot: 156.8, loss_coin: 0.18, loss_usd: 28, pct_of_equity: 0.004 },
+  scenarios: [scenario(-3, -70), scenario(-2, -30), scenario(0, 0), scenario(2, -12), scenario(3, -28)],
+};
+const solSummary = {
+  underlying: "SOL",
+  as_of: "2026-11-26T12:00:00Z",
+  spot: 140,
+  holding: { strangles: 1, legs: 2, calls: 1, puts: 1, coin: "SOL" },
+  income: {
+    coin: "SOL",
+    unit: "USDC",
+    months: [{ month: "2026-11", closes: 2, realised_coin: 9, realised_usd: 9 }],
+    this_month: { month: "2026-11", closes: 2, realised_coin: 9, realised_usd: 9 },
+    unrealised_coin: 4.5,
+    unrealised_usd: 4.5,
+  },
+  worst_case: solWorst,
+  last_action: { at: "2026-11-26T11:00:00Z", kind: "close", instrument: "SOL_USDC-25DEC26-80-C", qty: 10, reason: "take-profit", spot: 138, pnl_coin: 3.25, pnl_usd: 3.25 },
+};
+const solBot = () => ({ name: "sol", stale: false, status: { ...solStatus, as_of: "2026-11-26T12:00:00Z" }, summary: solSummary });
+
+describe("Scenario: the phone overview of a SOL bot is in USDC", () => {
+  test("headline, making-or-losing, worst case and last action: USDC, no $ copy, no % of a SOL equity", () => {
+    render(<PhoneOverview bots={[solBot()]} selected="sol" now={NOW} />);
+    const phone = screen.getByTestId("phone-overview");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("This month: +9.00 USDC after fees");
+    expect(phone).not.toHaveTextContent("About +$9");
+    const making = screen.getByRole("region", { name: "Making or losing" });
+    expect(making).toHaveTextContent("+9.00 USDC");
+    expect(making).toHaveTextContent("+4.50 USDC");
+    const worst = screen.getByRole("region", { name: "Worst case right now" });
+    expect(worst).toHaveTextContent("would cost about 70.00 USDC.");
+    expect(worst).not.toHaveTextContent("of the account");
+    expect(screen.getByRole("region", { name: /^Last action/ })).toHaveTextContent("result +3.25 USDC");
+    expect(phone.textContent).not.toMatch(SOL_AMOUNT);
+  });
+});
+
+describe("Scenario: the investor summary of a SOL bot is in USDC", () => {
+  test("months, open now, the worst case's two days and the last trade in USDC", () => {
+    render(<BotSummary bot={solBot()} />);
+    const page = screen.getByRole("region", { name: "SOL · investor summary" });
+    expect(screen.getByRole("row", { name: /Nov/ })).toHaveTextContent("+9.00 USDC");
+    expect(page).toHaveTextContent("Open positions now (not realised): +4.50 USDC");
+    expect(page).toHaveTextContent("If SOL falls 12.0% to $123: −70.00 USDC");
+    expect(page).not.toHaveTextContent("of equity");
+    expect(page).toHaveTextContent("Result of that trade (net of fees): +3.25 USDC");
+    // a USDC amount is already dollars: no rounded $ copy beside it
+    expect(page).not.toHaveTextContent("+$5");
+    expect(page).not.toHaveTextContent("+$3");
+    expect(page.textContent).not.toMatch(SOL_AMOUNT);
+  });
+});
+
+describe("Scenario: Worst case of a SOL bot is in USDC", () => {
+  test("the headline and the five days in USDC; the account share waits for a USDC balance", () => {
+    render(<WorstCaseReport summary={solSummary} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("If SOL had a very bad day today, you'd lose about 70.00 USDC");
+    expect(screen.getByRole("heading", { level: 1 })).not.toHaveTextContent("of the account");
+    const fall = screen.getByRole("row", { name: /^−12 %/ });
+    expect(fall).toHaveTextContent("−70.00 USDC");
+    expect(fall).toHaveTextContent("not yet for a USDC account");
+    expect(document.body.textContent).not.toMatch(SOL_AMOUNT);
+    expect(screen.getByText(/equity in USDC/)).toBeInTheDocument();
+  });
+
+  test("BTC keeps its coin, its $ and its % of the account", () => {
+    const btc = { ...solSummary, underlying: "BTC", income: { ...solSummary.income, coin: "BTC", unit: "BTC" } };
+    render(<WorstCaseReport summary={btc} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("0.5700 BTC ($70), 0.0 % of the account");
+  });
+});
+
+describe("Scenario: Since you last looked, for a SOL bot, is in USDC", () => {
+  test("closes, their result, the hedge's close and the worst case then vs now in USDC, no ≈ $", () => {
+    const at = (h) => new Date(NOW - h * 3_600_000).toISOString();
+    const visit = { loaded: true, dismissed: false, dismiss: () => {}, previous: { sol: { at: Date.parse(at(20)), worst: { coin: 30, usd: 30 }, warnings: [] } } };
+    const trades = { sol: [{ seq: 1, at: at(2), kind: "close", instrument: "SOL_USDC-25DEC26-80-C", qty: 10, reason: "roi_target", pnl: 3.25, pnl_usd: 3.25 }] };
+    const hedgeEvents = { sol: [{ seq: 2, at: at(1), event: "hedge", data: { change: "hedge_closed", filled_usd: 700, realised_coin: 1.5 }, plain: "The hedge closed." }] };
+    render(<SinceLastVisit bots={[solBot()]} trades={trades} tradesComplete={{ sol: true }} hedgeEvents={hedgeEvents} visit={visit} now={NOW} />);
+    const card = screen.getByTestId("since-sol");
+    expect(card).toHaveTextContent("Closed since then, net of fees: +3.25 USDC");
+    expect(within(card).getByTestId("since-hedge")).toHaveTextContent("+1.50 USDC");
+    expect(within(card).getByTestId("since-worst")).toHaveTextContent("then −30.00 USDC, now −70.00 USDC.");
+    expect(card).not.toHaveTextContent("≈");
+    expect(card).not.toHaveTextContent("$");
+    expect(card.textContent).not.toMatch(SOL_AMOUNT);
+  });
+});
+
+describe("Scenario: Activity of a SOL bot is in USDC", () => {
+  test("a close's result and a sale's premium say USDC; the title names the coin", () => {
+    const events = [
+      { seq: 1, at: "2026-11-26T10:00:00Z", event: "filled", plain: "Sold a call.", data: { instrument: "SOL_USDC-25DEC26-80-C", qty: 10, fill_price: 1.25 } },
+      { seq: 2, at: "2026-11-26T11:00:00Z", event: "closed", plain: "Bought back the call.", data: { instrument: "SOL_USDC-25DEC26-80-C", qty: 10, close_reason: "roi_target", pnl: 3.25 } },
+    ];
+    render(<ActivityView bot="sol" events={events} trades={[]} now={NOW} />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("What the bot did, and why · SOL");
+    const entries = screen.getAllByTestId("activity-entry").map((e) => e.textContent).join(" | ");
+    expect(entries).toContain("+12.50 USDC");
+    expect(entries).toContain("+3.25 USDC");
+    expect(entries).not.toMatch(SOL_AMOUNT);
   });
 });

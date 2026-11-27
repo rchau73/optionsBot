@@ -1,7 +1,9 @@
 // The SOL and XRP bots' amounts are in USDC (#837): /api/status's `unit`
 // names it, the leg rows and the KPI strip read it, and a USDC amount is
 // already dollars (never × spot). BTC and ETH keep their coin and × spot.
-import { toUSD, unitOf } from "@/lib/details";
+import fs from "fs";
+import path from "path";
+import { LINEAR_COINS, formatMoney, settlementUnit, summaryUnit, toUSD, unitOf, worstValue } from "@/lib/details";
 import { legRows, summarise } from "@/lib/monitor";
 
 const leg = { position_id: "p1", instrument: "SOL_USDC-25DEC26-80-C", option_type: "call", qty: 10, unrealised_pnl: 4.5 };
@@ -50,5 +52,40 @@ describe("pages that list bots", () => {
     ]);
     expect(kpi.totalUsd).toBeCloseTo(112, 9);
     expect(kpi.realisedUsd).toBeCloseTo(112, 9);
+  });
+});
+
+describe("the settlement unit without /api/status (review of #906, round 2)", () => {
+  test("LINEAR_COINS is the Go map linearCoins of internal/config/settlement.go", () => {
+    const src = fs.readFileSync(path.join(__dirname, "..", "..", "internal", "config", "settlement.go"), "utf8");
+    const m = src.match(/linearCoins = map\[string\]bool\{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    const goCoins = [...m[1].matchAll(/"([A-Z]+)":\s*true/g)].map((x) => x[1]).sort();
+    expect([...LINEAR_COINS].sort()).toEqual(goCoins);
+  });
+
+  test("SOL and XRP settle in USDC, BTC and ETH in themselves; an unknown coin stays as given", () => {
+    expect(settlementUnit("SOL")).toBe("USDC");
+    expect(settlementUnit("xrp")).toBe("USDC");
+    expect(settlementUnit("BTC")).toBe("BTC");
+    expect(settlementUnit("ETH")).toBe("ETH");
+    expect(settlementUnit("")).toBe("");
+    expect(unitOf({ name: "sol" })).toBe("USDC"); // status not in yet: the name's settlement unit
+  });
+
+  test("a summary's unit: its income's unit, else its underlying's", () => {
+    expect(summaryUnit({ underlying: "SOL", income: { coin: "SOL", unit: "USDC" } })).toBe("USDC");
+    expect(summaryUnit({ underlying: "XRP" })).toBe("USDC");
+    expect(summaryUnit({ underlying: "BTC", income: { coin: "BTC", unit: "BTC" } })).toBe("BTC");
+    expect(summaryUnit({ underlying: "ETH", income: { coin: "ETH" } })).toBe("ETH");
+    expect(summaryUnit(null)).toBe("");
+  });
+
+  test("USDC in cents, a coin with 5 decimals as before; a worst case in USDC is its dollar figure", () => {
+    expect(formatMoney(9, "USDC")).toBe("+9.00 USDC");
+    expect(formatMoney(-0.004, "BTC")).toBe("−0.00400 BTC");
+    expect(formatMoney(0.004, "ETH")).toBe("+0.00400 ETH");
+    expect(worstValue(0.5, 70, "USDC")).toBe(70);
+    expect(worstValue(0.05, 4935, "BTC")).toBe(0.05);
   });
 });

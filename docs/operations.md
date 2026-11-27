@@ -71,6 +71,8 @@ scripts/envctl.sh stable down
 ```
 
 Each clone's `deploy.env` holds `OPTIONSBOT_ENV`, `MONITOR_PORT` and `BOT_RECORD_MARKET`, plus, in mvp, `BOT_CONFIG_BTC=./config_btc.mvp.yaml` and `BOT_LINEAR=1` (`deploy.env.example` shows both).
+`config_btc.mvp.yaml` is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there.
+`envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**).
 
 **The SOL and XRP bots (mvp, #837).**
 They trade Deribit's USDC-settled options on `config_sol.yaml` and `config_xrp.yaml` (slots 30 and 50 DTE at 0.16 Δ), with the futures hedge on from their first start.
@@ -92,8 +94,7 @@ Six containers need more memory: give Docker Desktop more than 3 GB before turni
 ```bash
 scripts/envctl.sh mvp logs -f bot-sol
 ```
-That file is `config_btc.yaml` with only `gex_direction` changed, and `TestConfig_MVPBTCDiffersOnlyInDirection` fails on any other difference: when you change `config_btc.yaml`, copy the change there.
-`envctl.sh` also sets `BOT_VERSION` (`git describe`), and the bots report `deployment` and `version` in `/api/status`, which the monitor header shows (**STABLE · v0.3.0**, **MVP · v0.3.0-4-gabc123**).
+
 A plain `docker compose up` refuses to run (no `OPTIONSBOT_ENV`): always go through `envctl.sh`.
 
 ### Releasing to stable

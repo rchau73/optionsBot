@@ -90,7 +90,7 @@ function BotSince({ bot, view: v, now }) {
           ⚠ {p.chip} began since then: {p.words}. See the header.
         </p>
       ))}
-      <HedgeSince hedge={v.hedge} coin={v.coin} />
+      <HedgeSince hedge={v.hedge} unit={v.unit} />
       {v.unknown ? (
         <p className="text-warn">Closes unknown: {v.unknown}.</p>
       ) : v.loading ? (
@@ -100,13 +100,13 @@ function BotSince({ bot, view: v, now }) {
       ) : (
         <Changes bot={bot} v={v} />
       )}
-      <WorstLine coin={v.coin} worst={v.worst} />
+      <WorstLine unit={v.unit} worst={v.worst} />
     </section>
   );
 }
 
 /** The hedge's lines: one that changes the book's protection carries ⚠, so colour is never the only cue. */
-function HedgeSince({ hedge, coin }) {
+function HedgeSince({ hedge, unit }) {
   if (!hedge.rows.length) return null;
   return (
     <>
@@ -119,7 +119,7 @@ function HedgeSince({ hedge, coin }) {
             {isNumber(r.result) ? (
               <>
                 {" "}
-                <Result value={r.result}>{fmtCoin(r.result, coin)}</Result>
+                <Result value={r.result}>{fmtCoin(r.result, unit)}</Result>
               </>
             ) : null}
           </li>
@@ -136,8 +136,13 @@ function Changes({ bot, v }) {
     <>
       {v.result ? (
         <p className="text-base">
-          Closed since then, net of fees: <Result value={v.result.coin}>{fmtCoin(v.result.coin, v.coin)}</Result> ·{" "}
-          <Result value={v.result.usd}>{formatSignedUSD(v.result.usd)}</Result>
+          Closed since then, net of fees: <Result value={v.result.coin}>{fmtCoin(v.result.coin, v.unit)}</Result>
+          {v.unit === "USDC" ? null : (
+            <>
+              {" "}
+              · <Result value={v.result.usd}>{formatSignedUSD(v.result.usd)}</Result>
+            </>
+          )}
         </p>
       ) : (
         <p>Nothing closed since then.</p>
@@ -160,7 +165,7 @@ function Changes({ bot, v }) {
                   bought back {c.qty} × {c.instrument}
                 </span>
                 <span>· {c.words}</span>
-                <Result value={c.pnlCoin}>{fmtCoin(c.pnlCoin, v.coin)}</Result>
+                <Result value={c.pnlCoin}>{fmtCoin(c.pnlCoin, v.unit)}</Result>
               </li>
             ))}
           </ul>
@@ -175,10 +180,12 @@ function Changes({ bot, v }) {
 }
 
 /** "Worst case (one very bad day): larger — then −0.03000 BTC (≈ −$2,961), now −0.05000 BTC (≈ −$4,935)." */
-function WorstLine({ coin, worst: w }) {
+function WorstLine({ unit, worst: w }) {
   if (w.unknown) return <p className="text-muted">Worst case then vs now unknown: {w.unknown}.</p>;
   if (w.none) return <p>Worst case (one very bad day): about the same, nothing open then or now.</p>;
-  const figure = (x) => (x.none ? "nothing open" : `${fmtCoin(-x.coin, coin)}${x.usd != null ? ` (≈ ${formatSignedUSD(-x.usd)})` : ""}`);
+  // A USDC amount is already dollars (#837): no "≈ $" beside it.
+  const usd = (x) => (x.usd != null && unit !== "USDC" ? ` (≈ ${formatSignedUSD(-x.usd)})` : "");
+  const figure = (x) => (x.none ? "nothing open" : `${fmtCoin(-x.coin, unit)}${usd(x)}`);
   return (
     <p data-testid="since-worst">
       Worst case (one very bad day): <span className="font-semibold">{w.verdict}</span>, then {figure(w.then)}, now {figure(w.now)}.

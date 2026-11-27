@@ -332,7 +332,7 @@ Only an admin may switch it.
 A SOL or XRP bot, whose options are settled in USDC, starts with the hedge on: at its first start on testnet the bot switches it on by itself, and the card and the journal name "first start" as who switched it.
 Once an admin switches it off, it stays off after a restart.
 Its perpetual is the coin's USDC perpetual, such as SOL_USDC-PERPETUAL: its size is in the coin (for example 2.8 SOL) and is shown in USD at its average price, and its orders are whole steps of the exchange's minimum size.
-Its results, fees and funding are paid in USDC; the card shows them in the coin at the mark, with USD beside them, as for BTC and ETH.
+Its results, fees and funding are paid in USDC, and the card shows them in USDC; its deltas and its band stay quantities of the coin.
 Switching off first shows what it would do: the perpetual bought back or sold at market with its result and fee, the delta and the margin before and after, and what a 5 % or 10 % move would cost the options without the hedge.
 If that preview cannot be read, the window says so and the admin can still switch off.
 If the perpetual cannot be closed, the experiment stays on.
@@ -765,7 +765,8 @@ Learn more: OptionStrategy.md section 12.
 The mvp monitor also shows a SOL and an XRP bot, beside BTC and ETH, as two more chips in the coin selector; every page that lists bots lists them too.
 They trade options on Deribit's test exchange with test money: 5,000 USDC each, on an account of their own.
 Their options are settled in USDC, so every amount they show — premium, fees, profit and loss, margin, worst case — is in **USDC**, not in SOL or XRP.
-A BTC or ETH bot still shows its amounts in its own coin; USDC is already dollars, so its USD figure is the same number.
+A BTC or ETH bot still shows its amounts in its own coin with a USD figure beside them; USDC is already dollars, so a SOL or XRP amount has no USD copy beside it.
+The worst case of a SOL or XRP bot shows its loss in USDC but not yet its share of the account.
 Each order is whole contracts: 10 SOL or 1,000 XRP.
 They sell a strangle about 30 and about 50 days out, and their futures hedge is on from the first start (Positions shows the perpetual).
 For their first 90 days the margin limit stays at the lowest band, because these coins have no volatility index and the bot needs 90 days of their own implied volatility to rank it.
