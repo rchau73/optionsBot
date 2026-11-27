@@ -124,6 +124,26 @@ func (p Perp) Fee(size, price, rate float64) float64 {
 	return math.Abs(size) * price * rate
 }
 
+// Step is the order grid: the inverse perpetual's contract size (USD); for a
+// linear one the larger of the contract size and the minimum trade amount,
+// as Deribit sizes a linear perpetual's orders by its minimum (#836 review).
+func (p Perp) Step(contractSize, minTrade float64) float64 {
+	if p.Linear && minTrade > contractSize {
+		return minTrade
+	}
+	return contractSize
+}
+
+// BookScenarios is BookScenarios for this perpetual's size: a linear
+// position of size coin moves as an inverse one of size × spot USD opened at
+// spot (size × (S′ − spot) USDC = size·spot × (1/spot − 1/S′) coin at S′).
+func (p Perp) BookScenarios(spot, delta, gamma, size float64) []BookScenario {
+	if p.Linear {
+		size *= spot
+	}
+	return BookScenarios(spot, delta, gamma, size)
+}
+
 // Dust is the size under which a position counts as flat: half a USD for the
 // inverse perpetual, half a contract for a linear one (nothing smaller can
 // trade; with the contract unknown yet, only float noise).
@@ -192,6 +212,10 @@ type PreviewInput struct {
 	Unrealised    float64 // coin, as Deribit reports it (0: computed from the prices)
 	Funding       float64 // coin, realised funding of the position
 	FeeRate       float64 // taker fee rate for the close
+	// Kind is the perpetual: the zero value is the inverse one (BTC, ETH).
+	// For a linear one (SOL, XRP, #836) PerpUSD is the size in the coin and
+	// Unrealised and Funding are USDC, as Deribit reports them.
+	Kind Perp
 }
 
 // Scenario is the options' P&L for a spot move once the hedge is closed:
@@ -217,6 +241,10 @@ type Preview struct {
 	DeltaNow       float64    `json:"delta_now_coin"`
 	DeltaAfter     float64    `json:"delta_after_coin"`
 	Scenarios      []Scenario `json:"scenarios"`
+	// A linear perpetual (#836): PerpSize in SizeUnit (the coin), PerpUSD its
+	// value at the average price, the _coin fields converted from USDC at the mark.
+	PerpSize float64 `json:"perp_size,omitempty"`
+	SizeUnit string  `json:"size_unit,omitempty"`
 }
 
 // ScenarioMoves are the spot moves the preview prices (%).
@@ -242,10 +270,38 @@ func BuildPreview(in PreviewInput) Preview {
 		CloseFeeCoin: fee, CloseFeeUSD: fee * mark,
 		DeltaNow: in.OptionsDelta + perpDelta, DeltaAfter: in.OptionsDelta,
 	}
+	if in.Kind.Linear {
+		linearPreview(&p, in, mark)
+	}
 	for _, m := range ScenarioMoves {
 		p.Scenarios = append(p.Scenarios, ScenarioPnL(in.Spot, in.ScenarioDelta, in.OptionsGamma, m))
 	}
 	return p
+}
+
+// linearPreview redoes the perpetual's figures of a linear one: its delta is
+// its size, its P&L, fee and funding USDC (shown in coin at the mark).
+func linearPreview(p *Preview, in PreviewInput, mark float64) {
+	unreal := in.Unrealised
+	if unreal == 0 {
+		unreal = in.Kind.PnL(in.PerpUSD, in.PerpAvg, mark)
+	}
+	fee := in.Kind.Fee(in.PerpUSD, mark, in.FeeRate)
+	coin := func(usdc float64) float64 {
+		if mark <= 0 {
+			return 0
+		}
+		return usdc / mark
+	}
+	at := in.PerpAvg // the USD figure at the average price, as the hedge view's
+	if at <= 0 {
+		at = mark
+	}
+	p.PerpSize, p.PerpUSD, p.PerpDeltaCoin = in.PerpUSD, in.PerpUSD*at, in.PerpUSD
+	p.UnrealisedUSD, p.UnrealisedCoin = unreal, coin(unreal)
+	p.CloseFeeUSD, p.CloseFeeCoin = fee, coin(fee)
+	p.FundingCoin = coin(in.Funding)
+	p.DeltaNow = in.OptionsDelta + in.PerpUSD
 }
 
 // ScenarioPnL is the delta–gamma P&L of the options for a movePct spot move.
