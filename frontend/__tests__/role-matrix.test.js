@@ -57,7 +57,7 @@ function stateHandlers() {
   return out;
 }
 
-let dir, auditFile, auth, passwordHash, seq;
+let dir, auditFile, auth, passwordHash, seq, runSeq, runBase;
 
 const auditLines = () =>
   fs.existsSync(auditFile) ? fs.readFileSync(auditFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
@@ -216,9 +216,12 @@ const ACCOUNTS_STATUS = {
 };
 
 /** A fresh done BTC lab run with one proposal, in the test's folder (never the clone's data/): its id. */
+// A run id is a time to the second: it counts back from one clock reading per test,
+// so two runs never share an id however slow the test is (#912).
 function labRun() {
   process.env.COMPARE_DIR = path.join(dir, "compare");
-  const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  runSeq += 1;
+  const id = new Date(runBase - runSeq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   fs.mkdirSync(path.join(process.env.COMPARE_DIR, id), { recursive: true });
   const figures = { return_pct: 1, worst_week_pct: -1, max_drawdown_pct: 1, fees_usd: 10 };
   const report = {
@@ -280,6 +283,8 @@ beforeEach(async () => {
   resetAuth();
   auth = await getAuth();
   seq = 0;
+  runSeq = 0;
+  runBase = Date.now();
   global.fetch = jest.fn(async () => Response.json({ results: [], dry_run: true, actions: [] }));
 });
 afterEach(() => {

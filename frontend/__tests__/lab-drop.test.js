@@ -35,10 +35,12 @@ const REGISTRY = [
 ];
 const OTHER_ACCOUNT = "you do not manage account Account A (acct-a), which bot btc trades for: ask an admin to link it to you on the Users page";
 
-let root, dir, seq;
+let root, dir, seq, base;
+// A run id is a time to the second, so it counts back from one clock reading per test (#912):
+// Date.now() read on each call let a run made a second later take the previous run's id.
 const newRun = (over) => {
   seq += 1;
-  const id = new Date(Date.now() - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const id = new Date(base - seq * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   fs.mkdirSync(path.join(dir, id), { recursive: true });
   fs.writeFileSync(path.join(dir, id, "report.json"), JSON.stringify(report(over)));
   return id;
@@ -82,6 +84,7 @@ beforeEach(() => {
   process.env.ACCOUNTS_STATUS_PATH = path.join(root, "accounts_status.json");
   fs.writeFileSync(process.env.ACCOUNTS_STATUS_PATH, JSON.stringify({ version: 1, accounts: REGISTRY }));
   seq = 0;
+  base = Date.now();
   jest.spyOn(console, "error").mockImplementation(() => {});
   jest.spyOn(console, "log").mockImplementation(() => {});
   useTestAuth();
@@ -289,6 +292,16 @@ describe("Scenario: drop twice, or drop an applied run", () => {
     expect((await res.json()).error).toMatch(/^this run's proposal was dropped by [0-9a-f]{8} at .+: a dropped proposal cannot be confirmed$/);
     expect(files(recordsDir(dir))).toEqual([]);
     expect(linesOf(record, RECORD_AUDIT_ACTION)).toEqual([]);
+  });
+
+  test("runs made seconds apart in one test never share an id (#912)", () => {
+    const real = Date.now();
+    const clock = jest.spyOn(Date, "now");
+    const ids = [0, 1500, 3000].map((later) => {
+      clock.mockReturnValue(real + later);
+      return newRun();
+    });
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   test("an apply and a drop sent together: exactly one stands", async () => {
