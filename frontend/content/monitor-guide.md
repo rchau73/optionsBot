@@ -719,6 +719,13 @@ The written analysis of a run is not available yet, so the assistant does not qu
 It does not advise whether to apply a change.
 A user who asks gets no run figure.
 
+**Can the assistant tell me what my role lets me do, and why I cannot do something?** Yes: ask it, for example "why can't I close this position?" or "what can I do with my role?".
+It answers from your own role only: what your role may see and do, and, for something it may not do, which roles may and that an admin can give you another role on the Users page.
+A manager linked to some accounts is told that their actions on a bot apply only to the accounts they are linked to, and which ones.
+It reads nothing about anyone else: no other person's name, email or role reaches the answer.
+It never changes a role, a link or a setting, and never says how to get around a refusal.
+A vague message such as "it does not work" gets a question back about what you tried and where.
+
 Each environment has its own people and roles.
 
 Learn more: "Sign-in and password" and "For admins" in this guide.

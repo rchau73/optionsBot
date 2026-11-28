@@ -2,8 +2,8 @@ import { authDbPath, requireRole, sameOrigin } from "@/lib/auth/server";
 import { authLog } from "@/lib/auth/log";
 import { assistantLogPath } from "@/lib/assistant/log";
 import { QUESTIONS_PER_HOUR } from "@/lib/assistant/limit";
-import { assistantIndex, assistantLimiter, assistantModel, botBook, botExplain, botHedge, botJournal, botLive, botPerformance, botPnl, labRuns } from "@/lib/assistant/server";
-import { answerQuestion, asksAboutHedge, asksAboutIdle, asksAboutLab, asksAboutResults, mergePassages, validQuestion } from "@/lib/assistant/service";
+import { assistantIndex, assistantLimiter, assistantModel, botBook, botExplain, botHedge, botJournal, botLive, botPerformance, botPnl, labRuns, myAccess } from "@/lib/assistant/server";
+import { answerQuestion, asksAboutAccess, asksAboutHedge, asksAboutIdle, asksAboutLab, asksAboutResults, mergePassages, validQuestion } from "@/lib/assistant/service";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,8 @@ export async function GET(request) {
  * an idle book or unused margin its book now (#719), for a question about the
  * futures hedge or the perpetual its hedge now (#877); for a manager's or an
  * admin's question about a comparison, with or without "bot", the lab's
- * latest runs and requests (#742, percentages only); with "seq" too (the panel's "Why?" on a trade,
+ * latest runs and requests (#742, percentages only); for a question about
+ * access, the person's own role and what it may do (#911, myAccess); with "seq" too (the panel's "Why?" on a trade,
  * #408) also the facts the journal recorded about that event
  * (GET /api/explain). The answer must cite them, else it is replaced by
  * "I don't know" (no citation) or the fallback reply (advice, forecast, a
@@ -57,7 +58,7 @@ export async function GET(request) {
  * `remaining`, the questions left this hour.
  */
 export async function POST(request) {
-  const { user, response } = await requireRole(request, "user");
+  const { auth, user, response } = await requireRole(request, "user");
   if (response) return response;
   if (!sameOrigin(request)) return Response.json({ error: "cross-origin request refused" }, { status: 403 });
   if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
@@ -112,6 +113,8 @@ export async function POST(request) {
   }
   // The lab's comparisons, only for a question about one and only for a manager or an admin (#742): labRuns reads nothing for anyone else.
   const lab = asksAboutLab(valid.question) ? labRuns(user) : [];
+  // The person's own role and what it may do, only for a question about access (#911): their session role and, for a manager, their own links.
+  const access = asksAboutAccess(valid.question) ? myAccess(auth, user) : [];
 
   const { status, body: out } = await answerQuestion({
     question: valid.question,
@@ -122,6 +125,7 @@ export async function POST(request) {
     book,
     hedge,
     lab,
+    access,
     reportPassages: async () => (bot !== null ? botPnl(bot) : []),
     // The one more try of a rejected answer is a model call too (#534): it counts, and is skipped when the hour's budget is spent.
     takeRetry: () => limiter.take(user.id, Date.now()) === 0,

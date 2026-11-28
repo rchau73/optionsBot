@@ -53,7 +53,25 @@ type goldenQuestion struct {
 	// runs and requests and a correct answer citing the lab:<id>/… passages
 	// the monitor builds from them (__tests__/assistant-lab.test.js).
 	Lab *goldenLab `json:"lab,omitempty"`
+	// Access is a question about what the asking person's role may see or do
+	// (#911): their role, a manager's account links, and a correct answer
+	// citing the you:role / you:can/… passages the monitor builds from them
+	// (__tests__/assistant-access.test.js); none for a vague report (needs_info).
+	Access *goldenAccess `json:"access,omitempty"`
 }
+
+type goldenAccess struct {
+	Role   string   `json:"role"`
+	Links  []string `json:"links"`
+	Answer *struct {
+		Text      string   `json:"text"`
+		Citations []string `json:"citations"`
+	} `json:"answer,omitempty"`
+}
+
+// accessSource says whether a source names the asking person's own access
+// (#911), which a question's access fixture provides, never the help index.
+func accessSource(s string) bool { return strings.HasPrefix(s, "you:") }
 
 type goldenLab struct {
 	Runs     json.RawMessage `json:"runs"`
@@ -114,6 +132,7 @@ var goldenMinimum = map[string]int{
 	"idle":            4, // waiting for GEX, frozen, fully used, status unknown (#719)
 	"lab":             4, // the last run, the analysis withheld, no run, a failed request (#742)
 	"hedge":           4, // on, off, unavailable, the route unknown (#877)
+	"access":          4, // a user who cannot close, a manager and an unlinked account, an admin, a vague report (#911)
 }
 
 var goldenBehaviour = map[string]string{
@@ -129,6 +148,7 @@ var goldenBehaviour = map[string]string{
 	"idle":            "answer",
 	"lab":             "answer",
 	"hedge":           "answer",
+	"access":          "answer", // or needs_info for a vague report (#911)
 }
 
 // journalEvent names the catalogue event of a journal fixture's kind.
@@ -182,7 +202,7 @@ func unresolvedSources(qs []goldenQuestion, strategy []byte, index helpkb.File) 
 	var out []string
 	for _, q := range qs {
 		for _, s := range q.ExpectedSources {
-			ok := inIndex[s] || (q.Bot != nil && botSource(s)) || (q.Lab != nil && labSource(s))
+			ok := inIndex[s] || (q.Bot != nil && botSource(s)) || (q.Lab != nil && labSource(s)) || (q.Access != nil && accessSource(s))
 			if a, isStrategy := strings.CutPrefix(s, helpkb.StrategyFile+"#"); isStrategy {
 				ok = anchors[a]
 			}
@@ -225,6 +245,8 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 			if !slices.Contains(requestBehaviours, q.ExpectedBehaviour) {
 				t.Errorf("%s: a request case expects one of %v, has %q", q.ID, requestBehaviours, q.ExpectedBehaviour)
 			}
+		case q.Category == "access" && q.ExpectedBehaviour == "needs_info":
+			// A vague "it does not work" (#911): the request check asks what was tried and where.
 		case !known:
 			t.Errorf("%s: unknown category %q", q.ID, q.Category)
 		case q.ExpectedBehaviour != want:
@@ -274,6 +296,25 @@ func TestAssistantQuestions_SetIsCompleteAndConsistent(t *testing.T) {
 		}
 		if q.Lab != nil && !slices.ContainsFunc(q.Lab.Answer.Citations, labSource) {
 			t.Errorf("%s: a lab case needs an answer citing a lab: passage", q.ID)
+		}
+		// An access case (#911) answers from the person's own role: the monitor builds you:role and you:can/… from the fixture.
+		if (q.Category == "access") != (q.Access != nil) {
+			t.Errorf("%s: an access fixture belongs to access cases only, and each has one", q.ID)
+		}
+		if q.Access != nil {
+			if !slices.Contains([]string{"admin", "manager", "user"}, q.Access.Role) {
+				t.Errorf("%s: access role %q is not admin, manager or user", q.ID, q.Access.Role)
+			}
+			if q.Access.Role != "manager" && len(q.Access.Links) > 0 {
+				t.Errorf("%s: account links belong to a manager only", q.ID)
+			}
+			answers := q.ExpectedBehaviour == "answer"
+			if answers != (q.Access.Answer != nil) {
+				t.Errorf("%s: an access answer case needs a fixture answer, a needs_info case none", q.ID)
+			}
+			if q.Access.Answer != nil && !slices.ContainsFunc(q.Access.Answer.Citations, accessSource) {
+				t.Errorf("%s: an access case needs an answer citing a you: passage", q.ID)
+			}
 		}
 	}
 	for cat, min := range goldenMinimum {
@@ -381,12 +422,16 @@ func TestAssistantQuestions_MustSayComesFromSources(t *testing.T) {
 			// answer reads from the cited figures ("price fell"), checked by
 			// the monitor's guard against the passages built from them.
 			// A lab case likewise, from the lab's figures (#742).
-			if q.Bot != nil || q.Lab != nil {
+			// An access case likewise, from the person's own role (#911).
+			if q.Bot != nil || q.Lab != nil || (q.Access != nil && q.Access.Answer != nil) {
 				answer := ""
-				if q.Bot != nil {
+				switch {
+				case q.Bot != nil:
 					answer = q.Bot.Answer.Text
-				} else {
+				case q.Lab != nil:
 					answer = q.Lab.Answer.Text
+				default:
+					answer = q.Access.Answer.Text
 				}
 				if !strings.Contains(normText(answer), normText(phrase)) {
 					t.Errorf("%s: must_say %q is not in the fixture's answer", q.ID, phrase)

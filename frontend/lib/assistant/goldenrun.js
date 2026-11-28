@@ -14,7 +14,7 @@
 // The bot data a question needs comes from the question's own fixture
 // (`bot`, `request`): invented figures, never a live account's.
 import path from "node:path";
-import { answerQuestion, bookPassage, explainPassages, hedgePassage, journalPassages, labPassages, livePassages, mergePassages, perfPassages } from "./service";
+import { accessPassages, answerQuestion, bookPassage, explainPassages, hedgePassage, journalPassages, labPassages, livePassages, mergePassages, perfPassages } from "./service";
 
 // The fixtures name one bot (their ids read "live:btc/…", "journal:btc/…").
 export const GOLDEN_BOT = "btc";
@@ -53,11 +53,14 @@ function journalItems(passages) {
  * from its fixture: `bot` (#427: the bot's routes' answers → live and journal
  * passages, plus /api/explain's facts for a Why?, #534, and /api/performance's
  * 7- and 30-day answers as `perf`, #648, the book now as `book`, #719, and
- * /api/hedge's answer as `hedge`, #877), `lab` (#742:
+ * /api/hedge's answer as `hedge`, #877), `access` (#911: the asking person's
+ * role and account links → the you:role and you:can/… passages), `lab` (#742:
  * /api/lab/runs's runs and requests → the lab passages) or `request` (#409:
  * journal facts and P&L history points); none → a question with no bot.
  */
 export function goldenInputs(q) {
+  // An access question (#911): the asking person's role and links, as the route reads them from the session; no bot.
+  if (q.access) return { bot: null, live: [], journal: [], perf: [], book: [], access: accessPassages({ role: q.access.role, links: q.access.links }), reportPassages: async () => [] };
   // A lab question (#742): the lab's run list and requests, as /api/lab/runs answers them; no bot.
   if (q.lab) return { bot: null, live: [], journal: [], perf: [], book: [], lab: labPassages(q.lab), reportPassages: async () => [] };
   if (q.bot) {
