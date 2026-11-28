@@ -151,7 +151,7 @@ They hold counts only: no username, IP address, password, token or reset link; a
 
 | Store | Purpose | Retention |
 | --- | --- | --- |
-| Digest files, `data/agents/security/<week>/<env>/digest.md` and `.json` | The week's counts, the chain check and the date of the last admin-role change; the md is also the usage report's "Security" section | as long as the host keeps the agents' state; nothing deletes them today |
+| Digest files, `data/agents/security/<week>/<env>/digest.md` and `.json` | The week's counts, the chain check, the date of the last admin-role change and the access review's counts (people per role, managers with no account link, unused accounts; #919, no name or account id); the md is also the usage report's "Security" section | as long as the host keeps the agents' state; nothing deletes them today |
 | Alert IDs raised, `data/agents/security/<env>.alerts` | So one pattern never alerts twice: the rule, the UTC day or time and, for failed sign-ins and a promotion, a 12-character SHA-256 prefix of the username (a pseudonym: whoever holds the user list can match it), never the name | same; grows by one line per alert |
 | Notifications | The digest's one-line headline and each alert's text, shown on the Mac that runs the agents | the Mac's notification centre |
 

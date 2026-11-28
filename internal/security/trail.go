@@ -27,17 +27,21 @@ type Entry struct {
 	To       string // the new role of user_created and role_changed
 	From     string // the old role of role_changed
 	IP       string
+	// AccountID is the exchange account of account_link_added/removed, used
+	// only to replay a manager's links (#919); never in the digest.
+	AccountID string
 }
 
 // line is the JSON shape of an audit line (lib/auth/service.js audit()).
 type line struct {
-	Time     string `json:"time"`
-	Action   string `json:"action"`
-	Username string `json:"username"`
-	Target   string `json:"target"`
-	To       string `json:"to"`
-	From     string `json:"from"`
-	IP       string `json:"ip"`
+	Time     string          `json:"time"`
+	Action   string          `json:"action"`
+	Username string          `json:"username"`
+	Target   string          `json:"target"`
+	To       string          `json:"to"`
+	From     string          `json:"from"`
+	IP       string          `json:"ip"`
+	Account  json.RawMessage `json:"account_id"` // raw: a string or a number, compared as written
 }
 
 // Trail is the audit trail read whole: its entries oldest first and the lines
@@ -88,7 +92,7 @@ func parseLine(raw []byte) (Entry, bool) {
 	if err != nil {
 		return Entry{}, false
 	}
-	return Entry{Time: at.UTC(), Action: l.Action, Username: l.Username, Target: l.Target, To: l.To, From: l.From, IP: l.IP}, true
+	return Entry{Time: at.UTC(), Action: l.Action, Username: l.Username, Target: l.Target, To: l.To, From: l.From, IP: l.IP, AccountID: string(l.Account)}, true
 }
 
 // promotesToAdmin is true for a line that gives someone the admin role
