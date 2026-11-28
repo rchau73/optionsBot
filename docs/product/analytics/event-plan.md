@@ -158,6 +158,9 @@ Rejected properties and why: instrument name (it carries the strike, a price), q
 | manual close (confirmed ÷ opened) | Q6 | ≥ 20 points under |
 | rebalance (confirmed ÷ previewed) | Q6 | ≥ 20 points under |
 | lapsed share (lapsed ÷ people active in the 4 weeks before, #569) | Q2 "Lapsed" | ≥ 20 points **over** the 3 weeks' pooled share (rising is bad); under 10 people in either base is too few |
+| activation (activated in the first day ÷ new people, §8, #918) | Q2, Q4 "Activation" | ≥ 20 points under the 3 weeks' pooled share; under 10 new people in the week or in the pooled base is too few |
+
+The activation threshold (20 points) is an assumption, taken from the Q4 completion rule; revisit it after 12 weeks of data.
 
 A base under 10 users (or 10 funnel starts, in the base weeks and in the week) is "too few to judge" and raises nothing. A week with no events is noted and left out of the base, never counted as zero; a week with no events itself raises nothing. The issue and the epic comment carry counts and percentages only (percentages only for a live account).
 
@@ -174,7 +177,7 @@ Does a new person reach a useful answer early, and how fast? `cmd/usage` answers
 - **Weeks:** the report's week and the 11 before it (`usage.ActivationWeeks`), each with new people, how many opened the Overview, how many were activated, the share, the median and the first step of each activated person.
 - **Small base:** under 10 new people (`usage.ActivationMinUsers`) the week is `too few to judge`: no share and no median.
 - **Missing weeks:** a week with no event at all is noted and left out, never counted as zero.
-- **No alert:** §7's drop rules do not read it.
+- **Alert:** §7's `activation` row (#918) raises a drop when the week's share falls 20 points or more under the 3 weeks before's pooled share; it is in the Analytics page's **Needs your attention** and the `[E13] Engagement drop` issue.
 
 Only people who said yes send events (§5), so a person who did not accept analytics is in no figure; counts and shares only, never a `user_id`.
 

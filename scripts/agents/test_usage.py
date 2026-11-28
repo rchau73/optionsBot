@@ -49,6 +49,7 @@ def drops(*ds, missing=(), prev_active=40):
 
 ACTIVE_DROP = {"metric": "active_users", "kind": "count", "current": 20, "base": 40, "change_pct": -50}
 LAPSED_DROP = {"metric": "lapsed_share", "kind": "share", "current": 45, "base": 15, "change_pts": 30, "starts": 40, "base_starts": 120}
+ACTIVATION_DROP = {"metric": "activation", "kind": "funnel", "current": 25, "base": 60, "change_pts": -35, "starts": 12, "base_starts": 40}
 CLOSE_DROP = {"metric": "manual_close", "kind": "funnel", "current": 50, "base": 80, "change_pts": -30, "starts": 10, "base_starts": 30}
 
 
@@ -254,6 +255,16 @@ class Pure(unittest.TestCase):
         line, again = usage_week.issue(WEEK, self.envs, self.state, filed, NOW)
         self.assertIsNone(again)
         self.assertIn("#11 already reports it", line)
+
+    def test_scenario_activation_falls_names_it_in_the_monday_issue(self):
+        # #918: 60 % of 40 new people → 25 % of 12: the title names activation, the body counts new people.
+        self.put("mvp", report(), drops(ACTIVATION_DROP))
+        title, body = usage_week.issue(WEEK, self.envs, self.state, [], NOW)[1]
+        self.assertEqual(title, "[E13] Engagement drop: activation 2026-W43")
+        self.assertIn("- new people activated in their first day: 25 % of new people, was 60 % (-35 pts)"
+                      " — 12 new people this week, 40 in the base weeks", body)
+        self.assertEqual(usage_week.drop_text(ACTIVATION_DROP, True),
+                         "new people activated in their first day: 25 % of new people, was 60 % (-35 pts)")
 
     def test_lapsed_drop_live_env_shows_percentages_only(self):
         text = usage_week.drop_text(LAPSED_DROP, True)

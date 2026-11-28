@@ -150,16 +150,14 @@ func TestUsageActivation_ScenarioTooFewNewPeople(t *testing.T) {
 	if !strings.Contains(md.String(), "| 2026-W43 | 6 | 6 | 6 | — (too few to judge: under 10 new people) | — |") {
 		t.Errorf("markdown lacks the too-few row:\n%s", md.String())
 	}
-	// No alert: the drop check watches its own metrics only.
+	// No alert on 6 new people (#918): the activation rule says too few to judge.
 	for _, d := range r.Drops.Drops {
 		if strings.HasPrefix(d.Metric, "activation") {
 			t.Errorf("drop raised on activation: %+v", d)
 		}
 	}
-	for _, s := range r.Drops.Skipped {
-		if strings.HasPrefix(s.Metric, "activation") {
-			t.Errorf("drop check judged activation: %+v", s)
-		}
+	if got := skipReason(*r.Drops, usage.MetricActivation); got != usage.TooFew {
+		t.Errorf("activation skipped %q, want %q", got, usage.TooFew)
 	}
 }
 
