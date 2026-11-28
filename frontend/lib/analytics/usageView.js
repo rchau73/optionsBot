@@ -78,6 +78,7 @@ const METRICS = {
   manual_close: "Manual-close funnel",
   rebalance: "Rebalance funnel",
   lapsed_share: "People who stopped coming back",
+  activation: "New people activated in their first day",
 };
 
 /** A drop-check metric in plain words. */
@@ -92,7 +93,8 @@ export function dropText(d) {
     return `${metricLabel(d.metric)}: ${round(d.current)} % of ${d.starts} people, was ${round(d.base)} % of ${d.base_starts} (${signed(d.change_pts)} pts)`;
   }
   if (d.kind === "funnel") {
-    return `${metricLabel(d.metric)}: ${round(d.current)} % of ${d.starts} starts, was ${round(d.base)} % of ${d.base_starts} (${signed(d.change_pts)} pts)`;
+    const of = d.metric === "activation" ? "new people" : "starts"; // #918: the activation share's base is new people
+    return `${metricLabel(d.metric)}: ${round(d.current)} % of ${d.starts} ${of}, was ${round(d.base)} % of ${d.base_starts} (${signed(d.change_pts)} pts)`;
   }
   return `${metricLabel(d.metric)}: ${round(d.current)}, mean of the weeks before ${d.base.toFixed(1)} (${signed(d.change_pct)} %)`;
 }

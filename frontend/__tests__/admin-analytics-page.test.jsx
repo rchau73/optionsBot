@@ -280,6 +280,10 @@ describe("Must not: no id, username, amount or free text", () => {
     expect(dropText({ metric: "manual_close", kind: "funnel", current: 50, base: 80, change_pts: -30, starts: 10, base_starts: 20 })).toBe(
       "Manual-close funnel: 50 % of 10 starts, was 80 % of 20 (−30 pts)",
     );
+    // #918: the activation drop counts new people, not starts.
+    expect(dropText({ metric: "activation", kind: "funnel", current: 25, base: 60, change_pts: -35, starts: 12, base_starts: 40 })).toBe(
+      "New people activated in their first day: 25 % of 12 new people, was 60 % of 40 (−35 pts)",
+    );
     expect(attentionItems({ events_in_week: 0 })).toEqual([]);
   });
 });

@@ -859,7 +859,8 @@ On a phone the table scrolls sideways inside its card.
 
 **Activation in the first day** (on Analytics): of the people whose first visit fell in a week, how many opened the Overview and then the worst case, a trade's reason, a tip or the assistant within 24 hours of that first visit.
 It shows "8 of 12", the share and the median minutes to that answer, for the last 12 weeks.
-Under 10 new people it says **too few to judge**, gives no share and raises no alert.
+When the week's share falls 20 points or more under the 3 weeks before, "New people activated in their first day" shows as a DROP under "Needs your attention", with both shares.
+Under 10 new people, in the week or in those 3 weeks, it says **too few to judge**, gives no share and raises no alert.
 A week with no events is named under the table, never counted as zero.
 Only people who said yes to analytics are counted.
 

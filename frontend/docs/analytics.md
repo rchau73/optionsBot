@@ -46,7 +46,8 @@ No new page, so the menu (`lib/menu.js`) and its test do not change.
 A new person is activated when, within 24 h of their first session, they opened the Overview and then a worst-case view, a trade's reason, or a tip or the assistant.
 - The top line is the report's own week: "N of new people", the share and the median minutes to that step (`minutesShort`).
 - The table lists the last 12 weeks that had events, newest first: new people, opened the Overview, activated, share, median.
-- Under 10 new people (`usage.ActivationMinUsers`) the share and the median are "too few", with a `too few to judge` text badge for the week; no alert is ever raised on it.
+- Under 10 new people (`usage.ActivationMinUsers`) the share and the median are "too few", with a `too few to judge` text badge for the week, and the drop check raises nothing on it.
+- The share falling 20 points or more under the 3 weeks before's pooled share is the drop check's `activation` (#918, event plan §7): a DROP in **Needs your attention**, read "New people activated in their first day: 25 % of 12 new people, was 60 % of 40 (−35 pts)".
 - A week with no event at all is not a row: it is named under the table ("not counted as zero"); the report's own week without events says so in words.
 - A report written before #620 has no `activation`: the card says so (`activationView` returns null).
 Counts and shares only, as the rest of the report; the menu does not change.

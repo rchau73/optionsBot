@@ -33,10 +33,11 @@ const (
 	MetricManualClose  = "manual_close"  // manual-close dialogs confirmed ÷ opened
 	MetricRebalance    = "rebalance"     // rebalances confirmed ÷ previewed
 	MetricLapsed       = "lapsed_share"  // people who stopped coming back ÷ people active in the lookback weeks (#569)
+	MetricActivation   = "activation"    // new people activated within a day ÷ new people (#620, #918)
 )
 
 // dropMetrics are the metrics the check judges, in its order.
-var dropMetrics = []string{MetricActive, MetricHelp, MetricFirstAnswers, MetricManualClose, MetricRebalance, MetricLapsed}
+var dropMetrics = []string{MetricActive, MetricHelp, MetricFirstAnswers, MetricManualClose, MetricRebalance, MetricLapsed, MetricActivation}
 
 // Rules are the thresholds of the drop check.
 type Rules struct {
@@ -197,7 +198,26 @@ func Drops(current Report, previous []Report, rules Rules) Alert {
 		}
 		return r.Lapsed.Users, r.Lapsed.Base, true
 	})
+	// Activation (#918): the share of the week's new people activated in their
+	// first day, against the base weeks' pooled share, as the funnels — the
+	// FunnelPts fall (an assumption taken from the Q4 rule, revisited after 12
+	// weeks of data) on ActivationMinUsers (= MinBase) new people or more.
+	funnel(MetricActivation, activationOf)
 	return a
+}
+
+// activationOf is the activated and new people of a report's own week: the
+// last week of its activation block. A report without one (no events, or
+// written before #620) gives 0 of 0, so it adds nothing to a base.
+func activationOf(r Report) (activated, users int) {
+	if r.Activation == nil || len(r.Activation.Weeks) == 0 {
+		return 0, 0
+	}
+	w := r.Activation.Weeks[len(r.Activation.Weeks)-1]
+	if w.NoEvents {
+		return 0, 0
+	}
+	return w.Activated, w.Users
 }
 
 // BuildWeeks builds the reports of the n (normally DropBaseWeeks) 7-day windows
@@ -239,6 +259,9 @@ func sumCounts(m map[string]int) int {
 func (d Drop) String() string {
 	if d.Kind == "share" {
 		return fmt.Sprintf("%s: %.0f %% of %d people, was %.0f %% of %d (%+.0f pts)", d.Metric, d.Current, d.Starts, d.Base, d.BaseStart, d.ChangePts)
+	}
+	if d.Metric == MetricActivation {
+		return fmt.Sprintf("%s: %.0f %% of %d new people, was %.0f %% of %d (%+.0f pts)", d.Metric, d.Current, d.Starts, d.Base, d.BaseStart, d.ChangePts)
 	}
 	if d.Kind == "funnel" {
 		return fmt.Sprintf("%s: %.0f %% of %d starts, was %.0f %% of %d (%+.0f pts)", d.Metric, d.Current, d.Starts, d.Base, d.BaseStart, d.ChangePts)

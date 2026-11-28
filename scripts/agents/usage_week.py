@@ -50,6 +50,7 @@ METRIC_NAMES = {
     "manual_close": "manual-close dialogs confirmed",
     "rebalance": "rebalances confirmed after a preview",
     "lapsed_share": "people who stopped coming back",
+    "activation": "new people activated in their first day",
 }
 
 # internal/usage/flatten.go (#607): a cohort's curve is judged on its last
@@ -185,9 +186,10 @@ def drop_text(d, live):
             text += f" — {num(d.get('starts')) or 0} people this week, {num(d.get('base_starts')) or 0} in the base weeks"
         return text
     if d.get("kind") == "funnel":
-        text = f"{name}: {pct(cur)} of starts, was {pct(base)} ({num(d.get('change_pts')) or 0:+.0f} pts)"
+        of = "new people" if d.get("metric") == "activation" else "starts"  # #918
+        text = f"{name}: {pct(cur)} of {of}, was {pct(base)} ({num(d.get('change_pts')) or 0:+.0f} pts)"
         if not live:
-            text += f" — {num(d.get('starts')) or 0} starts this week, {num(d.get('base_starts')) or 0} in the base weeks"
+            text += f" — {num(d.get('starts')) or 0} {of} this week, {num(d.get('base_starts')) or 0} in the base weeks"
         return text
     change = signed_pct(num(d.get("change_pct")))
     if live:

@@ -13,12 +13,13 @@ It makes no Claude call, reads of the bots only the days in their `data/regime_h
 3. [`usage_week.py`](../../scripts/agents/usage_week.py) builds one comment, posted on the E13 epic: per environment, active users, the change against the week before, week-1 retention of the latest cohort, the curve of the latest cohort with 4 ended weeks, first answers found, activated in the first day, help used and help answers, the drops and the weeks with no events.
    Under the table, one **Retention by activation** line per environment (#818, event plan §9): the week-4 return of the activated and of the not activated, the cohorts of the last 12 weeks pooled, with "association, not proof" beside it ("activated come back 62 % in week 4, not activated 31 % (n = 14 / 22)"; a group under 10 is `too few to judge`; a live account gets the shares only).
    The curve (#607) is `flattening`, `falling`, `rising` or `too few to judge`, copied only from that fixed list.
-   **Activated in the first day** (#620, event plan §8) is the week's new people who opened the Overview and then a worst-case view, a trade's reason or a tip or the assistant within 24 h: "8 of 12 (67 %, median 9 min)"; under 10 new people "too few to judge", a week without events "— (no events)"; no drop rule reads it.
+   **Activated in the first day** (#620, event plan §8) is the week's new people who opened the Overview and then a worst-case view, a trade's reason or a tip or the assistant within 24 h: "8 of 12 (67 %, median 9 min)"; under 10 new people "too few to judge", a week without events "— (no events)"; the `activation` drop rule below reads it.
    It reads named figures only, so no user, session or amount field can reach GitHub.
    **Live accounts:** an environment whose `.env` has `DERIBIT_ENV=live` gets percentages only.
 
 **Drop rules** (`internal/usage/drops.go`, fixed; `cmd/usage -alert-*` flags study them): weekly active users or help used (tips opened + videos played) at least 30 % under the mean of the 3 weeks before; the first-answers, manual-close or rebalance funnel's completion share at least 20 points under those weeks'.
 The share of people who stopped coming back (`lapsed_share`, #569: active in the 4 weeks before, no visit in the week) at least 20 points over those weeks'; the issue names it "people who stopped coming back".
+The share of new people activated in their first day (`activation`, #918, event plan §7 and §8) at least 20 points under the 3 weeks' pooled share, on 10 new people or more in the week and in that base; the issue names it "new people activated in their first day" and counts new people (the 20 points are an assumption from the first-answers rule, revisited after 12 weeks of data).
 A base under 10 users (or 10 funnel starts, or 10 people active in the 4 weeks before, in the base and in the week) is `too few to judge`.
 A week with no events is noted and left out of the base, never counted as zero.
 
