@@ -63,6 +63,7 @@ type Digest struct {
 	SignInSources   int        `json:"sign_in_sources"`   // distinct sources (IP addresses) of the week's sign-ins
 	LastAdminChange *time.Time `json:"last_admin_change"` // the last line that gave or took the admin role, any week
 	Skipped         int        `json:"skipped_lines"`     // lines that are not readable audit lines
+	Access          Access     `json:"access"`            // who holds access at the end of the week and of the week before (#919)
 }
 
 // Build is the digest of week w from the trail and its chain check: per
@@ -95,6 +96,7 @@ func Build(t Trail, chain Chain, w evidence.Window) Digest {
 	}
 	d.LockedUsernames = len(locked)
 	d.SignInSources = len(sources)
+	d.Access = BuildAccess(t.Entries, w.From, w.To)
 	return d
 }
 
@@ -131,8 +133,8 @@ func (d Digest) Headline() string {
 		chain = "AUDIT CHAIN BROKEN"
 	}
 	f, l, r := d.count("sign_in_failed"), d.count("locked"), d.count("role_changed")
-	return fmt.Sprintf("Security %s: %s; %d failed sign-ins (%d the week before), %d lockouts (%d), %d role changes (%d).",
-		d.Week, chain, f.Week, f.Before, l.Week, l.Before, r.Week, r.Before)
+	return fmt.Sprintf("Security %s: %s; %d failed sign-ins (%d the week before), %d lockouts (%d), %d role changes (%d). %s",
+		d.Week, chain, f.Week, f.Before, l.Week, l.Before, r.Week, r.Before, d.Access.Line())
 }
 
 // Markdown is the digest as the weekly usage report's "Security" section.
@@ -163,6 +165,7 @@ func (d Digest) Markdown() string {
 		last = d.LastAdminChange.Format("2006-01-02")
 	}
 	fmt.Fprintf(&b, "- Last change of the admin role: %s\n", last)
+	fmt.Fprintf(&b, "- %s\n", d.Access.Line())
 	if d.Skipped > 0 {
 		fmt.Fprintf(&b, "- Unreadable lines left out: %d\n", d.Skipped)
 	}

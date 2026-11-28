@@ -42,7 +42,7 @@ On the first tick after a week ends it writes `data/agents/security/<week>/<env>
 A failed environment is retried once on a later tick, then `<week>.done` marks the week done.
 Nothing of it is posted on GitHub (the repository is public): the digest and the alerts stay in the notifications and the local files.
 Ledger agent `security`: a run per digest (`notified` or `failed`) and per check that raised an alert (`notified`, "N alert(s)").
-Tests: `test_security.py` (`security.sh` end to end with the real `cmd/security`, a fake docker and osascript) and `tests/security_digest_test.go` (one test per scenario of #717).
+Tests: `test_security.py` (`security.sh` end to end with the real `cmd/security`, a fake docker and osascript), `tests/security_digest_test.go` (one test per scenario of #717) and `tests/security_access_test.go` (the digest's "Access" line, one test per scenario of #919).
 
 **Assistant quality review** (#438): before its own report, `usage.sh` runs [`assistant_review.sh`](../../scripts/agents/assistant_review.sh).
 In each environment with a non-empty `data/monitor/assistant.jsonl` it runs `go run ./cmd/assistantreview` (the private review files go to `<clone>/data/monitor/assistant_reviews/`) and posts `usage_week.py assistant-comment` on the E10 epic.

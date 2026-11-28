@@ -190,8 +190,13 @@ The weekly digest of the last ISO week (Monday to Sunday, UTC), per environment:
 - for failed sign-ins, lockouts, lockouts lifted by an admin, failed password changes, passwords set by an admin, reset links issued, passwords reset with a link, role changes, users created, users deleted by an admin, accounts deleted by their owner, sessions ended and signed out everywhere: the count this week and the week before;
 - usernames locked out this week, and distinct sources (IP addresses) signing in this week, as counts;
 - the date of the last change of the admin role (any line that gave or took it, the first-admin setup included);
+- the "Access" line (#919), at the end of the week and of the week before: people per role (admin, manager, user), managers with no account link, and accounts unused for 90 days;
+  - it replays `user_created`, `role_changed`, `user_deleted`, `account_deleted`, `signed_in` and `account_link_added`/`_removed` from the first line, because a role at a point in time is not in any single line (it never reads `auth.db`);
+  - a manager's links survive a role change, as in `account_links`, and go with the account;
+  - unused is the Users page's rule (`UNUSED_DAYS` in `lib/users.js`, the same 90 as `security.UnusedDays`, kept equal by a test): the last sign-in 90 whole days or more before the week's end, or never signed in and created that long ago;
+  - when the trail cannot rebuild them (no first-admin `user_created` line, or a line acting on someone the trail never created: archives missing), it says "access count incomplete" and gives no figure;
 - "No data yet" when the trail has no line.
-It is one notification per environment ("Security 2026-W45: chain intact; 12 failed sign-ins (3 the week before), 2 lockouts (0), 0 role changes (0).") and the "Security" section of that week's usage report.
+It is one notification per environment ("Security 2026-W45: chain intact; 12 failed sign-ins (3 the week before), 2 lockouts (0), 0 role changes (0). Access: 1 admin, 2 managers, 4 users (1 admin, 2 managers, 5 users the week before); 1 manager with no account link (0); 3 unused for 90 days (2).") and the "Security" section of that week's usage report.
 The alert rules, fixed values in `internal/security/alerts.go`, not settings:
 - at least 10 failed sign-ins for one username within any hour: one alert per username and UTC day, with the most in any hour;
 - 3 or more lockouts in one UTC day: one alert per day;
