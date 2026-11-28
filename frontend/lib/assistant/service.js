@@ -10,7 +10,9 @@
 // person to a document, or for not being in English (#565), is asked once
 // more with what failed (#534); any other
 // rejected answer, or a second rejection, becomes the fallback reply.
+import { asksAboutAccess } from "./access";
 import { asksAboutHedge } from "./hedgeNow";
+export { ACCESS_ACTIONS, accessPassages, asksAboutAccess } from "./access";
 export { asksAboutHedge, hedgePassage } from "./hedgeNow";
 import { REASON_LANGUAGE, REASON_NO_CITATION, REASON_POINTS_TO_DOCUMENT, REASON_UNGROUNDED_NUMBER, REASON_UNKNOWN_CITATION, check, isCanonical, isEnglish } from "./guard";
 import { appendLine, newAnswerId } from "./log";
@@ -915,7 +917,9 @@ function applyRequestCheck(entry, verdict, passages) {
  * comparisons from labPassages, sent only when the question asks about one
  * (asksAboutLab, #742) — the caller passes them for a manager or an admin
  * only (labRuns); hedge: the bot's futures hedge now from hedgePassage, sent
- * only when the question asks about the hedge (asksAboutHedge, #877); reportPassages:
+ * only when the question asks about the hedge (asksAboutHedge, #877); access:
+ * the asking person's own role and links from accessPassages, sent only when
+ * the question asks what the role may see or do (asksAboutAccess, #911); reportPassages:
  * async () → more passages for a report (the bot's P&L history, #409);
  * takeRetry: () → true when the person's budget allows the one more try of a
  * rejected answer (#534; retryFeedback says which are retried); file: the
@@ -936,6 +940,7 @@ export async function answerQuestion({
   book = [],
   lab = [],
   hedge = [],
+  access = [],
   reportPassages = async () => [],
   takeRetry = () => true,
   user,
@@ -955,7 +960,9 @@ export async function answerQuestion({
   const comparisons = asksAboutLab(question) ? lab : [];
   // The hedge now goes only with a question about the hedge or the perpetual (#877).
   const hedgeNow = asksAboutHedge(question) ? hedge : [];
-  let passages = [...hits.map((h) => h.passage), ...live, ...present, ...hedgeNow, ...results, ...comparisons, ...facts];
+  // The person's own role and what it may do go only with a question about access (#911).
+  const mine = asksAboutAccess(question) ? access : [];
+  let passages = [...hits.map((h) => h.passage), ...mine, ...live, ...present, ...hedgeNow, ...results, ...comparisons, ...facts];
   const canCheck = typeof model.checkRequest === "function";
   let report = canCheck && looksLikeReport(question);
   const entry = {
@@ -983,7 +990,7 @@ export async function answerQuestion({
   // best hits go to the model anyway, so an advice or forecast question gets
   // the refusal, not "I don't know"; the guard checks the answer as any other.
   const closeEnough = !noAnswer(hits) || (hits.length > 0 && !isEnglish(question));
-  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && hedgeNow.length === 0 && results.length === 0 && comparisons.length === 0) {
+  if (!closeEnough && facts.length === 0 && live.length === 0 && present.length === 0 && hedgeNow.length === 0 && results.length === 0 && comparisons.length === 0 && mine.length === 0) {
     // Nothing to answer from: no model call. A report gets the checklist
     // (nothing to check it against), any other question the contract's reply.
     entry.model = null;

@@ -18,6 +18,7 @@ import {
   LAB_CACHE_MS,
   LIVE_CACHE_MS,
   PERF_CACHE_MS,
+  accessPassages,
   bookPassage,
   explainPassages,
   hedgePassage,
@@ -182,6 +183,27 @@ export async function botPerformance(bot, nowMs = Date.now()) {
     authLog("WARN", "assistant: bot performance unavailable", { component: "assistant", bot, error: err.message });
     return [];
   }
+}
+
+/**
+ * The asking person's own access (#911) as passages (accessPassages): their
+ * session role and, for a manager, the account ids linked to them — read for
+ * that person only (auth.store.accountLinks of their own id), never anyone
+ * else's row, and no username or email. A manager's links read that fails →
+ * [] with a WARN: a manager's passages without their links would say they act
+ * on every account, which may be wrong.
+ */
+export function myAccess(auth, user) {
+  let links = [];
+  if (user?.role === "manager") {
+    try {
+      links = auth.store.accountLinks(user.id);
+    } catch (err) {
+      authLog("WARN", "assistant: account links unavailable", { component: "assistant", error: err.message });
+      return [];
+    }
+  }
+  return accessPassages({ role: user?.role, links });
 }
 
 /**

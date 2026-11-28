@@ -92,6 +92,17 @@ It answers from the published help, the bot's live page data and the user's own 
   - the newest of all says "the newest comparison listed"; with none, `lab:none`: "unknown: no comparison has been run".
   The written analysis (`analysis.json`) is never read or quoted: while the L10 gate is closed the passage says "The written analysis is not available yet."
   The answer guard still refuses advice: "should I apply it?" gets the refusal, with the run's figures and their risks beside it when the model cites them.
+
+  **The person's own access** (#911, `accessPassages` in `lib/assistant/access.js`, `myAccess` in `lib/assistant/server.js`): a question about what the asker's role may see or do, with or without `bot`, also gets passages built on the server from the session's role.
+  Such a question is one `asksAboutAccess` matches: "why can't I …", "can I close/change/see …", "what can I do", "who can", "my role", "permission", "allowed to", "the Lab/Users/Audit/Analytics page", "manual close", "linked to accounts"…
+  The passages:
+  - `you:role`: the role, what it may do, what it may not do and which roles may, and that only an admin gives another role or other account links on the Users page;
+  - one `you:can/<action>` per `ACCESS_ACTIONS` entry (see, close, rebalance, hedge, lab, lab-confirm, users, audit, analytics): allowed for the role, or "managers and admins can do it; your role is user, so you cannot. An admin can give you another role on the Users page." — never a way around it.
+  Who may do each action is read from the role matrix (`STATE_CHANGING_ROUTES`, `READ_ROUTES` in `lib/auth/routeRoles.js`), so the passages follow it; `__tests__/assistant-access.test.js` fails on an action whose routes are not rows of it or allow different roles.
+  A manager's passages say that actions on a bot (`linked: true`) apply only to the accounts they are linked to and name those account ids — read for that manager only (`auth.store.accountLinks` of their own id); no link: every account.
+  A links read that fails sends no access passage (WARN log).
+  No username, email or other person's data enters a passage, and nothing is read for anyone else; the passages explain the server's checks and grant nothing.
+  Any other question sends no access passage; a vague "it does not work" runs the request check (needs_info).
   A full book of 8 legs + the market stays under `LIVE_TOKENS` (1,500).
   With the help and the journal a question is ≲ 10k input tokens.
   Without the payoff the exit lines read "unknown"; a bot that does not answer leaves the help and the journal (WARN log, not cached).
