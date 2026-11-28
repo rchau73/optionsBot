@@ -10,7 +10,8 @@ import IdleNote from "./IdleNote";
 import { Signed } from "./InvestorSummary";
 import MonthBars from "./MonthBars";
 import RegimeChart from "./RegimeChart";
-import { formatCoin, formatDate, formatUSD, isNumber } from "@/lib/format";
+import { summaryUnit, formatMoney, worstValue } from "@/lib/details";
+import { formatDate, formatUSD, isNumber } from "@/lib/format";
 import { hedgeActionWhat, isHedgeAction } from "@/lib/hedgeWords";
 import { clockHM, coinOf, isFirstDay, monthSoFar, moveSince, rangeBar, stateWords, warningChips, worstCaseLine } from "@/lib/overview";
 import { formatSignedPct, formatSignedUSD } from "@/lib/summary";
@@ -132,7 +133,7 @@ function PhoneHeader({ bots, bot, onSelect }) {
 /** "This month: +0.012 BTC after fees", then "About +$1,200 · 1–19 Oct · running normally". */
 function Headline({ bot }) {
   const s = bot.summary;
-  const coin = coinOf(bot);
+  const unit = summaryUnit(s); // USDC for SOL/XRP (#837): already dollars, so no "About $" beside it
   const m = s.income?.this_month;
   const closes = m?.closes ?? 0;
   const range = monthSoFar(s.as_of);
@@ -142,14 +143,14 @@ function Headline({ bot }) {
         This month:{" "}
         {closes > 0 ? (
           <>
-            <Signed value={m.realised_coin}>{formatCoin(m.realised_coin, coin)}</Signed> after fees
+            <Signed value={m.realised_coin}>{formatMoney(m.realised_coin, unit)}</Signed> after fees
           </>
         ) : (
           <span className="text-muted">not yet: no close this month</span>
         )}
       </h1>
       <p className="text-sm text-muted">
-        {[closes > 0 ? `About ${formatSignedUSD(m.realised_usd)}` : null, range, stateWords(bot)].filter(Boolean).join(" · ")}
+        {[closes > 0 && unit !== "USDC" ? `About ${formatSignedUSD(m.realised_usd)}` : null, range, stateWords(bot)].filter(Boolean).join(" · ")}
       </p>
     </div>
   );
@@ -219,14 +220,14 @@ export function RangeBar({ bar }) {
 }
 
 function MakingCard({ summary: s, bot }) {
-  const coin = s.underlying;
+  const unit = summaryUnit(s);
   const m = s.income?.this_month;
   return (
     <Card title="Making or losing">
       <dl className="grid grid-cols-2 gap-2 text-base tabular-nums">
         <div>
           <dt className="text-xs text-muted">This month</dt>
-          <dd>{m?.closes ? <Signed value={m.realised_coin}>{formatCoin(m.realised_coin, coin)}</Signed> : <span className="text-muted">not yet</span>}</dd>
+          <dd>{m?.closes ? <Signed value={m.realised_coin}>{formatMoney(m.realised_coin, unit)}</Signed> : <span className="text-muted">not yet</span>}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted">Open now</dt>
@@ -234,7 +235,7 @@ function MakingCard({ summary: s, bot }) {
             {s.holding?.legs === 0 ? (
               <span className="text-muted">nothing open</span>
             ) : isNumber(s.income?.unrealised_coin) ? (
-              <Signed value={s.income.unrealised_coin}>{formatCoin(s.income.unrealised_coin, coin)}</Signed>
+              <Signed value={s.income.unrealised_coin}>{formatMoney(s.income.unrealised_coin, unit)}</Signed>
             ) : (
               <span className="text-muted">unknown</span>
             )}
@@ -251,6 +252,9 @@ function MakingCard({ summary: s, bot }) {
 
 function WorstCard({ summary: s, bot }) {
   const coin = s.underlying;
+  const unit = summaryUnit(s);
+  // A USDC bot's loss is the model's dollar loss; its % of the account waits for a USDC balance in /api/summary (#837 follow-up).
+  const usdc = unit === "USDC";
   const w = worstCaseLine(s.worst_case);
   return (
     <Card title="Worst case right now" loss>
@@ -262,9 +266,10 @@ function WorstCard({ summary: s, bot }) {
         <p className="text-base">
           A very bad day ({coin} {formatSignedPct(w.move).replace("%", " %")}) would cost about{" "}
           <strong className="tabular-nums">
-            {formatCoin(w.lossCoin, coin).replace(/^[+−]/, "")} ({formatUSD(w.lossUSD)})
+            {formatMoney(worstValue(w.lossCoin, w.lossUSD, unit), unit).replace(/^[+−]/, "")}
+            {usdc ? null : ` (${formatUSD(w.lossUSD)})`}
           </strong>
-          , {w.pct == null ? "% of the account unknown" : `${Math.abs(w.pct).toFixed(1)} % of the account`}.
+          {usdc ? "" : `, ${w.pct == null ? "% of the account unknown" : `${Math.abs(w.pct).toFixed(1)} % of the account`}`}.
         </p>
       )}
       <Link href={`/worst-case?bot=${encodeURIComponent(bot)}`} className={LINK}>
@@ -277,6 +282,7 @@ function WorstCard({ summary: s, bot }) {
 function LastActionCard({ summary: s, bot }) {
   const a = s.last_action;
   const coin = s.underlying;
+  const unit = summaryUnit(s);
   const at = a ? clockHM(a.at) : null;
   const move = a ? moveSince(a.spot, s.spot) : null;
   return (
@@ -290,7 +296,7 @@ function LastActionCard({ summary: s, bot }) {
             {(a.kind === "close" || isHedgeAction(a)) && isNumber(a.pnl_coin) ? (
               <>
                 {" · result "}
-                <Signed value={a.pnl_coin}>{formatCoin(a.pnl_coin, coin)}</Signed>
+                <Signed value={a.pnl_coin}>{formatMoney(a.pnl_coin, unit)}</Signed>
               </>
             ) : null}
           </p>

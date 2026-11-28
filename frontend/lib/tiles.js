@@ -3,13 +3,14 @@
 // per bot in that bot's coin; different coins are never added together, only
 // their ≈ USD on the footer. Missing data says "unknown: <reason>", never 0.
 import { riskRows } from "./account";
+import { unitOf } from "./details";
 import { MISSING, formatCoin, formatDateTime, formatPct, isNumber } from "./format";
 import { hedgeShown } from "./futuresHedge";
 import { clockHM, coinOf, plainFreeze, stateWords, worstCaseLine } from "./overview";
 import { formatSignedPct, formatSignedUSD, toneOf } from "./summary";
 
-/** Fixed decimals per coin (product owner, #404): BTC 5, ETH 4; any other coin 4. */
-export const COIN_DECIMALS = { BTC: 5, ETH: 4 };
+/** Fixed decimals per coin (product owner, #404): BTC 5, ETH 4, USDC 2 (cents, #837); any other coin 4. */
+export const COIN_DECIMALS = { BTC: 5, ETH: 4, USDC: 2 };
 
 export const coinDigits = (coin) => COIN_DECIMALS[coin] ?? 4;
 
@@ -28,7 +29,7 @@ function summaryUnknown(bot) {
  * text is the coin figure, or the reason it is unknown.
  */
 function line(bot, value, usd, extra = {}) {
-  return { bot: bot.name, coin: coinOf(bot), value, usd, text: fmtCoin(value, coinOf(bot)), tone: toneOf(value), unknown: null, ...extra };
+  return { bot: bot.name, coin: coinOf(bot), value, usd, text: fmtCoin(value, unitOf(bot)), tone: toneOf(value), unknown: null, ...extra };
 }
 const unknownLine = (bot, why) => ({ bot: bot.name, coin: coinOf(bot), value: null, usd: null, text: why, tone: "muted", unknown: why });
 

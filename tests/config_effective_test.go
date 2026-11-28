@@ -16,7 +16,7 @@ import (
 // change a value unnoticed. Regenerate only for an intended rule change:
 // UPDATE_GOLDEN=1 go test ./tests -run TestConfig_EffectiveSettingsUnchanged
 func TestConfig_EffectiveSettingsUnchanged(t *testing.T) {
-	for _, coin := range []string{"btc", "eth"} {
+	for _, coin := range []string{"btc", "eth", "sol", "xrp"} { // sol, xrp: #837
 		t.Run(coin, func(t *testing.T) {
 			t.Setenv("DERIBIT_ENV", "testnet")
 			cfg, err := loadWithDummyCreds(t, filepath.Join("..", "config_"+coin+".yaml"))

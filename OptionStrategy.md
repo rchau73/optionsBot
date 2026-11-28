@@ -109,6 +109,24 @@ There is no cap.*
    The one exception is the futures hedge experiment, off by default and on test money only: while an admin has it on, the bot trades the coin's perpetual future to hold the delta near zero (section 9).
    A SOL or XRP bot starts with it on: it holds its delta with the coin's USDC perpetual, in the coin.
 
+**SOL and XRP bots (testnet, #837).**
+Since 2026-11 the mvp environment also runs a SOL and an XRP bot, the product owner's decision on #117, to build a track record before anyone judges them.
+- **USDC-settled options.** Deribit lists SOL and XRP options only as linear options settled in USDC (`SOL_USDC-25DEC26-80-C`, `XRP_USDC-25DEC26-2d2-P`, where "d" is the decimal point).
+  Every price, premium, fee, margin figure and result of these bots is in USDC, not in the coin; the monitor labels them so.
+  An order is whole contracts: 10 SOL or 1,000 XRP each.
+- **Slots 30 and 50 days at 0.16 delta.** Beyond two weeks Deribit lists only month- and quarter-end expiries for these coins, so each slot's ±10-day window (20–40 and 40–60 days) always holds one.
+  Every other setting is BTC's; the premium floor is about 0.1 % of the price, as BTC's 0.001 BTC: 0.07 USDC per SOL, 0.001 USDC per XRP.
+- **The coin's own implied volatility instead of DVOL**, and the lowest margin band until 90 days of it exist (section 9).
+- **Dealer positioning from the coin's own USDC book**, with dollar gamma.
+- **The futures hedge on** from the first start (above).
+- **Its own account.** Each bot trades on its own Deribit testnet subaccount with 5,000 USDC, never the BTC/ETH one: two bots on one account would cancel each other's orders and share one margin, and the start-up check refuses it.
+- **What the recorded books say** (replay of 2026-10-28 → 11-26 on mainnet's recorded books, 5,000 USDC each, hedge on): SOL −2,230 USDC (−44.6 %), worst week −40.5 %; XRP −271 USDC (−5.4 %), worst week −4.9 %.
+  Almost all of SOL's loss is two stop-losses on 2026-10-30 that bought back on an empty book at a placeholder ask (16 and 12 USDC for legs whose mid was near 1.4).
+  These books are thin: a stop that fires on an empty book pays whatever the one quote asks.
+  That is why these bots run on test money first.
+  The product owner accepted this on testnet (2026-11-26) with today's stop guard (wait while the spread is wide or there is no bid, at most 5 minutes, then at market).
+  A cap on what such a stop may pay is studied in #907, and decided there before any live SOL or XRP run.
+
 ## 4. How a trade can end
 
 The rules are checked in this order.

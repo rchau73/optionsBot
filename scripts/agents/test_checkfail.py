@@ -2,6 +2,8 @@
 failures and their log tails, the CI-red plan and the failure count."""
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -31,8 +33,19 @@ class Suites(unittest.TestCase):
         self.check(["docs/README.md", "frontend/e2e/README.md"], ["docs"])
         self.check(["docs/seq_entry.mmd", "docs/seq_entry.png"], [])
 
-    def test_frontend_code_runs_the_frontend_and_docker_not_go(self):
-        self.check(["frontend/components/StatTile.jsx"], ["frontend", "docker"])
+    def test_frontend_code_runs_the_frontend_docker_and_phone_not_go(self):
+        self.check(["frontend/components/StatTile.jsx"], ["frontend", "docker", "phone"])
+
+    def test_a_pull_request_that_touches_the_monitor_runs_the_phone_check(self):
+        # #739: the monitor's code, its baseline, the demo it measures and the API that serves it.
+        for f in ("frontend/app/income/page.jsx", "frontend/e2e/phone-baseline.json", "cmd/monitor-demo/main.go",
+                  "internal/api/api.go", ".github/workflows/ci.yml"):
+            self.assertIn("phone", checkfail.suites_for(f), f)
+
+    def test_a_pull_request_outside_the_monitor_skips_the_phone_check(self):
+        for f in ("internal/strategy/entry.go", "internal/risk/margin.go", "scripts/agents/tick.sh",
+                  "frontend/docs/testing.md", "frontend/README.md", "OptionStrategy.md", "frontend/CLAUDE.md"):
+            self.assertNotIn("phone", checkfail.suites_for(f), f)
 
     def test_frontend_files_the_go_tests_read_run_go_too(self):
         for f in ("frontend/lib/menu.js", "frontend/app/api/x/route.js", "frontend/content/glossary.json"):
@@ -46,7 +59,7 @@ class Suites(unittest.TestCase):
         self.check(["docs/operations.md"], ["go", "docs"])
 
     def test_go_code_runs_go_lint_scripts_and_docker(self):
-        self.check(["internal/strategy/entry.go"], ["go", "go_lint", "scripts", "docker"])
+        self.check(["internal/strategy/entry.go"], ["go", "go_lint", "scripts", "docker"])  # no phone (#739)
 
     def test_a_scripts_only_change_skips_go_vet_and_docker(self):
         self.check(["scripts/agents/tick.sh"], ["go", "scripts"])
@@ -478,7 +491,116 @@ class RepoWide(unittest.TestCase):
         self.assertIn('"$CHECKFAIL" repo-wide', src)  # and the script runs them itself
 
 
+class FrontendNeeded(unittest.TestCase):
+    """#900: a Dev run installs frontend/node_modules before the agent when the card needs it."""
+
+    def needed(self, body, branch=(), labels="bug, E6"):
+        return checkfail.frontend_needed(f"# Issue #1: t\n\nLabels: {labels}\n\n{body}", list(branch))
+
+    def test_a_frontend_card_s_worktree_is_ready(self):
+        # Scenario: a Ready card whose Files line names frontend/.
+        self.assertTrue(self.needed("**Files:** frontend/e2e/phone.js, docs/product/x.md"))
+        self.assertTrue(self.needed("**Files:** `frontend/components/NpsCard.jsx`"))
+        self.assertTrue(self.needed("**Files:** NpsCard.jsx"))  # a component named without its folder
+        self.assertTrue(self.needed("**Files:** internal/api/server.go"))  # a file the frontend tests read
+
+    def test_a_backend_card_installs_nothing(self):
+        self.assertFalse(self.needed("**Files:** scripts/agents/dev_agent.sh, scripts/agents/CLAUDE.md, docs/agents/dev.md"))
+        self.assertFalse(self.needed("**Files:** internal/strategy/entry.go"))
+
+    def test_unsure_is_always(self):
+        self.assertTrue(self.needed("Fix the thing."))  # no Files line
+        self.assertTrue(checkfail.frontend_needed("", []))
+
+    def test_a_label_or_the_branch_says_frontend(self):
+        self.assertTrue(self.needed("**Files:** internal/strategy/entry.go", labels="enhancement, UI"))
+        self.assertTrue(self.needed("**Files:** internal/strategy/entry.go", branch=["frontend/app/page.jsx"]))
+
+    def test_the_cli(self):
+        with tempfile.TemporaryDirectory() as d:
+            write(d, "task.md", "Labels: bug\n\n**Files:** scripts/agents/lib.sh\n")
+            write(d, "files.txt", "frontend/lib/menu.js\n")
+            run = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "checkfail.py"), "frontend-needed", *a],
+                                            capture_output=True, text=True, check=True).stdout.strip()
+            self.assertEqual(run(os.path.join(d, "task.md")), "no")
+            self.assertEqual(run(os.path.join(d, "task.md"), os.path.join(d, "files.txt")), "yes")
+
+
+class FrontendDeps(unittest.TestCase):
+    """#900: frontend_deps.sh with a fake npm on PATH (no network)."""
+
+    def run_deps(self, npm_body):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        wt, bin_dir = os.path.join(d, "wt"), os.path.join(d, "bin")
+        write(wt, "frontend/package-lock.json", '{"lockfileVersion": 3}\n')
+        write(bin_dir, "npm", "#!/usr/bin/env bash\n" + npm_body)
+        os.chmod(os.path.join(bin_dir, "npm"), 0o755)
+        subprocess.run(["git", "init", "-q", wt], check=True)
+        env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ["PATH"])
+        log, reason = os.path.join(d, "npm-ci.log"), os.path.join(d, "reason.md")
+        got = subprocess.run(["bash", os.path.join(HERE, "frontend_deps.sh"), wt, log, reason],
+                             capture_output=True, text=True, env=env)
+        return got, wt, log, reason
+
+    def test_a_frontend_card_s_worktree_is_ready(self):
+        got, wt, log, reason = self.run_deps('[[ "$1 $2" == "ci --no-audit" ]] || exit 9\nmkdir node_modules\necho "added 705 packages"\n')
+        self.assertEqual(got.returncode, 0, got.stderr)
+        self.assertTrue(os.path.isdir(os.path.join(wt, "frontend", "node_modules")))
+        with open(log, encoding="utf-8") as f:
+            self.assertIn("added 705 packages", f.read())
+        want = subprocess.run(["git", "-C", wt, "hash-object", "frontend/package-lock.json"],
+                              capture_output=True, text=True, check=True).stdout
+        self.assertEqual(got.stdout, want)  # the lock's hash: verify() skips a second install
+        self.assertFalse(os.path.exists(reason))
+
+    def test_an_install_failure_blocks_with_its_reason(self):
+        got, wt, log, reason = self.run_deps('echo "npm error code E404"\necho "npm error 404 Not Found - left-pad"\nexit 1\n')
+        self.assertEqual(got.returncode, 1)
+        self.assertEqual(got.stdout, "")
+        with open(reason, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("the agent was not started", text)
+        self.assertIn("    npm error 404 Not Found - left-pad", text)  # the log's last lines
+
+
 class DevScript(unittest.TestCase):
+    def src(self):
+        with open(os.path.join(HERE, "dev_agent.sh"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_an_install_failure_blocks_before_the_agent_starts(self):
+        src = self.src()
+        install = src.index('frontend_deps.sh"')
+        self.assertLess(src.index('"$CHECKFAIL" frontend-needed'), install)
+        self.assertLess(install, src.index('block "$run_dir/reason.md" "npm ci failed before the agent"'))
+        self.assertLess(install, src.index("no_github claude -p"))
+        self.assertIn('log "dev: npm ci in $wt/frontend', src)  # the run log's npm ci line
+        verify = src[src.index("verify() {"):src.index("\nverify\n")]
+        self.assertIn('== "$npm_lock"', verify)  # reused, not a second install
+
+    def test_the_agent_can_run_jest_from_the_worktree_root(self):
+        # Scenario: the documented jest command for one test file matches the allow-list
+        # (Claude Code's "Bash(<prefix>:*)" rules match the prefix as whole words:
+        # "bash scripts/:*" does not match "bash scripts/x.sh"), so dontAsk does not refuse it.
+        src = self.src()
+        prompt = src[src.index('PROMPT="'):src.index('End your answer with the exact RESULT')]
+        allowed = src[src.index("allowed=("):src.index("denied=(")]
+        prefixes = re.findall(r'"Bash\(([^)]*?):\*\)"', allowed)
+        for cmd in ("npm --prefix frontend test -- --ci __tests__/", "npm --prefix frontend run test:phone",
+                    "npm --prefix frontend run lint", "npm --prefix frontend ci"):
+            self.assertIn(cmd, prompt)
+            self.assertTrue(any(cmd == p or cmd.startswith(p + " ") for p in prefixes), cmd)
+        self.assertNotIn("(from frontend/)", prompt)
+
+    @unittest.skipUnless(os.path.isdir(os.path.join(REPO, "frontend", "node_modules", "jest")),
+                         "frontend/node_modules not installed")
+    def test_the_documented_jest_command_runs_one_file_from_the_root(self):
+        got = subprocess.run(["npm", "--prefix", "frontend", "test", "--", "--ci", "__tests__/menu.test.jsx"],
+                             cwd=REPO, capture_output=True, text=True, timeout=300)
+        self.assertEqual(got.returncode, 0, got.stdout[-2000:] + got.stderr[-2000:])
+        self.assertIn("Tests:", got.stderr + got.stdout)
+
     def test_related_jest_run_passes_when_no_test_relates_to_the_change(self):
         # jest exits 1 on "No tests found" (a page or globals.css no test imports):
         # without the flag a valid frontend change would fail the Dev script's check.

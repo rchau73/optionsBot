@@ -20,6 +20,7 @@ import (
 // ledgerExempt lists the scripts that write no run, each with its reason.
 var ledgerExempt = map[string]string{
 	"branch_work.sh":    "a helper dev_agent.sh runs inside its own dev run",
+	"frontend_deps.sh":  "a helper dev_agent.sh runs inside its own dev run",
 	"install.sh":        "a person runs it once to schedule the jobs",
 	"lib.sh":            "the library that defines run_begin and run_end, sourced by every agent",
 	"limit_lib.sh":      "a library (budget and limits), sourced by the tick and the agents",

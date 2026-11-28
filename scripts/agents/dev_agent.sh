@@ -139,14 +139,37 @@ fi
 cp "$run_dir/task.md" "$wt/.agent-task.md"
 echo ".agent-task.md" >> "$(git -C "$wt" rev-parse --git-path info/exclude)" # never committed"
 
+# ── Frontend dependencies (#900) ────────────────────────────────────────────
+# A fresh worktree has no frontend/node_modules (gitignored): #878's and #887's
+# agents could run no jest and stopped. A card that needs the frontend (its
+# Files line, labels or branch; unsure = always) gets npm ci before the agent
+# starts; a failed install blocks the card with the log's last lines and the
+# agent never starts. verify() reuses the install while the lock is unchanged.
+npm_lock=""
+git -C "$wt" diff --name-only origin/main...HEAD > "$run_dir/branch-files.txt" 2>/dev/null || : > "$run_dir/branch-files.txt"
+if [[ "$(python3 "$CHECKFAIL" frontend-needed "$run_dir/task.md" "$run_dir/branch-files.txt")" == "yes" ]]; then
+  log "dev: npm ci in $wt/frontend (log: npm-ci.log)"
+  if ! npm_lock="$(bash "$AGENT_REPO_DIR/scripts/agents/frontend_deps.sh" "$wt" "$run_dir/npm-ci.log" "$run_dir/reason.md")"; then
+    block "$run_dir/reason.md" "npm ci failed before the agent"
+  fi
+  log "dev: npm ci done: frontend/node_modules ready"
+fi
+
 PROMPT="Use the developer skill in its \"Agent mode\" and implement the GitHub issue described in .agent-task.md
 (read it first; it includes any review feedback to address). You are on branch $branch in an isolated worktree.
 Implement it with tests and commit your work (git add + git commit).
-Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group', npx jest <file>,
-python3 -m unittest <file>), plus gofmt and go vet. Do NOT run the whole go test ./tests/... suite: the script runs
-the tests your change touches after you finish and CI runs every suite; a failure comes back to you.
+Tests: run only the tests your change touches (e.g. go test ./tests/ -run 'TestName|Group',
+npm --prefix frontend test -- --ci __tests__/<file>, python3 -m unittest <file>), plus gofmt and go vet. Do NOT run
+the whole go test ./tests/... suite: the script runs the tests your change touches after you finish and CI runs
+every suite; a failure comes back to you.
 You are already in the worktree: run each command directly (no cd prefix); only the listed commands are
-allowed, so a line mixing in another command is refused whole. You may run python3 and go run (scripts you write
+allowed, so a line mixing in another command is refused whole. The frontend's commands run from the worktree root
+with npm --prefix frontend (the script installed frontend/node_modules when the card needs it; after a
+package-lock.json change, npm --prefix frontend ci): npm --prefix frontend test -- --ci <jest files or options>,
+npm --prefix frontend run lint, npm --prefix frontend run build, npm --prefix frontend run test:phone.
+Not npx jest --config frontend/jest.config.mjs from the root: next/jest reads package.json from the current folder.
+Commit with git add <files> then git commit -m '<message>', each its own command (no git -C, no \$(...), no
+heredoc: those forms are refused). You may run python3 and go run (scripts you write
 in the worktree, the cmd/* generators), the repo's scripts (bash scripts/<name>.sh), shellcheck and make check;
 to delete or rename a tracked file use git rm or git mv (plain rm is refused);
 set GOMAXPROCS with go test -cpu=N, not an env prefix; keep helper scripts under scripts/
@@ -157,8 +180,8 @@ A change a person can see or do in the monitor is done only with its section in 
 a golden question in docs/product/assistant/golden.jsonl and go run ./cmd/helpindex (#483); answer the PR
 template's 'User-facing?' line in the PR body.
 Before you hand over (#467), run the checks that read the whole repo, not only the tests your change touches:
-for a frontend change npx jest __tests__/glossary.test.js __tests__/responsive-audit.test.js
-__tests__/empty-states.test.js __tests__/menu.test.jsx (from frontend/), and go run ./cmd/helpindex when a
+for a frontend change npm --prefix frontend test -- --ci __tests__/glossary.test.js __tests__/responsive-audit.test.js
+__tests__/empty-states.test.js __tests__/menu.test.jsx, and go run ./cmd/helpindex when a
 help source changed (OptionStrategy.md, docs/parameters.md, the glossary, the monitor guide, internal/api's
 catalogue or explain). As your last step, git merge --no-edit origin/main (resolve any conflict as main's
 behaviour plus yours), then rerun the tests your change touches and those checks, and commit.
@@ -171,6 +194,8 @@ allowed=( "Read" "Edit" "Write" "Grep" "Glob" "Skill"
   # denied list below still refuses push, gh, curl, docker and rm as commands.
   "Bash(python3:*)" "Bash(bash scripts/:*)" "Bash(shellcheck:*)" "Bash(make check:*)"
   "Bash(npm ci:*)" "Bash(npx jest:*)" "Bash(npx eslint:*)" "Bash(npx next build:*)" "Bash(mmdc:*)"
+  # The frontend from the worktree root (#900): npm --prefix runs the script in frontend/, no cd.
+  "Bash(npm --prefix frontend ci:*)" "Bash(npm --prefix frontend test:*)" "Bash(npm --prefix frontend run:*)"
   "Bash(git status:*)" "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" "Bash(git add:*)" "Bash(git commit:*)"
   "Bash(git merge:*)" # the last step: merge origin/main (fetched by the script) and rerun the checks (#467)
   "Bash(git rm:*)" "Bash(git mv:*)" # tracked files only, every one shown in the PR diff (#466 could not drop a file it had split, #515)
@@ -386,7 +411,15 @@ verify() { # sets ok
   fi
   if need go || need docs; then go_touched || ok=0; fi
   if need frontend; then
-    check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund' || ok=0
+    # The install before the agent (#900) holds while package-lock.json is unchanged.
+    if [[ -n "$npm_lock" && -d "$wt/frontend/node_modules" &&
+          "$(git -C "$wt" hash-object frontend/package-lock.json)" == "$npm_lock" ]]; then
+      echo "- [x] frontend: npm ci (before the agent ran; package-lock.json unchanged since)" >> "$checks"
+    elif check "frontend: npm ci" bash -c 'cd frontend && npm ci --no-audit --no-fund'; then
+      npm_lock="$(git -C "$wt" hash-object frontend/package-lock.json)"
+    else
+      ok=0
+    fi
     check "frontend: eslint" bash -c 'cd frontend && npx eslint .' || ok=0
     local jest_files=() f
     while IFS= read -r f; do [[ -n "$f" ]] && jest_files+=("$f"); done < <(python3 "$CHECKFAIL" jest-files "$run_dir/files.txt")

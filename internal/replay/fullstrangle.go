@@ -104,11 +104,17 @@ func perpContractUSD(underlying string) float64 {
 	return 1
 }
 
-// coinDelta is the book's delta in the coin (StateManager.TotalCoinDelta).
+// coinDelta is the book's delta in the coin (StateManager.TotalCoinDelta):
+// an inverse leg's delta less its mark in coin; a linear leg's (USDC, #837)
+// delta alone, as its mark is not held in the coin.
 func (e *engine) coinDelta() float64 {
 	delta := 0.0
 	for _, s := range e.book {
 		for _, p := range s.legs() {
+			if e.linear {
+				delta -= p.Qty * p.CurrentGreeks.Delta
+				continue
+			}
 			delta -= p.Qty * (p.CurrentGreeks.Delta - p.CurrentMid)
 		}
 	}
@@ -130,7 +136,7 @@ func (e *engine) holdBookDelta(at time.Time, marginBalance, spot float64) {
 			return
 		}
 	}
-	band := hedge.Band(marginBalance, false, spot, config.FixedFuturesHedgeBandPct)
+	band := hedge.Band(marginBalance, e.linear, spot, config.FixedFuturesHedgeBandPct) // a USDC balance in coin, as the bot (#837)
 	usd, side := hedge.HedgeOrder(options, hedge.PerpDelta(e.hedge.usd, spot), band, spot, perpContractUSD(e.cfg.Underlying))
 	if side == "" {
 		return
@@ -269,7 +275,7 @@ func FullStrangleMarkdown(coin string, rows []FullStrangleRow, missing []time.Ti
 		if res.Equity0 > 0 {
 			net = res.Net / res.Equity0 * 100
 		}
-		fmt.Fprintf(b, "| %s | %g× | %+.4f | %+.0f | %+.2f | %.0f | %.0f | %.0f | %.0f | %d | %.4f | %.4f | %+.4f", r.Variant, r.CostMultiple, res.Net, NetUSD(res.Days),
+		fmt.Fprintf(b, "| %s | %g× | %+.4f | %+.0f | %+.2f | %.0f | %.0f | %.0f | %.0f | %d | %.4f | %.4f | %+.4f", r.Variant, r.CostMultiple, res.Net, res.NetInUSD(),
 			net, res.MissingLegHours, perWeek(res.MissingLegHours, res), res.PerpTradedUSD, res.MaxPerpUSD, res.HedgeTrades, res.PerpFees, res.PerpFunding, res.HedgePnL)
 		for _, w := range ShedWindows {
 			if p, n := WindowPnL(res.Days, w, res.Equity0); n > 0 {

@@ -10,6 +10,7 @@ import LastTrade from "./LastTrade";
 import MarginBar from "./MarginBar";
 import StrangleRow from "./StrangleRow";
 import { ageSeconds, formatAge, formatNumber, formatUSD, isNumber } from "@/lib/format";
+import { unitOf } from "@/lib/details";
 import { coinOf, isFirstDay } from "@/lib/overview";
 import { payoffStrangles } from "@/lib/payoff";
 import { gexFreshness, regimeBadge, trendBadge } from "@/lib/regime";
@@ -39,6 +40,7 @@ export default function BotDashboards({ bots, onOpen }) {
 
 export function BotDashboard({ bot, onOpen }) {
   const coin = coinOf(bot);
+  const unit = unitOf(bot); // the amounts' unit: USDC for SOL/XRP (#837); the coin names the market
   const down = !bot.status && bot.error;
   return (
     <section aria-label={`${coin} dashboard`} className={clsx("space-y-3 rounded-lg border border-line bg-panel/40 p-3", bot.stale && "opacity-60")}>
@@ -56,9 +58,9 @@ export function BotDashboard({ bot, onOpen }) {
         <>
           <div className="grid gap-3 lg:grid-cols-[3fr_2fr]">
             <BandChart status={bot.status} payoff={bot.payoff} coin={coin} />
-            <StrangleList bot={bot} coin={coin} onOpen={onOpen} />
+            <StrangleList bot={bot} coin={coin} unit={unit} onOpen={onOpen} />
           </div>
-          <LastTrade bot={bot} coin={coin} />
+          <LastTrade bot={bot} coin={coin} unit={unit} />
         </>
       )}
     </section>
@@ -66,7 +68,7 @@ export function BotDashboard({ bot, onOpen }) {
 }
 
 /** The strangle rows of one bot, or why there are none. */
-function StrangleList({ bot, coin, onOpen }) {
+function StrangleList({ bot, coin, unit, onOpen }) {
   const report = bot.payoff;
   const list = payoffStrangles(report);
   const failure = bot.payoffError ?? (report ? null : bot.error);
@@ -85,7 +87,7 @@ function StrangleList({ bot, coin, onOpen }) {
         <ul className="space-y-2">
           {list.map((sp) => (
             <li key={sp.strangle_id}>
-              <StrangleRow sp={sp} coin={coin} onOpen={(id, el) => onOpen?.(bot.name, id, el)} />
+              <StrangleRow sp={sp} coin={coin} unit={unit} onOpen={(id, el) => onOpen?.(bot.name, id, el)} />
             </li>
           ))}
         </ul>

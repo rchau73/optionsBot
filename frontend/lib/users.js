@@ -62,6 +62,31 @@ export function lockedLabel(user) {
   return clock ? `Locked until ${clock.slice(0, 5)} ${DISPLAY_TZ_LABEL}` : "Locked";
 }
 
+/** An account without a sign-in for this many days is flagged unused (#910); fixed, not a setting. */
+export const UNUSED_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole days from ISO time `iso` to `now` (ms), or null when `iso` is missing or unreadable. */
+function daysSince(iso, now) {
+  const t = Date.parse(iso ?? "");
+  return Number.isNaN(t) ? null : Math.floor((now - t) / DAY_MS);
+}
+
+/**
+ * The Users page's unused tag (#910) for a row at `now` (ms), or null:
+ * "Unused for 90 days" when the last sign-in is UNUSED_DAYS or more ago,
+ * "Never signed in, created N days ago" when it never signed in and was
+ * created that long ago. A tag only: it blocks nothing and changes nothing.
+ */
+export function unusedLabel(user, now) {
+  if (user?.last_sign_in_at) {
+    const days = daysSince(user.last_sign_in_at, now);
+    return days !== null && days >= UNUSED_DAYS ? `Unused for ${UNUSED_DAYS} days` : null;
+  }
+  const age = daysSince(user?.created_at, now);
+  return age !== null && age >= UNUSED_DAYS ? `Never signed in, created ${age} days ago` : null;
+}
+
 /**
  * The confirmation of an action on `user` by the admin `me` (a username):
  * { title, body, button } in plain words, saying what follows.

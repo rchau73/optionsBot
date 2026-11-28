@@ -13,7 +13,8 @@ export const INCOME_UNITS = ["coin", "usd", "pct"];
 
 /** A signed amount in the chosen unit: "coin" → "+0.01200 BTC", "usd" → "+$1,200". */
 export function formatAmount(v, unit, coin) {
-  return unit === "usd" ? formatSignedUSD(v) : formatCoin(v, coin);
+  // a USDC bot's amounts (#837) in cents; a coin's as before
+  return unit === "usd" ? formatSignedUSD(v) : coin === "USDC" ? formatCoin(v, coin, 2) : formatCoin(v, coin);
 }
 
 /**

@@ -6,7 +6,10 @@ CI's `changes` job, dev_agent.sh and pr_gate.sh call it.
     checkfail.py suites [<files.txt>]
         → "<suite>=true|false" lines (GITHUB_OUTPUT form) for the changed
           paths (stdin without a file): go, go_lint, frontend, docs,
-          scripts, docker, vuln.
+          scripts, docker, vuln, phone.
+    checkfail.py frontend-needed <task.md> [<branch files.txt>]
+        → "yes" when the Dev agent's worktree needs frontend/node_modules
+          before the agent starts (#900), else "no".
     checkfail.py go-tests <repo> <files.txt> <report regex>
         → "all" when every Go test is needed (go.mod/go.sum changed), else
           two lines "core <regex>" and "reports <regex>" (empty: none) for the
@@ -92,7 +95,10 @@ SCRIPTS_READS = (".githooks/", ".github/", "cmd/", "docs/legal/", "docs/product/
                  "go.sum", "internal/", "scripts/")
 DOCKER_READS = ("Dockerfile", ".dockerignore", "cmd/", "frontend/", "go.mod", "go.sum", "internal/")
 VULN_READS = ("frontend/package-lock.json", "go.mod", "go.sum")
-SUITES = ("go", "go_lint", "frontend", "docs", "scripts", "docker", "vuln")
+# The phone viewport check (#739) measures the monitor (every non-doc file under
+# frontend/) on cmd/monitor-demo's data, served through internal/api; ci.yml holds the job.
+PHONE_READS = (".github/workflows/ci.yml", "cmd/monitor-demo/", "internal/api/")
+SUITES = ("go", "go_lint", "frontend", "docs", "scripts", "docker", "vuln", "phone")
 # Go tests that read every tracked .md (or every CLAUDE.md): fast line checks,
 # run for any doc change. file → the changed paths it reads.
 DOC_TESTS = {
@@ -128,6 +134,8 @@ def suites_for(path):
         out.add("docker")
     if matches(path, VULN_READS):
         out.add("vuln")
+    if matches(path, PHONE_READS) or (front and not doc):
+        out.add("phone")
     return out
 
 
@@ -136,6 +144,30 @@ def suites(files):
     for f in files:
         out |= suites_for(f)
     return out
+
+
+# ── A card that needs the frontend's dependencies (#900) ─────────────────────
+FRONTEND_LABELS = {"frontend", "ui", "ux", "a11y"}
+FRONTEND_EXT = (".js", ".jsx", ".mjs", ".css")
+LABELS_LINE = re.compile(r"^Labels:\s*(.*)$", re.M)
+
+
+def frontend_needed(task, branch_files):
+    """True when a Dev run must install frontend/node_modules before the agent
+    starts (#900: #878 and #887 could run no jest in a fresh worktree): the
+    branch already changes what the frontend suite runs on, a label says
+    frontend, or the card's Files line names a frontend file or a file the
+    frontend tests read. A card that names no file at all is unsure: True."""
+    if "frontend" in suites(branch_files):
+        return True
+    m = LABELS_LINE.search(task or "")
+    if m and {l.strip().lower() for l in m.group(1).split(",")} & FRONTEND_LABELS:
+        return True
+    import pm_board  # files_named: the card's "Files" line, as the pick order reads it (#467)
+    named = pm_board.files_named(task)
+    if not named:
+        return True
+    return any(n.startswith("frontend") or n.endswith(FRONTEND_EXT) or "frontend" in suites_for(n) for n in named)
 
 
 # ── What a test opens and imports ────────────────────────────────────────────
@@ -577,6 +609,8 @@ def main(argv):
         got = suites(files)
         for s in SUITES:
             print(f"{s}={'true' if s in got else 'false'}")
+    elif cmd == "frontend-needed":
+        print("yes" if frontend_needed(_text(argv[2]), _lines(argv[3]) if len(argv) > 3 else []) else "no")
     elif cmd == "go-tests":
         got = go_tests(argv[2], _lines(argv[3]), argv[4] if len(argv) > 4 else "")
         if got == "all":

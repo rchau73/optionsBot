@@ -290,6 +290,31 @@ describe("role change, sign out everywhere and delete", () => {
   });
 });
 
+describe("Scenario: nothing changes by itself (#910)", () => {
+  test("listing an account last signed in 91 days ago keeps its role, sessions and password, writes no audit line, and it still signs in", async () => {
+    const { cookie, auth, audit } = await asAdmin();
+    await createBob(cookie, "manager");
+    const bob = auth.store.userByName("bob");
+    await auth.login({ username: "bob", password: BOB_PASSWORD });
+    const longAgo = Math.floor((Date.now() - 91 * 24 * 60 * 60 * 1000) / 1000);
+    auth.store.db.run("UPDATE users SET last_sign_in_at = ? WHERE id = ?", [longAgo, bob.id]);
+    const hash = auth.store.passwordHash(bob.id);
+    const sessions = auth.store.sessionCount(bob.id);
+    const before = audit.length;
+
+    for (let i = 0; i < 2; i++) {
+      const row = (await (await list(req("/api/admin/users", { method: "GET", cookie }))).json()).users.find((u) => u.username === "bob");
+      expect(Date.parse(row.last_sign_in_at)).toBe(longAgo * 1000);
+      expect(JSON.stringify(row)).not.toMatch(/ip|token|argon2/i);
+    }
+    expect(audit.length).toBe(before);
+    expect(auth.store.userById(bob.id).role).toBe("manager");
+    expect(auth.store.passwordHash(bob.id)).toBe(hash);
+    expect(auth.store.sessionCount(bob.id)).toBe(sessions);
+    expect((await auth.login({ username: "bob", password: BOB_PASSWORD })).ok).toBe(true);
+  });
+});
+
 describe("last sign-in column", () => {
   test("a user database from before #306 gains last_sign_in_at, everyone never signed in", async () => {
     const store = await AuthStore.open(":memory:");

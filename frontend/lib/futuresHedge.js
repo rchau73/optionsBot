@@ -55,6 +55,20 @@ export function hedgePnl(h) {
   return { coin, usd: isNumber(coin) && isNumber(h.perp_mark_price) ? coin * h.perp_mark_price : null };
 }
 
+/**
+ * A hedge money figure (a `_coin` field: P&L, fees, funding) in the bot's
+ * unit (#837). GET /api/hedge gives a SOL/XRP bot's in the coin at the mark,
+ * so in USDC it is × the mark; a BTC/ETH figure stays in its coin. Deltas and
+ * the band are quantities of the coin, never this.
+ */
+export function hedgeAmount(h, v, coin, unit) {
+  if (unit !== "USDC") return formatCoin(v, coin, 4);
+  return formatCoin(isNumber(v) && isNumber(h?.perp_mark_price) ? v * h.perp_mark_price : null, "USDC", 2);
+}
+
+/** The hedge's money unit read from the hedge itself: USDC for a linear `<COIN>_USDC-PERPETUAL` (#836), else the coin. */
+export const hedgeMoneyUnit = (h, coin) => (h?.benchmark?.unit === "USDC" || String(h?.instrument ?? "").includes("_USDC-") ? "USDC" : coin);
+
 /** "short · 3,231 contracts"; without the contract size only the side. */
 export function positionWords(h) {
   const side = h.perp_usd < 0 ? "short" : "long";

@@ -175,7 +175,7 @@ func (e *engine) slotTargetLots(s *strangle, st risk.Status, spot float64) int {
 	for _, p := range s.legs() {
 		one = append(one, marginLeg{p.OptionType, p.Strike, e.lot, years(p.Expiry, e.now), p.CurrentGreeks.IV})
 	}
-	return strategy.TargetLots(share, scanIM(one, spot))
+	return strategy.TargetLots(share, scanIM(e.linear, one, spot))
 }
 
 // perpHedge is the hedge variant's short (or long) perpetual (MODEL: priced
@@ -193,8 +193,8 @@ type perpHedge struct {
 func (e *engine) markPerp(at time.Time, spot float64) {
 	h := &e.hedge
 	if h.usd != 0 && h.price > 0 {
-		pnl := perpPnL(h.usd, h.price, spot)
-		funding := math.Abs(h.usd) / spot * e.set.PerpFundingPct / 100 * at.Sub(h.at).Hours() / 24 / 365
+		pnl := perpPnL(e.linear, h.usd, h.price, spot)
+		funding := e.perpAmount(math.Abs(h.usd), spot) * e.set.PerpFundingPct / 100 * at.Sub(h.at).Hours() / 24 / 365
 		e.cash += pnl - funding
 		e.res.HedgePnL += pnl - funding
 		e.res.PerpFunding += funding
@@ -262,7 +262,7 @@ func (e *engine) tradePerp(at time.Time, usd float64, why string) {
 	if change == 0 || h.price <= 0 {
 		return
 	}
-	fee := math.Abs(change) / h.price * PerpFeeRate * e.costMultiple()
+	fee := e.perpAmount(math.Abs(change), h.price) * PerpFeeRate * e.costMultiple()
 	e.cash -= fee
 	e.res.HedgePnL -= fee
 	e.res.Fees += fee
@@ -281,8 +281,23 @@ func (e *engine) costMultiple() float64 { return math.Max(e.set.CostMultiple, 1)
 // widen is the quote the study's cost multiple fills on.
 func (e *engine) widen(q recorder.Quote) recorder.Quote { return Widen(q, e.costMultiple()) }
 
-// fee is Deribit's option fee times the study's cost multiple.
-func (e *engine) fee(price, qty float64) float64 { return Fee(price, qty) * e.costMultiple() }
+// fee is Deribit's option fee times the study's cost multiple: per contract
+// in the coin, or, linear, 0.03 % of the index in USDC (#837).
+func (e *engine) fee(price, qty float64) float64 {
+	if e.linear {
+		return LinearFee(e.spot, price, qty) * e.costMultiple()
+	}
+	return Fee(price, qty) * e.costMultiple()
+}
+
+// perpAmount is usd of perpetual notional in the settlement currency at
+// price: the coin for the inverse perpetual, USDC (= USD) for the linear one.
+func (e *engine) perpAmount(usd, price float64) float64 {
+	if e.linear {
+		return usd
+	}
+	return usd / price
+}
 
 // ShedRow is one variant's replay at one cost multiple.
 type ShedRow struct {
@@ -365,6 +380,15 @@ func WorstDay(days []Day, equity0 float64) float64 {
 		worst = math.Min(worst, d.PnL)
 	}
 	return worst / equity0 * 100
+}
+
+// NetInUSD is the result's net in USD: a USDC net as it is (linear, #837),
+// else each day's change at that day's spot (NetUSD).
+func (r Result) NetInUSD() float64 {
+	if r.Linear {
+		return r.Net
+	}
+	return NetUSD(r.Days)
 }
 
 // NetUSD is the replay's net in USD: each day's change at that day's spot.
@@ -489,7 +513,7 @@ func ShedStudyMarkdown(coin string, rows []ShedRow, missing []time.Time, maxMMPc
 		if res.ShedBreaks > 0 {
 			perBreak = fmt.Sprintf("%+.2f (%+.2f × %d)", pct(res.ShedPnL), pct(res.ShedPnL)/float64(res.ShedBreaks), res.ShedBreaks)
 		}
-		fmt.Fprintf(&b, "| %s | %g× | %+.4f | %+.0f | %+.2f | %s | %+.4f", r.Variant, r.CostMultiple, res.Net, NetUSD(res.Days),
+		fmt.Fprintf(&b, "| %s | %g× | %+.4f | %+.0f | %+.2f | %s | %+.4f", r.Variant, r.CostMultiple, res.Net, res.NetInUSD(),
 			pct(res.Net), perBreak, res.HedgePnL)
 		for _, w := range ShedWindows {
 			if p, n := WindowPnL(res.Days, w, res.Equity0); n > 0 {

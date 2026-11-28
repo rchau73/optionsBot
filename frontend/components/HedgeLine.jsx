@@ -3,7 +3,8 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { formatAge, formatCoin } from "@/lib/format";
-import { HEDGE_HEADLINE, hedgePnl, hedgeShown, hedgeStaleAge, hedgeState, pausedWords, perpLine, pricedAtIndex } from "@/lib/futuresHedge";
+import { unitOf } from "@/lib/details";
+import { HEDGE_HEADLINE, hedgeAmount, hedgePnl, hedgeShown, hedgeStaleAge, hedgeState, pausedWords, perpLine, pricedAtIndex } from "@/lib/futuresHedge";
 import { coinOf } from "@/lib/overview";
 import { formatSignedUSD } from "@/lib/summary";
 import { track } from "@/lib/track";
@@ -18,13 +19,14 @@ export default function HedgeLine({ bot, now, net = false }) {
   if (!hedgeShown(h)) return null;
   const state = hedgeState(h);
   const coin = coinOf(bot);
+  const unit = unitOf(bot); // the P&L's unit: USDC for SOL/XRP (#837); the deltas stay in the coin
   const pnl = hedgePnl(h);
   const age = hedgeStaleAge(h, now);
   const paused = state === "paused" ? pausedWords(h) : null;
   const facts = [
     net ? `net delta ${formatCoin(h.net_delta_coin, coin, 4)}` : null,
     perpLine(h, coin),
-    `P&L ${formatCoin(pnl.coin, coin, 4)} (${formatSignedUSD(pnl.usd)}) net of fees`,
+    unit === "USDC" ? `P&L ${hedgeAmount(h, pnl.coin, coin, unit)} net of fees` : `P&L ${formatCoin(pnl.coin, coin, 4)} (${formatSignedUSD(pnl.usd)}) net of fees`,
     pricedAtIndex(h) ? "priced at the index (testnet)" : null,
     age != null ? `as of ${formatAge(age)}` : null,
   ];

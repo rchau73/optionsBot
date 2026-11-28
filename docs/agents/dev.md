@@ -19,6 +19,15 @@ Rules in [`checkfail.py`](../../scripts/agents/checkfail.py), tested in `test_ch
   Go lint (gofmt, vet) runs only on Go files, and the scripts' checks have their own job.
   A push to `main`, the nightly run (02:30 UTC) and a manual run run every job.
   `test_checkfail.py` scans `tests/*.go` and the frontend tests for the paths they open and fails when one would not trigger its suite, so a new test that reads a doc cannot be skipped silently.
+- **A frontend card's worktree has its dependencies before the agent starts** (#900: #878's and #887's agents could run no jest in a fresh worktree and stopped).
+  `git worktree add` leaves out `frontend/node_modules`.
+  When `checkfail.py frontend-needed` says the card needs the frontend (its Files line names a frontend file or one the frontend tests read, a `frontend`/`ui`/`ux`/`a11y` label, the branch already changes one, or no Files line at all),
+  `dev_agent.sh` runs `frontend_deps.sh`: `npm ci --no-audit --no-fund` in `frontend/`, logged to the run's `npm-ci.log`.
+  A failed install blocks the card with the log's last lines and the agent is never started.
+  The script's own checks reuse that install while `package-lock.json` is unchanged.
+  The agent runs the frontend from the worktree root with `npm --prefix frontend test -- --ci __tests__/<file>` (and `run lint`, `run build`, `run test:phone`, `ci`), which npm runs in `frontend/`.
+  `npx jest --config frontend/jest.config.mjs` from the root does not work: `next/jest` reads `package.json` from the current folder, and `npx` picks up a stray parent install.
+  #887's refused `git add`/`git commit` left no session to read (`--no-session-persistence`); both are allowed, so the prompt now asks for each as its own command, with no `git -C`, `$(...)` or heredoc, the forms a prefix rule does not match.
 - **A check failure goes back once.**
   The first failure on a card (the script's, or CI's on an In review PR's head) sends it to **Ready** with `needs-fix` and a comment holding the failing checks and each failing test's own output (its last 40 lines).
   The next Dev run reads that comment first and fixes it on the same PR.

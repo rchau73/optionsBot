@@ -2,7 +2,7 @@
 // report. No React, no fetching — everything here is unit-tested.
 
 import { formatCoin, formatNumber, formatPct, formatPrice, formatUSD, slotLabel, isNumber } from "./format";
-import { strangleLabel } from "./details";
+import { strangleLabel, toUSD, unitOf } from "./details";
 
 /** Data older than this (seconds) is shown as stale. */
 export const STALE_AFTER_SEC = 5;
@@ -70,7 +70,7 @@ export function loopStalled(status, now = Date.now()) {
 export function legRows(bots) {
   const rows = [];
   for (const bot of bots) {
-    const unit = bot.status?.underlying ?? bot.name.toUpperCase();
+    const unit = unitOf(bot);
     const spot = bot.status?.market?.spot;
     const deltaExit = bot.summary?.delta_exit_threshold ?? null; // from /api/summary; null on an older bot
     for (const st of bot.positions?.strangles ?? []) {
@@ -99,7 +99,7 @@ export function legRows(bots) {
           markAsOf: leg.mark_as_of,
           pnl: leg.unrealised_pnl,
           spot,
-          pnlUsd: isNumber(spot) && isNumber(leg.unrealised_pnl) ? leg.unrealised_pnl * spot : null,
+          pnlUsd: toUSD(leg.unrealised_pnl, unit, spot),
           roiPct: leg.roi_pct,
           lossMultiple: leg.loss_multiple,
           stopMark: leg.stop_loss_mark,
@@ -294,10 +294,11 @@ export function summarise(bots) {
     if (s.history_since && (!kpi.since || Date.parse(s.history_since) < Date.parse(kpi.since))) kpi.since = s.history_since;
     const total = (s.pnl ?? []).find((p) => p.slot == null);
     const spot = s.market?.spot;
-    if (total && isNumber(spot)) {
-      kpi.realisedUsd += total.realised * spot;
-      kpi.unrealisedUsd += total.unrealised * spot;
-      kpi.totalUsd += total.total * spot;
+    const unit = unitOf(b);
+    if (total && toUSD(total.total, unit, spot) !== null) {
+      kpi.realisedUsd += toUSD(total.realised, unit, spot) ?? 0;
+      kpi.unrealisedUsd += toUSD(total.unrealised, unit, spot) ?? 0;
+      kpi.totalUsd += toUSD(total.total, unit, spot);
     }
   }
   return kpi;
