@@ -16,6 +16,7 @@ Table `users`: username (3–64 of `a-z 0-9 . _ -`, case-insensitive), argon2id 
 ### Passwords
 
 argon2id (`hash-wasm`; 19 MiB, 2 passes), at least 12 characters.
+An argon2 computation that throws (its WebAssembly memory not allocated in a loaded process) is retried once, then thrown: only a mismatch or a malformed stored hash reads as a wrong password (#866).
 Creating a user, changing a password and both resets also pass `guessablePasswordProblem` (`lib/auth/password.js`, #680), the one definition of the rule, which answers 400 with a reason in plain words:
 - `too common`: on the bundled list of about 1,000 common passwords (`lib/auth/commonPasswords.js`; public data, not personal data, and no call to an outside service), ignoring case, look-alikes (`p@ssw0rd`) and digits or symbols before or after (`password2026!`);
 - `contains your username`: the username inside the password, in any case.

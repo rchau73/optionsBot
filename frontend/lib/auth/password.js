@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import { argon2id, argon2Verify } from "hash-wasm";
 import { COMMON_PASSWORDS } from "./commonPasswords";
+import { authLog } from "./log";
 
 /** Shortest password a user may have. */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -12,18 +13,37 @@ export const MAX_PASSWORD_LENGTH = 1024;
 // OWASP's argon2id baseline: 19 MiB, 2 passes, 1 lane.
 const PARAMS = { parallelism: 1, iterations: 2, memorySize: 19456, hashLength: 32 };
 
-/** Returns the encoded argon2id hash ($argon2id$v=19$...) of a password. */
-export function hashPassword(password) {
-  return argon2id({ ...PARAMS, password, salt: crypto.randomBytes(16), outputType: "encoded" });
+// An encoded argon2 hash: $argon2id$v=19$m=…,t=…,p=…$salt$hash (base64, no padding).
+const ENCODED_HASH = /^\$argon2(id|i|d)\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
+
+/**
+ * Runs one argon2 computation, once more if it throws: hash-wasm allocates a
+ * WebAssembly memory per call, which a loaded process can fail to get. A second
+ * failure is thrown, never read as a wrong password (#866: a swallowed failure
+ * answered a right password 401 and counted toward the username's lock).
+ */
+async function argon2Once(what, run) {
+  try {
+    return await run();
+  } catch (err) {
+    authLog("WARN", "argon2 failed: retrying once", { op: what, error: err.message });
+    return run();
+  }
 }
 
-/** True when the password matches the encoded hash; false for any malformed hash. */
+/** Returns the encoded argon2id hash ($argon2id$v=19$...) of a password. */
+export function hashPassword(password) {
+  return argon2Once("hash", () => argon2id({ ...PARAMS, password, salt: crypto.randomBytes(16), outputType: "encoded" }));
+}
+
+/**
+ * True when the password matches the encoded hash; false for any malformed
+ * hash. Throws when argon2 itself fails twice (argon2Once), so the caller
+ * answers "unavailable" rather than "wrong password".
+ */
 export async function verifyPassword(password, hash) {
-  try {
-    return await argon2Verify({ password, hash });
-  } catch {
-    return false;
-  }
+  if (typeof hash !== "string" || !ENCODED_HASH.test(hash)) return false;
+  return argon2Once("verify", () => argon2Verify({ password, hash }));
 }
 
 let dummy = null;
